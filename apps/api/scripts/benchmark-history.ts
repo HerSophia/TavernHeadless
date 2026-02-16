@@ -116,6 +116,7 @@ function parseArgs(args: string[]): BenchmarkOptions {
       case "help": {
         printUsage();
         process.exit(0);
+        break;
       }
       default:
         throw new Error(`Unknown option: --${key}`);
