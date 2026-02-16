@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: Lint Test Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test:ci
+
+      - name: Build
+        run: pnpm build
+
+  api-smoke:
+    name: API Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: checks
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Start API server
+        run: |
+          pnpm --filter @tavern/api exec tsx src/index.ts > api.log 2>&1 &
+          echo "API_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for API health
+        run: |
+          for i in {1..60}; do
+            if curl -fsS "http://127.0.0.1:3000/health" > /dev/null; then
+              echo "API is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "API did not become healthy within timeout"
+          cat api.log || true
+          exit 1
+
+      - name: Run smoke tests
+        run: pnpm --filter @tavern/api smoke
+
+      - name: Stop API server
+        if: always()
+        run: |
+          if [ -n "${API_PID:-}" ]; then
+            kill "$API_PID" || true
+          fi
+
+      - name: Print API logs on failure
+        if: failure()
+        run: cat api.log || true

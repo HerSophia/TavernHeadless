@@ -1,0 +1,128 @@
+import type { FastifyInstance } from "fastify";
+import fastifySwagger from "@fastify/swagger";
+import fastifySwaggerUi from "@fastify/swagger-ui";
+
+import {
+  cloneOpenApiDocument,
+  localizeOpenApiDocument,
+  resolveApiDocLanguage,
+} from "./openapi-i18n";
+import type { AuthMode } from "./auth";
+
+export type RegisterOpenApiOptions = {
+  authMode?: AuthMode;
+};
+
+const AUTH_SECURITY_SCHEMES = {
+  ApiKeyAuth: {
+    type: "apiKey",
+    in: "header",
+    name: "x-api-key",
+    description: "Provide API key via x-api-key header",
+  },
+  BearerAuth: {
+    type: "http",
+    scheme: "bearer",
+    bearerFormat: "JWT",
+    description: "Provide JWT via Authorization: Bearer <token>",
+  },
+} as const;
+
+export async function registerOpenApi(app: FastifyInstance, options: RegisterOpenApiOptions = {}): Promise<void> {
+  const authMode = options.authMode ?? "off";
+
+  let security: Array<Record<string, string[]>> | undefined;
+  if (authMode === "api_key") {
+    security = [{ ApiKeyAuth: [] }];
+  }
+
+  if (authMode === "jwt") {
+    security = [{ BearerAuth: [] }];
+  }
+
+  await app.register(fastifySwagger, {
+    openapi: {
+      openapi: "3.0.3",
+      info: {
+        title: "TavernHeadless API",
+        description: "Backend API for TavernHeadless core engine",
+        version: "0.1.0",
+      },
+      components: {
+        securitySchemes: AUTH_SECURITY_SCHEMES,
+      },
+      security,
+      tags: [
+        { name: "system", description: "System and health endpoints" },
+        { name: "sessions", description: "Session CRUD and lifecycle" },
+        { name: "floors", description: "Floor CRUD" },
+        { name: "pages", description: "Message page CRUD" },
+        { name: "messages", description: "Message CRUD" },
+        { name: "variables", description: "Variable CRUD and upsert" },
+        { name: "memories", description: "Memory and memory-edge CRUD" },
+        { name: "imports", description: "SillyTavern resource import APIs" },
+        { name: "characters", description: "Character lifecycle and versioning" },
+        { name: "chat", description: "Chat respond and regenerate" },
+        { name: "llm-profiles", description: "LLM profile vault and activation" },
+        { name: "accounts", description: "Account management" },
+        { name: "users", description: "Account user-card management" },
+      ],
+    },
+  });
+
+  await app.register(fastifySwaggerUi, {
+    routePrefix: "/docs",
+    staticCSP: true,
+    uiConfig: {
+      docExpansion: "list",
+      deepLinking: false,
+    },
+    transformSpecification: (swaggerObject, request) => {
+      const language = resolveApiDocLanguage(request);
+      const localized = localizeOpenApiDocument(cloneOpenApiDocument(swaggerObject), language);
+      return localized;
+    },
+    transformSpecificationClone: false,
+  });
+
+  app.get(
+    "/docs-zh",
+    {
+      config: {
+        swagger: {
+          hide: true,
+        },
+      },
+    },
+    async (_, reply) => reply.redirect("/docs/?lang=zh")
+  );
+
+  app.get(
+    "/openapi.json",
+    {
+      config: {
+        swagger: {
+          hide: true,
+        },
+      },
+    },
+    async (request) => {
+      const swaggerApp = app as FastifyInstance & { swagger: () => unknown };
+      const language = resolveApiDocLanguage(request);
+      const specification = cloneOpenApiDocument(swaggerApp.swagger());
+      return localizeOpenApiDocument(specification, language);
+    }
+  );
+
+  app.get(
+    "/docs-en",
+    {
+      config: {
+        swagger: {
+          hide: true,
+        },
+      },
+    },
+    async (_, reply) => reply.redirect("/docs/?lang=en")
+  );
+}

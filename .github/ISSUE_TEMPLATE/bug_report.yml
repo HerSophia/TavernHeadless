@@ -1,0 +1,77 @@
+name: Bug Report
+description: Report a reproducible bug
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+        Please provide enough detail for maintainers to reproduce it.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence description of the problem
+      placeholder: API returns 500 when creating a floor with branch_id
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - apps/api
+        - apps/web
+        - packages/core
+        - packages/adapters-sillytavern
+        - packages/shared
+        - docs
+        - ci
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide clear step-by-step instructions
+      placeholder: |
+        1. Start API server with `pnpm --filter @tavern/api dev`
+        2. Send request `POST /floors` with ...
+        3. Observe error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: Request succeeds with status 201
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: Request fails with status 500 and stack trace
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / screenshots
+      description: Paste logs, stack traces, or screenshots if available
+      render: shell
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS / Node.js / pnpm versions
+      placeholder: Windows 11, Node 20.18.0, pnpm 9.15.4

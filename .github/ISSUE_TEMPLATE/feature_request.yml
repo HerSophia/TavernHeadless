@@ -1,0 +1,56 @@
+name: Feature Request
+description: Suggest an improvement or a new feature
+title: "feat: "
+labels:
+  - feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing your idea.
+        Please focus on the user problem first, then the proposed solution.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+      placeholder: It is hard to ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe what you want to happen
+      placeholder: Add an endpoint/service that ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional alternative approaches you considered
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Optional checklist for done state
+      placeholder: |
+        - [ ] API contract is documented
+        - [ ] Integration tests are added
+        - [ ] No breaking change for existing clients
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Expected impact
+      options:
+        - low
+        - medium
+        - high
+    validations:
+      required: true

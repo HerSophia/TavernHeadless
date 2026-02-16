@@ -1,0 +1,102 @@
+{
+  "name": "tavern-headless",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Backend-first AI RP engine with SillyTavern compatibility",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev-select.mjs",
+    "dev:api": "pnpm --filter @tavern/api dev",
+    "dev:web": "pnpm --filter @tavern/web dev",
+    "dev:both": "concurrently \"pnpm --filter @tavern/api dev\" \"pnpm --filter @tavern/web dev\"",
+    "dev:select": "node scripts/dev-select.mjs",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest",
+    "test:ci": "vitest run --coverage --reporter=verbose",
+    "test:coverage": "vitest run --coverage",
+    "smoke:api": "pnpm --filter @tavern/api smoke",
+    "lint": "eslint . && prettier --check .",
+    "lint:fix": "eslint . --fix && prettier --write .",
+    "docs:lint": "markdownlint-cli2 \"**/*.md\" \"!**/node_modules/**\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "openapi:export": "pnpm --filter @tavern/api openapi:export -- packages/shared/src/generated/openapi.json",
+    "sdk:generate": "pnpm openapi:export && pnpm exec openapi-typescript packages/shared/src/generated/openapi.json --output packages/shared/src/generated/openapi-types.ts",
+    "sdk:check": "pnpm --filter @tavern/api openapi:export -- packages/shared/src/generated/.openapi.check.json && pnpm exec openapi-typescript packages/shared/src/generated/.openapi.check.json --output packages/shared/src/generated/.openapi-types.check.ts && tsx scripts/check-sdk-generated.ts",
+    "clean": "rimraf node_modules coverage .turbo",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^1.0.17",
+    "@fastify/cors": "^10.0.1",
+    "@fastify/sensible": "^6.0.3",
+    "ai": "^4.1.18",
+    "better-sqlite3": "^11.7.0",
+    "drizzle-orm": "^0.36.4",
+    "emittery": "^1.1.0",
+    "fastify": "^5.2.1",
+    "lru-cache": "^11.0.2",
+    "nanoid": "^5.0.9",
+    "pinia": "^2.3.0",
+    "vue": "^3.5.13",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.6.1",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@eslint/js": "^9.17.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vitest/coverage-v8": "^2.1.8",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
+    "drizzle-kit": "^0.30.1",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-vue": "^9.32.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
+    "markdownlint-cli2": "^0.16.0",
+    "openapi-typescript": "^7.13.0",
+    "postcss": "^8.4.49",
+    "prettier": "^3.4.2",
+    "prettier-plugin-tailwindcss": "^0.6.9",
+    "rimraf": "^6.0.1",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8",
+    "vue-tsc": "^2.2.0"
+  },
+  "lint-staged": {
+    "*.{js,cjs,mjs,ts,cts,mts,tsx,vue,json,yml,yaml}": [
+      "prettier --write"
+    ],
+    "*.{js,cjs,mjs,ts,cts,mts,tsx,vue}": [
+      "eslint --fix"
+    ],
+    "*.md": [
+      "prettier --write"
+    ]
+  },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  }
+}

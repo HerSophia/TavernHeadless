@@ -1,0 +1,31 @@
+import type { FastifyInstance } from "fastify";
+
+import type { DatabaseConnection } from "../db/client";
+import { registerCharacterRoutes } from "./characters";
+import { registerFloorRoutes } from "./floors";
+import { registerImportRoutes } from "./imports";
+import { registerMemoryRoutes } from "./memories";
+import { registerMessageRoutes } from "./messages";
+import { registerMessagePageRoutes } from "./pages";
+import { registerLlmProfileRoutes } from "./llm-profiles";
+import { registerSessionRoutes } from "./sessions";
+import { registerVariableRoutes } from "./variables";
+import { registerAccountRoutes } from "./accounts";
+import { registerUserRoutes } from "./users";
+
+export async function registerCrudRoutes(
+  app: FastifyInstance,
+  connection: DatabaseConnection
+): Promise<void> {
+  await registerAccountRoutes(app, connection);
+  await registerSessionRoutes(app, connection);
+  await registerCharacterRoutes(app, connection);
+  await registerFloorRoutes(app, connection);
+  await registerUserRoutes(app, connection);
+  await registerMessagePageRoutes(app, connection);
+  await registerMessageRoutes(app, connection);
+  await registerVariableRoutes(app, connection);
+  await registerMemoryRoutes(app, connection);
+  await registerImportRoutes(app, connection);
+  await registerLlmProfileRoutes(app, connection);
+}

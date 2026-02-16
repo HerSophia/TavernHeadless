@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TavernHeadless Visual Tone: Atmospheric Utilitarianism</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ["Inter", "Noto Sans SC", "sans-serif"],
+                        mono: ["JetBrains Mono", "monospace"]
+                    },
+                    colors: {
+                        bg: "#09090b",
+                        panel: "#121215",
+                        surface: "#18181b",
+                        signal: {
+                            success: "#4ade80",
+                            warn: "#fbbf24",
+                            error: "#f87171",
+                            info: "#60a5fa",
+                            accent: "#2dd4bf"
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+
+    <style>
+        :root {
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-active: rgba(255, 255, 255, 0.16);
+        }
+
+        body {
+            background-color: #050505;
+            color: #e4e4e7;
+        }
+
+        .glass-panel {
+            background: rgba(18, 18, 21, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .border-b-subtle {
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .border-r-subtle {
+            border-right: 1px solid var(--border-subtle);
+        }
+
+        .border-l-subtle {
+            border-left: 1px solid var(--border-subtle);
+        }
+
+        .border-t-subtle {
+            border-top: 1px solid var(--border-subtle);
+        }
+
+        .btn-ghost {
+            padding: 0.375rem 0.75rem;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
+            color: rgb(161 161 170);
+            transition: color 180ms ease, background-color 180ms ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-ghost:hover {
+            color: rgb(244 244 245);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .btn-primary {
+            padding: 0.375rem 1rem;
+            border-radius: 0.25rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 200ms ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(45, 212, 191, 0.1);
+            color: #2dd4bf;
+            border: 1px solid rgba(45, 212, 191, 0.2);
+        }
+
+        .btn-primary:hover {
+            background: rgba(45, 212, 191, 0.16);
+            box-shadow: 0 0 15px -4px rgba(45, 212, 191, 0.3);
+            border-color: rgba(45, 212, 191, 0.45);
+        }
+
+        .inspector-tab {
+            flex: 1;
+            padding: 0.5rem 0;
+            font-size: 11px;
+            font-weight: 500;
+            color: rgb(113 113 122);
+            border-bottom: 1px solid transparent;
+            transition: all 160ms ease;
+        }
+
+        .inspector-tab:hover {
+            color: rgb(212 212 216);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .inspector-tab.active {
+            color: rgb(244 244 245);
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom-color: #2dd4bf;
+        }
+
+        .data-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: rgb(113 113 122);
+            font-family: "JetBrains Mono", monospace;
+        }
+
+        .event-row {
+            display: flex;
+            gap: 0.5rem;
+            align-items: flex-start;
+            font-size: 11px;
+            line-height: 1.4;
+            padding: 0.25rem 0;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+        }
+
+        .event-row:last-child {
+            border-bottom: none;
+        }
+
+        .event-row.success {
+            color: rgb(74 222 128);
+        }
+
+        .event-row.info {
+            color: rgb(96 165 250);
+        }
+
+        .event-row.warn {
+            color: rgb(251 191 36);
+        }
+
+        .flash {
+            box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.5), 0 0 18px -6px rgba(45, 212, 191, 0.5);
+            transition: box-shadow 220ms ease;
+        }
+
+        .session-item {
+            width: 100%;
+            text-align: left;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            background: rgba(255, 255, 255, 0.01);
+            border-radius: 0.25rem;
+            position: relative;
+        }
+
+        .session-item:hover .session-item-kebab {
+            opacity: 1;
+        }
+
+        .session-item-kebab {
+            opacity: 0;
+            transition: opacity 150ms ease;
+        }
+
+        .context-menu {
+            position: fixed;
+            z-index: 60;
+            min-width: 170px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(12, 12, 14, 0.96);
+            backdrop-filter: blur(10px);
+            border-radius: 0.35rem;
+            padding: 0.25rem;
+            box-shadow: 0 14px 28px -14px rgba(0, 0, 0, 0.8);
+        }
+
+        .context-menu.hidden {
+            display: none;
+        }
+
+        .context-menu-item {
+            width: 100%;
+            border: 1px solid transparent;
+            border-radius: 0.25rem;
+            background: transparent;
+            color: rgb(212 212 216);
+            font-size: 11px;
+            font-family: "JetBrains Mono", monospace;
+            text-align: left;
+            padding: 0.35rem 0.5rem;
+            transition: all 140ms ease;
+        }
+
+        .context-menu-item:hover {
+            background: rgba(45, 212, 191, 0.1);
+            border-color: rgba(45, 212, 191, 0.25);
+            color: rgb(240 253 250);
+        }
+
+        .context-menu-item:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .context-menu-item.danger:hover {
+            background: rgba(248, 113, 113, 0.12);
+            border-color: rgba(248, 113, 113, 0.3);
+            color: rgb(252 165 165);
+        }
+
+        .context-menu-sep {
+            height: 1px;
+            margin: 0.25rem 0;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #27272a;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3f3f46;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col overflow-hidden text-sm selection:bg-signal-accent selection:text-black">
+
+    <header class="h-12 border-b-subtle flex items-center justify-between px-4 bg-[#09090b] z-20">
+        <div class="flex items-center gap-4 min-w-0">
+            <div class="flex items-center gap-2 text-zinc-100 font-semibold tracking-tight shrink-0">
+                <i data-lucide="box" class="w-5 h-5 text-signal-accent"></i>
+                <span>Tavern<span class="opacity-50 font-light">Headless</span></span>
+            </div>
+            <div class="h-4 w-[1px] bg-white/10"></div>
+            <div class="flex items-center gap-2 text-xs text-zinc-400 font-mono min-w-0">
+                <span class="w-2 h-2 rounded-full bg-signal-success shadow-[0_0_8px_rgba(74,222,128,0.5)]"></span>
+                <span class="px-1 py-0.5 rounded border border-sky-400/30 text-sky-300" data-i18n="status.accountMode"></span>
+                <span class="text-zinc-600">|</span>
+                <span data-i18n="status.engineOnline"></span>
+                <span class="text-zinc-600">|</span>
+                <span>WS: 45ms</span>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <button class="btn-ghost" id="account-switcher-btn">
+                <i data-lucide="building-2" class="w-4 h-4 text-signal-info"></i>
+                <span class="text-xs font-mono" id="account-switcher-label"></span>
+                <i data-lucide="chevron-down" class="w-3 h-3"></i>
+            </button>
+            <button class="btn-ghost">
+                <i data-lucide="users" class="w-4 h-4"></i>
+                <span class="text-xs font-mono" data-i18n="header.users"></span>
+            </button>
+            <button class="btn-ghost" id="lang-toggle" aria-label="Language toggle">EN</button>
+            <button class="btn-ghost">
+                <i data-lucide="settings" class="w-4 h-4"></i>
+            </button>
+            <button class="btn-ghost">
+                <i data-lucide="bell" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden">
+
+        <nav class="w-64 border-r-subtle bg-[#09090b] flex flex-col">
+            <div class="p-3 space-y-1">
+                <div class="text-[10px] font-mono text-zinc-500 px-3 py-2 uppercase tracking-widest" data-i18n="nav.runtime"></div>
+
+                <a href="#" class="flex items-center gap-3 px-3 py-2 rounded bg-white/5 border border-white/5 text-zinc-100">
+                    <i data-lucide="message-square" class="w-4 h-4 text-signal-accent"></i>
+                    <span data-i18n="nav.sessions"></span>
+                </a>
+
+                <div class="px-3 py-2 mt-3 rounded border border-white/5 bg-white/[0.02] space-y-2">
+                    <div class="flex items-center justify-between">
+                        <div class="text-[10px] font-mono text-zinc-500 uppercase tracking-widest" data-i18n="nav.sessionList"></div>
+                        <span id="session-count-badge" class="text-[10px] font-mono text-zinc-500"></span>
+                    </div>
+                    <div class="text-[10px] font-mono text-zinc-600" data-i18n="nav.sessionHint"></div>
+                    <div id="session-list" class="space-y-1"></div>
+                </div>
+
+                <div class="px-3 py-2 mt-3 rounded border border-white/5 bg-white/[0.02] space-y-2">
+                    <div class="text-[10px] font-mono text-zinc-500 uppercase tracking-widest" data-i18n="nav.currentBindings"></div>
+                    <div class="text-xs text-zinc-300 flex items-center gap-2">
+                        <i data-lucide="user-circle-2" class="w-3.5 h-3.5 text-signal-accent"></i>
+                        <span id="runtime-character-name">Seraphina v4</span>
+                    </div>
+                    <div class="text-xs text-zinc-400 flex items-center gap-2">
+                        <i data-lucide="book-open" class="w-3.5 h-3.5"></i>
+                        <span id="runtime-worldbook-count"></span>
+                    </div>
+                    <div class="text-xs text-zinc-400 flex items-center gap-2">
+                        <i data-lucide="contact" class="w-3.5 h-3.5"></i>
+                        <span id="runtime-user-name"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-3 space-y-1">
+                <div class="text-[10px] font-mono text-zinc-500 px-3 py-2 uppercase tracking-widest" data-i18n="nav.library"></div>
+                <a href="#" class="flex items-center gap-3 px-3 py-2 rounded hover:bg-white/5 hover:text-zinc-100 text-zinc-400 transition-colors">
+                    <i data-lucide="users" class="w-4 h-4"></i>
+                    <span data-i18n="nav.characters"></span>
+                </a>
+                <a href="#" class="flex items-center gap-3 px-3 py-2 rounded hover:bg-white/5 hover:text-zinc-100 text-zinc-400 transition-colors">
+                    <i data-lucide="book" class="w-4 h-4"></i>
+                    <span data-i18n="nav.worldbooks"></span>
+                </a>
+                <a href="#" class="flex items-center gap-3 px-3 py-2 rounded hover:bg-white/5 hover:text-zinc-100 text-zinc-400 transition-colors">
+                    <i data-lucide="contact" class="w-4 h-4"></i>
+                    <span data-i18n="nav.users"></span>
+                </a>
+            </div>
+
+            <div class="mt-auto p-4 border-t-subtle">
+                <div class="mb-3 flex gap-2">
+                    <button id="nav-new-session-btn" class="btn-primary w-full justify-center">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        <span data-i18n="nav.newSession"></span>
+                    </button>
+                </div>
+                <div class="glass-panel p-3 rounded flex flex-col gap-2">
+                    <div class="flex justify-between items-center">
+                        <span class="data-label" data-i18n="nav.activeModel"></span>
+                        <span class="w-1.5 h-1.5 bg-signal-info rounded-full"></span>
+                    </div>
+                    <div class="font-mono text-xs text-zinc-300 truncate">claude-3-opus-20240229</div>
+                    <div class="h-1 w-full bg-zinc-800 rounded overflow-hidden mt-1">
+                        <div class="h-full bg-signal-info w-[45%]"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-zinc-500 font-mono">
+                        <span>CTX: 45%</span>
+                        <span>14k / 32k</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="session-context-menu" class="context-menu hidden" role="menu">
+                <button class="context-menu-item" data-session-action="create" data-i18n="session.create"></button>
+                <div class="context-menu-sep"></div>
+                <button class="context-menu-item" data-session-action="open" data-i18n="session.open"></button>
+                <button class="context-menu-item" data-session-action="rename" data-i18n="session.rename"></button>
+                <button class="context-menu-item" data-session-action="archive" data-i18n="session.archive"></button>
+                <div class="context-menu-sep"></div>
+                <button class="context-menu-item danger" data-session-action="delete" data-i18n="session.delete"></button>
+            </div>
+        </nav>
+
+        <main class="flex-1 flex flex-col bg-[#050505] relative min-w-0">
+            <div class="h-10 border-b-subtle flex items-center justify-between px-4 bg-[#09090b] gap-2">
+                <div class="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
+                    <span class="text-sm font-medium text-zinc-300" id="session-title"></span>
+                    <span id="session-id-chip" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-zinc-800 text-zinc-400 border border-zinc-700"></span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-teal-500/10 text-teal-300 border border-teal-500/20" id="session-character-chip">Character: Seraphina v4</span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-300 border border-sky-500/20" id="session-account-chip"></span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-300 border border-sky-500/20" id="session-user-chip"></span>
+                    <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-zinc-800/70 text-zinc-400 border border-zinc-700" id="session-worldbook-chip"></span>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                    <button id="toolbar-attach-btn" class="p-1.5 rounded border border-teal-500/20 bg-teal-500/10 text-teal-300 hover:bg-teal-500/15 transition-colors text-[10px] font-mono" data-i18n="main.attach"></button>
+                    <button id="toolbar-replace-user-btn" class="p-1.5 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors text-[10px] font-mono" data-i18n="main.replaceUser"></button>
+                    <button id="toolbar-detach-btn" class="p-1.5 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors text-[10px] font-mono" data-i18n="main.detachAsset"></button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-8 space-y-8">
+                <div class="flex gap-4 group">
+                    <div class="w-8 h-8 rounded-full bg-zinc-800 flex-shrink-0 flex items-center justify-center border border-white/10 text-xs font-mono text-zinc-400">USR</div>
+                    <div class="flex-1 max-w-3xl space-y-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-zinc-400" data-i18n="chat.user"></span>
+                            <span class="text-[10px] text-zinc-600 font-mono">10:42 AM</span>
+                        </div>
+                        <div class="text-zinc-300 leading-relaxed" data-i18n="chat.userLine"></div>
+                    </div>
+                </div>
+
+                <div class="flex gap-4 group">
+                    <div class="w-8 h-8 rounded-full bg-indigo-900/30 flex-shrink-0 flex items-center justify-center border border-indigo-500/30 text-xs font-mono text-indigo-300">AI</div>
+                    <div class="flex-1 max-w-3xl space-y-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-signal-accent">Seraphina</span>
+                            <span class="text-[10px] text-zinc-600 font-mono">10:42 AM</span>
+                        </div>
+                        <div class="text-zinc-100 leading-relaxed">
+                            <p data-i18n="chat.aiLine1"></p>
+                            <p class="mt-2" data-i18n="chat.aiLine2"></p>
+                        </div>
+                        <div class="mt-2 pt-2 border-t border-white/5 flex gap-4 text-[10px] font-mono text-zinc-500">
+                            <span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> 1.2s</span>
+                            <span class="flex items-center gap-1"><i data-lucide="cpu" class="w-3 h-3"></i> 240 tok</span>
+                            <span class="flex items-center gap-1 text-signal-accent"><i data-lucide="zap" class="w-3 h-3"></i> Cache Hit</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t-subtle bg-[#09090b]">
+                <div class="relative group">
+                    <textarea class="w-full bg-[#121215] border border-zinc-800 rounded-lg p-3 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-signal-accent focus:ring-1 focus:ring-signal-accent/20 transition-all resize-none" rows="3" data-i18n-placeholder="main.inputPlaceholder"></textarea>
+                    <div class="absolute bottom-3 right-3 flex gap-2">
+                        <button class="btn-primary">
+                            <i data-lucide="send" class="w-4 h-4"></i>
+                            <span data-i18n="main.send"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <aside class="w-80 border-l-subtle bg-[#09090b] flex flex-col">
+            <div class="flex border-b-subtle" id="inspector-tabs">
+                <button class="inspector-tab active" data-tab="bindings" data-i18n="inspector.tabs.bindings"></button>
+                <button class="inspector-tab" data-tab="memory" data-i18n="inspector.tabs.memory"></button>
+                <button class="inspector-tab" data-tab="impact" data-i18n="inspector.tabs.impact"></button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4" id="inspector-panels">
+                <div data-panel="bindings" class="space-y-6">
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider" data-i18n="inspector.variables"></h3>
+                            <i data-lucide="sliders-horizontal" class="w-3 h-3 text-zinc-600"></i>
+                        </div>
+                        <div class="bg-[#121215] border border-white/5 rounded p-2 space-y-2">
+                            <div class="flex justify-between items-center">
+                                <span class="font-mono text-xs text-zinc-500">location</span>
+                                <span class="font-mono text-xs text-signal-warn">"Museum"</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="font-mono text-xs text-zinc-500">danger_lvl</span>
+                                <span class="font-mono text-xs text-signal-error">85</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="font-mono text-xs text-zinc-500">inventory</span>
+                                <span class="font-mono text-xs text-zinc-300">[Array(3)]</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider" data-i18n="inspector.bindingState"></h3>
+                        <div class="bg-[#121215] border border-white/5 rounded p-3 space-y-2" id="binding-card">
+                            <div class="flex items-center justify-between">
+                                <span class="data-label" data-i18n="inspector.accountScope"></span>
+                                <span class="text-[10px] font-mono text-signal-info" data-i18n="inspector.isolated"></span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs text-zinc-300" id="binding-account-name">studio-alpha</span>
+                                <span class="text-[10px] text-zinc-500 font-mono">account_id: acc_01</span>
+                            </div>
+
+                            <div class="pt-2 border-t border-white/5 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="data-label" data-i18n="inspector.userBinding"></span>
+                                    <span class="text-[10px] font-mono text-signal-success" data-i18n="inspector.applied"></span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs text-zinc-300" id="binding-user-name"></span>
+                                    <button id="replace-user-btn" class="text-[10px] font-mono px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200" data-i18n="actions.replace"></button>
+                                </div>
+                                <div class="text-[10px] text-zinc-500" data-i18n="inspector.userBindingHint"></div>
+                                <button id="apply-user-btn" class="text-[10px] font-mono px-2 py-0.5 rounded border border-sky-500/20 text-sky-300" data-i18n="actions.applyAssetUpdate"></button>
+                            </div>
+
+                            <div class="pt-2 border-t border-white/5 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="data-label" data-i18n="inspector.characterBinding"></span>
+                                    <span class="text-[10px] font-mono text-signal-success" data-i18n="inspector.applied"></span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs text-zinc-300">Seraphina v4</span>
+                                    <button class="text-[10px] font-mono px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200" data-i18n="actions.replace"></button>
+                                </div>
+                            </div>
+
+                            <div class="pt-2 border-t border-white/5 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="data-label" data-i18n="inspector.worldbooks"></span>
+                                    <button id="attach-worldbook-btn" class="text-[10px] font-mono px-2 py-0.5 rounded border border-teal-500/20 text-teal-300" data-i18n="actions.attach"></button>
+                                </div>
+                                <div class="text-xs text-zinc-400 font-mono">1. artifacts-core (priority 80)</div>
+                                <div class="text-xs text-zinc-500 font-mono">2. museum-security (priority 40)</div>
+                                <div class="text-[10px] text-zinc-500" data-i18n="inspector.worldbookHint"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div data-panel="memory" class="space-y-6 hidden">
+                    <div class="space-y-2">
+                        <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider" data-i18n="inspector.memoryActivation"></h3>
+                        <div class="border border-l-2 border-l-signal-accent border-y-white/5 border-r-white/5 bg-white/[0.02] p-2 rounded-r">
+                            <div class="flex justify-between mb-1">
+                                <span class="text-[10px] text-zinc-500 font-mono">MEM-291</span>
+                                <span class="text-[10px] text-signal-accent font-mono">92% Match</span>
+                            </div>
+                            <p class="text-xs text-zinc-300" data-i18n="memory.item1"></p>
+                        </div>
+                        <div class="border border-l-2 border-l-zinc-700 border-y-white/5 border-r-white/5 bg-white/[0.01] p-2 rounded-r opacity-70">
+                            <div class="flex justify-between mb-1">
+                                <span class="text-[10px] text-zinc-500 font-mono">WB-ENTRY-5</span>
+                                <span class="text-[10px] text-zinc-500 font-mono">65% Match</span>
+                            </div>
+                            <p class="text-xs text-zinc-300" data-i18n="memory.item2"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div data-panel="impact" class="space-y-6 hidden">
+                    <div class="space-y-2">
+                        <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider" data-i18n="impact.title"></h3>
+                        <div class="bg-[#121215] border border-white/5 rounded p-3 space-y-2">
+                            <div class="text-[10px] text-zinc-500" data-i18n="impact.deleteHint"></div>
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-zinc-400" data-i18n="impact.affectedSessions"></span>
+                                <span class="font-mono text-zinc-200">12</span>
+                            </div>
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-zinc-400" data-i18n="impact.affectedFloors"></span>
+                                <span class="font-mono text-zinc-200">64</span>
+                            </div>
+                            <button class="w-full text-[10px] font-mono px-2 py-1 rounded border border-signal-warn/30 text-signal-warn" data-i18n="impact.disableFirst"></button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider" data-i18n="impact.tokenUsage"></h3>
+                        <div class="h-16 flex items-end gap-[1px] opacity-80">
+                            <div class="w-1 bg-zinc-800 h-[20%]"></div>
+                            <div class="w-1 bg-zinc-800 h-[30%]"></div>
+                            <div class="w-1 bg-zinc-800 h-[25%]"></div>
+                            <div class="w-1 bg-zinc-800 h-[40%]"></div>
+                            <div class="w-1 bg-zinc-800 h-[35%]"></div>
+                            <div class="w-1 bg-zinc-700 h-[50%]"></div>
+                            <div class="w-1 bg-zinc-700 h-[60%]"></div>
+                            <div class="w-1 bg-zinc-700 h-[55%]"></div>
+                            <div class="w-1 bg-zinc-600 h-[70%]"></div>
+                            <div class="w-1 bg-zinc-600 h-[85%]"></div>
+                            <div class="w-1 bg-signal-accent h-[90%]"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="h-28 border-t-subtle p-3 bg-[#09090b] flex flex-col">
+                <div class="text-[10px] uppercase tracking-wider text-zinc-500 font-mono mb-2" data-i18n="events.title"></div>
+                <div id="event-log" class="flex-1 overflow-y-auto pr-1"></div>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        const I18N = {
+            zh: {
+                "status.accountMode": "ACCOUNT_MODE=multi",
+                "status.engineOnline": "引擎在线",
+                "header.users": "用户",
+                "nav.runtime": "运行区",
+                "nav.sessions": "会话",
+                "nav.sessionList": "会话列表",
+                "nav.sessionHint": "右键会话以执行 CRUD",
+                "nav.currentBindings": "当前绑定",
+                "nav.library": "资产库",
+                "nav.characters": "角色卡(模板)",
+                "nav.worldbooks": "世界书(资产)",
+                "nav.users": "用户卡(账号资产)",
+                "nav.newSession": "新建会话",
+                "nav.activeModel": "当前模型",
+                "session.create": "新建",
+                "session.open": "打开",
+                "session.rename": "重命名",
+                "session.archive": "归档",
+                "session.delete": "删除",
+                "main.attach": "绑定",
+                "main.replaceUser": "替换用户",
+                "main.detachAsset": "解除绑定",
+                "main.inputPlaceholder": "输入消息... (Ctrl+Enter 发送)",
+                "main.send": "发送",
+                "chat.user": "用户",
+                "chat.userLine": "仔细看看这个房间。架子上的那些器物，有什么不寻常的吗？",
+                "chat.aiLine1": "她眯起眼，向陈列柜靠近了一步。环境光在黑曜石短刃周围出现了轻微弯折。",
+                "chat.aiLine2": "“它在震动，”她压低声音说道，“这个共振特征不属于这个时代。”",
+                "inspector.tabs.bindings": "绑定",
+                "inspector.tabs.memory": "记忆",
+                "inspector.tabs.impact": "影响",
+                "inspector.variables": "变量",
+                "inspector.bindingState": "绑定状态",
+                "inspector.accountScope": "账号作用域",
+                "inspector.isolated": "已隔离",
+                "inspector.userBinding": "用户绑定(快照)",
+                "inspector.applied": "已生效",
+                "inspector.userBindingHint": "替换用户会同步更新该会话后续 floor 的 user_binding 元信息。",
+                "inspector.characterBinding": "角色绑定",
+                "inspector.worldbooks": "世界书",
+                "inspector.worldbookHint": "解除绑定只移除关系，不会删除资产本体。",
+                "inspector.memoryActivation": "记忆命中",
+                "memory.item1": "黑曜石短刃上次出现于 1899 年探险期间，持有者为虚空教团。",
+                "memory.item2": "博物馆安保协议每周日午夜更新。",
+                "impact.title": "影响预览",
+                "impact.deleteHint": "删除用户卡前建议先 Disable。",
+                "impact.affectedSessions": "影响会话数",
+                "impact.affectedFloors": "影响楼层数",
+                "impact.disableFirst": "先禁用再评估删除",
+                "impact.tokenUsage": "Token 用量",
+                "actions.replace": "替换",
+                "actions.applyAssetUpdate": "将资产更新应用到当前会话",
+                "actions.attach": "绑定",
+                "events.title": "交互事件",
+                "events.empty": "暂无交互事件",
+                "events.replaceUser": "已切换用户快照 -> {user}",
+                "events.attachWorldbook": "已增加世界书绑定，当前共 {count} 项",
+                "events.detachWorldbook": "已解除一个世界书绑定，当前共 {count} 项",
+                "events.noWorldbook": "没有可解除的世界书绑定",
+                "events.applyUser": "已将用户资产更新应用到当前会话",
+                "events.switchAccount": "已切换账号 -> {account}",
+                "events.sessionCreate": "已创建会话 -> {title}",
+                "events.sessionOpen": "已打开会话 -> {title}",
+                "events.sessionRename": "会话已重命名 -> {title}",
+                "events.sessionArchive": "会话已归档 -> {title}",
+                "events.sessionDelete": "会话已删除 -> {title}",
+                "events.sessionNone": "当前没有可操作会话",
+                "events.sessionLastGuard": "至少保留 1 个会话",
+                "dynamic.runtimeUser": "用户: {user} (快照)",
+                "dynamic.runtimeWorldbooks": "已绑定世界书 {count} 项",
+                "dynamic.sessionTitle": "会话: {title}",
+                "dynamic.sessionId": "ID: {id}",
+                "dynamic.sessionCount": "{count} 项",
+                "dynamic.sessionLabel": "{title}",
+                "dynamic.sessionArchived": "已归档",
+                "dynamic.sessionAccount": "账号: {account}",
+                "dynamic.sessionUser": "用户: {user} (快照)",
+                "dynamic.sessionWorldbooks": "世界书: {count}"
+            },
+            en: {
+                "status.accountMode": "ACCOUNT_MODE=multi",
+                "status.engineOnline": "ENGINE ONLINE",
+                "header.users": "Users",
+                "nav.runtime": "Runtime",
+                "nav.sessions": "Sessions",
+                "nav.sessionList": "Session List",
+                "nav.sessionHint": "Right-click a session for CRUD",
+                "nav.currentBindings": "Current Bindings",
+                "nav.library": "Library",
+                "nav.characters": "Characters (Templates)",
+                "nav.worldbooks": "Worldbooks (Assets)",
+                "nav.users": "Users (Account Assets)",
+                "nav.newSession": "New Session",
+                "nav.activeModel": "Active Model",
+                "session.create": "Create",
+                "session.open": "Open",
+                "session.rename": "Rename",
+                "session.archive": "Archive",
+                "session.delete": "Delete",
+                "main.attach": "Attach",
+                "main.replaceUser": "Replace User",
+                "main.detachAsset": "Detach Asset",
+                "main.inputPlaceholder": "Type your message... (Ctrl+Enter to send)",
+                "main.send": "Send",
+                "chat.user": "User",
+                "chat.userLine": "Look around the room carefully. Is there anything unusual about the artifacts on the shelf?",
+                "chat.aiLine1": "She narrows her eyes and steps closer to the display case. Ambient light bends slightly around the obsidian dagger.",
+                "chat.aiLine2": "\"It is vibrating,\" she whispers. \"That resonance signature does not belong to this era.\"",
+                "inspector.tabs.bindings": "Bindings",
+                "inspector.tabs.memory": "Memory",
+                "inspector.tabs.impact": "Impact",
+                "inspector.variables": "Variables",
+                "inspector.bindingState": "Binding State",
+                "inspector.accountScope": "Account Scope",
+                "inspector.isolated": "Isolated",
+                "inspector.userBinding": "User Binding (Snapshot)",
+                "inspector.applied": "Applied",
+                "inspector.userBindingHint": "Replacing user will patch upcoming floor user_binding metadata in this session.",
+                "inspector.characterBinding": "Character Binding",
+                "inspector.worldbooks": "Worldbooks",
+                "inspector.worldbookHint": "Detach removes relation only, the source asset remains in Library.",
+                "inspector.memoryActivation": "Memory Activation",
+                "memory.item1": "The obsidian dagger was last seen in the hands of the Cult of the Void during the 1899 expedition.",
+                "memory.item2": "Museum security protocols are updated every Sunday at midnight.",
+                "impact.title": "Impact Preview",
+                "impact.deleteHint": "Disable user card first before hard delete.",
+                "impact.affectedSessions": "Affected Sessions",
+                "impact.affectedFloors": "Affected Floors",
+                "impact.disableFirst": "Disable First, Then Review Delete",
+                "impact.tokenUsage": "Token Usage",
+                "actions.replace": "Replace",
+                "actions.applyAssetUpdate": "Apply asset update to current session",
+                "actions.attach": "Attach",
+                "events.title": "Interaction Log",
+                "events.empty": "No interaction yet",
+                "events.replaceUser": "User snapshot switched -> {user}",
+                "events.attachWorldbook": "Attached one worldbook, now {count} total",
+                "events.detachWorldbook": "Detached one worldbook, now {count} total",
+                "events.noWorldbook": "No worldbook binding left to detach",
+                "events.applyUser": "Applied user asset update to current session",
+                "events.switchAccount": "Switched account -> {account}",
+                "events.sessionCreate": "Created session -> {title}",
+                "events.sessionOpen": "Opened session -> {title}",
+                "events.sessionRename": "Renamed session -> {title}",
+                "events.sessionArchive": "Archived session -> {title}",
+                "events.sessionDelete": "Deleted session -> {title}",
+                "events.sessionNone": "No session available",
+                "events.sessionLastGuard": "Keep at least one session",
+                "dynamic.runtimeUser": "User: {user} (snapshot)",
+                "dynamic.runtimeWorldbooks": "{count} worldbooks attached",
+                "dynamic.sessionTitle": "Session: {title}",
+                "dynamic.sessionId": "ID: {id}",
+                "dynamic.sessionCount": "{count} items",
+                "dynamic.sessionLabel": "{title}",
+                "dynamic.sessionArchived": "archived",
+                "dynamic.sessionAccount": "Account: {account}",
+                "dynamic.sessionUser": "User: {user} (snapshot)",
+                "dynamic.sessionWorldbooks": "Worldbooks: {count}"
+            }
+        };
+
+        const state = {
+            lang: "zh",
+            accountIndex: 0,
+            accounts: ["studio-alpha", "studio-beta"],
+            userIndex: 0,
+            users: ["Detective Rowan", "Archivist Lin", "Field Agent Mira"],
+            sessions: [
+                {
+                    id: "8f3a-2b1c",
+                    title: {
+                        zh: "水晶宫",
+                        en: "The Crystal Palace"
+                    },
+                    archived: false
+                },
+                {
+                    id: "9aa1-440d",
+                    title: {
+                        zh: "黄铜花园",
+                        en: "Brass Garden"
+                    },
+                    archived: false
+                },
+                {
+                    id: "1c77-b03e",
+                    title: {
+                        zh: "深港回廊",
+                        en: "Deep Harbor Arcade"
+                    },
+                    archived: true
+                }
+            ],
+            activeSessionIndex: 0,
+            sessionSeed: 4,
+            renameSeed: 1,
+            worldbookCount: 2,
+            activeTab: "bindings",
+            events: []
+        };
+
+        function format(template, vars = {}) {
+            return template.replace(/\{(\w+)\}/g, (_, key) => {
+                if (Object.prototype.hasOwnProperty.call(vars, key)) {
+                    return String(vars[key]);
+                }
+                return "";
+            });
+        }
+
+        function t(key, vars = {}) {
+            const pack = I18N[state.lang] || I18N.en;
+            const fallback = I18N.en[key] || key;
+            const text = pack[key] || fallback;
+            return format(text, vars);
+        }
+
+        function setText(id, value) {
+            const node = document.getElementById(id);
+            if (node) {
+                node.textContent = value;
+            }
+        }
+
+        function getSessionTitle(session) {
+            if (!session) {
+                return "";
+            }
+            return session.title[state.lang] || session.title.en || "";
+        }
+
+        function getActiveSession() {
+            if (state.sessions.length === 0) {
+                return null;
+            }
+            if (state.activeSessionIndex < 0 || state.activeSessionIndex >= state.sessions.length) {
+                state.activeSessionIndex = 0;
+            }
+            return state.sessions[state.activeSessionIndex];
+        }
+
+        function createSessionId(seed) {
+            const left = String(seed).padStart(4, "0");
+            const right = Math.random().toString(16).slice(2, 6);
+            return left + "-" + right;
+        }
+
+        function applyI18n() {
+            document.documentElement.lang = state.lang === "zh" ? "zh-CN" : "en";
+            document.querySelectorAll("[data-i18n]").forEach((el) => {
+                el.textContent = t(el.dataset.i18n);
+            });
+            document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+                el.setAttribute("placeholder", t(el.dataset.i18nPlaceholder));
+            });
+            setText("lang-toggle", state.lang === "zh" ? "EN" : "中");
+            applyStateToUI();
+            renderEvents();
+        }
+
+        function renderSessionList() {
+            const list = document.getElementById("session-list");
+            if (!list) {
+                return;
+            }
+            list.innerHTML = "";
+            state.sessions.forEach((session, index) => {
+                const row = document.createElement("button");
+                row.type = "button";
+                row.className = "session-item px-2 py-1.5 transition-colors " + (index === state.activeSessionIndex ? "border-signal-accent/40 bg-signal-accent/10 text-zinc-100" : "hover:bg-white/5 text-zinc-400");
+                row.dataset.sessionIndex = String(index);
+
+                const top = document.createElement("div");
+                top.className = "flex items-center justify-between gap-2";
+
+                const title = document.createElement("span");
+                title.className = "text-[11px] truncate";
+                title.textContent = t("dynamic.sessionLabel", { title: getSessionTitle(session) });
+
+                const id = document.createElement("span");
+                id.className = "text-[10px] font-mono text-zinc-600";
+                id.textContent = session.id;
+
+                const hint = document.createElement("span");
+                hint.className = "session-item-kebab text-[10px] font-mono text-zinc-600";
+                hint.textContent = "...";
+
+                const right = document.createElement("div");
+                right.className = "flex items-center gap-2";
+                right.appendChild(id);
+                right.appendChild(hint);
+
+                top.appendChild(title);
+                top.appendChild(right);
+
+                row.appendChild(top);
+                if (session.archived) {
+                    const archived = document.createElement("div");
+                    archived.className = "text-[10px] font-mono text-signal-warn mt-1";
+                    archived.textContent = t("dynamic.sessionArchived");
+                    row.appendChild(archived);
+                }
+
+                list.appendChild(row);
+            });
+        }
+
+        function applyStateToUI() {
+            const account = state.accounts[state.accountIndex];
+            const user = state.users[state.userIndex];
+            const session = getActiveSession();
+
+            setText("account-switcher-label", "acct: " + account);
+            setText("binding-account-name", account);
+            setText("runtime-user-name", t("dynamic.runtimeUser", { user }));
+            setText("runtime-worldbook-count", t("dynamic.runtimeWorldbooks", { count: state.worldbookCount }));
+            setText("session-count-badge", t("dynamic.sessionCount", { count: state.sessions.length }));
+            setText("session-account-chip", t("dynamic.sessionAccount", { account }));
+            setText("session-user-chip", t("dynamic.sessionUser", { user }));
+            setText("session-worldbook-chip", t("dynamic.sessionWorldbooks", { count: state.worldbookCount }));
+            setText("binding-user-name", user);
+            setText("session-title", t("dynamic.sessionTitle", { title: getSessionTitle(session) }));
+            setText("session-id-chip", t("dynamic.sessionId", { id: session ? session.id : "-" }));
+            renderSessionList();
+        }
+
+        function setActiveTab(tab) {
+            state.activeTab = tab;
+            document.querySelectorAll(".inspector-tab").forEach((btn) => {
+                btn.classList.toggle("active", btn.dataset.tab === tab);
+            });
+            document.querySelectorAll("[data-panel]").forEach((panel) => {
+                panel.classList.toggle("hidden", panel.dataset.panel !== tab);
+            });
+        }
+
+        function flashBindingCard() {
+            const card = document.getElementById("binding-card");
+            if (!card) {
+                return;
+            }
+            card.classList.add("flash");
+            window.setTimeout(() => card.classList.remove("flash"), 240);
+        }
+
+        function addEvent(key, tone = "info", vars = {}) {
+            state.events.unshift({ key, tone, vars, at: new Date() });
+            state.events = state.events.slice(0, 8);
+            renderEvents();
+        }
+
+        function renderEvents() {
+            const log = document.getElementById("event-log");
+            if (!log) {
+                return;
+            }
+            if (state.events.length === 0) {
+                log.innerHTML = "<div class=\"text-[11px] text-zinc-600\">" + t("events.empty") + "</div>";
+                return;
+            }
+            log.innerHTML = "";
+            state.events.forEach((eventItem) => {
+                const row = document.createElement("div");
+                row.className = "event-row " + eventItem.tone;
+
+                const time = document.createElement("span");
+                time.className = "font-mono text-[10px] text-zinc-600 shrink-0";
+                time.textContent = eventItem.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+                const text = document.createElement("span");
+                text.textContent = t(eventItem.key, eventItem.vars);
+
+                row.appendChild(time);
+                row.appendChild(text);
+                log.appendChild(row);
+            });
+        }
+
+        function setupInteractions() {
+            document.getElementById("lang-toggle").addEventListener("click", () => {
+                state.lang = state.lang === "zh" ? "en" : "zh";
+                applyI18n();
+            });
+
+            document.getElementById("account-switcher-btn").addEventListener("click", () => {
+                state.accountIndex = (state.accountIndex + 1) % state.accounts.length;
+                applyStateToUI();
+                addEvent("events.switchAccount", "info", { account: state.accounts[state.accountIndex] });
+            });
+
+            document.querySelectorAll(".inspector-tab").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    setActiveTab(btn.dataset.tab);
+                });
+            });
+
+            function openSessionByIndex(index, eventKey = "events.sessionOpen") {
+                if (index < 0 || index >= state.sessions.length) {
+                    addEvent("events.sessionNone", "warn");
+                    return;
+                }
+                state.activeSessionIndex = index;
+                applyStateToUI();
+                addEvent(eventKey, "info", { title: getSessionTitle(state.sessions[index]) });
+            }
+
+            function createSession() {
+                const seed = state.sessionSeed;
+                state.sessionSeed += 1;
+                const session = {
+                    id: createSessionId(seed),
+                    title: {
+                        zh: "新会话 " + seed,
+                        en: "New Session " + seed
+                    },
+                    archived: false
+                };
+                state.sessions.unshift(session);
+                openSessionByIndex(0, "events.sessionCreate");
+            }
+
+            function renameSessionByIndex(index) {
+                const session = state.sessions[index];
+                if (!session) {
+                    addEvent("events.sessionNone", "warn");
+                    return;
+                }
+                const seed = state.renameSeed;
+                state.renameSeed += 1;
+                session.title.zh = "会话 " + seed + "号修订";
+                session.title.en = "Session Revision " + seed;
+                applyStateToUI();
+                addEvent("events.sessionRename", "info", { title: getSessionTitle(session) });
+            }
+
+            function archiveSessionByIndex(index) {
+                const session = state.sessions[index];
+                if (!session) {
+                    addEvent("events.sessionNone", "warn");
+                    return;
+                }
+                if (session.archived) {
+                    applyStateToUI();
+                    return;
+                }
+                session.archived = true;
+                if (index === state.activeSessionIndex) {
+                    const nextActive = state.sessions.findIndex((item) => !item.archived);
+                    if (nextActive >= 0) {
+                        state.activeSessionIndex = nextActive;
+                    }
+                }
+                applyStateToUI();
+                addEvent("events.sessionArchive", "warn", { title: getSessionTitle(session) });
+            }
+
+            function deleteSessionByIndex(index) {
+                if (state.sessions.length <= 1) {
+                    addEvent("events.sessionLastGuard", "warn");
+                    return;
+                }
+                const removed = state.sessions.splice(index, 1)[0];
+                if (!removed) {
+                    addEvent("events.sessionNone", "warn");
+                    return;
+                }
+                if (index < state.activeSessionIndex) {
+                    state.activeSessionIndex -= 1;
+                }
+                state.activeSessionIndex = Math.max(0, Math.min(state.activeSessionIndex, state.sessions.length - 1));
+                applyStateToUI();
+                addEvent("events.sessionDelete", "warn", { title: getSessionTitle(removed) });
+            }
+
+            const sessionList = document.getElementById("session-list");
+            const sessionContextMenu = document.getElementById("session-context-menu");
+
+            function hideSessionContextMenu() {
+                if (!sessionContextMenu) {
+                    return;
+                }
+                sessionContextMenu.classList.add("hidden");
+                delete sessionContextMenu.dataset.targetIndex;
+            }
+
+            function getContextTargetIndex() {
+                if (!sessionContextMenu) {
+                    return state.activeSessionIndex;
+                }
+                const value = Number(sessionContextMenu.dataset.targetIndex);
+                if (Number.isNaN(value)) {
+                    return state.activeSessionIndex;
+                }
+                return value;
+            }
+
+            function showSessionContextMenu(x, y, index) {
+                if (!sessionContextMenu) {
+                    return;
+                }
+                const targetSession = state.sessions[index];
+                if (!targetSession) {
+                    return;
+                }
+                sessionContextMenu.dataset.targetIndex = String(index);
+                sessionContextMenu.classList.remove("hidden");
+
+                const archiveBtn = sessionContextMenu.querySelector("[data-session-action='archive']");
+                const deleteBtn = sessionContextMenu.querySelector("[data-session-action='delete']");
+                if (archiveBtn instanceof HTMLButtonElement) {
+                    archiveBtn.disabled = targetSession.archived;
+                }
+                if (deleteBtn instanceof HTMLButtonElement) {
+                    deleteBtn.disabled = state.sessions.length <= 1;
+                }
+
+                const maxX = window.innerWidth - sessionContextMenu.offsetWidth - 10;
+                const maxY = window.innerHeight - sessionContextMenu.offsetHeight - 10;
+                sessionContextMenu.style.left = Math.max(8, Math.min(x, maxX)) + "px";
+                sessionContextMenu.style.top = Math.max(8, Math.min(y, maxY)) + "px";
+            }
+
+            if (sessionList) {
+                sessionList.addEventListener("click", (event) => {
+                    const target = event.target;
+                    if (!(target instanceof Element)) {
+                        return;
+                    }
+                    const row = target.closest("[data-session-index]");
+                    if (!row) {
+                        return;
+                    }
+                    openSessionByIndex(Number(row.dataset.sessionIndex));
+                    hideSessionContextMenu();
+                });
+
+                sessionList.addEventListener("contextmenu", (event) => {
+                    const target = event.target;
+                    if (!(target instanceof Element)) {
+                        return;
+                    }
+                    const row = target.closest("[data-session-index]");
+                    if (!row) {
+                        return;
+                    }
+                    event.preventDefault();
+                    showSessionContextMenu(event.clientX, event.clientY, Number(row.dataset.sessionIndex));
+                });
+            }
+
+            if (sessionContextMenu) {
+                sessionContextMenu.addEventListener("click", (event) => {
+                    const target = event.target;
+                    if (!(target instanceof Element)) {
+                        return;
+                    }
+                    const item = target.closest("[data-session-action]");
+                    if (!item) {
+                        return;
+                    }
+                    if (item instanceof HTMLButtonElement && item.disabled) {
+                        return;
+                    }
+                    const index = getContextTargetIndex();
+                    switch (item.dataset.sessionAction) {
+                        case "create":
+                            createSession();
+                            break;
+                        case "open":
+                            openSessionByIndex(index);
+                            break;
+                        case "rename":
+                            renameSessionByIndex(index);
+                            break;
+                        case "archive":
+                            archiveSessionByIndex(index);
+                            break;
+                        case "delete":
+                            deleteSessionByIndex(index);
+                            break;
+                        default:
+                            break;
+                    }
+                    hideSessionContextMenu();
+                });
+            }
+
+            document.addEventListener("click", (event) => {
+                if (!sessionContextMenu || sessionContextMenu.classList.contains("hidden")) {
+                    return;
+                }
+                const target = event.target;
+                if (!(target instanceof Node) || sessionContextMenu.contains(target)) {
+                    return;
+                }
+                hideSessionContextMenu();
+            });
+
+            document.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") {
+                    hideSessionContextMenu();
+                }
+            });
+
+            window.addEventListener("resize", hideSessionContextMenu);
+
+            function replaceUser() {
+                state.userIndex = (state.userIndex + 1) % state.users.length;
+                applyStateToUI();
+                flashBindingCard();
+                addEvent("events.replaceUser", "info", { user: state.users[state.userIndex] });
+            }
+
+            function attachWorldbook() {
+                state.worldbookCount += 1;
+                applyStateToUI();
+                flashBindingCard();
+                addEvent("events.attachWorldbook", "success", { count: state.worldbookCount });
+            }
+
+            function detachWorldbook() {
+                if (state.worldbookCount <= 0) {
+                    addEvent("events.noWorldbook", "warn");
+                    return;
+                }
+                state.worldbookCount -= 1;
+                applyStateToUI();
+                flashBindingCard();
+                addEvent("events.detachWorldbook", "warn", { count: state.worldbookCount });
+            }
+
+            document.getElementById("nav-new-session-btn").addEventListener("click", createSession);
+
+            document.getElementById("replace-user-btn").addEventListener("click", replaceUser);
+            document.getElementById("toolbar-replace-user-btn").addEventListener("click", replaceUser);
+            document.getElementById("attach-worldbook-btn").addEventListener("click", attachWorldbook);
+            document.getElementById("toolbar-attach-btn").addEventListener("click", attachWorldbook);
+            document.getElementById("toolbar-detach-btn").addEventListener("click", detachWorldbook);
+
+            document.getElementById("apply-user-btn").addEventListener("click", () => {
+                flashBindingCard();
+                addEvent("events.applyUser", "success");
+            });
+        }
+
+        lucide.createIcons();
+        setupInteractions();
+        setActiveTab("bindings");
+        applyI18n();
+    </script>
+</body>
+</html>

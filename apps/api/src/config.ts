@@ -1,0 +1,299 @@
+/**
+ * Configuration
+ *
+ * 从环境变量加载应用配置，构造 OrchestrationConfig。
+ *
+ * 支持的环境变量：
+ * - LLM_PROVIDER: 提供商类型（默认 openai-compatible）
+ * - LLM_API_KEY: API 密钥（必须）
+ * - LLM_BASE_URL: 自定义 Base URL
+ * - LLM_MODEL: 默认模型 ID（默认 gpt-4o-mini）
+ * - LLM_DIRECTOR_MODEL: Director 模型（可选）
+ * - LLM_VERIFIER_MODEL: Verifier 模型（可选）
+ * - LLM_MEMORY_MODEL: Memory 模型（可选）
+ * - ENABLE_SSE_CHAT: 是否启用 SSE 流式聊天端点（默认 false）
+ * - ENABLE_PROMPT_DRY_RUN: 是否启用 Prompt Dry-run 调试端点（默认 false）
+ * - CHAT_HISTORY_MAX_FLOORS: 可选历史楼层上限（最近 N 层）
+ * - ENABLE_MEMORY_CONSOLIDATION: 是否默认启用 MemoryConsolidator（默认 false）
+ * - AUTH_MODE: 认证模式（off | api_key | jwt，默认 off）
+ * - AUTH_API_KEYS: API Key 模式下的 key 列表（逗号分隔）
+ * - AUTH_API_KEY_ACCOUNTS: 多账号 + API Key 模式下的账号映射（key:account_id，逗号分隔）
+ * - AUTH_JWT_SECRET: JWT 模式下的签名密钥
+ * - AUTH_JWT_ACCOUNT_CLAIM: 多账号 + JWT 模式的账号 claim 字段名（默认 account_id）
+ * - ACCOUNT_MODE: 账号模式（single | multi，默认 single）
+ * - CORS_ORIGINS / CORS_ORIGIN: 允许的跨域来源（逗号分隔，默认本地 Vite 地址）
+ * - CORS_CREDENTIALS: 是否允许携带凭据（true | false，默认 false）
+ */
+
+import type { ProviderType } from "@tavern/core";
+
+import type { OrchestrationConfig } from "./services/orchestration-factory.js";
+import type { AuthConfig, AuthMode } from "./plugins/auth.js";
+import type { AccountMode } from "./accounts/constants.js";
+import { parseCorsOrigins, type CorsConfig } from "./plugins/cors.js";
+
+// ── 类型 ──────────────────────────────────────────────
+
+export interface AppConfig {
+  /** 服务端口 */
+  port: number;
+  /** 数据库路径 */
+  databasePath?: string;
+  /** 编排配置（如果提供了 LLM_API_KEY） */
+  orchestration?: OrchestrationConfig;
+  /** 是否启用 WebSocket */
+  enableWebSocket: boolean;
+  /** 可选：限制进入 prompt 的历史楼层数（最近 N 层） */
+  chatHistoryMaxFloors?: number;
+  /** 是否启用记忆系统（摘要注入 + 持久化） */
+  enableMemory: boolean;
+  /** 是否启用 SSE 流式聊天端点 */
+  enableSseChat: boolean;
+  /** 是否启用 Prompt Dry-run 端点 */
+  enablePromptDryRun: boolean;
+  /** 是否默认启用 MemoryConsolidator */
+  enableMemoryConsolidation: boolean;
+  /** 认证配置 */
+  auth: AuthConfig;
+  /** 账号模式 */
+  accountMode: AccountMode;
+  /** CORS 配置 */
+  cors: CorsConfig;
+}
+
+// ── 加载函数 ──────────────────────────────────────────
+
+/**
+ * 从环境变量加载应用配置。
+ *
+ * 如果未配置 LLM_API_KEY，orchestration 为 undefined，
+ * 聊天路由不会启用（仅 CRUD 可用）。
+ */
+export function loadConfig(): AppConfig {
+  const port = Number(process.env.PORT ?? 3000);
+  const databasePath = process.env.DATABASE_URL || undefined;
+  const enableWebSocket = process.env.ENABLE_WEBSOCKET !== "false";
+  const chatHistoryMaxFloors = parsePositiveInt(process.env.CHAT_HISTORY_MAX_FLOORS);
+  const enableMemory = process.env.ENABLE_MEMORY === "true";
+  const enableSseChat = process.env.ENABLE_SSE_CHAT === "true";
+  const enablePromptDryRun = process.env.ENABLE_PROMPT_DRY_RUN === "true";
+  const accountMode = parseAccountMode(process.env.ACCOUNT_MODE);
+  const enableMemoryConsolidation = process.env.ENABLE_MEMORY_CONSOLIDATION === "true";
+  const cors = parseCorsConfig(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN, process.env.CORS_CREDENTIALS);
+
+  const auth = parseAuthConfig(
+    process.env.AUTH_MODE,
+    process.env.AUTH_API_KEYS,
+    process.env.AUTH_JWT_SECRET,
+    process.env.AUTH_API_KEY_ACCOUNTS,
+    process.env.AUTH_JWT_ACCOUNT_CLAIM
+  );
+
+  if (accountMode === "multi" && auth.mode === "off") {
+    throw new Error("ACCOUNT_MODE=multi requires AUTH_MODE to be api_key or jwt");
+  }
+
+  if (accountMode === "multi" && auth.mode === "api_key" && !auth.apiKeyAccountMap) {
+    throw new Error("ACCOUNT_MODE=multi with AUTH_MODE=api_key requires AUTH_API_KEY_ACCOUNTS mapping");
+  }
+
+  // ── LLM 配置 ──
+  const apiKey = process.env.LLM_API_KEY;
+
+  if (!apiKey) {
+    return {
+      port,
+      databasePath,
+      enableWebSocket,
+      chatHistoryMaxFloors,
+      enableMemory,
+      enableSseChat,
+      enablePromptDryRun,
+      enableMemoryConsolidation,
+      auth,
+      accountMode,
+      cors,
+    };
+  }
+
+  const providerType = (process.env.LLM_PROVIDER ?? "openai-compatible") as ProviderType;
+  const baseURL = process.env.LLM_BASE_URL || undefined;
+  const modelId = process.env.LLM_MODEL ?? "gpt-4o-mini";
+
+  // Provider ID 从类型派生，加上 "default-" 前缀区分
+  const providerId = `default-${providerType}`;
+
+  const orchestration: OrchestrationConfig = {
+    providers: [
+      {
+        id: providerId,
+        type: providerType,
+        apiKey,
+        baseURL,
+      },
+    ],
+    defaultModel: {
+      providerId,
+      modelId,
+    },
+  };
+
+  // 可选：Director / Verifier / Memory 使用不同模型
+  const directorModel = process.env.LLM_DIRECTOR_MODEL;
+  if (directorModel) {
+    orchestration.directorModel = { providerId, modelId: directorModel };
+  }
+
+  const verifierModel = process.env.LLM_VERIFIER_MODEL;
+  if (verifierModel) {
+    orchestration.verifierModel = { providerId, modelId: verifierModel };
+  }
+
+  const memoryModel = process.env.LLM_MEMORY_MODEL;
+  if (memoryModel) {
+    orchestration.memoryModel = { providerId, modelId: memoryModel };
+  }
+
+  return {
+    port,
+    databasePath,
+    orchestration,
+    enableWebSocket,
+    chatHistoryMaxFloors,
+    enableMemory,
+    enableSseChat,
+    enablePromptDryRun,
+    enableMemoryConsolidation,
+    auth,
+    accountMode,
+    cors,
+  };
+}
+
+function parseCorsConfig(originsRaw: string | undefined, credentialsRaw: string | undefined): CorsConfig {
+  return {
+    origins: parseCorsOrigins(originsRaw),
+    credentials: credentialsRaw === "true",
+  };
+}
+
+function parsePositiveInt(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+function parseAuthConfig(
+  modeRaw: string | undefined,
+  apiKeysRaw: string | undefined,
+  jwtSecret: string | undefined,
+  apiKeyAccountsRaw: string | undefined,
+  jwtAccountClaimRaw: string | undefined
+): AuthConfig {
+  const mode = parseAuthMode(modeRaw);
+
+  if (mode === "off") {
+    return { mode: "off" };
+  }
+
+  if (mode === "api_key") {
+    const apiKeys = (apiKeysRaw ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+
+    if (apiKeys.length === 0) {
+      throw new Error("AUTH_MODE=api_key requires AUTH_API_KEYS to be set");
+    }
+
+    return {
+      mode: "api_key",
+      apiKeys: Array.from(new Set(apiKeys)),
+      apiKeyAccountMap: parseApiKeyAccountMap(apiKeyAccountsRaw),
+    };
+  }
+
+  if (!jwtSecret || jwtSecret.trim().length === 0) {
+    throw new Error("AUTH_MODE=jwt requires AUTH_JWT_SECRET to be set");
+  }
+
+  return {
+    mode: "jwt",
+    jwtSecret,
+    jwtAccountClaim: parseOptionalNonEmpty(jwtAccountClaimRaw),
+  };
+}
+
+function parseApiKeyAccountMap(raw: string | undefined): Record<string, string> | undefined {
+  if (!raw || raw.trim().length === 0) {
+    return undefined;
+  }
+
+  const map: Record<string, string> = {};
+  const pairs = raw.split(",").map((item) => item.trim()).filter((item) => item.length > 0);
+
+  for (const pair of pairs) {
+    const separatorIndex = pair.indexOf(":");
+    if (separatorIndex <= 0 || separatorIndex === pair.length - 1) {
+      throw new Error(`Invalid AUTH_API_KEY_ACCOUNTS pair: ${pair}`);
+    }
+
+    const key = pair.slice(0, separatorIndex).trim();
+    const accountId = pair.slice(separatorIndex + 1).trim();
+    if (!key || !accountId) {
+      throw new Error(`Invalid AUTH_API_KEY_ACCOUNTS pair: ${pair}`);
+    }
+
+    map[key] = accountId;
+  }
+
+  return Object.keys(map).length > 0 ? map : undefined;
+}
+
+function parseOptionalNonEmpty(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function parseAuthMode(raw: string | undefined): AuthMode {
+  if (!raw || raw.trim().length === 0) {
+    return "off";
+  }
+
+  const normalized = raw.trim();
+
+  if (normalized === "api_key" || normalized === "jwt") {
+    return normalized;
+  }
+
+  if (normalized === "off") {
+    return "off";
+  }
+
+  throw new Error(`Unsupported AUTH_MODE: ${raw}`);
+}
+
+function parseAccountMode(raw: string | undefined): AccountMode {
+  if (!raw || raw.trim().length === 0) {
+    return "single";
+  }
+
+  const normalized = raw.trim();
+
+  if (normalized === "single" || normalized === "multi") {
+    return normalized;
+  }
+
+  throw new Error(`Unsupported ACCOUNT_MODE: ${raw}`);
+}

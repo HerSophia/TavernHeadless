@@ -1,0 +1,275 @@
+import Fastify, { type FastifyInstance } from "fastify";
+import { ZodError } from "zod";
+
+import { createDatabase } from "./db/client";
+import { sendError, zodIssues } from "./lib/http";
+import { registerCrudRoutes } from "./routes";
+import { registerChatRoutes } from "./routes/chat";
+import { registerWsPlugin, type WsBridge } from "./ws";
+import { DrizzleFloorRepository, DrizzleMemoryRepository } from "./adapters";
+import { ChatService, ChatServiceError } from "./services/chat-service";
+import {
+  createOrchestrationContext,
+  type OrchestrationConfig,
+  type OrchestrationContext,
+} from "./services/orchestration-factory";
+import { LlmProfileService, LlmProfileServiceError } from "./services/llm-profile-service";
+import { registerOpenApi } from "./plugins/openapi";
+import { registerRequestLogging } from "./plugins/request-logging";
+import { registerAuth, type AuthConfig } from "./plugins/auth";
+import { findNativePipelineError } from "./lib/native-pipeline-error";
+import { ensureDefaultAdminAccount } from "./accounts/service";
+import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "./accounts/constants";
+import { registerCors, type CorsConfig } from "./plugins/cors";
+
+type FastifyValidationIssue = {
+  instancePath?: string;
+  message?: string;
+  keyword?: string;
+};
+
+function isFastifyRequestValidationError(error: unknown): error is {
+  code: "FST_ERR_VALIDATION";
+  validation?: FastifyValidationIssue[];
+} {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  return (error as { code?: string }).code === "FST_ERR_VALIDATION";
+}
+
+function toValidationDetails(error: { validation?: FastifyValidationIssue[] }) {
+  return (error.validation ?? []).map((issue) => ({
+    path: issue.instancePath ?? "",
+    message: issue.message ?? "Invalid value",
+    code: issue.keyword ?? "validation"
+  }));
+}
+
+export type BuildAppOptions = {
+  databasePath?: string;
+  logger?: boolean;
+  /** 提供 LLM 配置后自动启用聊天路由 */
+  orchestration?: OrchestrationConfig;
+  /**
+   * 是否启用 WebSocket 推送。
+   * - undefined（默认）：当 orchestration 启用时自动启用
+   * - true：强制启用（需要 orchestration）
+   * - false：强制禁用
+   */
+  enableWebSocket?: boolean;
+  /** 可选：限制进入 prompt 的历史楼层数（最近 N 层） */
+  chatHistoryMaxFloors?: number;
+  /** 是否启用记忆系统（摘要注入 + 持久化），默认 false */
+  enableMemory?: boolean;
+  /** 是否启用 SSE 流式聊天端点（/sessions/:id/respond/stream），默认 false */
+  enableSseChat?: boolean;
+  /** 是否启用 Prompt Dry-run 端点（/sessions/:id/respond/dry-run），默认 false */
+  enablePromptDryRun?: boolean;
+  /** 是否默认启用 MemoryConsolidator（可被请求级 turn config 覆盖） */
+  enableMemoryConsolidation?: boolean;
+  /** 认证配置（默认 off） */
+  auth?: AuthConfig;
+  /** 账号模式（默认 single） */
+  accountMode?: AccountMode;
+  /** CORS 配置 */
+  cors?: CorsConfig;
+};
+
+export type BuildAppResult = {
+  app: FastifyInstance;
+  /** 如果启用了 orchestration，返回上下文（EventBus 等） */
+  orchestrationContext?: OrchestrationContext;
+  /** 如果启用了 WebSocket，返回 WsBridge 实例 */
+  wsBridge?: WsBridge;
+};
+
+export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppResult> {
+  const app = Fastify({ logger: options.logger ?? true });
+  const database = createDatabase(options.databasePath);
+  const accountMode = options.accountMode ?? "single";
+
+  app.addHook("onClose", async () => {
+    database.close();
+  });
+
+  await ensureDefaultAdminAccount(database.db);
+
+  const auth = options.auth ?? { mode: "off" };
+
+  await registerCors(app, options.cors ?? { origins: true, credentials: false });
+
+  await registerOpenApi(app, { authMode: auth.mode });
+  await registerRequestLogging(app);
+  await registerAuth(app, auth, {
+    accountMode,
+    defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    if (error instanceof ZodError) {
+      return sendError(reply, 400, "validation_error", "Request validation failed", zodIssues(error));
+    }
+
+    if (isFastifyRequestValidationError(error)) {
+      return sendError(
+        reply,
+        400,
+        "validation_error",
+        "Request validation failed",
+        toValidationDetails(error));
+    }
+
+    const nativePipelineError = findNativePipelineError(error);
+    if (nativePipelineError) {
+      app.log.error(
+        {
+          request_id: request.id,
+          route: request.routeOptions.url ?? request.url.split("?")[0] ?? "/",
+          error_code: "native_pipeline_failed",
+          node_name: nativePipelineError.nodeName,
+          input_summary: nativePipelineError.inputSummary,
+          state_summary: nativePipelineError.stateSummary,
+          err: error,
+        },
+        "native prompt pipeline failed"
+      );
+    }
+
+    const code = (error as { code?: string }).code;
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    if (code?.startsWith("SQLITE_CONSTRAINT")) {
+      return sendError(reply, 409, "constraint_error", "Database constraint violation", {
+        sqlite_code: code,
+        message: errorMessage
+      });
+    }
+
+    if (!nativePipelineError) {
+      app.log.error({
+        err: error,
+        message: errorMessage
+      });
+    }
+
+    return sendError(reply, 500, "internal_error", "Unexpected server error");
+  });
+
+  app.get(
+    "/health",
+    {
+      schema: {
+        tags: ["system"],
+        summary: "Health check",
+        security: [],
+        response: {
+          200: {
+            type: "object",
+            required: ["ok", "service", "database"],
+            properties: {
+              ok: { type: "boolean" },
+              service: { type: "string" },
+              database: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    async () => {
+      return {
+        ok: true,
+        service: "@tavern/api",
+        database: "ready"
+      };
+    }
+  );
+
+  await registerCrudRoutes(app, database);
+
+  // ── 可选：聊天业务路由 ──
+  let orchestrationContext: OrchestrationContext | undefined;
+  let wsBridge: WsBridge | undefined;
+
+  if (options.orchestration) {
+    const floorRepo = new DrizzleFloorRepository(database.db);
+    const memoryRepo = new DrizzleMemoryRepository(database.db);
+
+    const activeOrchestrationContext = createOrchestrationContext(
+      options.orchestration,
+      floorRepo,
+      memoryRepo
+    );
+    orchestrationContext = activeOrchestrationContext;
+
+    const llmProfileService = new LlmProfileService(database.db);
+
+    const chatService = new ChatService(
+      database.db,
+      activeOrchestrationContext.orchestrator,
+      activeOrchestrationContext.tokenCounter,
+      {
+        historyMaxFloors: options.chatHistoryMaxFloors,
+        memoryStore: options.enableMemory ? activeOrchestrationContext.memoryStore : undefined,
+        enableMemoryConsolidationByDefault: options.enableMemoryConsolidation,
+        resolveTurnModels: async (sessionId, accountId = DEFAULT_ADMIN_ACCOUNT_ID) => {
+          try {
+            const profileMap = await llmProfileService.resolveActiveProfiles(sessionId, accountId);
+            const result: Record<string, { model: { providerId: string; modelId: string }; source: "session_profile" | "global_profile"; profileId: string }> = {};
+
+            for (const [slot, resolved] of Object.entries(profileMap)) {
+              if (!resolved) continue;
+
+              const providerId = `llm-profile-${resolved.profileId}`;
+              activeOrchestrationContext.providerRegistry.register({
+                id: providerId,
+                type: resolved.provider,
+                apiKey: resolved.apiKey,
+                baseURL: resolved.baseUrl ?? undefined,
+              });
+
+              // Map slot key: '*' wildcard maps to 'narrator' (backward compat)
+              const mappedSlot = slot === '*' ? 'narrator' : slot;
+              // Don't override a specific slot binding with the wildcard
+              if (result[mappedSlot]) continue;
+
+              result[mappedSlot] = {
+                model: { providerId, modelId: resolved.modelId },
+                source: resolved.source === "session" ? "session_profile" : "global_profile",
+                profileId: resolved.profileId,
+              };
+            }
+
+            return result;
+          } catch (error) {
+            if (error instanceof LlmProfileServiceError) {
+              throw new ChatServiceError(error.code, error.message, error);
+            }
+            throw error;
+          }
+        },
+        onTurnModelUsed: async (resolvedModel, accountId = DEFAULT_ADMIN_ACCOUNT_ID) => {
+          if (!resolvedModel.profileId) {
+            return;
+          }
+          await llmProfileService.touchLastUsed(resolvedModel.profileId, accountId);
+        },
+      }
+    );
+
+    await registerChatRoutes(app, chatService, {
+      enableSseChat: options.enableSseChat,
+      enablePromptDryRun: options.enablePromptDryRun,
+    });
+
+    // ── 可选：WebSocket 实时推送 ──
+    if (options.enableWebSocket !== false) {
+      wsBridge = await registerWsPlugin(app, {
+        eventBus: activeOrchestrationContext.eventBus,
+      });
+    }
+  }
+
+  return { app, orchestrationContext, wsBridge };
+}
