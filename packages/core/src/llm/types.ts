@@ -41,6 +41,8 @@ export interface ModelConfig {
 
 /** 生成参数（从 STPreset 或自定义传入） */
 export interface GenerationParams {
+  /** 最大上下文 token 数（主要用于 prompt assemble / token budget） */
+  maxContextTokens?: number;
   /** 最大输出 token 数 */
   maxOutputTokens?: number;
   /** 采样温度 */

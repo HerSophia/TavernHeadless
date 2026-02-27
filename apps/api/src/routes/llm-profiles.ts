@@ -4,12 +4,29 @@ import { z } from "zod";
 import type { DatabaseConnection } from "../db/client";
 import { parseWithSchema, sendError } from "../lib/http";
 import { getRequestAuthContext } from "../plugins/auth";
-import { LlmProfileService, LlmProfileServiceError, type LlmProfileListItem } from "../services/llm-profile-service";
+import {
+  LlmProfileService,
+  LlmProfileServiceError,
+  type LlmBindingGenerationParams,
+  type LlmProfileListItem,
+} from "../services/llm-profile-service";
 
 const providerSchema = z.enum(["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"]);
 const profileStatusSchema = z.enum(["active", "disabled", "deleted"]);
 const instanceSlotSchema = z.enum(["*", "narrator", "director", "verifier", "memory"]);
 const activateScopeSchema = z.enum(["global", "session"]);
+const generationParamsSchema = z.object({
+  max_context_tokens: z.number().int().min(1).optional(),
+  max_output_tokens: z.number().int().min(1).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  top_p: z.number().min(0).max(1).optional(),
+  top_k: z.number().int().min(0).optional(),
+  frequency_penalty: z.number().min(-2).max(2).optional(),
+  presence_penalty: z.number().min(-2).max(2).optional(),
+  stream: z.boolean().optional(),
+  timeout_ms: z.number().int().min(1).optional(),
+  max_retries: z.number().int().min(0).max(10).optional(),
+});
 
 const runtimeQuerySchema = z.object({
   session_id: z.string().trim().min(1).optional(),
@@ -54,6 +71,7 @@ const activateProfileSchema = z
     scope: activateScopeSchema.default("global"),
     session_id: z.string().trim().min(1).optional(),
     instance_slot: instanceSlotSchema.default("*"),
+    params: generationParamsSchema.nullable().optional(),
   })
   .refine((value) => value.scope === "global" || Boolean(value.session_id), {
     message: "session_id is required when scope=session",
@@ -185,6 +203,27 @@ const activateBodyJsonSchema = {
   properties: {
     scope: { type: "string", enum: ["global", "session"], default: "global" },
     session_id: { type: "string", minLength: 1 },
+    params: {
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            max_context_tokens: { type: "integer", minimum: 1 },
+            max_output_tokens: { type: "integer", minimum: 1 },
+            temperature: { type: "number", minimum: 0, maximum: 2 },
+            top_p: { type: "number", minimum: 0, maximum: 1 },
+            top_k: { type: "integer", minimum: 0 },
+            frequency_penalty: { type: "number", minimum: -2, maximum: 2 },
+            presence_penalty: { type: "number", minimum: -2, maximum: 2 },
+            stream: { type: "boolean" },
+            timeout_ms: { type: "integer", minimum: 1 },
+            max_retries: { type: "integer", minimum: 0, maximum: 10 },
+          },
+          additionalProperties: false,
+        },
+        { type: "null" },
+      ],
+    },
     instance_slot: { type: "string", enum: ["*", "narrator", "director", "verifier", "memory"], default: "*" },
   },
   additionalProperties: false,
@@ -258,12 +297,33 @@ const activateResponseJsonSchema = {
   properties: {
     data: {
       type: "object",
-      required: ["profile_id", "scope", "scope_id", "instance_slot", "activated"],
+      required: ["profile_id", "scope", "scope_id", "instance_slot", "params", "activated"],
       properties: {
         profile_id: { type: "string" },
         scope: { type: "string", enum: ["global", "session"] },
         scope_id: { type: "string" },
         instance_slot: { type: "string" },
+        params: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                max_context_tokens: { type: "integer", minimum: 1 },
+                max_output_tokens: { type: "integer", minimum: 1 },
+                temperature: { type: "number", minimum: 0, maximum: 2 },
+                top_p: { type: "number", minimum: 0, maximum: 1 },
+                top_k: { type: "integer", minimum: 0 },
+                frequency_penalty: { type: "number", minimum: -2, maximum: 2 },
+                presence_penalty: { type: "number", minimum: -2, maximum: 2 },
+                stream: { type: "boolean" },
+                timeout_ms: { type: "integer", minimum: 1 },
+                max_retries: { type: "integer", minimum: 0, maximum: 10 },
+              },
+              additionalProperties: false,
+            },
+            { type: "null" },
+          ],
+        },
         activated: { type: "boolean" },
       },
       additionalProperties: false,
@@ -289,14 +349,32 @@ const deleteResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const runtimeParamsJsonSchema = {
+  type: "object",
+  properties: {
+    max_context_tokens: { type: "integer", minimum: 1 },
+    max_output_tokens: { type: "integer", minimum: 1 },
+    temperature: { type: "number", minimum: 0, maximum: 2 },
+    top_p: { type: "number", minimum: 0, maximum: 1 },
+    top_k: { type: "integer", minimum: 0 },
+    frequency_penalty: { type: "number", minimum: -2, maximum: 2 },
+    presence_penalty: { type: "number", minimum: -2, maximum: 2 },
+    stream: { type: "boolean" },
+    timeout_ms: { type: "integer", minimum: 1 },
+    max_retries: { type: "integer", minimum: 0, maximum: 10 },
+  },
+  additionalProperties: false,
+} as const;
+
 const runtimeSlotJsonSchema = {
   type: "object",
-  required: ["model_id", "preset_name", "profile_id", "provider", "scope", "slot", "source"],
+  required: ["model_id", "params", "preset_name", "profile_id", "provider", "scope", "slot", "source"],
   properties: {
     slot: { type: "string", enum: [...runtimeSlots] },
     source: { type: "string", enum: ["env", "global_profile", "session_profile"] },
     scope: { anyOf: [{ type: "string", enum: ["global", "session"] }, { type: "null" }] },
     profile_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    params: { anyOf: [runtimeParamsJsonSchema, { type: "null" }] },
     preset_name: { anyOf: [{ type: "string" }, { type: "null" }] },
     provider: { type: "string" },
     model_id: { type: "string" },
@@ -324,8 +402,22 @@ const runtimeResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
+type RuntimeParamsResponse = {
+  max_context_tokens?: number;
+  max_output_tokens?: number;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  stream?: boolean;
+  timeout_ms?: number;
+  max_retries?: number;
+};
+
 type RuntimeSlotResponse = {
   model_id: string;
+  params: RuntimeParamsResponse | null;
   preset_name: string | null;
   profile_id: string | null;
   provider: string;
@@ -739,16 +831,18 @@ export async function registerLlmProfileRoutes(app: FastifyInstance, connection:
 
       const scopeId = body.data.scope === "global" ? "global" : body.data.session_id ?? "";
       const instanceSlot = body.data.instance_slot;
+      const bindingParams = fromApiGenerationParams(body.data.params);
 
       try {
         const auth = getRequestAuthContext(request);
-        await service.activateProfile(body.data.scope, scopeId, params.data.id, instanceSlot, auth.accountId);
+        await service.activateProfile(body.data.scope, scopeId, params.data.id, instanceSlot, bindingParams, auth.accountId);
         return reply.send({
           data: {
             profile_id: params.data.id,
             scope: body.data.scope,
             scope_id: scopeId,
             instance_slot: instanceSlot,
+            params: toApiGenerationParams(bindingParams),
             activated: true,
           },
         });
@@ -785,12 +879,66 @@ function sendServiceError(reply: FastifyReply, error: unknown) {
       return sendError(reply, 409, error.code, error.message);
     }
 
+    if (error.code === "invalid_params") {
+      return sendError(reply, 400, error.code, error.message);
+    }
+
     if (error.code === "secret_unavailable") {
       return sendError(reply, 503, error.code, error.message);
     }
   }
 
   throw error;
+}
+
+function fromApiGenerationParams(
+  params: z.infer<typeof generationParamsSchema> | null | undefined,
+): LlmBindingGenerationParams | null | undefined {
+  if (params === undefined) {
+    return undefined;
+  }
+  if (params === null) {
+    return null;
+  }
+
+  return {
+    maxContextTokens: params.max_context_tokens,
+    maxOutputTokens: params.max_output_tokens,
+    temperature: params.temperature,
+    topP: params.top_p,
+    topK: params.top_k,
+    frequencyPenalty: params.frequency_penalty,
+    presencePenalty: params.presence_penalty,
+    stream: params.stream,
+    timeoutMs: params.timeout_ms,
+    maxRetries: params.max_retries,
+  };
+}
+
+function toApiGenerationParams(
+  params: LlmBindingGenerationParams | null | undefined,
+): RuntimeParamsResponse | null {
+  if (!params) {
+    return null;
+  }
+
+  const mapped: RuntimeParamsResponse = {
+    max_context_tokens: params.maxContextTokens,
+    max_output_tokens: params.maxOutputTokens,
+    temperature: params.temperature,
+    top_p: params.topP,
+    top_k: params.topK,
+    frequency_penalty: params.frequencyPenalty,
+    presence_penalty: params.presencePenalty,
+    stream: params.stream,
+    timeout_ms: params.timeoutMs,
+    max_retries: params.maxRetries,
+  };
+
+  const compacted = Object.fromEntries(
+    Object.entries(mapped).filter(([, value]) => value !== undefined),
+  ) as RuntimeParamsResponse;
+  return Object.keys(compacted).length > 0 ? compacted : null;
 }
 
 function toProfileRuntimeSlot(
@@ -801,6 +949,7 @@ function toProfileRuntimeSlot(
     presetName: string;
     provider: string;
     modelId: string;
+    params: LlmBindingGenerationParams;
   }
 ): RuntimeSlotResponse {
   return {
@@ -808,6 +957,7 @@ function toProfileRuntimeSlot(
     source: resolved.source === "session" ? "session_profile" : "global_profile",
     scope: resolved.source,
     profile_id: resolved.profileId,
+    params: toApiGenerationParams(resolved.params),
     preset_name: resolved.presetName,
     provider: resolved.provider,
     model_id: resolved.modelId,
@@ -820,6 +970,7 @@ function buildEnvRuntimeSlot(slot: z.infer<typeof instanceSlotSchema>, provider:
     source: "env",
     scope: null,
     profile_id: null,
+    params: null,
     preset_name: null,
     provider,
     model_id: modelId,

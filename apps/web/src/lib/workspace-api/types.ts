@@ -364,8 +364,20 @@ export type WorkspaceRespondResult = {
   totalTokens: number;
 };
 
+export type WorkspaceGenerationParams = {
+  frequencyPenalty?: number;
+  maxOutputTokens?: number;
+  presencePenalty?: number;
+  stopSequences?: string[];
+  stream?: boolean;
+  temperature?: number;
+  topK?: number;
+  topP?: number;
+};
+
 export type StreamRespondOptions = {
   accountId?: string;
+  generationParams?: WorkspaceGenerationParams;
   onChunk?: (chunk: string) => void;
   onDone?: (result: WorkspaceRespondResult) => void;
   onError?: (message: string) => void;

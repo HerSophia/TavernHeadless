@@ -20,6 +20,7 @@ import type { WorkspaceToast } from "../../stores/workspace-ui";
 import AssetContextMenu from "./AssetContextMenu.vue";
 import type {
   WorkspaceLlmDiscoveredModel,
+  WorkspaceLlmGenerationParams,
   WorkspaceLlmInstanceSlot,
   WorkspaceLlmProfile,
   WorkspaceLlmRuntimeSlot
@@ -28,6 +29,7 @@ import AssetImportDialog from "./AssetImportDialog.vue";
 import CharacterAssetManagerDialog from "./CharacterAssetManagerDialog.vue";
 import MessageActionDialogs from "./MessageActionDialogs.vue";
 import PresetAssetManagerDialog from "./PresetAssetManagerDialog.vue";
+import WorkspaceAssetBrowserDialog from "./WorkspaceAssetBrowserDialog.vue";
 import SessionContextMenu from "./SessionContextMenu.vue";
 import WorldbookAssetManagerDialog from "./WorldbookAssetManagerDialog.vue";
 import WorkspaceToastStack from "./WorkspaceToastStack.vue";
@@ -60,6 +62,10 @@ type SessionContextMenuState = {
   y: number;
 };
 
+type AssetBrowserDialogState = {
+  open: boolean;
+};
+
 type AssetContextMenuState = {
   targetAssetKind: WorkspaceAsset["kind"];
   visible: boolean;
@@ -74,6 +80,9 @@ type WorldbookManagerDialogState = Omit<WorldbookManagerDialogProps, "t">;
 type LlmManagerDialogState = {
   page: "instances" | "profiles";
   applyingSlot: WorkspaceLlmInstanceSlot | null;
+  applyingPresetParams: boolean;
+  drawerOpen: boolean;
+  drawerSlot: WorkspaceLlmInstanceSlot | null;
   errorMessage: string;
   loading: boolean;
   open: boolean;
@@ -95,9 +104,12 @@ type LlmManagerDialogState = {
   profileSaving: boolean;
   profileTesting: boolean;
   profiles: WorkspaceLlmProfile[];
+  presetAssets: Array<{ id: string; name: string }>;
   runtimeSlots: WorkspaceLlmRuntimeSlot[];
   scope: "global" | "session";
+  selectedPresetBySlot: Record<WorkspaceLlmInstanceSlot, string>;
   selectedProfileBySlot: Record<WorkspaceLlmInstanceSlot, string>;
+  slotParamsDraft: WorkspaceLlmGenerationParams;
 };
 
 type MaybePromise = Promise<void> | void;
@@ -106,6 +118,7 @@ const props = defineProps<{
   assetContextMenu: AssetContextMenuState;
   assetImportDialog: AssetImportDialogState;
   characterManagerDialog: CharacterManagerDialogState;
+  assetBrowserDialog: AssetBrowserDialogState;
   contextActionDisabled: {
     archive: boolean;
     delete: boolean;
@@ -117,6 +130,7 @@ const props = defineProps<{
   hasActiveSession: boolean;
   llmProfileDraftTitle: string;
   llmManagerDialog: LlmManagerDialogState;
+  libraryAssets: WorkspaceAsset[];
   onAddPresetManagerEntry: () => void;
   onClearAssetImportFailures: () => void;
   onClearCharacterManagerError: () => void;
@@ -127,10 +141,15 @@ const props = defineProps<{
   onConfirmCharacterManagerAction: () => MaybePromise;
   onConfirmDeleteMessage: () => MaybePromise;
   onCancelLlmProfileDraft: () => void;
+  onCloseLlmSlotDrawer: () => void;
   onConfirmEditAndRegenerate: () => MaybePromise;
-  onConfirmLlmSlotBinding: (slot: WorkspaceLlmInstanceSlot) => MaybePromise;
   onConfirmEditMessage: () => MaybePromise;
   onConfirmPresetManagerAction: () => MaybePromise;
+  onOpenLlmSlotDrawer: (slot: WorkspaceLlmInstanceSlot) => void;
+  onApplyLlmSlotPresetParams: () => MaybePromise;
+  onPatchLlmSlotParams: (patch: Partial<WorkspaceLlmGenerationParams>) => void;
+  onResetLlmSlotParams: () => void;
+  onSubmitLlmSlotDrawer: () => MaybePromise;
   onCreateLlmProfileDraft: () => void;
   onConfirmRetryFloor: () => MaybePromise;
   onConfirmWorldbookManagerAction: () => MaybePromise;
@@ -138,6 +157,12 @@ const props = defineProps<{
   onHandleAssetImport: (entries: AssetImportReadyEntry[]) => MaybePromise;
   onHandleAssetMenuAction: (action: AssetMenuAction) => MaybePromise;
   onHandleSessionAction: (action: SessionAction) => void;
+  onApplyAssetFromBrowser: (assetId: string) => void;
+  onOpenAssetFromBrowser: (assetId: string) => void;
+  onOpenAssetContextMenuFromBrowser: (event: MouseEvent, assetId: string) => void;
+  onOpenAssetImportDialogFromBrowser: (kind: WorkspaceAsset["kind"]) => void;
+  onSetAssetBrowserDialogOpen: (open: boolean) => void;
+  onToggleAssetFavoriteFromBrowser: (assetId: string) => void;
   onMovePresetManagerEntry: (payload: { delta: -1 | 1; identifier: string }) => void;
   onDeleteLlmProfile: (profileId: string) => MaybePromise;
   onDiscoverLlmProfileModels: () => MaybePromise;
@@ -147,6 +172,7 @@ const props = defineProps<{
   onSetPresetManagerView: (view: PresetManagerView) => void;
   onTogglePresetManagerEntryEnabled: (identifier: string) => void;
   onRefreshLlmManagerDialog: () => MaybePromise;
+  onSetLlmManagerPresetSelection: (payload: { presetId: string; slot: WorkspaceLlmInstanceSlot }) => void;
   onSetLlmManagerProfileSelection: (payload: { profileId: string; slot: WorkspaceLlmInstanceSlot }) => void;
   onSetLlmManagerPage: (page: "instances" | "profiles") => void;
   onSetLlmManagerScope: (scope: "global" | "session") => void;
@@ -204,6 +230,18 @@ const props = defineProps<{
     @confirm-retry="void props.onConfirmRetryFloor()"
   />
 
+  <WorkspaceAssetBrowserDialog
+    :assets="props.libraryAssets"
+    :open="props.assetBrowserDialog.open"
+    :t="props.t"
+    @apply-asset="props.onApplyAssetFromBrowser"
+    @open-asset="props.onOpenAssetFromBrowser"
+    @open-asset-context-menu="(event, assetId) => props.onOpenAssetContextMenuFromBrowser(event, assetId)"
+    @open-import="props.onOpenAssetImportDialogFromBrowser"
+    @toggle-favorite="props.onToggleAssetFavoriteFromBrowser"
+    @update:open="props.onSetAssetBrowserDialogOpen"
+  />
+
   <AssetImportDialog
     v-model:duplicate-policy="props.assetImportDialog.duplicatePolicy"
     v-model:kind="props.assetImportDialog.kind"
@@ -217,9 +255,9 @@ const props = defineProps<{
   />
 
   <PresetAssetManagerDialog
-    :active-entry-id="props.presetManagerDialog.activeEntryId"
     v-model:draft-name="props.presetManagerDialog.draftName"
     v-model:open="props.presetManagerDialog.open"
+    :active-entry-id="props.presetManagerDialog.activeEntryId"
     :editor-draft="props.presetManagerDialog.editorDraft"
     :error-message="props.presetManagerDialog.errorMessage"
     :loading="props.presetManagerDialog.loading"
@@ -277,6 +315,9 @@ const props = defineProps<{
   <WorkspaceLlmInstanceManagerDialog
     v-model:open="props.llmManagerDialog.open"
     :applying-slot="props.llmManagerDialog.applyingSlot"
+    :applying-preset-params="props.llmManagerDialog.applyingPresetParams"
+    :drawer-open="props.llmManagerDialog.drawerOpen"
+    :drawer-slot="props.llmManagerDialog.drawerSlot"
     :error-message="props.llmManagerDialog.errorMessage"
     :has-active-session="props.hasActiveSession"
     :loading="props.llmManagerDialog.loading"
@@ -290,21 +331,30 @@ const props = defineProps<{
     :profile-saving="props.llmManagerDialog.profileSaving"
     :profile-testing="props.llmManagerDialog.profileTesting"
     :profiles="props.llmManagerDialog.profiles"
+    :preset-assets="props.llmManagerDialog.presetAssets"
     :runtime-slots="props.llmManagerDialog.runtimeSlots"
     :scope="props.llmManagerDialog.scope"
     :selected-profile-by-slot="props.llmManagerDialog.selectedProfileBySlot"
+    :selected-preset-by-slot="props.llmManagerDialog.selectedPresetBySlot"
+    :slot-params-draft="props.llmManagerDialog.slotParamsDraft"
     :t="props.t"
-    @apply-slot-binding="void props.onConfirmLlmSlotBinding($event)"
+    @apply-slot-preset-params="void props.onApplyLlmSlotPresetParams()"
     @cancel-profile-draft="props.onCancelLlmProfileDraft"
+    @close-slot-drawer="props.onCloseLlmSlotDrawer"
     @create-profile-draft="props.onCreateLlmProfileDraft"
     @delete-profile="void props.onDeleteLlmProfile($event)"
     @discover-profile-models="void props.onDiscoverLlmProfileModels()"
     @edit-profile-draft="props.onEditLlmProfileDraft"
+    @open-slot-drawer="props.onOpenLlmSlotDrawer"
+    @patch-slot-params="props.onPatchLlmSlotParams"
     @refresh="void props.onRefreshLlmManagerDialog()"
+    @reset-slot-params="props.onResetLlmSlotParams"
     @submit-profile-draft="void props.onSubmitLlmProfileDraft()"
+    @submit-slot-drawer="void props.onSubmitLlmSlotDrawer()"
     @test-profile-model="void props.onTestLlmProfileModel()"
     @update:page="props.onSetLlmManagerPage"
     @update:profile-draft="props.onPatchLlmProfileDraft"
+    @update:selected-preset="props.onSetLlmManagerPresetSelection"
     @update:scope="props.onSetLlmManagerScope"
     @update:selected-profile="props.onSetLlmManagerProfileSelection"
   />

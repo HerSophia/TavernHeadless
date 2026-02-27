@@ -10,7 +10,7 @@ import WorkspaceOverlayLayer from "./components/workspace/WorkspaceOverlayLayer.
 import WorkspaceTopBar from "./components/workspace/WorkspaceTopBar.vue";
 import WorkspaceViewportFrame from "./components/workspace/WorkspaceViewportFrame.vue";
 import { useWorkspaceLlmManagerDialog } from "./composables/workspace/llm";
-import { useWorkspaceAssetContextMenu, useWorkspaceAssetImportDialog, useWorkspaceAssetManagerDialogs, useWorkspaceAssetMenuActions, useWorkspaceRuntimeActions } from "./composables/workspace/assets";
+import { useWorkspaceAssetBrowserDialog, useWorkspaceAssetContextMenu, useWorkspaceAssetImportDialog, useWorkspaceAssetManagerDialogs, useWorkspaceAssetMenuActions, useWorkspaceRuntimeActions } from "./composables/workspace/assets";
 import { useWorkspaceMessageDialog } from "./composables/workspace/messages";
 import { useWorkspacePresetActions, useWorkspacePresetSelection } from "./composables/workspace/presets";
 import { useWorkspaceSessionActionDispatch, useWorkspaceSessionActions, useWorkspaceSessionContextMenuState } from "./composables/workspace/sessions";
@@ -119,6 +119,13 @@ const {
 });
 
 const {
+  assetBrowserDialog,
+  closeAssetBrowserDialog,
+  openAssetBrowserDialog,
+  resetAssetBrowserDialog
+} = useWorkspaceAssetBrowserDialog();
+
+const {
   formatTime,
   getSessionTitle,
   toggleLang
@@ -133,16 +140,20 @@ function addEvent(key: string, tone: EventTone = "info", vars: Record<string, nu
 const {
   activeModelDetail,
   activeModelName,
+  applySlotPresetParams,
   beginCreateLlmProfileDraft,
   beginEditLlmProfileDraft,
   cancelLlmProfileDraft,
-  applyLlmSlotBinding,
+  setLlmManagerPresetSelection,
+  closeSlotDrawer,
   closeLlmManagerDialog,
   fetchLlmProfileModels,
   hasActiveSession,
   llmManagerDialog,
   openLlmManagerDialog,
+  openSlotDrawer,
   patchLlmProfileDraft,
+  patchSlotParams,
   profileDraftTitle,
   refreshLlmManagerDialog,
   refreshLlmRuntime,
@@ -151,6 +162,8 @@ const {
   setLlmManagerProfileSelection,
   setLlmManagerScope,
   submitLlmProfileDraft,
+  submitSlotDrawer,
+  resetSlotParams,
   testLlmProfileModel
 } = useWorkspaceLlmManagerDialog({ activeSessionId: computed(() => activeSession.value?.id ?? null), addEvent, currentAccount, t });
 
@@ -228,6 +241,7 @@ const {
   closeAssetContextMenu,
   closeAssetImportDialog,
   closeDrawers,
+  closeAssetBrowserDialog,
   closeMessageDialogs,
   closeLlmManagerDialog,
   closeSessionContextMenu,
@@ -236,6 +250,7 @@ const {
   resetActiveTab,
   resetAssetImportDialog,
   resetCharacterManagerDialog,
+  resetAssetBrowserDialog,
   resetPresetManagerDialog,
   resetWorldbookManagerDialog,
   workspace,
@@ -340,6 +355,7 @@ const {
   closeAssetContextMenu,
   closeAssetImportDialog,
   closeDrawers,
+  closeAssetBrowserDialog,
   closeMessageDialogs,
   closeLlmManagerDialog,
   closeSessionContextMenu,
@@ -373,6 +389,27 @@ watch(
     immediate: true
   }
 );
+
+function setAssetBrowserDialogOpen(open: boolean): void {
+  if (open) {
+    openAssetBrowserDialog();
+    return;
+  }
+
+  closeAssetBrowserDialog();
+}
+
+function openAssetBrowserFromNav(): void {
+  closeNavDrawer();
+  closeSessionContextMenu();
+  closeAssetContextMenu();
+  openAssetBrowserDialog();
+}
+
+function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
+  closeAssetBrowserDialog();
+  openAssetImportDialog(kind);
+}
 </script>
 
 <template>
@@ -416,11 +453,7 @@ watch(
         @edit-current-preset="void editCurrentPreset()"
         @open-context-menu="openContextMenu"
         @open-session="openSession"
-        @apply-asset="applyLibraryAsset"
-        @open-asset="openLibraryAsset"
-        @toggle-favorite="toggleAssetFavorite"
-        @open-asset-context-menu="openAssetContextMenu"
-        @open-import-dialog="openAssetImportDialog"
+        @open-asset-browser="openAssetBrowserFromNav"
         @switch-current-preset="switchCurrentPreset"
         @export-current-preset="void exportCurrentPreset()"
         @open-llm-manager="void openLlmManagerDialog()"
@@ -438,8 +471,8 @@ watch(
 
     <template #center>
       <WorkspaceCanvas
-        class="workspace-center-pane"
         v-model:message-input="messageInput"
+        class="workspace-center-pane"
         :active-session="activeSession"
         :active-timeline="activeTimeline"
         :current-account="currentAccount"
@@ -495,6 +528,7 @@ watch(
 
     <template #overlays>
       <WorkspaceOverlayLayer
+        :asset-browser-dialog="assetBrowserDialog"
         :asset-context-menu="assetContextMenu"
         :asset-import-dialog="assetImportDialog"
         :character-manager-dialog="characterManagerDialog"
@@ -505,6 +539,7 @@ watch(
         :llm-manager-dialog="llmManagerDialog"
         :llm-profile-draft-title="profileDraftTitle"
         :message-dialog="messageDialog"
+        :library-assets="libraryAssets"
         :message-dialog-role-label="messageDialogRoleLabel"
         :on-add-preset-manager-entry="addPresetManagerEntry"
         :on-clear-asset-import-failures="clearAssetImportFailures"
@@ -515,13 +550,18 @@ watch(
         :on-close-nav-drawer="closeNavDrawer"
         :on-confirm-character-manager-action="confirmCharacterManagerAction"
         :on-cancel-llm-profile-draft="cancelLlmProfileDraft"
+        :on-close-llm-slot-drawer="closeSlotDrawer"
         :on-confirm-delete-message="confirmDeleteMessage"
         :on-confirm-edit-and-regenerate="confirmEditAndRegenerate"
-        :on-confirm-llm-slot-binding="applyLlmSlotBinding"
         :on-confirm-edit-message="confirmEditMessage"
         :on-confirm-preset-manager-action="confirmPresetManagerAction"
         :on-confirm-retry-floor="confirmRetryFloor"
         :on-confirm-worldbook-manager-action="confirmWorldbookManagerAction"
+        :on-open-llm-slot-drawer="openSlotDrawer"
+        :on-apply-llm-slot-preset-params="applySlotPresetParams"
+        :on-patch-llm-slot-params="patchSlotParams"
+        :on-reset-llm-slot-params="resetSlotParams"
+        :on-submit-llm-slot-drawer="submitSlotDrawer"
         :on-delete-preset-manager-entry="deletePresetManagerEntry"
         :on-create-llm-profile-draft="beginCreateLlmProfileDraft"
         :on-delete-llm-profile="removeLlmProfile"
@@ -529,6 +569,12 @@ watch(
         :on-handle-asset-import="handleAssetImport"
         :on-handle-asset-menu-action="handleAssetMenuAction"
         :on-handle-session-action="handleSessionAction"
+        :on-apply-asset-from-browser="applyLibraryAsset"
+        :on-open-asset-from-browser="openLibraryAsset"
+        :on-open-asset-context-menu-from-browser="openAssetContextMenu"
+        :on-open-asset-import-dialog-from-browser="openAssetImportDialogFromBrowser"
+        :on-set-asset-browser-dialog-open="setAssetBrowserDialogOpen"
+        :on-toggle-asset-favorite-from-browser="toggleAssetFavorite"
         :on-move-preset-manager-entry="movePresetManagerEntry"
         :on-open-preset-manager-entry="openPresetManagerEntry"
         :on-request-character-delete="requestCharacterDelete"
@@ -537,6 +583,7 @@ watch(
         :on-patch-llm-profile-draft="patchLlmProfileDraft"
         :on-refresh-llm-manager-dialog="refreshLlmManagerDialog"
         :on-set-llm-manager-page="setLlmManagerPage"
+        :on-set-llm-manager-preset-selection="setLlmManagerPresetSelection"
         :on-set-llm-manager-profile-selection="setLlmManagerProfileSelection"
         :on-set-llm-manager-scope="setLlmManagerScope"
         :on-submit-llm-profile-draft="submitLlmProfileDraft"

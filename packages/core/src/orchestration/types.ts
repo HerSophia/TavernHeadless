@@ -46,6 +46,8 @@ export interface TurnInput {
   model?: ModelConfig;
   /** 按 LLM 实例槽位覆盖模型配置 */
   modelOverrides?: Partial<Record<InstanceSlot, ModelConfig>>;
+  /** 按 LLM 实例槽位覆盖 Generation 参数 */
+  generationParamsOverrides?: Partial<Record<InstanceSlot, GenerationParams>>;
 
   // ── 可选组件输入 ──
 

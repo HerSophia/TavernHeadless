@@ -228,6 +228,45 @@ describe('TurnOrchestrator', () => {
     expect(result.totalUsage.totalTokens).toBe(150 + 50 + 70 + 90);
   });
 
+  it('propagates slot generation params overrides to each component', async () => {
+    const input = makeInput({
+      config: {
+        enableDirector: true,
+        enableVerifier: true,
+        enableMemoryConsolidation: true,
+      },
+      directorInput: {
+        recentContext: 'Recent events...',
+        activeFacts: [makeMemoryItem('Fact 1')],
+      },
+      verifierInput: {
+        characterRules: 'Must stay in character',
+        activeFacts: [makeMemoryItem('Fact 1')],
+      },
+      consolidationContext: {
+        currentFloorContent: 'Current content...',
+        recentSummaries: ['Summary 1'],
+        existingFacts: [],
+      },
+      generationParamsOverrides: {
+        narrator: { temperature: 0.95, topP: 0.88 },
+        director: { temperature: 0.15, maxOutputTokens: 120 },
+        verifier: { temperature: 0.25, maxOutputTokens: 80 },
+        memory: { temperature: 0.35, maxOutputTokens: 160 },
+      },
+    });
+
+    await orchestrator.executeTurn(input);
+
+    expect(deps.generationPipeline.run).toHaveBeenCalledWith(
+      expect.objectContaining({ params: expect.objectContaining({ temperature: 0.95, topP: 0.88 }) }),
+      expect.anything(),
+    );
+    expect(deps.director.direct).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ temperature: 0.15, maxOutputTokens: 120 }), undefined);
+    expect(deps.verifier.verify).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ temperature: 0.25, maxOutputTokens: 80 }), undefined);
+    expect((deps.memoryConsolidator.consolidate as any).mock.calls[0][0].params).toEqual(expect.objectContaining({ temperature: 0.35, maxOutputTokens: 160 }));
+  });
+
   // ── Director ────────────────────────────────────────
 
   it('calls director when enabled', async () => {

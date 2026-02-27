@@ -1,4 +1,5 @@
 export * from "./asset-browser";
+export * from "./asset-browser-dialog";
 export * from "./asset-context-menu";
 export * from "./asset-export";
 export * from "./asset-import-dialog";

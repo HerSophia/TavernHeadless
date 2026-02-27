@@ -118,6 +118,106 @@ describe("LLM Profile Routes", () => {
     expect(body.error.code).toBe("profile_in_use");
   });
 
+  it("activates profile with params and exposes effective params in runtime", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Runtime Param Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        api_key: "sk-test-runtime-params",
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+
+    const profileId = (createRes.json() as { data: { id: string } }).data.id;
+
+    const activateRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${profileId}/activate`,
+      payload: {
+        scope: "global",
+        instance_slot: "narrator",
+        params: {
+          max_context_tokens: 12000,
+          max_output_tokens: 900,
+          temperature: 0.65,
+          top_p: 0.9,
+          stream: true,
+          timeout_ms: 90000,
+        },
+      },
+    });
+    expect(activateRes.statusCode).toBe(200);
+    expect((activateRes.json() as { data: { params: Record<string, unknown> | null } }).data.params).toEqual(
+      expect.objectContaining({
+        max_context_tokens: 12000,
+        max_output_tokens: 900,
+        temperature: 0.65,
+        top_p: 0.9,
+        stream: true,
+        timeout_ms: 90000,
+      }),
+    );
+
+    const runtimeRes = await app.inject({
+      method: "GET",
+      url: "/llm-profiles/runtime",
+    });
+    expect(runtimeRes.statusCode).toBe(200);
+
+    const runtimeBody = runtimeRes.json() as {
+      data: {
+        slots: Array<{ slot: string; source: string; profile_id: string | null; params: Record<string, unknown> | null }>;
+      };
+    };
+
+    const narrator = runtimeBody.data.slots.find((slot) => slot.slot === "narrator");
+    expect(narrator).toBeDefined();
+    expect(narrator?.source).toBe("global_profile");
+    expect(narrator?.profile_id).toBe(profileId);
+    expect(narrator?.params).toEqual(
+      expect.objectContaining({
+        max_context_tokens: 12000,
+        max_output_tokens: 900,
+        temperature: 0.65,
+        top_p: 0.9,
+        stream: true,
+        timeout_ms: 90000,
+      }),
+    );
+  });
+
+  it("rejects invalid activate params", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Invalid Param Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        api_key: "sk-test-invalid-params",
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+
+    const profileId = (createRes.json() as { data: { id: string } }).data.id;
+    const activateRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${profileId}/activate`,
+      payload: {
+        scope: "global",
+        params: {
+          temperature: 9,
+        },
+      },
+    });
+
+    expect(activateRes.statusCode).toBe(400);
+    expect((activateRes.json() as { error: { code: string } }).error.code).toBe("validation_error");
+  });
+
   it("isolates profiles by account in multi-account mode", async () => {
     await app.close();
     ({ app } = await buildApp({

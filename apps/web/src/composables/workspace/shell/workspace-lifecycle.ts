@@ -25,6 +25,7 @@ type UseWorkspaceLifecycleOptions = {
   clearMessageDialogTarget: () => void;
   closeAssetContextMenu: () => void;
   closeAssetImportDialog: () => void;
+  closeAssetBrowserDialog: () => void;
   closeDrawers: () => void;
   closeMessageDialogs: () => void;
   closeLlmManagerDialog: () => void;
@@ -34,6 +35,7 @@ type UseWorkspaceLifecycleOptions = {
   resetActiveTab: () => void;
   resetAssetImportDialog: () => void;
   resetCharacterManagerDialog: () => void;
+  resetAssetBrowserDialog: () => void;
   resetPresetManagerDialog: () => void;
   resetWorldbookManagerDialog: () => void;
   workspace: WorkspaceLifecycleStore;
@@ -65,10 +67,12 @@ export function useWorkspaceLifecycle(options: UseWorkspaceLifecycleOptions) {
     options.closeDrawers();
     options.closeMessageDialogs();
     options.closeLlmManagerDialog();
+    options.closeAssetBrowserDialog();
     options.clearMessageDialogTarget();
     options.resetAssetImportDialog();
     options.resetPresetManagerDialog();
     options.resetCharacterManagerDialog();
+    options.resetAssetBrowserDialog();
     options.resetWorldbookManagerDialog();
   }
 

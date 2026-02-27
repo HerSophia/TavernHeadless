@@ -20,6 +20,7 @@ import type {
   StreamSummaryPayload,
   StreamChunkPayload,
   WorkspaceMessageUpdateResult,
+  WorkspaceGenerationParams,
   WorkspaceRegenerateResult,
   WorkspaceRespondResult
 } from "./types";
@@ -117,9 +118,15 @@ export async function retryFloor(floorId: string, accountId?: string): Promise<W
   };
 }
 
-export async function respondInSession(sessionId: string, message: string, accountId?: string): Promise<WorkspaceRespondResult> {
+export async function respondInSession(
+  sessionId: string,
+  message: string,
+  accountId?: string,
+  generationParams?: WorkspaceGenerationParams
+): Promise<WorkspaceRespondResult> {
   const response = await fetch(resolvePath(`/sessions/${encodeURIComponent(sessionId)}/respond`), {
     body: JSON.stringify({
+      generation_params: toApiGenerationParams(generationParams),
       message
     }),
     headers: {
@@ -149,13 +156,56 @@ export async function respondInSession(sessionId: string, message: string, accou
   };
 }
 
+function toApiGenerationParams(generationParams?: WorkspaceGenerationParams): {
+  frequency_penalty?: number;
+  max_output_tokens?: number;
+  presence_penalty?: number;
+  stop_sequences?: string[];
+  stream?: boolean;
+  temperature?: number;
+  top_k?: number;
+  top_p?: number;
+} | undefined {
+  if (!generationParams) {
+    return undefined;
+  }
+
+  const mapped = {
+    frequency_penalty: generationParams.frequencyPenalty,
+    max_output_tokens: generationParams.maxOutputTokens,
+    presence_penalty: generationParams.presencePenalty,
+    stop_sequences: generationParams.stopSequences,
+    stream: generationParams.stream,
+    temperature: generationParams.temperature,
+    top_k: generationParams.topK,
+    top_p: generationParams.topP
+  };
+
+  const compacted = Object.fromEntries(
+    Object.entries(mapped).filter(([, value]) => value !== undefined)
+  ) as {
+    frequency_penalty?: number;
+    max_output_tokens?: number;
+    presence_penalty?: number;
+    stop_sequences?: string[];
+    stream?: boolean;
+    temperature?: number;
+    top_k?: number;
+    top_p?: number;
+  };
+
+  return Object.keys(compacted).length > 0 ? compacted : undefined;
+}
+
 export async function streamSessionResponse(
   sessionId: string,
   message: string,
   options: StreamRespondOptions = {}
 ): Promise<WorkspaceRespondResult> {
+  const generationParams = toApiGenerationParams(options.generationParams);
   const response = await fetch(resolvePath(`/sessions/${encodeURIComponent(sessionId)}/respond/stream`), {
     body: JSON.stringify({
+      generation_params: generationParams,
       message
     }),
     headers: {

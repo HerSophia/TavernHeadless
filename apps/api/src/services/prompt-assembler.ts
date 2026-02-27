@@ -124,6 +124,8 @@ export interface AssemblePromptOptions {
    * 默认 false，用于常规 respond/regenerate 场景减少开销。
    */
   includeDebug?: boolean;
+  /** narrator 上下文预算覆盖（来自 slot binding / request override） */
+  maxContextTokensOverride?: number;
 }
 
 // ── 默认 System Prompt ────────────────────────────────
@@ -220,7 +222,7 @@ export async function assemblePrompt(
         worldbookEntries: toNativeWorldbookEntries(worldBookResults),
         variables,
         memorySummary,
-        maxTokens: preset.maxContext,
+        maxTokens: normalizePositiveInt(options.maxContextTokensOverride) ?? preset.maxContext,
         reservedForReply: preset.maxTokens,
         tokenCounter,
       })
@@ -310,6 +312,18 @@ export async function assemblePrompt(
   } : undefined;
 
   return { messages, preProcess, postProcess, tokenUsage, debug };
+}
+
+function normalizePositiveInt(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  if (value <= 0) {
+    return undefined;
+  }
+
+  return Math.trunc(value);
 }
 
 // ── DB 加载函数 ────────────────────────────────────────

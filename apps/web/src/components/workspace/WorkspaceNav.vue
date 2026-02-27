@@ -10,7 +10,6 @@ import {
 } from "lucide-vue-next";
 
 import type { SessionState, WorkspaceAsset } from "../../stores/workspace";
-import WorkspaceAssetBrowser from "./WorkspaceAssetBrowser.vue";
 
 type Translator = (key: string, vars?: Record<string, number | string>) => string;
 
@@ -31,14 +30,10 @@ const emit = defineEmits<{
   createSession: [];
   openContextMenu: [event: MouseEvent, index: number];
   openSession: [index: number];
-  applyAsset: [assetId: string];
-  openAsset: [assetId: string];
-  toggleFavorite: [assetId: string];
-  openImportDialog: [kind: WorkspaceAsset["kind"]];
-  openAssetContextMenu: [event: MouseEvent, assetId: string];
   editCurrentPreset: [];
   switchCurrentPreset: [];
   exportCurrentPreset: [];
+  openAssetBrowser: [];
   openLlmManager: [];
 }>();
 </script>
@@ -139,15 +134,17 @@ const emit = defineEmits<{
 
       <section class="space-y-2">
         <div class="px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-zinc-500">{{ props.t("nav.library") }}</div>
-        <WorkspaceAssetBrowser
-          :assets="props.libraryAssets"
-          :t="props.t"
-          @apply-asset="emit('applyAsset', $event)"
-          @open-asset="emit('openAsset', $event)"
-          @toggle-favorite="emit('toggleFavorite', $event)"
-          @open-import="emit('openImportDialog', $event)"
-          @open-asset-context-menu="(event, assetId) => emit('openAssetContextMenu', event, assetId)"
-        />
+        <div class="space-y-2 rounded border border-white/5 bg-white/[0.02] p-3">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">{{ props.t("nav.assetBrowser") }}</span>
+            <span class="font-mono text-[10px] text-zinc-600">{{ props.t("dynamic.assetCount", { count: props.libraryAssets.length }) }}</span>
+          </div>
+          <div class="font-mono text-[10px] text-zinc-600">{{ props.t("nav.assetBrowserHint") }}</div>
+          <button class="btn-ghost w-full justify-center text-[11px]" type="button" @click="emit('openAssetBrowser')">
+            <SlidersHorizontal class="h-3.5 w-3.5" />
+            <span>{{ props.t("actions.openAssetBrowser") }}</span>
+          </button>
+        </div>
       </section>
     </div>
 

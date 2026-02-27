@@ -169,7 +169,7 @@ body {
 
 .context-menu {
   position: fixed;
-  z-index: 60;
+  z-index: 110;
   min-width: 170px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.35rem;
@@ -275,6 +275,39 @@ body {
   width: min(460px, calc(100vw - 1.5rem));
 }
 
+.asset-browser-dialog {
+  width: min(1120px, calc(100vw - 1.5rem));
+  max-height: min(88vh, 920px);
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.asset-browser-dialog-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+@media (max-width: 1024px) {
+  .asset-browser-dialog {
+    width: calc(100vw - 1rem);
+    max-height: calc(100vh - 1rem);
+    padding: 0.75rem;
+  }
+
+  .asset-browser-dialog-body {
+    min-height: min(64vh, 680px);
+  }
+}
+
+@media (max-width: 640px) {
+  .asset-browser-dialog-body {
+    min-height: min(58vh, 620px);
+  }
+}
+
 .dialog-title {
   font-size: 0.875rem;
   font-weight: 600;
@@ -367,11 +400,20 @@ body {
 
 .llm-manager-dialog {
   width: min(900px, calc(100vw - 1.5rem));
+  overflow: hidden;
+}
+
+.llm-manager-instance-layout {
+  position: relative;
+  min-height: min(64vh, 560px);
 }
 
 .llm-manager-list {
   display: grid;
   gap: 0.6rem;
+  max-height: min(58vh, 500px);
+  overflow-y: auto;
+  padding-right: 0.1rem;
 }
 
 .llm-manager-empty {
@@ -388,6 +430,24 @@ body {
   border-radius: 0.45rem;
   background: rgba(255, 255, 255, 0.02);
   padding: 0.65rem;
+}
+
+.llm-manager-slot-button {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.llm-manager-slot-button:hover {
+  border-color: rgba(45, 212, 191, 0.3);
+  background: rgba(45, 212, 191, 0.08);
+  transform: translateX(1px);
+}
+
+.llm-manager-slot-button.active {
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(45, 212, 191, 0.12);
 }
 
 .llm-manager-slot-head {
@@ -408,12 +468,140 @@ body {
   color: rgb(161 161 170);
 }
 
-.llm-manager-slot-controls {
-  margin-top: 0.55rem;
+.llm-manager-slot-selected {
+  margin-top: 0.5rem;
+  font-size: 11px;
+  color: rgb(212 212 216);
+}
+
+.llm-manager-drawer-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.llm-manager-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  width: min(420px, calc(100% - 1rem));
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 12, 14, 0.98);
+  padding: 0.75rem;
+  overflow-y: auto;
+  transform: translateX(104%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 180ms ease, opacity 150ms ease;
+}
+
+.llm-manager-drawer.open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.llm-manager-drawer-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
+}
+
+.llm-manager-drawer-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgb(228 228 231);
+}
+
+.llm-manager-drawer-close {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgb(212 212 216);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0.2rem 0.42rem;
+}
+
+.llm-manager-drawer-section {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.42rem;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.55rem;
+}
+
+.llm-manager-drawer-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgb(161 161 170);
+}
+
+.llm-manager-drawer-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgb(251 191 36);
+}
+
+.llm-manager-drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.llm-manager-param-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.llm-manager-param-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.llm-manager-param-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.llm-manager-param-state {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 0.05rem 0.35rem;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.llm-manager-param-state.override {
+  border-color: rgba(45, 212, 191, 0.36);
+  color: rgb(110 231 183);
+  background: rgba(45, 212, 191, 0.11);
+}
+
+.llm-manager-param-state.inherit {
+  border-color: rgba(244, 114, 182, 0.3);
+  color: rgb(244 114 182);
+  background: rgba(244, 114, 182, 0.09);
+}
+
+.llm-manager-param-input {
+  margin-top: 0;
+}
+
+.llm-manager-param-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .llm-manager-tabs {
@@ -438,6 +626,23 @@ body {
   border-color: rgba(45, 212, 191, 0.32);
   background: rgba(45, 212, 191, 0.12);
   color: rgb(153 246 228);
+}
+
+.llm-manager-param-slider {
+  flex: 1;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  accent-color: rgb(45 212 191);
+}
+
+.llm-manager-param-slider:focus-visible {
+  outline: 1px solid rgba(45, 212, 191, 0.55);
+  outline-offset: 2px;
+}
+
+.llm-manager-param-slider::-webkit-slider-thumb {
+  cursor: pointer;
 }
 
 .llm-manager-profile-layout {
@@ -731,6 +936,35 @@ body {
     align-items: stretch;
     flex-direction: column;
   }
+
+  .llm-manager-instance-layout {
+    min-height: 0;
+  }
+
+  .llm-manager-drawer-overlay {
+    display: none;
+  }
+
+  .llm-manager-drawer {
+    position: static;
+    width: 100%;
+    max-height: none;
+    margin-top: 0.65rem;
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    transform: none;
+    opacity: 1;
+    pointer-events: auto;
+    display: none;
+  }
+
+  .llm-manager-drawer.open {
+    display: block;
+  }
+
+  .llm-manager-param-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .pane-resize-handle {
@@ -760,6 +994,25 @@ body.pane-resizing {
 
 .asset-browser {
   min-height: 240px;
+}
+
+.asset-browser--dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-height: 100%;
+  width: 100%;
+}
+
+.asset-browser--dialog .asset-browser-toolbar {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.asset-browser--dialog .asset-browser-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 .asset-browser:focus-visible {

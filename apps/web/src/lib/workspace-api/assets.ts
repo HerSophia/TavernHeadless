@@ -120,7 +120,7 @@ async function fetchCharacterAssets(accountId?: string): Promise<WorkspaceLibrar
   }));
 }
 
-async function fetchPresetAssets(accountId?: string): Promise<WorkspaceLibraryAsset[]> {
+export async function fetchPresetAssets(accountId?: string): Promise<WorkspaceLibraryAsset[]> {
   const response = await fetchJson<ResourceListResponse>("/presets", accountId);
   return (response.data ?? []).map((item) => ({
     createdAt: item.created_at,

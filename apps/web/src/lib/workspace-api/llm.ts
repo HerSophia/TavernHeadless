@@ -20,8 +20,22 @@ export type WorkspaceLlmProfile = {
   updatedAt: number;
 };
 
+export type WorkspaceLlmGenerationParams = {
+  frequency_penalty?: number;
+  max_context_tokens?: number;
+  max_output_tokens?: number;
+  max_retries?: number;
+  presence_penalty?: number;
+  stream?: boolean;
+  temperature?: number;
+  timeout_ms?: number;
+  top_k?: number;
+  top_p?: number;
+};
+
 export type WorkspaceLlmRuntimeSlot = {
   modelId: string;
+  params: WorkspaceLlmGenerationParams | null;
   presetName: string | null;
   profileId: string | null;
   provider: string;
@@ -72,6 +86,7 @@ type LlmProfileListResponse = {
 type LlmRuntimeResponse = {
   data?: {
     slots?: Array<{
+      params: WorkspaceLlmGenerationParams | null;
       model_id: string;
       preset_name: string | null;
       profile_id: string | null;
@@ -268,6 +283,7 @@ export async function fetchLlmRuntime(sessionId: string | undefined, accountId?:
 
   return rows.map((row) => ({
     modelId: row.model_id,
+    params: row.params ?? null,
     presetName: row.preset_name,
     profileId: row.profile_id,
     provider: row.provider,
@@ -281,6 +297,7 @@ export async function activateLlmProfileBinding(
   profileId: string,
   payload: {
     instanceSlot: WorkspaceLlmInstanceSlot;
+    params?: WorkspaceLlmGenerationParams | null;
     scope: "global" | "session";
     sessionId?: string;
   },
@@ -290,6 +307,7 @@ export async function activateLlmProfileBinding(
     `/llm-profiles/${encodeURIComponent(profileId)}/activate`,
     {
       instance_slot: payload.instanceSlot,
+      params: payload.params,
       scope: payload.scope,
       session_id: payload.sessionId
     },

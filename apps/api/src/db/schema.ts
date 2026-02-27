@@ -261,6 +261,7 @@ export const llmProfileBindings = sqliteTable(
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
     scopeId: text("scope_id").notNull(),
     instanceSlot: text("instance_slot").notNull().default("*"),
+    paramsJson: text("params_json"),
     profileId: text("profile_id").notNull().references(() => llmProfiles.id, { onDelete: "restrict" }),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),

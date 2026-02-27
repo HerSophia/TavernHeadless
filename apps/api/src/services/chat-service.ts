@@ -175,6 +175,7 @@ export interface ResolvedTurnModel {
   model: ModelConfig;
   source: "env" | "global_profile" | "session_profile";
   profileId?: string;
+  generationParams?: Partial<GenerationParams>;
 }
 
 export type ResolvedTurnModels = Partial<Record<InstanceSlot, ResolvedTurnModel>>;
@@ -326,14 +327,26 @@ export class ChatService {
       userSnapshotJson: session.userSnapshotJson,
     };
 
+    const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+    const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+    const maxContextTokensOverride = normalizePositiveInt(request.generationParams?.maxContextTokens)
+      ?? normalizePositiveInt(narratorParams?.maxContextTokens);
+
     const assembled = await assemblePrompt(
-      this.db, sessionInfo, history, request.message, this.tokenCounter, memorySummary
+      this.db,
+      sessionInfo,
+      history,
+      request.message,
+      this.tokenCounter,
+      memorySummary,
+      { maxContextTokensOverride }
     );
 
     const generationParams: GenerationParams = {
       temperature: 0.7,
       maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
       stream: true,
+      ...this.stripMaxContextTokens(narratorParams),
       ...request.generationParams,
     };
 
@@ -343,7 +356,6 @@ export class ChatService {
       request.message,
       turnConfig
     );
-    const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
 
     const turnInput: TurnInput = {
       sessionId,
@@ -355,6 +367,7 @@ export class ChatService {
       preProcess: assembled.preProcess,
       postProcess: assembled.postProcess,
       modelOverrides: this.buildModelOverrides(resolvedTurnModels),
+      generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
       onChunk: runtimeOptions.onChunk,
       abortSignal: runtimeOptions.abortSignal,
     };
@@ -427,6 +440,9 @@ export class ChatService {
 
     const history = await this.loadHistory(sessionId);
     const memorySummary = await this.retrieveMemorySummary(sessionId);
+    const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+    const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+    const maxContextTokensOverride = normalizePositiveInt(narratorParams?.maxContextTokens);
 
     const sessionInfo: SessionPromptInfo = {
       presetId: session.presetId,
@@ -445,7 +461,7 @@ export class ChatService {
       request.message,
       this.tokenCounter,
       memorySummary,
-      { includeDebug: true }
+      { includeDebug: true, maxContextTokensOverride }
     );
 
     const preprocessedUserMessage = assembled.preProcess
@@ -570,14 +586,26 @@ export class ChatService {
       userSnapshotJson: session.userSnapshotJson,
     };
 
+    const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+    const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+    const maxContextTokensOverride = normalizePositiveInt(request.generationParams?.maxContextTokens)
+      ?? normalizePositiveInt(narratorParams?.maxContextTokens);
+
     const assembled = await assemblePrompt(
-      this.db, sessionInfo, history, userMessage, this.tokenCounter, memorySummary
+      this.db,
+      sessionInfo,
+      history,
+      userMessage,
+      this.tokenCounter,
+      memorySummary,
+      { maxContextTokensOverride }
     );
 
     const generationParams: GenerationParams = {
       temperature: 0.7,
       maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
       stream: true,
+      ...this.stripMaxContextTokens(narratorParams),
       ...request.generationParams,
     };
 
@@ -587,7 +615,6 @@ export class ChatService {
       userMessage,
       turnConfig
     );
-    const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
 
     const turnInput: TurnInput = {
       sessionId,
@@ -599,6 +626,7 @@ export class ChatService {
       preProcess: assembled.preProcess,
       postProcess: assembled.postProcess,
       modelOverrides: this.buildModelOverrides(resolvedTurnModels),
+      generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
     };
 
     let turnOutput: TurnOutput;
@@ -715,19 +743,26 @@ export class ChatService {
       userSnapshotJson: session.userSnapshotJson,
     };
 
+    const resolvedTurnModels = await this.resolveTurnModelsForSession(targetFloor.sessionId, accountId);
+    const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+    const maxContextTokensOverride = normalizePositiveInt(request.generationParams?.maxContextTokens)
+      ?? normalizePositiveInt(narratorParams?.maxContextTokens);
+
     const assembled = await assemblePrompt(
       this.db,
       sessionInfo,
       history,
       userMessage,
       this.tokenCounter,
-      memorySummary
+      memorySummary,
+      { maxContextTokensOverride }
     );
 
     const generationParams: GenerationParams = {
       temperature: 0.7,
       maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
       stream: true,
+      ...this.stripMaxContextTokens(narratorParams),
       ...request.generationParams,
     };
 
@@ -737,7 +772,6 @@ export class ChatService {
       userMessage,
       turnConfig
     );
-    const resolvedTurnModels = await this.resolveTurnModelsForSession(targetFloor.sessionId, accountId);
 
     const turnInput: TurnInput = {
       sessionId: targetFloor.sessionId,
@@ -749,6 +783,7 @@ export class ChatService {
       preProcess: assembled.preProcess,
       postProcess: assembled.postProcess,
       modelOverrides: this.buildModelOverrides(resolvedTurnModels),
+      generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
     };
 
     let turnOutput: TurnOutput;
@@ -963,19 +998,26 @@ export class ChatService {
       userSnapshotJson: args.session.userSnapshotJson,
     };
 
+    const resolvedTurnModels = await this.resolveTurnModelsForSession(args.sessionId, args.accountId);
+    const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+    const maxContextTokensOverride = normalizePositiveInt(args.request.generationParams?.maxContextTokens)
+      ?? normalizePositiveInt(narratorParams?.maxContextTokens);
+
     const assembled = await assemblePrompt(
       this.db,
       sessionInfo,
       args.history,
       args.userMessage,
       this.tokenCounter,
-      memorySummary
+      memorySummary,
+      { maxContextTokensOverride }
     );
 
     const generationParams: GenerationParams = {
       temperature: 0.7,
       maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
       stream: true,
+      ...this.stripMaxContextTokens(narratorParams),
       ...args.request.generationParams,
     };
 
@@ -985,7 +1027,6 @@ export class ChatService {
       args.userMessage,
       turnConfig
     );
-    const resolvedTurnModels = await this.resolveTurnModelsForSession(args.sessionId, args.accountId);
 
     let turnOutput: TurnOutput;
     try {
@@ -999,6 +1040,7 @@ export class ChatService {
         preProcess: assembled.preProcess,
         postProcess: assembled.postProcess,
         modelOverrides: this.buildModelOverrides(resolvedTurnModels),
+        generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
       });
     } catch (error) {
       throw new ChatServiceError(
@@ -1157,6 +1199,45 @@ export class ChatService {
       overrides[slot] = resolved.model;
     }
     return overrides;
+  }
+
+  private buildGenerationParamsOverrides(
+    models: ResolvedTurnModels,
+  ): Partial<Record<InstanceSlot, GenerationParams>> | undefined {
+    const overrides: Partial<Record<InstanceSlot, GenerationParams>> = {};
+
+    (Object.entries(models) as [InstanceSlot, ResolvedTurnModel][]).forEach(([slot, resolved]) => {
+      if (slot === "narrator") {
+        return;
+      }
+
+      const params = this.stripMaxContextTokens(resolved.generationParams);
+      if (!params || Object.keys(params).length === 0) {
+        return;
+      }
+
+      overrides[slot] = params;
+    });
+
+    return Object.keys(overrides).length > 0 ? overrides : undefined;
+  }
+
+  private getSlotGenerationParams(
+    models: ResolvedTurnModels,
+    slot: InstanceSlot,
+  ): Partial<GenerationParams> | undefined {
+    return models[slot]?.generationParams;
+  }
+
+  private stripMaxContextTokens(
+    params?: Partial<GenerationParams>,
+  ): Partial<GenerationParams> | undefined {
+    if (!params) {
+      return undefined;
+    }
+
+    const { maxContextTokens: _, ...rest } = params;
+    return rest;
   }
 
   private resolveTurnConfig(config?: TurnConfig): TurnConfig | undefined {

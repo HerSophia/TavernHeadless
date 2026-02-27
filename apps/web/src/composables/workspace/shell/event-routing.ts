@@ -3,6 +3,7 @@ import type { WorkspaceInspectorTab } from "./inspector-view";
 type UseWorkspaceEventRoutingOptions = {
   closeAssetContextMenu: () => void;
   closeAssetImportDialog: () => void;
+  closeAssetBrowserDialog: () => void;
   closeDrawers: () => void;
   closeLlmManagerDialog: () => void;
   closeMessageDialogs: () => void;
@@ -48,6 +49,7 @@ export function useWorkspaceEventRouting(options: UseWorkspaceEventRoutingOption
       options.resetPresetManagerDialog();
       options.resetCharacterManagerDialog();
       options.closeLlmManagerDialog();
+      options.closeAssetBrowserDialog();
       options.resetWorldbookManagerDialog();
       return;
     }

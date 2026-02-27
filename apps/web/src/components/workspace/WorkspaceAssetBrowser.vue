@@ -18,10 +18,13 @@ import type { WorkspaceAsset, WorkspaceAssetKind } from "../../stores/workspace"
 
 type Translator = (key: string, vars?: Record<string, number | string>) => string;
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   assets: WorkspaceAsset[];
   t: Translator;
-}>();
+  variant?: "sidebar" | "dialog";
+}>(), {
+  variant: "sidebar"
+});
 
 const emit = defineEmits<{
   applyAsset: [assetId: string];
@@ -69,7 +72,7 @@ const {
 </script>
 
 <template>
-  <section class="asset-browser rounded border border-white/5 bg-white/[0.02] p-2" tabindex="0" @keydown="handleBrowserKeydown">
+  <section class="asset-browser rounded border border-white/5 bg-white/[0.02] p-2" :class="props.variant === 'dialog' ? 'asset-browser--dialog' : ''" tabindex="0" @keydown="handleBrowserKeydown">
     <div class="asset-browser-toolbar">
       <div class="flex items-center gap-2">
         <span class="font-mono text-[10px] uppercase tracking-widest text-zinc-500">{{ props.t("nav.assetBrowser") }}</span>

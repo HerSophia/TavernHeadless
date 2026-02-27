@@ -1,7 +1,6 @@
 import { and, count, desc, eq, ne, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import type { ProviderType } from "@tavern/core";
-import type { InstanceSlot } from "@tavern/core";
+import type { GenerationParams, InstanceSlot, ProviderType } from "@tavern/core";
 
 import type { AppDb } from "../db/client";
 import { llmProfileBindings, llmProfiles } from "../db/schema";
@@ -12,6 +11,19 @@ const GLOBAL_SCOPE_ID = "global";
 
 export type LlmProfileScope = "global" | "session";
 export type LlmProfileStatus = "active" | "disabled" | "deleted";
+
+export type LlmBindingGenerationParams = Partial<Pick<GenerationParams,
+  | "maxContextTokens"
+  | "maxOutputTokens"
+  | "temperature"
+  | "topP"
+  | "topK"
+  | "frequencyPenalty"
+  | "presencePenalty"
+  | "stream"
+  | "timeoutMs"
+  | "maxRetries"
+>>;
 
 export type LlmProfileListItem = {
   id: string;
@@ -35,6 +47,7 @@ export type LlmProfileResolved = {
   modelId: string;
   baseUrl: string | null;
   apiKey: string;
+  params: LlmBindingGenerationParams;
 };
 
 export type CreateLlmProfileInput = {
@@ -63,6 +76,7 @@ export class LlmProfileServiceError extends Error {
       | "profile_conflict"
       | "profile_in_use"
       | "profile_inactive"
+      | "invalid_params"
       | "secret_unavailable",
     message: string
   ) {
@@ -87,6 +101,7 @@ type BindingRow = {
   modelId: string;
   baseUrl: string | null;
   apiKeyEncrypted: string;
+  paramsJson: string | null;
 };
 
 export class LlmProfileService {
@@ -239,6 +254,7 @@ export class LlmProfileService {
     scopeId: string,
     profileId: string,
     instanceSlot: string = '*',
+    params?: LlmBindingGenerationParams | null,
     accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
   ): Promise<void> {
     const profile = await this.findProfileById(profileId, accountId);
@@ -252,6 +268,16 @@ export class LlmProfileService {
 
     const now = this.now();
     const bindingScopeId = scope === "global" ? GLOBAL_SCOPE_ID : scopeId;
+    const normalizedParams = normalizeBindingParams(params, true);
+    const paramsJson = normalizedParams ? JSON.stringify(normalizedParams) : null;
+
+    const conflictSet: Partial<typeof llmProfileBindings.$inferInsert> = {
+      profileId,
+      updatedAt: now,
+    };
+    if (params !== undefined) {
+      conflictSet.paramsJson = paramsJson;
+    }
 
     await this.db
       .insert(llmProfileBindings)
@@ -262,15 +288,13 @@ export class LlmProfileService {
         scopeId: bindingScopeId,
         instanceSlot,
         profileId,
+        paramsJson,
         createdAt: now,
         updatedAt: now,
       })
       .onConflictDoUpdate({
         target: [llmProfileBindings.accountId, llmProfileBindings.scope, llmProfileBindings.scopeId, llmProfileBindings.instanceSlot],
-        set: {
-          profileId,
-          updatedAt: now,
-        },
+        set: conflictSet,
       });
   }
 
@@ -364,6 +388,7 @@ export class LlmProfileService {
           modelId: found.modelId,
           baseUrl: found.baseUrl,
           apiKey: this.decrypt(found.apiKeyEncrypted),
+          params: normalizeBindingParams(parseBindingParamsJson(found.paramsJson), false) ?? {},
         };
       }
     }
@@ -390,6 +415,7 @@ export class LlmProfileService {
         modelId: llmProfiles.modelId,
         baseUrl: llmProfiles.baseUrl,
         apiKeyEncrypted: llmProfiles.apiKeyEncrypted,
+        paramsJson: llmProfileBindings.paramsJson,
       })
       .from(llmProfileBindings)
       .innerJoin(llmProfiles, eq(llmProfileBindings.profileId, llmProfiles.id))
@@ -448,6 +474,99 @@ export class LlmProfileService {
 
     return decryptSecret(value, this.masterKey);
   }
+}
+
+function parseBindingParamsJson(value: string | null): unknown {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeBindingParams(input: unknown, strict: boolean): LlmBindingGenerationParams | undefined {
+  if (input === null || input === undefined) {
+    return undefined;
+  }
+
+  if (typeof input !== "object" || Array.isArray(input)) {
+    if (strict) {
+      throw new LlmProfileServiceError("invalid_params", "params must be an object");
+    }
+    return undefined;
+  }
+
+  const raw = input as Record<string, unknown>;
+  const normalized: LlmBindingGenerationParams = {};
+
+  const readNumber = (
+    key: string,
+    options: { int?: boolean; min?: number; max?: number } = {}
+  ): number | undefined => {
+    const value = raw[key];
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      if (strict) throw new LlmProfileServiceError("invalid_params", `params.${key} must be a number`);
+      return undefined;
+    }
+    if (options.int && !Number.isInteger(value)) {
+      if (strict) throw new LlmProfileServiceError("invalid_params", `params.${key} must be an integer`);
+      return undefined;
+    }
+    if (options.min !== undefined && value < options.min) {
+      if (strict) throw new LlmProfileServiceError("invalid_params", `params.${key} must be >= ${options.min}`);
+      return undefined;
+    }
+    if (options.max !== undefined && value > options.max) {
+      if (strict) throw new LlmProfileServiceError("invalid_params", `params.${key} must be <= ${options.max}`);
+      return undefined;
+    }
+    return options.int ? Math.trunc(value) : value;
+  };
+
+  const maxContextTokens = readNumber("maxContextTokens", { int: true, min: 1 });
+  if (maxContextTokens !== undefined) normalized.maxContextTokens = maxContextTokens;
+
+  const maxOutputTokens = readNumber("maxOutputTokens", { int: true, min: 1 });
+  if (maxOutputTokens !== undefined) normalized.maxOutputTokens = maxOutputTokens;
+
+  const temperature = readNumber("temperature", { min: 0, max: 2 });
+  if (temperature !== undefined) normalized.temperature = temperature;
+
+  const topP = readNumber("topP", { min: 0, max: 1 });
+  if (topP !== undefined) normalized.topP = topP;
+
+  const topK = readNumber("topK", { int: true, min: 0 });
+  if (topK !== undefined) normalized.topK = topK;
+
+  const frequencyPenalty = readNumber("frequencyPenalty", { min: -2, max: 2 });
+  if (frequencyPenalty !== undefined) normalized.frequencyPenalty = frequencyPenalty;
+
+  const presencePenalty = readNumber("presencePenalty", { min: -2, max: 2 });
+  if (presencePenalty !== undefined) normalized.presencePenalty = presencePenalty;
+
+  const timeoutMs = readNumber("timeoutMs", { int: true, min: 1 });
+  if (timeoutMs !== undefined) normalized.timeoutMs = timeoutMs;
+
+  const maxRetries = readNumber("maxRetries", { int: true, min: 0, max: 10 });
+  if (maxRetries !== undefined) normalized.maxRetries = maxRetries;
+
+  const stream = raw.stream;
+  if (stream !== undefined && stream !== null) {
+    if (typeof stream !== "boolean") {
+      if (strict) throw new LlmProfileServiceError("invalid_params", "params.stream must be boolean");
+    } else {
+      normalized.stream = stream;
+    }
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 function requireProfile(profile: LlmProfileListItem | null, profileId: string): LlmProfileListItem {

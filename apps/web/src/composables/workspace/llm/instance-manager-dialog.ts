@@ -6,14 +6,17 @@ import {
   deleteLlmProfile,
   discoverLlmModels,
   fetchLlmProfiles,
+  fetchPresetAssetDetail,
+  fetchPresetAssets,
   fetchLlmRuntime,
   testLlmModel,
   updateLlmProfile,
   type WorkspaceLlmDiscoveredModel,
+  type WorkspaceLlmGenerationParams,
   type WorkspaceLlmInstanceSlot,
   type WorkspaceLlmProfile,
   type WorkspaceLlmProvider,
-  type WorkspaceLlmRuntimeSlot
+  type WorkspaceLlmRuntimeSlot,
 } from "../../../lib/workspace-api";
 import type { EventTone } from "../../../stores/workspace-ui";
 
@@ -40,6 +43,11 @@ type LlmProfileDraft = {
   status: "active" | "disabled";
 };
 
+type WorkspacePresetSummary = {
+  id: string;
+  name: string;
+};
+
 export const workspaceLlmInstanceSlots: WorkspaceLlmInstanceSlot[] = ["narrator", "director", "verifier", "memory", "*"];
 
 export const workspaceLlmInstanceSlotLabelKeyMap: Record<WorkspaceLlmInstanceSlot, string> = {
@@ -57,6 +65,16 @@ const runtimeSourceLabelKeyMap: Record<WorkspaceLlmRuntimeSlot["source"], string
 };
 
 function createSlotProfileSelection(): Record<WorkspaceLlmInstanceSlot, string> {
+  return {
+    "*": "",
+    narrator: "",
+    director: "",
+    verifier: "",
+    memory: ""
+  };
+}
+
+function createSlotPresetSelection(): Record<WorkspaceLlmInstanceSlot, string> {
   return {
     "*": "",
     narrator: "",
@@ -94,9 +112,129 @@ function createProfileDraft(mode: "create" | "edit", profile?: WorkspaceLlmProfi
   };
 }
 
+const workspaceLlmGenerationParamKeys: Array<keyof WorkspaceLlmGenerationParams> = [
+  "max_context_tokens",
+  "max_output_tokens",
+  "temperature",
+  "top_p",
+  "top_k",
+  "frequency_penalty",
+  "presence_penalty",
+  "stream",
+  "timeout_ms",
+  "max_retries"
+];
+
+function createSlotParamsDraft(params?: WorkspaceLlmGenerationParams | null): WorkspaceLlmGenerationParams {
+  return Object.fromEntries(
+    workspaceLlmGenerationParamKeys
+      .map((key) => [key, params?.[key]] as const)
+      .filter(([, value]) => value !== undefined)
+  ) as WorkspaceLlmGenerationParams;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function createPresetParamCandidates(data: Record<string, unknown>): Record<string, unknown>[] {
+  const candidates: Record<string, unknown>[] = [];
+
+  const append = (value: unknown): void => {
+    const record = asRecord(value);
+    if (!record) {
+      return;
+    }
+
+    if (!candidates.includes(record)) {
+      candidates.push(record);
+    }
+  };
+
+  append(data);
+  append(data.data);
+  append(data.top_level);
+
+  const editor = asRecord(data.editor);
+  if (editor) {
+    append(editor);
+    append(editor.top_level);
+  }
+
+  return candidates;
+}
+
+function parseNumericPresetParam(records: Record<string, unknown>[], aliases: string[]): number | undefined {
+  for (const record of records) {
+    for (const key of aliases) {
+      const value = record[key];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+
+      if (typeof value === "string" && value.trim().length > 0 && Number.isFinite(Number(value))) {
+        return Number(value);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function parseBooleanPresetParam(records: Record<string, unknown>[], aliases: string[]): boolean | undefined {
+  for (const record of records) {
+    for (const key of aliases) {
+      const value = record[key];
+      if (typeof value === "boolean") {
+        return value;
+      }
+
+      if (typeof value === "number") {
+        if (value === 1) {
+          return true;
+        }
+        if (value === 0) {
+          return false;
+        }
+      }
+
+      if (typeof value === "string") {
+        if (value === "true" || value === "1") return true;
+        if (value === "false" || value === "0") return false;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function extractPresetGenerationParams(data: Record<string, unknown>): WorkspaceLlmGenerationParams {
+  const candidates = createPresetParamCandidates(data);
+
+  const mapped: WorkspaceLlmGenerationParams = {
+    frequency_penalty: parseNumericPresetParam(candidates, ["frequency_penalty", "frequencyPenalty"]),
+    max_context_tokens: parseNumericPresetParam(candidates, ["openai_max_context", "maxContext", "max_context_tokens"]),
+    max_output_tokens: parseNumericPresetParam(candidates, ["openai_max_tokens", "maxTokens", "max_output_tokens"]),
+    presence_penalty: parseNumericPresetParam(candidates, ["presence_penalty", "presencePenalty"]),
+    stream: parseBooleanPresetParam(candidates, ["stream_openai", "stream"]),
+    temperature: parseNumericPresetParam(candidates, ["temperature"]),
+    top_k: parseNumericPresetParam(candidates, ["top_k", "topK"]),
+    top_p: parseNumericPresetParam(candidates, ["top_p", "topP"])
+  };
+
+  return createSlotParamsDraft(mapped);
+}
+
 export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDialogOptions) {
   const llmManagerDialog = reactive({
     applyingSlot: null as WorkspaceLlmInstanceSlot | null,
+    applyingPresetParams: false,
+    drawerOpen: false,
+    drawerSlot: null as WorkspaceLlmInstanceSlot | null,
     errorMessage: "",
     loading: false,
     open: false,
@@ -109,8 +247,11 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
     profileSaving: false,
     profileTesting: false,
     profiles: [] as WorkspaceLlmProfile[],
+    presetAssets: [] as WorkspacePresetSummary[],
     runtimeSlots: [] as WorkspaceLlmRuntimeSlot[],
+    slotParamsDraft: createSlotParamsDraft(),
     scope: "session" as "global" | "session",
+    selectedPresetBySlot: createSlotPresetSelection(),
     selectedProfileBySlot: createSlotProfileSelection()
   });
 
@@ -185,6 +326,7 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
       llmManagerDialog.errorMessage = "";
       llmManagerDialog.profileTesting = false;
       resetProfileModelOptions();
+      closeSlotDrawer();
     }
 
     llmManagerDialog.page = page;
@@ -192,6 +334,152 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
 
   function setLlmManagerProfileSelection(payload: { profileId: string; slot: WorkspaceLlmInstanceSlot }): void {
     llmManagerDialog.selectedProfileBySlot[payload.slot] = payload.profileId;
+  }
+
+  function setLlmManagerPresetSelection(payload: { presetId: string; slot: WorkspaceLlmInstanceSlot }): void {
+    llmManagerDialog.selectedPresetBySlot[payload.slot] = payload.presetId;
+  }
+
+  function openSlotDrawer(slot: WorkspaceLlmInstanceSlot): void {
+    const runtime = runtimeBySlot.value[slot] ?? null;
+
+    if (runtime?.profileId) {
+      llmManagerDialog.selectedProfileBySlot[slot] = runtime.profileId;
+    }
+
+    if (runtime?.scope) {
+      llmManagerDialog.scope = resolveScope(runtime.scope);
+    }
+
+    llmManagerDialog.drawerSlot = slot;
+    llmManagerDialog.drawerOpen = true;
+    llmManagerDialog.slotParamsDraft = createSlotParamsDraft(runtime?.params);
+    llmManagerDialog.errorMessage = "";
+  }
+
+  function closeSlotDrawer(): void {
+    llmManagerDialog.drawerOpen = false;
+    llmManagerDialog.drawerSlot = null;
+    llmManagerDialog.slotParamsDraft = createSlotParamsDraft();
+  }
+
+  function patchSlotParams(patch: Partial<WorkspaceLlmGenerationParams>): void {
+    if (!llmManagerDialog.drawerOpen || !llmManagerDialog.drawerSlot) {
+      return;
+    }
+
+    llmManagerDialog.slotParamsDraft = createSlotParamsDraft({
+      ...llmManagerDialog.slotParamsDraft,
+      ...patch
+    });
+  }
+
+  function resetSlotParams(): void {
+    if (!llmManagerDialog.drawerSlot) {
+      return;
+    }
+
+    const runtime = runtimeBySlot.value[llmManagerDialog.drawerSlot] ?? null;
+    llmManagerDialog.slotParamsDraft = createSlotParamsDraft(runtime?.params);
+    llmManagerDialog.errorMessage = "";
+  }
+
+  function validateSlotParamsDraft(params: WorkspaceLlmGenerationParams): string | null {
+    if (
+      params.temperature !== undefined &&
+      (!Number.isFinite(params.temperature) || params.temperature < 0 || params.temperature > 2)
+    ) {
+      return options.t("dialogs.llmManagerParamValidationTemperature");
+    }
+
+    if (params.max_output_tokens !== undefined && (!Number.isInteger(params.max_output_tokens) || params.max_output_tokens < 1)) {
+      return options.t("dialogs.llmManagerParamValidationMaxOutputTokens");
+    }
+
+    if (params.max_context_tokens !== undefined && (!Number.isInteger(params.max_context_tokens) || params.max_context_tokens < 1)) {
+      return options.t("dialogs.llmManagerParamValidationMaxContextTokens");
+    }
+
+    if (params.top_p !== undefined && (!Number.isFinite(params.top_p) || params.top_p < 0 || params.top_p > 1)) {
+      return options.t("dialogs.llmManagerParamValidationTopP");
+    }
+
+    if (params.top_k !== undefined && (!Number.isInteger(params.top_k) || params.top_k < 0)) {
+      return options.t("dialogs.llmManagerParamValidationTopK");
+    }
+
+    if (
+      params.frequency_penalty !== undefined &&
+      (!Number.isFinite(params.frequency_penalty) || params.frequency_penalty < -2 || params.frequency_penalty > 2)
+    ) {
+      return options.t("dialogs.llmManagerParamValidationFrequencyPenalty");
+    }
+
+    if (
+      params.presence_penalty !== undefined &&
+      (!Number.isFinite(params.presence_penalty) || params.presence_penalty < -2 || params.presence_penalty > 2)
+    ) {
+      return options.t("dialogs.llmManagerParamValidationPresencePenalty");
+    }
+
+    if (params.timeout_ms !== undefined && (!Number.isInteger(params.timeout_ms) || params.timeout_ms < 1)) {
+      return options.t("dialogs.llmManagerParamValidationTimeoutMs");
+    }
+
+    if (params.max_retries !== undefined && (!Number.isInteger(params.max_retries) || params.max_retries < 0 || params.max_retries > 10)) {
+      return options.t("dialogs.llmManagerParamValidationMaxRetries");
+    }
+
+    if (params.stream !== undefined && typeof params.stream !== "boolean") {
+      return options.t("dialogs.llmManagerParamValidationStream");
+    }
+
+    return null;
+  }
+
+  async function applySlotPresetParams(slot?: WorkspaceLlmInstanceSlot): Promise<void> {
+    const targetSlot = slot ?? llmManagerDialog.drawerSlot;
+    if (!targetSlot) {
+      return;
+    }
+
+    const presetId = llmManagerDialog.selectedPresetBySlot[targetSlot];
+    if (!presetId) {
+      llmManagerDialog.errorMessage = options.t("dialogs.llmManagerPresetSelectFirst");
+      return;
+    }
+
+    const preset = llmManagerDialog.presetAssets.find((item) => item.id === presetId) ?? null;
+    llmManagerDialog.applyingPresetParams = true;
+    llmManagerDialog.errorMessage = "";
+
+    try {
+      const detail = await fetchPresetAssetDetail(presetId, options.currentAccount.value);
+      const mappedParams = extractPresetGenerationParams(detail.data);
+
+      if (Object.keys(mappedParams).length === 0) {
+        throw new Error(options.t("dialogs.llmManagerPresetNoSupportedParams"));
+      }
+
+      if (llmManagerDialog.drawerOpen && llmManagerDialog.drawerSlot === targetSlot) {
+        llmManagerDialog.slotParamsDraft = createSlotParamsDraft({
+          ...llmManagerDialog.slotParamsDraft,
+          ...mappedParams
+        });
+      }
+
+      options.addEvent("events.llmSlotPresetParamsApplied", "success", {
+        preset: preset?.name ?? presetId,
+        slot: options.t(workspaceLlmInstanceSlotLabelKeyMap[targetSlot])
+      });
+    } catch (error) {
+      llmManagerDialog.errorMessage = error instanceof Error ? error.message : options.t("dialogs.llmManagerPresetApplyFailed");
+      options.addEvent("events.llmSlotPresetParamsApplyFailed", "warn", {
+        slot: options.t(workspaceLlmInstanceSlotLabelKeyMap[targetSlot])
+      });
+    } finally {
+      llmManagerDialog.applyingPresetParams = false;
+    }
   }
 
   function resetProfileModelOptions(): void {
@@ -270,14 +558,25 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
     llmManagerDialog.errorMessage = "";
 
     try {
-      const [profiles, runtimeSlots] = await Promise.all([
+      const [profiles, runtimeSlots, presetAssets] = await Promise.all([
         fetchLlmProfiles(options.currentAccount.value),
-        fetchLlmRuntime(options.activeSessionId.value ?? undefined, options.currentAccount.value)
+        fetchLlmRuntime(options.activeSessionId.value ?? undefined, options.currentAccount.value),
+        fetchPresetAssets(options.currentAccount.value)
       ]);
 
       llmManagerDialog.profiles = profiles;
+      llmManagerDialog.presetAssets = presetAssets.map((asset) => ({ id: asset.id, name: asset.name }));
       llmManagerDialog.runtimeSlots = runtimeSlots;
       primeProfileSelection(runtimeSlots);
+
+      if (llmManagerDialog.drawerOpen && llmManagerDialog.drawerSlot) {
+        const drawerRuntime = runtimeSlots.find((item) => item.slot === llmManagerDialog.drawerSlot) ?? null;
+        if (drawerRuntime?.scope) {
+          llmManagerDialog.scope = resolveScope(drawerRuntime.scope);
+        }
+
+        llmManagerDialog.slotParamsDraft = createSlotParamsDraft(drawerRuntime?.params);
+      }
 
       if (llmManagerDialog.profileEditorOpen && llmManagerDialog.profileDraft.mode === "edit") {
         const editing = profiles.find((item) => item.id === llmManagerDialog.profileDraft.id);
@@ -292,6 +591,7 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
       }
     } catch (error) {
       llmManagerDialog.profiles = [];
+      llmManagerDialog.presetAssets = [];
       llmManagerDialog.runtimeSlots = [];
       llmManagerDialog.errorMessage = error instanceof Error ? error.message : options.t("dialogs.llmManagerLoadFailed");
       options.addEvent("events.llmRuntimeSyncFailed", "warn");
@@ -306,8 +606,11 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
     llmManagerDialog.profileDraft = createProfileDraft("create");
     llmManagerDialog.profileEditorOpen = false;
     llmManagerDialog.profileModelsLoading = false;
+    llmManagerDialog.selectedPresetBySlot = createSlotPresetSelection();
+    llmManagerDialog.applyingPresetParams = false;
     llmManagerDialog.profileTesting = false;
     resetProfileModelOptions();
+    closeSlotDrawer();
   }
 
   async function openLlmManagerDialog(page: LlmManagerPage = "instances"): Promise<void> {
@@ -316,23 +619,33 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
     llmManagerDialog.scope = resolveScope("session");
     llmManagerDialog.profileDraft = createProfileDraft("create");
     llmManagerDialog.profileEditorOpen = false;
+    llmManagerDialog.selectedPresetBySlot = createSlotPresetSelection();
+    llmManagerDialog.applyingPresetParams = false;
     llmManagerDialog.profileTesting = false;
+    closeSlotDrawer();
     await refreshLlmManagerDialog();
   }
 
-  async function applyLlmSlotBinding(slot: WorkspaceLlmInstanceSlot): Promise<void> {
+  async function applyLlmSlotBinding(
+    slot: WorkspaceLlmInstanceSlot,
+    params?: WorkspaceLlmGenerationParams
+  ): Promise<boolean> {
     const profileId = llmManagerDialog.selectedProfileBySlot[slot];
     if (!profileId) {
       llmManagerDialog.errorMessage = options.t("dialogs.llmManagerSelectProfileFirst");
-      return;
+      return false;
     }
 
     const scope = resolveScope(llmManagerDialog.scope);
     const sessionId = scope === "session" ? options.activeSessionId.value ?? undefined : undefined;
     if (scope === "session" && !sessionId) {
       llmManagerDialog.errorMessage = options.t("dialogs.llmManagerSessionRequired");
-      return;
+      return false;
     }
+
+    const normalizedParams = params === undefined ? undefined : createSlotParamsDraft(params);
+    const activateParams =
+      normalizedParams === undefined ? undefined : Object.keys(normalizedParams).length > 0 ? normalizedParams : null;
 
     llmManagerDialog.applyingSlot = slot;
     llmManagerDialog.errorMessage = "";
@@ -342,6 +655,7 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
         profileId,
         {
           instanceSlot: slot,
+          params: activateParams,
           scope,
           sessionId
         },
@@ -353,20 +667,51 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
       }
 
       const profileName = llmManagerDialog.profiles.find((item) => item.id === profileId)?.presetName ?? profileId;
+
       options.addEvent("events.llmBindingUpdated", "success", {
         profile: profileName,
         slot: options.t(workspaceLlmInstanceSlotLabelKeyMap[slot])
       });
 
       await refreshLlmManagerDialog();
+      return true;
     } catch (error) {
       llmManagerDialog.errorMessage = error instanceof Error ? error.message : options.t("dialogs.llmManagerApplyFailed");
       options.addEvent("events.llmBindingFailed", "warn", {
         slot: options.t(workspaceLlmInstanceSlotLabelKeyMap[slot])
       });
+      return false;
     } finally {
       llmManagerDialog.applyingSlot = null;
     }
+  }
+
+  async function submitSlotDrawer(): Promise<void> {
+    if (!llmManagerDialog.drawerOpen || !llmManagerDialog.drawerSlot) {
+      return;
+    }
+
+    const slot = llmManagerDialog.drawerSlot;
+    const validationError = validateSlotParamsDraft(llmManagerDialog.slotParamsDraft);
+    if (validationError) {
+      llmManagerDialog.errorMessage = validationError;
+      options.addEvent("events.llmSlotParamsFailed", "warn", {
+        slot: options.t(workspaceLlmInstanceSlotLabelKeyMap[slot])
+      });
+      return;
+    }
+
+    const applied = await applyLlmSlotBinding(slot, llmManagerDialog.slotParamsDraft);
+    if (applied) {
+      options.addEvent("events.llmSlotParamsUpdated", "success", {
+        slot: options.t(workspaceLlmInstanceSlotLabelKeyMap[slot])
+      });
+      return;
+    }
+
+    options.addEvent("events.llmSlotParamsFailed", "warn", {
+      slot: options.t(workspaceLlmInstanceSlotLabelKeyMap[slot])
+    });
   }
 
   async function fetchLlmProfileModels(): Promise<void> {
@@ -555,25 +900,32 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
   return {
     activeModelDetail,
     activeModelName,
+    applySlotPresetParams,
     applyLlmSlotBinding,
     beginCreateLlmProfileDraft,
     beginEditLlmProfileDraft,
     cancelLlmProfileDraft,
+    closeSlotDrawer,
     closeLlmManagerDialog,
     fetchLlmProfileModels,
     hasActiveSession,
     llmManagerDialog,
     openLlmManagerDialog,
+    openSlotDrawer,
     patchLlmProfileDraft,
+    patchSlotParams,
     profileDraftTitle,
     refreshLlmManagerDialog,
     refreshLlmRuntime,
+    resetSlotParams,
     removeLlmProfile,
     runtimeBySlot,
     setLlmManagerPage,
+    setLlmManagerPresetSelection,
     setLlmManagerProfileSelection,
     setLlmManagerScope,
     submitLlmProfileDraft,
+    submitSlotDrawer,
     testLlmProfileModel
   };
 }

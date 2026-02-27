@@ -7,7 +7,7 @@ import { registerCrudRoutes } from "./routes";
 import { registerChatRoutes } from "./routes/chat";
 import { registerWsPlugin, type WsBridge } from "./ws";
 import { DrizzleFloorRepository, DrizzleMemoryRepository } from "./adapters";
-import { ChatService, ChatServiceError } from "./services/chat-service";
+import { ChatService, ChatServiceError, type ResolvedTurnModels } from "./services/chat-service";
 import {
   createOrchestrationContext,
   type OrchestrationConfig,
@@ -216,7 +216,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         resolveTurnModels: async (sessionId, accountId = DEFAULT_ADMIN_ACCOUNT_ID) => {
           try {
             const profileMap = await llmProfileService.resolveActiveProfiles(sessionId, accountId);
-            const result: Record<string, { model: { providerId: string; modelId: string }; source: "session_profile" | "global_profile"; profileId: string }> = {};
+            const result: ResolvedTurnModels = {};
 
             for (const [slot, resolved] of Object.entries(profileMap)) {
               if (!resolved) continue;
@@ -229,15 +229,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
                 baseURL: resolved.baseUrl ?? undefined,
               });
 
-              // Map slot key: '*' wildcard maps to 'narrator' (backward compat)
-              const mappedSlot = slot === '*' ? 'narrator' : slot;
-              // Don't override a specific slot binding with the wildcard
-              if (result[mappedSlot]) continue;
+              // resolveActiveProfiles 已经对每个具体槽位完成 fallback 解析，忽略通配位
+              if (slot === "*") continue;
+              const concreteSlot = slot as keyof ResolvedTurnModels;
 
-              result[mappedSlot] = {
+              result[concreteSlot] = {
                 model: { providerId, modelId: resolved.modelId },
                 source: resolved.source === "session" ? "session_profile" : "global_profile",
                 profileId: resolved.profileId,
+                generationParams: resolved.params,
               };
             }
 

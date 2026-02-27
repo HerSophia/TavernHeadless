@@ -1,10 +1,9 @@
 import type { FloorState } from '@tavern/shared';
 import type { CoreEventBus } from '../events/index.js';
 import type { FloorStateMachine } from '../floor/floor-state-machine.js';
-import type { InstanceSlot, ModelConfig } from '../llm/types.js';
+import type { GenerationParams, InstanceSlot, ModelConfig, TokenUsage } from '../llm/types.js';
 import type { GenerationPipeline } from '../generation/generation-pipeline.js';
 import type { GenerationOutput } from '../generation/types.js';
-import type { TokenUsage } from '../llm/types.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { MemoryConsolidator } from '../memory/memory-consolidator.js';
 import type { ConsolidationResult } from '../memory/memory-consolidator.js';
@@ -99,6 +98,23 @@ function resolveSlotModel(
   // 向后兼容：旧 model 字段视为 narrator 的覆盖
   if (slot === 'narrator') return input.model;
   return undefined;
+}
+
+/**
+ * 解析指定槽位的 GenerationParams 覆盖。
+ * - narrator: 在全局 generationParams 的基础上应用 narrator 覆盖
+ * - 其他槽位: 仅使用对应槽位覆盖（无则 undefined）
+ */
+function resolveSlotGenerationParams(
+  input: TurnInput,
+  slot: InstanceSlot,
+): GenerationParams | undefined {
+  const fromOverrides = input.generationParamsOverrides?.[slot];
+  if (slot === 'narrator') {
+    if (!fromOverrides) return input.generationParams;
+    return { ...input.generationParams, ...fromOverrides };
+  }
+  return fromOverrides;
 }
 
 // ── TurnOrchestrator ──────────────────────────────────
@@ -223,7 +239,7 @@ export class TurnOrchestrator {
     try {
       return await this.deps.director.direct(
         input.directorInput!,
-        undefined,
+        resolveSlotGenerationParams(input, 'director'),
         resolveSlotModel(input, 'director'),
       );
     } catch (error) {
@@ -265,7 +281,7 @@ export class TurnOrchestrator {
       const result = await this.deps.generationPipeline.run(
         {
           messages: input.messages,
-          params: input.generationParams,
+          params: resolveSlotGenerationParams(input, 'narrator') ?? input.generationParams,
           preProcess: input.preProcess,
           postProcess: input.postProcess,
           model: resolveSlotModel(input, 'narrator'),
@@ -322,7 +338,7 @@ export class TurnOrchestrator {
           ...input.verifierInput!,
           generatedText,
         },
-        undefined,
+        resolveSlotGenerationParams(input, 'verifier'),
         resolveSlotModel(input, 'verifier'),
       );
     } catch (error) {
@@ -408,6 +424,7 @@ export class TurnOrchestrator {
         scope: 'chat',
         scopeId: input.sessionId,
         sourceFloorId: input.floorId,
+        params: resolveSlotGenerationParams(input, 'memory'),
         model: resolveSlotModel(input, 'memory'),
       });
     } catch (error) {

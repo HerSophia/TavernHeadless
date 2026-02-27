@@ -64,6 +64,13 @@
       "when": 1760800000000,
       "tag": "0008_account_user_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1760900000000,
+      "tag": "0009_llm_binding_params",
+      "breakpoints": true
     }
   ]
 }
