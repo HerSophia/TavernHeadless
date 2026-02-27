@@ -7,7 +7,46 @@
 
 \- 里程碑：`M9-M12 - 后端高优先级能力`
 \- 状态：`进行中（Phase 1-5 已完成）`
-\- 最后更新：`2026-02-15`
+\- 最后更新：`2026-02-27`
+
+## M21 增量：记忆系统加固与维护任务（本次）
+
+### 1) 已完成（本次）
+
+- [x] Core：`MemoryStore.applyConsolidation()` 新增自动冲突消解（同 key 的 fact 自动 deprecate 旧记录 + updates 边）
+- [x] Core：`MemoryInjectionOptions` 支持可选 `decay`（半衰期衰减排序；可按 `createdAt/updatedAt` 计算年龄）
+- [x] API：`ChatService.retrieveMemorySummary()` 透传 `decay`；新增 `MEMORY_INJECTION_DECAY_*` 环境变量解析
+- [x] API：新增 `MemoryMaintenanceService` + 可选定时任务（deprecate summary/open_loop + purge deprecated）
+- [x] API：新增记忆维护 CLI：`pnpm --filter @tavern/api memory:maintenance -- ...`（支持 dry-run / batch / policy flags）
+- [x] DB：新增索引 migration `0010_memory_indexes.sql`（memory_item: status/updated_at + scope_id/status/type/importance）
+- [x] 文档：`.env.example` / `README.md` 补充 decay 与 maintenance 配置项
+
+### 2) 测试与验证（本次）
+
+- [x] `pnpm --filter @tavern/core test` 通过（新增 memory-store 回归）
+- [x] `pnpm --filter @tavern/core build` 通过（避免 api 引用到 stale 类型产物）
+- [x] `pnpm --filter @tavern/api typecheck` 通过
+- [x] `pnpm --filter @tavern/api test` 通过（新增 memory-maintenance 测试）
+- [x] `pnpm --filter @tavern/api memory:maintenance -- --db :memory: --dry-run` 通过
+
+### 3) 本次修改文件
+
+- `packages/core/src/memory/memory-store.ts`
+- `packages/core/src/memory/types.ts`
+- `packages/core/src/memory/__tests__/memory-store.test.ts`
+- `apps/api/src/services/chat-service.ts`
+- `apps/api/src/services/memory-maintenance-service.ts`
+- `apps/api/scripts/memory-maintenance.ts`
+- `apps/api/src/app.ts`
+- `apps/api/src/config.ts`
+- `apps/api/src/index.ts`
+- `apps/api/drizzle/0010_memory_indexes.sql`
+- `apps/api/drizzle/meta/_journal.json`
+- `apps/api/test/memory-maintenance.test.ts`
+- `apps/api/package.json`
+- `.env.example`
+- `README.md`
+- `apps/api/PROGRESS.md`
 
 ## M20 增量：LLM 模型列表发现（本次）
 
@@ -21,8 +60,9 @@
 
 ### 2) 测试与验证（本次）
 
-- [ ] `pnpm --filter @tavern/api typecheck`
-- [ ] `pnpm --filter @tavern/api test -- test/llm-profiles.integration.test.ts test/openapi.integration.test.ts`
+- [x] `pnpm --filter @tavern/api typecheck` 通过
+- [x] `pnpm --filter @tavern/api test -- test/llm-profiles.integration.test.ts` 通过
+- [x] `pnpm --filter @tavern/api test -- test/openapi.integration.test.ts` 通过
 
 ### 3) 本次修改文件
 

@@ -1,4 +1,4 @@
-import type { MemoryScope, MemoryType } from '@tavern/shared';
+import type { MemoryRelation, MemoryScope, MemoryType } from '@tavern/shared';
 import type { CoreEventBus } from '../events/index.js';
 import type { TokenCounter } from '../prompt/types.js';
 import type { MemoryRepository } from '../ports/memory-repository.js';
@@ -30,6 +30,37 @@ function formatMemoryItems(items: MemoryItem[]): string {
   });
 
   return `[Memory]\n${lines.join('\n')}`;
+}
+
+function normalizeFactKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function parseFactKeyFromContent(content: string): string | undefined {
+  const match = /^\s*([^:：]+?)\s*[:：]\s*/.exec(content);
+  if (!match) return undefined;
+
+  const rawKey = match[1];
+  if (!rawKey) return undefined;
+
+  const key = normalizeFactKey(rawKey);
+  return key.length > 0 ? key : undefined;
+}
+
+function compareFactItemsForConflictResolution(
+  a: MemoryItem,
+  b: MemoryItem,
+  preferredIds: Set<string>,
+): number {
+  const aPreferred = preferredIds.has(a.id);
+  const bPreferred = preferredIds.has(b.id);
+  if (aPreferred !== bPreferred) return aPreferred ? -1 : 1;
+
+  if (a.updatedAt !== b.updatedAt) return b.updatedAt - a.updatedAt;
+  if (a.importance !== b.importance) return b.importance - a.importance;
+  if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
+
+  return b.id.localeCompare(a.id);
 }
 
 const BALANCED_DEFAULT_ORDER: MemoryType[] = ['open_loop', 'fact', 'summary'];
@@ -205,8 +236,13 @@ export class MemoryStore {
     if (options.scope) query.scope = options.scope;
     if (options.minImportance !== undefined) query.minImportance = options.minImportance;
 
-    // 查询足够多的候选项（给 token 裁剪留余量）
-    query.limit = options.maxItems ?? 50;
+    const baseLimit = options.maxItems ?? 50;
+    const decayEnabled = !!options.decay && options.decay.halfLifeMs > 0;
+
+    // 查询足够多的候选项（给 token 裁剪 / decay 重排留余量）
+    query.limit = decayEnabled
+      ? Math.min(500, Math.max(baseLimit * 5, 100))
+      : baseLimit;
 
     let candidates = await this.repo.findMany(query);
 
@@ -215,6 +251,32 @@ export class MemoryStore {
     if (includeTypes && includeTypes.length > 0) {
       const typeSet = new Set(options.includeTypes);
       candidates = candidates.filter((item) => typeSet.has(item.type));
+    }
+
+    if (decayEnabled) {
+      const decay = options.decay!;
+      const now = options.now ?? Date.now();
+      const by = decay.by ?? 'updatedAt';
+      const halfLifeMs = decay.halfLifeMs;
+      const minFactor = Math.max(0, Math.min(1, decay.minFactor ?? 0.05));
+
+      const scored = candidates.map((item) => {
+        const ts = by === 'createdAt' ? item.createdAt : item.updatedAt;
+        const ageMs = Math.max(0, now - ts);
+        const rawFactor = Math.pow(0.5, ageMs / halfLifeMs);
+        const factor = Math.max(minFactor, rawFactor);
+        const score = item.importance * factor;
+        return { item, score };
+      });
+
+      scored.sort((a, b) => {
+        if (a.score !== b.score) return b.score - a.score;
+        if (a.item.updatedAt !== b.item.updatedAt) return b.item.updatedAt - a.item.updatedAt;
+        if (a.item.importance !== b.item.importance) return b.item.importance - a.item.importance;
+        return b.item.id.localeCompare(a.item.id);
+      });
+
+      candidates = scored.map(({ item }) => item);
     }
 
     if (options.selectionMode === 'balanced') {
@@ -279,6 +341,19 @@ export class MemoryStore {
     let updatedCount = 0;
     let deprecatedCount = 0;
 
+    const touchedFactKeysByScope = new Map<MemoryScope, Set<string>>();
+    const touchedFactItemIds = new Set<string>();
+
+    const markTouchedFactKey = (factScope: MemoryScope, key: string | undefined) => {
+      if (!key) return;
+      const normalized = normalizeFactKey(key);
+      if (!normalized) return;
+
+      const set = touchedFactKeysByScope.get(factScope) ?? new Set<string>();
+      set.add(normalized);
+      touchedFactKeysByScope.set(factScope, set);
+    };
+
     // 1. 存储 turnSummary
     if (output.turnSummary?.trim()) {
       const item = await this.repo.create({
@@ -301,6 +376,7 @@ export class MemoryStore {
 
     // 2. 新增 facts
     for (const fact of output.factsAdd) {
+      markTouchedFactKey(fact.scope ?? scope, fact.key);
       const factContent = fact.key ? `${fact.key}: ${fact.value}` : fact.value;
       const item = await this.repo.create({
         scope: fact.scope ?? scope,
@@ -312,6 +388,8 @@ export class MemoryStore {
         sourceFloorId,
         status: 'active',
       });
+
+      touchedFactItemIds.add(item.id);
 
       await this.eventBus.emit('memory.created', {
         item,
@@ -335,6 +413,9 @@ export class MemoryStore {
 
       const updated = await this.repo.update(update.id, patch);
       if (updated) {
+        touchedFactItemIds.add(updated.id);
+        markTouchedFactKey(updated.scope, parseFactKeyFromContent(updated.content));
+
         await this.eventBus.emit('memory.updated', {
           item: updated,
           previousContent,
@@ -355,7 +436,67 @@ export class MemoryStore {
       }
     }
 
-    // 5. 广播整理完成事件
+    // 5. 自动冲突消解：同一 key 只保留最新/本轮触达的 active fact
+    for (const [factScope, touchedKeys] of touchedFactKeysByScope) {
+      if (touchedKeys.size === 0) continue;
+
+      const activeFacts = await this.repo.findMany({
+        scope: factScope,
+        scopeId,
+        type: 'fact',
+        status: 'active',
+        limit: 1000,
+        orderBy: 'updatedAt',
+        orderDir: 'desc',
+      });
+
+      const grouped = new Map<string, MemoryItem[]>();
+      for (const item of activeFacts) {
+        const key = parseFactKeyFromContent(item.content);
+        if (!key || !touchedKeys.has(key)) continue;
+
+        const bucket = grouped.get(key);
+        if (bucket) {
+          bucket.push(item);
+        } else {
+          grouped.set(key, [item]);
+        }
+      }
+
+      for (const [key, items] of grouped) {
+        if (items.length <= 1) continue;
+
+        const sorted = [...items].sort((a, b) =>
+          compareFactItemsForConflictResolution(a, b, touchedFactItemIds)
+        );
+
+        const winner = sorted[0]!;
+        for (const other of sorted.slice(1)) {
+          const deprecated = await this.repo.deprecate(other.id);
+          if (!deprecated) continue;
+
+          await this.eventBus.emit('memory.deprecated', {
+            item: deprecated,
+            reason: `conflict_resolution:${key}`,
+          });
+          deprecatedCount++;
+
+          // Best-effort：记录关系边（winner updates old）
+          try {
+            const relation: MemoryRelation = 'updates';
+            await this.repo.createEdge({
+              fromId: winner.id,
+              toId: deprecated.id,
+              relation,
+            });
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+
+    // 6. 广播整理完成事件
     await this.eventBus.emit('memory.consolidated', {
       floorId: sourceFloorId,
       created: createdCount,

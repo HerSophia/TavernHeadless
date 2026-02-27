@@ -1,6 +1,8 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 
+import type { MemoryInjectionOptions } from "@tavern/core";
+
 import { createDatabase } from "./db/client";
 import { sendError, zodIssues } from "./lib/http";
 import { registerCrudRoutes } from "./routes";
@@ -8,6 +10,10 @@ import { registerChatRoutes } from "./routes/chat";
 import { registerWsPlugin, type WsBridge } from "./ws";
 import { DrizzleFloorRepository, DrizzleMemoryRepository } from "./adapters";
 import { ChatService, ChatServiceError, type ResolvedTurnModels } from "./services/chat-service";
+import {
+  MemoryMaintenanceService,
+  type MemoryMaintenancePolicy,
+} from "./services/memory-maintenance-service";
 import {
   createOrchestrationContext,
   type OrchestrationConfig,
@@ -63,6 +69,25 @@ export type BuildAppOptions = {
   chatHistoryMaxFloors?: number;
   /** 是否启用记忆系统（摘要注入 + 持久化），默认 false */
   enableMemory?: boolean;
+  /**
+   * 可选：记忆注入衰减配置。
+   * 仅在 enableMemory=true 且 chat routes 启用时生效。
+   */
+  memoryInjectionDecay?: MemoryInjectionOptions["decay"];
+  /**
+   * 可选：记忆后台维护任务（deprecate / purge）。
+   * 仅在 enableMemory=true 时生效。
+   */
+  memoryMaintenance?: {
+    /** 运行间隔（ms） */
+    intervalMs: number;
+    /** 批处理大小（默认 500） */
+    batchSize?: number;
+    /** 清理策略（不设置则全部跳过） */
+    policy?: MemoryMaintenancePolicy;
+    /** 可选：仅统计，不执行写入/删除 */
+    dryRun?: boolean;
+  };
   /** 是否启用 SSE 流式聊天端点（/sessions/:id/respond/stream），默认 false */
   enableSseChat?: boolean;
   /** 是否启用 Prompt Dry-run 端点（/sessions/:id/respond/dry-run），默认 false */
@@ -90,7 +115,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   const database = createDatabase(options.databasePath);
   const accountMode = options.accountMode ?? "single";
 
+  let memoryMaintenanceTimer: NodeJS.Timeout | undefined;
+
   app.addHook("onClose", async () => {
+    if (memoryMaintenanceTimer) {
+      clearInterval(memoryMaintenanceTimer);
+      memoryMaintenanceTimer = undefined;
+    }
     database.close();
   });
 
@@ -188,6 +219,39 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
   await registerCrudRoutes(app, database);
 
+  // ── 可选：记忆维护任务（deprecate / purge） ──
+  if (options.enableMemory === true && options.memoryMaintenance) {
+    const maintenance = options.memoryMaintenance;
+    const service = new MemoryMaintenanceService(database.db);
+    const intervalMs = Math.max(10_000, maintenance.intervalMs);
+    const batchSize = maintenance.batchSize;
+    const policy = maintenance.policy;
+    const dryRun = maintenance.dryRun === true;
+
+    let running = false;
+
+    const runOnce = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const result = await service.run({
+          batchSize,
+          policy,
+          dryRun,
+        });
+        app.log.info({ result }, "Memory maintenance completed");
+      } catch (error) {
+        app.log.error({ error }, "Memory maintenance failed");
+      } finally {
+        running = false;
+      }
+    };
+
+    memoryMaintenanceTimer = setInterval(() => {
+      void runOnce();
+    }, intervalMs);
+  }
+
   // ── 可选：聊天业务路由 ──
   let orchestrationContext: OrchestrationContext | undefined;
   let wsBridge: WsBridge | undefined;
@@ -212,6 +276,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       {
         historyMaxFloors: options.chatHistoryMaxFloors,
         memoryStore: options.enableMemory ? activeOrchestrationContext.memoryStore : undefined,
+        memoryInjectionDecay: options.memoryInjectionDecay,
         enableMemoryConsolidationByDefault: options.enableMemoryConsolidation,
         resolveTurnModels: async (sessionId, accountId = DEFAULT_ADMIN_ACCOUNT_ID) => {
           try {

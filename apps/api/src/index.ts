@@ -17,6 +17,8 @@ const { app } = await buildApp({
   enableWebSocket: config.enableWebSocket,
   chatHistoryMaxFloors: config.chatHistoryMaxFloors,
   enableMemory: config.enableMemory,
+  memoryInjectionDecay: config.memoryInjectionDecay,
+  memoryMaintenance: config.memoryMaintenance,
   enableMemoryConsolidation: config.enableMemoryConsolidation,
   enableSseChat: config.enableSseChat,
   enablePromptDryRun: config.enablePromptDryRun,

@@ -15,6 +15,16 @@
  * - ENABLE_PROMPT_DRY_RUN: 是否启用 Prompt Dry-run 调试端点（默认 false）
  * - CHAT_HISTORY_MAX_FLOORS: 可选历史楼层上限（最近 N 层）
  * - ENABLE_MEMORY_CONSOLIDATION: 是否默认启用 MemoryConsolidator（默认 false）
+ * - MEMORY_INJECTION_DECAY_HALF_LIFE_DAYS: 可选，启用记忆注入衰减排序的半衰期（天）
+ * - MEMORY_INJECTION_DECAY_MIN_FACTOR: 可选，衰减因子下限（0-1，默认 0.05）
+ * - MEMORY_INJECTION_DECAY_BY: 可选，衰减使用的时间字段（updatedAt | createdAt，默认 updatedAt）
+ * - ENABLE_MEMORY_MAINTENANCE: 可选，启用记忆维护任务（deprecate / purge）
+ * - MEMORY_MAINTENANCE_INTERVAL_MINUTES: 可选，维护任务运行间隔（分钟，默认 60）
+ * - MEMORY_MAINTENANCE_BATCH_SIZE: 可选，批处理大小（默认 500）
+ * - MEMORY_MAINTENANCE_DEPRECATE_SUMMARY_DAYS: 可选，summary 超过 N 天自动 deprecated（默认 30，设为 0 禁用）
+ * - MEMORY_MAINTENANCE_DEPRECATE_OPEN_LOOP_DAYS: 可选，open_loop 超过 N 天自动 deprecated（默认 7，设为 0 禁用）
+ * - MEMORY_MAINTENANCE_PURGE_DEPRECATED_DAYS: 可选，deprecated 超过 N 天自动删除（默认 90，设为 0 禁用）
+ * - MEMORY_MAINTENANCE_DRY_RUN: 可选，仅统计不执行写入/删除（默认 false）
  * - AUTH_MODE: 认证模式（off | api_key | jwt，默认 off）
  * - AUTH_API_KEYS: API Key 模式下的 key 列表（逗号分隔）
  * - AUTH_API_KEY_ACCOUNTS: 多账号 + API Key 模式下的账号映射（key:account_id，逗号分隔）
@@ -25,7 +35,9 @@
  * - CORS_CREDENTIALS: 是否允许携带凭据（true | false，默认 false）
  */
 
-import type { ProviderType } from "@tavern/core";
+import type { MemoryInjectionOptions, ProviderType } from "@tavern/core";
+
+import type { MemoryMaintenancePolicy } from "./services/memory-maintenance-service.js";
 
 import type { OrchestrationConfig } from "./services/orchestration-factory.js";
 import type { AuthConfig, AuthMode } from "./plugins/auth.js";
@@ -47,6 +59,15 @@ export interface AppConfig {
   chatHistoryMaxFloors?: number;
   /** 是否启用记忆系统（摘要注入 + 持久化） */
   enableMemory: boolean;
+  /** 可选：记忆注入衰减配置（不设置则不启用） */
+  memoryInjectionDecay?: MemoryInjectionOptions["decay"];
+  /** 可选：记忆维护任务配置（不设置则不启用） */
+  memoryMaintenance?: {
+    intervalMs: number;
+    batchSize?: number;
+    policy?: MemoryMaintenancePolicy;
+    dryRun?: boolean;
+  };
   /** 是否启用 SSE 流式聊天端点 */
   enableSseChat: boolean;
   /** 是否启用 Prompt Dry-run 端点 */
@@ -80,6 +101,21 @@ export function loadConfig(): AppConfig {
   const accountMode = parseAccountMode(process.env.ACCOUNT_MODE);
   const enableMemoryConsolidation = process.env.ENABLE_MEMORY_CONSOLIDATION === "true";
   const cors = parseCorsConfig(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN, process.env.CORS_CREDENTIALS);
+  const memoryInjectionDecay = parseMemoryInjectionDecay(
+    process.env.MEMORY_INJECTION_DECAY_HALF_LIFE_DAYS,
+    process.env.MEMORY_INJECTION_DECAY_MIN_FACTOR,
+    process.env.MEMORY_INJECTION_DECAY_BY
+  );
+
+  const memoryMaintenance = parseMemoryMaintenanceConfig(
+    process.env.ENABLE_MEMORY_MAINTENANCE,
+    process.env.MEMORY_MAINTENANCE_INTERVAL_MINUTES,
+    process.env.MEMORY_MAINTENANCE_BATCH_SIZE,
+    process.env.MEMORY_MAINTENANCE_DEPRECATE_SUMMARY_DAYS,
+    process.env.MEMORY_MAINTENANCE_DEPRECATE_OPEN_LOOP_DAYS,
+    process.env.MEMORY_MAINTENANCE_PURGE_DEPRECATED_DAYS,
+    process.env.MEMORY_MAINTENANCE_DRY_RUN
+  );
 
   const auth = parseAuthConfig(
     process.env.AUTH_MODE,
@@ -107,6 +143,8 @@ export function loadConfig(): AppConfig {
       enableWebSocket,
       chatHistoryMaxFloors,
       enableMemory,
+      memoryInjectionDecay,
+      memoryMaintenance,
       enableSseChat,
       enablePromptDryRun,
       enableMemoryConsolidation,
@@ -161,6 +199,8 @@ export function loadConfig(): AppConfig {
     enableWebSocket,
     chatHistoryMaxFloors,
     enableMemory,
+    memoryInjectionDecay,
+    memoryMaintenance,
     enableSseChat,
     enablePromptDryRun,
     enableMemoryConsolidation,
@@ -188,6 +228,105 @@ function parsePositiveInt(value: string | undefined): number | undefined {
   }
 
   return parsed;
+}
+
+function parseNonNegativeInt(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+function parsePositiveNumber(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+function parseMemoryInjectionDecay(
+  halfLifeDaysRaw: string | undefined,
+  minFactorRaw: string | undefined,
+  byRaw: string | undefined
+): MemoryInjectionOptions["decay"] | undefined {
+  const halfLifeDays = parsePositiveNumber(halfLifeDaysRaw);
+  if (!halfLifeDays) {
+    return undefined;
+  }
+
+  const halfLifeMs = Math.round(halfLifeDays * 24 * 60 * 60 * 1000);
+
+  let minFactor: number | undefined;
+  if (minFactorRaw !== undefined && minFactorRaw.trim().length > 0) {
+    const parsed = Number(minFactorRaw);
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
+      minFactor = parsed;
+    }
+  }
+
+  const byNormalized = byRaw?.trim();
+  const by = byNormalized === "createdAt" || byNormalized === "updatedAt"
+    ? byNormalized
+    : undefined;
+
+  return {
+    halfLifeMs,
+    ...(minFactor !== undefined ? { minFactor } : {}),
+    ...(by ? { by } : {}),
+  };
+}
+
+function parseMemoryMaintenanceConfig(
+  enabledRaw: string | undefined,
+  intervalMinutesRaw: string | undefined,
+  batchSizeRaw: string | undefined,
+  deprecateSummaryDaysRaw: string | undefined,
+  deprecateOpenLoopDaysRaw: string | undefined,
+  purgeDeprecatedDaysRaw: string | undefined,
+  dryRunRaw: string | undefined
+): AppConfig["memoryMaintenance"] | undefined {
+  const enabled = enabledRaw === "true";
+  if (!enabled) {
+    return undefined;
+  }
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const intervalMinutes = parsePositiveInt(intervalMinutesRaw) ?? 60;
+  const batchSize = parsePositiveInt(batchSizeRaw) ?? 500;
+  const deprecateSummaryDays = parseNonNegativeInt(deprecateSummaryDaysRaw) ?? 30;
+  const deprecateOpenLoopDays = parseNonNegativeInt(deprecateOpenLoopDaysRaw) ?? 7;
+  const purgeDeprecatedDays = parseNonNegativeInt(purgeDeprecatedDaysRaw) ?? 90;
+
+  const policy: MemoryMaintenancePolicy = {
+    ...(deprecateSummaryDays > 0
+      ? { summaryMaxAgeMs: deprecateSummaryDays * dayMs }
+      : {}),
+    ...(deprecateOpenLoopDays > 0
+      ? { openLoopMaxAgeMs: deprecateOpenLoopDays * dayMs }
+      : {}),
+    ...(purgeDeprecatedDays > 0
+      ? { deprecatedPurgeAgeMs: purgeDeprecatedDays * dayMs }
+      : {}),
+  };
+
+  return {
+    intervalMs: intervalMinutes * 60 * 1000,
+    batchSize,
+    policy,
+    dryRun: dryRunRaw === "true",
+  };
 }
 
 function parseAuthConfig(
