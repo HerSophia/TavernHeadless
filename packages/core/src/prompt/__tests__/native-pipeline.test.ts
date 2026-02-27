@@ -3,7 +3,9 @@ import { SimpleTokenCounter } from '../token-budget.js';
 import {
   assembleNativePrompt,
   TemplateNode,
+  ConditionNode,
   WorldbookResolveNode,
+  TransformNode,
   MemoryInjectNode,
   TokenBudgetNode,
   PackMessagesNode,
@@ -141,6 +143,116 @@ describe('assembleNativePrompt', () => {
     );
 
     expect(ir.sections.map((section) => section.name)).toEqual(['nativeSystem', 'chatHistory']);
+  });
+
+  it('supports condition branching (runs nested nodes and records executedNodes)', () => {
+    const branchA: NativePipelineNode = {
+      name: 'branch_a',
+      run(state) {
+        return {
+          ...state,
+          sections: [
+            ...state.sections,
+            {
+              name: 'branchA',
+              order: 1.5,
+              pinned: true,
+              messages: [
+                {
+                  role: 'system',
+                  content: 'A',
+                  prunable: false,
+                },
+              ],
+            },
+          ],
+        };
+      },
+    };
+
+    const branchB: NativePipelineNode = {
+      name: 'branch_b',
+      run(state) {
+        return {
+          ...state,
+          sections: [
+            ...state.sections,
+            {
+              name: 'branchB',
+              order: 1.5,
+              pinned: true,
+              messages: [
+                {
+                  role: 'system',
+                  content: 'B',
+                  prunable: false,
+                },
+              ],
+            },
+          ],
+        };
+      },
+    };
+
+    const inspect: NativePipelineNode = {
+      name: 'inspect',
+      run(state) {
+        expect(state.artifacts?.executedNodes).toEqual(['template', 'branch_a', 'condition']);
+        return state;
+      },
+    };
+
+    const ir = assembleNativePrompt(
+      {
+        systemPrompt: 'Hello',
+        chatHistory: [],
+        variables: { mode: 'a' },
+        maxTokens: 100,
+        reservedForReply: 10,
+      },
+      [
+        new TemplateNode(),
+        new ConditionNode({
+          when: (state) => state.input.variables?.mode === 'a',
+          thenNodes: [branchA],
+          elseNodes: [branchB],
+        }),
+        inspect,
+        new PackMessagesNode(),
+      ]
+    );
+
+    expect(ir.sections.map((section) => section.name)).toEqual(['nativeSystem', 'branchA']);
+  });
+
+  it('supports transform node regex replacements with role filtering', () => {
+    const ir = assembleNativePrompt(
+      {
+        systemPrompt: 'System',
+        chatHistory: [
+          { role: 'user', content: 'foo' },
+          { role: 'assistant', content: 'foo' },
+        ],
+        maxTokens: 100,
+        reservedForReply: 10,
+      },
+      [
+        new TemplateNode(),
+        new TransformNode({
+          rules: [
+            {
+              pattern: 'foo',
+              replace: 'bar',
+              roles: ['assistant'],
+            },
+          ],
+        }),
+        new PackMessagesNode(),
+      ]
+    );
+
+    const chatSection = ir.sections.find((section) => section.name === 'chatHistory');
+    expect(chatSection?.messages.map((message) => message.content)).toEqual(['foo', 'bar']);
   });
 
   it('wraps node errors as NativePipelineError with node and state summary', () => {

@@ -33,6 +33,38 @@ export interface NativePipelineNode {
   run(state: NativePipelineState): NativePipelineState;
 }
 
+export type ConditionNodeOptions = {
+  /** Override node name used for executedNodes/debugging (default: 'condition') */
+  name?: string;
+  /** Predicate that selects which branch to run */
+  when: (state: NativePipelineState) => boolean;
+  /** Nodes to run when predicate returns true */
+  thenNodes?: NativePipelineNode[];
+  /** Nodes to run when predicate returns false */
+  elseNodes?: NativePipelineNode[];
+  /** Optional: store the boolean result into state.artifacts[artifactKey] */
+  artifactKey?: string;
+};
+
+export type TransformRule = {
+  /** JavaScript RegExp source (without surrounding /.../) */
+  pattern: string;
+  /** RegExp flags (default: 'g') */
+  flags?: string;
+  /** Replacement string */
+  replace: string;
+  /** Only apply to specific roles (default: all) */
+  roles?: ChatRole[];
+  /** Only apply to specific section names (default: all) */
+  sectionNames?: string[];
+};
+
+export type TransformNodeOptions = {
+  /** Override node name used for executedNodes/debugging (default: 'transform') */
+  name?: string;
+  rules: TransformRule[];
+};
+
 export interface NativePipelineInputSummary {
   systemPromptLength: number;
   chatHistoryCount: number;
@@ -100,6 +132,51 @@ function summarizeState(state: NativePipelineState): NativePipelineStateSummary 
   };
 }
 
+function runNodeSequence(
+  initialState: NativePipelineState,
+  nodes: NativePipelineNode[]
+): NativePipelineState {
+  let state = initialState;
+
+  for (const node of nodes) {
+    try {
+      const nextState = node.run(state);
+
+      if (!nextState || !nextState.input || !Array.isArray(nextState.sections)) {
+        throw new Error('Node returned an invalid pipeline state');
+      }
+
+      const previousExecutedNodes = getExecutedNodes(state.artifacts);
+      const nextExecutedNodes = getExecutedNodes(nextState.artifacts);
+      const mergedExecutedNodes = [
+        ...previousExecutedNodes,
+        ...nextExecutedNodes.filter((name) => !previousExecutedNodes.includes(name)),
+      ];
+
+      state = {
+        ...nextState,
+        artifacts: {
+          ...(nextState.artifacts ?? {}),
+          executedNodes: [...mergedExecutedNodes, node.name],
+        },
+      };
+    } catch (error) {
+      if (error instanceof NativePipelineError) {
+        throw error;
+      }
+
+      throw new NativePipelineError({
+        nodeName: node.name,
+        inputSummary: summarizeInput(state.input),
+        stateSummary: summarizeState(state),
+        cause: error,
+      });
+    }
+  }
+
+  return state;
+}
+
 function renderWithVariables(
   templateEngine: TemplateEngine,
   text: string,
@@ -162,6 +239,38 @@ export class TemplateNode implements NativePipelineNode {
   }
 }
 
+
+export class ConditionNode implements NativePipelineNode {
+  readonly name: string;
+
+  private readonly when: (state: NativePipelineState) => boolean;
+  private readonly thenNodes: NativePipelineNode[];
+  private readonly elseNodes: NativePipelineNode[];
+  private readonly artifactKey?: string;
+
+  constructor(options: ConditionNodeOptions) {
+    this.name = options.name ?? 'condition';
+    this.when = options.when;
+    this.thenNodes = options.thenNodes ?? [];
+    this.elseNodes = options.elseNodes ?? [];
+    this.artifactKey = options.artifactKey;
+  }
+
+  run(state: NativePipelineState): NativePipelineState {
+    const matched = this.when(state);
+    const nodes = matched ? this.thenNodes : this.elseNodes;
+    const nextState = nodes.length > 0 ? runNodeSequence(state, nodes) : state;
+
+    return {
+      ...nextState,
+      artifacts: {
+        ...(nextState.artifacts ?? {}),
+        ...(this.artifactKey ? { [this.artifactKey]: matched } : {}),
+      },
+    };
+  }
+}
+
 export class WorldbookResolveNode implements NativePipelineNode {
   readonly name = 'worldbook_resolve';
 
@@ -215,6 +324,68 @@ export class WorldbookResolveNode implements NativePipelineNode {
     return {
       ...state,
       sections,
+    };
+  }
+}
+
+
+type CompiledTransformRule = TransformRule & {
+  regex: RegExp;
+};
+
+export class TransformNode implements NativePipelineNode {
+  readonly name: string;
+  private readonly rules: CompiledTransformRule[];
+
+  constructor(options: TransformNodeOptions) {
+    this.name = options.name ?? 'transform';
+    this.rules = (options.rules ?? []).map((rule) => ({
+      ...rule,
+      regex: new RegExp(rule.pattern, rule.flags ?? 'g'),
+    }));
+  }
+
+  run(state: NativePipelineState): NativePipelineState {
+    if (this.rules.length === 0 || state.sections.length === 0) {
+      return state;
+    }
+
+    const counter = state.input.tokenCounter;
+    const sections = state.sections.map((section) => ({
+      ...section,
+      messages: section.messages.map((message) => {
+        let content = message.content;
+
+        for (const rule of this.rules) {
+          if (rule.sectionNames && !rule.sectionNames.includes(section.name)) {
+            continue;
+          }
+          if (rule.roles && !rule.roles.includes(message.role)) {
+            continue;
+          }
+
+          // Clone regex to avoid shared lastIndex state across runs.
+          const regex = new RegExp(rule.regex.source, rule.regex.flags);
+          content = content.replace(regex, rule.replace);
+        }
+
+        if (content === message.content) {
+          return message;
+        }
+
+        return {
+          ...message,
+          content,
+          tokenCount: counter ? counter.count(content) : undefined,
+        };
+      }),
+    }));
+
+    return {
+      ...state,
+      sections,
+      // If a previous node produced output, keep it in sync with sections.
+      output: state.output ? finalizePrompt(state.input, sections) : state.output,
     };
   }
 }

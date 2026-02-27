@@ -25,10 +25,23 @@ export type { MessageBuilderOptions } from './message-builder.js';
 export {
   assembleNativePrompt,
   TemplateNode,
+  ConditionNode,
   WorldbookResolveNode,
+  TransformNode,
   MemoryInjectNode,
   TokenBudgetNode,
   PackMessagesNode,
   NativePipelineError,
 } from './native-pipeline.js';
-export type { NativePromptMode, NativeWorldbookEntry, NativePipelineInput, NativePipelineState, NativePipelineNode, NativePipelineInputSummary, NativePipelineStateSummary } from './native-pipeline.js';
+export type {
+  NativePromptMode,
+  NativeWorldbookEntry,
+  NativePipelineInput,
+  NativePipelineState,
+  NativePipelineNode,
+  NativePipelineInputSummary,
+  NativePipelineStateSummary,
+  ConditionNodeOptions,
+  TransformRule,
+  TransformNodeOptions,
+} from './native-pipeline.js';

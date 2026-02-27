@@ -167,7 +167,7 @@ page → floor → chat → global
 | `token_budget`      | 按 token 预算裁剪历史消息           |
 | `pack_messages`     | 最终拼装成 LLM 要求的 messages 数组 |
 
-当前 v1 已落地 `template / worldbook_resolve / memory_inject / token_budget / pack_messages` 闭环，
+当前 v1 已落地 `template / condition / worldbook_resolve / transform / memory_inject / token_budget / pack_messages` 闭环，
 并在 API 侧支持会话显式字段 `session.prompt_mode`。解析优先级是：
 `session.prompt_mode` > `metadata.promptMode` > `metadata.prompt_mode`。
 
