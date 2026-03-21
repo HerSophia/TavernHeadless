@@ -121,6 +121,9 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | Users | 用户卡管理 | [Users](./api/users) |
 | Variables | 四级变量系统 | [Variables](./api/variables) |
 | Memories | 记忆条目与边 | [Memories](./api/memories) |
-| Imports | SillyTavern 兼容导入、Preset/Worldbook/Regex 管理 | [Imports](./api/imports) |
+| Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
+| Presets | 预设管理、编辑器视图 | [Presets](./api/presets) |
+| Worldbooks | 世界书管理 | [Worldbooks](./api/worldbooks) |
+| Regex Profiles | 正则配置管理 | [Regex Profiles](./api/regex-profiles) |
 | LLM Profiles | LLM 配置管理、模型发现与测试 | [LLM Profiles](./api/llm-profiles) |
 | Accounts | 账号管理 | [Accounts](./api/accounts) |
