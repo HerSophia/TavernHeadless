@@ -1,0 +1,127 @@
+import { defineConfig } from 'vitepress';
+
+export default defineConfig({
+  lang: 'zh-CN',
+  base: '/TavernHeadless/',
+  title: 'TavernHeadless',
+  description: '一个为开发者而生的 AI RP 后端引擎',
+
+  head: [
+    ['meta', { name: 'theme-color', content: '#2dd4bf' }],
+    ['meta', { name: 'og:type', content: 'website' }],
+    ['meta', { name: 'og:site_name', content: 'TavernHeadless' }],
+  ],
+
+  themeConfig: {
+    logo: undefined,
+    siteTitle: 'TavernHeadless',
+
+    nav: [
+      {
+        text: '指南',
+        items: [
+          { text: '简介', link: '/guide/introduction' },
+          { text: '快速开始', link: '/guide/getting-started' },
+          { text: '架构设计', link: '/guide/architecture' },
+          { text: '前端设计', link: '/guide/frontend-vision' },
+        ],
+      },
+      {
+        text: '开发',
+        items: [
+          { text: '协作指南', link: '/development/contributing' },
+          { text: '测试与 CI', link: '/development/testing' },
+          { text: '文档规范', link: '/development/doc-standards' },
+        ],
+      },
+      {
+        text: '参考',
+        items: [
+          { text: '数据库字典', link: '/reference/database' },
+          { text: 'API 概览', link: '/reference/api' },
+        ],
+      },
+      { text: '进度', link: '/progress/' },
+    ],
+
+    sidebar: {
+      '/guide/': [
+        {
+          text: '指南',
+          items: [
+            { text: '简介', link: '/guide/introduction' },
+            { text: '快速开始', link: '/guide/getting-started' },
+            { text: '架构设计', link: '/guide/architecture' },
+            { text: '前端设计', link: '/guide/frontend-vision' },
+          ],
+        },
+      ],
+      '/development/': [
+        {
+          text: '开发',
+          items: [
+            { text: '协作指南', link: '/development/contributing' },
+            { text: '测试与 CI', link: '/development/testing' },
+            { text: '文档规范', link: '/development/doc-standards' },
+          ],
+        },
+      ],
+      '/reference/': [
+        {
+          text: '参考',
+          items: [
+            { text: '数据库字典', link: '/reference/database' },
+            { text: 'API 概览', link: '/reference/api' },
+          ],
+        },
+      ],
+      '/progress/': [
+        {
+          text: '进度',
+          items: [
+            { text: '总览', link: '/progress/' },
+            { text: '核心引擎', link: '/progress/core' },
+            { text: '后端 API', link: '/progress/api' },
+            { text: '管理前端', link: '/progress/web' },
+          ],
+        },
+      ],
+    },
+
+    socialLinks: [
+      { icon: 'github', link: 'https://github.com/your-org/TavernHeadless' },
+    ],
+
+    outline: {
+      level: [2, 3],
+      label: '本页目录',
+    },
+
+    docFooter: {
+      prev: '上一页',
+      next: '下一页',
+    },
+
+    lastUpdated: {
+      text: '最后更新',
+    },
+
+    search: {
+      provider: 'local',
+      options: {
+        translations: {
+          button: { buttonText: '搜索文档', buttonAriaLabel: '搜索文档' },
+          modal: {
+            noResultsText: '未找到结果',
+            resetButtonTitle: '清除查询',
+            footer: { selectText: '选择', navigateText: '切换', closeText: '关闭' },
+          },
+        },
+      },
+    },
+
+    returnToTopLabel: '回到顶部',
+    sidebarMenuLabel: '菜单',
+    darkModeSwitchLabel: '主题',
+  },
+});
