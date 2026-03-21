@@ -43,7 +43,7 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 
 ```json
 {
-  "data": { ... }
+  "data": { }
 }
 ```
 
@@ -51,7 +51,7 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 
 ```json
 {
-  "data": [ ... ],
+  "data": [ ],
   "meta": {
     "total": 42,
     "limit": 20,
