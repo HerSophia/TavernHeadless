@@ -23,6 +23,7 @@ export type LlmBindingGenerationParams = Partial<Pick<GenerationParams,
   | "stream"
   | "timeoutMs"
   | "maxRetries"
+  | "reasoningEffort"
 >>;
 
 export type LlmProfileListItem = {
@@ -556,6 +557,17 @@ function normalizeBindingParams(input: unknown, strict: boolean): LlmBindingGene
 
   const maxRetries = readNumber("maxRetries", { int: true, min: 0, max: 10 });
   if (maxRetries !== undefined) normalized.maxRetries = maxRetries;
+
+  const reasoningEffort = raw.reasoningEffort;
+  if (reasoningEffort !== undefined && reasoningEffort !== null) {
+    if (reasoningEffort !== "low" && reasoningEffort !== "medium" && reasoningEffort !== "high") {
+      if (strict) {
+        throw new LlmProfileServiceError("invalid_params", "params.reasoningEffort must be one of low, medium, high");
+      }
+    } else {
+      normalized.reasoningEffort = reasoningEffort;
+    }
+  }
 
   const stream = raw.stream;
   if (stream !== undefined && stream !== null) {

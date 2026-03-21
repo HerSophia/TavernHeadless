@@ -26,6 +26,7 @@ const generationParamsSchema = z.object({
   stream: z.boolean().optional(),
   timeout_ms: z.number().int().min(1).optional(),
   max_retries: z.number().int().min(0).max(10).optional(),
+  reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
 });
 
 const runtimeQuerySchema = z.object({
@@ -89,7 +90,120 @@ const testModelSchema = z.object({
   base_url: z.string().trim().min(1).max(500).optional(),
   model_id: z.string().trim().min(1).max(200),
   provider: providerSchema,
+  reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
 });
+
+const llmGenerationParamsExample = {
+  max_output_tokens: 512,
+  temperature: 0.7,
+  max_retries: 2,
+  reasoning_effort: "low",
+} as const;
+
+const llmProfileCreateBodyExample = {
+  preset_name: "OpenAI Narrator",
+  provider: "openai",
+  model_id: "gpt-4o-mini",
+  api_key_name: "OPENAI_API_KEY",
+  api_key: "sk-demo-key",
+} as const;
+
+const llmProfileUpdateBodyExample = {
+  preset_name: "OpenAI Narrator v2",
+  status: "active",
+  api_key_name: "OPENAI_API_KEY",
+} as const;
+
+const llmProfileExample = {
+  id: "lp_narrator",
+  preset_name: "OpenAI Narrator",
+  provider: "openai",
+  model_id: "gpt-4o-mini",
+  base_url: null,
+  api_key_name: "OPENAI_API_KEY",
+  api_key_masked: "sk-***-key",
+  status: "active",
+  last_used_at: 1735689660000,
+  created_at: 1735689600000,
+  updated_at: 1735689660000,
+} as const;
+
+const llmProfileResponseExample = {
+  data: llmProfileExample,
+} as const;
+
+const llmProfileListResponseExample = {
+  data: [llmProfileExample],
+} as const;
+
+const discoverModelsBodyExample = {
+  provider: "openai",
+  api_key: "sk-demo-key",
+} as const;
+
+const discoverModelsResponseExample = {
+  data: [
+    { id: "gpt-4o-mini", label: "gpt-4o-mini" },
+    { id: "gpt-4.1-mini", label: "gpt-4.1-mini" },
+  ],
+} as const;
+
+const testModelBodyExample = {
+  provider: "openai",
+  model_id: "gpt-4o-mini",
+  api_key: "sk-demo-key",
+  reasoning_effort: "low",
+} as const;
+
+const testModelResponseExample = {
+  data: {
+    request_text: "Hello",
+    response_text: "Hello! How can I help you today?",
+  },
+} as const;
+
+const activateBodyExample = {
+  scope: "session",
+  session_id: "sess_demo",
+  instance_slot: "director",
+  params: llmGenerationParamsExample,
+} as const;
+
+const activateResponseExample = {
+  data: {
+    profile_id: "lp_narrator",
+    scope: "session",
+    scope_id: "sess_demo",
+    instance_slot: "director",
+    params: llmGenerationParamsExample,
+    activated: true,
+  },
+} as const;
+
+const runtimeSlotExample = {
+  slot: "director",
+  source: "session_profile",
+  scope: "session",
+  profile_id: "lp_narrator",
+  params: llmGenerationParamsExample,
+  preset_name: "OpenAI Narrator",
+  provider: "openai",
+  model_id: "gpt-4o-mini",
+} as const;
+
+const runtimeResponseExample = {
+  data: {
+    session_id: "sess_demo",
+    slots: [runtimeSlotExample],
+  },
+} as const;
+
+const llmProfileDeleteResponseExample = {
+  data: {
+    id: "lp_narrator",
+    deleted: true,
+  },
+} as const;
 
 const idParamsJsonSchema = {
   type: "object",
@@ -146,6 +260,7 @@ const profileJsonSchema = {
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
   },
+  examples: [llmProfileExample],
   additionalProperties: false,
 } as const;
 
@@ -155,6 +270,7 @@ const profileResponseJsonSchema = {
   properties: {
     data: profileJsonSchema,
   },
+  examples: [llmProfileResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -167,6 +283,7 @@ const profileListResponseJsonSchema = {
       items: profileJsonSchema,
     },
   },
+  examples: [llmProfileListResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -181,6 +298,7 @@ const createBodyJsonSchema = {
     api_key_name: { type: "string", minLength: 1, maxLength: 120 },
     api_key: { type: "string", minLength: 1, maxLength: 2048 },
   },
+  examples: [llmProfileCreateBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -195,6 +313,7 @@ const updateBodyJsonSchema = {
     api_key: { type: "string", minLength: 1, maxLength: 2048 },
     status: { type: "string", enum: ["active", "disabled"] },
   },
+  examples: [llmProfileUpdateBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -218,6 +337,7 @@ const activateBodyJsonSchema = {
             stream: { type: "boolean" },
             timeout_ms: { type: "integer", minimum: 1 },
             max_retries: { type: "integer", minimum: 0, maximum: 10 },
+            reasoning_effort: { type: "string", enum: ["low", "medium", "high"] },
           },
           additionalProperties: false,
         },
@@ -226,6 +346,7 @@ const activateBodyJsonSchema = {
     },
     instance_slot: { type: "string", enum: ["*", "narrator", "director", "verifier", "memory"], default: "*" },
   },
+  examples: [activateBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -237,6 +358,7 @@ const discoverModelsBodyJsonSchema = {
     base_url: { type: "string", minLength: 1, maxLength: 500 },
     provider: { type: "string", enum: ["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"] },
   },
+  examples: [discoverModelsBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -248,7 +370,9 @@ const testModelBodyJsonSchema = {
     base_url: { type: "string", minLength: 1, maxLength: 500 },
     model_id: { type: "string", minLength: 1, maxLength: 200 },
     provider: { type: "string", enum: ["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"] },
+    reasoning_effort: { type: "string", enum: ["low", "medium", "high"] },
   },
+  examples: [testModelBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -271,6 +395,7 @@ const discoverModelsResponseJsonSchema = {
       items: discoveredModelJsonSchema,
     },
   },
+  examples: [discoverModelsResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -288,6 +413,7 @@ const testModelResponseJsonSchema = {
       additionalProperties: false,
     },
   },
+  examples: [testModelResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -318,6 +444,7 @@ const activateResponseJsonSchema = {
                 stream: { type: "boolean" },
                 timeout_ms: { type: "integer", minimum: 1 },
                 max_retries: { type: "integer", minimum: 0, maximum: 10 },
+                reasoning_effort: { type: "string", enum: ["low", "medium", "high"] },
               },
               additionalProperties: false,
             },
@@ -329,6 +456,7 @@ const activateResponseJsonSchema = {
       additionalProperties: false,
     },
   },
+  examples: [activateResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -346,6 +474,7 @@ const deleteResponseJsonSchema = {
       additionalProperties: false,
     },
   },
+  examples: [llmProfileDeleteResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -362,6 +491,7 @@ const runtimeParamsJsonSchema = {
     stream: { type: "boolean" },
     timeout_ms: { type: "integer", minimum: 1 },
     max_retries: { type: "integer", minimum: 0, maximum: 10 },
+    reasoning_effort: { type: "string", enum: ["low", "medium", "high"] },
   },
   additionalProperties: false,
 } as const;
@@ -379,6 +509,7 @@ const runtimeSlotJsonSchema = {
     provider: { type: "string" },
     model_id: { type: "string" },
   },
+  examples: [runtimeSlotExample],
   additionalProperties: false,
 } as const;
 
@@ -399,6 +530,7 @@ const runtimeResponseJsonSchema = {
       additionalProperties: false,
     },
   },
+  examples: [runtimeResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -413,6 +545,7 @@ type RuntimeParamsResponse = {
   stream?: boolean;
   timeout_ms?: number;
   max_retries?: number;
+  reasoning_effort?: "low" | "medium" | "high";
 };
 
 type RuntimeSlotResponse = {
@@ -455,16 +588,19 @@ class LlmModelDiscoveryError extends Error {
 class LlmModelTestError extends Error {
   readonly code: "model_test_failed" | "model_test_invalid_response";
   readonly statusCode: number;
+  readonly upstreamStatus?: number;
 
   constructor(
     code: "model_test_failed" | "model_test_invalid_response",
     message: string,
     statusCode = 502,
+    upstreamStatus?: number,
   ) {
     super(message);
     this.name = "LlmModelTestError";
     this.code = code;
     this.statusCode = statusCode;
+    this.upstreamStatus = upstreamStatus;
   }
 }
 
@@ -616,6 +752,7 @@ export async function registerLlmProfileRoutes(app: FastifyInstance, connection:
           baseUrl: body.data.base_url,
           modelId: body.data.model_id,
           provider: body.data.provider,
+          reasoningEffort: body.data.reasoning_effort,
         });
 
         return reply.send({ data: tested });
@@ -912,6 +1049,7 @@ function fromApiGenerationParams(
     stream: params.stream,
     timeoutMs: params.timeout_ms,
     maxRetries: params.max_retries,
+    reasoningEffort: params.reasoning_effort,
   };
 }
 
@@ -933,6 +1071,7 @@ function toApiGenerationParams(
     stream: params.stream,
     timeout_ms: params.timeoutMs,
     max_retries: params.maxRetries,
+    reasoning_effort: params.reasoningEffort,
   };
 
   const compacted = Object.fromEntries(
@@ -985,6 +1124,24 @@ const PROVIDER_DEFAULT_BASE_URLS: Record<z.infer<typeof providerSchema>, string>
   xai: "https://api.x.ai/v1",
   "openai-compatible": process.env.LLM_BASE_URL ?? "https://api.openai.com/v1",
 };
+
+type HelloProbeStrategy =
+  | { kind: "provider-native" }
+  | { kind: "chat-completions"; stream: boolean }
+  | { kind: "responses"; stream: boolean };
+
+function buildProviderHelloProbeStrategies(provider: z.infer<typeof providerSchema>): HelloProbeStrategy[] {
+  if (!isOpenAICompatibleProvider(provider)) {
+    return [{ kind: "provider-native" }];
+  }
+
+  return [
+    { kind: "chat-completions", stream: false },
+    { kind: "chat-completions", stream: true },
+    { kind: "responses", stream: false },
+    { kind: "responses", stream: true },
+  ];
+}
 
 async function discoverModels(input: {
   apiKey: string;
@@ -1064,8 +1221,67 @@ async function testProviderModelWithHello(input: {
   baseUrl?: string;
   modelId: string;
   provider: z.infer<typeof providerSchema>;
+  reasoningEffort?: "low" | "medium" | "high";
 }): Promise<TestedModelResponse> {
-  const request = buildProviderHelloRequest(input);
+  const strategies = buildProviderHelloProbeStrategies(input.provider);
+  let lastError: LlmModelTestError | null = null;
+
+  for (let index = 0; index < strategies.length; index += 1) {
+    const strategy = strategies[index]!;
+    const attempt = await attemptProviderHelloProbe(input, strategy);
+    if (attempt.ok) {
+      return attempt.value;
+    }
+
+    lastError = attempt.error;
+    const hasNextStrategy = index < strategies.length - 1;
+    if (!hasNextStrategy || !shouldRetryModelTestWithFallback(input.provider, attempt.error)) {
+      throw attempt.error;
+    }
+  }
+
+  throw lastError ?? new LlmModelTestError("model_test_failed", "Model test request failed");
+}
+
+async function attemptProviderHelloProbe(
+  input: {
+    apiKey: string;
+    baseUrl?: string;
+    modelId: string;
+    provider: z.infer<typeof providerSchema>;
+    reasoningEffort?: "low" | "medium" | "high";
+  },
+  strategy: HelloProbeStrategy,
+): Promise<{ ok: true; value: TestedModelResponse } | { ok: false; error: LlmModelTestError }> {
+  try {
+    return {
+      ok: true,
+      value: await executeProviderHelloProbe(input, strategy),
+    };
+  } catch (error) {
+    if (error instanceof LlmModelTestError) {
+      return {
+        ok: false,
+        error,
+      };
+    }
+
+    throw error;
+  }
+}
+
+async function executeProviderHelloProbe(
+  input: {
+    apiKey: string;
+    baseUrl?: string;
+    modelId: string;
+    provider: z.infer<typeof providerSchema>;
+    reasoningEffort?: "low" | "medium" | "high";
+  },
+  strategy: HelloProbeStrategy,
+): Promise<TestedModelResponse> {
+  const request = buildProviderHelloRequest(input, strategy);
+  const streamRequested = strategy.kind !== "provider-native" && strategy.stream;
 
   let response: Response;
   try {
@@ -1080,21 +1296,61 @@ async function testProviderModelWithHello(input: {
   }
 
   if (!response.ok) {
-    throw new LlmModelTestError("model_test_failed", `Model test request failed with status ${response.status}`);
+    throw new LlmModelTestError(
+      "model_test_failed",
+      `Model test request failed with status ${response.status}`,
+      502,
+      response.status,
+    );
   }
 
-  let payload: unknown;
+  const contentType = response.headers.get("content-type");
+  let rawText: string;
   try {
-    payload = await response.json();
+    rawText = await response.text();
   } catch {
-    throw new LlmModelTestError("model_test_invalid_response", "Model test response is not valid JSON");
+    throw new LlmModelTestError("model_test_invalid_response", "Model test response body could not be read");
   }
 
-  const responseText = parseTestedModelResponse(input.provider, payload);
+  const responseText = parseTestedModelResponseBody(input.provider, rawText, contentType, streamRequested);
   return {
     request_text: "Hello",
     response_text: responseText,
   };
+}
+
+function shouldRetryModelTestWithFallback(
+  provider: z.infer<typeof providerSchema>,
+  error: LlmModelTestError,
+): boolean {
+  if (!isOpenAICompatibleProvider(provider)) {
+    return false;
+  }
+
+  if (error.code === "model_test_invalid_response") {
+    return true;
+  }
+
+  if (error.code !== "model_test_failed") {
+    return false;
+  }
+
+  if (error.upstreamStatus === undefined) {
+    return false;
+  }
+
+  return error.upstreamStatus === 400
+    || error.upstreamStatus === 405
+    || error.upstreamStatus === 415
+    || error.upstreamStatus === 422
+    || error.upstreamStatus >= 500;
+}
+
+function isOpenAICompatibleProvider(provider: z.infer<typeof providerSchema>): boolean {
+  return provider === "openai"
+    || provider === "deepseek"
+    || provider === "xai"
+    || provider === "openai-compatible";
 }
 
 function buildProviderHelloRequest(input: {
@@ -1102,7 +1358,8 @@ function buildProviderHelloRequest(input: {
   baseUrl?: string;
   modelId: string;
   provider: z.infer<typeof providerSchema>;
-}): { body: Record<string, unknown>; headers: Record<string, string>; url: string } {
+  reasoningEffort?: "low" | "medium" | "high";
+}, strategy: HelloProbeStrategy): { body: Record<string, unknown>; headers: Record<string, string>; url: string } {
   if (input.provider === "anthropic") {
     const baseUrl = normalizeBaseUrl(input.baseUrl ?? PROVIDER_DEFAULT_BASE_URLS.anthropic);
     return {
@@ -1144,6 +1401,29 @@ function buildProviderHelloRequest(input: {
 
   const defaultBaseUrl = PROVIDER_DEFAULT_BASE_URLS[input.provider];
   const baseUrl = normalizeBaseUrl(input.baseUrl ?? defaultBaseUrl);
+
+  if (strategy.kind === "responses") {
+    return {
+      url: buildProviderUrl(baseUrl, "responses"),
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${input.apiKey}`,
+      },
+      body: {
+        model: input.modelId,
+        input: [
+          {
+            role: "user",
+            content: [{ type: "input_text", text: "Hello" }],
+          },
+        ],
+        max_output_tokens: 64,
+        ...(input.reasoningEffort ? { reasoning_effort: input.reasoningEffort } : {}),
+        ...(strategy.stream ? { stream: true } : {}),
+      },
+    };
+  }
+
   return {
     url: buildProviderUrl(baseUrl, "chat/completions"),
     headers: {
@@ -1155,8 +1435,100 @@ function buildProviderHelloRequest(input: {
       messages: [{ role: "user", content: "Hello" }],
       max_tokens: 64,
       temperature: 0,
+      ...(input.reasoningEffort ? { reasoning_effort: input.reasoningEffort } : {}),
+      ...(strategy.kind === "chat-completions" && strategy.stream ? { stream: true } : {}),
     },
   };
+}
+
+function parseTestedModelResponseBody(
+  provider: z.infer<typeof providerSchema>,
+  rawText: string,
+  contentType: string | null,
+  streamRequested: boolean,
+): string {
+  const shouldTryStream = streamRequested || Boolean(contentType?.includes("text/event-stream"));
+  if (shouldTryStream) {
+    const streamedText = parseStreamedTestedModelResponse(provider, rawText);
+    if (streamedText) {
+      return streamedText;
+    }
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawText);
+  } catch {
+    throw new LlmModelTestError("model_test_invalid_response", "Model test response is not valid JSON");
+  }
+
+  return parseTestedModelResponse(provider, payload);
+}
+
+function parseStreamedTestedModelResponse(
+  provider: z.infer<typeof providerSchema>,
+  rawText: string,
+): string | null {
+  if (!isOpenAICompatibleProvider(provider)) {
+    return null;
+  }
+
+  return extractOpenAICompatibleStreamText(rawText);
+}
+
+function extractOpenAICompatibleStreamText(rawText: string): string | null {
+  const chunks: string[] = [];
+
+  for (const payloadText of extractSseDataPayloads(rawText)) {
+    if (payloadText === "[DONE]") {
+      continue;
+    }
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(payloadText);
+    } catch {
+      continue;
+    }
+
+    if (!payload || typeof payload !== "object") {
+      continue;
+    }
+
+    const chunkText = extractOpenAICompatibleStreamChunk(payload as Record<string, unknown>);
+    if (chunkText) {
+      chunks.push(chunkText);
+    }
+  }
+
+  const text = chunks.join("").trim();
+  return text || null;
+}
+
+function extractSseDataPayloads(rawText: string): string[] {
+  const payloads: string[] = [];
+  let current: string[] = [];
+
+  for (const rawLine of rawText.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    if (line.length === 0) {
+      if (current.length > 0) {
+        payloads.push(current.join("\n"));
+        current = [];
+      }
+      continue;
+    }
+
+    if (line.startsWith("data:")) {
+      current.push(line.slice(5).trimStart());
+    }
+  }
+
+  if (current.length > 0) {
+    payloads.push(current.join("\n"));
+  }
+
+  return payloads;
 }
 
 function parseTestedModelResponse(provider: z.infer<typeof providerSchema>, payload: unknown): string {
@@ -1192,42 +1564,134 @@ function parseTestedModelResponse(provider: z.infer<typeof providerSchema>, payl
 }
 
 function extractOpenAICompatibleText(payload: Record<string, unknown>): string | null {
-  if (!Array.isArray(payload.choices) || payload.choices.length === 0) {
-    return null;
+  if (Array.isArray(payload.choices) && payload.choices.length > 0) {
+    const first = payload.choices[0];
+    if (!first || typeof first !== "object") {
+      return null;
+    }
+
+    const message = (first as Record<string, unknown>).message;
+    if (!message || typeof message !== "object") {
+      return null;
+    }
+
+    const content = (message as Record<string, unknown>).content;
+    if (typeof content === "string") {
+      return content.trim();
+    }
+
+    if (Array.isArray(content)) {
+      const text = content
+        .map((part) => {
+          if (!part || typeof part !== "object") {
+            return "";
+          }
+
+          const value = (part as Record<string, unknown>).text;
+          return typeof value === "string" ? value : "";
+        })
+        .join("")
+        .trim();
+
+      return text || null;
+    }
   }
 
-  const first = payload.choices[0];
-  if (!first || typeof first !== "object") {
-    return null;
-  }
-
-  const message = (first as Record<string, unknown>).message;
-  if (!message || typeof message !== "object") {
-    return null;
-  }
-
-  const content = (message as Record<string, unknown>).content;
-  if (typeof content === "string") {
-    return content.trim();
-  }
-
-  if (Array.isArray(content)) {
-    const text = content
-      .map((part) => {
-        if (!part || typeof part !== "object") {
-          return "";
-        }
-
-        const value = (part as Record<string, unknown>).text;
-        return typeof value === "string" ? value : "";
-      })
-      .join("")
-      .trim();
-
-    return text || null;
+  const outputText = extractResponseOutputText(payload);
+  if (outputText) {
+    return outputText;
   }
 
   return null;
+}
+
+function extractOpenAICompatibleStreamChunk(payload: Record<string, unknown>): string {
+  if (typeof payload.delta === "string") {
+    return payload.delta;
+  }
+
+  if (Array.isArray(payload.choices)) {
+    return payload.choices
+      .map((choice) => {
+        if (!choice || typeof choice !== "object") {
+          return "";
+        }
+
+        const record = choice as Record<string, unknown>;
+        const delta = record.delta;
+        if (delta && typeof delta === "object") {
+          const deltaText = extractTextContent((delta as Record<string, unknown>).content);
+          if (deltaText) {
+            return deltaText;
+          }
+        }
+
+        const message = record.message;
+        if (message && typeof message === "object") {
+          const messageText = extractTextContent((message as Record<string, unknown>).content);
+          if (messageText) {
+            return messageText;
+          }
+        }
+
+        return typeof record.text === "string" ? record.text : "";
+      })
+      .join("");
+  }
+
+  const outputText = extractResponseOutputText(payload);
+  return outputText ?? "";
+}
+
+function extractResponseOutputText(payload: Record<string, unknown>): string | null {
+  if (typeof payload.output_text === "string") {
+    const outputText = payload.output_text.trim();
+    return outputText || null;
+  }
+
+  if (!Array.isArray(payload.output)) {
+    return null;
+  }
+
+  const text = payload.output
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return "";
+      }
+
+      return extractTextContent((item as Record<string, unknown>).content) ?? "";
+    })
+    .join("")
+    .trim();
+
+  return text || null;
+}
+
+function extractTextContent(content: unknown): string | null {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return null;
+  }
+
+  const text = content
+    .map((part) => {
+      if (!part || typeof part !== "object") {
+        return "";
+      }
+
+      const record = part as Record<string, unknown>;
+      if (typeof record.text === "string") {
+        return record.text;
+      }
+
+      return typeof record.delta === "string" ? record.delta : "";
+    })
+    .join("");
+
+  return text || null;
 }
 
 function extractAnthropicText(payload: Record<string, unknown>): string | null {

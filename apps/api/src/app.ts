@@ -220,6 +220,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   await registerCrudRoutes(app, database);
 
   // ── 可选：记忆维护任务（deprecate / purge） ──
+  // 注意：当前实现为进程内定时器，不带分布式锁。
+  // 多实例部署时，只允许一个实例启用记忆维护；
+  // 其余 API 实例应关闭该开关，或改由独立 maintenance job / worker 负责。
+  // 当前 beta 仅记录该部署约束，不在这里实现多实例协调。
   if (options.enableMemory === true && options.memoryMaintenance) {
     const maintenance = options.memoryMaintenance;
     const service = new MemoryMaintenanceService(database.db);

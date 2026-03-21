@@ -863,6 +863,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/llm-profiles/models/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover provider model list */
+        post: operations["discoverLlmProfileModels"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm-profiles/models/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a Hello probe to provider model */
+        post: operations["testLlmProfileModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm-profiles/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get runtime LLM info for all instance slots */
+        get: operations["getLlmRuntimeProfiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/memories": {
         parameters: {
             query?: never;
@@ -906,6 +957,36 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": [
+                         *         {
+                         *           "confidence": 0.9,
+                         *           "content": {
+                         *             "text": "Alice carries a silver sword."
+                         *           },
+                         *           "created_at": 1735689600000,
+                         *           "id": "mem_fact_1",
+                         *           "importance": 0.8,
+                         *           "scope": "chat",
+                         *           "scope_id": "session-memory",
+                         *           "source_floor_id": "floor_12",
+                         *           "source_message_id": "msg_21",
+                         *           "status": "active",
+                         *           "type": "fact",
+                         *           "updated_at": 1735689660000
+                         *         }
+                         *       ],
+                         *       "meta": {
+                         *         "has_more": false,
+                         *         "limit": 10,
+                         *         "offset": 0,
+                         *         "sort_by": "created_at",
+                         *         "sort_order": "desc",
+                         *         "total": 1
+                         *       }
+                         *     }
+                         */
                         "application/json": {
                             data: {
                                 confidence: number;
@@ -989,7 +1070,45 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "confidence": 0.9,
+                         *         "content": {
+                         *           "text": "Alice carries a silver sword."
+                         *         },
+                         *         "created_at": 1735689600000,
+                         *         "id": "mem_fact_1",
+                         *         "importance": 0.8,
+                         *         "scope": "chat",
+                         *         "scope_id": "session-memory",
+                         *         "source_floor_id": "floor_12",
+                         *         "source_message_id": "msg_21",
+                         *         "status": "active",
+                         *         "type": "fact",
+                         *         "updated_at": 1735689660000
+                         *       }
+                         *     }
+                         */
                         "application/json": {
+                            /**
+                             * @example {
+                             *       "confidence": 0.9,
+                             *       "content": {
+                             *         "text": "Alice carries a silver sword."
+                             *       },
+                             *       "created_at": 1735689600000,
+                             *       "id": "mem_fact_1",
+                             *       "importance": 0.8,
+                             *       "scope": "chat",
+                             *       "scope_id": "session-memory",
+                             *       "source_floor_id": "floor_12",
+                             *       "source_message_id": "msg_21",
+                             *       "status": "active",
+                             *       "type": "fact",
+                             *       "updated_at": 1735689660000
+                             *     }
+                             */
                             data: {
                                 confidence: number;
                                 content: unknown;
@@ -1077,7 +1196,45 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "confidence": 0.9,
+                         *         "content": {
+                         *           "text": "Alice carries a silver sword."
+                         *         },
+                         *         "created_at": 1735689600000,
+                         *         "id": "mem_fact_1",
+                         *         "importance": 0.8,
+                         *         "scope": "chat",
+                         *         "scope_id": "session-memory",
+                         *         "source_floor_id": "floor_12",
+                         *         "source_message_id": "msg_21",
+                         *         "status": "active",
+                         *         "type": "fact",
+                         *         "updated_at": 1735689660000
+                         *       }
+                         *     }
+                         */
                         "application/json": {
+                            /**
+                             * @example {
+                             *       "confidence": 0.9,
+                             *       "content": {
+                             *         "text": "Alice carries a silver sword."
+                             *       },
+                             *       "created_at": 1735689600000,
+                             *       "id": "mem_fact_1",
+                             *       "importance": 0.8,
+                             *       "scope": "chat",
+                             *       "scope_id": "session-memory",
+                             *       "source_floor_id": "floor_12",
+                             *       "source_message_id": "msg_21",
+                             *       "status": "active",
+                             *       "type": "fact",
+                             *       "updated_at": 1735689660000
+                             *     }
+                             */
                             data: {
                                 confidence: number;
                                 content: unknown;
@@ -1137,6 +1294,14 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "deleted": true,
+                         *         "id": "mem_fact_1"
+                         *       }
+                         *     }
+                         */
                         "application/json": {
                             data: {
                                 deleted: boolean;
@@ -1201,7 +1366,45 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "confidence": 0.9,
+                         *         "content": {
+                         *           "text": "Alice carries a silver sword."
+                         *         },
+                         *         "created_at": 1735689600000,
+                         *         "id": "mem_fact_1",
+                         *         "importance": 0.8,
+                         *         "scope": "chat",
+                         *         "scope_id": "session-memory",
+                         *         "source_floor_id": "floor_12",
+                         *         "source_message_id": "msg_21",
+                         *         "status": "active",
+                         *         "type": "fact",
+                         *         "updated_at": 1735689660000
+                         *       }
+                         *     }
+                         */
                         "application/json": {
+                            /**
+                             * @example {
+                             *       "confidence": 0.9,
+                             *       "content": {
+                             *         "text": "Alice carries a silver sword."
+                             *       },
+                             *       "created_at": 1735689600000,
+                             *       "id": "mem_fact_1",
+                             *       "importance": 0.8,
+                             *       "scope": "chat",
+                             *       "scope_id": "session-memory",
+                             *       "source_floor_id": "floor_12",
+                             *       "source_message_id": "msg_21",
+                             *       "status": "active",
+                             *       "type": "fact",
+                             *       "updated_at": 1735689660000
+                             *     }
+                             */
                             data: {
                                 confidence: number;
                                 content: unknown;
@@ -1258,6 +1461,40 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/memories/batch/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Batch delete memory items */
+        post: operations["batchDeleteMemoryItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memories/batch/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Batch update memory item status */
+        patch: operations["batchUpdateMemoryItemStatus"];
         trace?: never;
     };
     "/memories/stats": {
@@ -1570,6 +1807,14 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "deleted": true,
+                         *         "id": "mem_fact_1"
+                         *       }
+                         *     }
+                         */
                         "application/json": {
                             data: {
                                 deleted: boolean;
@@ -1637,6 +1882,40 @@ export interface paths {
         head?: never;
         /** Update message */
         patch: operations["updateMessage"];
+        trace?: never;
+    };
+    "/messages/batch/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Batch delete messages */
+        post: operations["batchDeleteMessages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/batch/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Batch update message visibility */
+        patch: operations["batchUpdateMessageVisibility"];
         trace?: never;
     };
     "/openapi.json": {
@@ -1752,10 +2031,28 @@ export interface paths {
         };
         /** Get imported preset */
         get: operations["getImportedPreset"];
-        put?: never;
+        /** Update imported preset by id */
+        put: operations["updateImportedPreset"];
         post?: never;
         /** Delete imported preset */
         delete: operations["deleteImportedPreset"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/presets/{id}/editor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get imported preset editor document */
+        get: operations["getImportedPresetEditor"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1825,6 +2122,59 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": [
+                         *         {
+                         *           "character_binding": {
+                         *             "character_id": "char_hero",
+                         *             "character_version_id": "charver_hero_v3",
+                         *             "snapshot_summary": {
+                         *               "has_greeting": true,
+                         *               "name": "Hero"
+                         *             },
+                         *             "sync_policy": "pin"
+                         *           },
+                         *           "created_at": 1735689600000,
+                         *           "id": "sess_demo",
+                         *           "metadata": {
+                         *             "source": "demo",
+                         *             "tags": [
+                         *               "beta",
+                         *               "docs"
+                         *             ]
+                         *           },
+                         *           "model_name": "gpt-4o-mini",
+                         *           "model_params": {
+                         *             "temperature": 0.7,
+                         *             "top_p": 0.9
+                         *           },
+                         *           "model_provider": "openai",
+                         *           "preset_id": "preset_story",
+                         *           "prompt_mode": "native",
+                         *           "regex_profile_id": "regex_safe",
+                         *           "status": "active",
+                         *           "title": "Campfire Planning",
+                         *           "updated_at": 1735689660000,
+                         *           "user_binding": {
+                         *             "snapshot_summary": {
+                         *               "name": "Alice"
+                         *             },
+                         *             "user_id": "usr_demo"
+                         *           },
+                         *           "worldbook_profile_id": "wb_world"
+                         *         }
+                         *       ],
+                         *       "meta": {
+                         *         "has_more": false,
+                         *         "limit": 20,
+                         *         "offset": 0,
+                         *         "sort_by": "created_at",
+                         *         "sort_order": "desc",
+                         *         "total": 1
+                         *       }
+                         *     }
+                         */
                         "application/json": {
                             data: {
                                 character_binding: {
@@ -1900,6 +2250,32 @@ export interface paths {
             };
             requestBody: {
                 content: {
+                    /**
+                     * @example {
+                     *       "character_id": "char_hero",
+                     *       "character_sync_policy": "pin",
+                     *       "metadata": {
+                     *         "source": "demo",
+                     *         "tags": [
+                     *           "beta",
+                     *           "docs"
+                     *         ]
+                     *       },
+                     *       "model_name": "gpt-4o-mini",
+                     *       "model_params": {
+                     *         "temperature": 0.7,
+                     *         "top_p": 0.9
+                     *       },
+                     *       "model_provider": "openai",
+                     *       "preset_id": "preset_story",
+                     *       "prompt_mode": "native",
+                     *       "regex_profile_id": "regex_safe",
+                     *       "status": "active",
+                     *       "title": "Campfire Planning",
+                     *       "user_id": "usr_demo",
+                     *       "worldbook_profile_id": "wb_world"
+                     *     }
+                     */
                     "application/json": {
                         character_id?: string;
                         character_snapshot?: Record<string, never>;
@@ -1932,7 +2308,91 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "character_binding": {
+                         *           "character_id": "char_hero",
+                         *           "character_version_id": "charver_hero_v3",
+                         *           "snapshot_summary": {
+                         *             "has_greeting": true,
+                         *             "name": "Hero"
+                         *           },
+                         *           "sync_policy": "pin"
+                         *         },
+                         *         "created_at": 1735689600000,
+                         *         "id": "sess_demo",
+                         *         "metadata": {
+                         *           "source": "demo",
+                         *           "tags": [
+                         *             "beta",
+                         *             "docs"
+                         *           ]
+                         *         },
+                         *         "model_name": "gpt-4o-mini",
+                         *         "model_params": {
+                         *           "temperature": 0.7,
+                         *           "top_p": 0.9
+                         *         },
+                         *         "model_provider": "openai",
+                         *         "preset_id": "preset_story",
+                         *         "prompt_mode": "native",
+                         *         "regex_profile_id": "regex_safe",
+                         *         "status": "active",
+                         *         "title": "Campfire Planning",
+                         *         "updated_at": 1735689660000,
+                         *         "user_binding": {
+                         *           "snapshot_summary": {
+                         *             "name": "Alice"
+                         *           },
+                         *           "user_id": "usr_demo"
+                         *         },
+                         *         "worldbook_profile_id": "wb_world"
+                         *       }
+                         *     }
+                         */
                         "application/json": {
+                            /**
+                             * @example {
+                             *       "character_binding": {
+                             *         "character_id": "char_hero",
+                             *         "character_version_id": "charver_hero_v3",
+                             *         "snapshot_summary": {
+                             *           "has_greeting": true,
+                             *           "name": "Hero"
+                             *         },
+                             *         "sync_policy": "pin"
+                             *       },
+                             *       "created_at": 1735689600000,
+                             *       "id": "sess_demo",
+                             *       "metadata": {
+                             *         "source": "demo",
+                             *         "tags": [
+                             *           "beta",
+                             *           "docs"
+                             *         ]
+                             *       },
+                             *       "model_name": "gpt-4o-mini",
+                             *       "model_params": {
+                             *         "temperature": 0.7,
+                             *         "top_p": 0.9
+                             *       },
+                             *       "model_provider": "openai",
+                             *       "preset_id": "preset_story",
+                             *       "prompt_mode": "native",
+                             *       "regex_profile_id": "regex_safe",
+                             *       "status": "active",
+                             *       "title": "Campfire Planning",
+                             *       "updated_at": 1735689660000,
+                             *       "user_binding": {
+                             *         "snapshot_summary": {
+                             *           "name": "Alice"
+                             *         },
+                             *         "user_id": "usr_demo"
+                             *       },
+                             *       "worldbook_profile_id": "wb_world"
+                             *     }
+                             */
                             data: {
                                 character_binding: {
                                     character_id: string | null;
@@ -2052,7 +2512,91 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "character_binding": {
+                         *           "character_id": "char_hero",
+                         *           "character_version_id": "charver_hero_v3",
+                         *           "snapshot_summary": {
+                         *             "has_greeting": true,
+                         *             "name": "Hero"
+                         *           },
+                         *           "sync_policy": "pin"
+                         *         },
+                         *         "created_at": 1735689600000,
+                         *         "id": "sess_demo",
+                         *         "metadata": {
+                         *           "source": "demo",
+                         *           "tags": [
+                         *             "beta",
+                         *             "docs"
+                         *           ]
+                         *         },
+                         *         "model_name": "gpt-4o-mini",
+                         *         "model_params": {
+                         *           "temperature": 0.7,
+                         *           "top_p": 0.9
+                         *         },
+                         *         "model_provider": "openai",
+                         *         "preset_id": "preset_story",
+                         *         "prompt_mode": "native",
+                         *         "regex_profile_id": "regex_safe",
+                         *         "status": "active",
+                         *         "title": "Campfire Planning",
+                         *         "updated_at": 1735689660000,
+                         *         "user_binding": {
+                         *           "snapshot_summary": {
+                         *             "name": "Alice"
+                         *           },
+                         *           "user_id": "usr_demo"
+                         *         },
+                         *         "worldbook_profile_id": "wb_world"
+                         *       }
+                         *     }
+                         */
                         "application/json": {
+                            /**
+                             * @example {
+                             *       "character_binding": {
+                             *         "character_id": "char_hero",
+                             *         "character_version_id": "charver_hero_v3",
+                             *         "snapshot_summary": {
+                             *           "has_greeting": true,
+                             *           "name": "Hero"
+                             *         },
+                             *         "sync_policy": "pin"
+                             *       },
+                             *       "created_at": 1735689600000,
+                             *       "id": "sess_demo",
+                             *       "metadata": {
+                             *         "source": "demo",
+                             *         "tags": [
+                             *           "beta",
+                             *           "docs"
+                             *         ]
+                             *       },
+                             *       "model_name": "gpt-4o-mini",
+                             *       "model_params": {
+                             *         "temperature": 0.7,
+                             *         "top_p": 0.9
+                             *       },
+                             *       "model_provider": "openai",
+                             *       "preset_id": "preset_story",
+                             *       "prompt_mode": "native",
+                             *       "regex_profile_id": "regex_safe",
+                             *       "status": "active",
+                             *       "title": "Campfire Planning",
+                             *       "updated_at": 1735689660000,
+                             *       "user_binding": {
+                             *         "snapshot_summary": {
+                             *           "name": "Alice"
+                             *         },
+                             *         "user_id": "usr_demo"
+                             *       },
+                             *       "worldbook_profile_id": "wb_world"
+                             *     }
+                             */
                             data: {
                                 character_binding: {
                                     character_id: string | null;
@@ -2127,6 +2671,14 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "deleted": true,
+                         *         "id": "sess_demo"
+                         *       }
+                         *     }
+                         */
                         "application/json": {
                             data: {
                                 deleted: boolean;
@@ -2168,6 +2720,32 @@ export interface paths {
             };
             requestBody: {
                 content: {
+                    /**
+                     * @example {
+                     *       "character_id": "char_hero",
+                     *       "character_sync_policy": "pin",
+                     *       "metadata": {
+                     *         "source": "demo",
+                     *         "tags": [
+                     *           "beta",
+                     *           "docs"
+                     *         ]
+                     *       },
+                     *       "model_name": "gpt-4o-mini",
+                     *       "model_params": {
+                     *         "temperature": 0.7,
+                     *         "top_p": 0.9
+                     *       },
+                     *       "model_provider": "openai",
+                     *       "preset_id": "preset_story",
+                     *       "prompt_mode": "native",
+                     *       "regex_profile_id": "regex_safe",
+                     *       "status": "active",
+                     *       "title": "Campfire Planning",
+                     *       "user_id": "usr_demo",
+                     *       "worldbook_profile_id": "wb_world"
+                     *     }
+                     */
                     "application/json": {
                         character_id?: string;
                         character_snapshot?: Record<string, never>;
@@ -2200,7 +2778,91 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "character_binding": {
+                         *           "character_id": "char_hero",
+                         *           "character_version_id": "charver_hero_v3",
+                         *           "snapshot_summary": {
+                         *             "has_greeting": true,
+                         *             "name": "Hero"
+                         *           },
+                         *           "sync_policy": "pin"
+                         *         },
+                         *         "created_at": 1735689600000,
+                         *         "id": "sess_demo",
+                         *         "metadata": {
+                         *           "source": "demo",
+                         *           "tags": [
+                         *             "beta",
+                         *             "docs"
+                         *           ]
+                         *         },
+                         *         "model_name": "gpt-4o-mini",
+                         *         "model_params": {
+                         *           "temperature": 0.7,
+                         *           "top_p": 0.9
+                         *         },
+                         *         "model_provider": "openai",
+                         *         "preset_id": "preset_story",
+                         *         "prompt_mode": "native",
+                         *         "regex_profile_id": "regex_safe",
+                         *         "status": "active",
+                         *         "title": "Campfire Planning",
+                         *         "updated_at": 1735689660000,
+                         *         "user_binding": {
+                         *           "snapshot_summary": {
+                         *             "name": "Alice"
+                         *           },
+                         *           "user_id": "usr_demo"
+                         *         },
+                         *         "worldbook_profile_id": "wb_world"
+                         *       }
+                         *     }
+                         */
                         "application/json": {
+                            /**
+                             * @example {
+                             *       "character_binding": {
+                             *         "character_id": "char_hero",
+                             *         "character_version_id": "charver_hero_v3",
+                             *         "snapshot_summary": {
+                             *           "has_greeting": true,
+                             *           "name": "Hero"
+                             *         },
+                             *         "sync_policy": "pin"
+                             *       },
+                             *       "created_at": 1735689600000,
+                             *       "id": "sess_demo",
+                             *       "metadata": {
+                             *         "source": "demo",
+                             *         "tags": [
+                             *           "beta",
+                             *           "docs"
+                             *         ]
+                             *       },
+                             *       "model_name": "gpt-4o-mini",
+                             *       "model_params": {
+                             *         "temperature": 0.7,
+                             *         "top_p": 0.9
+                             *       },
+                             *       "model_provider": "openai",
+                             *       "preset_id": "preset_story",
+                             *       "prompt_mode": "native",
+                             *       "regex_profile_id": "regex_safe",
+                             *       "status": "active",
+                             *       "title": "Campfire Planning",
+                             *       "updated_at": 1735689660000,
+                             *       "user_binding": {
+                             *         "snapshot_summary": {
+                             *           "name": "Alice"
+                             *         },
+                             *         "user_id": "usr_demo"
+                             *       },
+                             *       "worldbook_profile_id": "wb_world"
+                             *     }
+                             */
                             data: {
                                 character_binding: {
                                     character_id: string | null;
@@ -2321,6 +2983,28 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": [
+                         *         {
+                         *           "branch_id": "main",
+                         *           "floor_count": 3,
+                         *           "latest_floor_id": "floor_12",
+                         *           "latest_floor_no": 2,
+                         *           "latest_state": "committed",
+                         *           "updated_at": 1735689720000
+                         *         }
+                         *       ],
+                         *       "meta": {
+                         *         "has_more": false,
+                         *         "limit": 20,
+                         *         "offset": 0,
+                         *         "sort_by": "updated_at",
+                         *         "sort_order": "desc",
+                         *         "total": 1
+                         *       }
+                         *     }
+                         */
                         "application/json": {
                             data: {
                                 branch_id: string;
@@ -2397,6 +3081,36 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "base_branch_id": "main",
+                         *         "base_only_floors": [
+                         *           {
+                         *             "branchId": "main",
+                         *             "floorNo": 2,
+                         *             "id": "floor_12",
+                         *             "state": "committed"
+                         *           }
+                         *         ],
+                         *         "fork_floor_no": 1,
+                         *         "session_id": "sess_demo",
+                         *         "shared_floor_nos": [
+                         *           0,
+                         *           1
+                         *         ],
+                         *         "target_branch_id": "alt-branch",
+                         *         "target_only_floors": [
+                         *           {
+                         *             "branchId": "alt-branch",
+                         *             "floorNo": 2,
+                         *             "id": "floor_13",
+                         *             "state": "committed"
+                         *           }
+                         *         ]
+                         *       }
+                         *     }
+                         */
                         "application/json": {
                             data: {
                                 base_branch_id: string;
@@ -2460,7 +3174,18 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    /**
+                     * @example {
+                     *       "force": true
+                     *     }
+                     */
+                    "application/json": {
+                        force?: boolean;
+                    };
+                };
+            };
             responses: {
                 /** @description Default Response */
                 200: {
@@ -2468,7 +3193,91 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "character_binding": {
+                         *           "character_id": "char_hero",
+                         *           "character_version_id": "charver_hero_v3",
+                         *           "snapshot_summary": {
+                         *             "has_greeting": true,
+                         *             "name": "Hero"
+                         *           },
+                         *           "sync_policy": "pin"
+                         *         },
+                         *         "created_at": 1735689600000,
+                         *         "id": "sess_demo",
+                         *         "metadata": {
+                         *           "source": "demo",
+                         *           "tags": [
+                         *             "beta",
+                         *             "docs"
+                         *           ]
+                         *         },
+                         *         "model_name": "gpt-4o-mini",
+                         *         "model_params": {
+                         *           "temperature": 0.7,
+                         *           "top_p": 0.9
+                         *         },
+                         *         "model_provider": "openai",
+                         *         "preset_id": "preset_story",
+                         *         "prompt_mode": "native",
+                         *         "regex_profile_id": "regex_safe",
+                         *         "status": "active",
+                         *         "title": "Campfire Planning",
+                         *         "updated_at": 1735689660000,
+                         *         "user_binding": {
+                         *           "snapshot_summary": {
+                         *             "name": "Alice"
+                         *           },
+                         *           "user_id": "usr_demo"
+                         *         },
+                         *         "worldbook_profile_id": "wb_world"
+                         *       }
+                         *     }
+                         */
                         "application/json": {
+                            /**
+                             * @example {
+                             *       "character_binding": {
+                             *         "character_id": "char_hero",
+                             *         "character_version_id": "charver_hero_v3",
+                             *         "snapshot_summary": {
+                             *           "has_greeting": true,
+                             *           "name": "Hero"
+                             *         },
+                             *         "sync_policy": "pin"
+                             *       },
+                             *       "created_at": 1735689600000,
+                             *       "id": "sess_demo",
+                             *       "metadata": {
+                             *         "source": "demo",
+                             *         "tags": [
+                             *           "beta",
+                             *           "docs"
+                             *         ]
+                             *       },
+                             *       "model_name": "gpt-4o-mini",
+                             *       "model_params": {
+                             *         "temperature": 0.7,
+                             *         "top_p": 0.9
+                             *       },
+                             *       "model_provider": "openai",
+                             *       "preset_id": "preset_story",
+                             *       "prompt_mode": "native",
+                             *       "regex_profile_id": "regex_safe",
+                             *       "status": "active",
+                             *       "title": "Campfire Planning",
+                             *       "updated_at": 1735689660000,
+                             *       "user_binding": {
+                             *         "snapshot_summary": {
+                             *           "name": "Alice"
+                             *         },
+                             *         "user_id": "usr_demo"
+                             *       },
+                             *       "worldbook_profile_id": "wb_world"
+                             *     }
+                             */
                             data: {
                                 character_binding: {
                                     character_id: string | null;
@@ -2592,6 +3401,48 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "branch_id": "main",
+                         *         "floors": [
+                         *           {
+                         *             "active_page": {
+                         *               "id": "page_12",
+                         *               "messages": [
+                         *                 {
+                         *                   "content": "The firelight wavers as the next part of the story begins.",
+                         *                   "content_format": "text",
+                         *                   "id": "msg_21",
+                         *                   "role": "assistant",
+                         *                   "seq": 0
+                         *                 }
+                         *               ],
+                         *               "page_kind": "output",
+                         *               "page_no": 0,
+                         *               "version": 1
+                         *             },
+                         *             "created_at": 1735689720000,
+                         *             "floor_no": 2,
+                         *             "id": "floor_12",
+                         *             "page_count": 1,
+                         *             "state": "committed",
+                         *             "token_in": 320,
+                         *             "token_out": 128
+                         *           }
+                         *         ],
+                         *         "session_id": "sess_demo"
+                         *       },
+                         *       "meta": {
+                         *         "has_more": false,
+                         *         "limit": 50,
+                         *         "offset": 0,
+                         *         "sort_by": "floor_no",
+                         *         "sort_order": "asc",
+                         *         "total": 1
+                         *       }
+                         *     }
+                         */
                         "application/json": {
                             data: {
                                 branch_id: string;
@@ -2689,6 +3540,31 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": [
+                         *         {
+                         *           "created_at": 1735689600000,
+                         *           "id": "usr_demo",
+                         *           "name": "Alice",
+                         *           "snapshot": {
+                         *             "description": "A calm strategist who keeps concise notes.",
+                         *             "name": "Alice"
+                         *           },
+                         *           "status": "active",
+                         *           "updated_at": 1735689600000
+                         *         }
+                         *       ],
+                         *       "meta": {
+                         *         "has_more": false,
+                         *         "limit": 20,
+                         *         "offset": 0,
+                         *         "sort_by": "updated_at",
+                         *         "sort_order": "desc",
+                         *         "total": 1
+                         *       }
+                         *     }
+                         */
                         "application/json": {
                             data: {
                                 created_at: number;
@@ -2743,6 +3619,15 @@ export interface paths {
             };
             requestBody: {
                 content: {
+                    /**
+                     * @example {
+                     *       "snapshot": {
+                     *         "description": "A calm strategist who keeps concise notes.",
+                     *         "name": "Alice"
+                     *       },
+                     *       "status": "active"
+                     *     }
+                     */
                     "application/json": {
                         snapshot: {
                             [key: string]: unknown;
@@ -2759,7 +3644,35 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "created_at": 1735689600000,
+                         *         "id": "usr_demo",
+                         *         "name": "Alice",
+                         *         "snapshot": {
+                         *           "description": "A calm strategist who keeps concise notes.",
+                         *           "name": "Alice"
+                         *         },
+                         *         "status": "active",
+                         *         "updated_at": 1735689600000
+                         *       }
+                         *     }
+                         */
                         "application/json": {
+                            /**
+                             * @example {
+                             *       "created_at": 1735689600000,
+                             *       "id": "usr_demo",
+                             *       "name": "Alice",
+                             *       "snapshot": {
+                             *         "description": "A calm strategist who keeps concise notes.",
+                             *         "name": "Alice"
+                             *       },
+                             *       "status": "active",
+                             *       "updated_at": 1735689600000
+                             *     }
+                             */
                             data: {
                                 created_at: number;
                                 id: string;
@@ -2841,7 +3754,35 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "created_at": 1735689600000,
+                         *         "id": "usr_demo",
+                         *         "name": "Alice",
+                         *         "snapshot": {
+                         *           "description": "A calm strategist who keeps concise notes.",
+                         *           "name": "Alice"
+                         *         },
+                         *         "status": "active",
+                         *         "updated_at": 1735689600000
+                         *       }
+                         *     }
+                         */
                         "application/json": {
+                            /**
+                             * @example {
+                             *       "created_at": 1735689600000,
+                             *       "id": "usr_demo",
+                             *       "name": "Alice",
+                             *       "snapshot": {
+                             *         "description": "A calm strategist who keeps concise notes.",
+                             *         "name": "Alice"
+                             *       },
+                             *       "status": "active",
+                             *       "updated_at": 1735689600000
+                             *     }
+                             */
                             data: {
                                 created_at: number;
                                 id: string;
@@ -2895,6 +3836,14 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "deleted": true,
+                         *         "id": "usr_demo"
+                         *       }
+                         *     }
+                         */
                         "application/json": {
                             data: {
                                 deleted: boolean;
@@ -2936,6 +3885,15 @@ export interface paths {
             };
             requestBody: {
                 content: {
+                    /**
+                     * @example {
+                     *       "snapshot": {
+                     *         "description": "A calm strategist who keeps concise notes.",
+                     *         "name": "Alice"
+                     *       },
+                     *       "status": "active"
+                     *     }
+                     */
                     "application/json": {
                         snapshot?: {
                             [key: string]: unknown;
@@ -2952,7 +3910,35 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "created_at": 1735689600000,
+                         *         "id": "usr_demo",
+                         *         "name": "Alice",
+                         *         "snapshot": {
+                         *           "description": "A calm strategist who keeps concise notes.",
+                         *           "name": "Alice"
+                         *         },
+                         *         "status": "active",
+                         *         "updated_at": 1735689600000
+                         *       }
+                         *     }
+                         */
                         "application/json": {
+                            /**
+                             * @example {
+                             *       "created_at": 1735689600000,
+                             *       "id": "usr_demo",
+                             *       "name": "Alice",
+                             *       "snapshot": {
+                             *         "description": "A calm strategist who keeps concise notes.",
+                             *         "name": "Alice"
+                             *       },
+                             *       "status": "active",
+                             *       "updated_at": 1735689600000
+                             *     }
+                             */
                             data: {
                                 created_at: number;
                                 id: string;
@@ -3058,6 +4044,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/variables/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Batch upsert variables */
+        put: operations["batchUpsertVariables"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/worldbooks": {
         parameters: {
             query?: never;
@@ -3084,7 +4087,8 @@ export interface paths {
         };
         /** Get imported worldbook */
         get: operations["getImportedWorldbook"];
-        put?: never;
+        /** Update imported worldbook by id */
+        put: operations["updateImportedWorldbook"];
         post?: never;
         /** Delete imported worldbook */
         delete: operations["deleteImportedWorldbook"];
@@ -3120,6 +4124,21 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "created_at": 1735689600000,
+                     *           "id": "acc_demo",
+                     *           "is_default": false,
+                     *           "name": "Demo Workspace",
+                     *           "role": "user",
+                     *           "status": "active",
+                     *           "updated_at": 1735689600000
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             created_at: number;
@@ -3163,6 +4182,13 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "id": "acc_demo",
+                 *       "name": "Demo Workspace",
+                 *       "role": "user"
+                 *     }
+                 */
                 "application/json": {
                     id?: string;
                     name: string;
@@ -3178,7 +4204,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "id": "acc_demo",
+                     *         "is_default": false,
+                     *         "name": "Demo Workspace",
+                     *         "role": "user",
+                     *         "status": "active",
+                     *         "updated_at": 1735689600000
+                     *       }
+                     *     }
+                     */
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "created_at": 1735689600000,
+                         *       "id": "acc_demo",
+                         *       "is_default": false,
+                         *       "name": "Demo Workspace",
+                         *       "role": "user",
+                         *       "status": "active",
+                         *       "updated_at": 1735689600000
+                         *     }
+                         */
                         data: {
                             created_at: number;
                             id: string;
@@ -3727,6 +4777,24 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "create_session": true,
+                 *       "payload": {
+                 *         "data": {
+                 *           "description": "A moon priestess who keeps watch at night.",
+                 *           "first_mes": "The moon is bright tonight.",
+                 *           "mes_example": "<START>\n{{char}}: The tide is turning.",
+                 *           "name": "Luna",
+                 *           "personality": "Calm and precise",
+                 *           "scenario": "Night watch at the city wall"
+                 *         },
+                 *         "spec": "chara_card_v2",
+                 *         "spec_version": "2.0"
+                 *       },
+                 *       "title": "Luna Demo Session"
+                 *     }
+                 */
                 "application/json": {
                     create_session?: boolean;
                     payload: {
@@ -3743,6 +4811,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "character": {
+                     *           "description": "A moon priestess who keeps watch at night.",
+                     *           "first_mes": "The moon is bright tonight.",
+                     *           "mes_example": "<START>\n{{char}}: The tide is turning.",
+                     *           "name": "Luna",
+                     *           "personality": "Calm and precise",
+                     *           "scenario": "Night watch at the city wall"
+                     *         },
+                     *         "create_session": true,
+                     *         "session": {
+                     *           "character_binding": {
+                     *             "character_id": "char_luna",
+                     *             "character_version_id": "charver_luna_1",
+                     *             "snapshot_summary": {
+                     *               "has_greeting": true,
+                     *               "name": "Luna"
+                     *             },
+                     *             "sync_policy": "pin"
+                     *           },
+                     *           "created_at": 1735689600000,
+                     *           "id": "sess_luna",
+                     *           "status": "active",
+                     *           "title": "Luna Demo Session",
+                     *           "updated_at": 1735689660000
+                     *         }
+                     *       }
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             character: {
@@ -3805,6 +4904,15 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "data": {
+                 *         "prompt_order": [],
+                 *         "prompts": []
+                 *       },
+                 *       "name": "Story Preset"
+                 *     }
+                 */
                 "application/json": {
                     data: {
                         [key: string]: unknown;
@@ -3820,6 +4928,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "id": "preset_story",
+                     *         "name": "Story Preset",
+                     *         "source": "sillytavern"
+                     *       }
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             id: string;
@@ -3857,6 +4974,18 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "data": [
+                 *         {
+                 *           "find": "\\s+$",
+                 *           "replace": "",
+                 *           "scriptName": "trim_whitespace"
+                 *         }
+                 *       ],
+                 *       "name": "Safety Filters"
+                 *     }
+                 */
                 "application/json": {
                     data: {
                         [key: string]: unknown;
@@ -3872,6 +5001,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "id": "regex_safe",
+                     *         "name": "Safety Filters",
+                     *         "script_count": 1,
+                     *         "source": "sillytavern"
+                     *       }
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             id: string;
@@ -3910,6 +5049,21 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "data": {
+                 *         "entries": [
+                 *           {
+                 *             "content": "The kingdom is recovering from a long war.",
+                 *             "keys": [
+                 *               "kingdom"
+                 *             ]
+                 *           }
+                 *         ]
+                 *       },
+                 *       "name": "Kingdom Lore"
+                 *     }
+                 */
                 "application/json": {
                     data: {
                         [key: string]: unknown;
@@ -3925,6 +5079,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "id": "preset_story",
+                     *         "name": "Story Preset",
+                     *         "source": "sillytavern"
+                     *       }
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             id: string;
@@ -3971,6 +5134,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "api_key_masked": "sk-***-key",
+                     *           "api_key_name": "OPENAI_API_KEY",
+                     *           "base_url": null,
+                     *           "created_at": 1735689600000,
+                     *           "id": "lp_narrator",
+                     *           "last_used_at": 1735689660000,
+                     *           "model_id": "gpt-4o-mini",
+                     *           "preset_name": "OpenAI Narrator",
+                     *           "provider": "openai",
+                     *           "status": "active",
+                     *           "updated_at": 1735689660000
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             api_key_masked: string;
@@ -4018,6 +5200,15 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "api_key": "sk-demo-key",
+                 *       "api_key_name": "OPENAI_API_KEY",
+                 *       "model_id": "gpt-4o-mini",
+                 *       "preset_name": "OpenAI Narrator",
+                 *       "provider": "openai"
+                 *     }
+                 */
                 "application/json": {
                     api_key: string;
                     api_key_name?: string;
@@ -4036,7 +5227,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "api_key_masked": "sk-***-key",
+                     *         "api_key_name": "OPENAI_API_KEY",
+                     *         "base_url": null,
+                     *         "created_at": 1735689600000,
+                     *         "id": "lp_narrator",
+                     *         "last_used_at": 1735689660000,
+                     *         "model_id": "gpt-4o-mini",
+                     *         "preset_name": "OpenAI Narrator",
+                     *         "provider": "openai",
+                     *         "status": "active",
+                     *         "updated_at": 1735689660000
+                     *       }
+                     *     }
+                     */
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "api_key_masked": "sk-***-key",
+                         *       "api_key_name": "OPENAI_API_KEY",
+                         *       "base_url": null,
+                         *       "created_at": 1735689600000,
+                         *       "id": "lp_narrator",
+                         *       "last_used_at": 1735689660000,
+                         *       "model_id": "gpt-4o-mini",
+                         *       "preset_name": "OpenAI Narrator",
+                         *       "provider": "openai",
+                         *       "status": "active",
+                         *       "updated_at": 1735689660000
+                         *     }
+                         */
                         data: {
                             api_key_masked: string;
                             api_key_name: string | null;
@@ -4125,7 +5348,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "api_key_masked": "sk-***-key",
+                     *         "api_key_name": "OPENAI_API_KEY",
+                     *         "base_url": null,
+                     *         "created_at": 1735689600000,
+                     *         "id": "lp_narrator",
+                     *         "last_used_at": 1735689660000,
+                     *         "model_id": "gpt-4o-mini",
+                     *         "preset_name": "OpenAI Narrator",
+                     *         "provider": "openai",
+                     *         "status": "active",
+                     *         "updated_at": 1735689660000
+                     *       }
+                     *     }
+                     */
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "api_key_masked": "sk-***-key",
+                         *       "api_key_name": "OPENAI_API_KEY",
+                         *       "base_url": null,
+                         *       "created_at": 1735689600000,
+                         *       "id": "lp_narrator",
+                         *       "last_used_at": 1735689660000,
+                         *       "model_id": "gpt-4o-mini",
+                         *       "preset_name": "OpenAI Narrator",
+                         *       "provider": "openai",
+                         *       "status": "active",
+                         *       "updated_at": 1735689660000
+                         *     }
+                         */
                         data: {
                             api_key_masked: string;
                             api_key_name: string | null;
@@ -4197,6 +5452,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "deleted": true,
+                     *         "id": "lp_narrator"
+                     *       }
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             deleted: boolean;
@@ -4269,6 +5532,13 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "api_key_name": "OPENAI_API_KEY",
+                 *       "preset_name": "OpenAI Narrator v2",
+                 *       "status": "active"
+                 *     }
+                 */
                 "application/json": {
                     api_key?: string;
                     api_key_name?: string | null;
@@ -4289,7 +5559,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "api_key_masked": "sk-***-key",
+                     *         "api_key_name": "OPENAI_API_KEY",
+                     *         "base_url": null,
+                     *         "created_at": 1735689600000,
+                     *         "id": "lp_narrator",
+                     *         "last_used_at": 1735689660000,
+                     *         "model_id": "gpt-4o-mini",
+                     *         "preset_name": "OpenAI Narrator",
+                     *         "provider": "openai",
+                     *         "status": "active",
+                     *         "updated_at": 1735689660000
+                     *       }
+                     *     }
+                     */
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "api_key_masked": "sk-***-key",
+                         *       "api_key_name": "OPENAI_API_KEY",
+                         *       "base_url": null,
+                         *       "created_at": 1735689600000,
+                         *       "id": "lp_narrator",
+                         *       "last_used_at": 1735689660000,
+                         *       "model_id": "gpt-4o-mini",
+                         *       "preset_name": "OpenAI Narrator",
+                         *       "provider": "openai",
+                         *       "status": "active",
+                         *       "updated_at": 1735689660000
+                         *     }
+                         */
                         data: {
                             api_key_masked: string;
                             api_key_name: string | null;
@@ -4389,12 +5691,39 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "instance_slot": "director",
+                 *       "params": {
+                 *         "max_output_tokens": 512,
+                 *         "max_retries": 2,
+                 *         "reasoning_effort": "low",
+                 *         "temperature": 0.7
+                 *       },
+                 *       "scope": "session",
+                 *       "session_id": "sess_demo"
+                 *     }
+                 */
                 "application/json": {
                     /**
                      * @default *
                      * @enum {string}
                      */
                     instance_slot?: "*" | "narrator" | "director" | "verifier" | "memory";
+                    params?: {
+                        frequency_penalty?: number;
+                        max_context_tokens?: number;
+                        max_output_tokens?: number;
+                        max_retries?: number;
+                        presence_penalty?: number;
+                        /** @enum {string} */
+                        reasoning_effort?: "low" | "medium" | "high";
+                        stream?: boolean;
+                        temperature?: number;
+                        timeout_ms?: number;
+                        top_k?: number;
+                        top_p?: number;
+                    } | null;
                     /**
                      * @default global
                      * @enum {string}
@@ -4411,10 +5740,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "activated": true,
+                     *         "instance_slot": "director",
+                     *         "params": {
+                     *           "max_output_tokens": 512,
+                     *           "max_retries": 2,
+                     *           "reasoning_effort": "low",
+                     *           "temperature": 0.7
+                     *         },
+                     *         "profile_id": "lp_narrator",
+                     *         "scope": "session",
+                     *         "scope_id": "sess_demo"
+                     *       }
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             activated: boolean;
                             instance_slot: string;
+                            params: {
+                                frequency_penalty?: number;
+                                max_context_tokens?: number;
+                                max_output_tokens?: number;
+                                max_retries?: number;
+                                presence_penalty?: number;
+                                /** @enum {string} */
+                                reasoning_effort?: "low" | "medium" | "high";
+                                stream?: boolean;
+                                temperature?: number;
+                                timeout_ms?: number;
+                                top_k?: number;
+                                top_p?: number;
+                            } | null;
                             profile_id: string;
                             /** @enum {string} */
                             scope: "global" | "session";
@@ -4459,6 +5819,523 @@ export interface operations {
             };
             /** @description Default Response */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    discoverLlmProfileModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "api_key": "sk-demo-key",
+                 *       "provider": "openai"
+                 *     }
+                 */
+                "application/json": {
+                    api_key: string;
+                    base_url?: string;
+                    /** @enum {string} */
+                    provider: "openai" | "anthropic" | "google" | "deepseek" | "xai" | "openai-compatible";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "gpt-4o-mini",
+                     *           "label": "gpt-4o-mini"
+                     *         },
+                     *         {
+                     *           "id": "gpt-4.1-mini",
+                     *           "label": "gpt-4.1-mini"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            id: string;
+                            label: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    testLlmProfileModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "api_key": "sk-demo-key",
+                 *       "model_id": "gpt-4o-mini",
+                 *       "provider": "openai",
+                 *       "reasoning_effort": "low"
+                 *     }
+                 */
+                "application/json": {
+                    api_key: string;
+                    base_url?: string;
+                    model_id: string;
+                    /** @enum {string} */
+                    provider: "openai" | "anthropic" | "google" | "deepseek" | "xai" | "openai-compatible";
+                    /** @enum {string} */
+                    reasoning_effort?: "low" | "medium" | "high";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "request_text": "Hello",
+                     *         "response_text": "Hello! How can I help you today?"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            request_text: string;
+                            response_text: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getLlmRuntimeProfiles: {
+        parameters: {
+            query?: {
+                session_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "session_id": "sess_demo",
+                     *         "slots": [
+                     *           {
+                     *             "model_id": "gpt-4o-mini",
+                     *             "params": {
+                     *               "max_output_tokens": 512,
+                     *               "max_retries": 2,
+                     *               "reasoning_effort": "low",
+                     *               "temperature": 0.7
+                     *             },
+                     *             "preset_name": "OpenAI Narrator",
+                     *             "profile_id": "lp_narrator",
+                     *             "provider": "openai",
+                     *             "scope": "session",
+                     *             "slot": "director",
+                     *             "source": "session_profile"
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            session_id: string | null;
+                            slots: {
+                                model_id: string;
+                                params: {
+                                    frequency_penalty?: number;
+                                    max_context_tokens?: number;
+                                    max_output_tokens?: number;
+                                    max_retries?: number;
+                                    presence_penalty?: number;
+                                    /** @enum {string} */
+                                    reasoning_effort?: "low" | "medium" | "high";
+                                    stream?: boolean;
+                                    temperature?: number;
+                                    timeout_ms?: number;
+                                    top_k?: number;
+                                    top_p?: number;
+                                } | null;
+                                preset_name: string | null;
+                                profile_id: string | null;
+                                provider: string;
+                                scope: ("global" | "session") | null;
+                                /** @enum {string} */
+                                slot: "*" | "narrator" | "director" | "verifier" | "memory";
+                                /** @enum {string} */
+                                source: "env" | "global_profile" | "session_profile";
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchDeleteMemoryItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "ids": [
+                 *         "mem_fact_1",
+                 *         "mem_missing"
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "meta": {
+                     *           "deleted": 1,
+                     *           "not_found": 1,
+                     *           "total": 2
+                     *         },
+                     *         "results": [
+                     *           {
+                     *             "action": "deleted",
+                     *             "id": "mem_fact_1",
+                     *             "index": 0
+                     *           },
+                     *           {
+                     *             "action": "not_found",
+                     *             "id": "mem_missing",
+                     *             "index": 1
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            meta: {
+                                deleted: number;
+                                not_found: number;
+                                total: number;
+                            };
+                            results: {
+                                /** @enum {string} */
+                                action: "deleted" | "not_found";
+                                id: string;
+                                index: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchUpdateMemoryItemStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "ids": [
+                 *         "mem_fact_1",
+                 *         "mem_missing"
+                 *       ],
+                 *       "status": "deprecated"
+                 *     }
+                 */
+                "application/json": {
+                    ids: string[];
+                    /** @enum {string} */
+                    status: "active" | "deprecated";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "meta": {
+                     *           "not_found": 1,
+                     *           "status": "deprecated",
+                     *           "total": 2,
+                     *           "updated": 1
+                     *         },
+                     *         "results": [
+                     *           {
+                     *             "action": "updated",
+                     *             "data": {
+                     *               "confidence": 0.9,
+                     *               "content": {
+                     *                 "text": "Alice carries a silver sword."
+                     *               },
+                     *               "created_at": 1735689600000,
+                     *               "id": "mem_fact_1",
+                     *               "importance": 0.8,
+                     *               "scope": "chat",
+                     *               "scope_id": "session-memory",
+                     *               "source_floor_id": "floor_12",
+                     *               "source_message_id": "msg_21",
+                     *               "status": "deprecated",
+                     *               "type": "fact",
+                     *               "updated_at": 1735689720000
+                     *             },
+                     *             "id": "mem_fact_1",
+                     *             "index": 0
+                     *           },
+                     *           {
+                     *             "action": "not_found",
+                     *             "id": "mem_missing",
+                     *             "index": 1
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            meta: {
+                                not_found: number;
+                                /** @enum {string} */
+                                status: "active" | "deprecated";
+                                total: number;
+                                updated: number;
+                            };
+                            results: {
+                                /** @enum {string} */
+                                action: "updated" | "not_found";
+                                /**
+                                 * @example {
+                                 *       "confidence": 0.9,
+                                 *       "content": {
+                                 *         "text": "Alice carries a silver sword."
+                                 *       },
+                                 *       "created_at": 1735689600000,
+                                 *       "id": "mem_fact_1",
+                                 *       "importance": 0.8,
+                                 *       "scope": "chat",
+                                 *       "scope_id": "session-memory",
+                                 *       "source_floor_id": "floor_12",
+                                 *       "source_message_id": "msg_21",
+                                 *       "status": "active",
+                                 *       "type": "fact",
+                                 *       "updated_at": 1735689660000
+                                 *     }
+                                 */
+                                data?: {
+                                    confidence: number;
+                                    content: unknown;
+                                    created_at: number;
+                                    id: string;
+                                    importance: number;
+                                    /** @enum {string} */
+                                    scope: "global" | "chat" | "floor";
+                                    scope_id: string;
+                                    source_floor_id?: string | null;
+                                    source_message_id?: string | null;
+                                    /** @enum {string} */
+                                    status: "active" | "deprecated";
+                                    /** @enum {string} */
+                                    type: "fact" | "summary" | "open_loop";
+                                    updated_at: number;
+                                };
+                                id: string;
+                                index: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4554,6 +6431,18 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "content": "The fire settles into a steady glow.",
+                 *       "content_format": "text",
+                 *       "is_hidden": false,
+                 *       "page_id": "page_12",
+                 *       "role": "assistant",
+                 *       "seq": 1,
+                 *       "source": "model",
+                 *       "token_count": 128
+                 *     }
+                 */
                 "application/json": {
                     content: string;
                     /** @enum {string} */
@@ -4576,6 +6465,20 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "content": "The fire settles into a steady glow.",
+                         *       "content_format": "text",
+                         *       "created_at": 1735689720000,
+                         *       "id": "msg_21",
+                         *       "is_hidden": false,
+                         *       "page_id": "page_12",
+                         *       "role": "assistant",
+                         *       "seq": 1,
+                         *       "source": "model",
+                         *       "token_count": 128
+                         *     }
+                         */
                         data: {
                             content: string;
                             /** @enum {string} */
@@ -4647,6 +6550,20 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "content": "The fire settles into a steady glow.",
+                         *       "content_format": "text",
+                         *       "created_at": 1735689720000,
+                         *       "id": "msg_21",
+                         *       "is_hidden": false,
+                         *       "page_id": "page_12",
+                         *       "role": "assistant",
+                         *       "seq": 1,
+                         *       "source": "model",
+                         *       "token_count": 128
+                         *     }
+                         */
                         data: {
                             content: string;
                             /** @enum {string} */
@@ -4738,6 +6655,18 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "content": "The fire settles into a steady glow.",
+                 *       "content_format": "text",
+                 *       "is_hidden": false,
+                 *       "page_id": "page_12",
+                 *       "role": "assistant",
+                 *       "seq": 1,
+                 *       "source": "model",
+                 *       "token_count": 128
+                 *     }
+                 */
                 "application/json": {
                     content?: string;
                     /** @enum {string} */
@@ -4760,6 +6689,20 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "content": "The fire settles into a steady glow.",
+                         *       "content_format": "text",
+                         *       "created_at": 1735689720000,
+                         *       "id": "msg_21",
+                         *       "is_hidden": false,
+                         *       "page_id": "page_12",
+                         *       "role": "assistant",
+                         *       "seq": 1,
+                         *       "source": "model",
+                         *       "token_count": 128
+                         *     }
+                         */
                         data: {
                             content: string;
                             /** @enum {string} */
@@ -4796,6 +6739,226 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchDeleteMessages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "ids": [
+                 *         "msg_21",
+                 *         "msg_missing"
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "meta": {
+                     *           "deleted": 1,
+                     *           "not_found": 1,
+                     *           "total": 2
+                     *         },
+                     *         "results": [
+                     *           {
+                     *             "action": "deleted",
+                     *             "id": "msg_21",
+                     *             "index": 0
+                     *           },
+                     *           {
+                     *             "action": "not_found",
+                     *             "id": "msg_missing",
+                     *             "index": 1
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            meta: {
+                                deleted: number;
+                                not_found: number;
+                                total: number;
+                            };
+                            results: {
+                                /** @enum {string} */
+                                action: "deleted" | "not_found";
+                                id: string;
+                                index: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchUpdateMessageVisibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "ids": [
+                 *         "msg_21",
+                 *         "msg_missing"
+                 *       ],
+                 *       "is_hidden": true
+                 *     }
+                 */
+                "application/json": {
+                    ids: string[];
+                    is_hidden: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "meta": {
+                     *           "is_hidden": true,
+                     *           "not_found": 1,
+                     *           "total": 2,
+                     *           "updated": 1
+                     *         },
+                     *         "results": [
+                     *           {
+                     *             "action": "updated",
+                     *             "data": {
+                     *               "content": "The fire settles into a steady glow.",
+                     *               "content_format": "text",
+                     *               "created_at": 1735689720000,
+                     *               "id": "msg_21",
+                     *               "is_hidden": true,
+                     *               "page_id": "page_12",
+                     *               "role": "assistant",
+                     *               "seq": 1,
+                     *               "source": "model",
+                     *               "token_count": 128
+                     *             },
+                     *             "id": "msg_21",
+                     *             "index": 0
+                     *           },
+                     *           {
+                     *             "action": "not_found",
+                     *             "id": "msg_missing",
+                     *             "index": 1
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            meta: {
+                                is_hidden: boolean;
+                                not_found: number;
+                                total: number;
+                                updated: number;
+                            };
+                            results: {
+                                /** @enum {string} */
+                                action: "updated" | "not_found";
+                                /**
+                                 * @example {
+                                 *       "content": "The fire settles into a steady glow.",
+                                 *       "content_format": "text",
+                                 *       "created_at": 1735689720000,
+                                 *       "id": "msg_21",
+                                 *       "is_hidden": false,
+                                 *       "page_id": "page_12",
+                                 *       "role": "assistant",
+                                 *       "seq": 1,
+                                 *       "source": "model",
+                                 *       "token_count": 128
+                                 *     }
+                                 */
+                                data?: {
+                                    content: string;
+                                    /** @enum {string} */
+                                    content_format: "text" | "markdown" | "json";
+                                    created_at: number;
+                                    id: string;
+                                    is_hidden: boolean;
+                                    page_id: string;
+                                    /** @enum {string} */
+                                    role: "user" | "assistant" | "system" | "narrator";
+                                    seq: number;
+                                    source: string | null;
+                                    token_count: number;
+                                };
+                                id: string;
+                                index: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5220,6 +7383,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "created_at": 1735689600000,
+                     *           "id": "preset_story",
+                     *           "name": "Story Preset",
+                     *           "source": "sillytavern",
+                     *           "updated_at": 1735689660000
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             created_at: number;
@@ -5250,7 +7426,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "data": {
+                     *           "prompt_order": [],
+                     *           "prompts": []
+                     *         },
+                     *         "id": "preset_story",
+                     *         "name": "Story Preset",
+                     *         "source": "sillytavern",
+                     *         "updated_at": 1735689660000
+                     *       }
+                     *     }
+                     */
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "created_at": 1735689600000,
+                         *       "id": "preset_story",
+                         *       "name": "Story Preset",
+                         *       "source": "sillytavern",
+                         *       "updated_at": 1735689660000
+                         *     }
+                         */
                         data: {
                             created_at: number;
                             data: unknown;
@@ -5264,6 +7464,163 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    updateImportedPreset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "editor": {
+                 *         "default_character_id": 100000,
+                 *         "entries": [
+                 *           {
+                 *             "content": "Stay in character and keep the tone warm.",
+                 *             "enabled": true,
+                 *             "extra": {},
+                 *             "identifier": "main",
+                 *             "injection_position": 0,
+                 *             "marker": false,
+                 *             "name": "System Guidance",
+                 *             "role": "system",
+                 *             "system_prompt": true
+                 *           }
+                 *         ],
+                 *         "order_contexts": [
+                 *           {
+                 *             "character_id": 100000,
+                 *             "extra": {},
+                 *             "order": [
+                 *               {
+                 *                 "enabled": true,
+                 *                 "identifier": "main"
+                 *               }
+                 *             ]
+                 *           }
+                 *         ],
+                 *         "top_level": {
+                 *           "temperature": 0.7
+                 *         }
+                 *       },
+                 *       "expected_updated_at": 1735689660000,
+                 *       "name": "Story Preset"
+                 *     }
+                 */
+                "application/json": {
+                    editor: {
+                        default_character_id: number;
+                        entries: {
+                            [key: string]: unknown;
+                        }[];
+                        order_contexts: {
+                            [key: string]: unknown;
+                        }[];
+                        top_level: {
+                            [key: string]: unknown;
+                        };
+                    };
+                    expected_updated_at?: number;
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "id": "preset_story",
+                     *         "name": "Story Preset",
+                     *         "source": "sillytavern",
+                     *         "updated_at": 1735689660000
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "created_at": 1735689600000,
+                         *       "id": "preset_story",
+                         *       "name": "Story Preset",
+                         *       "source": "sillytavern",
+                         *       "updated_at": 1735689660000
+                         *     }
+                         */
+                        data: {
+                            created_at: number;
+                            id: string;
+                            name: string;
+                            source: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5318,6 +7675,124 @@ export interface operations {
             };
         };
     };
+    getImportedPresetEditor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "editor": {
+                     *           "default_character_id": 100000,
+                     *           "entries": [
+                     *             {
+                     *               "content": "Stay in character and keep the tone warm.",
+                     *               "enabled": true,
+                     *               "extra": {},
+                     *               "identifier": "main",
+                     *               "injection_position": 0,
+                     *               "marker": false,
+                     *               "name": "System Guidance",
+                     *               "role": "system",
+                     *               "system_prompt": true
+                     *             }
+                     *           ],
+                     *           "order_contexts": [
+                     *             {
+                     *               "character_id": 100000,
+                     *               "extra": {},
+                     *               "order": [
+                     *                 {
+                     *                   "enabled": true,
+                     *                   "identifier": "main"
+                     *                 }
+                     *               ]
+                     *             }
+                     *           ],
+                     *           "top_level": {
+                     *             "temperature": 0.7
+                     *           }
+                     *         },
+                     *         "id": "preset_story",
+                     *         "name": "Story Preset",
+                     *         "source": "sillytavern",
+                     *         "updated_at": 1735689660000
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "created_at": 1735689600000,
+                         *       "id": "preset_story",
+                         *       "name": "Story Preset",
+                         *       "source": "sillytavern",
+                         *       "updated_at": 1735689660000
+                         *     }
+                         */
+                        data: {
+                            created_at: number;
+                            editor: {
+                                [key: string]: unknown;
+                            };
+                            id: string;
+                            name: string;
+                            source: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     listImportedRegexProfiles: {
         parameters: {
             query?: never;
@@ -5333,6 +7808,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "created_at": 1735689600000,
+                     *           "id": "preset_story",
+                     *           "name": "Story Preset",
+                     *           "source": "sillytavern",
+                     *           "updated_at": 1735689660000
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             created_at: number;
@@ -5363,7 +7851,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "data": {
+                     *           "prompt_order": [],
+                     *           "prompts": []
+                     *         },
+                     *         "id": "preset_story",
+                     *         "name": "Story Preset",
+                     *         "source": "sillytavern",
+                     *         "updated_at": 1735689660000
+                     *       }
+                     *     }
+                     */
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "created_at": 1735689600000,
+                         *       "id": "preset_story",
+                         *       "name": "Story Preset",
+                         *       "source": "sillytavern",
+                         *       "updated_at": 1735689660000
+                         *     }
+                         */
                         data: {
                             created_at: number;
                             data: unknown;
@@ -5454,6 +7966,30 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "var_mood",
+                     *           "key": "mood",
+                     *           "scope": "chat",
+                     *           "scope_id": "session-a",
+                     *           "updated_at": 1735689720000,
+                     *           "value": {
+                     *             "score": 20
+                     *           }
+                     *         }
+                     *       ],
+                     *       "meta": {
+                     *         "has_more": false,
+                     *         "limit": 10,
+                     *         "offset": 0,
+                     *         "sort_by": "updated_at",
+                     *         "sort_order": "desc",
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             id: string;
@@ -5504,6 +8040,16 @@ export interface operations {
         };
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "key": "mood",
+                 *       "scope": "chat",
+                 *       "scope_id": "session-a",
+                 *       "value": {
+                 *         "score": 20
+                 *       }
+                 *     }
+                 */
                 "application/json": {
                     key: string;
                     /** @enum {string} */
@@ -5520,7 +8066,33 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "id": "var_mood",
+                     *         "key": "mood",
+                     *         "scope": "chat",
+                     *         "scope_id": "session-a",
+                     *         "updated_at": 1735689720000,
+                     *         "value": {
+                     *           "score": 20
+                     *         }
+                     *       }
+                     *     }
+                     */
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "id": "var_mood",
+                         *       "key": "mood",
+                         *       "scope": "chat",
+                         *       "scope_id": "session-a",
+                         *       "updated_at": 1735689720000,
+                         *       "value": {
+                         *         "score": 20
+                         *       }
+                         *     }
+                         */
                         data: {
                             id: string;
                             key: string;
@@ -5539,7 +8111,33 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "id": "var_mood",
+                     *         "key": "mood",
+                     *         "scope": "chat",
+                     *         "scope_id": "session-a",
+                     *         "updated_at": 1735689720000,
+                     *         "value": {
+                     *           "score": 20
+                     *         }
+                     *       }
+                     *     }
+                     */
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "id": "var_mood",
+                         *       "key": "mood",
+                         *       "scope": "chat",
+                         *       "scope_id": "session-a",
+                         *       "updated_at": 1735689720000,
+                         *       "value": {
+                         *         "score": 20
+                         *       }
+                         *     }
+                         */
                         data: {
                             id: string;
                             key: string;
@@ -5588,7 +8186,33 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "id": "var_mood",
+                     *         "key": "mood",
+                     *         "scope": "chat",
+                     *         "scope_id": "session-a",
+                     *         "updated_at": 1735689720000,
+                     *         "value": {
+                     *           "score": 20
+                     *         }
+                     *       }
+                     *     }
+                     */
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "id": "var_mood",
+                         *       "key": "mood",
+                         *       "scope": "chat",
+                         *       "scope_id": "session-a",
+                         *       "updated_at": 1735689720000,
+                         *       "value": {
+                         *         "score": 20
+                         *       }
+                         *     }
+                         */
                         data: {
                             id: string;
                             key: string;
@@ -5637,6 +8261,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "deleted": true,
+                     *         "id": "var_mood"
+                     *       }
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             deleted: boolean;
@@ -5647,6 +8279,148 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchUpsertVariables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "items": [
+                 *         {
+                 *           "key": "mood",
+                 *           "scope": "chat",
+                 *           "scope_id": "session-a",
+                 *           "value": {
+                 *             "score": 20
+                 *           }
+                 *         },
+                 *         {
+                 *           "key": "topic",
+                 *           "scope": "chat",
+                 *           "scope_id": "session-a",
+                 *           "value": "campfire"
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    items: {
+                        key: string;
+                        /** @enum {string} */
+                        scope: "global" | "chat" | "floor" | "page";
+                        scope_id: string;
+                        value: unknown;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "meta": {
+                     *           "created": 1,
+                     *           "total": 2,
+                     *           "updated": 1
+                     *         },
+                     *         "results": [
+                     *           {
+                     *             "action": "updated",
+                     *             "data": {
+                     *               "id": "var_mood",
+                     *               "key": "mood",
+                     *               "scope": "chat",
+                     *               "scope_id": "session-a",
+                     *               "updated_at": 1735689720000,
+                     *               "value": {
+                     *                 "score": 20
+                     *               }
+                     *             },
+                     *             "index": 0
+                     *           },
+                     *           {
+                     *             "action": "created",
+                     *             "data": {
+                     *               "id": "var_topic",
+                     *               "key": "topic",
+                     *               "scope": "chat",
+                     *               "scope_id": "session-a",
+                     *               "updated_at": 1735689720000,
+                     *               "value": "campfire"
+                     *             },
+                     *             "index": 1
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            meta: {
+                                created: number;
+                                total: number;
+                                updated: number;
+                            };
+                            results: {
+                                /** @enum {string} */
+                                action: "created" | "updated";
+                                /**
+                                 * @example {
+                                 *       "id": "var_mood",
+                                 *       "key": "mood",
+                                 *       "scope": "chat",
+                                 *       "scope_id": "session-a",
+                                 *       "updated_at": 1735689720000,
+                                 *       "value": {
+                                 *         "score": 20
+                                 *       }
+                                 *     }
+                                 */
+                                data: {
+                                    id: string;
+                                    key: string;
+                                    /** @enum {string} */
+                                    scope: "global" | "chat" | "floor" | "page";
+                                    scope_id: string;
+                                    updated_at: number;
+                                    value: unknown;
+                                };
+                                index: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5679,6 +8453,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "created_at": 1735689600000,
+                     *           "id": "preset_story",
+                     *           "name": "Story Preset",
+                     *           "source": "sillytavern",
+                     *           "updated_at": 1735689660000
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": {
                         data: {
                             created_at: number;
@@ -5709,7 +8496,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "data": {
+                     *           "prompt_order": [],
+                     *           "prompts": []
+                     *         },
+                     *         "id": "preset_story",
+                     *         "name": "Story Preset",
+                     *         "source": "sillytavern",
+                     *         "updated_at": 1735689660000
+                     *       }
+                     *     }
+                     */
                     "application/json": {
+                        /**
+                         * @example {
+                         *       "created_at": 1735689600000,
+                         *       "id": "preset_story",
+                         *       "name": "Story Preset",
+                         *       "source": "sillytavern",
+                         *       "updated_at": 1735689660000
+                         *     }
+                         */
                         data: {
                             created_at: number;
                             data: unknown;
@@ -5723,6 +8534,133 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    updateImportedWorldbook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "data": {
+                 *         "entries": [
+                 *           {
+                 *             "content": "The kingdom is recovering from a long war.",
+                 *             "keys": [
+                 *               "kingdom"
+                 *             ]
+                 *           }
+                 *         ]
+                 *       },
+                 *       "expected_updated_at": 1735689660000,
+                 *       "name": "Kingdom Lore"
+                 *     }
+                 */
+                "application/json": {
+                    data: {
+                        [key: string]: unknown;
+                    };
+                    expected_updated_at?: number;
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "id": "wb_kingdom",
+                     *         "name": "Kingdom Lore",
+                     *         "source": "sillytavern",
+                     *         "updated_at": 1735689720000
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "created_at": 1735689600000,
+                         *       "id": "preset_story",
+                         *       "name": "Story Preset",
+                         *       "source": "sillytavern",
+                         *       "updated_at": 1735689660000
+                         *     }
+                         */
+                        data: {
+                            created_at: number;
+                            id: string;
+                            name: string;
+                            source: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

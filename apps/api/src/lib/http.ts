@@ -81,3 +81,10 @@ export function requireRow<T>(row: T | undefined, message: string): T {
 
   return row;
 }
+
+export function ensureOptionalObjectBody(request: { body?: unknown }): void {
+  if (request.body === undefined || request.body === null) {
+    (request as { body: Record<string, never> }).body = {};
+  }
+}
+

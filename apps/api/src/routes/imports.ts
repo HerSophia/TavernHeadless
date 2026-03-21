@@ -136,6 +136,190 @@ type PresetEditorDocumentInput = z.infer<typeof presetEditorDocumentSchema>;
 
 const MAX_CHARACTER_IMPORT_BYTES = 200_000;
 
+const resourceListItemExample = {
+  id: "preset_story",
+  name: "Story Preset",
+  source: "sillytavern",
+  created_at: 1735689600000,
+  updated_at: 1735689660000,
+} as const;
+
+const importPresetBodyExample = {
+  name: "Story Preset",
+  data: {
+    prompts: [],
+    prompt_order: [],
+  },
+} as const;
+
+const importWorldbookBodyExample = {
+  name: "Kingdom Lore",
+  data: {
+    entries: [
+      {
+        keys: ["kingdom"],
+        content: "The kingdom is recovering from a long war.",
+      },
+    ],
+  },
+} as const;
+
+const importRegexBodyExample = {
+  name: "Safety Filters",
+  data: [
+    {
+      scriptName: "trim_whitespace",
+      find: "\\s+$",
+      replace: "",
+    },
+  ],
+} as const;
+
+const importResourceResponseExample = {
+  data: {
+    id: "preset_story",
+    name: "Story Preset",
+    source: "sillytavern",
+  },
+} as const;
+
+const importRegexResponseExample = {
+  data: {
+    id: "regex_safe",
+    name: "Safety Filters",
+    source: "sillytavern",
+    script_count: 1,
+  },
+} as const;
+
+const importedSessionExample = {
+  id: "sess_luna",
+  title: "Luna Demo Session",
+  status: "active",
+  character_binding: {
+    character_id: "char_luna",
+    character_version_id: "charver_luna_1",
+    sync_policy: "pin",
+    snapshot_summary: {
+      name: "Luna",
+      has_greeting: true,
+    },
+  },
+  created_at: 1735689600000,
+  updated_at: 1735689660000,
+} as const;
+
+const importCharacterBodyExample = {
+  payload: {
+    spec: "chara_card_v2",
+    spec_version: "2.0",
+    data: {
+      name: "Luna",
+      description: "A moon priestess who keeps watch at night.",
+      personality: "Calm and precise",
+      scenario: "Night watch at the city wall",
+      first_mes: "The moon is bright tonight.",
+      mes_example: "<START>\n{{char}}: The tide is turning.",
+    },
+  },
+  create_session: true,
+  title: "Luna Demo Session",
+} as const;
+
+const importCharacterResponseExample = {
+  data: {
+    create_session: true,
+    character: {
+      name: "Luna",
+      description: "A moon priestess who keeps watch at night.",
+      personality: "Calm and precise",
+      scenario: "Night watch at the city wall",
+      first_mes: "The moon is bright tonight.",
+      mes_example: "<START>\n{{char}}: The tide is turning.",
+    },
+    session: importedSessionExample,
+  },
+} as const;
+
+const resourceListResponseExample = {
+  data: [resourceListItemExample],
+} as const;
+
+const resourceDetailResponseExample = {
+  data: {
+    ...resourceListItemExample,
+    data: {
+      prompts: [],
+      prompt_order: [],
+    },
+  },
+} as const;
+
+const presetEditorBodyExample = {
+  name: "Story Preset",
+  expected_updated_at: 1735689660000,
+  editor: {
+    default_character_id: 100000,
+    entries: [
+      {
+        identifier: "main",
+        name: "System Guidance",
+        role: "system",
+        content: "Stay in character and keep the tone warm.",
+        system_prompt: true,
+        marker: false,
+        injection_position: 0,
+        enabled: true,
+        extra: {},
+      },
+    ],
+    order_contexts: [
+      {
+        character_id: 100000,
+        order: [{ identifier: "main", enabled: true }],
+        extra: {},
+      },
+    ],
+    top_level: {
+      temperature: 0.7,
+    },
+  },
+} as const;
+
+const presetEditorDetailResponseExample = {
+  data: {
+    ...resourceListItemExample,
+    editor: presetEditorBodyExample.editor,
+  },
+} as const;
+
+const presetUpdateResponseExample = {
+  data: resourceListItemExample,
+} as const;
+
+const worldbookUpdateBodyExample = {
+  name: "Kingdom Lore",
+  data: {
+    entries: [
+      {
+        keys: ["kingdom"],
+        content: "The kingdom is recovering from a long war.",
+      },
+    ],
+  },
+  expected_updated_at: 1735689660000,
+} as const;
+
+const worldbookUpdateResponseExample = {
+  data: {
+    id: "wb_kingdom",
+    name: "Kingdom Lore",
+    source: "sillytavern",
+    created_at: 1735689600000,
+    updated_at: 1735689720000,
+  },
+} as const;
+
 const idParamsJsonSchema = {
   type: "object",
   required: ["id"],
@@ -152,6 +336,7 @@ const importPresetBodyJsonSchema = {
     name: { type: "string" },
     data: { type: "object", additionalProperties: true }
   },
+  examples: [importPresetBodyExample],
   additionalProperties: false
 } as const;
 
@@ -162,6 +347,7 @@ const importWorldbookBodyJsonSchema = {
     name: { type: "string" },
     data: { type: "object", additionalProperties: true }
   },
+  examples: [importWorldbookBodyExample],
   additionalProperties: false
 } as const;
 
@@ -172,6 +358,7 @@ const importRegexBodyJsonSchema = {
     name: { type: "string", minLength: 1 },
     data: { type: "array", items: { type: "object", additionalProperties: true } }
   },
+  examples: [importRegexBodyExample],
   additionalProperties: false
 } as const;
 
@@ -183,6 +370,7 @@ const importCharacterBodyJsonSchema = {
     create_session: { type: "boolean" },
     title: { type: "string", minLength: 1, maxLength: 200 }
   },
+  examples: [importCharacterBodyExample],
   additionalProperties: false
 } as const;
 
@@ -196,6 +384,7 @@ const resourceListItemJsonSchema = {
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 }
   },
+  examples: [resourceListItemExample],
   additionalProperties: false
 } as const;
 
@@ -205,6 +394,7 @@ const resourceListResponseJsonSchema = {
   properties: {
     data: { type: "array", items: resourceListItemJsonSchema }
   },
+  examples: [resourceListResponseExample],
   additionalProperties: false
 } as const;
 
@@ -221,6 +411,7 @@ const resourceDetailResponseJsonSchema = {
       }
     }
   },
+  examples: [resourceDetailResponseExample],
   additionalProperties: false
 } as const;
 
@@ -239,6 +430,27 @@ const importResourceResponseJsonSchema = {
       additionalProperties: false
     }
   },
+  examples: [importResourceResponseExample],
+  additionalProperties: false
+} as const;
+
+const importRegexResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["id", "name", "source", "script_count"],
+      properties: {
+        id: { type: "string" },
+        name: { type: "string" },
+        source: { type: "string" },
+        script_count: { type: "integer", minimum: 0 }
+      },
+      additionalProperties: false
+    }
+  },
+  examples: [importRegexResponseExample],
   additionalProperties: false
 } as const;
 
@@ -277,6 +489,7 @@ const importCharacterResponseJsonSchema = {
       additionalProperties: true
     }
   },
+  examples: [importCharacterResponseExample],
   additionalProperties: false
 } as const;
 
@@ -304,6 +517,7 @@ const presetEditorBodyJsonSchema = {
       additionalProperties: false
     }
   },
+  examples: [presetEditorBodyExample],
   additionalProperties: false
 } as const;
 
@@ -320,6 +534,7 @@ const presetEditorDetailResponseJsonSchema = {
       }
     }
   },
+  examples: [presetEditorDetailResponseExample],
   additionalProperties: false
 } as const;
 
@@ -329,6 +544,7 @@ const presetUpdateResponseJsonSchema = {
   properties: {
     data: resourceListItemJsonSchema
   },
+  examples: [presetUpdateResponseExample],
   additionalProperties: false
 } as const;
 
@@ -340,6 +556,7 @@ const worldbookUpdateBodyJsonSchema = {
     data: { type: "object", additionalProperties: true },
     expected_updated_at: { type: "integer", minimum: 0 }
   },
+  examples: [worldbookUpdateBodyExample],
   additionalProperties: false
 } as const;
 
@@ -347,6 +564,7 @@ const worldbookUpdateResponseJsonSchema = {
   type: "object",
   required: ["data"],
   properties: { data: resourceListItemJsonSchema },
+  examples: [worldbookUpdateResponseExample],
   additionalProperties: false
 } as const;
 
@@ -473,7 +691,7 @@ export async function registerImportRoutes(
       operationId: "importRegexProfile",
       body: importRegexBodyJsonSchema,
       response: {
-        201: { type: "object", required: ["data"], properties: { data: { type: "object", required: ["id", "name", "source", "script_count"], properties: { id: { type: "string" }, name: { type: "string" }, source: { type: "string" }, script_count: { type: "integer", minimum: 0 } }, additionalProperties: false } }, additionalProperties: false },
+        201: importRegexResponseJsonSchema,
         400: errorResponseJsonSchema
       }
     }

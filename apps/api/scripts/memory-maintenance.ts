@@ -32,7 +32,7 @@ Options:
   --batch-size <n>               Batch size (default: env MEMORY_MAINTENANCE_BATCH_SIZE or 500)
   --summary-days <n>             Deprecate summary older than N days (0 disables; default: env ... or 30)
   --open-loop-days <n>           Deprecate open_loop older than N days (0 disables; default: env ... or 7)
-  --purge-deprecated-days <n>    Purge deprecated older than N days (0 disables; default: env ... or 90)
+  --purge-deprecated-days <n>    Purge deprecated rows untouched for N days while deprecated (uses updatedAt; 0 disables; default: env ... or 90)
   -h, --help                     Show this help
 `);
 }

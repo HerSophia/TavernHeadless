@@ -9,9 +9,14 @@ export type MemoryMaintenancePolicy = {
   /** 将超过该 age 的 open_loop 标记为 deprecated（按 createdAt 计算）。 */
   openLoopMaxAgeMs?: number;
   /**
-   * 清理超过该 age 的 deprecated 记忆（按 updatedAt 计算，通常等同于 deprecatedAt）。
+   * 清理超过该 age 的 deprecated 记忆。
    *
-   * 注意：当前 schema 未单独记录 deprecatedAt，因此这里用 updatedAt 近似表示。
+   * 当前以 updatedAt 作为 deprecated 状态下的最后变更时间：
+   * - 自动 deprecate 时，会把 updatedAt 置为当前时间
+   * - 如果 deprecated 条目之后又被手工更新，purge 计时也会随 updatedAt 顺延
+   *
+   * 也就是说，这里的语义是“deprecated 且自上次更新后超过 N 天”，
+   * 而不是独立 deprecatedAt 字段意义上的“弃用后超过 N 天”。
    */
   deprecatedPurgeAgeMs?: number;
 };
@@ -70,10 +75,10 @@ export class MemoryMaintenanceService {
     }
 
     if (policy.deprecatedPurgeAgeMs !== undefined && policy.deprecatedPurgeAgeMs > 0) {
-      const updatedBefore = now - policy.deprecatedPurgeAgeMs;
+      const deprecatedUntouchedBefore = now - policy.deprecatedPurgeAgeMs;
       purged = dryRun
-        ? await this.countDeprecatedBefore(updatedBefore)
-        : await this.purgeDeprecatedBefore(updatedBefore, batchSize);
+        ? await this.countDeprecatedBefore(deprecatedUntouchedBefore)
+        : await this.purgeDeprecatedBefore(deprecatedUntouchedBefore, batchSize);
     }
 
     const durationMs = Date.now() - startedAt;
@@ -111,11 +116,11 @@ export class MemoryMaintenanceService {
     return row?.count ?? 0;
   }
 
-  private async countDeprecatedBefore(updatedBefore: number): Promise<number> {
+  private async countDeprecatedBefore(deprecatedUntouchedBefore: number): Promise<number> {
     const [row] = await this.db
       .select({ count: sql<number>`count(*)` })
       .from(memoryItems)
-      .where(and(eq(memoryItems.status, "deprecated"), lt(memoryItems.updatedAt, updatedBefore)));
+      .where(and(eq(memoryItems.status, "deprecated"), lt(memoryItems.updatedAt, deprecatedUntouchedBefore)));
 
     return row?.count ?? 0;
   }
@@ -157,14 +162,14 @@ export class MemoryMaintenanceService {
     return total;
   }
 
-  private async purgeDeprecatedBefore(updatedBefore: number, batchSize: number): Promise<number> {
+  private async purgeDeprecatedBefore(deprecatedUntouchedBefore: number, batchSize: number): Promise<number> {
     let total = 0;
 
     while (true) {
       const rows = await this.db
         .select({ id: memoryItems.id })
         .from(memoryItems)
-        .where(and(eq(memoryItems.status, "deprecated"), lt(memoryItems.updatedAt, updatedBefore)))
+        .where(and(eq(memoryItems.status, "deprecated"), lt(memoryItems.updatedAt, deprecatedUntouchedBefore)))
         .limit(batchSize);
 
       const ids = rows.map((row) => row.id);

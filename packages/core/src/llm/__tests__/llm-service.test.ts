@@ -74,11 +74,20 @@ describe('LLMService', () => {
           topP: 0.9,
           frequencyPenalty: 0.3,
           presencePenalty: 0.2,
+          reasoningEffort: 'low',
         },
       });
 
       // MockLanguageModelV1 receives these through generateText's options
       expect(capturedSettings).toBeDefined();
+      expect(capturedSettings.maxTokens).toBe(500);
+      expect(capturedSettings.temperature).toBe(0.5);
+      expect(capturedSettings.topP).toBe(0.9);
+      expect(capturedSettings.frequencyPenalty).toBe(0.3);
+      expect(capturedSettings.presencePenalty).toBe(0.2);
+      expect(capturedSettings.providerMetadata).toEqual({
+        openai: { reasoningEffort: 'low' },
+      });
     });
 
     it('wraps errors as LLMServiceError', async () => {

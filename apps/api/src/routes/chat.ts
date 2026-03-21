@@ -22,7 +22,7 @@ import {
   type EditAndRegenerateRequest,
   type RespondRuntimeOptions,
 } from "../services/chat-service.js";
-import { parseWithSchema, sendError } from "../lib/http.js";
+import { ensureOptionalObjectBody, parseWithSchema, sendError } from "../lib/http.js";
 import { findNativePipelineError } from "../lib/native-pipeline-error.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 
@@ -57,6 +57,7 @@ const generationParamsSchema = z.object({
   presence_penalty: z.number().optional(),
   stop_sequences: z.array(z.string()).optional(),
   stream: z.boolean().optional(),
+  reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
 });
 
 const respondBodySchema = z.object({
@@ -83,6 +84,117 @@ const editAndRegenerateBodySchema = regenerateBodySchema.extend({
 });
 
 const retryFloorBodySchema = regenerateBodySchema;
+
+const turnConfigExample = {
+  enableDirector: true,
+  enableVerifier: true,
+  enableMemoryConsolidation: true,
+  verifierFailStrategy: "warn",
+  maxRetries: 1,
+} as const;
+
+const generationParamsExample = {
+  temperature: 0.7,
+  max_output_tokens: 256,
+  top_p: 0.9,
+  reasoning_effort: "low",
+} as const;
+
+const respondBodyExample = {
+  message: "Please continue the campfire scene.",
+  branch_id: "main",
+  config: turnConfigExample,
+  generation_params: generationParamsExample,
+} as const;
+
+const regenerateBodyExample = {
+  config: {
+    enableDirector: true,
+  },
+  generation_params: generationParamsExample,
+} as const;
+
+const editAndRegenerateBodyExample = {
+  content: "I step closer to the fire and lower my voice.",
+  branch_id: "alt-branch",
+  config: {
+    enableDirector: false,
+  },
+  generation_params: generationParamsExample,
+} as const;
+
+const usageExample = {
+  prompt_tokens: 320,
+  completion_tokens: 128,
+  total_tokens: 448,
+} as const;
+
+const respondDataExample = {
+  floor_id: "floor_12",
+  floor_no: 12,
+  branch_id: "main",
+  generated_text: "The firelight wavers as the next part of the story begins.",
+  summaries: ["The group resumes the campfire planning scene."],
+  total_usage: usageExample,
+  final_state: "committed",
+} as const;
+
+const respondSuccessResponseExample = {
+  data: respondDataExample,
+} as const;
+
+const regenerateSuccessResponseExample = {
+  data: {
+    floor_id: "floor_13",
+    floor_no: 13,
+    previous_floor_id: "floor_12",
+    generated_text: "The assistant retries the last turn with a different phrasing.",
+    summaries: ["The last assistant turn was regenerated."],
+    total_usage: usageExample,
+    final_state: "committed",
+  },
+} as const;
+
+const editAndRegenerateSuccessResponseExample = {
+  data: {
+    ...respondDataExample,
+    branch_id: "alt-branch",
+    source_floor_id: "floor_11",
+    source_message_id: "msg_21",
+  },
+} as const;
+
+const dryRunSuccessResponseExample = {
+  data: {
+    messages: [
+      { role: "system", content: "Stay in character and keep the tone warm." },
+      { role: "user", content: "Please continue the campfire scene." },
+    ],
+    token_estimate: 512,
+    available_for_reply: 1536,
+    memory_summary: "The party recently agreed to search the northern pass.",
+    assembly: {
+      mode: "preset",
+      preset_used: true,
+      worldbook_hits: 1,
+      regex_pre_rules: ["trim_whitespace"],
+      regex_post_rules: [],
+      memory_summary_injected: true,
+      preprocessed_user_message: "Please continue the campfire scene.",
+    },
+  },
+} as const;
+
+const streamResponseExample = [
+  "event: start",
+  'data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main"}',
+  "",
+  "event: chunk",
+  'data: {"chunk":"The firelight wavers..."}',
+  "",
+  "event: done",
+  'data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"The firelight wavers as the next part of the story begins.","summaries":["The group resumes the campfire planning scene."],"total_usage":{"prompt_tokens":320,"completion_tokens":128,"total_tokens":448},"final_state":"committed"}',
+].join("\n");
 
 const sessionIdParamsJsonSchema = {
   type: "object",
@@ -111,6 +223,7 @@ const turnConfigJsonSchema = {
     verifierFailStrategy: { type: "string", enum: ["warn", "block", "retry"] },
     maxRetries: { type: "integer", minimum: 0, maximum: 5 },
   },
+  examples: [turnConfigExample],
   additionalProperties: false,
 } as const;
 
@@ -128,7 +241,9 @@ const generationParamsJsonSchema = {
       items: { type: "string" },
     },
     stream: { type: "boolean" },
+    reasoning_effort: { type: "string", enum: ["low", "medium", "high"] },
   },
+  examples: [generationParamsExample],
   additionalProperties: false,
 } as const;
 
@@ -141,6 +256,7 @@ const editAndRegenerateBodyJsonSchema = {
     config: turnConfigJsonSchema,
     generation_params: generationParamsJsonSchema,
   },
+  examples: [editAndRegenerateBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -154,6 +270,7 @@ const respondBodyJsonSchema = {
     branch_id: { type: "string", minLength: 1 },
     source_floor_id: { type: "string", minLength: 1 },
   },
+  examples: [respondBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -163,6 +280,7 @@ const regenerateBodyJsonSchema = {
     config: turnConfigJsonSchema,
     generation_params: generationParamsJsonSchema,
   },
+  examples: [regenerateBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -192,6 +310,7 @@ const usageJsonSchema = {
     completion_tokens: { type: "integer", minimum: 0 },
     total_tokens: { type: "integer", minimum: 0 },
   },
+  examples: [usageExample],
   additionalProperties: false,
 } as const;
 
@@ -207,6 +326,7 @@ const respondDataJsonSchema = {
     total_usage: usageJsonSchema,
     final_state: { type: "string" },
   },
+  examples: [respondDataExample],
   additionalProperties: false,
 } as const;
 
@@ -218,12 +338,14 @@ const editAndRegenerateDataJsonSchema = {
     source_floor_id: { type: "string" },
     source_message_id: { type: "string" },
   },
+  examples: [editAndRegenerateSuccessResponseExample.data],
 } as const;
 
 const editAndRegenerateSuccessResponseJsonSchema = {
   type: "object",
   required: ["data"],
   properties: { data: editAndRegenerateDataJsonSchema },
+  examples: [editAndRegenerateSuccessResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -239,6 +361,7 @@ const regenerateDataJsonSchema = {
     total_usage: usageJsonSchema,
     final_state: { type: "string" },
   },
+  examples: [regenerateSuccessResponseExample.data],
   additionalProperties: false,
 } as const;
 
@@ -284,6 +407,7 @@ const dryRunDataJsonSchema = {
       additionalProperties: false,
     },
   },
+  examples: [dryRunSuccessResponseExample.data],
   additionalProperties: false,
 } as const;
 
@@ -293,6 +417,7 @@ const respondSuccessResponseJsonSchema = {
   properties: {
     data: respondDataJsonSchema,
   },
+  examples: [respondSuccessResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -302,6 +427,7 @@ const regenerateSuccessResponseJsonSchema = {
   properties: {
     data: regenerateDataJsonSchema,
   },
+  examples: [regenerateSuccessResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -311,6 +437,7 @@ const dryRunSuccessResponseJsonSchema = {
   properties: {
     data: dryRunDataJsonSchema,
   },
+  examples: [dryRunSuccessResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -401,6 +528,7 @@ export async function registerChatRoutes(
         200: {
           type: "string",
           description: "SSE stream payload (start/chunk/summary/done/error events).",
+          examples: [streamResponseExample],
         },
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
@@ -573,6 +701,10 @@ export async function registerChatRoutes(
         500: errorResponseJsonSchema,
       },
     },
+    preValidation: (request, _reply, done) => {
+      ensureOptionalObjectBody(request);
+      done();
+    },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
@@ -623,6 +755,10 @@ export async function registerChatRoutes(
         409: errorResponseJsonSchema,
         500: errorResponseJsonSchema,
       },
+    },
+    preValidation: (request, _reply, done) => {
+      ensureOptionalObjectBody(request);
+      done();
     },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(floorIdParamsSchema, request.params, reply);
@@ -728,6 +864,7 @@ function mapGenerationParams(
     presencePenalty: params.presence_penalty,
     stopSequences: params.stop_sequences,
     stream: params.stream,
+    reasoningEffort: params.reasoning_effort,
   };
 }
 

@@ -120,6 +120,13 @@ function mapParams(params: GenerationParams): Record<string, unknown> {
   if (params.presencePenalty !== undefined) mapped.presencePenalty = params.presencePenalty;
   if (params.stopSequences !== undefined) mapped.stopSequences = params.stopSequences;
   if (params.maxRetries !== undefined) mapped.maxRetries = params.maxRetries;
+  if (params.reasoningEffort !== undefined) {
+    mapped.providerOptions = {
+      openai: {
+        reasoningEffort: params.reasoningEffort,
+      },
+    };
+  }
 
   return mapped;
 }

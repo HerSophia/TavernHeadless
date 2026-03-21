@@ -114,7 +114,10 @@ async function main(): Promise<void> {
 
   try {
     const health = await runStep("GET /health", () => api.request<JsonObject>("GET", "/health", undefined, [200]));
-    assert(health.body?.ok === true, "Health endpoint returned unexpected payload");
+    assert(
+      health.body?.ok === true,
+      `Health endpoint returned unexpected payload: ${JSON.stringify(health.body)}`
+    );
 
     const openApi = await runStep("GET /openapi.json", () =>
       api.request<JsonObject>("GET", "/openapi.json", undefined, [200])

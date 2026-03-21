@@ -146,6 +146,7 @@ describe("LLM Profile Routes", () => {
           top_p: 0.9,
           stream: true,
           timeout_ms: 90000,
+          reasoning_effort: "low",
         },
       },
     });
@@ -158,6 +159,7 @@ describe("LLM Profile Routes", () => {
         top_p: 0.9,
         stream: true,
         timeout_ms: 90000,
+        reasoning_effort: "low",
       }),
     );
 
@@ -185,6 +187,7 @@ describe("LLM Profile Routes", () => {
         top_p: 0.9,
         stream: true,
         timeout_ms: 90000,
+        reasoning_effort: "low",
       }),
     );
   });
@@ -361,6 +364,7 @@ describe("LLM Profile Routes", () => {
         provider: "openai",
         model_id: "gpt-4o-mini",
         api_key: "sk-test-probe",
+        reasoning_effort: "low",
       },
     });
 
@@ -377,11 +381,207 @@ describe("LLM Profile Routes", () => {
       expect.objectContaining({ method: "POST" }),
     );
 
+    const [, requestInit] = fetchMock.mock.calls[0]!;
+    const requestBody = JSON.parse(String(requestInit?.body));
+    expect(requestBody).toEqual(expect.objectContaining({ reasoning_effort: "low" }));
+
+    vi.unstubAllGlobals();
+  });
+
+  it("falls back to stream probe for stream-only openai-compatible providers", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "stream required" } }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          [
+            'data: {"choices":[{"delta":{"content":"Hi"}}]}',
+            "",
+            'data: {"choices":[{"delta":{"content":" there!"}}]}',
+            "",
+            "data: [DONE]",
+            "",
+          ].join("\n"),
+          {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          },
+        ),
+      );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/llm-profiles/models/test",
+      payload: {
+        provider: "openai-compatible",
+        model_id: "stream-only-model",
+        api_key: "sk-test-probe",
+        base_url: "https://proxy.example/v1",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json() as { data: { request_text: string; response_text: string } }).toEqual({
+      data: {
+        request_text: "Hello",
+        response_text: "Hi there!",
+      },
+    });
+
+    const firstBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const secondBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(firstBody.stream).toBeUndefined();
+    expect(secondBody.stream).toBe(true);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("falls back to responses probe for responses-only openai providers", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "chat unavailable" } }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "chat stream unavailable" } }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            output: [
+              {
+                content: [{ type: "output_text", text: "Hi there!" }],
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/llm-profiles/models/test",
+      payload: {
+        provider: "openai",
+        model_id: "gpt-5.4",
+        api_key: "sk-test-probe",
+        base_url: "https://proxy.example/v1",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json() as { data: { request_text: string; response_text: string } }).toEqual({
+      data: {
+        request_text: "Hello",
+        response_text: "Hi there!",
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "https://proxy.example/v1/chat/completions",
+      "https://proxy.example/v1/chat/completions",
+      "https://proxy.example/v1/responses",
+    ]);
+
+    const firstBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const secondBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    const thirdBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    expect(firstBody.stream).toBeUndefined();
+    expect(secondBody.stream).toBe(true);
+    expect(thirdBody.stream).toBeUndefined();
+    expect(thirdBody.input).toEqual([
+      {
+        role: "user",
+        content: [{ type: "input_text", text: "Hello" }],
+      },
+    ]);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("falls back to streamed responses probe when responses API requires stream", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "chat unavailable" } }), { status: 500 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "chat stream unavailable" } }), { status: 500 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "stream required" } }), { status: 400 }))
+      .mockResolvedValueOnce(
+        new Response(
+          [
+            "event: response.output_text.delta",
+            'data: {"type":"response.output_text.delta","delta":"Hi"}',
+            "",
+            "event: response.output_text.delta",
+            'data: {"type":"response.output_text.delta","delta":" there!"}',
+            "",
+            'data: {"type":"response.completed"}',
+            "",
+          ].join("\n"),
+          {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          },
+        ),
+      );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/llm-profiles/models/test",
+      payload: {
+        provider: "openai",
+        model_id: "gpt-5.4",
+        api_key: "sk-test-probe",
+        base_url: "https://proxy.example/v1",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json() as { data: { request_text: string; response_text: string } }).toEqual({
+      data: {
+        request_text: "Hello",
+        response_text: "Hi there!",
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "https://proxy.example/v1/chat/completions",
+      "https://proxy.example/v1/chat/completions",
+      "https://proxy.example/v1/responses",
+      "https://proxy.example/v1/responses",
+    ]);
+
+    const thirdBody = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    const fourthBody = JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body));
+    expect(thirdBody.stream).toBeUndefined();
+    expect(fourthBody.stream).toBe(true);
+
     vi.unstubAllGlobals();
   });
 
   it("returns upstream model test error", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response("bad gateway", { status: 502 }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response("unauthorized", { status: 401 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const res = await app.inject({
@@ -395,6 +595,7 @@ describe("LLM Profile Routes", () => {
     });
 
     expect(res.statusCode).toBe(502);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(res.json() as { error: { code: string } }).toEqual(
       expect.objectContaining({ error: expect.objectContaining({ code: "model_test_failed" }) }),
     );

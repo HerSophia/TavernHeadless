@@ -28,6 +28,111 @@ const upsertVariableSchema = z.object({
   value: z.unknown()
 });
 
+type VariableWriteInput = z.infer<typeof upsertVariableSchema>;
+
+type PreparedVariableWriteInput = VariableWriteInput & {
+  valueJson: string;
+};
+
+const batchUpsertVariablesSchema = z.object({
+  items: z.array(upsertVariableSchema).min(1).max(100)
+}).superRefine((value, ctx) => {
+  const seen = new Map<string, number>();
+
+  value.items.forEach((item, index) => {
+    const identity = buildVariableIdentity(item);
+    const firstIndex = seen.get(identity);
+
+    if (firstIndex !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["items", index],
+        message: `Duplicate variable target also appears at items.${firstIndex}`
+      });
+      return;
+    }
+
+    seen.set(identity, index);
+  });
+});
+
+const upsertVariableBodyExample = {
+  scope: "chat",
+  scope_id: "session-a",
+  key: "mood",
+  value: { score: 20 }
+} as const;
+
+const variableExample = {
+  id: "var_mood",
+  scope: "chat",
+  scope_id: "session-a",
+  key: "mood",
+  value: { score: 20 },
+  updated_at: 1735689720000
+} as const;
+
+const variableResponseExample = {
+  data: variableExample
+} as const;
+
+const variableListResponseExample = {
+  data: [variableExample],
+  meta: {
+    total: 1,
+    limit: 10,
+    offset: 0,
+    has_more: false,
+    sort_by: "updated_at",
+    sort_order: "desc"
+  }
+} as const;
+
+const deleteVariableResponseExample = {
+  data: { id: "var_mood", deleted: true }
+} as const;
+
+const batchUpsertVariablesBodyExample = {
+  items: [
+    upsertVariableBodyExample,
+    {
+      scope: "chat",
+      scope_id: "session-a",
+      key: "topic",
+      value: "campfire"
+    }
+  ]
+} as const;
+
+const batchUpsertVariablesResponseExample = {
+  data: {
+    results: [
+      {
+        index: 0,
+        action: "updated",
+        data: variableExample
+      },
+      {
+        index: 1,
+        action: "created",
+        data: {
+          id: "var_topic",
+          scope: "chat",
+          scope_id: "session-a",
+          key: "topic",
+          value: "campfire",
+          updated_at: 1735689720000
+        }
+      }
+    ],
+    meta: {
+      total: 2,
+      created: 1,
+      updated: 1
+    }
+  }
+} as const;
+
 const idParamsJsonSchema = {
   type: "object",
   required: ["id"],
@@ -60,6 +165,22 @@ const upsertVariableBodyJsonSchema = {
     key: { type: "string", minLength: 1 },
     value: {},
   },
+  examples: [upsertVariableBodyExample],
+  additionalProperties: false,
+} as const;
+
+const batchUpsertVariablesBodyJsonSchema = {
+  type: "object",
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      minItems: 1,
+      maxItems: 100,
+      items: upsertVariableBodyJsonSchema,
+    },
+  },
+  examples: [batchUpsertVariablesBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -74,6 +195,7 @@ const variableJsonSchema = {
     value: {},
     updated_at: { type: "integer", minimum: 0 },
   },
+  examples: [variableExample],
   additionalProperties: false,
 } as const;
 
@@ -115,6 +237,7 @@ const variableResponseJsonSchema = {
   properties: {
     data: variableJsonSchema,
   },
+  examples: [variableResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -125,6 +248,50 @@ const variableListResponseJsonSchema = {
     data: { type: "array", items: variableJsonSchema },
     meta: listMetaJsonSchema,
   },
+  examples: [variableListResponseExample],
+  additionalProperties: false,
+} as const;
+
+const batchUpsertVariableResultJsonSchema = {
+  type: "object",
+  required: ["index", "action", "data"],
+  properties: {
+    index: { type: "integer", minimum: 0 },
+    action: { type: "string", enum: ["created", "updated"] },
+    data: variableJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const batchUpsertVariableMetaJsonSchema = {
+  type: "object",
+  required: ["total", "created", "updated"],
+  properties: {
+    total: { type: "integer", minimum: 1 },
+    created: { type: "integer", minimum: 0 },
+    updated: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchUpsertVariablesResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["results", "meta"],
+      properties: {
+        results: {
+          type: "array",
+          items: batchUpsertVariableResultJsonSchema,
+        },
+        meta: batchUpsertVariableMetaJsonSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [batchUpsertVariablesResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -139,6 +306,7 @@ const deleteResponseJsonSchema = {
       additionalProperties: false,
     },
   },
+  examples: [deleteVariableResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -150,6 +318,21 @@ function toVariableResponse(row: typeof variables.$inferSelect) {
     key: row.key,
     value: parseJsonField(row.valueJson),
     updated_at: row.updatedAt
+  };
+}
+
+function buildVariableIdentity(input: Pick<VariableWriteInput, "scope" | "scope_id" | "key">) {
+  return `${input.scope}\u0000${input.scope_id}\u0000${input.key}`;
+}
+
+function toVariableResponseFromInput(input: VariableWriteInput, id: string, updatedAt: number) {
+  return {
+    id,
+    scope: input.scope,
+    scope_id: input.scope_id,
+    key: input.key,
+    value: input.value,
+    updated_at: updatedAt
   };
 }
 
@@ -227,6 +410,73 @@ export async function registerVariableRoutes(
     const created = requireRow(createdRows[0], "Failed to create variable");
 
     return reply.code(201).send({ data: toVariableResponse(created) });
+  });
+
+  app.put("/variables/batch", {
+    schema: {
+      tags: ["variables"],
+      summary: "Batch upsert variables",
+      operationId: "batchUpsertVariables",
+      body: batchUpsertVariablesBodyJsonSchema,
+      response: {
+        200: batchUpsertVariablesResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedBody = parseWithSchema(batchUpsertVariablesSchema, request.body, reply);
+
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const preparedItems: PreparedVariableWriteInput[] = [];
+
+    for (const item of parsedBody.data.items) {
+      const valueJson = stringifyJsonField(item.value);
+
+      if (valueJson === null) {
+        return sendError(reply, 400, "validation_error", "Variable value cannot be undefined");
+      }
+
+      preparedItems.push({
+        ...item,
+        valueJson,
+      });
+    }
+
+    const now = Date.now();
+    const batchResult = db.transaction((tx) => {
+      let created = 0;
+      let updated = 0;
+
+      const results = preparedItems.map((item, index) => {
+        const existing = tx
+          .select({ id: variables.id })
+          .from(variables)
+          .where(and(eq(variables.scope, item.scope), eq(variables.scopeId, item.scope_id), eq(variables.key, item.key)))
+          .limit(1)
+          .get();
+
+        if (existing) {
+          tx.update(variables).set({ valueJson: item.valueJson, updatedAt: now }).where(eq(variables.id, existing.id)).run();
+          updated += 1;
+          return { index, action: "updated" as const, data: toVariableResponseFromInput(item, existing.id, now) };
+        }
+
+        const id = nanoid();
+        tx.insert(variables).values({ id, scope: item.scope, scopeId: item.scope_id, key: item.key, valueJson: item.valueJson, updatedAt: now }).run();
+        created += 1;
+        return { index, action: "created" as const, data: toVariableResponseFromInput(item, id, now) };
+      });
+
+      return {
+        results,
+        meta: { total: results.length, created, updated }
+      };
+    });
+
+    return reply.send({ data: batchResult });
   });
 
   app.get("/variables", {

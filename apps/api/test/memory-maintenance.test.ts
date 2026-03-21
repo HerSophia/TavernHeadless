@@ -133,7 +133,7 @@ describe("MemoryMaintenanceService", () => {
     expect(row?.status).toBe("active");
   });
 
-  it("purges deprecated memories older than threshold based on updatedAt", async () => {
+  it("purges deprecated memories based on updatedAt while deprecated, not createdAt", async () => {
     const service = new MemoryMaintenanceService(database.db);
 
     const dayMs = 24 * 60 * 60 * 1000;
@@ -155,15 +155,15 @@ describe("MemoryMaintenanceService", () => {
         sourceMessageId: null,
       },
       {
-        id: "dep-new",
+        id: "dep-touched",
         scope: "chat",
         scopeId: "s1",
         type: "summary",
-        contentJson: toContentJson("deprecated new"),
+        contentJson: toContentJson("deprecated but touched recently"),
         importance: 0.5,
         confidence: 1,
         status: "deprecated",
-        createdAt: now - 50 * dayMs,
+        createdAt: now - 200 * dayMs,
         updatedAt: now - 10 * dayMs,
         sourceFloorId: null,
         sourceMessageId: null,
@@ -181,7 +181,7 @@ describe("MemoryMaintenanceService", () => {
       .select({ id: memoryItems.id })
       .from(memoryItems);
 
-    expect(remaining.map((row) => row.id).sort()).toEqual(["dep-new"]);
+    expect(remaining.map((row) => row.id).sort()).toEqual(["dep-touched"]);
   });
 });
 
