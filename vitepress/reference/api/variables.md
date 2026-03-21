@@ -40,10 +40,10 @@ PUT /variables
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
-| `scope` | string | **是** | 作用域 |
+| `scope` | string | **是** | 作用域：`global` / `session` / `floor` / `page` |
 | `scope_id` | string | **是** | 关联资源 ID |
-| `key` | string | **是** | 键名 |
-| `value` | any | **是** | 值 |
+| `key` | string | **是** | 键名（至少 1 字符） |
+| `value` | any | **是** | 值（任意 JSON，不可为 `undefined`） |
 
 ### 响应
 
@@ -52,13 +52,33 @@ PUT /variables
 
 返回 `{ "data": Variable }` 。
 
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败（scope 不合法、key 为空等） |
+
 ## 批量设置变量
 
 ```http
 PUT /variables/batch
 ```
 
+批量 upsert 变量。每个条目的语义与单条 `PUT /variables` 相同。
+
 ### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `items` | Variable[] | **是** | 变量数组，1-100 条 |
+
+每个 `items` 元素的字段与单条 upsert 相同（`scope`、`scope_id`、`key`、`value`）。
+
+::: warning 去重校验
+同一批次内，`scope + scope_id + key` 组合不可重复，否则返回 `400`。
+:::
+
+### 请求示例
 
 ```json
 {
@@ -69,21 +89,57 @@ PUT /variables/batch
 }
 ```
 
-- `items`：1-100 条，同一 scope + scope_id + key 组合不可重复
-
 ### 响应 `200`
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `data.results` | array | 每条的处理结果 |
+| `data.results[].index` | integer | 对应请求数组中的下标 |
+| `data.results[].action` | string | `created` 或 `updated` |
+| `data.results[].data` | Variable | 完整的变量对象 |
+| `data.meta.total` | integer | 总条数 |
+| `data.meta.created` | integer | 新建条数 |
+| `data.meta.updated` | integer | 更新条数 |
 
 ```json
 {
   "data": {
     "results": [
-      { "index": 0, "action": "updated", "data": {} },
-      { "index": 1, "action": "created", "data": {} }
+      {
+        "index": 0,
+        "action": "updated",
+        "data": {
+          "id": "var_mood",
+          "scope": "session",
+          "scope_id": "sess_001",
+          "key": "mood",
+          "value": "happy",
+          "updated_at": 1735689720000
+        }
+      },
+      {
+        "index": 1,
+        "action": "created",
+        "data": {
+          "id": "var_score",
+          "scope": "session",
+          "scope_id": "sess_001",
+          "key": "score",
+          "value": 42,
+          "updated_at": 1735689720000
+        }
+      }
     ],
     "meta": { "total": 2, "created": 1, "updated": 1 }
   }
 }
 ```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败、items 为空或超过 100 条、存在重复的 scope+scope_id+key 组合 |
 
 ## 查询变量
 
@@ -100,11 +156,25 @@ GET /variables
 | `key` | string | 按键名过滤 |
 | `sort_by` | string | `key`（默认）/ `updated_at` |
 
+### 响应 `200`
+
+返回 `{ "data": Variable[], "meta": ListMeta }` 。
+
 ## 获取变量详情
 
 ```http
 GET /variables/:id
 ```
+
+### 响应 `200`
+
+返回 `{ "data": Variable }` 。
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 变量不存在 |
 
 ## 删除变量
 
@@ -117,3 +187,9 @@ DELETE /variables/:id
 ```json
 { "data": { "id": "var_001", "deleted": true } }
 ```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 变量不存在 |

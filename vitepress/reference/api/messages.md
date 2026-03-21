@@ -13,7 +13,7 @@ outline: [2, 3]
 | `id` | string | 消息 ID |
 | `page_id` | string | 所属消息页 ID |
 | `seq` | integer | 消息在页内的序号 |
-| `role` | string | 角色：`system` / `user` / `assistant` |
+| `role` | string | 角色：`system` / `user` / `assistant` / `narrator` |
 | `content` | string | 消息内容 |
 | `content_format` | string | 内容格式：`plain` / `markdown` |
 | `token_count` | integer | token 数量 |
@@ -44,6 +44,12 @@ POST /messages
 
 返回 `{ "data": Message }` 。
 
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败 |
+
 ## 列出消息
 
 ```http
@@ -55,15 +61,25 @@ GET /messages
 | 参数 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `page_id` | string | 按消息页过滤 |
-| `role` | string | 按角色过滤 |
+| `role` | string | 按角色过滤：`system` / `user` / `assistant` / `narrator` |
 | `is_hidden` | boolean | 按隐藏状态过滤 |
 | `sort_by` | string | `seq`（默认）/ `created_at` |
+
+### 响应 `200`
+
+返回 `{ "data": Message[], "meta": ListMeta }` 。
 
 ## 获取消息详情
 
 ```http
 GET /messages/:id
 ```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 消息不存在 |
 
 ## 更新消息
 
@@ -73,11 +89,24 @@ PATCH /messages/:id
 
 至少提供一个字段。可更新：`seq`、`role`、`content`、`content_format`、`token_count`、`is_hidden`、`source`。
 
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败 |
+| `404` | 消息不存在 |
+
 ## 删除消息
 
 ```http
 DELETE /messages/:id
 ```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 消息不存在 |
 
 ## 批量更新可见性
 
@@ -89,6 +118,17 @@ PATCH /messages/batch/visibility
 
 ### 请求体
 
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `ids` | string[] | **是** | 消息 ID 数组，1-100 条，不可重复 |
+| `is_hidden` | boolean | **是** | 目标可见性状态 |
+
+::: warning 去重校验
+同一批次内 ID 不可重复，否则返回 `400`。
+:::
+
+### 请求示例
+
 ```json
 {
   "ids": ["msg_001", "msg_002"],
@@ -96,27 +136,57 @@ PATCH /messages/batch/visibility
 }
 ```
 
-- `ids`：消息 ID 数组，1-100 条，不可重复
-- `is_hidden`：目标可见性状态
-
 ### 响应 `200`
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `data.results` | array | 每条的处理结果 |
+| `data.results[].index` | integer | 对应请求数组中的下标 |
+| `data.results[].id` | string | 消息 ID |
+| `data.results[].action` | string | `updated`（成功）或 `not_found`（ID 不存在） |
+| `data.results[].data` | Message | 更新后的完整消息对象（仅 `action=updated` 时存在） |
+| `data.meta.total` | integer | 请求总条数 |
+| `data.meta.updated` | integer | 成功更新条数 |
+| `data.meta.not_found` | integer | 未找到条数 |
+| `data.meta.is_hidden` | boolean | 本次设置的目标状态 |
 
 ```json
 {
   "data": {
     "results": [
-      { "index": 0, "id": "msg_001", "action": "updated", "data": {} },
-      { "index": 1, "id": "msg_002", "action": "not_found" }
+      {
+        "index": 0,
+        "id": "msg_001",
+        "action": "updated",
+        "data": {
+          "id": "msg_001",
+          "page_id": "page_12",
+          "seq": 1,
+          "role": "assistant",
+          "content": "The moon is bright tonight.",
+          "content_format": "plain",
+          "token_count": 6,
+          "is_hidden": true,
+          "source": null,
+          "created_at": 1735689600000
+        }
+      },
+      {
+        "index": 1,
+        "id": "msg_002",
+        "action": "not_found"
+      }
     ],
-    "meta": {
-      "total": 2,
-      "updated": 1,
-      "not_found": 1,
-      "is_hidden": true
-    }
+    "meta": { "total": 2, "updated": 1, "not_found": 1, "is_hidden": true }
   }
 }
 ```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败、ids 为空或超过 100 条、存在重复 ID |
 
 ## 批量删除消息
 
@@ -124,7 +194,15 @@ PATCH /messages/batch/visibility
 POST /messages/batch/delete
 ```
 
+批量物理删除指定消息。
+
 ### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `ids` | string[] | **是** | 消息 ID 数组，1-100 条，不可重复 |
+
+### 请求示例
 
 ```json
 {
@@ -133,6 +211,16 @@ POST /messages/batch/delete
 ```
 
 ### 响应 `200`
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `data.results` | array | 每条的处理结果 |
+| `data.results[].index` | integer | 对应请求数组中的下标 |
+| `data.results[].id` | string | 消息 ID |
+| `data.results[].action` | string | `deleted`（成功）或 `not_found`（ID 不存在） |
+| `data.meta.total` | integer | 请求总条数 |
+| `data.meta.deleted` | integer | 成功删除条数 |
+| `data.meta.not_found` | integer | 未找到条数 |
 
 ```json
 {
@@ -145,3 +233,9 @@ POST /messages/batch/delete
   }
 }
 ```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败、ids 为空或超过 100 条、存在重复 ID |

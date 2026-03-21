@@ -47,6 +47,12 @@ POST /memories
 
 返回 `{ "data": MemoryItem }` 。
 
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败 |
+
 ## 查询记忆条目
 
 ```http
@@ -74,11 +80,21 @@ GET /memories
 | `q` | string | 全文搜索 |
 | `sort_by` | string | `created_at`（默认）/ `updated_at` / `importance` / `confidence` / `type` |
 
+### 响应 `200`
+
+返回 `{ "data": MemoryItem[], "meta": ListMeta }` 。
+
 ## 获取记忆详情
 
 ```http
 GET /memories/:id
 ```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 记忆条目不存在 |
 
 ## 更新记忆
 
@@ -88,11 +104,30 @@ PATCH /memories/:id
 
 至少提供一个字段。可更新所有可写字段。
 
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败 |
+| `404` | 记忆条目不存在 |
+
 ## 删除记忆
 
 ```http
 DELETE /memories/:id
 ```
+
+### 响应 `200`
+
+```json
+{ "data": { "id": "mem_fact_1", "deleted": true } }
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 记忆条目不存在 |
 
 ## 记忆统计
 
@@ -128,7 +163,20 @@ GET /memories/stats
 PATCH /memories/batch/status
 ```
 
+批量将指定记忆条目的状态设为 `active` 或 `deprecated`。
+
 ### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `ids` | string[] | **是** | 记忆 ID 数组，1-100 条，不可重复 |
+| `status` | string | **是** | 目标状态：`active` 或 `deprecated` |
+
+::: warning 去重校验
+同一批次内 ID 不可重复，否则返回 `400`。
+:::
+
+### 请求示例
 
 ```json
 {
@@ -139,17 +187,57 @@ PATCH /memories/batch/status
 
 ### 响应 `200`
 
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `data.results` | array | 每条的处理结果 |
+| `data.results[].index` | integer | 对应请求数组中的下标 |
+| `data.results[].id` | string | 记忆 ID |
+| `data.results[].action` | string | `updated`（成功）或 `not_found`（ID 不存在） |
+| `data.results[].data` | MemoryItem | 更新后的完整对象（仅 `action=updated` 时存在） |
+| `data.meta.total` | integer | 请求总条数 |
+| `data.meta.updated` | integer | 成功更新条数 |
+| `data.meta.not_found` | integer | 未找到条数 |
+| `data.meta.status` | string | 本次设置的目标状态 |
+
 ```json
 {
   "data": {
     "results": [
-      { "index": 0, "id": "mem_001", "action": "updated", "data": {} },
-      { "index": 1, "id": "mem_002", "action": "not_found" }
+      {
+        "index": 0,
+        "id": "mem_001",
+        "action": "updated",
+        "data": {
+          "id": "mem_001",
+          "scope": "session",
+          "scope_id": "sess_001",
+          "type": "fact",
+          "content": { "text": "User prefers warm lighting" },
+          "importance": 0.7,
+          "confidence": 0.9,
+          "source_floor_id": null,
+          "source_message_id": null,
+          "status": "deprecated",
+          "created_at": 1735689600000,
+          "updated_at": 1735690000000
+        }
+      },
+      {
+        "index": 1,
+        "id": "mem_002",
+        "action": "not_found"
+      }
     ],
     "meta": { "total": 2, "updated": 1, "not_found": 1, "status": "deprecated" }
   }
 }
 ```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败、ids 为空或超过 100 条、存在重复 ID、status 不合法 |
 
 ## 批量删除记忆
 
@@ -157,11 +245,49 @@ PATCH /memories/batch/status
 POST /memories/batch/delete
 ```
 
+批量物理删除指定记忆条目。
+
 ### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `ids` | string[] | **是** | 记忆 ID 数组，1-100 条，不可重复 |
+
+### 请求示例
 
 ```json
 { "ids": ["mem_001", "mem_002"] }
 ```
+
+### 响应 `200`
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `data.results` | array | 每条的处理结果 |
+| `data.results[].index` | integer | 对应请求数组中的下标 |
+| `data.results[].id` | string | 记忆 ID |
+| `data.results[].action` | string | `deleted`（成功）或 `not_found`（ID 不存在） |
+| `data.meta.total` | integer | 请求总条数 |
+| `data.meta.deleted` | integer | 成功删除条数 |
+| `data.meta.not_found` | integer | 未找到条数 |
+
+```json
+{
+  "data": {
+    "results": [
+      { "index": 0, "id": "mem_001", "action": "deleted" },
+      { "index": 1, "id": "mem_002", "action": "not_found" }
+    ],
+    "meta": { "total": 2, "deleted": 1, "not_found": 1 }
+  }
+}
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败、ids 为空或超过 100 条、存在重复 ID |
 
 ---
 
@@ -193,6 +319,13 @@ POST /memory-edges
 | `to_id` | string | **是** |
 | `relation` | string | **是** |
 
+#### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败 |
+| `404` | from_id 或 to_id 对应的记忆条目不存在 |
+
 ### 列出记忆边
 
 ```http
@@ -214,8 +347,20 @@ GET /memory-edges
 GET /memory-edges/:id
 ```
 
+#### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 记忆边不存在 |
+
 ### 删除记忆边
 
 ```http
 DELETE /memory-edges/:id
 ```
+
+#### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 记忆边不存在 |
