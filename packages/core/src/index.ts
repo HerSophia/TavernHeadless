@@ -50,11 +50,16 @@ export type {
   NativePipelineNode,
   NativePipelineInputSummary,
   NativePipelineStateSummary,
+  ConditionNodeOptions,
+  TransformRule,
+  TransformNodeOptions,
 } from './prompt/index.js';
 export {
   assembleNativePrompt,
   TemplateNode,
+  ConditionNode,
   WorldbookResolveNode,
+  TransformNode,
   MemoryInjectNode,
   TokenBudgetNode,
   PackMessagesNode,

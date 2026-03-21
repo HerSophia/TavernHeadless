@@ -27,6 +27,7 @@ import type {
   InstanceSlot,
   ModelConfig,
   TokenCounter,
+  MemoryInjectionOptions,
   MemoryStore,
 } from "@tavern/core";
 
@@ -201,6 +202,11 @@ export interface ChatServiceOptions {
    */
   memoryStore?: MemoryStore;
   /**
+   * 可选：记忆注入衰减配置。
+   * 传入后会在注入候选记忆的排序中启用 decay（更偏向最近更新的条目）。
+   */
+  memoryInjectionDecay?: MemoryInjectionOptions["decay"];
+  /**
    * 可选：默认启用 MemoryConsolidator。
    */
   enableMemoryConsolidationByDefault?: boolean;
@@ -225,6 +231,7 @@ export interface ChatServiceOptions {
 export class ChatService {
   private readonly historyMaxFloors?: number;
   private readonly memoryStore?: MemoryStore;
+  private readonly memoryInjectionDecay?: MemoryInjectionOptions["decay"];
   private readonly enableMemoryConsolidationByDefault: boolean;
   private readonly resolveTurnModel?: ResolveTurnModelFn;
   private readonly resolveTurnModels?: ResolveTurnModelsFn;
@@ -238,6 +245,7 @@ export class ChatService {
   ) {
     this.historyMaxFloors = normalizePositiveInt(options.historyMaxFloors);
     this.memoryStore = options.memoryStore;
+    this.memoryInjectionDecay = options.memoryInjectionDecay;
     this.enableMemoryConsolidationByDefault =
       options.enableMemoryConsolidationByDefault === true;
     this.resolveTurnModel = options.resolveTurnModel;
@@ -1100,6 +1108,7 @@ export class ChatService {
         selectionMode: "balanced",
         typeOrder: ["open_loop", "fact", "summary"],
         typeMaxItems: { open_loop: 6, fact: 10, summary: 8 },
+        decay: this.memoryInjectionDecay,
       });
 
       // 保持向下兼容：上层字段名仍为 memorySummary。

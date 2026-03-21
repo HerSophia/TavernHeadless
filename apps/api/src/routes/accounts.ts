@@ -14,6 +14,30 @@ const createAccountSchema = z.object({
   role: z.enum(["admin", "user"]).default("user"),
 });
 
+const createAccountBodyExample = {
+  id: "acc_demo",
+  name: "Demo Workspace",
+  role: "user",
+} as const;
+
+const accountExample = {
+  id: "acc_demo",
+  name: "Demo Workspace",
+  role: "user",
+  status: "active",
+  is_default: false,
+  created_at: 1735689600000,
+  updated_at: 1735689600000,
+} as const;
+
+const accountListResponseExample = {
+  data: [accountExample],
+} as const;
+
+const accountResponseExample = {
+  data: accountExample,
+} as const;
+
 const accountJsonSchema = {
   type: "object",
   required: ["id", "name", "role", "status", "is_default", "created_at", "updated_at"],
@@ -26,6 +50,7 @@ const accountJsonSchema = {
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
   },
+  examples: [accountExample],
   additionalProperties: false,
 } as const;
 
@@ -38,6 +63,7 @@ const accountListResponseJsonSchema = {
       items: accountJsonSchema,
     },
   },
+  examples: [accountListResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -47,6 +73,7 @@ const accountResponseJsonSchema = {
   properties: {
     data: accountJsonSchema,
   },
+  examples: [accountResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -58,6 +85,7 @@ const createBodyJsonSchema = {
     name: { type: "string", minLength: 1, maxLength: 120 },
     role: { type: "string", enum: ["admin", "user"] },
   },
+  examples: [createAccountBodyExample],
   additionalProperties: false,
 } as const;
 

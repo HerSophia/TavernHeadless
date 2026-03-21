@@ -5,9 +5,174 @@
 
 ## 当前里程碑
 
-\- 里程碑：`M9-M12 - 后端高优先级能力`
-\- 状态：`进行中（Phase 1-5 已完成）`
-\- 最后更新：`2026-02-15`
+\- 里程碑：`后端 Beta 阶段`
+\- 状态：`进行中（当前处于收口阶段，自动化验证已通过，当前以真实 provider 回归与发布收尾为主）`
+\- 最后更新：`2026-03-16`
+
+## 当前判断（审计后）
+
+- `apps/api` 已完成 M2-M21 的主要后端能力落地，当前阶段已进入 Beta，当前工作以收口为主。
+- 当前已覆盖的主能力包括：CRUD 与迁移、聊天生成与重生成、SSE、Prompt dry-run、分支治理、角色生命周期、多账号隔离与用户绑定、`LLM Profile Vault`、模型发现与连通性测试、记忆注入与维护任务、OpenAPI/Swagger、Typed SDK、CORS 与中英文化文档入口。
+- `apps/api/package.json` 与 OpenAPI `info.version` 已同步到 `0.2.0-beta.2`，用于表达后端 beta 预发布版本姿态。
+- 目前 beta 收口剩余的主差距已收敛为：真实 provider 的最小回归。`0.2.0-beta.2` 的版本同步、OpenAPI/SDK 产物同步与最终全量验证记录已完成；多实例记忆维护约束、公网部署责任、CRUD / batch 口径与首批 batch 接口也已在本次落地。
+
+## Beta.2 范围冻结（本次）
+
+### 1) 记忆维护部署约束
+
+- 当前实现仍为 `apps/api/src/app.ts` 的 API 进程内定时器，不带分布式锁。
+- 多实例部署时，只允许一个实例开启 `ENABLE_MEMORY_MAINTENANCE=true`。
+- 其余 API 实例必须关闭该开关；如需稳定长期运行，建议改由独立 maintenance job / worker 负责。
+
+### 2) 公网部署责任
+
+- 若 `apps/api` 直接对公网开放，限流、网关防护与基础观测仍由部署层承担。
+- 当前 beta 仍未内建 `@fastify/rate-limit`、`/metrics` 或 tracing / OTel。
+
+### 3) CRUD / batch 口径冻结
+
+- 导入资源当前接受的 create 路径保持为：
+  - `POST /import/preset`
+  - `POST /import/worldbook`
+  - `POST /import/regex`
+- `characters` 保持 SillyTavern 风格的版本化模型，不强行改成普通 CRUD。
+- `accounts` 不作为当前 batch 优先目标。
+- `branches` 不作为当前 batch 优先目标。
+- 首批 batch 优先级：
+  - 第一批：`variables`、`memories`、`messages`
+  - 第二批：`pages`、`users`、受限动作型 `sessions`
+  - 低优先级或延后：`floors`、`llm-profiles`
+- 已在本次落地：
+  - `PUT /variables/batch`：按 `(scope, scope_id, key)` 做批量 upsert，并显式返回每项 `created|updated` 结果
+  - `PATCH /memories/batch/status`：按显式 id 批量切换 `active|deprecated`，并同步刷新 `updated_at`
+  - `POST /memories/batch/delete`：按显式 id 批量删除记忆条目，并逐项返回 `deleted|not_found`
+  - `PATCH /messages/batch/visibility`：按显式 id 批量更新 `is_hidden`
+  - `POST /messages/batch/delete`：按显式 id 批量删除消息，并逐项返回 `deleted|not_found`
+
+## 后端 Beta 准入标准（草案）
+
+- [x] `apps/api/PROGRESS.md` 与 `README.md` 的阶段描述已同步到当前实现
+- [x] 核心业务路由补齐 OpenAPI 请求/响应示例
+- [x] 中文 OpenAPI 覆盖当前主路由分组（含 `accounts`、`users`、`llm-profiles`）
+- [x] 记忆维护的 purge 语义已明确接受并写入文档（beta 采用 `updatedAt` 语义，不引入 `deprecatedAt`）
+- [x] `pnpm --filter @tavern/api typecheck` 通过（beta 收口复核）
+- [x] `pnpm --filter @tavern/api test` 通过（beta 收口复核）
+- [x] `pnpm --filter @tavern/api openapi:export` 通过（beta 收口复核）
+- [x] `pnpm --filter @tavern/api smoke` 通过（beta 收口复核）
+- [x] `pnpm --filter @tavern/api memory:maintenance -- --db :memory: --dry-run` 通过（beta 收口复核）
+- [x] 认证、多账号隔离、SSE、Prompt dry-run、模型发现/连通性测试已完成收口复核
+- [x] `apps/api/package.json` 与 OpenAPI `info.version` 已同步到 beta 预发布版本姿态（`0.2.0-beta.2`）
+- [x] 进程内记忆维护定时任务的多实例部署约束与公网部署责任已写入代码注释和文档
+- [ ] 至少 1 个真实 provider 完成最小回归并留下记录（见下方“真实 provider 最小回归清单”）
+
+## 真实 provider 最小回归清单（待执行）
+
+### 建议环境
+
+- 使用临时 `DATABASE_URL`，避免污染现有开发数据。
+- 设置 `AUTH_MODE=off`，并保持 `ACCOUNT_MODE=single`，先排除鉴权和多账号变量。
+- 设置 `LLM_PROVIDER`、`LLM_API_KEY`、可选 `LLM_BASE_URL`、`LLM_MODEL`。
+- 设置 `ENABLE_PROMPT_DRY_RUN=true`，否则 `/sessions/:id/respond/dry-run` 会返回 `404`。
+- 设置 `ENABLE_SSE_CHAT=true`，否则 `/sessions/:id/respond/stream` 会返回 `404`。
+- 设置 `APP_SECRETS_MASTER_KEY`，否则 `POST /llm-profiles` 无法完成密钥加密。
+- 使用 `pnpm --filter @tavern/api exec tsx src/index.ts` 启动服务。
+- 启动后确认日志出现 `Chat routes enabled (model: ...)`；若未设置 `LLM_API_KEY`，`apps/api/src/index.ts` 不会注册聊天路由。
+
+- 如需减少手工步骤，可直接运行 `pnpm --filter @tavern/api real-provider:regression -- --operator <name> [--output .tmp/real-provider-regression.json]`。该脚本会用临时 `DATABASE_URL` 拉起本地 `apps/api` 实例，自动执行下方清单并输出 JSON 记录。
+- 脚本不会把 `api_key` 或 `APP_SECRETS_MASTER_KEY` 写入报告；如果当前 `LLM_API_KEY` 或 `APP_SECRETS_MASTER_KEY` 仍是占位符，脚本会在真正发起 provider 请求前直接退出。
+
+### 建议请求体
+
+- `POST /llm-profiles/models/discover`
+  - `{ "provider": "<provider>", "api_key": "<real-key>", "base_url": "<optional>" }`
+- `POST /llm-profiles/models/test`
+  - `{ "provider": "<provider>", "model_id": "<model>", "api_key": "<real-key>", "base_url": "<optional>" }`
+- `POST /llm-profiles`
+  - `{ "preset_name": "Real Provider Smoke", "provider": "<provider>", "model_id": "<model>", "api_key_name": "REAL_PROVIDER_KEY", "api_key": "<real-key>", "base_url": "<optional>" }`
+- `POST /sessions`
+  - `{ "title": "real-provider-regression", "prompt_mode": "native" }`
+- `POST /llm-profiles/:id/activate`
+  - `{ "scope": "session", "session_id": "<sessionId>", "instance_slot": "*" }`
+- `POST /sessions/:id/respond/dry-run`
+  - `{ "message": "Please introduce yourself in one short paragraph." }`
+- `POST /sessions/:id/respond`
+  - `{ "message": "Please introduce yourself in one short paragraph." }`
+- `POST /sessions/:id/respond/stream`
+  - `{ "message": "Please introduce yourself in one short paragraph." }`
+- `POST /sessions/:id/regenerate`
+  - `{}`
+
+### 执行顺序
+
+1. `GET /health` 返回 `{ ok: true, service: "@tavern/api", database: "ready" }`。
+2. `POST /llm-profiles/models/discover` 返回 `200`，并且 `data[]` 中包含目标 `model_id`。
+3. `POST /llm-profiles/models/test` 返回 `200`，`request_text` 为 `"Hello"`，且 `response_text` 非空。
+4. `POST /llm-profiles` 返回 `201`，记录创建出的 profile id。
+5. `POST /sessions` 返回 `201`，记录创建出的 session id。
+6. `POST /llm-profiles/:id/activate` 以 `scope=session`、`instance_slot=*` 激活后返回 `200`，且 `activated=true`。
+7. `GET /llm-profiles/runtime?session_id=<sessionId>` 返回 `200`，并能在解析结果中看到刚激活的 profile id。
+8. `POST /sessions/:id/respond/dry-run` 返回 `200`，包含 `messages[]`、`token_estimate`、`available_for_reply`。
+9. `POST /sessions/:id/respond` 返回 `200`，包含非空 `generated_text`、`floor_id`，且 `final_state="committed"`。
+10. `POST /sessions/:id/respond/stream` 返回 `200`，SSE 输出至少包含 `event: start` 与 `event: done`。
+11. `POST /sessions/:id/regenerate` 返回 `200`，包含新的 `floor_id` 和非空 `previous_floor_id`。
+12. 可选清理：`DELETE /sessions/:id` 与 `DELETE /llm-profiles/:id` 均返回 `200`。
+
+### 建议记录字段
+
+- 执行日期与执行人
+- provider
+- `base_url`（如有）
+- `model_id`
+- 本次是否只验证 env fallback，还是同时验证了 `llm_profile` 激活链路
+- `discover`、`models/test`、`create profile`、`activate`、`runtime`、`dry-run`、`respond`、`respond/stream`、`regenerate` 的逐项结果
+- 如失败，记录首个失败端点、HTTP status 与错误响应体
+
+## 记忆维护语义（beta 接受）
+
+- `summary` 与 `open_loop` 的自动 deprecated 仍按 `createdAt` 计算。
+- `purge deprecated` 采用 `memory_item.updated_at` 语义，不新增 `deprecatedAt` 字段。
+- 当前定义的含义是：条目处于 `deprecated` 状态，且自上次更新后超过阈值，即可被 purge。
+- `MemoryMaintenanceService` 自动 deprecate 时会把 `updatedAt` 写成当前时间；如果后续通过 API 或仓储层再次更新该条目，purge 计时会顺延。
+- 如果以后需要严格区分“弃用时间”和“最后编辑时间”，再通过 schema migration 引入 `deprecatedAt`。
+
+## M21 增量：记忆系统加固与维护任务（本次）
+
+### 1) 已完成（本次）
+
+- [x] Core：`MemoryStore.applyConsolidation()` 新增自动冲突消解（同 key 的 fact 自动 deprecate 旧记录 + updates 边）
+- [x] Core：`MemoryInjectionOptions` 支持可选 `decay`（半衰期衰减排序；可按 `createdAt/updatedAt` 计算年龄）
+- [x] API：`ChatService.retrieveMemorySummary()` 透传 `decay`；新增 `MEMORY_INJECTION_DECAY_*` 环境变量解析
+- [x] API：新增 `MemoryMaintenanceService` + 可选定时任务（deprecate summary/open_loop + purge deprecated）
+- [x] API：新增记忆维护 CLI：`pnpm --filter @tavern/api memory:maintenance -- ...`（支持 dry-run / batch / policy flags）
+- [x] DB：新增索引 migration `0010_memory_indexes.sql`（memory_item: status/updated_at + scope_id/status/type/importance）
+- [x] 文档：`.env.example` / `README.md` 补充 decay 与 maintenance 配置项
+
+### 2) 测试与验证（本次）
+
+- [x] `pnpm --filter @tavern/core test` 通过（新增 memory-store 回归）
+- [x] `pnpm --filter @tavern/core build` 通过（避免 api 引用到 stale 类型产物）
+- [x] `pnpm --filter @tavern/api typecheck` 通过
+- [x] `pnpm --filter @tavern/api test` 通过（新增 memory-maintenance 测试）
+- [x] `pnpm --filter @tavern/api memory:maintenance -- --db :memory: --dry-run` 通过
+
+### 3) 本次修改文件
+
+- `packages/core/src/memory/memory-store.ts`
+- `packages/core/src/memory/types.ts`
+- `packages/core/src/memory/__tests__/memory-store.test.ts`
+- `apps/api/src/services/chat-service.ts`
+- `apps/api/src/services/memory-maintenance-service.ts`
+- `apps/api/scripts/memory-maintenance.ts`
+- `apps/api/src/app.ts`
+- `apps/api/src/config.ts`
+- `apps/api/src/index.ts`
+- `apps/api/drizzle/0010_memory_indexes.sql`
+- `apps/api/drizzle/meta/_journal.json`
+- `apps/api/test/memory-maintenance.test.ts`
+- `apps/api/package.json`
+- `.env.example`
+- `README.md`
+- `apps/api/PROGRESS.md`
 
 ## M20 增量：LLM 模型列表发现（本次）
 
@@ -21,8 +186,9 @@
 
 ### 2) 测试与验证（本次）
 
-- [ ] `pnpm --filter @tavern/api typecheck`
-- [ ] `pnpm --filter @tavern/api test -- test/llm-profiles.integration.test.ts test/openapi.integration.test.ts`
+- [x] `pnpm --filter @tavern/api typecheck` 通过
+- [x] `pnpm --filter @tavern/api test -- test/llm-profiles.integration.test.ts` 通过
+- [x] `pnpm --filter @tavern/api test -- test/openapi.integration.test.ts` 通过
 
 ### 3) 本次修改文件
 
@@ -912,14 +1078,77 @@
 - [x] 统一 OpenAPI/Swagger 输出
 - [x] 增加请求日志字段（request id / latency / route tag）
 - [x] 长会话性能优化（历史查询 + 索引 + 可选历史窗口）
-- [ ] 为核心业务路由补充更完整的 OpenAPI schema（请求/响应示例）
-- [ ] 引入长期上下文策略（摘要注入 / 分层记忆）
+- [x] 引入长期上下文策略（摘要注入 / 分层记忆）
+- [x] 记忆冲突自动消解、衰减与维护任务
+- [x] 同步 `apps/api/PROGRESS.md` 与 `README.md` 的阶段描述，并明确后端已进入 Beta、当前处于收口阶段
+- [x] 为核心业务路由补充更完整的 OpenAPI schema（请求/响应示例）
+- [x] 补齐 OpenAPI 中文文案（`accounts` / `users` / `llm-profiles`）
+- [x] 明确 `MemoryMaintenanceService` 的 purge 语义（beta 接受 `updatedAt` 作为 deprecated 状态下最后变更时间）
+- [x] 做最后一轮 beta 验证（`typecheck` / `test` / `openapi:export` / `smoke` / `memory:maintenance --dry-run`）
+- [x] 同步 `apps/api/package.json` 与 OpenAPI `info.version` 到 `0.2.0-beta.1`
+- [x] 冻结 `0.2.0-beta.2` 的 CRUD / batch 口径，并先落地 `PUT /variables/batch`
+- [x] 明确记忆维护定时任务的多实例部署约束（当前规则：仅允许单实例开启，或拆分独立 job）
+- [x] 记录公网部署时的限流 / 网关防护责任（当前仍不内建 rate limiting / metrics / tracing）
+- [x] 完成 `memories` / `messages` 的首批 batch（显式 id + status/visibility/delete）
+- [x] 同步 `apps/api/package.json` 与 OpenAPI `info.version` 到 `0.2.0-beta.2`
+- [x] 做 `0.2.0-beta.2` 的最终全量验证记录（全量 `test` / `smoke` / `memory:maintenance --dry-run` / SDK 检查）
+- [ ] 补做真实 provider 的最小回归（见上方“真实 provider 最小回归清单”）
 
 ## 已知限制
 
-- 记忆系统已支持 `summary/fact/open_loop` 混合注入，但冲突自动消解、衰减与定期清理任务仍未完成。
+- 当前 schema 不单独记录 `deprecatedAt`；beta 语义定义为按 deprecated 条目的 `updatedAt` 做 purge。如未来需要审计级弃用时间，需追加 schema migration。
+- 当前聊天 E2E 仍以 mock orchestrator 为主；beta sign-off 前仍建议补一轮真实 provider 的最小回归。
+- 记忆维护定时任务当前以 API 进程内定时器运行；多实例部署时只允许一个实例开启，或改由独立 job 负责。
+- 当前后端未内建 rate limiting、`/metrics` 或 tracing / OTel；若直接对公网开放，需要由网关 / 部署层补足基础保护与观测。
+- 当前 batch 仍保持“首批安全动作”范围：`PUT /variables/batch`、`PATCH /memories/batch/status`、`POST /memories/batch/delete`、`PATCH /messages/batch/visibility`、`POST /messages/batch/delete`；尚未扩展到 `pages` / `users` / `sessions` 等第二批资源。
 
 ## 更新日志
+
+### 2026-03-16（beta.2 版本同步与最终全量验证）
+
+- 同步 `apps/api/package.json` 与 `apps/api/src/plugins/openapi.ts` 的 OpenAPI `info.version` 到 `0.2.0-beta.2`
+- 重新生成 `apps/api/openapi/openapi.json`、`packages/shared/src/generated/openapi.json`、`packages/shared/src/generated/openapi-types.ts`
+- 全量通过 `pnpm --filter @tavern/api typecheck`
+- 全量通过 `pnpm --filter @tavern/api test`（`25` files，`231` tests）
+- 通过 `pnpm --filter @tavern/api openapi:export`、`pnpm openapi:export`、`pnpm sdk:generate`、`pnpm sdk:check`
+- 通过 `pnpm --filter @tavern/api smoke`，验证环境为 `PORT=3112`、`DATABASE_URL=.tmp/apps-api-beta2-smoke-3112.sqlite`、`AUTH_MODE=off`、`ACCOUNT_MODE=single`、`API_BASE_URL=http://127.0.0.1:3112`
+- 通过 `pnpm --filter @tavern/api memory:maintenance -- --db :memory: --dry-run`
+- 当前 beta 收口剩余项收敛为真实 provider 的最小回归
+
+### 2026-03-16（beta.2 第二批执行：memories / messages batch）
+
+- 新增 `PATCH /memories/batch/status`：按显式 id 批量切换记忆状态，逐项返回 `updated|not_found`，并保持 `updated_at` 刷新语义与现有 purge 口径一致
+- 新增 `POST /memories/batch/delete`：按显式 id 批量删除记忆条目，避免在 beta 引入基于筛选条件的破坏性批量删除
+- 新增 `PATCH /messages/batch/visibility`：按显式 id 批量更新 `is_hidden`，不触碰消息排序与分页约束
+- 新增 `POST /messages/batch/delete`：按显式 id 批量删除消息，保持消息 batch 仍为低风险维护动作
+- 为 `memories` / `messages` 的 batch 路由补充 OpenAPI schema 与示例，并补齐中文文案
+- 扩展 `test/api.integration.test.ts` 与 `test/openapi.integration.test.ts`，覆盖主路径、重复 id 校验、OpenAPI schema 与示例可见性
+- 通过增量验证：`pnpm --filter @tavern/api typecheck`、`pnpm --filter @tavern/api test -- test/api.integration.test.ts test/openapi.integration.test.ts`、`pnpm --filter @tavern/api openapi:export`、`pnpm openapi:export`、`pnpm sdk:generate`、`pnpm sdk:check`
+
+### 2026-03-16（beta.2 第一批执行：部署约束与 variables batch）
+
+- 冻结 beta.2 的 CRUD / batch 口径，明确 import create、版本化 `characters`、`accounts` / `branches` 的 batch 排除，以及 `variables` / `memories` / `messages` 的首批优先级
+- 在 `apps/api/src/app.ts` 注释、`README.md`、`apps/api/PROGRESS.md` 写明记忆维护定时任务的多实例部署规则：当前仅允许单实例启用，或拆分独立 job
+- 补记公网部署责任：当前 beta 不内建 `@fastify/rate-limit`、`/metrics` 或 tracing / OTel，若公网暴露需由部署层承担基础保护
+- 新增 `PUT /variables/batch`，按 `(scope, scope_id, key)` 批量 upsert，并返回逐项 `created|updated` 结果与汇总 `meta`
+- 为 `variables` 单条 / 批量路由补充 OpenAPI 示例，并补齐中文文案 `Batch upsert variables`
+- 扩展 `test/api.integration.test.ts` 与 `test/openapi.integration.test.ts`，覆盖 `variables` 批量 upsert 主路径、重复目标校验、OpenAPI schema 与示例
+- 通过增量验证：`pnpm --filter @tavern/api typecheck`、`pnpm --filter @tavern/api test -- test/api.integration.test.ts test/openapi.integration.test.ts`、`pnpm --filter @tavern/api openapi:export`、`pnpm openapi:export`、`pnpm sdk:generate`、`pnpm sdk:check`
+
+### 2026-03-16（状态对齐：后端进入 Beta 阶段）
+
+- 同步 `当前里程碑` 为“后端 Beta 阶段”，明确当前已进入 Beta，后续以文档、验证与发布收尾为主
+- 补记当前后端判断：核心能力已覆盖到 M21，当前重点不再是主功能补洞
+- 补记已落地但旧标题未体现的能力：`/accounts`、CORS、OpenAPI 中英文化、`/docs-zh`、`/docs-en`
+- 补齐 `accounts`、`users`、`llm-profiles` 的中文 OpenAPI 文案，并通过 `test/openapi.integration.test.ts`
+- 补齐 `sessions`、`chat`、`accounts`、`users`、`llm-profiles`、`imports` 的 OpenAPI 请求/响应示例，并扩展 `test/openapi.integration.test.ts` 断言覆盖
+- 明确 `MemoryMaintenanceService` 的 beta purge 语义：不引入 `deprecatedAt`，以 deprecated 条目的 `updatedAt` 作为最后变更时间，并扩展 `test/memory-maintenance.test.ts` 固化该约定
+- 新增“后端 Beta 准入标准（草案）”，作为后续收口判断基线
+- 更新“下一步”与“已知限制”，移除过期的记忆系统未完成描述
+- 完成 beta 收口复核：`typecheck`、`test`、`openapi:export`、`smoke`、`memory:maintenance -- --db :memory: --dry-run` 均已通过
+- 同步 `apps/api/package.json` 与 OpenAPI `info.version` 到 `0.2.0-beta.1`，明确后端采用 beta 预发布版本姿态
+- 补充“真实 provider 最小回归清单（待执行）”，后续只需按清单执行并记录结果，无需重新做大范围审计
+- 统一 `README.md` 与 `apps/api/PROGRESS.md` 的阶段口径：项目整体仍为 Alpha，`apps/api` 已进入 Beta，当前处于收口阶段
 
 ### 2026-02-14（M8：核心 RP 体验接口）
 

@@ -19,6 +19,46 @@ type ItemResponse<T> = {
   data: T;
 };
 
+type ErrorResponse = {
+  error: {
+    code: string;
+    message: string;
+    details?: Array<{
+      path: string;
+      message: string;
+      code: string;
+    }>;
+  };
+};
+
+type VariableBatchResponse = {
+  data: {
+    results: Array<{ index: number; action: "created" | "updated"; data: { id: string; key: string; value: unknown } }>;
+    meta: { total: number; created: number; updated: number };
+  };
+};
+
+type MemoryBatchStatusResponse = {
+  data: {
+    results: Array<{ index: number; id: string; action: "updated" | "not_found"; data?: { id: string; status: string; updated_at: number } }>;
+    meta: { total: number; updated: number; not_found: number; status: "active" | "deprecated" };
+  };
+};
+
+type BatchDeleteResponse = {
+  data: {
+    results: Array<{ index: number; id: string; action: "deleted" | "not_found" }>;
+    meta: { total: number; deleted: number; not_found: number };
+  };
+};
+
+type MessageBatchVisibilityResponse = {
+  data: {
+    results: Array<{ index: number; id: string; action: "updated" | "not_found"; data?: { id: string; is_hidden: boolean } }>;
+    meta: { total: number; updated: number; not_found: number; is_hidden: boolean };
+  };
+};
+
 describe("apps/api integration", () => {
   let app: FastifyInstance;
 
@@ -199,6 +239,71 @@ describe("apps/api integration", () => {
     expect(deleteResponse.statusCode).toBe(200);
   });
 
+  it("supports batch message visibility update and explicit delete", async () => {
+    const session = await createSession(app, { title: "Session for message batch" });
+    const floor = await createFloor(app, { session_id: session.id, floor_no: 1, branch_id: "main" });
+    const page = await createPage(app, { floor_id: floor.id, page_no: 1, page_kind: "mixed" });
+
+    const messageA = await createMessage(app, {
+      page_id: page.id,
+      seq: 1,
+      role: "assistant",
+      content: "First message"
+    });
+    const messageB = await createMessage(app, {
+      page_id: page.id,
+      seq: 2,
+      role: "user",
+      content: "Second message"
+    });
+
+    const visibilityResponse = await app.inject({
+      method: "PATCH",
+      url: "/messages/batch/visibility",
+      payload: { ids: [messageA.id, "msg_missing", messageB.id], is_hidden: true }
+    });
+
+    expect(visibilityResponse.statusCode).toBe(200);
+    const visibilityBody = visibilityResponse.json<MessageBatchVisibilityResponse>();
+    expect(visibilityBody.data.meta).toEqual({ total: 3, updated: 2, not_found: 1, is_hidden: true });
+    expect(visibilityBody.data.results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ index: 0, id: messageA.id, action: "updated", data: expect.objectContaining({ is_hidden: true }) }),
+      expect.objectContaining({ index: 1, id: "msg_missing", action: "not_found" }),
+      expect.objectContaining({ index: 2, id: messageB.id, action: "updated", data: expect.objectContaining({ is_hidden: true }) }),
+    ]));
+
+    const hiddenListResponse = await app.inject({
+      method: "GET",
+      url: `/messages?page_id=${page.id}&is_hidden=true&limit=10&offset=0&sort_by=seq&sort_order=asc`
+    });
+    expect(hiddenListResponse.statusCode).toBe(200);
+    const hiddenListBody = hiddenListResponse.json<ListResponse<{ id: string }>>();
+    expect(hiddenListBody.data.map((item) => item.id)).toEqual([messageA.id, messageB.id]);
+
+    const deleteResponse = await app.inject({
+      method: "POST",
+      url: "/messages/batch/delete",
+      payload: { ids: [messageA.id, "msg_missing"] }
+    });
+
+    expect(deleteResponse.statusCode).toBe(200);
+    const deleteBody = deleteResponse.json<BatchDeleteResponse>();
+    expect(deleteBody.data.meta).toEqual({ total: 2, deleted: 1, not_found: 1 });
+
+    expect((await app.inject({ method: "GET", url: `/messages/${messageA.id}` })).statusCode).toBe(404);
+    expect((await app.inject({ method: "GET", url: `/messages/${messageB.id}` })).statusCode).toBe(200);
+  });
+
+  it("rejects duplicate ids in message batch visibility update", async () => {
+    const response = await app.inject({ method: "PATCH", url: "/messages/batch/visibility", payload: { ids: ["msg_1", "msg_1"], is_hidden: true } });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<ErrorResponse>();
+    expect(body.error.code).toBe("validation_error");
+    expect(body.error.details).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "ids.1", message: expect.stringContaining("Duplicate message id") })
+    ]));
+  });
+
   it("covers variables upsert/list/get/delete", async () => {
     const createResponse = await app.inject({
       method: "PUT",
@@ -241,6 +346,72 @@ describe("apps/api integration", () => {
 
     const deleteResponse = await app.inject({ method: "DELETE", url: `/variables/${createdBody.data.id}` });
     expect(deleteResponse.statusCode).toBe(200);
+  });
+
+  it("supports batch variable upsert with created and updated results", async () => {
+    const seedResponse = await app.inject({
+      method: "PUT",
+      url: "/variables",
+      payload: {
+        scope: "chat",
+        scope_id: "session-a",
+        key: "mood",
+        value: { score: 10 }
+      }
+    });
+
+    expect(seedResponse.statusCode).toBe(201);
+
+    const batchResponse = await app.inject({
+      method: "PUT",
+      url: "/variables/batch",
+      payload: {
+        items: [
+          { scope: "chat", scope_id: "session-a", key: "mood", value: { score: 20 } },
+          { scope: "chat", scope_id: "session-a", key: "topic", value: "campfire" }
+        ]
+      }
+    });
+
+    expect(batchResponse.statusCode).toBe(200);
+    const batchBody = batchResponse.json<VariableBatchResponse>();
+    expect(batchBody.data.meta).toEqual({ total: 2, created: 1, updated: 1 });
+    expect(batchBody.data.results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ index: 0, action: "updated", data: expect.objectContaining({ key: "mood", value: { score: 20 } }) }),
+      expect.objectContaining({ index: 1, action: "created", data: expect.objectContaining({ key: "topic", value: "campfire" }) }),
+    ]));
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/variables?scope=chat&scope_id=session-a&limit=10&offset=0&sort_by=key&sort_order=asc"
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    const listBody = listResponse.json<ListResponse<{ key: string; value: unknown }>>();
+    expect(listBody.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "mood", value: { score: 20 } }),
+      expect.objectContaining({ key: "topic", value: "campfire" }),
+    ]));
+  });
+
+  it("rejects duplicate targets in variable batch upsert", async () => {
+    const response = await app.inject({
+      method: "PUT",
+      url: "/variables/batch",
+      payload: {
+        items: [
+          { scope: "chat", scope_id: "session-a", key: "mood", value: 1 },
+          { scope: "chat", scope_id: "session-a", key: "mood", value: 2 }
+        ]
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<ErrorResponse>();
+    expect(body.error.code).toBe("validation_error");
+    expect(body.error.details).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "items.1", message: expect.stringContaining("Duplicate variable target") }),
+    ]));
   });
 
   it("covers memories and memory-edges CRUD", async () => {
@@ -356,6 +527,64 @@ describe("apps/api integration", () => {
     expect(statsBody.data.deprecated).toBe(1);
     expect(statsBody.data.by_type.fact).toBe(1);
     expect(statsBody.data.by_type.summary).toBe(1);
+  });
+
+  it("supports batch memory status update and explicit delete", async () => {
+    const memoryA = await createMemory(app, {
+      scope: "chat",
+      scope_id: "session-batch",
+      type: "fact",
+      content: { text: "A" }
+    });
+    const memoryB = await createMemory(app, {
+      scope: "chat",
+      scope_id: "session-batch",
+      type: "summary",
+      content: { text: "B" }
+    });
+
+    const beforeResponse = await app.inject({ method: "GET", url: `/memories/${memoryA.id}` });
+    expect(beforeResponse.statusCode).toBe(200);
+    const beforeBody = beforeResponse.json<ItemResponse<{ updated_at: number }>>();
+
+    const statusResponse = await app.inject({
+      method: "PATCH",
+      url: "/memories/batch/status",
+      payload: { ids: [memoryA.id, "mem_missing", memoryB.id], status: "deprecated" }
+    });
+
+    expect(statusResponse.statusCode).toBe(200);
+    const statusBody = statusResponse.json<MemoryBatchStatusResponse>();
+    expect(statusBody.data.meta).toEqual({ total: 3, updated: 2, not_found: 1, status: "deprecated" });
+    expect(statusBody.data.results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ index: 0, id: memoryA.id, action: "updated", data: expect.objectContaining({ status: "deprecated" }) }),
+      expect.objectContaining({ index: 1, id: "mem_missing", action: "not_found" }),
+      expect.objectContaining({ index: 2, id: memoryB.id, action: "updated", data: expect.objectContaining({ status: "deprecated" }) }),
+    ]));
+    expect(statusBody.data.results[0]?.data?.updated_at).toBeGreaterThanOrEqual(beforeBody.data.updated_at);
+
+    const deleteResponse = await app.inject({
+      method: "POST",
+      url: "/memories/batch/delete",
+      payload: { ids: [memoryA.id, "mem_missing"] }
+    });
+
+    expect(deleteResponse.statusCode).toBe(200);
+    const deleteBody = deleteResponse.json<BatchDeleteResponse>();
+    expect(deleteBody.data.meta).toEqual({ total: 2, deleted: 1, not_found: 1 });
+
+    expect((await app.inject({ method: "GET", url: `/memories/${memoryA.id}` })).statusCode).toBe(404);
+    expect((await app.inject({ method: "GET", url: `/memories/${memoryB.id}` })).statusCode).toBe(200);
+  });
+
+  it("rejects duplicate ids in memory batch status update", async () => {
+    const response = await app.inject({ method: "PATCH", url: "/memories/batch/status", payload: { ids: ["mem_1", "mem_1"], status: "deprecated" } });
+    expect(response.statusCode).toBe(400);
+    const body = response.json<ErrorResponse>();
+    expect(body.error.code).toBe("validation_error");
+    expect(body.error.details).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "ids.1", message: expect.stringContaining("Duplicate memory id") })
+    ]));
   });
 
   it("returns validation_error for invalid query params", async () => {

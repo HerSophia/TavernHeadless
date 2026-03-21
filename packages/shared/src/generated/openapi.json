@@ -19,7 +19,7 @@
   "info": {
     "description": "Backend API for TavernHeadless core engine",
     "title": "TavernHeadless API",
-    "version": "0.1.0"
+    "version": "0.2.0-beta.2"
   },
   "openapi": "3.0.3",
   "paths": {
@@ -30,12 +30,34 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "created_at": 1735689600000,
+                      "id": "acc_demo",
+                      "is_default": false,
+                      "name": "Demo Workspace",
+                      "role": "user",
+                      "status": "active",
+                      "updated_at": 1735689600000
+                    }
+                  ]
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "items": {
                         "additionalProperties": false,
+                        "example": {
+                          "created_at": 1735689600000,
+                          "id": "acc_demo",
+                          "is_default": false,
+                          "name": "Demo Workspace",
+                          "role": "user",
+                          "status": "active",
+                          "updated_at": 1735689600000
+                        },
                         "properties": {
                           "created_at": {
                             "minimum": 0,
@@ -136,6 +158,11 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "id": "acc_demo",
+                "name": "Demo Workspace",
+                "role": "user"
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -170,11 +197,31 @@
           "201": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "created_at": 1735689600000,
+                    "id": "acc_demo",
+                    "is_default": false,
+                    "name": "Demo Workspace",
+                    "role": "user",
+                    "status": "active",
+                    "updated_at": 1735689600000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "created_at": 1735689600000,
+                        "id": "acc_demo",
+                        "is_default": false,
+                        "name": "Demo Workspace",
+                        "role": "user",
+                        "status": "active",
+                        "updated_at": 1735689600000
+                      },
                       "properties": {
                         "created_at": {
                           "minimum": 0,
@@ -2761,6 +2808,22 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "create_session": true,
+                "payload": {
+                  "data": {
+                    "description": "A moon priestess who keeps watch at night.",
+                    "first_mes": "The moon is bright tonight.",
+                    "mes_example": "<START>\n{{char}}: The tide is turning.",
+                    "name": "Luna",
+                    "personality": "Calm and precise",
+                    "scenario": "Night watch at the city wall"
+                  },
+                  "spec": "chara_card_v2",
+                  "spec_version": "2.0"
+                },
+                "title": "Luna Demo Session"
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -2790,6 +2853,35 @@
           "201": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "character": {
+                      "description": "A moon priestess who keeps watch at night.",
+                      "first_mes": "The moon is bright tonight.",
+                      "mes_example": "<START>\n{{char}}: The tide is turning.",
+                      "name": "Luna",
+                      "personality": "Calm and precise",
+                      "scenario": "Night watch at the city wall"
+                    },
+                    "create_session": true,
+                    "session": {
+                      "character_binding": {
+                        "character_id": "char_luna",
+                        "character_version_id": "charver_luna_1",
+                        "snapshot_summary": {
+                          "has_greeting": true,
+                          "name": "Luna"
+                        },
+                        "sync_policy": "pin"
+                      },
+                      "created_at": 1735689600000,
+                      "id": "sess_luna",
+                      "status": "active",
+                      "title": "Luna Demo Session",
+                      "updated_at": 1735689660000
+                    }
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -2909,6 +3001,13 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "data": {
+                  "prompt_order": [],
+                  "prompts": []
+                },
+                "name": "Story Preset"
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -2933,6 +3032,13 @@
           "201": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "id": "preset_story",
+                    "name": "Story Preset",
+                    "source": "sillytavern"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -3012,6 +3118,16 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "data": [
+                  {
+                    "find": "\\s+$",
+                    "replace": "",
+                    "scriptName": "trim_whitespace"
+                  }
+                ],
+                "name": "Safety Filters"
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -3041,6 +3157,14 @@
           "201": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "id": "regex_safe",
+                    "name": "Safety Filters",
+                    "script_count": 1,
+                    "source": "sillytavern"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -3125,6 +3249,19 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "data": {
+                  "entries": [
+                    {
+                      "content": "The kingdom is recovering from a long war.",
+                      "keys": [
+                        "kingdom"
+                      ]
+                    }
+                  ]
+                },
+                "name": "Kingdom Lore"
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -3149,6 +3286,13 @@
           "201": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "id": "preset_story",
+                    "name": "Story Preset",
+                    "source": "sillytavern"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -3253,12 +3397,42 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "api_key_masked": "sk-***-key",
+                      "api_key_name": "OPENAI_API_KEY",
+                      "base_url": null,
+                      "created_at": 1735689600000,
+                      "id": "lp_narrator",
+                      "last_used_at": 1735689660000,
+                      "model_id": "gpt-4o-mini",
+                      "preset_name": "OpenAI Narrator",
+                      "provider": "openai",
+                      "status": "active",
+                      "updated_at": 1735689660000
+                    }
+                  ]
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "items": {
                         "additionalProperties": false,
+                        "example": {
+                          "api_key_masked": "sk-***-key",
+                          "api_key_name": "OPENAI_API_KEY",
+                          "base_url": null,
+                          "created_at": 1735689600000,
+                          "id": "lp_narrator",
+                          "last_used_at": 1735689660000,
+                          "model_id": "gpt-4o-mini",
+                          "preset_name": "OpenAI Narrator",
+                          "provider": "openai",
+                          "status": "active",
+                          "updated_at": 1735689660000
+                        },
                         "properties": {
                           "api_key_masked": {
                             "type": "string"
@@ -3402,6 +3576,13 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "api_key": "sk-demo-key",
+                "api_key_name": "OPENAI_API_KEY",
+                "model_id": "gpt-4o-mini",
+                "preset_name": "OpenAI Narrator",
+                "provider": "openai"
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -3458,11 +3639,39 @@
           "201": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "api_key_masked": "sk-***-key",
+                    "api_key_name": "OPENAI_API_KEY",
+                    "base_url": null,
+                    "created_at": 1735689600000,
+                    "id": "lp_narrator",
+                    "last_used_at": 1735689660000,
+                    "model_id": "gpt-4o-mini",
+                    "preset_name": "OpenAI Narrator",
+                    "provider": "openai",
+                    "status": "active",
+                    "updated_at": 1735689660000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "api_key_masked": "sk-***-key",
+                        "api_key_name": "OPENAI_API_KEY",
+                        "base_url": null,
+                        "created_at": 1735689600000,
+                        "id": "lp_narrator",
+                        "last_used_at": 1735689660000,
+                        "model_id": "gpt-4o-mini",
+                        "preset_name": "OpenAI Narrator",
+                        "provider": "openai",
+                        "status": "active",
+                        "updated_at": 1735689660000
+                      },
                       "properties": {
                         "api_key_masked": {
                           "type": "string"
@@ -3684,6 +3893,12 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "deleted": true,
+                    "id": "lp_narrator"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -3835,11 +4050,39 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "api_key_masked": "sk-***-key",
+                    "api_key_name": "OPENAI_API_KEY",
+                    "base_url": null,
+                    "created_at": 1735689600000,
+                    "id": "lp_narrator",
+                    "last_used_at": 1735689660000,
+                    "model_id": "gpt-4o-mini",
+                    "preset_name": "OpenAI Narrator",
+                    "provider": "openai",
+                    "status": "active",
+                    "updated_at": 1735689660000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "api_key_masked": "sk-***-key",
+                        "api_key_name": "OPENAI_API_KEY",
+                        "base_url": null,
+                        "created_at": 1735689600000,
+                        "id": "lp_narrator",
+                        "last_used_at": 1735689660000,
+                        "model_id": "gpt-4o-mini",
+                        "preset_name": "OpenAI Narrator",
+                        "provider": "openai",
+                        "status": "active",
+                        "updated_at": 1735689660000
+                      },
                       "properties": {
                         "api_key_masked": {
                           "type": "string"
@@ -4025,6 +4268,11 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "api_key_name": "OPENAI_API_KEY",
+                "preset_name": "OpenAI Narrator v2",
+                "status": "active"
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -4096,11 +4344,39 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "api_key_masked": "sk-***-key",
+                    "api_key_name": "OPENAI_API_KEY",
+                    "base_url": null,
+                    "created_at": 1735689600000,
+                    "id": "lp_narrator",
+                    "last_used_at": 1735689660000,
+                    "model_id": "gpt-4o-mini",
+                    "preset_name": "OpenAI Narrator",
+                    "provider": "openai",
+                    "status": "active",
+                    "updated_at": 1735689660000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "api_key_masked": "sk-***-key",
+                        "api_key_name": "OPENAI_API_KEY",
+                        "base_url": null,
+                        "created_at": 1735689600000,
+                        "id": "lp_narrator",
+                        "last_used_at": 1735689660000,
+                        "model_id": "gpt-4o-mini",
+                        "preset_name": "OpenAI Narrator",
+                        "provider": "openai",
+                        "status": "active",
+                        "updated_at": 1735689660000
+                      },
                       "properties": {
                         "api_key_masked": {
                           "type": "string"
@@ -4354,6 +4630,17 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "instance_slot": "director",
+                "params": {
+                  "max_output_tokens": 512,
+                  "max_retries": 2,
+                  "reasoning_effort": "low",
+                  "temperature": 0.7
+                },
+                "scope": "session",
+                "session_id": "sess_demo"
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -4367,6 +4654,71 @@
                       "memory"
                     ],
                     "type": "string"
+                  },
+                  "params": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "frequency_penalty": {
+                            "maximum": 2,
+                            "minimum": -2,
+                            "type": "number"
+                          },
+                          "max_context_tokens": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "max_output_tokens": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "max_retries": {
+                            "maximum": 10,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "presence_penalty": {
+                            "maximum": 2,
+                            "minimum": -2,
+                            "type": "number"
+                          },
+                          "reasoning_effort": {
+                            "enum": [
+                              "low",
+                              "medium",
+                              "high"
+                            ],
+                            "type": "string"
+                          },
+                          "stream": {
+                            "type": "boolean"
+                          },
+                          "temperature": {
+                            "maximum": 2,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "timeout_ms": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "top_k": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "top_p": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "scope": {
                     "default": "global",
@@ -4391,6 +4743,21 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "activated": true,
+                    "instance_slot": "director",
+                    "params": {
+                      "max_output_tokens": 512,
+                      "max_retries": 2,
+                      "reasoning_effort": "low",
+                      "temperature": 0.7
+                    },
+                    "profile_id": "lp_narrator",
+                    "scope": "session",
+                    "scope_id": "sess_demo"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -4402,6 +4769,71 @@
                         },
                         "instance_slot": {
                           "type": "string"
+                        },
+                        "params": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "frequency_penalty": {
+                                  "maximum": 2,
+                                  "minimum": -2,
+                                  "type": "number"
+                                },
+                                "max_context_tokens": {
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                "max_output_tokens": {
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                "max_retries": {
+                                  "maximum": 10,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "presence_penalty": {
+                                  "maximum": 2,
+                                  "minimum": -2,
+                                  "type": "number"
+                                },
+                                "reasoning_effort": {
+                                  "enum": [
+                                    "low",
+                                    "medium",
+                                    "high"
+                                  ],
+                                  "type": "string"
+                                },
+                                "stream": {
+                                  "type": "boolean"
+                                },
+                                "temperature": {
+                                  "maximum": 2,
+                                  "minimum": 0,
+                                  "type": "number"
+                                },
+                                "timeout_ms": {
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                "top_k": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "top_p": {
+                                  "maximum": 1,
+                                  "minimum": 0,
+                                  "type": "number"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "profile_id": {
                           "type": "string"
@@ -4422,6 +4854,7 @@
                         "scope",
                         "scope_id",
                         "instance_slot",
+                        "params",
                         "activated"
                       ],
                       "type": "object"
@@ -4537,6 +4970,648 @@
           }
         },
         "summary": "Activate LLM profile",
+        "tags": [
+          "llm-profiles"
+        ]
+      }
+    },
+    "/llm-profiles/models/discover": {
+      "post": {
+        "operationId": "discoverLlmProfileModels",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "api_key": "sk-demo-key",
+                "provider": "openai"
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "api_key": {
+                    "maxLength": 2048,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "base_url": {
+                    "maxLength": 500,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "enum": [
+                      "openai",
+                      "anthropic",
+                      "google",
+                      "deepseek",
+                      "xai",
+                      "openai-compatible"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "api_key",
+                  "provider"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "id": "gpt-4o-mini",
+                      "label": "gpt-4o-mini"
+                    },
+                    {
+                      "id": "gpt-4.1-mini",
+                      "label": "gpt-4.1-mini"
+                    }
+                  ]
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Discover provider model list",
+        "tags": [
+          "llm-profiles"
+        ]
+      }
+    },
+    "/llm-profiles/models/test": {
+      "post": {
+        "operationId": "testLlmProfileModel",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "api_key": "sk-demo-key",
+                "model_id": "gpt-4o-mini",
+                "provider": "openai",
+                "reasoning_effort": "low"
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "api_key": {
+                    "maxLength": 2048,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "base_url": {
+                    "maxLength": 500,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "model_id": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "enum": [
+                      "openai",
+                      "anthropic",
+                      "google",
+                      "deepseek",
+                      "xai",
+                      "openai-compatible"
+                    ],
+                    "type": "string"
+                  },
+                  "reasoning_effort": {
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "api_key",
+                  "model_id",
+                  "provider"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "request_text": "Hello",
+                    "response_text": "Hello! How can I help you today?"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "request_text": {
+                          "type": "string"
+                        },
+                        "response_text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "request_text",
+                        "response_text"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Send a Hello probe to provider model",
+        "tags": [
+          "llm-profiles"
+        ]
+      }
+    },
+    "/llm-profiles/runtime": {
+      "get": {
+        "operationId": "getLlmRuntimeProfiles",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "session_id": "sess_demo",
+                    "slots": [
+                      {
+                        "model_id": "gpt-4o-mini",
+                        "params": {
+                          "max_output_tokens": 512,
+                          "max_retries": 2,
+                          "reasoning_effort": "low",
+                          "temperature": 0.7
+                        },
+                        "preset_name": "OpenAI Narrator",
+                        "profile_id": "lp_narrator",
+                        "provider": "openai",
+                        "scope": "session",
+                        "slot": "director",
+                        "source": "session_profile"
+                      }
+                    ]
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "slots": {
+                          "items": {
+                            "additionalProperties": false,
+                            "example": {
+                              "model_id": "gpt-4o-mini",
+                              "params": {
+                                "max_output_tokens": 512,
+                                "max_retries": 2,
+                                "reasoning_effort": "low",
+                                "temperature": 0.7
+                              },
+                              "preset_name": "OpenAI Narrator",
+                              "profile_id": "lp_narrator",
+                              "provider": "openai",
+                              "scope": "session",
+                              "slot": "director",
+                              "source": "session_profile"
+                            },
+                            "properties": {
+                              "model_id": {
+                                "type": "string"
+                              },
+                              "params": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "frequency_penalty": {
+                                        "maximum": 2,
+                                        "minimum": -2,
+                                        "type": "number"
+                                      },
+                                      "max_context_tokens": {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      "max_output_tokens": {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      "max_retries": {
+                                        "maximum": 10,
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "presence_penalty": {
+                                        "maximum": 2,
+                                        "minimum": -2,
+                                        "type": "number"
+                                      },
+                                      "reasoning_effort": {
+                                        "enum": [
+                                          "low",
+                                          "medium",
+                                          "high"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "stream": {
+                                        "type": "boolean"
+                                      },
+                                      "temperature": {
+                                        "maximum": 2,
+                                        "minimum": 0,
+                                        "type": "number"
+                                      },
+                                      "timeout_ms": {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      "top_k": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "top_p": {
+                                        "maximum": 1,
+                                        "minimum": 0,
+                                        "type": "number"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "preset_name": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "profile_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "provider": {
+                                "type": "string"
+                              },
+                              "scope": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "global",
+                                      "session"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "slot": {
+                                "enum": [
+                                  "*",
+                                  "narrator",
+                                  "director",
+                                  "verifier",
+                                  "memory"
+                                ],
+                                "type": "string"
+                              },
+                              "source": {
+                                "enum": [
+                                  "env",
+                                  "global_profile",
+                                  "session_profile"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "model_id",
+                              "params",
+                              "preset_name",
+                              "profile_id",
+                              "provider",
+                              "scope",
+                              "slot",
+                              "source"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "session_id",
+                        "slots"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get runtime LLM info for all instance slots",
         "tags": [
           "llm-profiles"
         ]
@@ -4745,12 +5820,56 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "confidence": 0.9,
+                      "content": {
+                        "text": "Alice carries a silver sword."
+                      },
+                      "created_at": 1735689600000,
+                      "id": "mem_fact_1",
+                      "importance": 0.8,
+                      "scope": "chat",
+                      "scope_id": "session-memory",
+                      "source_floor_id": "floor_12",
+                      "source_message_id": "msg_21",
+                      "status": "active",
+                      "type": "fact",
+                      "updated_at": 1735689660000
+                    }
+                  ],
+                  "meta": {
+                    "has_more": false,
+                    "limit": 10,
+                    "offset": 0,
+                    "sort_by": "created_at",
+                    "sort_order": "desc",
+                    "total": 1
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "items": {
                         "additionalProperties": false,
+                        "example": {
+                          "confidence": 0.9,
+                          "content": {
+                            "text": "Alice carries a silver sword."
+                          },
+                          "created_at": 1735689600000,
+                          "id": "mem_fact_1",
+                          "importance": 0.8,
+                          "scope": "chat",
+                          "scope_id": "session-memory",
+                          "source_floor_id": "floor_12",
+                          "source_message_id": "msg_21",
+                          "status": "active",
+                          "type": "fact",
+                          "updated_at": 1735689660000
+                        },
                         "properties": {
                           "confidence": {
                             "maximum": 1,
@@ -4996,11 +6115,45 @@
           "201": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "confidence": 0.9,
+                    "content": {
+                      "text": "Alice carries a silver sword."
+                    },
+                    "created_at": 1735689600000,
+                    "id": "mem_fact_1",
+                    "importance": 0.8,
+                    "scope": "chat",
+                    "scope_id": "session-memory",
+                    "source_floor_id": "floor_12",
+                    "source_message_id": "msg_21",
+                    "status": "active",
+                    "type": "fact",
+                    "updated_at": 1735689660000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "confidence": 0.9,
+                        "content": {
+                          "text": "Alice carries a silver sword."
+                        },
+                        "created_at": 1735689600000,
+                        "id": "mem_fact_1",
+                        "importance": 0.8,
+                        "scope": "chat",
+                        "scope_id": "session-memory",
+                        "source_floor_id": "floor_12",
+                        "source_message_id": "msg_21",
+                        "status": "active",
+                        "type": "fact",
+                        "updated_at": 1735689660000
+                      },
                       "properties": {
                         "confidence": {
                           "maximum": 1,
@@ -5185,6 +6338,12 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "deleted": true,
+                    "id": "mem_fact_1"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -5269,11 +6428,45 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "confidence": 0.9,
+                    "content": {
+                      "text": "Alice carries a silver sword."
+                    },
+                    "created_at": 1735689600000,
+                    "id": "mem_fact_1",
+                    "importance": 0.8,
+                    "scope": "chat",
+                    "scope_id": "session-memory",
+                    "source_floor_id": "floor_12",
+                    "source_message_id": "msg_21",
+                    "status": "active",
+                    "type": "fact",
+                    "updated_at": 1735689660000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "confidence": 0.9,
+                        "content": {
+                          "text": "Alice carries a silver sword."
+                        },
+                        "created_at": 1735689600000,
+                        "id": "mem_fact_1",
+                        "importance": 0.8,
+                        "scope": "chat",
+                        "scope_id": "session-memory",
+                        "source_floor_id": "floor_12",
+                        "source_message_id": "msg_21",
+                        "status": "active",
+                        "type": "fact",
+                        "updated_at": 1735689660000
+                      },
                       "properties": {
                         "confidence": {
                           "maximum": 1,
@@ -5483,11 +6676,45 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "confidence": 0.9,
+                    "content": {
+                      "text": "Alice carries a silver sword."
+                    },
+                    "created_at": 1735689600000,
+                    "id": "mem_fact_1",
+                    "importance": 0.8,
+                    "scope": "chat",
+                    "scope_id": "session-memory",
+                    "source_floor_id": "floor_12",
+                    "source_message_id": "msg_21",
+                    "status": "active",
+                    "type": "fact",
+                    "updated_at": 1735689660000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "confidence": 0.9,
+                        "content": {
+                          "text": "Alice carries a silver sword."
+                        },
+                        "created_at": 1735689600000,
+                        "id": "mem_fact_1",
+                        "importance": 0.8,
+                        "scope": "chat",
+                        "scope_id": "session-memory",
+                        "source_floor_id": "floor_12",
+                        "source_message_id": "msg_21",
+                        "status": "active",
+                        "type": "fact",
+                        "updated_at": 1735689660000
+                      },
                       "properties": {
                         "confidence": {
                           "maximum": 1,
@@ -5650,6 +6877,488 @@
           }
         },
         "summary": "Update memory item",
+        "tags": [
+          "memories"
+        ]
+      }
+    },
+    "/memories/batch/delete": {
+      "post": {
+        "operationId": "batchDeleteMemoryItems",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "ids": [
+                  "mem_fact_1",
+                  "mem_missing"
+                ]
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "ids": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "ids"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "meta": {
+                      "deleted": 1,
+                      "not_found": 1,
+                      "total": 2
+                    },
+                    "results": [
+                      {
+                        "action": "deleted",
+                        "id": "mem_fact_1",
+                        "index": 0
+                      },
+                      {
+                        "action": "not_found",
+                        "id": "mem_missing",
+                        "index": 1
+                      }
+                    ]
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "meta": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "deleted": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "not_found": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "total": {
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "deleted",
+                            "not_found"
+                          ],
+                          "type": "object"
+                        },
+                        "results": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "action": {
+                                "enum": [
+                                  "deleted",
+                                  "not_found"
+                                ],
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "index": {
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "index",
+                              "id",
+                              "action"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "results",
+                        "meta"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Batch delete memory items",
+        "tags": [
+          "memories"
+        ]
+      }
+    },
+    "/memories/batch/status": {
+      "patch": {
+        "operationId": "batchUpdateMemoryItemStatus",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "ids": [
+                  "mem_fact_1",
+                  "mem_missing"
+                ],
+                "status": "deprecated"
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "ids": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "status": {
+                    "enum": [
+                      "active",
+                      "deprecated"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ids",
+                  "status"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "meta": {
+                      "not_found": 1,
+                      "status": "deprecated",
+                      "total": 2,
+                      "updated": 1
+                    },
+                    "results": [
+                      {
+                        "action": "updated",
+                        "data": {
+                          "confidence": 0.9,
+                          "content": {
+                            "text": "Alice carries a silver sword."
+                          },
+                          "created_at": 1735689600000,
+                          "id": "mem_fact_1",
+                          "importance": 0.8,
+                          "scope": "chat",
+                          "scope_id": "session-memory",
+                          "source_floor_id": "floor_12",
+                          "source_message_id": "msg_21",
+                          "status": "deprecated",
+                          "type": "fact",
+                          "updated_at": 1735689720000
+                        },
+                        "id": "mem_fact_1",
+                        "index": 0
+                      },
+                      {
+                        "action": "not_found",
+                        "id": "mem_missing",
+                        "index": 1
+                      }
+                    ]
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "meta": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "not_found": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "status": {
+                              "enum": [
+                                "active",
+                                "deprecated"
+                              ],
+                              "type": "string"
+                            },
+                            "total": {
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "updated": {
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "updated",
+                            "not_found",
+                            "status"
+                          ],
+                          "type": "object"
+                        },
+                        "results": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "action": {
+                                "enum": [
+                                  "updated",
+                                  "not_found"
+                                ],
+                                "type": "string"
+                              },
+                              "data": {
+                                "additionalProperties": false,
+                                "example": {
+                                  "confidence": 0.9,
+                                  "content": {
+                                    "text": "Alice carries a silver sword."
+                                  },
+                                  "created_at": 1735689600000,
+                                  "id": "mem_fact_1",
+                                  "importance": 0.8,
+                                  "scope": "chat",
+                                  "scope_id": "session-memory",
+                                  "source_floor_id": "floor_12",
+                                  "source_message_id": "msg_21",
+                                  "status": "active",
+                                  "type": "fact",
+                                  "updated_at": 1735689660000
+                                },
+                                "properties": {
+                                  "confidence": {
+                                    "maximum": 1,
+                                    "minimum": 0,
+                                    "type": "number"
+                                  },
+                                  "content": {},
+                                  "created_at": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "importance": {
+                                    "maximum": 1,
+                                    "minimum": 0,
+                                    "type": "number"
+                                  },
+                                  "scope": {
+                                    "enum": [
+                                      "global",
+                                      "chat",
+                                      "floor"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "scope_id": {
+                                    "type": "string"
+                                  },
+                                  "source_floor_id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "source_message_id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "status": {
+                                    "enum": [
+                                      "active",
+                                      "deprecated"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "enum": [
+                                      "fact",
+                                      "summary",
+                                      "open_loop"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "updated_at": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "scope",
+                                  "scope_id",
+                                  "type",
+                                  "content",
+                                  "importance",
+                                  "confidence",
+                                  "status",
+                                  "created_at",
+                                  "updated_at"
+                                ],
+                                "type": "object"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "index": {
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "index",
+                              "id",
+                              "action"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "results",
+                        "meta"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Batch update memory item status",
         "tags": [
           "memories"
         ]
@@ -6314,6 +8023,12 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "deleted": true,
+                    "id": "mem_fact_1"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -6574,6 +8289,18 @@
                     "data": {
                       "items": {
                         "additionalProperties": false,
+                        "example": {
+                          "content": "The fire settles into a steady glow.",
+                          "content_format": "text",
+                          "created_at": 1735689720000,
+                          "id": "msg_21",
+                          "is_hidden": false,
+                          "page_id": "page_12",
+                          "role": "assistant",
+                          "seq": 1,
+                          "source": "model",
+                          "token_count": 128
+                        },
                         "properties": {
                           "content": {
                             "type": "string"
@@ -6737,6 +8464,16 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "content": "The fire settles into a steady glow.",
+                "content_format": "text",
+                "is_hidden": false,
+                "page_id": "page_12",
+                "role": "assistant",
+                "seq": 1,
+                "source": "model",
+                "token_count": 128
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -6802,6 +8539,18 @@
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "content": "The fire settles into a steady glow.",
+                        "content_format": "text",
+                        "created_at": 1735689720000,
+                        "id": "msg_21",
+                        "is_hidden": false,
+                        "page_id": "page_12",
+                        "role": "assistant",
+                        "seq": 1,
+                        "source": "model",
+                        "token_count": 128
+                      },
                       "properties": {
                         "content": {
                           "type": "string"
@@ -7058,6 +8807,18 @@
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "content": "The fire settles into a steady glow.",
+                        "content_format": "text",
+                        "created_at": 1735689720000,
+                        "id": "msg_21",
+                        "is_hidden": false,
+                        "page_id": "page_12",
+                        "role": "assistant",
+                        "seq": 1,
+                        "source": "model",
+                        "token_count": 128
+                      },
                       "properties": {
                         "content": {
                           "type": "string"
@@ -7190,6 +8951,16 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "content": "The fire settles into a steady glow.",
+                "content_format": "text",
+                "is_hidden": false,
+                "page_id": "page_12",
+                "role": "assistant",
+                "seq": 1,
+                "source": "model",
+                "token_count": 128
+              },
               "schema": {
                 "additionalProperties": false,
                 "minProperties": 1,
@@ -7250,6 +9021,18 @@
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "content": "The fire settles into a steady glow.",
+                        "content_format": "text",
+                        "created_at": 1735689720000,
+                        "id": "msg_21",
+                        "is_hidden": false,
+                        "page_id": "page_12",
+                        "role": "assistant",
+                        "seq": 1,
+                        "source": "model",
+                        "token_count": 128
+                      },
                       "properties": {
                         "content": {
                           "type": "string"
@@ -7395,6 +9178,455 @@
           }
         },
         "summary": "Update message",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/messages/batch/delete": {
+      "post": {
+        "operationId": "batchDeleteMessages",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "ids": [
+                  "msg_21",
+                  "msg_missing"
+                ]
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "ids": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "ids"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "meta": {
+                      "deleted": 1,
+                      "not_found": 1,
+                      "total": 2
+                    },
+                    "results": [
+                      {
+                        "action": "deleted",
+                        "id": "msg_21",
+                        "index": 0
+                      },
+                      {
+                        "action": "not_found",
+                        "id": "msg_missing",
+                        "index": 1
+                      }
+                    ]
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "meta": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "deleted": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "not_found": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "total": {
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "deleted",
+                            "not_found"
+                          ],
+                          "type": "object"
+                        },
+                        "results": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "action": {
+                                "enum": [
+                                  "deleted",
+                                  "not_found"
+                                ],
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "index": {
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "index",
+                              "id",
+                              "action"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "results",
+                        "meta"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Batch delete messages",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/messages/batch/visibility": {
+      "patch": {
+        "operationId": "batchUpdateMessageVisibility",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "ids": [
+                  "msg_21",
+                  "msg_missing"
+                ],
+                "is_hidden": true
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "ids": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "is_hidden": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "ids",
+                  "is_hidden"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "meta": {
+                      "is_hidden": true,
+                      "not_found": 1,
+                      "total": 2,
+                      "updated": 1
+                    },
+                    "results": [
+                      {
+                        "action": "updated",
+                        "data": {
+                          "content": "The fire settles into a steady glow.",
+                          "content_format": "text",
+                          "created_at": 1735689720000,
+                          "id": "msg_21",
+                          "is_hidden": true,
+                          "page_id": "page_12",
+                          "role": "assistant",
+                          "seq": 1,
+                          "source": "model",
+                          "token_count": 128
+                        },
+                        "id": "msg_21",
+                        "index": 0
+                      },
+                      {
+                        "action": "not_found",
+                        "id": "msg_missing",
+                        "index": 1
+                      }
+                    ]
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "meta": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "is_hidden": {
+                              "type": "boolean"
+                            },
+                            "not_found": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "total": {
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "updated": {
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "updated",
+                            "not_found",
+                            "is_hidden"
+                          ],
+                          "type": "object"
+                        },
+                        "results": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "action": {
+                                "enum": [
+                                  "updated",
+                                  "not_found"
+                                ],
+                                "type": "string"
+                              },
+                              "data": {
+                                "additionalProperties": false,
+                                "example": {
+                                  "content": "The fire settles into a steady glow.",
+                                  "content_format": "text",
+                                  "created_at": 1735689720000,
+                                  "id": "msg_21",
+                                  "is_hidden": false,
+                                  "page_id": "page_12",
+                                  "role": "assistant",
+                                  "seq": 1,
+                                  "source": "model",
+                                  "token_count": 128
+                                },
+                                "properties": {
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "content_format": {
+                                    "enum": [
+                                      "text",
+                                      "markdown",
+                                      "json"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "created_at": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "is_hidden": {
+                                    "type": "boolean"
+                                  },
+                                  "page_id": {
+                                    "type": "string"
+                                  },
+                                  "role": {
+                                    "enum": [
+                                      "user",
+                                      "assistant",
+                                      "system",
+                                      "narrator"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "seq": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "source": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "token_count": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "page_id",
+                                  "seq",
+                                  "role",
+                                  "content",
+                                  "content_format",
+                                  "token_count",
+                                  "is_hidden",
+                                  "source",
+                                  "created_at"
+                                ],
+                                "type": "object"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "index": {
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "index",
+                              "id",
+                              "action"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "results",
+                        "meta"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Batch update message visibility",
         "tags": [
           "messages"
         ]
@@ -8435,12 +10667,30 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "created_at": 1735689600000,
+                      "id": "preset_story",
+                      "name": "Story Preset",
+                      "source": "sillytavern",
+                      "updated_at": 1735689660000
+                    }
+                  ]
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "items": {
                         "additionalProperties": false,
+                        "example": {
+                          "created_at": 1735689600000,
+                          "id": "preset_story",
+                          "name": "Story Preset",
+                          "source": "sillytavern",
+                          "updated_at": 1735689660000
+                        },
                         "properties": {
                           "created_at": {
                             "minimum": 0,
@@ -8562,11 +10812,31 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "created_at": 1735689600000,
+                    "data": {
+                      "prompt_order": [],
+                      "prompts": []
+                    },
+                    "id": "preset_story",
+                    "name": "Story Preset",
+                    "source": "sillytavern",
+                    "updated_at": 1735689660000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "created_at": 1735689600000,
+                        "id": "preset_story",
+                        "name": "Story Preset",
+                        "source": "sillytavern",
+                        "updated_at": 1735689660000
+                      },
                       "properties": {
                         "created_at": {
                           "minimum": 0,
@@ -8645,6 +10915,466 @@
         "tags": [
           "imports"
         ]
+      },
+      "put": {
+        "operationId": "updateImportedPreset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "editor": {
+                  "default_character_id": 100000,
+                  "entries": [
+                    {
+                      "content": "Stay in character and keep the tone warm.",
+                      "enabled": true,
+                      "extra": {},
+                      "identifier": "main",
+                      "injection_position": 0,
+                      "marker": false,
+                      "name": "System Guidance",
+                      "role": "system",
+                      "system_prompt": true
+                    }
+                  ],
+                  "order_contexts": [
+                    {
+                      "character_id": 100000,
+                      "extra": {},
+                      "order": [
+                        {
+                          "enabled": true,
+                          "identifier": "main"
+                        }
+                      ]
+                    }
+                  ],
+                  "top_level": {
+                    "temperature": 0.7
+                  }
+                },
+                "expected_updated_at": 1735689660000,
+                "name": "Story Preset"
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "editor": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "default_character_id": {
+                        "type": "integer"
+                      },
+                      "entries": {
+                        "items": {
+                          "additionalProperties": true,
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "order_contexts": {
+                        "items": {
+                          "additionalProperties": true,
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "top_level": {
+                        "additionalProperties": true,
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "entries",
+                      "order_contexts",
+                      "top_level",
+                      "default_character_id"
+                    ],
+                    "type": "object"
+                  },
+                  "expected_updated_at": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "editor"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "created_at": 1735689600000,
+                    "id": "preset_story",
+                    "name": "Story Preset",
+                    "source": "sillytavern",
+                    "updated_at": 1735689660000
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "example": {
+                        "created_at": 1735689600000,
+                        "id": "preset_story",
+                        "name": "Story Preset",
+                        "source": "sillytavern",
+                        "updated_at": 1735689660000
+                      },
+                      "properties": {
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "source",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Update imported preset by id",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/presets/{id}/editor": {
+      "get": {
+        "operationId": "getImportedPresetEditor",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "created_at": 1735689600000,
+                    "editor": {
+                      "default_character_id": 100000,
+                      "entries": [
+                        {
+                          "content": "Stay in character and keep the tone warm.",
+                          "enabled": true,
+                          "extra": {},
+                          "identifier": "main",
+                          "injection_position": 0,
+                          "marker": false,
+                          "name": "System Guidance",
+                          "role": "system",
+                          "system_prompt": true
+                        }
+                      ],
+                      "order_contexts": [
+                        {
+                          "character_id": 100000,
+                          "extra": {},
+                          "order": [
+                            {
+                              "enabled": true,
+                              "identifier": "main"
+                            }
+                          ]
+                        }
+                      ],
+                      "top_level": {
+                        "temperature": 0.7
+                      }
+                    },
+                    "id": "preset_story",
+                    "name": "Story Preset",
+                    "source": "sillytavern",
+                    "updated_at": 1735689660000
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "example": {
+                        "created_at": 1735689600000,
+                        "id": "preset_story",
+                        "name": "Story Preset",
+                        "source": "sillytavern",
+                        "updated_at": 1735689660000
+                      },
+                      "properties": {
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "editor": {
+                          "additionalProperties": true,
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "source",
+                        "created_at",
+                        "updated_at",
+                        "editor"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get imported preset editor document",
+        "tags": [
+          "imports"
+        ]
       }
     },
     "/regex-profiles": {
@@ -8654,12 +11384,30 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "created_at": 1735689600000,
+                      "id": "preset_story",
+                      "name": "Story Preset",
+                      "source": "sillytavern",
+                      "updated_at": 1735689660000
+                    }
+                  ]
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "items": {
                         "additionalProperties": false,
+                        "example": {
+                          "created_at": 1735689600000,
+                          "id": "preset_story",
+                          "name": "Story Preset",
+                          "source": "sillytavern",
+                          "updated_at": 1735689660000
+                        },
                         "properties": {
                           "created_at": {
                             "minimum": 0,
@@ -8781,11 +11529,31 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "created_at": 1735689600000,
+                    "data": {
+                      "prompt_order": [],
+                      "prompts": []
+                    },
+                    "id": "preset_story",
+                    "name": "Story Preset",
+                    "source": "sillytavern",
+                    "updated_at": 1735689660000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "created_at": 1735689600000,
+                        "id": "preset_story",
+                        "name": "Story Preset",
+                        "source": "sillytavern",
+                        "updated_at": 1735689660000
+                      },
                       "properties": {
                         "created_at": {
                           "minimum": 0,
@@ -8929,12 +11697,102 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "character_binding": {
+                        "character_id": "char_hero",
+                        "character_version_id": "charver_hero_v3",
+                        "snapshot_summary": {
+                          "has_greeting": true,
+                          "name": "Hero"
+                        },
+                        "sync_policy": "pin"
+                      },
+                      "created_at": 1735689600000,
+                      "id": "sess_demo",
+                      "metadata": {
+                        "source": "demo",
+                        "tags": [
+                          "beta",
+                          "docs"
+                        ]
+                      },
+                      "model_name": "gpt-4o-mini",
+                      "model_params": {
+                        "temperature": 0.7,
+                        "top_p": 0.9
+                      },
+                      "model_provider": "openai",
+                      "preset_id": "preset_story",
+                      "prompt_mode": "native",
+                      "regex_profile_id": "regex_safe",
+                      "status": "active",
+                      "title": "Campfire Planning",
+                      "updated_at": 1735689660000,
+                      "user_binding": {
+                        "snapshot_summary": {
+                          "name": "Alice"
+                        },
+                        "user_id": "usr_demo"
+                      },
+                      "worldbook_profile_id": "wb_world"
+                    }
+                  ],
+                  "meta": {
+                    "has_more": false,
+                    "limit": 20,
+                    "offset": 0,
+                    "sort_by": "created_at",
+                    "sort_order": "desc",
+                    "total": 1
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "items": {
                         "additionalProperties": false,
+                        "example": {
+                          "character_binding": {
+                            "character_id": "char_hero",
+                            "character_version_id": "charver_hero_v3",
+                            "snapshot_summary": {
+                              "has_greeting": true,
+                              "name": "Hero"
+                            },
+                            "sync_policy": "pin"
+                          },
+                          "created_at": 1735689600000,
+                          "id": "sess_demo",
+                          "metadata": {
+                            "source": "demo",
+                            "tags": [
+                              "beta",
+                              "docs"
+                            ]
+                          },
+                          "model_name": "gpt-4o-mini",
+                          "model_params": {
+                            "temperature": 0.7,
+                            "top_p": 0.9
+                          },
+                          "model_provider": "openai",
+                          "preset_id": "preset_story",
+                          "prompt_mode": "native",
+                          "regex_profile_id": "regex_safe",
+                          "status": "active",
+                          "title": "Campfire Planning",
+                          "updated_at": 1735689660000,
+                          "user_binding": {
+                            "snapshot_summary": {
+                              "name": "Alice"
+                            },
+                            "user_id": "usr_demo"
+                          },
+                          "worldbook_profile_id": "wb_world"
+                        },
                         "properties": {
                           "character_binding": {
                             "anyOf": [
@@ -9262,6 +12120,30 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "character_id": "char_hero",
+                "character_sync_policy": "pin",
+                "metadata": {
+                  "source": "demo",
+                  "tags": [
+                    "beta",
+                    "docs"
+                  ]
+                },
+                "model_name": "gpt-4o-mini",
+                "model_params": {
+                  "temperature": 0.7,
+                  "top_p": 0.9
+                },
+                "model_provider": "openai",
+                "preset_id": "preset_story",
+                "prompt_mode": "native",
+                "regex_profile_id": "regex_safe",
+                "status": "active",
+                "title": "Campfire Planning",
+                "user_id": "usr_demo",
+                "worldbook_profile_id": "wb_world"
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -9345,11 +12227,91 @@
           "201": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "character_binding": {
+                      "character_id": "char_hero",
+                      "character_version_id": "charver_hero_v3",
+                      "snapshot_summary": {
+                        "has_greeting": true,
+                        "name": "Hero"
+                      },
+                      "sync_policy": "pin"
+                    },
+                    "created_at": 1735689600000,
+                    "id": "sess_demo",
+                    "metadata": {
+                      "source": "demo",
+                      "tags": [
+                        "beta",
+                        "docs"
+                      ]
+                    },
+                    "model_name": "gpt-4o-mini",
+                    "model_params": {
+                      "temperature": 0.7,
+                      "top_p": 0.9
+                    },
+                    "model_provider": "openai",
+                    "preset_id": "preset_story",
+                    "prompt_mode": "native",
+                    "regex_profile_id": "regex_safe",
+                    "status": "active",
+                    "title": "Campfire Planning",
+                    "updated_at": 1735689660000,
+                    "user_binding": {
+                      "snapshot_summary": {
+                        "name": "Alice"
+                      },
+                      "user_id": "usr_demo"
+                    },
+                    "worldbook_profile_id": "wb_world"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "character_binding": {
+                          "character_id": "char_hero",
+                          "character_version_id": "charver_hero_v3",
+                          "snapshot_summary": {
+                            "has_greeting": true,
+                            "name": "Hero"
+                          },
+                          "sync_policy": "pin"
+                        },
+                        "created_at": 1735689600000,
+                        "id": "sess_demo",
+                        "metadata": {
+                          "source": "demo",
+                          "tags": [
+                            "beta",
+                            "docs"
+                          ]
+                        },
+                        "model_name": "gpt-4o-mini",
+                        "model_params": {
+                          "temperature": 0.7,
+                          "top_p": 0.9
+                        },
+                        "model_provider": "openai",
+                        "preset_id": "preset_story",
+                        "prompt_mode": "native",
+                        "regex_profile_id": "regex_safe",
+                        "status": "active",
+                        "title": "Campfire Planning",
+                        "updated_at": 1735689660000,
+                        "user_binding": {
+                          "snapshot_summary": {
+                            "name": "Alice"
+                          },
+                          "user_id": "usr_demo"
+                        },
+                        "worldbook_profile_id": "wb_world"
+                      },
                       "properties": {
                         "character_binding": {
                           "anyOf": [
@@ -9715,6 +12677,12 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "deleted": true,
+                    "id": "sess_demo"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -9799,11 +12767,91 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "character_binding": {
+                      "character_id": "char_hero",
+                      "character_version_id": "charver_hero_v3",
+                      "snapshot_summary": {
+                        "has_greeting": true,
+                        "name": "Hero"
+                      },
+                      "sync_policy": "pin"
+                    },
+                    "created_at": 1735689600000,
+                    "id": "sess_demo",
+                    "metadata": {
+                      "source": "demo",
+                      "tags": [
+                        "beta",
+                        "docs"
+                      ]
+                    },
+                    "model_name": "gpt-4o-mini",
+                    "model_params": {
+                      "temperature": 0.7,
+                      "top_p": 0.9
+                    },
+                    "model_provider": "openai",
+                    "preset_id": "preset_story",
+                    "prompt_mode": "native",
+                    "regex_profile_id": "regex_safe",
+                    "status": "active",
+                    "title": "Campfire Planning",
+                    "updated_at": 1735689660000,
+                    "user_binding": {
+                      "snapshot_summary": {
+                        "name": "Alice"
+                      },
+                      "user_id": "usr_demo"
+                    },
+                    "worldbook_profile_id": "wb_world"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "character_binding": {
+                          "character_id": "char_hero",
+                          "character_version_id": "charver_hero_v3",
+                          "snapshot_summary": {
+                            "has_greeting": true,
+                            "name": "Hero"
+                          },
+                          "sync_policy": "pin"
+                        },
+                        "created_at": 1735689600000,
+                        "id": "sess_demo",
+                        "metadata": {
+                          "source": "demo",
+                          "tags": [
+                            "beta",
+                            "docs"
+                          ]
+                        },
+                        "model_name": "gpt-4o-mini",
+                        "model_params": {
+                          "temperature": 0.7,
+                          "top_p": 0.9
+                        },
+                        "model_provider": "openai",
+                        "preset_id": "preset_story",
+                        "prompt_mode": "native",
+                        "regex_profile_id": "regex_safe",
+                        "status": "active",
+                        "title": "Campfire Planning",
+                        "updated_at": 1735689660000,
+                        "user_binding": {
+                          "snapshot_summary": {
+                            "name": "Alice"
+                          },
+                          "user_id": "usr_demo"
+                        },
+                        "worldbook_profile_id": "wb_world"
+                      },
                       "properties": {
                         "character_binding": {
                           "anyOf": [
@@ -10100,6 +13148,30 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "character_id": "char_hero",
+                "character_sync_policy": "pin",
+                "metadata": {
+                  "source": "demo",
+                  "tags": [
+                    "beta",
+                    "docs"
+                  ]
+                },
+                "model_name": "gpt-4o-mini",
+                "model_params": {
+                  "temperature": 0.7,
+                  "top_p": 0.9
+                },
+                "model_provider": "openai",
+                "preset_id": "preset_story",
+                "prompt_mode": "native",
+                "regex_profile_id": "regex_safe",
+                "status": "active",
+                "title": "Campfire Planning",
+                "user_id": "usr_demo",
+                "worldbook_profile_id": "wb_world"
+              },
               "schema": {
                 "additionalProperties": false,
                 "minProperties": 1,
@@ -10184,11 +13256,91 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "character_binding": {
+                      "character_id": "char_hero",
+                      "character_version_id": "charver_hero_v3",
+                      "snapshot_summary": {
+                        "has_greeting": true,
+                        "name": "Hero"
+                      },
+                      "sync_policy": "pin"
+                    },
+                    "created_at": 1735689600000,
+                    "id": "sess_demo",
+                    "metadata": {
+                      "source": "demo",
+                      "tags": [
+                        "beta",
+                        "docs"
+                      ]
+                    },
+                    "model_name": "gpt-4o-mini",
+                    "model_params": {
+                      "temperature": 0.7,
+                      "top_p": 0.9
+                    },
+                    "model_provider": "openai",
+                    "preset_id": "preset_story",
+                    "prompt_mode": "native",
+                    "regex_profile_id": "regex_safe",
+                    "status": "active",
+                    "title": "Campfire Planning",
+                    "updated_at": 1735689660000,
+                    "user_binding": {
+                      "snapshot_summary": {
+                        "name": "Alice"
+                      },
+                      "user_id": "usr_demo"
+                    },
+                    "worldbook_profile_id": "wb_world"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "character_binding": {
+                          "character_id": "char_hero",
+                          "character_version_id": "charver_hero_v3",
+                          "snapshot_summary": {
+                            "has_greeting": true,
+                            "name": "Hero"
+                          },
+                          "sync_policy": "pin"
+                        },
+                        "created_at": 1735689600000,
+                        "id": "sess_demo",
+                        "metadata": {
+                          "source": "demo",
+                          "tags": [
+                            "beta",
+                            "docs"
+                          ]
+                        },
+                        "model_name": "gpt-4o-mini",
+                        "model_params": {
+                          "temperature": 0.7,
+                          "top_p": 0.9
+                        },
+                        "model_provider": "openai",
+                        "preset_id": "preset_story",
+                        "prompt_mode": "native",
+                        "regex_profile_id": "regex_safe",
+                        "status": "active",
+                        "title": "Campfire Planning",
+                        "updated_at": 1735689660000,
+                        "user_binding": {
+                          "snapshot_summary": {
+                            "name": "Alice"
+                          },
+                          "user_id": "usr_demo"
+                        },
+                        "worldbook_profile_id": "wb_world"
+                      },
                       "properties": {
                         "character_binding": {
                           "anyOf": [
@@ -10599,7 +13751,28 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "branch_id": "main",
+                      "floor_count": 3,
+                      "latest_floor_id": "floor_12",
+                      "latest_floor_no": 2,
+                      "latest_state": "committed",
+                      "updated_at": 1735689720000
+                    }
+                  ],
+                  "meta": {
+                    "has_more": false,
+                    "limit": 20,
+                    "offset": 0,
+                    "sort_by": "updated_at",
+                    "sort_order": "desc",
+                    "total": 1
+                  }
+                },
                 "schema": {
+                  "additionalProperties": false,
                   "properties": {
                     "data": {
                       "items": {
@@ -10764,6 +13937,34 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "base_branch_id": "main",
+                    "base_only_floors": [
+                      {
+                        "branchId": "main",
+                        "floorNo": 2,
+                        "id": "floor_12",
+                        "state": "committed"
+                      }
+                    ],
+                    "fork_floor_no": 1,
+                    "session_id": "sess_demo",
+                    "shared_floor_nos": [
+                      0,
+                      1
+                    ],
+                    "target_branch_id": "alt-branch",
+                    "target_only_floors": [
+                      {
+                        "branchId": "alt-branch",
+                        "floorNo": 2,
+                        "id": "floor_13",
+                        "state": "committed"
+                      }
+                    ]
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -10886,15 +14087,114 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "force": true
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "force": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "character_binding": {
+                      "character_id": "char_hero",
+                      "character_version_id": "charver_hero_v3",
+                      "snapshot_summary": {
+                        "has_greeting": true,
+                        "name": "Hero"
+                      },
+                      "sync_policy": "pin"
+                    },
+                    "created_at": 1735689600000,
+                    "id": "sess_demo",
+                    "metadata": {
+                      "source": "demo",
+                      "tags": [
+                        "beta",
+                        "docs"
+                      ]
+                    },
+                    "model_name": "gpt-4o-mini",
+                    "model_params": {
+                      "temperature": 0.7,
+                      "top_p": 0.9
+                    },
+                    "model_provider": "openai",
+                    "preset_id": "preset_story",
+                    "prompt_mode": "native",
+                    "regex_profile_id": "regex_safe",
+                    "status": "active",
+                    "title": "Campfire Planning",
+                    "updated_at": 1735689660000,
+                    "user_binding": {
+                      "snapshot_summary": {
+                        "name": "Alice"
+                      },
+                      "user_id": "usr_demo"
+                    },
+                    "worldbook_profile_id": "wb_world"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "character_binding": {
+                          "character_id": "char_hero",
+                          "character_version_id": "charver_hero_v3",
+                          "snapshot_summary": {
+                            "has_greeting": true,
+                            "name": "Hero"
+                          },
+                          "sync_policy": "pin"
+                        },
+                        "created_at": 1735689600000,
+                        "id": "sess_demo",
+                        "metadata": {
+                          "source": "demo",
+                          "tags": [
+                            "beta",
+                            "docs"
+                          ]
+                        },
+                        "model_name": "gpt-4o-mini",
+                        "model_params": {
+                          "temperature": 0.7,
+                          "top_p": 0.9
+                        },
+                        "model_provider": "openai",
+                        "preset_id": "preset_story",
+                        "prompt_mode": "native",
+                        "regex_profile_id": "regex_safe",
+                        "status": "active",
+                        "title": "Campfire Planning",
+                        "updated_at": 1735689660000,
+                        "user_binding": {
+                          "snapshot_summary": {
+                            "name": "Alice"
+                          },
+                          "user_id": "usr_demo"
+                        },
+                        "worldbook_profile_id": "wb_world"
+                      },
                       "properties": {
                         "character_binding": {
                           "anyOf": [
@@ -11288,6 +14588,46 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "branch_id": "main",
+                    "floors": [
+                      {
+                        "active_page": {
+                          "id": "page_12",
+                          "messages": [
+                            {
+                              "content": "The firelight wavers as the next part of the story begins.",
+                              "content_format": "text",
+                              "id": "msg_21",
+                              "role": "assistant",
+                              "seq": 0
+                            }
+                          ],
+                          "page_kind": "output",
+                          "page_no": 0,
+                          "version": 1
+                        },
+                        "created_at": 1735689720000,
+                        "floor_no": 2,
+                        "id": "floor_12",
+                        "page_count": 1,
+                        "state": "committed",
+                        "token_in": 320,
+                        "token_out": 128
+                      }
+                    ],
+                    "session_id": "sess_demo"
+                  },
+                  "meta": {
+                    "has_more": false,
+                    "limit": 50,
+                    "offset": 0,
+                    "sort_by": "floor_no",
+                    "sort_order": "asc",
+                    "total": 1
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -11593,12 +14933,46 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "created_at": 1735689600000,
+                      "id": "usr_demo",
+                      "name": "Alice",
+                      "snapshot": {
+                        "description": "A calm strategist who keeps concise notes.",
+                        "name": "Alice"
+                      },
+                      "status": "active",
+                      "updated_at": 1735689600000
+                    }
+                  ],
+                  "meta": {
+                    "has_more": false,
+                    "limit": 20,
+                    "offset": 0,
+                    "sort_by": "updated_at",
+                    "sort_order": "desc",
+                    "total": 1
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "items": {
                         "additionalProperties": false,
+                        "example": {
+                          "created_at": 1735689600000,
+                          "id": "usr_demo",
+                          "name": "Alice",
+                          "snapshot": {
+                            "description": "A calm strategist who keeps concise notes.",
+                            "name": "Alice"
+                          },
+                          "status": "active",
+                          "updated_at": 1735689600000
+                        },
                         "properties": {
                           "created_at": {
                             "minimum": 0,
@@ -11732,6 +15106,13 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "snapshot": {
+                  "description": "A calm strategist who keeps concise notes.",
+                  "name": "Alice"
+                },
+                "status": "active"
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -11760,11 +15141,35 @@
           "201": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "created_at": 1735689600000,
+                    "id": "usr_demo",
+                    "name": "Alice",
+                    "snapshot": {
+                      "description": "A calm strategist who keeps concise notes.",
+                      "name": "Alice"
+                    },
+                    "status": "active",
+                    "updated_at": 1735689600000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "created_at": 1735689600000,
+                        "id": "usr_demo",
+                        "name": "Alice",
+                        "snapshot": {
+                          "description": "A calm strategist who keeps concise notes.",
+                          "name": "Alice"
+                        },
+                        "status": "active",
+                        "updated_at": 1735689600000
+                      },
                       "properties": {
                         "created_at": {
                           "minimum": 0,
@@ -11903,6 +15308,12 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "deleted": true,
+                    "id": "usr_demo"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -11987,11 +15398,35 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "created_at": 1735689600000,
+                    "id": "usr_demo",
+                    "name": "Alice",
+                    "snapshot": {
+                      "description": "A calm strategist who keeps concise notes.",
+                      "name": "Alice"
+                    },
+                    "status": "active",
+                    "updated_at": 1735689600000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "created_at": 1735689600000,
+                        "id": "usr_demo",
+                        "name": "Alice",
+                        "snapshot": {
+                          "description": "A calm strategist who keeps concise notes.",
+                          "name": "Alice"
+                        },
+                        "status": "active",
+                        "updated_at": 1735689600000
+                      },
                       "properties": {
                         "created_at": {
                           "minimum": 0,
@@ -12094,6 +15529,13 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "snapshot": {
+                  "description": "A calm strategist who keeps concise notes.",
+                  "name": "Alice"
+                },
+                "status": "active"
+              },
               "schema": {
                 "additionalProperties": false,
                 "minProperties": 1,
@@ -12120,11 +15562,35 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "created_at": 1735689600000,
+                    "id": "usr_demo",
+                    "name": "Alice",
+                    "snapshot": {
+                      "description": "A calm strategist who keeps concise notes.",
+                      "name": "Alice"
+                    },
+                    "status": "active",
+                    "updated_at": 1735689600000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "created_at": 1735689600000,
+                        "id": "usr_demo",
+                        "name": "Alice",
+                        "snapshot": {
+                          "description": "A calm strategist who keeps concise notes.",
+                          "name": "Alice"
+                        },
+                        "status": "active",
+                        "updated_at": 1735689600000
+                      },
                       "properties": {
                         "created_at": {
                           "minimum": 0,
@@ -12363,12 +15829,44 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "id": "var_mood",
+                      "key": "mood",
+                      "scope": "chat",
+                      "scope_id": "session-a",
+                      "updated_at": 1735689720000,
+                      "value": {
+                        "score": 20
+                      }
+                    }
+                  ],
+                  "meta": {
+                    "has_more": false,
+                    "limit": 10,
+                    "offset": 0,
+                    "sort_by": "updated_at",
+                    "sort_order": "desc",
+                    "total": 1
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "items": {
                         "additionalProperties": false,
+                        "example": {
+                          "id": "var_mood",
+                          "key": "mood",
+                          "scope": "chat",
+                          "scope_id": "session-a",
+                          "updated_at": 1735689720000,
+                          "value": {
+                            "score": 20
+                          }
+                        },
                         "properties": {
                           "id": {
                             "type": "string"
@@ -12500,6 +15998,14 @@
         "requestBody": {
           "content": {
             "application/json": {
+              "example": {
+                "key": "mood",
+                "scope": "chat",
+                "scope_id": "session-a",
+                "value": {
+                  "score": 20
+                }
+              },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
@@ -12538,11 +16044,33 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "id": "var_mood",
+                    "key": "mood",
+                    "scope": "chat",
+                    "scope_id": "session-a",
+                    "updated_at": 1735689720000,
+                    "value": {
+                      "score": 20
+                    }
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "id": "var_mood",
+                        "key": "mood",
+                        "scope": "chat",
+                        "scope_id": "session-a",
+                        "updated_at": 1735689720000,
+                        "value": {
+                          "score": 20
+                        }
+                      },
                       "properties": {
                         "id": {
                           "type": "string"
@@ -12591,11 +16119,33 @@
           "201": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "id": "var_mood",
+                    "key": "mood",
+                    "scope": "chat",
+                    "scope_id": "session-a",
+                    "updated_at": 1735689720000,
+                    "value": {
+                      "score": 20
+                    }
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "id": "var_mood",
+                        "key": "mood",
+                        "scope": "chat",
+                        "scope_id": "session-a",
+                        "updated_at": 1735689720000,
+                        "value": {
+                          "score": 20
+                        }
+                      },
                       "properties": {
                         "id": {
                           "type": "string"
@@ -12699,6 +16249,12 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "deleted": true,
+                    "id": "var_mood"
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
@@ -12784,11 +16340,33 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "id": "var_mood",
+                    "key": "mood",
+                    "scope": "chat",
+                    "scope_id": "session-a",
+                    "updated_at": 1735689720000,
+                    "value": {
+                      "score": 20
+                    }
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "id": "var_mood",
+                        "key": "mood",
+                        "scope": "chat",
+                        "scope_id": "session-a",
+                        "updated_at": 1735689720000,
+                        "value": {
+                          "score": 20
+                        }
+                      },
                       "properties": {
                         "id": {
                           "type": "string"
@@ -12874,6 +16452,285 @@
         ]
       }
     },
+    "/variables/batch": {
+      "put": {
+        "operationId": "batchUpsertVariables",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "items": [
+                  {
+                    "key": "mood",
+                    "scope": "chat",
+                    "scope_id": "session-a",
+                    "value": {
+                      "score": 20
+                    }
+                  },
+                  {
+                    "key": "topic",
+                    "scope": "chat",
+                    "scope_id": "session-a",
+                    "value": "campfire"
+                  }
+                ]
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "items": {
+                    "items": {
+                      "additionalProperties": false,
+                      "example": {
+                        "key": "mood",
+                        "scope": "chat",
+                        "scope_id": "session-a",
+                        "value": {
+                          "score": 20
+                        }
+                      },
+                      "properties": {
+                        "key": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "global",
+                            "chat",
+                            "floor",
+                            "page"
+                          ],
+                          "type": "string"
+                        },
+                        "scope_id": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "value": {}
+                      },
+                      "required": [
+                        "scope",
+                        "scope_id",
+                        "key",
+                        "value"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "items"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "meta": {
+                      "created": 1,
+                      "total": 2,
+                      "updated": 1
+                    },
+                    "results": [
+                      {
+                        "action": "updated",
+                        "data": {
+                          "id": "var_mood",
+                          "key": "mood",
+                          "scope": "chat",
+                          "scope_id": "session-a",
+                          "updated_at": 1735689720000,
+                          "value": {
+                            "score": 20
+                          }
+                        },
+                        "index": 0
+                      },
+                      {
+                        "action": "created",
+                        "data": {
+                          "id": "var_topic",
+                          "key": "topic",
+                          "scope": "chat",
+                          "scope_id": "session-a",
+                          "updated_at": 1735689720000,
+                          "value": "campfire"
+                        },
+                        "index": 1
+                      }
+                    ]
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "meta": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "created": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "total": {
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "updated": {
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "created",
+                            "updated"
+                          ],
+                          "type": "object"
+                        },
+                        "results": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "action": {
+                                "enum": [
+                                  "created",
+                                  "updated"
+                                ],
+                                "type": "string"
+                              },
+                              "data": {
+                                "additionalProperties": false,
+                                "example": {
+                                  "id": "var_mood",
+                                  "key": "mood",
+                                  "scope": "chat",
+                                  "scope_id": "session-a",
+                                  "updated_at": 1735689720000,
+                                  "value": {
+                                    "score": 20
+                                  }
+                                },
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "scope": {
+                                    "enum": [
+                                      "global",
+                                      "chat",
+                                      "floor",
+                                      "page"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "scope_id": {
+                                    "type": "string"
+                                  },
+                                  "updated_at": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "value": {}
+                                },
+                                "required": [
+                                  "id",
+                                  "scope",
+                                  "scope_id",
+                                  "key",
+                                  "value",
+                                  "updated_at"
+                                ],
+                                "type": "object"
+                              },
+                              "index": {
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "index",
+                              "action",
+                              "data"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "results",
+                        "meta"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Batch upsert variables",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
     "/worldbooks": {
       "get": {
         "operationId": "listImportedWorldbooks",
@@ -12881,12 +16738,30 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "created_at": 1735689600000,
+                      "id": "preset_story",
+                      "name": "Story Preset",
+                      "source": "sillytavern",
+                      "updated_at": 1735689660000
+                    }
+                  ]
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "items": {
                         "additionalProperties": false,
+                        "example": {
+                          "created_at": 1735689600000,
+                          "id": "preset_story",
+                          "name": "Story Preset",
+                          "source": "sillytavern",
+                          "updated_at": 1735689660000
+                        },
                         "properties": {
                           "created_at": {
                             "minimum": 0,
@@ -13008,11 +16883,31 @@
           "200": {
             "content": {
               "application/json": {
+                "example": {
+                  "data": {
+                    "created_at": 1735689600000,
+                    "data": {
+                      "prompt_order": [],
+                      "prompts": []
+                    },
+                    "id": "preset_story",
+                    "name": "Story Preset",
+                    "source": "sillytavern",
+                    "updated_at": 1735689660000
+                  }
+                },
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
                     "data": {
                       "additionalProperties": false,
+                      "example": {
+                        "created_at": 1735689600000,
+                        "id": "preset_story",
+                        "name": "Story Preset",
+                        "source": "sillytavern",
+                        "updated_at": 1735689660000
+                      },
                       "properties": {
                         "created_at": {
                           "minimum": 0,
@@ -13088,6 +16983,230 @@
           }
         },
         "summary": "Get imported worldbook",
+        "tags": [
+          "imports"
+        ]
+      },
+      "put": {
+        "operationId": "updateImportedWorldbook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "data": {
+                  "entries": [
+                    {
+                      "content": "The kingdom is recovering from a long war.",
+                      "keys": [
+                        "kingdom"
+                      ]
+                    }
+                  ]
+                },
+                "expected_updated_at": 1735689660000,
+                "name": "Kingdom Lore"
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "expected_updated_at": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "data"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "created_at": 1735689600000,
+                    "id": "wb_kingdom",
+                    "name": "Kingdom Lore",
+                    "source": "sillytavern",
+                    "updated_at": 1735689720000
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "example": {
+                        "created_at": 1735689600000,
+                        "id": "preset_story",
+                        "name": "Story Preset",
+                        "source": "sillytavern",
+                        "updated_at": 1735689660000
+                      },
+                      "properties": {
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "source",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Update imported worldbook by id",
         "tags": [
           "imports"
         ]

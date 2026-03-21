@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
 import { floors } from "../db/schema";
-import { parseWithSchema, requireRow, sendError } from "../lib/http";
+import { ensureOptionalObjectBody, parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 
 const floorStateSchema = z.enum(["draft", "generating", "committed", "failed"]);
@@ -480,6 +480,10 @@ export async function registerFloorRoutes(
         404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
       },
+    },
+    preValidation: (request, _reply, done) => {
+      ensureOptionalObjectBody(request);
+      done();
     },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(floorParamsSchema, request.params, reply);

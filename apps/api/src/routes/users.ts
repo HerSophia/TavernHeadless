@@ -40,6 +40,50 @@ const updateUserSchema = z
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 
+const userSnapshotExample = {
+  name: "Alice",
+  description: "A calm strategist who keeps concise notes."
+} as const;
+
+const userBodyExample = {
+  snapshot: userSnapshotExample,
+  status: "active"
+} as const;
+
+const userExample = {
+  id: "usr_demo",
+  name: "Alice",
+  status: "active",
+  snapshot: userSnapshotExample,
+  created_at: 1735689600000,
+  updated_at: 1735689600000
+} as const;
+
+const userListMetaExample = {
+  total: 1,
+  limit: 20,
+  offset: 0,
+  has_more: false,
+  sort_by: "updated_at",
+  sort_order: "desc"
+} as const;
+
+const userResponseExample = {
+  data: userExample
+} as const;
+
+const userListResponseExample = {
+  data: [userExample],
+  meta: userListMetaExample
+} as const;
+
+const userDeleteResponseExample = {
+  data: {
+    id: "usr_demo",
+    deleted: true
+  }
+} as const;
+
 const idParamsJsonSchema = {
   type: "object",
   required: ["id"],
@@ -69,6 +113,7 @@ const userBodyJsonSchema = {
     snapshot: { type: "object", additionalProperties: true },
     status: { type: "string", enum: ["active", "disabled"] }
   },
+  examples: [userBodyExample],
   additionalProperties: false
 } as const;
 
@@ -83,6 +128,7 @@ const userJsonSchema = {
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 }
   },
+  examples: [userExample],
   additionalProperties: false
 } as const;
 
@@ -122,6 +168,7 @@ const userResponseJsonSchema = {
   type: "object",
   required: ["data"],
   properties: { data: userJsonSchema },
+  examples: [userResponseExample],
   additionalProperties: false
 } as const;
 
@@ -132,6 +179,7 @@ const userListResponseJsonSchema = {
     data: { type: "array", items: userJsonSchema },
     meta: listMetaJsonSchema
   },
+  examples: [userListResponseExample],
   additionalProperties: false
 } as const;
 
@@ -149,6 +197,7 @@ const deleteResponseJsonSchema = {
       additionalProperties: false
     }
   },
+  examples: [userDeleteResponseExample],
   additionalProperties: false
 } as const;
 

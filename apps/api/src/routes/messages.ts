@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -45,6 +45,111 @@ const updateMessageSchema = z
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 
+const messageIdArraySchema = z.array(z.string().min(1)).min(1).max(100).superRefine((ids, ctx) => {
+  const seen = new Map<string, number>();
+
+  ids.forEach((id, index) => {
+    const firstIndex = seen.get(id);
+
+    if (firstIndex !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index],
+        message: `Duplicate message id also appears at ids.${firstIndex}`
+      });
+      return;
+    }
+
+    seen.set(id, index);
+  });
+});
+
+const batchUpdateMessageVisibilitySchema = z.object({
+  ids: messageIdArraySchema,
+  is_hidden: z.boolean()
+});
+
+const batchDeleteMessagesSchema = z.object({
+  ids: messageIdArraySchema
+});
+
+const createMessageBodyExample = {
+  page_id: "page_12",
+  seq: 1,
+  role: "assistant",
+  content: "The fire settles into a steady glow.",
+  content_format: "text",
+  token_count: 128,
+  is_hidden: false,
+  source: "model"
+} as const;
+
+const messageExample = {
+  id: "msg_21",
+  ...createMessageBodyExample,
+  created_at: 1735689720000
+} as const;
+
+const hiddenMessageExample = {
+  ...messageExample,
+  is_hidden: true
+} as const;
+
+const batchUpdateMessageVisibilityBodyExample = {
+  ids: ["msg_21", "msg_missing"],
+  is_hidden: true
+} as const;
+
+const batchUpdateMessageVisibilityResponseExample = {
+  data: {
+    results: [
+      {
+        index: 0,
+        id: "msg_21",
+        action: "updated",
+        data: hiddenMessageExample
+      },
+      {
+        index: 1,
+        id: "msg_missing",
+        action: "not_found"
+      }
+    ],
+    meta: {
+      total: 2,
+      updated: 1,
+      not_found: 1,
+      is_hidden: true
+    }
+  }
+} as const;
+
+const batchDeleteMessagesBodyExample = {
+  ids: ["msg_21", "msg_missing"]
+} as const;
+
+const batchDeleteMessagesResponseExample = {
+  data: {
+    results: [
+      {
+        index: 0,
+        id: "msg_21",
+        action: "deleted"
+      },
+      {
+        index: 1,
+        id: "msg_missing",
+        action: "not_found"
+      }
+    ],
+    meta: {
+      total: 2,
+      deleted: 1,
+      not_found: 1
+    }
+  }
+} as const;
+
 const idParamsJsonSchema = {
   type: "object",
   required: ["id"],
@@ -80,6 +185,35 @@ const messageBodyJsonSchema = {
     is_hidden: { type: "boolean" },
     source: { type: "string", minLength: 1 },
   },
+  examples: [createMessageBodyExample],
+  additionalProperties: false,
+} as const;
+
+const messageBatchIdsJsonSchema = {
+  type: "array",
+  minItems: 1,
+  maxItems: 100,
+  items: { type: "string", minLength: 1 },
+} as const;
+
+const batchUpdateMessageVisibilityBodyJsonSchema = {
+  type: "object",
+  required: ["ids", "is_hidden"],
+  properties: {
+    ids: messageBatchIdsJsonSchema,
+    is_hidden: { type: "boolean" },
+  },
+  examples: [batchUpdateMessageVisibilityBodyExample],
+  additionalProperties: false,
+} as const;
+
+const batchDeleteMessagesBodyJsonSchema = {
+  type: "object",
+  required: ["ids"],
+  properties: {
+    ids: messageBatchIdsJsonSchema,
+  },
+  examples: [batchDeleteMessagesBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -98,6 +232,7 @@ const messageJsonSchema = {
     source: { anyOf: [{ type: "string" }, { type: "null" }] },
     created_at: { type: "integer", minimum: 0 },
   },
+  examples: [messageExample],
   additionalProperties: false,
 } as const;
 
@@ -130,6 +265,94 @@ const listMetaJsonSchema = {
     sort_by: { type: "string" },
     sort_order: { type: "string", enum: ["asc", "desc"] },
   },
+  additionalProperties: false,
+} as const;
+
+const batchUpdateMessageVisibilityResultJsonSchema = {
+  type: "object",
+  required: ["index", "id", "action"],
+  properties: {
+    index: { type: "integer", minimum: 0 },
+    id: { type: "string" },
+    action: { type: "string", enum: ["updated", "not_found"] },
+    data: messageJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const batchUpdateMessageVisibilityMetaJsonSchema = {
+  type: "object",
+  required: ["total", "updated", "not_found", "is_hidden"],
+  properties: {
+    total: { type: "integer", minimum: 1 },
+    updated: { type: "integer", minimum: 0 },
+    not_found: { type: "integer", minimum: 0 },
+    is_hidden: { type: "boolean" },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchUpdateMessageVisibilityResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["results", "meta"],
+      properties: {
+        results: {
+          type: "array",
+          items: batchUpdateMessageVisibilityResultJsonSchema,
+        },
+        meta: batchUpdateMessageVisibilityMetaJsonSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [batchUpdateMessageVisibilityResponseExample],
+  additionalProperties: false,
+} as const;
+
+const batchDeleteMessageResultJsonSchema = {
+  type: "object",
+  required: ["index", "id", "action"],
+  properties: {
+    index: { type: "integer", minimum: 0 },
+    id: { type: "string" },
+    action: { type: "string", enum: ["deleted", "not_found"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchDeleteMessagesMetaJsonSchema = {
+  type: "object",
+  required: ["total", "deleted", "not_found"],
+  properties: {
+    total: { type: "integer", minimum: 1 },
+    deleted: { type: "integer", minimum: 0 },
+    not_found: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchDeleteMessagesResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["results", "meta"],
+      properties: {
+        results: {
+          type: "array",
+          items: batchDeleteMessageResultJsonSchema,
+        },
+        meta: batchDeleteMessagesMetaJsonSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [batchDeleteMessagesResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -274,6 +497,103 @@ export async function registerMessageRoutes(
         sortBy: parsedQuery.data.sort_by,
         sortOrder: parsedQuery.data.sort_order
       })
+    });
+  });
+
+  app.patch("/messages/batch/visibility", {
+    schema: {
+      tags: ["messages"],
+      summary: "Batch update message visibility",
+      operationId: "batchUpdateMessageVisibility",
+      body: batchUpdateMessageVisibilityBodyJsonSchema,
+      response: {
+        200: batchUpdateMessageVisibilityResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedBody = parseWithSchema(batchUpdateMessageVisibilitySchema, request.body, reply);
+
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const updatedRows = await db
+      .update(messages)
+      .set({
+        isHidden: parsedBody.data.is_hidden,
+      })
+      .where(inArray(messages.id, parsedBody.data.ids))
+      .returning();
+
+    const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
+    const results = parsedBody.data.ids.map((id, index) => {
+      const row = updatedById.get(id);
+
+      if (!row) {
+        return { index, id, action: "not_found" as const };
+      }
+
+      return {
+        index,
+        id,
+        action: "updated" as const,
+        data: toMessageResponse(row)
+      };
+    });
+
+    return reply.send({
+      data: {
+        results,
+        meta: {
+          total: results.length,
+          updated: updatedRows.length,
+          not_found: results.length - updatedRows.length,
+          is_hidden: parsedBody.data.is_hidden
+        }
+      }
+    });
+  });
+
+  app.post("/messages/batch/delete", {
+    schema: {
+      tags: ["messages"],
+      summary: "Batch delete messages",
+      operationId: "batchDeleteMessages",
+      body: batchDeleteMessagesBodyJsonSchema,
+      response: {
+        200: batchDeleteMessagesResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedBody = parseWithSchema(batchDeleteMessagesSchema, request.body, reply);
+
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const deletedRows = await db
+      .delete(messages)
+      .where(inArray(messages.id, parsedBody.data.ids))
+      .returning();
+
+    const deletedIds = new Set(deletedRows.map((row) => row.id));
+    const results = parsedBody.data.ids.map((id, index) => ({
+      index,
+      id,
+      action: deletedIds.has(id) ? ("deleted" as const) : ("not_found" as const)
+    }));
+
+    return reply.send({
+      data: {
+        results,
+        meta: {
+          total: results.length,
+          deleted: deletedRows.length,
+          not_found: results.length - deletedRows.length
+        }
+      }
     });
   });
 

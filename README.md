@@ -13,12 +13,15 @@ TavernHeadless 是一个 Headless 的 AI 角色扮演系统。你可以把它理
 
 ## 当前状态
 
-项目处于 **Alpha（早期成品）** 阶段：
+项目整体仍处于 **Alpha** 阶段，但 `apps/api` 后端已进入 **Beta 阶段**，当前处于收口阶段：
 
-- 核心链路可用：Session/Floor/Page、分支、重试、编辑再生成。
-- 生态兼容可用：Preset/Worldbook/Regex/Character 导入。
-- 调试能力可用：SSE、Prompt dry-run、OpenAPI、Typed SDK。
-- 安全基线可用：`AUTH_MODE=off|api_key|jwt`。
+- 后端核心链路已完整：Session/Floor/Page、分支、重试、编辑再生成、时间线、分支治理。
+- 生态兼容可用：Preset/Worldbook/Regex/Character 导入，兼容模式与原生 Prompt 流水线并存。
+- 开发与调试能力可用：SSE、Prompt dry-run、OpenAPI、Typed SDK、`/docs-zh`、`/docs-en`。
+- 安全与隔离能力可用：`AUTH_MODE=off|api_key|jwt`、多账号隔离、`/accounts`、`/users`、`LLM Profile Vault`。
+- 首批 batch 能力已落地：`PUT /variables/batch`、`PATCH /memories/batch/status`、`POST /memories/batch/delete`、`PATCH /messages/batch/visibility`、`POST /messages/batch/delete`。
+- `apps/api` 当前采用 `0.2.0-beta.2` 作为 beta 预发布版本，OpenAPI 文档版本、导出产物、自动化验证与 SDK 校验已同步通过。
+- 当前重点：补做真实 provider 的最小回归，并继续保持多实例运维约束与公网部署责任文档同步。
 
 ## 主要特性
 
@@ -105,7 +108,34 @@ AUTH_MODE=off
 
 # LLM Profile Vault（数据库密钥加密）
 # APP_SECRETS_MASTER_KEY=replace-with-strong-secret
+
+# Memory（可选）
+# ENABLE_MEMORY=true
+# ENABLE_MEMORY_CONSOLIDATION=true
+# 记忆注入衰减排序（可选）
+# MEMORY_INJECTION_DECAY_HALF_LIFE_DAYS=7
+# MEMORY_INJECTION_DECAY_MIN_FACTOR=0.05
+# MEMORY_INJECTION_DECAY_BY=updatedAt
+
+# 记忆维护任务（可选，deprecate / purge）
+# ENABLE_MEMORY_MAINTENANCE=true
+# MEMORY_MAINTENANCE_INTERVAL_MINUTES=60
+# MEMORY_MAINTENANCE_BATCH_SIZE=500
+# MEMORY_MAINTENANCE_DEPRECATE_SUMMARY_DAYS=30
+# MEMORY_MAINTENANCE_DEPRECATE_OPEN_LOOP_DAYS=7
+# deprecated 且自上次更新后超过 N 天自动删除（默认 90，设为 0 禁用）
+# 当前无独立 deprecatedAt；这里以 updatedAt 作为 deprecated 状态下的最后变更时间
+# MEMORY_MAINTENANCE_PURGE_DEPRECATED_DAYS=90
+# MEMORY_MAINTENANCE_DRY_RUN=false
 ```
+
+## 记忆维护语义
+
+- `MEMORY_MAINTENANCE_DEPRECATE_SUMMARY_DAYS` 与 `MEMORY_MAINTENANCE_DEPRECATE_OPEN_LOOP_DAYS` 按 `createdAt` 判断。
+- `MEMORY_MAINTENANCE_PURGE_DEPRECATED_DAYS` 按 `memory_item.updated_at` 判断，不单独引入 `deprecatedAt`。
+- 这表示 purge 的含义是：条目已处于 `deprecated` 状态，且自上次更新后超过阈值。自动 deprecate 与后续手工更新都会刷新 `updatedAt`，因此会顺延清理时间。
+- 当前记忆维护调度器仍运行在 `apps/api/src/app.ts` 的 API 进程内定时器上，不带分布式锁。多实例部署时，只允许一个实例开启 `ENABLE_MEMORY_MAINTENANCE=true`；其余实例应关闭，或改由独立 maintenance job / worker 负责。
+- 若 `apps/api` 直接对公网开放，限流、网关防护与基础观测仍需由部署层负责。当前 beta 不内建 `@fastify/rate-limit`、`/metrics` 或 tracing / OTel。
 
 Windows 也可以直接运行：
 

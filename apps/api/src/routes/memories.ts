@@ -1,4 +1,4 @@
-import { and, count, eq, gte, like, lte } from "drizzle-orm";
+import { and, count, eq, gte, inArray, like, lte } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { SimpleTokenCounter } from "@tavern/core";
@@ -47,6 +47,34 @@ const updateMemoryItemSchema = z
     status: memoryStatusSchema.optional()
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
+
+const memoryIdArraySchema = z.array(z.string().min(1)).min(1).max(100).superRefine((ids, ctx) => {
+  const seen = new Map<string, number>();
+
+  ids.forEach((id, index) => {
+    const firstIndex = seen.get(id);
+
+    if (firstIndex !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index],
+        message: `Duplicate memory id also appears at ids.${firstIndex}`
+      });
+      return;
+    }
+
+    seen.set(id, index);
+  });
+});
+
+const batchUpdateMemoryStatusSchema = z.object({
+  ids: memoryIdArraySchema,
+  status: memoryStatusSchema
+});
+
+const batchDeleteMemoriesSchema = z.object({
+  ids: memoryIdArraySchema
+});
 
 const memoryFilterSchemaShape = {
   scope: memoryScopeSchema.optional(),
@@ -128,6 +156,102 @@ const listMemoryEdgesQuerySchema = listQuerySchemaBase.extend({
   sort_by: z.enum(["created_at"]).default("created_at")
 });
 
+const memoryItemExample = {
+  id: "mem_fact_1",
+  scope: "chat",
+  scope_id: "session-memory",
+  type: "fact",
+  content: { text: "Alice carries a silver sword." },
+  importance: 0.8,
+  confidence: 0.9,
+  source_floor_id: "floor_12",
+  source_message_id: "msg_21",
+  status: "active",
+  created_at: 1735689600000,
+  updated_at: 1735689660000
+} as const;
+
+const deprecatedMemoryItemExample = {
+  ...memoryItemExample,
+  status: "deprecated",
+  updated_at: 1735689720000
+} as const;
+
+const memoryItemResponseExample = {
+  data: memoryItemExample
+} as const;
+
+const memoryListResponseExample = {
+  data: [memoryItemExample],
+  meta: {
+    total: 1,
+    limit: 10,
+    offset: 0,
+    has_more: false,
+    sort_by: "created_at",
+    sort_order: "desc"
+  }
+} as const;
+
+const deleteMemoryResponseExample = {
+  data: { id: "mem_fact_1", deleted: true }
+} as const;
+
+const batchUpdateMemoryStatusBodyExample = {
+  ids: ["mem_fact_1", "mem_missing"],
+  status: "deprecated"
+} as const;
+
+const batchUpdateMemoryStatusResponseExample = {
+  data: {
+    results: [
+      {
+        index: 0,
+        id: "mem_fact_1",
+        action: "updated",
+        data: deprecatedMemoryItemExample
+      },
+      {
+        index: 1,
+        id: "mem_missing",
+        action: "not_found"
+      }
+    ],
+    meta: {
+      total: 2,
+      updated: 1,
+      not_found: 1,
+      status: "deprecated"
+    }
+  }
+} as const;
+
+const batchDeleteMemoriesBodyExample = {
+  ids: ["mem_fact_1", "mem_missing"]
+} as const;
+
+const batchDeleteMemoriesResponseExample = {
+  data: {
+    results: [
+      {
+        index: 0,
+        id: "mem_fact_1",
+        action: "deleted"
+      },
+      {
+        index: 1,
+        id: "mem_missing",
+        action: "not_found"
+      }
+    ],
+    meta: {
+      total: 2,
+      deleted: 1,
+      not_found: 1
+    }
+  }
+} as const;
+
 const idParamsJsonSchema = {
   type: "object",
   required: ["id"],
@@ -197,6 +321,7 @@ const memoryItemJsonSchema = {
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
   },
+  examples: [memoryItemExample],
   additionalProperties: false,
 } as const;
 
@@ -255,6 +380,34 @@ const updateMemoryBodyJsonSchema = {
   minProperties: 1,
 } as const;
 
+const memoryBatchIdsJsonSchema = {
+  type: "array",
+  minItems: 1,
+  maxItems: 100,
+  items: { type: "string", minLength: 1 },
+} as const;
+
+const batchUpdateMemoryStatusBodyJsonSchema = {
+  type: "object",
+  required: ["ids", "status"],
+  properties: {
+    ids: memoryBatchIdsJsonSchema,
+    status: { type: "string", enum: ["active", "deprecated"] },
+  },
+  examples: [batchUpdateMemoryStatusBodyExample],
+  additionalProperties: false,
+} as const;
+
+const batchDeleteMemoriesBodyJsonSchema = {
+  type: "object",
+  required: ["ids"],
+  properties: {
+    ids: memoryBatchIdsJsonSchema,
+  },
+  examples: [batchDeleteMemoriesBodyExample],
+  additionalProperties: false,
+} as const;
+
 const listMemoriesQueryJsonSchema = {
   type: "object",
   properties: {
@@ -302,6 +455,7 @@ const memoryItemResponseJsonSchema = {
   type: "object",
   required: ["data"],
   properties: { data: memoryItemJsonSchema },
+  examples: [memoryItemResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -326,6 +480,7 @@ const deleteResponseJsonSchema = {
       additionalProperties: false,
     },
   },
+  examples: [deleteMemoryResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -336,6 +491,7 @@ const memoryListResponseJsonSchema = {
     data: { type: "array", items: memoryItemJsonSchema },
     meta: listMetaJsonSchema,
   },
+  examples: [memoryListResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -385,6 +541,94 @@ const memoryStatsResponseJsonSchema = {
       additionalProperties: false,
     },
   },
+  additionalProperties: false,
+} as const;
+
+const batchUpdateMemoryStatusResultJsonSchema = {
+  type: "object",
+  required: ["index", "id", "action"],
+  properties: {
+    index: { type: "integer", minimum: 0 },
+    id: { type: "string" },
+    action: { type: "string", enum: ["updated", "not_found"] },
+    data: memoryItemJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const batchUpdateMemoryStatusMetaJsonSchema = {
+  type: "object",
+  required: ["total", "updated", "not_found", "status"],
+  properties: {
+    total: { type: "integer", minimum: 1 },
+    updated: { type: "integer", minimum: 0 },
+    not_found: { type: "integer", minimum: 0 },
+    status: { type: "string", enum: ["active", "deprecated"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchUpdateMemoryStatusResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["results", "meta"],
+      properties: {
+        results: {
+          type: "array",
+          items: batchUpdateMemoryStatusResultJsonSchema,
+        },
+        meta: batchUpdateMemoryStatusMetaJsonSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [batchUpdateMemoryStatusResponseExample],
+  additionalProperties: false,
+} as const;
+
+const batchDeleteMemoryResultJsonSchema = {
+  type: "object",
+  required: ["index", "id", "action"],
+  properties: {
+    index: { type: "integer", minimum: 0 },
+    id: { type: "string" },
+    action: { type: "string", enum: ["deleted", "not_found"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchDeleteMemoriesMetaJsonSchema = {
+  type: "object",
+  required: ["total", "deleted", "not_found"],
+  properties: {
+    total: { type: "integer", minimum: 1 },
+    deleted: { type: "integer", minimum: 0 },
+    not_found: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchDeleteMemoriesResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["results", "meta"],
+      properties: {
+        results: {
+          type: "array",
+          items: batchDeleteMemoryResultJsonSchema,
+        },
+        meta: batchDeleteMemoriesMetaJsonSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [batchDeleteMemoriesResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -711,6 +955,105 @@ export async function registerMemoryRoutes(
         avg_importance: total === 0 ? 0 : importanceTotal / total,
         avg_confidence: total === 0 ? 0 : confidenceTotal / total,
         estimated_tokens: estimatedTokens,
+      }
+    });
+  });
+
+  app.patch("/memories/batch/status", {
+    schema: {
+      tags: ["memories"],
+      summary: "Batch update memory item status",
+      operationId: "batchUpdateMemoryItemStatus",
+      body: batchUpdateMemoryStatusBodyJsonSchema,
+      response: {
+        200: batchUpdateMemoryStatusResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedBody = parseWithSchema(batchUpdateMemoryStatusSchema, request.body, reply);
+
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const now = Date.now();
+    const updatedRows = await db
+      .update(memoryItems)
+      .set({
+        status: parsedBody.data.status,
+        updatedAt: now,
+      })
+      .where(inArray(memoryItems.id, parsedBody.data.ids))
+      .returning();
+
+    const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
+    const results = parsedBody.data.ids.map((id, index) => {
+      const row = updatedById.get(id);
+
+      if (!row) {
+        return { index, id, action: "not_found" as const };
+      }
+
+      return {
+        index,
+        id,
+        action: "updated" as const,
+        data: toMemoryItemResponse(row)
+      };
+    });
+
+    return reply.send({
+      data: {
+        results,
+        meta: {
+          total: results.length,
+          updated: updatedRows.length,
+          not_found: results.length - updatedRows.length,
+          status: parsedBody.data.status
+        }
+      }
+    });
+  });
+
+  app.post("/memories/batch/delete", {
+    schema: {
+      tags: ["memories"],
+      summary: "Batch delete memory items",
+      operationId: "batchDeleteMemoryItems",
+      body: batchDeleteMemoriesBodyJsonSchema,
+      response: {
+        200: batchDeleteMemoriesResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedBody = parseWithSchema(batchDeleteMemoriesSchema, request.body, reply);
+
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const deletedRows = await db
+      .delete(memoryItems)
+      .where(inArray(memoryItems.id, parsedBody.data.ids))
+      .returning();
+
+    const deletedIds = new Set(deletedRows.map((row) => row.id));
+    const results = parsedBody.data.ids.map((id, index) => ({
+      index,
+      id,
+      action: deletedIds.has(id) ? ("deleted" as const) : ("not_found" as const)
+    }));
+
+    return reply.send({
+      data: {
+        results,
+        meta: {
+          total: results.length,
+          deleted: deletedRows.length,
+          not_found: results.length - deletedRows.length
+        }
       }
     });
   });

@@ -36,7 +36,10 @@
     "sdk:generate": "pnpm openapi:export && pnpm exec openapi-typescript packages/shared/src/generated/openapi.json --output packages/shared/src/generated/openapi-types.ts",
     "sdk:check": "pnpm --filter @tavern/api openapi:export -- packages/shared/src/generated/.openapi.check.json && pnpm exec openapi-typescript packages/shared/src/generated/.openapi.check.json --output packages/shared/src/generated/.openapi-types.check.ts && tsx scripts/check-sdk-generated.ts",
     "clean": "rimraf node_modules coverage .turbo",
-    "prepare": "husky"
+    "prepare": "husky",
+    "docs:dev": "pnpm --filter @tavern/docs dev",
+    "docs:build": "pnpm --filter @tavern/docs build",
+    "docs:preview": "pnpm --filter @tavern/docs preview"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.0.17",

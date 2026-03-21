@@ -280,6 +280,55 @@ describe('MemoryStore', () => {
       expect(result.items[1]!.content).toBe('Low importance');
     });
 
+    it('supports optional decay sorting (prefers newer memories when enabled)', async () => {
+      const { store, repo } = createStore();
+
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2020-01-01T00:00:00.000Z'));
+        const older = await repo.create({
+          scope: 'chat',
+          scopeId: 'session-1',
+          type: 'fact',
+          content: 'Older',
+          importance: 0.5,
+          confidence: 1.0,
+          status: 'active',
+        });
+
+        vi.setSystemTime(new Date('2020-01-01T00:00:10.000Z'));
+        const newer = await repo.create({
+          scope: 'chat',
+          scopeId: 'session-1',
+          type: 'fact',
+          content: 'Newer',
+          importance: 0.5,
+          confidence: 1.0,
+          status: 'active',
+        });
+
+        const withoutDecay = await store.prepareInjection('session-1', {
+          maxTokens: 10000,
+          maxItems: 1,
+        });
+        expect(withoutDecay.items[0]!.id).toBe(older.id);
+
+        const withDecay = await store.prepareInjection('session-1', {
+          maxTokens: 10000,
+          maxItems: 1,
+          now: new Date('2020-01-01T00:00:10.000Z').getTime(),
+          decay: {
+            halfLifeMs: 1000,
+            minFactor: 0.05,
+            by: 'updatedAt',
+          },
+        });
+        expect(withDecay.items[0]!.id).toBe(newer.id);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('supports balanced selection across memory types', async () => {
       const { store, repo } = createStore();
       await repo.create({
@@ -399,6 +448,51 @@ describe('MemoryStore', () => {
       expect(createdCalls[0]![1].item.importance).toBe(0.7);
       expect(createdCalls[1]![1].item.content).toBe('location: library');
       expect(createdCalls[1]![1].item.importance).toBe(0.5); // default
+    });
+
+    it('auto-deprecates older facts with the same key when a new fact is added', async () => {
+      const { store, repo, eventBus } = createStore();
+
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'fact',
+        content: 'mood: sad',
+        importance: 0.5,
+        confidence: 1.0,
+        status: 'active',
+      });
+
+      const output: MemoryConsolidationOutput = {
+        turnSummary: '',
+        factsAdd: [{ key: 'mood', value: 'happy', scope: 'chat' }],
+        factsUpdate: [],
+        factsDeprecate: [],
+      };
+
+      await store.applyConsolidation(output, 'chat', 'session-1', 'floor-1');
+
+      const activeFacts = await store.query({
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'fact',
+        status: 'active',
+      });
+      expect(activeFacts).toHaveLength(1);
+      expect(activeFacts[0]!.content).toBe('mood: happy');
+
+      const depCalls = (eventBus.emit as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c) => c[0] === 'memory.deprecated',
+      );
+      expect(depCalls).toHaveLength(1);
+      expect(depCalls[0]![1].reason).toBe('conflict_resolution:mood');
+
+      expect(eventBus.emit).toHaveBeenCalledWith('memory.consolidated', {
+        floorId: 'floor-1',
+        created: 1,
+        updated: 0,
+        deprecated: 1,
+      });
     });
 
     it('updates existing facts from factsUpdate', async () => {

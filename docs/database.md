@@ -7,7 +7,7 @@
 - ORM: Drizzle ORM
 - 迁移目录: `apps/api/drizzle/`
 - 当前基础迁移: `0000_initial_schema.sql`
-- 当前最新迁移: `0008_account_user_binding.sql`
+- 当前最新迁移: `0010_memory_indexes.sql`
 
 ## `account`
 
@@ -226,12 +226,21 @@
 | `source_message_id` | `TEXT` | `NULL` | 来源消息 ID |
 | `status` | `TEXT` | `NOT NULL`, default `active` | 条目状态 |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
-| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms）；deprecated 条目的 purge 以此字段作为最后变更时间 |
 
 枚举约束：
 - `scope`: `global | chat | floor`
 - `type`: `fact | summary | open_loop`
 - `status`: `active | deprecated`
+
+说明：
+- 当前 schema 不单独记录 `deprecated_at`。
+- 维护任务在 `status = deprecated` 时，以 `updated_at` 表示该条目在 deprecated 状态下的最后变更时间。
+- 因此自动 deprecate 与后续手工更新都会刷新 purge 计时。
+
+索引：
+- 普通索引 `memory_item_status_updated_at_idx(status, updated_at)`
+- 普通索引 `memory_item_scope_id_status_type_importance_idx(scope_id, status, type, importance)`
 
 ## `memory_edge`
 

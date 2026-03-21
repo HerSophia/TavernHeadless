@@ -6,7 +6,7 @@
 
 - 里程碑：`M9-M12 - 后端高优先级能力`
 - 状态：`进行中（Phase 1-3 已完成，core/adapters 支撑已落地）`
-- 最后更新：`2026-02-14`
+- 最后更新：`2026-02-27`
 
 ## M12 Phase 4 进行中（Core 增量）：Native Pipeline 错误定位与执行轨迹
 
@@ -36,6 +36,10 @@
 - [x] 为 pipeline 状态新增 `artifacts.executedNodes` 轨迹，支持节点级执行追踪
 - [x] 增加无效节点状态保护（node 返回非法 state 时直接抛出 `NativePipelineError`）
 - [x] 补充 native pipeline 单测（执行轨迹、错误包装、非法状态）
+- [x] 新增 `ConditionNode`（`condition`）节点：支持 `when` 分支 + `thenNodes/elseNodes` 嵌套执行
+- [x] 新增 `TransformNode`（`transform`）节点：支持按 role/section 过滤的正则替换，变更后重算 `tokenCount`
+- [x] Barrel exports 更新：导出 `ConditionNode`/`TransformNode` 及 `ConditionNodeOptions`/`TransformNodeOptions`/`TransformRule`
+- [x] 补充 native pipeline 单测（condition/transform 分支、role 过滤、output 同步）
 
 ### 文件清单
 
@@ -43,6 +47,7 @@
 - `packages/core/src/prompt/__tests__/native-pipeline.test.ts`
 - `packages/core/src/prompt/index.ts`
 - `packages/core/src/index.ts`
+- `docs/architecture.md`
 
 ## M10 Phase 2 已完成（Adapters 支撑）：角色卡解析与导出
 

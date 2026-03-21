@@ -46,7 +46,7 @@ export async function registerOpenApi(app: FastifyInstance, options: RegisterOpe
       info: {
         title: "TavernHeadless API",
         description: "Backend API for TavernHeadless core engine",
-        version: "0.1.0",
+        version: "0.2.0-beta.2",
       },
       components: {
         securitySchemes: AUTH_SECURITY_SCHEMES,

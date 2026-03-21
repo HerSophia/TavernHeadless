@@ -114,6 +114,17 @@ export interface MemoryInjectionOptions {
   typeOrder?: MemoryType[];
   /** balanced 模式下各类型最多条目数 */
   typeMaxItems?: Partial<Record<MemoryType, number>>;
+  /** 注入时使用的“当前时间”（ms），用于可测试的衰减；默认 Date.now() */
+  now?: number;
+  /** 可选：对重要度进行时间衰减后再排序（effectiveScore = importance * decayFactor） */
+  decay?: {
+    /** 半衰期（ms）。age=halfLife 时 decayFactor=0.5 */
+    halfLifeMs: number;
+    /** decayFactor 的下限，避免过旧条目完全归零（默认 0.05） */
+    minFactor?: number;
+    /** 使用哪个时间字段计算 age（默认 updatedAt） */
+    by?: 'updatedAt' | 'createdAt';
+  };
   /** 限定作用域 */
   scope?: MemoryScope;
 }

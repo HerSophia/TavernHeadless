@@ -1,0 +1,108 @@
+---
+outline: [2, 3]
+---
+
+# 后端 API 进度
+
+> 对应 `apps/api`，当前版本 `0.2.0-beta.2`。
+
+## 当前里程碑
+
+- 里程碑：后端 Beta 阶段
+- 状态：收口中，当前以真实 provider 回归与发布收尾为主
+
+## Beta 准入标准
+
+- [x] 核心业务路由补齐 OpenAPI 请求/响应示例
+- [x] 中文 OpenAPI 覆盖主路由分组
+- [x] typecheck / test / openapi:export / smoke / memory:maintenance 全部通过
+- [x] 版本号同步到 `0.2.0-beta.2`
+- [ ] 至少 1 个真实 provider 完成最小回归
+
+## 已完成能力一览
+
+### M21：记忆系统加固
+
+- [x] 自动冲突消解（同 key 的 fact 自动 deprecate 旧记录）
+- [x] 衰减排序（半衰期，可按 createdAt/updatedAt 计算）
+- [x] MemoryMaintenanceService + 定时任务
+- [x] 记忆维护 CLI
+
+### M20：LLM 模型发现
+
+- [x] `POST /llm-profiles/models/discover`
+- [x] `POST /llm-profiles/models/test`
+
+### M19：Account User Binding
+
+- [x] `account_user` 实体
+- [x] Session 绑定用户卡 + 快照冻结
+- [x] PromptAssembler 优先读取 `user_snapshot_json`
+
+### M18：LLM Profile Vault
+
+- [x] `llm_profile` + `llm_profile_binding` 表
+- [x] AES-256-GCM 加密密钥
+- [x] CRUD + activate + runtime resolve
+- [x] Instance Slot + Per-Slot Binding
+- [x] 认证插件（`AUTH_MODE=off|api_key|jwt`）
+- [x] 多账号隔离收口
+
+### M17：OpenAPI + SDK
+
+- [x] OpenAPI 导出 + Swagger UI
+- [x] openapi-typescript 自动生成 SDK 类型
+- [x] 一致性校验脚本
+
+### M16：Character 生命周期
+
+- [x] 版本化角色卡（character + character_version）
+- [x] 软删除/恢复
+- [x] 关键写路径事务化
+
+### M15：Character Binding
+
+- [x] Session 绑定角色 + 冻结快照
+- [x] 角色同步策略（pin / manual / force）
+
+### M13：分支治理
+
+- [x] 分支 CRUD/比对
+- [x] 编辑重试（edit-and-regenerate）
+- [x] Failed 楼层原地重试
+
+### M11：Prompt Dry-run
+
+- [x] `POST /sessions/:id/respond/dry-run`
+- [x] 无副作用，返回 messages / token 估算 / 调试信息
+
+### M9：SSE 流式
+
+- [x] `POST /sessions/:id/respond/stream`
+- [x] SSE 事件：start / chunk / summary / done / error
+
+### M8：核心 RP 体验
+
+- [x] Timeline 查询
+- [x] 分支创建
+- [x] 消息页激活（Swipe）
+
+### M5-M6：基础能力
+
+- [x] Prompt 编排接入
+- [x] 性能优化（聚合查询 / 索引 / 历史窗口）
+- [x] 请求日志增强
+- [x] OpenAPI/Swagger
+
+### M2-M4：CRUD + 聊天
+
+- [x] 全量 CRUD（Session/Floor/Page/Message/Variable/Memory）
+- [x] 统一分页/排序/过滤
+- [x] ChatService + 核心聊天接口
+- [x] SillyTavern 导入
+
+## 已知限制
+
+- 记忆维护定时任务以 API 进程内定时器运行，多实例部署时只允许一个实例开启。
+- 未内建 rate limiting、`/metrics` 或 tracing / OTel，公网部署需由网关层补足。
+- batch 当前范围：variables / memories / messages；尚未扩展到 pages / users / sessions。

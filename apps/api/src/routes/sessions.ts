@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
 import { accountUsers, characterVersions, floors, messagePages, messages, sessions } from "../db/schema";
-import { parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
+import { ensureOptionalObjectBody, parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
 
@@ -119,6 +119,101 @@ const listMetaJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const sessionBodyExample = {
+  title: "Campfire Planning",
+  status: "active",
+  character_id: "char_hero",
+  character_sync_policy: "pin",
+  user_id: "usr_demo",
+  preset_id: "preset_story",
+  regex_profile_id: "regex_safe",
+  worldbook_profile_id: "wb_world",
+  model_provider: "openai",
+  model_name: "gpt-4o-mini",
+  model_params: {
+    temperature: 0.7,
+    top_p: 0.9,
+  },
+  prompt_mode: "native",
+  metadata: {
+    source: "demo",
+    tags: ["beta", "docs"],
+  },
+} as const;
+
+const sessionExample = {
+  id: "sess_demo",
+  title: "Campfire Planning",
+  status: "active",
+  character_binding: {
+    character_id: "char_hero",
+    character_version_id: "charver_hero_v3",
+    sync_policy: "pin",
+    snapshot_summary: {
+      name: "Hero",
+      has_greeting: true,
+    },
+  },
+  user_binding: {
+    user_id: "usr_demo",
+    snapshot_summary: {
+      name: "Alice",
+    },
+  },
+  preset_id: "preset_story",
+  regex_profile_id: "regex_safe",
+  worldbook_profile_id: "wb_world",
+  model_provider: "openai",
+  model_name: "gpt-4o-mini",
+  model_params: {
+    temperature: 0.7,
+    top_p: 0.9,
+  },
+  prompt_mode: "native",
+  metadata: {
+    source: "demo",
+    tags: ["beta", "docs"],
+  },
+  created_at: 1735689600000,
+  updated_at: 1735689660000,
+} as const;
+
+const sessionResponseExample = {
+  data: sessionExample,
+} as const;
+
+const sessionListResponseExample = {
+  data: [sessionExample],
+  meta: {
+    total: 1,
+    limit: 20,
+    offset: 0,
+    has_more: false,
+    sort_by: "created_at",
+    sort_order: "desc",
+  },
+} as const;
+
+const sessionDeleteResponseExample = {
+  data: {
+    id: "sess_demo",
+    deleted: true,
+  },
+} as const;
+
+const syncSessionCharacterBodyJsonSchema = {
+  type: "object",
+  properties: {
+    force: { type: "boolean" },
+  },
+  examples: [
+    {
+      force: true,
+    },
+  ],
+  additionalProperties: false,
+} as const;
+
 const sessionBodyJsonSchema = {
   type: "object",
   properties: {
@@ -141,6 +236,7 @@ const sessionBodyJsonSchema = {
     prompt_mode: { type: "string", enum: ["compat_strict", "compat_plus", "native"] },
     metadata: {},
   },
+  examples: [sessionBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -239,6 +335,7 @@ const sessionJsonSchema = {
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
   },
+  examples: [sessionExample],
   additionalProperties: false,
 } as const;
 
@@ -248,6 +345,7 @@ const sessionResponseJsonSchema = {
   properties: {
     data: sessionJsonSchema,
   },
+  examples: [sessionResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -265,6 +363,7 @@ const deleteResponseJsonSchema = {
       additionalProperties: false,
     },
   },
+  examples: [sessionDeleteResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -275,6 +374,7 @@ const sessionListResponseJsonSchema = {
     data: { type: "array", items: sessionJsonSchema },
     meta: listMetaJsonSchema,
   },
+  examples: [sessionListResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -346,6 +446,142 @@ const timelineFloorJsonSchema = {
     },
     page_count: { type: "integer", minimum: 0 },
   },
+  additionalProperties: false,
+} as const;
+
+const branchSummaryExample = {
+  branch_id: "main",
+  floor_count: 3,
+  latest_floor_no: 2,
+  latest_floor_id: "floor_12",
+  latest_state: "committed",
+  updated_at: 1735689720000,
+} as const;
+
+const branchListResponseJsonSchema = {
+  type: "object",
+  required: ["data", "meta"],
+  properties: {
+    data: { type: "array", items: branchSummaryJsonSchema },
+    meta: listMetaJsonSchema,
+  },
+  examples: [
+    {
+      data: [branchSummaryExample],
+      meta: {
+        total: 1,
+        limit: 20,
+        offset: 0,
+        has_more: false,
+        sort_by: "updated_at",
+        sort_order: "desc",
+      },
+    },
+  ],
+  additionalProperties: false,
+} as const;
+
+const branchDiffResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: [
+        "session_id",
+        "base_branch_id",
+        "target_branch_id",
+        "fork_floor_no",
+        "shared_floor_nos",
+        "base_only_floors",
+        "target_only_floors",
+      ],
+      properties: {
+        session_id: { type: "string" },
+        base_branch_id: { type: "string" },
+        target_branch_id: { type: "string" },
+        fork_floor_no: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+        shared_floor_nos: { type: "array", items: { type: "integer", minimum: 0 } },
+        base_only_floors: { type: "array", items: { type: "object", additionalProperties: true } },
+        target_only_floors: { type: "array", items: { type: "object", additionalProperties: true } },
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [
+    {
+      data: {
+        session_id: "sess_demo",
+        base_branch_id: "main",
+        target_branch_id: "alt-branch",
+        fork_floor_no: 1,
+        shared_floor_nos: [0, 1],
+        base_only_floors: [{ id: "floor_12", branchId: "main", floorNo: 2, state: "committed" }],
+        target_only_floors: [{ id: "floor_13", branchId: "alt-branch", floorNo: 2, state: "committed" }],
+      },
+    },
+  ],
+  additionalProperties: false,
+} as const;
+
+const timelineResponseJsonSchema = {
+  type: "object",
+  required: ["data", "meta"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["session_id", "branch_id", "floors"],
+      properties: {
+        session_id: { type: "string" },
+        branch_id: { type: "string" },
+        floors: { type: "array", items: timelineFloorJsonSchema },
+      },
+      additionalProperties: false,
+    },
+    meta: listMetaJsonSchema,
+  },
+  examples: [
+    {
+      data: {
+        session_id: "sess_demo",
+        branch_id: "main",
+        floors: [
+          {
+            id: "floor_12",
+            floor_no: 2,
+            state: "committed",
+            token_in: 320,
+            token_out: 128,
+            created_at: 1735689720000,
+            active_page: {
+              id: "page_12",
+              page_no: 0,
+              page_kind: "output",
+              version: 1,
+              messages: [
+                {
+                  id: "msg_21",
+                  seq: 0,
+                  role: "assistant",
+                  content: "The firelight wavers as the next part of the story begins.",
+                  content_format: "text",
+                },
+              ],
+            },
+            page_count: 1,
+          },
+        ],
+      },
+      meta: {
+        total: 1,
+        limit: 50,
+        offset: 0,
+        has_more: false,
+        sort_by: "floor_no",
+        sort_order: "asc",
+      },
+    },
+  ],
   additionalProperties: false,
 } as const;
 
@@ -1068,12 +1304,17 @@ export async function registerSessionRoutes(
       tags: ["sessions"],
       summary: "Sync session character snapshot to latest version",
       params: idParamsJsonSchema,
+      body: syncSessionCharacterBodyJsonSchema,
       response: {
         200: sessionResponseJsonSchema,
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
-      },
+      }
+    },
+    preValidation: (request, _reply, done) => {
+      ensureOptionalObjectBody(request);
+      done();
     },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(sessionParamsSchema, request.params, reply);
@@ -1140,7 +1381,7 @@ export async function registerSessionRoutes(
         },
       },
       response: {
-        200: { type: "object", properties: { data: { type: "array", items: branchSummaryJsonSchema }, meta: listMetaJsonSchema }, required: ["data", "meta"] },
+        200: branchListResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -1253,35 +1494,7 @@ export async function registerSessionRoutes(
         additionalProperties: false,
       },
       response: {
-        200: {
-          type: "object",
-          required: ["data"],
-          properties: {
-            data: {
-              type: "object",
-              required: [
-                "session_id",
-                "base_branch_id",
-                "target_branch_id",
-                "fork_floor_no",
-                "shared_floor_nos",
-                "base_only_floors",
-                "target_only_floors",
-              ],
-              properties: {
-                session_id: { type: "string" },
-                base_branch_id: { type: "string" },
-                target_branch_id: { type: "string" },
-                fork_floor_no: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
-                shared_floor_nos: { type: "array", items: { type: "integer", minimum: 0 } },
-                base_only_floors: { type: "array", items: { type: "object", additionalProperties: true } },
-                target_only_floors: { type: "array", items: { type: "object", additionalProperties: true } },
-              },
-              additionalProperties: false,
-            },
-          },
-          additionalProperties: false,
-        },
+        200: branchDiffResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -1358,15 +1571,7 @@ export async function registerSessionRoutes(
         additionalProperties: false,
       },
       response: {
-        200: {
-          type: "object",
-          required: ["data", "meta"],
-          properties: {
-            data: { type: "object", required: ["session_id", "branch_id", "floors"], properties: { session_id: { type: "string" }, branch_id: { type: "string" }, floors: { type: "array", items: timelineFloorJsonSchema } }, additionalProperties: false },
-            meta: listMetaJsonSchema,
-          },
-          additionalProperties: false,
-        },
+        200: timelineResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },

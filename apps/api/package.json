@@ -1,6 +1,6 @@
 {
   "name": "@tavern/api",
-  "version": "0.1.0",
+  "version": "0.2.0-beta.2",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
@@ -14,6 +14,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "bench:history": "tsx scripts/benchmark-history.ts",
     "smoke": "tsx scripts/smoke-api.ts",
+    "real-provider:regression": "tsx scripts/real-provider-regression.ts",
+    "memory:maintenance": "tsx scripts/memory-maintenance.ts",
     "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "openapi:export": "tsx scripts/export-openapi.ts"
   },

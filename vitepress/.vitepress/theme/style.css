@@ -1,0 +1,62 @@
+/**
+ * TavernHeadless 文档站自定义样式
+ *
+ * 视觉基调参考 frontend-vision.md：
+ * Atmospheric Utilitarianism — 工具感优先，数据为纹理，静谧而精密。
+ */
+
+:root {
+  /* 主色调：Teal，理性、冷静 */
+  --vp-c-brand-1: #2dd4bf;
+  --vp-c-brand-2: #14b8a6;
+  --vp-c-brand-3: #0d9488;
+  --vp-c-brand-soft: rgba(45, 212, 191, 0.14);
+
+  /* Home hero 渐变 */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(
+    120deg,
+    #2dd4bf 30%,
+    #818cf8
+  );
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    #2dd4bf50 50%,
+    #818cf830 50%
+  );
+  --vp-home-hero-image-filter: blur(44px);
+}
+
+.dark {
+  --vp-c-brand-1: #2dd4bf;
+  --vp-c-brand-2: #5eead4;
+  --vp-c-brand-3: #99f6e4;
+  --vp-c-brand-soft: rgba(45, 212, 191, 0.16);
+
+  /* 深色模式下更深邃的背景 */
+  --vp-c-bg: #09090b;
+  --vp-c-bg-alt: #121215;
+  --vp-c-bg-elv: #18181b;
+  --vp-c-bg-soft: #18181b;
+}
+
+/* 代码字体 */
+:root {
+  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', 'Menlo', 'Monaco',
+    'Consolas', monospace;
+}
+
+/* 首页 Feature 卡片微调 */
+.VPFeature {
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.dark .VPFeature:hover {
+  border-color: rgba(45, 212, 191, 0.3);
+  box-shadow: 0 0 16px -4px rgba(45, 212, 191, 0.15);
+}
+
+/* 侧边栏活跃项强调 */
+.VPSidebarItem.is-active > .item > .link > .text {
+  color: var(--vp-c-brand-1);
+}

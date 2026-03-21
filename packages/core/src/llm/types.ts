@@ -63,6 +63,8 @@ export interface GenerationParams {
   timeoutMs?: number;
   /** 最大重试次数 */
   maxRetries?: number;
+  /** 推理强度（适用于支持 reasoning 的模型） */
+  reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
 // ── LLM Instance ──────────────────────────────────────
