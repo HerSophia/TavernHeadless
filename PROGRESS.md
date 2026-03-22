@@ -6,7 +6,7 @@
 
 - 里程碑：`M9-M12 - 后端高优先级能力`
 - 状态：`进行中（Phase 1-3 已完成，core/adapters 支撑已落地）`
-- 最后更新：`2026-02-27`
+- 最后更新：`2026-06-25`
 
 ## M12 Phase 4 进行中（Core 增量）：Native Pipeline 错误定位与执行轨迹
 
@@ -402,9 +402,14 @@ packages/core/src/
 | M4 Phase 1 (Chat Endpoint) | 10 | 410* |
 | M4 Phase 2 (Regenerate/Imports) | 32 | 442* |
 
-*全量：core 232 + adapters 104 + api 106 = 442
+*全量：core 232 + adapters 104 + api 371 = 707
 
 ## 更新日志
+
+### 2026-06-25
+
+- 同步后端 API 进度：Beta 准入标准 14/14 全部达成，真实 provider 回归已通过，世界书 E2E 测试已全部通过
+- API 全量测试更新为 371 passed，全库合计 707 个测试
 
 ### 2026-02-12
 

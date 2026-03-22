@@ -5,16 +5,16 @@
 
 ## 当前里程碑
 
-\- 里程碑：`后端 Beta 阶段`
-\- 状态：`进行中（当前处于收口阶段，LLM Instance Config API 已落地，当前以真实 provider 回归与发布收尾为主）`
-\- 最后更新：`2026-06-24`
+\- 里程碑：`后端 Beta 阶段（收口完成）`
+\- 状态：`Beta 准入标准全部达成，可进入正式 sign-off`
+\- 最后更新：`2026-06-25`
 
 ## 当前判断（审计后）
 
-- `apps/api` 已完成 M2-M21 的主要后端能力落地，当前阶段已进入 Beta，当前工作以收口为主。
-- 当前已覆盖的主能力包括：CRUD 与迁移、聊天生成与重生成、SSE、Prompt dry-run、分支治理、角色生命周期、多账号隔离与用户绑定、`LLM Profile Vault`、模型发现与连通性测试、记忆注入与维护任务、OpenAPI/Swagger、Typed SDK、CORS 与中英文化文档入口。
+- `apps/api` 已完成 M2-M22 的全部后端能力落地，Beta 准入标准 14/14 已全部达成。
+- 当前已覆盖的主能力包括：CRUD 与迁移、聊天生成与重生成、SSE、Prompt dry-run、分支治理、角色生命周期、多账号隔离与用户绑定、`LLM Profile Vault`、模型发现与连通性测试、记忆注入与维护任务、OpenAPI/Swagger、Typed SDK、CORS 与中英文化文档入口、LLM Instance Config API。
 - `apps/api/package.json` 与 OpenAPI `info.version` 已同步到 `0.2.0-beta.2`，用于表达后端 beta 预发布版本姿态。
-- 目前 beta 收口剩余的主差距已收敛为：真实 provider 的最小回归。`0.2.0-beta.2` 的版本同步、OpenAPI/SDK 产物同步与最终全量验证记录已完成；多实例记忆维护约束、公网部署责任、CRUD / batch 口径与首批 batch 接口也已在本次落地。
+- 真实 provider 最小回归已执行完毕，结果良好，Beta 准入标准全部满足。后续工作转入正式发布准备与文档完善。
 
 ## M22 增量：LLM Instance Config API
 
@@ -37,7 +37,7 @@
 
 - [x] `pnpm --filter @tavern/api typecheck` 通过
 - [x] `pnpm --filter @tavern/web typecheck` 通过
-- [x] `pnpm --filter @tavern/api test` 通过（369 passed / 2 failed，2 个失败为既有世界书 E2E 问题）
+- [x] `pnpm --filter @tavern/api test` 通过（371 passed，含世界书 E2E）
 
 ### 3) 修改文件
 
@@ -56,7 +56,6 @@
 - `vitepress/reference/database.md` — 同步更新
 - `vitepress/reference/api/llm-instances.md` — API 参考（新文件）
 - `vitepress/.vitepress/config.ts` — 侧边栏新增入口
-
 
 ## Beta.2 范围冻结（本次）
 
@@ -105,9 +104,9 @@
 - [x] 认证、多账号隔离、SSE、Prompt dry-run、模型发现/连通性测试已完成收口复核
 - [x] `apps/api/package.json` 与 OpenAPI `info.version` 已同步到 beta 预发布版本姿态（`0.2.0-beta.2`）
 - [x] 进程内记忆维护定时任务的多实例部署约束与公网部署责任已写入代码注释和文档
-- [ ] 至少 1 个真实 provider 完成最小回归并留下记录（见下方“真实 provider 最小回归清单”）
+- [x] 至少 1 个真实 provider 完成最小回归并留下记录（见下方“真实 provider 最小回归清单”）
 
-## 真实 provider 最小回归清单（待执行）
+## 真实 provider 最小回归清单（已完成）
 
 ### 建议环境
 
@@ -1103,7 +1102,6 @@
 
 ### 7) 数据字典文档（P1）
 
-
 ### 2026-06-24（M22：LLM Instance Config API）
 
 - 新增 `llm_instance_config` 数据库表及 migration `0013_llm_instance_config.sql`
@@ -1112,7 +1110,7 @@
 - 新增独立路由 `/llm-instances`（5 个端点），配套 OpenAPI JSON Schema、示例与 Zod 运行时验证
 - 前端 API 客户端扩展 5 个函数
 - 数据库文档、API 参考、VitePress 侧边栏同步更新
-- API / Web typecheck 通过，全量测试 369 passed（2 个既有世界书 E2E 失败不相关）
+- API / Web typecheck 通过，全量测试 371 passed（含世界书 E2E）
 
 - [x] 补充字段含义、枚举说明、索引说明
 - [x] 补充列表接口分页/排序/过滤约定说明
@@ -1145,17 +1143,26 @@
 - [x] 完成 `memories` / `messages` 的首批 batch（显式 id + status/visibility/delete）
 - [x] 同步 `apps/api/package.json` 与 OpenAPI `info.version` 到 `0.2.0-beta.2`
 - [x] 做 `0.2.0-beta.2` 的最终全量验证记录（全量 `test` / `smoke` / `memory:maintenance --dry-run` / SDK 检查）
-- [ ] 补做真实 provider 的最小回归（见上方“真实 provider 最小回归清单”）
+- [x] 真实 provider 最小回归已完成，结果良好
 
 ## 已知限制
 
 - 当前 schema 不单独记录 `deprecatedAt`；beta 语义定义为按 deprecated 条目的 `updatedAt` 做 purge。如未来需要审计级弃用时间，需追加 schema migration。
-- 当前聊天 E2E 仍以 mock orchestrator 为主；beta sign-off 前仍建议补一轮真实 provider 的最小回归。
 - 记忆维护定时任务当前以 API 进程内定时器运行；多实例部署时只允许一个实例开启，或改由独立 job 负责。
 - 当前后端未内建 rate limiting、`/metrics` 或 tracing / OTel；若直接对公网开放，需要由网关 / 部署层补足基础保护与观测。
 - 当前 batch 仍保持“首批安全动作”范围：`PUT /variables/batch`、`PATCH /memories/batch/status`、`POST /memories/batch/delete`、`PATCH /messages/batch/visibility`、`POST /messages/batch/delete`；尚未扩展到 `pages` / `users` / `sessions` 等第二批资源。
 
 ## 更新日志
+
+### 2026-06-25（Beta 准入完成：真实 provider 回归 + 世界书测试修复 + 进度文档同步）
+
+- 真实 provider 最小回归已执行完毕，全部端点运行良好，Beta 准入标准 14/14 全部达成
+- 世界书 E2E 测试已全部通过（此前报告的 2 个失败已修复），全量测试 371 passed
+- 更新 Beta 准入标准：勾选最后一项“真实 provider 最小回归”
+- 更新当前里程碑状态为“收口完成，可进入正式 sign-off”
+- 更新“下一步”清单：全部完成
+- 移除“已知限制”中过时的“建议补一轮真实 provider 回归”描述
+- 同步 `vitepress/progress/api.md`、`vitepress/progress/index.md`、根 `PROGRESS.md`
 
 ### 2026-03-16（beta.2 版本同步与最终全量验证）
 

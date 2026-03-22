@@ -8,8 +8,8 @@ outline: [2, 3]
 
 ## 当前里程碑
 
-- 里程碑：后端 Beta 阶段
-- 状态：收口中，当前以真实 provider 回归与发布收尾为主
+- 里程碑：后端 Beta 阶段（收口完成）
+- 状态：Beta 准入标准 14/14 全部达成，可进入正式 sign-off
 
 ## Beta 准入标准
 
@@ -17,9 +17,16 @@ outline: [2, 3]
 - [x] 中文 OpenAPI 覆盖主路由分组
 - [x] typecheck / test / openapi:export / smoke / memory:maintenance 全部通过
 - [x] 版本号同步到 `0.2.0-beta.2`
-- [ ] 至少 1 个真实 provider 完成最小回归
+- [x] 至少 1 个真实 provider 完成最小回归（已执行，结果良好）
 
 ## 已完成能力一览
+
+### M22：LLM Instance Config API
+
+- [x] `llm_instance_config` 数据库表及 migration
+- [x] `LlmInstanceService`（CRUD + 多级优先级解析）
+- [x] 独立路由 `/llm-instances`（5 个端点）
+- [x] 前端 API 客户端扩展
 
 ### M21：记忆系统加固
 
@@ -100,6 +107,11 @@ outline: [2, 3]
 - [x] 统一分页/排序/过滤
 - [x] ChatService + 核心聊天接口
 - [x] SillyTavern 导入
+
+## 测试统计
+
+- 全量测试：**371 passed**（27 个测试文件）
+- 覆盖范围：CRUD 集成、认证、聊天链路、分支管理、角色生命周期、导入、LLM Profile/Instance、记忆、Prompt dry-run、OpenAPI、请求日志、安全、WebSocket
 
 ## 已知限制
 
