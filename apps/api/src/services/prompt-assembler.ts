@@ -19,7 +19,8 @@
  * { messages, preProcess, postProcess }
  */
 
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
+import { normalizePositiveInt } from "../lib/utils.js";
 import {
   assembleNativePrompt,
   MessageBuilder,
@@ -42,7 +43,7 @@ import {
 } from "@tavern/adapters-sillytavern";
 
 import type { AppDb } from "../db/client.js";
-import { presets, worldbooks, regexProfiles } from "../db/schema.js";
+import { presets, worldbooks, worldbookEntries, regexProfiles } from "../db/schema.js";
 
 // ── 类型 ──────────────────────────────────────────────
 
@@ -314,17 +315,6 @@ export async function assemblePrompt(
   return { messages, preProcess, postProcess, tokenUsage, debug };
 }
 
-function normalizePositiveInt(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return undefined;
-  }
-
-  if (value <= 0) {
-    return undefined;
-  }
-
-  return Math.trunc(value);
-}
 
 // ── DB 加载函数 ────────────────────────────────────────
 
@@ -356,7 +346,7 @@ async function loadPreset(
 }
 
 /**
- * 从 DB 加载世界书并解析为 STWorldBookEntry[]。
+ * 从 DB 加载世界书（全局设置 + 条目表）并组装为 STWorldBook。
  * 如果 worldbookProfileId 为空或找不到记录，返回空数组。
  */
 async function loadWorldbookData(
@@ -366,19 +356,53 @@ async function loadWorldbookData(
   if (!worldbookProfileId) return null;
 
   const [row] = await db
-    .select({ dataJson: worldbooks.dataJson })
+    .select({ id: worldbooks.id, name: worldbooks.name, dataJson: worldbooks.dataJson })
     .from(worldbooks)
     .where(eq(worldbooks.id, worldbookProfileId))
     .limit(1);
 
   if (!row) return null;
 
+  // Load entries from the dedicated table
+  const entryRows = await db
+    .select()
+    .from(worldbookEntries)
+    .where(eq(worldbookEntries.worldbookId, row.id))
+    .orderBy(asc(worldbookEntries.order));
+
+  // Parse global settings from dataJson
+  let globalSettings: Record<string, unknown> = {};
   try {
-    const rawData = JSON.parse(row.dataJson);
-    return parseWorldBook(rawData);
-  } catch {
-    return null;
-  }
+    const parsed = JSON.parse(row.dataJson);
+    if (parsed && typeof parsed === "object") globalSettings = parsed;
+  } catch { /* ignore malformed JSON */ }
+
+  return {
+    name: row.name,
+    entries: entryRows.map((e) => ({
+      uid: e.uid,
+      key: safeParsJsonArray(e.keysJson),
+      keysecondary: safeParsJsonArray(e.keysSecondaryJson),
+      selective: e.selective,
+      selectiveLogic: e.selectiveLogic as STWorldBook["entries"][number]["selectiveLogic"],
+      constant: e.constant,
+      content: e.content,
+      comment: e.comment,
+      position: e.position as STWorldBook["entries"][number]["position"],
+      order: e.order,
+      depth: e.depth,
+      role: e.role as STWorldBook["entries"][number]["role"],
+      disable: e.disable,
+      scanDepth: e.scanDepth ?? null,
+      caseSensitive: e.caseSensitive ?? null,
+      matchWholeWords: e.matchWholeWords ?? null,
+    })),
+    scanDepth: typeof globalSettings.scanDepth === "number" ? globalSettings.scanDepth : 2,
+    caseSensitive: typeof globalSettings.caseSensitive === "boolean" ? globalSettings.caseSensitive : false,
+    matchWholeWords: typeof globalSettings.matchWholeWords === "boolean" ? globalSettings.matchWholeWords : false,
+    recursive: typeof globalSettings.recursive === "boolean" ? globalSettings.recursive : false,
+    maxRecursionSteps: typeof globalSettings.maxRecursionSteps === "number" ? globalSettings.maxRecursionSteps : 0,
+  };
 }
 
 /**
@@ -608,4 +632,17 @@ function injectMemorySummary(
   const result = [...messages];
   result.splice(insertAt, 0, memoryMessage);
   return result;
+}
+
+
+/**
+ * 安全解析 JSON 字符串数组。如果解析失败或结果不是数组，返回空数组。
+ */
+function safeParsJsonArray(jsonStr: string): string[] {
+  try {
+    const parsed = JSON.parse(jsonStr);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }

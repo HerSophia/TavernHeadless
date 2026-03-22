@@ -537,7 +537,7 @@ describe('TurnOrchestrator', () => {
     expect(result.consolidationResult).toBeUndefined();
   });
 
-  it('consolidation failure marks floor as failed', async () => {
+  it('consolidation failure degrades gracefully without failing the turn', async () => {
     deps = makeDeps({
       memoryConsolidator: {
         consolidate: vi.fn().mockRejectedValue(new Error('Consolidation error')),
@@ -554,7 +554,21 @@ describe('TurnOrchestrator', () => {
       },
     });
 
-    await expect(orchestrator.executeTurn(input)).rejects.toThrow(TurnError);
-    await expect(orchestrator.executeTurn(input)).rejects.toThrow('Memory consolidation failed');
+    const result = await orchestrator.executeTurn(input);
+
+    // Turn should succeed with consolidationResult undefined
+    expect(result.finalState).toBe('committed');
+    expect(result.consolidationResult).toBeUndefined();
+
+    // memory.consolidation_failed event should have been emitted
+    const emitCalls = (deps.eventBus.emit as any).mock.calls;
+    const failedEvents = emitCalls.filter((c: any[]) => c[0] === 'memory.consolidation_failed');
+    expect(failedEvents).toHaveLength(1);
+    expect(failedEvents[0][1]).toEqual(
+      expect.objectContaining({
+        floorId: input.floorId,
+        error: expect.any(Error),
+      }),
+    );
   });
 });

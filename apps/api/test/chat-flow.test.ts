@@ -486,7 +486,7 @@ describe("ChatService", () => {
     const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(turnInput.generationParams.temperature).toBe(0.7);
     expect(turnInput.generationParams.maxOutputTokens).toBe(1000);
-    expect(turnInput.generationParams.stream).toBe(true);
+    expect(turnInput.generationParams.stream).toBe(false);
   });
 
   // ── regenerate 测试 ─────────────────────────────────

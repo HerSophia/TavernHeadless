@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
+import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { floors } from "../db/schema";
 import { ensureOptionalObjectBody, parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
@@ -54,14 +55,6 @@ const branchBodySchema = z.object({
   branch_id: z.string().trim().min(1).max(100).optional(),
 });
 
-const idParamsJsonSchema = {
-  type: "object",
-  required: ["id"],
-  properties: {
-    id: { type: "string", minLength: 1 },
-  },
-  additionalProperties: false,
-} as const;
 
 const listQueryJsonSchema = {
   type: "object",
@@ -120,23 +113,6 @@ const floorJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const errorResponseJsonSchema = {
-  type: "object",
-  required: ["error"],
-  properties: {
-    error: {
-      type: "object",
-      required: ["code", "message"],
-      properties: {
-        code: { type: "string" },
-        message: { type: "string" },
-        details: {},
-      },
-      additionalProperties: true,
-    },
-  },
-  additionalProperties: false,
-} as const;
 
 const listMetaJsonSchema = {
   type: "object",

@@ -22,6 +22,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get account by id */
+        get: operations["getAccount"];
+        put?: never;
+        post?: never;
+        /** Delete account by id */
+        delete: operations["deleteAccount"];
+        options?: never;
+        head?: never;
+        /** Update account by id */
+        patch: operations["updateAccount"];
+        trace?: never;
+    };
     "/branches/{id}": {
         parameters: {
             query?: never;
@@ -803,6 +822,59 @@ export interface paths {
         put?: never;
         /** Import SillyTavern worldbook */
         post: operations["importWorldbook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm-instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List LLM instance configs */
+        get: operations["listLlmInstanceConfigs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm-instances/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get LLM instance configs for a specific slot */
+        get: operations["getLlmInstanceConfigs"];
+        /** Create or update an LLM instance config for a slot */
+        put: operations["upsertLlmInstanceConfig"];
+        post?: never;
+        /** Delete an LLM instance config for a slot */
+        delete: operations["deleteLlmInstanceConfig"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm-instances/resolved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get resolved LLM instance configs for all slots */
+        get: operations["getResolvedLlmInstanceConfigs"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2005,6 +2077,23 @@ export interface paths {
         patch: operations["activatePage"];
         trace?: never;
     };
+    "/pages/batch/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Batch delete pages */
+        post: operations["batchDeletePages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/presets": {
         parameters: {
             query?: never;
@@ -2058,6 +2147,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/presets/{preset_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List preset prompt entries */
+        get: operations["listPresetEntries"];
+        put?: never;
+        /** Create preset prompt entry */
+        post: operations["createPresetEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/presets/{preset_id}/entries/{identifier}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get preset prompt entry */
+        get: operations["getPresetEntry"];
+        put?: never;
+        post?: never;
+        /** Delete preset prompt entry */
+        delete: operations["deletePresetEntry"];
+        options?: never;
+        head?: never;
+        /** Update preset prompt entry */
+        patch: operations["updatePresetEntry"];
+        trace?: never;
+    };
+    "/presets/{preset_id}/entries/batch/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Batch delete preset prompt entries */
+        post: operations["batchDeletePresetEntries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/presets/{preset_id}/entries/batch/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Batch update preset prompt entries */
+        patch: operations["batchUpdatePresetEntries"];
+        trace?: never;
+    };
+    "/presets/{preset_id}/entries/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Reorder preset prompt entries */
+        put: operations["reorderPresetEntries"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/regex-profiles": {
         parameters: {
             query?: never;
@@ -2084,7 +2261,8 @@ export interface paths {
         };
         /** Get imported regex profile */
         get: operations["getImportedRegexProfile"];
-        put?: never;
+        /** Update imported regex profile by id */
+        put: operations["updateImportedRegexProfile"];
         post?: never;
         /** Delete imported regex profile */
         delete: operations["deleteImportedRegexProfile"];
@@ -3509,6 +3687,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/batch/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Batch delete sessions */
+        post: operations["batchDeleteSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/batch/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Batch update session status */
+        patch: operations["batchUpdateSessionStatus"];
+        trace?: never;
+    };
     "/users": {
         parameters: {
             query?: never;
@@ -4008,6 +4220,40 @@ export interface paths {
         };
         trace?: never;
     };
+    "/users/batch/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Batch delete users */
+        post: operations["batchDeleteUsers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/batch/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Batch update user status */
+        patch: operations["batchUpdateUserStatus"];
+        trace?: never;
+    };
     "/variables": {
         parameters: {
             query?: never;
@@ -4095,6 +4341,94 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/worldbooks/{worldbook_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List worldbook entries */
+        get: operations["listWorldbookEntries"];
+        put?: never;
+        /** Create worldbook entry */
+        post: operations["createWorldbookEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worldbooks/{worldbook_id}/entries/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get worldbook entry */
+        get: operations["getWorldbookEntry"];
+        put?: never;
+        post?: never;
+        /** Delete worldbook entry */
+        delete: operations["deleteWorldbookEntry"];
+        options?: never;
+        head?: never;
+        /** Update worldbook entry */
+        patch: operations["updateWorldbookEntry"];
+        trace?: never;
+    };
+    "/worldbooks/{worldbook_id}/entries/batch/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Batch delete worldbook entries */
+        post: operations["batchDeleteWorldbookEntries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worldbooks/{worldbook_id}/entries/batch/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Batch reorder worldbook entries */
+        put: operations["batchReorderWorldbookEntries"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worldbooks/{worldbook_id}/entries/batch/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Batch update worldbook entries */
+        patch: operations["batchUpdateWorldbookEntries"];
         trace?: never;
     };
 }
@@ -4262,6 +4596,325 @@ export interface operations {
             };
             /** @description Default Response */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "id": "acc_demo",
+                     *         "is_default": false,
+                     *         "name": "Demo Workspace",
+                     *         "role": "user",
+                     *         "status": "active",
+                     *         "updated_at": 1735689600000
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "created_at": 1735689600000,
+                         *       "id": "acc_demo",
+                         *       "is_default": false,
+                         *       "name": "Demo Workspace",
+                         *       "role": "user",
+                         *       "status": "active",
+                         *       "updated_at": 1735689600000
+                         *     }
+                         */
+                        data: {
+                            created_at: number;
+                            id: string;
+                            is_default: boolean;
+                            name: string;
+                            /** @enum {string} */
+                            role: "admin" | "user";
+                            /** @enum {string} */
+                            status: "active" | "disabled";
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deleteAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "deleted": true,
+                     *         "id": "acc_demo"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            deleted: boolean;
+                            id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    updateAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "Updated Workspace"
+                 *     }
+                 */
+                "application/json": {
+                    name?: string;
+                    /** @enum {string} */
+                    role?: "admin" | "user";
+                    /** @enum {string} */
+                    status?: "active" | "disabled";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "id": "acc_demo",
+                     *         "is_default": false,
+                     *         "name": "Demo Workspace",
+                     *         "role": "user",
+                     *         "status": "active",
+                     *         "updated_at": 1735689600000
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "created_at": 1735689600000,
+                         *       "id": "acc_demo",
+                         *       "is_default": false,
+                         *       "name": "Demo Workspace",
+                         *       "role": "user",
+                         *       "status": "active",
+                         *       "updated_at": 1735689600000
+                         *     }
+                         */
+                        data: {
+                            created_at: number;
+                            id: string;
+                            is_default: boolean;
+                            name: string;
+                            /** @enum {string} */
+                            role: "admin" | "user";
+                            /** @enum {string} */
+                            status: "active" | "disabled";
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5116,6 +5769,467 @@ export interface operations {
             };
         };
     };
+    listLlmInstanceConfigs: {
+        parameters: {
+            query?: {
+                scope?: "global" | "session";
+                session_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "created_at": 1735689600000,
+                     *           "enabled": true,
+                     *           "id": "ic_demo123",
+                     *           "instance_slot": "narrator",
+                     *           "params": {
+                     *             "max_output_tokens": 1024,
+                     *             "temperature": 0.8
+                     *           },
+                     *           "preset_id": null,
+                     *           "scope": "global",
+                     *           "scope_id": "global",
+                     *           "updated_at": 1735689660000
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            created_at: number;
+                            enabled: boolean;
+                            id: string;
+                            /** @enum {string} */
+                            instance_slot: "*" | "narrator" | "director" | "verifier" | "memory";
+                            params?: {
+                                frequency_penalty?: number;
+                                max_context_tokens?: number;
+                                max_output_tokens?: number;
+                                max_retries?: number;
+                                presence_penalty?: number;
+                                /** @enum {string} */
+                                reasoning_effort?: "low" | "medium" | "high";
+                                stream?: boolean;
+                                temperature?: number;
+                                timeout_ms?: number;
+                                top_k?: number;
+                                top_p?: number;
+                            } | null;
+                            preset_id?: string | null;
+                            /** @enum {string} */
+                            scope: "global" | "session";
+                            scope_id: string;
+                            updated_at: number;
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getLlmInstanceConfigs: {
+        parameters: {
+            query?: {
+                scope?: "global" | "session";
+                session_id?: string;
+            };
+            header?: never;
+            path: {
+                slot: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "created_at": 1735689600000,
+                     *           "enabled": true,
+                     *           "id": "ic_demo123",
+                     *           "instance_slot": "narrator",
+                     *           "params": {
+                     *             "max_output_tokens": 1024,
+                     *             "temperature": 0.8
+                     *           },
+                     *           "preset_id": null,
+                     *           "scope": "global",
+                     *           "scope_id": "global",
+                     *           "updated_at": 1735689660000
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            created_at: number;
+                            enabled: boolean;
+                            id: string;
+                            /** @enum {string} */
+                            instance_slot: "*" | "narrator" | "director" | "verifier" | "memory";
+                            params?: {
+                                frequency_penalty?: number;
+                                max_context_tokens?: number;
+                                max_output_tokens?: number;
+                                max_retries?: number;
+                                presence_penalty?: number;
+                                /** @enum {string} */
+                                reasoning_effort?: "low" | "medium" | "high";
+                                stream?: boolean;
+                                temperature?: number;
+                                timeout_ms?: number;
+                                top_k?: number;
+                                top_p?: number;
+                            } | null;
+                            preset_id?: string | null;
+                            /** @enum {string} */
+                            scope: "global" | "session";
+                            scope_id: string;
+                            updated_at: number;
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    upsertLlmInstanceConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slot: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "enabled": true,
+                 *       "params": {
+                 *         "max_output_tokens": 1024,
+                 *         "temperature": 0.8
+                 *       },
+                 *       "preset_id": null,
+                 *       "scope": "global"
+                 *     }
+                 */
+                "application/json": {
+                    /** @default true */
+                    enabled?: boolean;
+                    params?: {
+                        frequency_penalty?: number;
+                        max_context_tokens?: number;
+                        max_output_tokens?: number;
+                        max_retries?: number;
+                        presence_penalty?: number;
+                        /** @enum {string} */
+                        reasoning_effort?: "low" | "medium" | "high";
+                        stream?: boolean;
+                        temperature?: number;
+                        timeout_ms?: number;
+                        top_k?: number;
+                        top_p?: number;
+                    } | null;
+                    preset_id?: string | null;
+                    /**
+                     * @default global
+                     * @enum {string}
+                     */
+                    scope?: "global" | "session";
+                    session_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "enabled": true,
+                     *         "id": "ic_demo123",
+                     *         "instance_slot": "narrator",
+                     *         "params": {
+                     *           "max_output_tokens": 1024,
+                     *           "temperature": 0.8
+                     *         },
+                     *         "preset_id": null,
+                     *         "scope": "global",
+                     *         "scope_id": "global",
+                     *         "updated_at": 1735689660000
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            created_at: number;
+                            enabled: boolean;
+                            id: string;
+                            /** @enum {string} */
+                            instance_slot: "*" | "narrator" | "director" | "verifier" | "memory";
+                            params?: {
+                                frequency_penalty?: number;
+                                max_context_tokens?: number;
+                                max_output_tokens?: number;
+                                max_retries?: number;
+                                presence_penalty?: number;
+                                /** @enum {string} */
+                                reasoning_effort?: "low" | "medium" | "high";
+                                stream?: boolean;
+                                temperature?: number;
+                                timeout_ms?: number;
+                                top_k?: number;
+                                top_p?: number;
+                            } | null;
+                            preset_id?: string | null;
+                            /** @enum {string} */
+                            scope: "global" | "session";
+                            scope_id: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deleteLlmInstanceConfig: {
+        parameters: {
+            query?: {
+                scope?: "global" | "session";
+                session_id?: string;
+            };
+            header?: never;
+            path: {
+                slot: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "deleted": true,
+                     *         "instance_slot": "narrator",
+                     *         "scope": "global"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            deleted: boolean;
+                            instance_slot: string;
+                            scope: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getResolvedLlmInstanceConfigs: {
+        parameters: {
+            query?: {
+                session_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "session_id": null,
+                     *         "slots": [
+                     *           {
+                     *             "config_id": "ic_demo123",
+                     *             "enabled": true,
+                     *             "params": {
+                     *               "max_output_tokens": 1024,
+                     *               "temperature": 0.8
+                     *             },
+                     *             "preset_id": null,
+                     *             "scope": "global",
+                     *             "slot": "narrator",
+                     *             "source": "global_config"
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            session_id?: string | null;
+                            slots: {
+                                config_id?: string | null;
+                                enabled: boolean;
+                                params?: {
+                                    frequency_penalty?: number;
+                                    max_context_tokens?: number;
+                                    max_output_tokens?: number;
+                                    max_retries?: number;
+                                    presence_penalty?: number;
+                                    /** @enum {string} */
+                                    reasoning_effort?: "low" | "medium" | "high";
+                                    stream?: boolean;
+                                    temperature?: number;
+                                    timeout_ms?: number;
+                                    top_k?: number;
+                                    top_p?: number;
+                                } | null;
+                                preset_id?: string | null;
+                                scope?: ("global" | "session") | null;
+                                /** @enum {string} */
+                                slot: "*" | "narrator" | "director" | "verifier" | "memory";
+                                /** @enum {string} */
+                                source: "session_config" | "global_config" | "default";
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     listLlmProfiles: {
         parameters: {
             query?: {
@@ -5852,6 +6966,7 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
+                    allow_private_network?: boolean;
                     api_key: string;
                     base_url?: string;
                     /** @enum {string} */
@@ -5942,6 +7057,7 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
+                    allow_private_network?: boolean;
                     api_key: string;
                     base_url?: string;
                     model_id: string;
@@ -7368,6 +8484,60 @@ export interface operations {
             };
         };
     };
+    batchDeletePages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            meta: {
+                                [key: string]: unknown;
+                            };
+                            results: {
+                                action?: string;
+                                id?: string;
+                                index?: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     listImportedPresets: {
         parameters: {
             query?: never;
@@ -7793,6 +8963,594 @@ export interface operations {
             };
         };
     };
+    listPresetEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            default_character_id?: number;
+                            entries?: {
+                                content?: string;
+                                enabled?: boolean;
+                                extra?: {
+                                    [key: string]: unknown;
+                                };
+                                forbid_overrides?: boolean;
+                                identifier?: string;
+                                injection_depth?: number;
+                                injection_order?: number;
+                                injection_position?: number;
+                                injection_trigger?: unknown[];
+                                marker?: boolean;
+                                name?: string;
+                                /** @enum {string} */
+                                role?: "assistant" | "system" | "user";
+                                system_prompt?: boolean;
+                            }[];
+                            preset_id?: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createPresetEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content?: string;
+                    enabled?: boolean;
+                    extra?: {
+                        [key: string]: unknown;
+                    };
+                    forbid_overrides?: boolean;
+                    identifier: string;
+                    injection_depth?: number;
+                    injection_order?: number;
+                    injection_position?: number;
+                    injection_trigger?: unknown[];
+                    marker?: boolean;
+                    name?: string;
+                    /** @enum {string} */
+                    role?: "assistant" | "system" | "user";
+                    system_prompt?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            content?: string;
+                            enabled?: boolean;
+                            extra?: {
+                                [key: string]: unknown;
+                            };
+                            forbid_overrides?: boolean;
+                            identifier?: string;
+                            injection_depth?: number;
+                            injection_order?: number;
+                            injection_position?: number;
+                            injection_trigger?: unknown[];
+                            marker?: boolean;
+                            name?: string;
+                            /** @enum {string} */
+                            role?: "assistant" | "system" | "user";
+                            system_prompt?: boolean;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getPresetEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+                identifier: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            content?: string;
+                            enabled?: boolean;
+                            extra?: {
+                                [key: string]: unknown;
+                            };
+                            forbid_overrides?: boolean;
+                            identifier?: string;
+                            injection_depth?: number;
+                            injection_order?: number;
+                            injection_position?: number;
+                            injection_trigger?: unknown[];
+                            marker?: boolean;
+                            name?: string;
+                            /** @enum {string} */
+                            role?: "assistant" | "system" | "user";
+                            system_prompt?: boolean;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deletePresetEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+                identifier: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            deleted?: boolean;
+                            identifier?: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    updatePresetEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+                identifier: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content?: string;
+                    enabled?: boolean;
+                    extra?: {
+                        [key: string]: unknown;
+                    };
+                    forbid_overrides?: boolean;
+                    injection_depth?: number;
+                    injection_order?: number;
+                    injection_position?: number;
+                    injection_trigger?: unknown[];
+                    marker?: boolean;
+                    name?: string;
+                    /** @enum {string} */
+                    role?: "assistant" | "system" | "user";
+                    system_prompt?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            content?: string;
+                            enabled?: boolean;
+                            extra?: {
+                                [key: string]: unknown;
+                            };
+                            forbid_overrides?: boolean;
+                            identifier?: string;
+                            injection_depth?: number;
+                            injection_order?: number;
+                            injection_position?: number;
+                            injection_trigger?: unknown[];
+                            marker?: boolean;
+                            name?: string;
+                            /** @enum {string} */
+                            role?: "assistant" | "system" | "user";
+                            system_prompt?: boolean;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchDeletePresetEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    identifiers: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            meta?: {
+                                [key: string]: unknown;
+                            };
+                            results?: {
+                                [key: string]: unknown;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchUpdatePresetEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    fields: {
+                        [key: string]: unknown;
+                    };
+                    identifiers: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            meta?: {
+                                [key: string]: unknown;
+                            };
+                            results?: {
+                                [key: string]: unknown;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    reorderPresetEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                preset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    identifiers: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            default_character_id?: number;
+                            entries?: {
+                                content?: string;
+                                enabled?: boolean;
+                                extra?: {
+                                    [key: string]: unknown;
+                                };
+                                forbid_overrides?: boolean;
+                                identifier?: string;
+                                injection_depth?: number;
+                                injection_order?: number;
+                                injection_position?: number;
+                                injection_trigger?: unknown[];
+                                marker?: boolean;
+                                name?: string;
+                                /** @enum {string} */
+                                role?: "assistant" | "system" | "user";
+                                system_prompt?: boolean;
+                            }[];
+                            preset_id?: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     listImportedRegexProfiles: {
         parameters: {
             query?: never;
@@ -7906,6 +9664,130 @@ export interface operations {
             };
         };
     };
+    updateImportedRegexProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "data": [
+                 *         {
+                 *           "find": "\\s+$",
+                 *           "replace": "",
+                 *           "scriptName": "trim_whitespace"
+                 *         }
+                 *       ],
+                 *       "expected_updated_at": 1735689660000,
+                 *       "name": "Safety Filters"
+                 *     }
+                 */
+                "application/json": {
+                    data: {
+                        [key: string]: unknown;
+                    }[];
+                    expected_updated_at?: number;
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "created_at": 1735689600000,
+                     *         "id": "regex_safe",
+                     *         "name": "Safety Filters",
+                     *         "source": "sillytavern",
+                     *         "updated_at": 1735689720000
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "created_at": 1735689600000,
+                         *       "id": "preset_story",
+                         *       "name": "Story Preset",
+                         *       "source": "sillytavern",
+                         *       "updated_at": 1735689660000
+                         *     }
+                         */
+                        data: {
+                            created_at: number;
+                            id: string;
+                            name: string;
+                            source: string;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     deleteImportedRegexProfile: {
         parameters: {
             query?: never;
@@ -7923,6 +9805,226 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchDeleteSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            meta: {
+                                [key: string]: unknown;
+                            };
+                            results: {
+                                action?: string;
+                                id?: string;
+                                index?: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchUpdateSessionStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ids: string[];
+                    /** @enum {string} */
+                    status: "active" | "archived";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            meta: {
+                                [key: string]: unknown;
+                            };
+                            results: {
+                                action?: string;
+                                id?: string;
+                                index?: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchDeleteUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            meta: {
+                                [key: string]: unknown;
+                            };
+                            results: {
+                                action?: string;
+                                id?: string;
+                                index?: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchUpdateUserStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    ids: string[];
+                    /** @enum {string} */
+                    status: "active" | "disabled";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            meta: {
+                                [key: string]: unknown;
+                            };
+                            results: {
+                                action?: string;
+                                id?: string;
+                                index?: number;
+                            }[];
+                        };
+                    };
+                };
             };
             /** @description Default Response */
             400: {
@@ -8698,6 +10800,1145 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listWorldbookEntries: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+                sort_by?: "order" | "updated_at" | "uid";
+                disable?: boolean;
+                constant?: boolean;
+                position?: number;
+                q?: string;
+            };
+            header?: never;
+            path: {
+                worldbook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "case_sensitive": null,
+                     *           "comment": "Kingdom basics",
+                     *           "constant": false,
+                     *           "content": "The kingdom is vast and ancient.",
+                     *           "created_at": 1735689600000,
+                     *           "depth": 4,
+                     *           "disable": false,
+                     *           "id": "ent_abc123",
+                     *           "keys": [
+                     *             "kingdom",
+                     *             "realm"
+                     *           ],
+                     *           "keys_secondary": [
+                     *             "history"
+                     *           ],
+                     *           "match_whole_words": null,
+                     *           "order": 100,
+                     *           "position": 0,
+                     *           "role": 0,
+                     *           "scan_depth": null,
+                     *           "selective": true,
+                     *           "selective_logic": 0,
+                     *           "uid": 0,
+                     *           "updated_at": 1735689660000,
+                     *           "worldbook_id": "wb_kingdom"
+                     *         }
+                     *       ],
+                     *       "meta": {
+                     *         "has_more": false,
+                     *         "limit": 50,
+                     *         "offset": 0,
+                     *         "sort_by": "order",
+                     *         "sort_order": "asc",
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            case_sensitive: boolean | null;
+                            comment: string;
+                            constant: boolean;
+                            content: string;
+                            created_at: number;
+                            depth: number;
+                            disable: boolean;
+                            id: string;
+                            keys: string[];
+                            keys_secondary: string[];
+                            match_whole_words: boolean | null;
+                            order: number;
+                            position: number;
+                            role: number;
+                            scan_depth: number | null;
+                            selective: boolean;
+                            selective_logic: number;
+                            uid: number;
+                            updated_at: number;
+                            worldbook_id: string;
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createWorldbookEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                worldbook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    case_sensitive?: boolean | null;
+                    comment?: string;
+                    constant?: boolean;
+                    content: string;
+                    depth?: number;
+                    disable?: boolean;
+                    keys: string[];
+                    keys_secondary?: string[];
+                    match_whole_words?: boolean | null;
+                    order?: number;
+                    position?: number;
+                    role?: number;
+                    scan_depth?: number | null;
+                    selective?: boolean;
+                    selective_logic?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "case_sensitive": null,
+                     *         "comment": "Kingdom basics",
+                     *         "constant": false,
+                     *         "content": "The kingdom is vast and ancient.",
+                     *         "created_at": 1735689600000,
+                     *         "depth": 4,
+                     *         "disable": false,
+                     *         "id": "ent_abc123",
+                     *         "keys": [
+                     *           "kingdom",
+                     *           "realm"
+                     *         ],
+                     *         "keys_secondary": [
+                     *           "history"
+                     *         ],
+                     *         "match_whole_words": null,
+                     *         "order": 100,
+                     *         "position": 0,
+                     *         "role": 0,
+                     *         "scan_depth": null,
+                     *         "selective": true,
+                     *         "selective_logic": 0,
+                     *         "uid": 0,
+                     *         "updated_at": 1735689660000,
+                     *         "worldbook_id": "wb_kingdom"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "case_sensitive": null,
+                         *       "comment": "Kingdom basics",
+                         *       "constant": false,
+                         *       "content": "The kingdom is vast and ancient.",
+                         *       "created_at": 1735689600000,
+                         *       "depth": 4,
+                         *       "disable": false,
+                         *       "id": "ent_abc123",
+                         *       "keys": [
+                         *         "kingdom",
+                         *         "realm"
+                         *       ],
+                         *       "keys_secondary": [
+                         *         "history"
+                         *       ],
+                         *       "match_whole_words": null,
+                         *       "order": 100,
+                         *       "position": 0,
+                         *       "role": 0,
+                         *       "scan_depth": null,
+                         *       "selective": true,
+                         *       "selective_logic": 0,
+                         *       "uid": 0,
+                         *       "updated_at": 1735689660000,
+                         *       "worldbook_id": "wb_kingdom"
+                         *     }
+                         */
+                        data: {
+                            case_sensitive: boolean | null;
+                            comment: string;
+                            constant: boolean;
+                            content: string;
+                            created_at: number;
+                            depth: number;
+                            disable: boolean;
+                            id: string;
+                            keys: string[];
+                            keys_secondary: string[];
+                            match_whole_words: boolean | null;
+                            order: number;
+                            position: number;
+                            role: number;
+                            scan_depth: number | null;
+                            selective: boolean;
+                            selective_logic: number;
+                            uid: number;
+                            updated_at: number;
+                            worldbook_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getWorldbookEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                worldbook_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "case_sensitive": null,
+                     *         "comment": "Kingdom basics",
+                     *         "constant": false,
+                     *         "content": "The kingdom is vast and ancient.",
+                     *         "created_at": 1735689600000,
+                     *         "depth": 4,
+                     *         "disable": false,
+                     *         "id": "ent_abc123",
+                     *         "keys": [
+                     *           "kingdom",
+                     *           "realm"
+                     *         ],
+                     *         "keys_secondary": [
+                     *           "history"
+                     *         ],
+                     *         "match_whole_words": null,
+                     *         "order": 100,
+                     *         "position": 0,
+                     *         "role": 0,
+                     *         "scan_depth": null,
+                     *         "selective": true,
+                     *         "selective_logic": 0,
+                     *         "uid": 0,
+                     *         "updated_at": 1735689660000,
+                     *         "worldbook_id": "wb_kingdom"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "case_sensitive": null,
+                         *       "comment": "Kingdom basics",
+                         *       "constant": false,
+                         *       "content": "The kingdom is vast and ancient.",
+                         *       "created_at": 1735689600000,
+                         *       "depth": 4,
+                         *       "disable": false,
+                         *       "id": "ent_abc123",
+                         *       "keys": [
+                         *         "kingdom",
+                         *         "realm"
+                         *       ],
+                         *       "keys_secondary": [
+                         *         "history"
+                         *       ],
+                         *       "match_whole_words": null,
+                         *       "order": 100,
+                         *       "position": 0,
+                         *       "role": 0,
+                         *       "scan_depth": null,
+                         *       "selective": true,
+                         *       "selective_logic": 0,
+                         *       "uid": 0,
+                         *       "updated_at": 1735689660000,
+                         *       "worldbook_id": "wb_kingdom"
+                         *     }
+                         */
+                        data: {
+                            case_sensitive: boolean | null;
+                            comment: string;
+                            constant: boolean;
+                            content: string;
+                            created_at: number;
+                            depth: number;
+                            disable: boolean;
+                            id: string;
+                            keys: string[];
+                            keys_secondary: string[];
+                            match_whole_words: boolean | null;
+                            order: number;
+                            position: number;
+                            role: number;
+                            scan_depth: number | null;
+                            selective: boolean;
+                            selective_logic: number;
+                            uid: number;
+                            updated_at: number;
+                            worldbook_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deleteWorldbookEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                worldbook_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "deleted": true,
+                     *         "id": "ent_abc123"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            deleted: boolean;
+                            id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    updateWorldbookEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                worldbook_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    case_sensitive?: boolean | null;
+                    comment?: string;
+                    constant?: boolean;
+                    content?: string;
+                    depth?: number;
+                    disable?: boolean;
+                    keys?: string[];
+                    keys_secondary?: string[];
+                    match_whole_words?: boolean | null;
+                    order?: number;
+                    position?: number;
+                    role?: number;
+                    scan_depth?: number | null;
+                    selective?: boolean;
+                    selective_logic?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "case_sensitive": null,
+                     *         "comment": "Kingdom basics",
+                     *         "constant": false,
+                     *         "content": "The kingdom is vast and ancient.",
+                     *         "created_at": 1735689600000,
+                     *         "depth": 4,
+                     *         "disable": false,
+                     *         "id": "ent_abc123",
+                     *         "keys": [
+                     *           "kingdom",
+                     *           "realm"
+                     *         ],
+                     *         "keys_secondary": [
+                     *           "history"
+                     *         ],
+                     *         "match_whole_words": null,
+                     *         "order": 100,
+                     *         "position": 0,
+                     *         "role": 0,
+                     *         "scan_depth": null,
+                     *         "selective": true,
+                     *         "selective_logic": 0,
+                     *         "uid": 0,
+                     *         "updated_at": 1735689660000,
+                     *         "worldbook_id": "wb_kingdom"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "case_sensitive": null,
+                         *       "comment": "Kingdom basics",
+                         *       "constant": false,
+                         *       "content": "The kingdom is vast and ancient.",
+                         *       "created_at": 1735689600000,
+                         *       "depth": 4,
+                         *       "disable": false,
+                         *       "id": "ent_abc123",
+                         *       "keys": [
+                         *         "kingdom",
+                         *         "realm"
+                         *       ],
+                         *       "keys_secondary": [
+                         *         "history"
+                         *       ],
+                         *       "match_whole_words": null,
+                         *       "order": 100,
+                         *       "position": 0,
+                         *       "role": 0,
+                         *       "scan_depth": null,
+                         *       "selective": true,
+                         *       "selective_logic": 0,
+                         *       "uid": 0,
+                         *       "updated_at": 1735689660000,
+                         *       "worldbook_id": "wb_kingdom"
+                         *     }
+                         */
+                        data: {
+                            case_sensitive: boolean | null;
+                            comment: string;
+                            constant: boolean;
+                            content: string;
+                            created_at: number;
+                            depth: number;
+                            disable: boolean;
+                            id: string;
+                            keys: string[];
+                            keys_secondary: string[];
+                            match_whole_words: boolean | null;
+                            order: number;
+                            position: number;
+                            role: number;
+                            scan_depth: number | null;
+                            selective: boolean;
+                            selective_logic: number;
+                            uid: number;
+                            updated_at: number;
+                            worldbook_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchDeleteWorldbookEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                worldbook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "ids": [
+                 *         "ent_abc123",
+                 *         "ent_missing"
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "meta": {
+                     *           "deleted": 1,
+                     *           "not_found": 1,
+                     *           "total": 2
+                     *         },
+                     *         "results": [
+                     *           {
+                     *             "action": "deleted",
+                     *             "id": "ent_abc123",
+                     *             "index": 0
+                     *           },
+                     *           {
+                     *             "action": "not_found",
+                     *             "id": "ent_missing",
+                     *             "index": 1
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            meta: {
+                                deleted: number;
+                                not_found: number;
+                                total: number;
+                            };
+                            results: {
+                                /** @enum {string} */
+                                action: "deleted" | "not_found";
+                                id: string;
+                                index: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchReorderWorldbookEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                worldbook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "items": [
+                 *         {
+                 *           "id": "ent_abc123",
+                 *           "order": 10
+                 *         },
+                 *         {
+                 *           "id": "ent_def456",
+                 *           "order": 20
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    items: {
+                        id: string;
+                        order: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "meta": {
+                     *           "not_found": 1,
+                     *           "total": 2,
+                     *           "updated": 1
+                     *         },
+                     *         "results": [
+                     *           {
+                     *             "action": "updated",
+                     *             "data": {
+                     *               "case_sensitive": null,
+                     *               "comment": "Kingdom basics",
+                     *               "constant": false,
+                     *               "content": "The kingdom is vast and ancient.",
+                     *               "created_at": 1735689600000,
+                     *               "depth": 4,
+                     *               "disable": false,
+                     *               "id": "ent_abc123",
+                     *               "keys": [
+                     *                 "kingdom",
+                     *                 "realm"
+                     *               ],
+                     *               "keys_secondary": [
+                     *                 "history"
+                     *               ],
+                     *               "match_whole_words": null,
+                     *               "order": 10,
+                     *               "position": 0,
+                     *               "role": 0,
+                     *               "scan_depth": null,
+                     *               "selective": true,
+                     *               "selective_logic": 0,
+                     *               "uid": 0,
+                     *               "updated_at": 1735689720000,
+                     *               "worldbook_id": "wb_kingdom"
+                     *             },
+                     *             "id": "ent_abc123",
+                     *             "index": 0
+                     *           },
+                     *           {
+                     *             "action": "not_found",
+                     *             "id": "ent_def456",
+                     *             "index": 1
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            meta: {
+                                not_found: number;
+                                total: number;
+                                updated: number;
+                            };
+                            results: {
+                                /** @enum {string} */
+                                action: "updated" | "not_found";
+                                /**
+                                 * @example {
+                                 *       "case_sensitive": null,
+                                 *       "comment": "Kingdom basics",
+                                 *       "constant": false,
+                                 *       "content": "The kingdom is vast and ancient.",
+                                 *       "created_at": 1735689600000,
+                                 *       "depth": 4,
+                                 *       "disable": false,
+                                 *       "id": "ent_abc123",
+                                 *       "keys": [
+                                 *         "kingdom",
+                                 *         "realm"
+                                 *       ],
+                                 *       "keys_secondary": [
+                                 *         "history"
+                                 *       ],
+                                 *       "match_whole_words": null,
+                                 *       "order": 100,
+                                 *       "position": 0,
+                                 *       "role": 0,
+                                 *       "scan_depth": null,
+                                 *       "selective": true,
+                                 *       "selective_logic": 0,
+                                 *       "uid": 0,
+                                 *       "updated_at": 1735689660000,
+                                 *       "worldbook_id": "wb_kingdom"
+                                 *     }
+                                 */
+                                data?: {
+                                    case_sensitive: boolean | null;
+                                    comment: string;
+                                    constant: boolean;
+                                    content: string;
+                                    created_at: number;
+                                    depth: number;
+                                    disable: boolean;
+                                    id: string;
+                                    keys: string[];
+                                    keys_secondary: string[];
+                                    match_whole_words: boolean | null;
+                                    order: number;
+                                    position: number;
+                                    role: number;
+                                    scan_depth: number | null;
+                                    selective: boolean;
+                                    selective_logic: number;
+                                    uid: number;
+                                    updated_at: number;
+                                    worldbook_id: string;
+                                };
+                                id: string;
+                                index: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    batchUpdateWorldbookEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                worldbook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "fields": {
+                 *         "disable": true
+                 *       },
+                 *       "ids": [
+                 *         "ent_abc123",
+                 *         "ent_missing"
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    fields: {
+                        case_sensitive?: boolean | null;
+                        comment?: string;
+                        constant?: boolean;
+                        content?: string;
+                        depth?: number;
+                        disable?: boolean;
+                        keys?: string[];
+                        keys_secondary?: string[];
+                        match_whole_words?: boolean | null;
+                        order?: number;
+                        position?: number;
+                        role?: number;
+                        scan_depth?: number | null;
+                        selective?: boolean;
+                        selective_logic?: number;
+                    };
+                    ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "meta": {
+                     *           "not_found": 1,
+                     *           "total": 2,
+                     *           "updated": 1
+                     *         },
+                     *         "results": [
+                     *           {
+                     *             "action": "updated",
+                     *             "data": {
+                     *               "case_sensitive": null,
+                     *               "comment": "Kingdom basics",
+                     *               "constant": false,
+                     *               "content": "The kingdom is vast and ancient.",
+                     *               "created_at": 1735689600000,
+                     *               "depth": 4,
+                     *               "disable": true,
+                     *               "id": "ent_abc123",
+                     *               "keys": [
+                     *                 "kingdom",
+                     *                 "realm"
+                     *               ],
+                     *               "keys_secondary": [
+                     *                 "history"
+                     *               ],
+                     *               "match_whole_words": null,
+                     *               "order": 100,
+                     *               "position": 0,
+                     *               "role": 0,
+                     *               "scan_depth": null,
+                     *               "selective": true,
+                     *               "selective_logic": 0,
+                     *               "uid": 0,
+                     *               "updated_at": 1735689720000,
+                     *               "worldbook_id": "wb_kingdom"
+                     *             },
+                     *             "id": "ent_abc123",
+                     *             "index": 0
+                     *           },
+                     *           {
+                     *             "action": "not_found",
+                     *             "id": "ent_missing",
+                     *             "index": 1
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            meta: {
+                                not_found: number;
+                                total: number;
+                                updated: number;
+                            };
+                            results: {
+                                /** @enum {string} */
+                                action: "updated" | "not_found";
+                                /**
+                                 * @example {
+                                 *       "case_sensitive": null,
+                                 *       "comment": "Kingdom basics",
+                                 *       "constant": false,
+                                 *       "content": "The kingdom is vast and ancient.",
+                                 *       "created_at": 1735689600000,
+                                 *       "depth": 4,
+                                 *       "disable": false,
+                                 *       "id": "ent_abc123",
+                                 *       "keys": [
+                                 *         "kingdom",
+                                 *         "realm"
+                                 *       ],
+                                 *       "keys_secondary": [
+                                 *         "history"
+                                 *       ],
+                                 *       "match_whole_words": null,
+                                 *       "order": 100,
+                                 *       "position": 0,
+                                 *       "role": 0,
+                                 *       "scan_depth": null,
+                                 *       "selective": true,
+                                 *       "selective_logic": 0,
+                                 *       "uid": 0,
+                                 *       "updated_at": 1735689660000,
+                                 *       "worldbook_id": "wb_kingdom"
+                                 *     }
+                                 */
+                                data?: {
+                                    case_sensitive: boolean | null;
+                                    comment: string;
+                                    constant: boolean;
+                                    content: string;
+                                    created_at: number;
+                                    depth: number;
+                                    disable: boolean;
+                                    id: string;
+                                    keys: string[];
+                                    keys_secondary: string[];
+                                    match_whole_words: boolean | null;
+                                    order: number;
+                                    position: number;
+                                    role: number;
+                                    scan_depth: number | null;
+                                    selective: boolean;
+                                    selective_logic: number;
+                                    uid: number;
+                                    updated_at: number;
+                                    worldbook_id: string;
+                                };
+                                id: string;
+                                index: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

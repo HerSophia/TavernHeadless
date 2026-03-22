@@ -6,8 +6,11 @@ import { registerFloorRoutes } from "./floors";
 import { registerImportRoutes } from "./imports";
 import { registerMemoryRoutes } from "./memories";
 import { registerMessageRoutes } from "./messages";
+import { registerWorldbookEntryRoutes } from "./worldbook-entries";
+import { registerPresetEntryRoutes } from "./preset-entries";
 import { registerMessagePageRoutes } from "./pages";
 import { registerLlmProfileRoutes } from "./llm-profiles";
+import { registerLlmInstanceRoutes } from "./llm-instances";
 import { registerSessionRoutes } from "./sessions";
 import { registerVariableRoutes } from "./variables";
 import { registerAccountRoutes } from "./accounts";
@@ -28,4 +31,7 @@ export async function registerCrudRoutes(
   await registerMemoryRoutes(app, connection);
   await registerImportRoutes(app, connection);
   await registerLlmProfileRoutes(app, connection);
+  await registerLlmInstanceRoutes(app, connection);
+  await registerWorldbookEntryRoutes(app, connection);
+  await registerPresetEntryRoutes(app, connection);
 }

@@ -602,4 +602,111 @@ describe("LLM Profile Routes", () => {
 
     vi.unstubAllGlobals();
   });
+
+  // ── SSRF 防护测试 ──────────────────────────────────────
+
+  it("blocks discover with private base_url when allow_private_network is not set", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/llm-profiles/models/discover",
+      payload: {
+        provider: "openai-compatible",
+        api_key: "sk-test",
+        base_url: "http://127.0.0.1:11434",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(
+      expect.objectContaining({ error: expect.objectContaining({ code: "ssrf_blocked" }) }),
+    );
+  });
+
+  it("blocks test with private base_url when allow_private_network is not set", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/llm-profiles/models/test",
+      payload: {
+        provider: "openai-compatible",
+        api_key: "sk-test",
+        model_id: "llama3",
+        base_url: "http://192.168.1.100:8080",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(
+      expect.objectContaining({ error: expect.objectContaining({ code: "ssrf_blocked" }) }),
+    );
+  });
+
+  it("allows discover with private base_url when allow_private_network is true", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ data: [{ id: "llama3" }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/llm-profiles/models/discover",
+      payload: {
+        provider: "openai-compatible",
+        api_key: "sk-test",
+        base_url: "http://127.0.0.1:11434",
+        allow_private_network: true,
+      },
+    });
+
+    // Should NOT be blocked by SSRF guard (request proceeds to fetch)
+    expect(res.statusCode).not.toBe(400);
+    expect(fetchMock).toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("allows test with private base_url when allow_private_network is true", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ choices: [{ message: { content: "Hello!" } }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/llm-profiles/models/test",
+      payload: {
+        provider: "openai-compatible",
+        api_key: "sk-test",
+        model_id: "llama3",
+        base_url: "http://192.168.1.100:8080",
+        allow_private_network: true,
+      },
+    });
+
+    // Should NOT be blocked by SSRF guard
+    expect(res.statusCode).not.toBe(400);
+    expect(fetchMock).toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("still rejects non-http protocol even with allow_private_network", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/llm-profiles/models/discover",
+      payload: {
+        provider: "openai-compatible",
+        api_key: "sk-test",
+        base_url: "ftp://127.0.0.1",
+        allow_private_network: true,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(
+      expect.objectContaining({ error: expect.objectContaining({ code: "ssrf_blocked" }) }),
+    );
+  });
+
 });

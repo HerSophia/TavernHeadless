@@ -64,7 +64,12 @@ function toMemoryEdge(row: MemoryEdgeRow): MemoryEdge {
 // ── Adapter ───────────────────────────────────────────
 
 export class DrizzleMemoryRepository implements MemoryRepository {
-  constructor(private readonly db: AppDb) {}
+  private readonly accountId: string;
+
+  constructor(db: AppDb, accountId?: string);
+  constructor(private readonly db: AppDb, accountId?: string) {
+    this.accountId = accountId ?? "default-admin";
+  }
 
   async findById(id: string): Promise<MemoryItem | null> {
     const [row] = await this.db
@@ -134,6 +139,7 @@ export class DrizzleMemoryRepository implements MemoryRepository {
       .insert(memoryItems)
       .values({
         id: nanoid(),
+        accountId: this.accountId,
         scope: item.scope,
         scopeId: item.scopeId,
         type: item.type,
@@ -196,6 +202,7 @@ export class DrizzleMemoryRepository implements MemoryRepository {
       .insert(memoryEdges)
       .values({
         id: nanoid(),
+        accountId: this.accountId,
         fromId: edge.fromId,
         toId: edge.toId,
         relation: edge.relation,

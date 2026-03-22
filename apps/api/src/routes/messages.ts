@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
+import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { messages } from "../db/schema";
 import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
@@ -150,14 +151,6 @@ const batchDeleteMessagesResponseExample = {
   }
 } as const;
 
-const idParamsJsonSchema = {
-  type: "object",
-  required: ["id"],
-  properties: {
-    id: { type: "string", minLength: 1 },
-  },
-  additionalProperties: false,
-} as const;
 
 const listMessagesQueryJsonSchema = {
   type: "object",
@@ -236,23 +229,6 @@ const messageJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const errorResponseJsonSchema = {
-  type: "object",
-  required: ["error"],
-  properties: {
-    error: {
-      type: "object",
-      required: ["code", "message"],
-      properties: {
-        code: { type: "string" },
-        message: { type: "string" },
-        details: {},
-      },
-      additionalProperties: true,
-    },
-  },
-  additionalProperties: false,
-} as const;
 
 const listMetaJsonSchema = {
   type: "object",

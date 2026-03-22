@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
+import { readFileSync } from "node:fs";
 
 import type { MemoryInjectionOptions } from "@tavern/core";
 
@@ -27,6 +28,9 @@ import { findNativePipelineError } from "./lib/native-pipeline-error";
 import { ensureDefaultAdminAccount } from "./accounts/service";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "./accounts/constants";
 import { registerCors, type CorsConfig } from "./plugins/cors";
+
+const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
+const API_VERSION: string = _pkgJson.version ?? "unknown";
 
 type FastifyValidationIssue = {
   instancePath?: string;
@@ -213,6 +217,36 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         ok: true,
         service: "@tavern/api",
         database: "ready"
+      };
+    }
+  );
+
+  app.get(
+    "/version",
+    {
+      schema: {
+        tags: ["system"],
+        summary: "Get service version",
+        security: [],
+        response: {
+          200: {
+            type: "object",
+            required: ["version", "service", "node_version"],
+            properties: {
+              version: { type: "string" },
+              service: { type: "string" },
+              node_version: { type: "string" },
+            },
+            additionalProperties: false,
+          },
+        },
+      },
+    },
+    async () => {
+      return {
+        version: API_VERSION,
+        service: "@tavern/api",
+        node_version: process.version,
       };
     }
   );

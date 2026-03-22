@@ -184,7 +184,9 @@ export class TurnOrchestrator {
       // ── 6. Memory 整理（可选） ──
       if (cfg.enableMemoryConsolidation && input.consolidationContext) {
         consolidationResult = await this.runConsolidation(input, generation);
-        totalUsage = addUsage(totalUsage, consolidationResult.usage);
+        if (consolidationResult) {
+          totalUsage = addUsage(totalUsage, consolidationResult.usage);
+        }
       }
 
       // ── 7. generating → committed ──
@@ -412,7 +414,7 @@ export class TurnOrchestrator {
   private async runConsolidation(
     input: TurnInput,
     generation: GenerationOutput,
-  ): Promise<ConsolidationResult> {
+  ): Promise<ConsolidationResult | undefined> {
     try {
       return await this.deps.memoryConsolidator.consolidate({
         currentFloorContent: input.consolidationContext!.currentFloorContent,
@@ -429,12 +431,16 @@ export class TurnOrchestrator {
       });
     } catch (error) {
       // Memory 整理失败不应阻断回合，降级处理
-      // 但仍要记录错误
-      throw new TurnError(
-        `Memory consolidation failed: ${error instanceof Error ? error.message : String(error)}`,
-        'memory_consolidation',
-        error,
-      );
+      // 发出事件供外部监控，但不抛出异常
+      try {
+        await this.deps.eventBus.emit('memory.consolidation_failed', {
+          floorId: input.floorId,
+          error: error instanceof Error ? error : new Error(String(error)),
+        });
+      } catch {
+        // fire-and-forget
+      }
+      return undefined;
     }
   }
 

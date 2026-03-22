@@ -1,30 +1,18 @@
 import { and, count, desc, eq, ne, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import type { GenerationParams, InstanceSlot, ProviderType } from "@tavern/core";
+import type { InstanceSlot, ProviderType } from "@tavern/core";
 
 import type { AppDb } from "../db/client";
 import { llmProfileBindings, llmProfiles } from "../db/schema";
 import { decryptSecret, encryptSecret, maskSecret } from "../lib/secrets";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants";
+import { normalizeBindingParams, parseBindingParamsJson, LlmParamsValidationError, type LlmBindingGenerationParams } from "../lib/llm-params";
+export type { LlmBindingGenerationParams };
 
 const GLOBAL_SCOPE_ID = "global";
 
 export type LlmProfileScope = "global" | "session";
 export type LlmProfileStatus = "active" | "disabled" | "deleted";
-
-export type LlmBindingGenerationParams = Partial<Pick<GenerationParams,
-  | "maxContextTokens"
-  | "maxOutputTokens"
-  | "temperature"
-  | "topP"
-  | "topK"
-  | "frequencyPenalty"
-  | "presencePenalty"
-  | "stream"
-  | "timeoutMs"
-  | "maxRetries"
-  | "reasoningEffort"
->>;
 
 export type LlmProfileListItem = {
   id: string;
@@ -269,7 +257,15 @@ export class LlmProfileService {
 
     const now = this.now();
     const bindingScopeId = scope === "global" ? GLOBAL_SCOPE_ID : scopeId;
-    const normalizedParams = normalizeBindingParams(params, true);
+    let normalizedParams: LlmBindingGenerationParams | undefined;
+    try {
+      normalizedParams = normalizeBindingParams(params, true);
+    } catch (e) {
+      if (e instanceof LlmParamsValidationError) {
+        throw new LlmProfileServiceError("invalid_params", e.message);
+      }
+      throw e;
+    }
     const paramsJson = normalizedParams ? JSON.stringify(normalizedParams) : null;
 
     const conflictSet: Partial<typeof llmProfileBindings.$inferInsert> = {
@@ -475,110 +471,6 @@ export class LlmProfileService {
 
     return decryptSecret(value, this.masterKey);
   }
-}
-
-function parseBindingParamsJson(value: string | null): unknown {
-  if (!value) {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-}
-
-function normalizeBindingParams(input: unknown, strict: boolean): LlmBindingGenerationParams | undefined {
-  if (input === null || input === undefined) {
-    return undefined;
-  }
-
-  if (typeof input !== "object" || Array.isArray(input)) {
-    if (strict) {
-      throw new LlmProfileServiceError("invalid_params", "params must be an object");
-    }
-    return undefined;
-  }
-
-  const raw = input as Record<string, unknown>;
-  const normalized: LlmBindingGenerationParams = {};
-
-  const readNumber = (
-    key: string,
-    options: { int?: boolean; min?: number; max?: number } = {}
-  ): number | undefined => {
-    const value = raw[key];
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-    if (typeof value !== "number" || !Number.isFinite(value)) {
-      if (strict) throw new LlmProfileServiceError("invalid_params", `params.${key} must be a number`);
-      return undefined;
-    }
-    if (options.int && !Number.isInteger(value)) {
-      if (strict) throw new LlmProfileServiceError("invalid_params", `params.${key} must be an integer`);
-      return undefined;
-    }
-    if (options.min !== undefined && value < options.min) {
-      if (strict) throw new LlmProfileServiceError("invalid_params", `params.${key} must be >= ${options.min}`);
-      return undefined;
-    }
-    if (options.max !== undefined && value > options.max) {
-      if (strict) throw new LlmProfileServiceError("invalid_params", `params.${key} must be <= ${options.max}`);
-      return undefined;
-    }
-    return options.int ? Math.trunc(value) : value;
-  };
-
-  const maxContextTokens = readNumber("maxContextTokens", { int: true, min: 1 });
-  if (maxContextTokens !== undefined) normalized.maxContextTokens = maxContextTokens;
-
-  const maxOutputTokens = readNumber("maxOutputTokens", { int: true, min: 1 });
-  if (maxOutputTokens !== undefined) normalized.maxOutputTokens = maxOutputTokens;
-
-  const temperature = readNumber("temperature", { min: 0, max: 2 });
-  if (temperature !== undefined) normalized.temperature = temperature;
-
-  const topP = readNumber("topP", { min: 0, max: 1 });
-  if (topP !== undefined) normalized.topP = topP;
-
-  const topK = readNumber("topK", { int: true, min: 0 });
-  if (topK !== undefined) normalized.topK = topK;
-
-  const frequencyPenalty = readNumber("frequencyPenalty", { min: -2, max: 2 });
-  if (frequencyPenalty !== undefined) normalized.frequencyPenalty = frequencyPenalty;
-
-  const presencePenalty = readNumber("presencePenalty", { min: -2, max: 2 });
-  if (presencePenalty !== undefined) normalized.presencePenalty = presencePenalty;
-
-  const timeoutMs = readNumber("timeoutMs", { int: true, min: 1 });
-  if (timeoutMs !== undefined) normalized.timeoutMs = timeoutMs;
-
-  const maxRetries = readNumber("maxRetries", { int: true, min: 0, max: 10 });
-  if (maxRetries !== undefined) normalized.maxRetries = maxRetries;
-
-  const reasoningEffort = raw.reasoningEffort;
-  if (reasoningEffort !== undefined && reasoningEffort !== null) {
-    if (reasoningEffort !== "low" && reasoningEffort !== "medium" && reasoningEffort !== "high") {
-      if (strict) {
-        throw new LlmProfileServiceError("invalid_params", "params.reasoningEffort must be one of low, medium, high");
-      }
-    } else {
-      normalized.reasoningEffort = reasoningEffort;
-    }
-  }
-
-  const stream = raw.stream;
-  if (stream !== undefined && stream !== null) {
-    if (typeof stream !== "boolean") {
-      if (strict) throw new LlmProfileServiceError("invalid_params", "params.stream must be boolean");
-    } else {
-      normalized.stream = stream;
-    }
-  }
-
-  return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 function requireProfile(profile: LlmProfileListItem | null, profileId: string): LlmProfileListItem {

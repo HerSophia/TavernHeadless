@@ -5,9 +5,11 @@ import { SimpleTokenCounter } from "@tavern/core";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
+import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { memoryEdges, memoryItems } from "../db/schema";
 import { parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
+import { getRequestAuthContext } from "../plugins/auth.js";
 
 const memoryScopeSchema = z.enum(["global", "chat", "floor"]);
 const memoryTypeSchema = z.enum(["fact", "summary", "open_loop"]);
@@ -149,6 +151,10 @@ const createMemoryEdgeSchema = z.object({
   relation: memoryRelationSchema
 });
 
+const updateMemoryEdgeSchema = z.object({
+  relation: memoryRelationSchema
+});
+
 const listMemoryEdgesQuerySchema = listQuerySchemaBase.extend({
   from_id: z.string().min(1).optional(),
   to_id: z.string().min(1).optional(),
@@ -252,14 +258,6 @@ const batchDeleteMemoriesResponseExample = {
   }
 } as const;
 
-const idParamsJsonSchema = {
-  type: "object",
-  required: ["id"],
-  properties: {
-    id: { type: "string", minLength: 1 },
-  },
-  additionalProperties: false,
-} as const;
 
 const listMetaJsonSchema = {
   type: "object",
@@ -275,23 +273,6 @@ const listMetaJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const errorResponseJsonSchema = {
-  type: "object",
-  required: ["error"],
-  properties: {
-    error: {
-      type: "object",
-      required: ["code", "message"],
-      properties: {
-        code: { type: "string" },
-        message: { type: "string" },
-        details: {},
-      },
-      additionalProperties: true,
-    },
-  },
-  additionalProperties: false,
-} as const;
 
 const memoryItemJsonSchema = {
   type: "object",
@@ -446,6 +427,15 @@ const createMemoryEdgeBodyJsonSchema = {
   properties: {
     from_id: { type: "string", minLength: 1 },
     to_id: { type: "string", minLength: 1 },
+    relation: { type: "string", enum: ["supports", "contradicts", "updates"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const updateMemoryEdgeBodyJsonSchema = {
+  type: "object",
+  required: ["relation"],
+  properties: {
     relation: { type: "string", enum: ["supports", "contradicts", "updates"] },
   },
   additionalProperties: false,
@@ -660,6 +650,7 @@ function toMemoryEdgeResponse(row: typeof memoryEdges.$inferSelect) {
 }
 
 function buildMemoryFilters(
+  accountId: string,
   query: Pick<
     z.infer<typeof listMemoryItemsQuerySchema>,
     | "scope"
@@ -680,6 +671,7 @@ function buildMemoryFilters(
   >
 ) {
   const filters = [];
+  filters.push(eq(memoryItems.accountId, accountId));
 
   if (query.scope !== undefined) {
     filters.push(eq(memoryItems.scope, query.scope));
@@ -769,6 +761,7 @@ export async function registerMemoryRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
     const contentJson = stringifyJsonField(parsedBody.data.content);
 
     if (contentJson === null) {
@@ -781,6 +774,7 @@ export async function registerMemoryRoutes(
       .insert(memoryItems)
       .values({
         id: nanoid(),
+        accountId: auth.accountId,
         scope: parsedBody.data.scope,
         scopeId: parsedBody.data.scope_id,
         type: parsedBody.data.type,
@@ -817,7 +811,8 @@ export async function registerMemoryRoutes(
       return;
     }
 
-    const filters = buildMemoryFilters(parsedQuery.data);
+    const auth = getRequestAuthContext(request);
+    const filters = buildMemoryFilters(auth.accountId, parsedQuery.data);
     const whereClause = filters.length > 0 ? and(...filters) : undefined;
 
     const sortByColumn =
@@ -881,7 +876,8 @@ export async function registerMemoryRoutes(
       return;
     }
 
-    const filters = buildMemoryFilters(parsedQuery.data);
+    const auth = getRequestAuthContext(request);
+    const filters = buildMemoryFilters(auth.accountId, parsedQuery.data);
     const whereClause = filters.length > 0 ? and(...filters) : undefined;
 
     const rows =
@@ -977,6 +973,7 @@ export async function registerMemoryRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
     const now = Date.now();
     const updatedRows = await db
       .update(memoryItems)
@@ -984,7 +981,7 @@ export async function registerMemoryRoutes(
         status: parsedBody.data.status,
         updatedAt: now,
       })
-      .where(inArray(memoryItems.id, parsedBody.data.ids))
+      .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
       .returning();
 
     const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
@@ -1034,9 +1031,10 @@ export async function registerMemoryRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
     const deletedRows = await db
       .delete(memoryItems)
-      .where(inArray(memoryItems.id, parsedBody.data.ids))
+      .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
       .returning();
 
     const deletedIds = new Set(deletedRows.map((row) => row.id));
@@ -1075,7 +1073,8 @@ export async function registerMemoryRoutes(
       return;
     }
 
-    const [row] = await db.select().from(memoryItems).where(eq(memoryItems.id, parsedParams.data.id));
+    const auth = getRequestAuthContext(request);
+    const [row] = await db.select().from(memoryItems).where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId)));
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Memory item not found");
@@ -1103,6 +1102,7 @@ export async function registerMemoryRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
     const parsedBody = parseWithSchema(updateMemoryItemSchema, request.body, reply);
 
     if (!parsedBody.ok) {
@@ -1158,7 +1158,7 @@ export async function registerMemoryRoutes(
     const [updated] = await db
       .update(memoryItems)
       .set(updates)
-      .where(eq(memoryItems.id, parsedParams.data.id))
+      .where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId)))
       .returning();
 
     if (!updated) {
@@ -1185,7 +1185,8 @@ export async function registerMemoryRoutes(
       return;
     }
 
-    const deleted = await db.delete(memoryItems).where(eq(memoryItems.id, parsedParams.data.id)).returning();
+    const auth = getRequestAuthContext(request);
+    const deleted = await db.delete(memoryItems).where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId))).returning();
 
     if (deleted.length === 0) {
       return sendError(reply, 404, "not_found", "Memory item not found");
@@ -1212,10 +1213,12 @@ export async function registerMemoryRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
     const createdRows = await db
       .insert(memoryEdges)
       .values({
         id: nanoid(),
+        accountId: auth.accountId,
         fromId: parsedBody.data.from_id,
         toId: parsedBody.data.to_id,
         relation: parsedBody.data.relation,
@@ -1245,7 +1248,8 @@ export async function registerMemoryRoutes(
       return;
     }
 
-    const filters = [];
+    const auth = getRequestAuthContext(request);
+    const filters = [eq(memoryEdges.accountId, auth.accountId)];
 
     if (parsedQuery.data.from_id !== undefined) {
       filters.push(eq(memoryEdges.fromId, parsedQuery.data.from_id));
@@ -1313,13 +1317,53 @@ export async function registerMemoryRoutes(
       return;
     }
 
-    const [row] = await db.select().from(memoryEdges).where(eq(memoryEdges.id, parsedParams.data.id));
+    const auth = getRequestAuthContext(request);
+    const [row] = await db.select().from(memoryEdges).where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)));
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Memory edge not found");
     }
 
     return reply.send({ data: toMemoryEdgeResponse(row) });
+  });
+
+  app.patch("/memory-edges/:id", {
+    schema: {
+      tags: ["memories"],
+      summary: "Update memory edge relation",
+      params: idParamsJsonSchema,
+      body: updateMemoryEdgeBodyJsonSchema,
+      response: {
+        200: memoryEdgeResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(memoryEdgeParamsSchema, request.params, reply);
+
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const parsedBody = parseWithSchema(updateMemoryEdgeSchema, request.body, reply);
+
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const [updated] = await db
+      .update(memoryEdges)
+      .set({ relation: parsedBody.data.relation })
+      .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
+      .returning();
+
+    if (!updated) {
+      return sendError(reply, 404, "not_found", "Memory edge not found");
+    }
+
+    return reply.send({ data: toMemoryEdgeResponse(updated) });
   });
 
   app.delete("/memory-edges/:id", {
@@ -1339,9 +1383,10 @@ export async function registerMemoryRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
     const deleted = await db
       .delete(memoryEdges)
-      .where(eq(memoryEdges.id, parsedParams.data.id))
+      .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
       .returning();
 
     if (deleted.length === 0) {

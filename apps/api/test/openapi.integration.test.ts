@@ -304,6 +304,21 @@ describe("OpenAPI integration", () => {
 
     const llmModelTestPath = body.paths["/llm-profiles/models/test"] as { post?: OpenApiOperation };
     expect(llmModelTestPath.post?.operationId).toBe("testLlmProfileModel");
+
+    const llmInstancesListPath = body.paths["/llm-instances"] as { get?: OpenApiOperation };
+    expect(llmInstancesListPath.get?.operationId).toBe("listLlmInstanceConfigs");
+
+    const llmInstancesResolvedPath = body.paths["/llm-instances/resolved"] as { get?: OpenApiOperation };
+    expect(llmInstancesResolvedPath.get?.operationId).toBe("getResolvedLlmInstanceConfigs");
+
+    const llmInstancesSlotPath = body.paths["/llm-instances/{slot}"] as {
+      get?: OpenApiOperation;
+      put?: OpenApiOperation;
+      delete?: OpenApiOperation;
+    };
+    expect(llmInstancesSlotPath.get?.operationId).toBe("getLlmInstanceConfigs");
+    expect(llmInstancesSlotPath.put?.operationId).toBe("upsertLlmInstanceConfig");
+    expect(llmInstancesSlotPath.delete?.operationId).toBe("deleteLlmInstanceConfig");
   });
 
   it("includes request/response examples for beta-hardening CRUD routes", async () => {
@@ -414,6 +429,18 @@ describe("OpenAPI integration", () => {
     const importCharacterPath = body.paths["/import/character"] as { post?: OpenApiOperation };
     expect(getOpenApiSchemaExample(importCharacterPath.post?.requestBody)).toMatchObject({ title: "Luna Demo Session" });
     expect(getOpenApiResponseExample(importCharacterPath.post, "201")).toMatchObject({ data: { create_session: true } });
+
+    const instancesListPath = body.paths["/llm-instances"] as { get?: OpenApiOperation };
+    expect(getOpenApiResponseExample(instancesListPath.get, "200")).toMatchObject({ data: [{ id: "ic_demo123" }] });
+
+    const instancesSlotPath = body.paths["/llm-instances/{slot}"] as { put?: OpenApiOperation };
+    expect(getOpenApiSchemaExample(instancesSlotPath.put?.requestBody)).toMatchObject({ scope: "global" });
+    expect(getOpenApiResponseExample(instancesSlotPath.put, "200")).toMatchObject({ data: { id: "ic_demo123" } });
+
+    const instancesResolvedPath = body.paths["/llm-instances/resolved"] as { get?: OpenApiOperation };
+    expect(getOpenApiResponseExample(instancesResolvedPath.get, "200")).toMatchObject({
+      data: { slots: [{ slot: "narrator" }] },
+    });
   });
 
   it("includes chat route schemas and examples when chat routes are registered", async () => {

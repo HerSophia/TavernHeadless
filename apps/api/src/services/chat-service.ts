@@ -10,7 +10,7 @@
  * - 重新生成（Regenerate）
  */
 
-import { asc, eq, and, desc, lt, inArray, ne } from "drizzle-orm";
+import { asc, eq, and, desc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
   assemblePrompt,
@@ -34,6 +34,9 @@ import type {
 import type { AppDb } from "../db/client.js";
 import { sessions, floors, messagePages, messages } from "../db/schema.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js";
+import { normalizePositiveInt } from "../lib/utils.js";
+import { ChatHistoryLoader } from "./chat-history-loader.js";
+import { ChatMessagePersistence } from "./chat-message-persistence.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
@@ -230,6 +233,8 @@ export interface ChatServiceOptions {
 
 export class ChatService {
   private readonly historyMaxFloors?: number;
+  private readonly historyLoader: ChatHistoryLoader;
+  private readonly messagePersistence: ChatMessagePersistence;
   private readonly memoryStore?: MemoryStore;
   private readonly memoryInjectionDecay?: MemoryInjectionOptions["decay"];
   private readonly enableMemoryConsolidationByDefault: boolean;
@@ -244,6 +249,8 @@ export class ChatService {
     options: ChatServiceOptions = {}
   ) {
     this.historyMaxFloors = normalizePositiveInt(options.historyMaxFloors);
+    this.historyLoader = new ChatHistoryLoader(db, this.historyMaxFloors);
+    this.messagePersistence = new ChatMessagePersistence(db, tokenCounter);
     this.memoryStore = options.memoryStore;
     this.memoryInjectionDecay = options.memoryInjectionDecay;
     this.enableMemoryConsolidationByDefault =
@@ -293,7 +300,7 @@ export class ChatService {
       branchId,
       request.sourceFloorId
     );
-    const history = await this.loadHistory(sessionId, branchId, branchContext.nextFloorNo);
+    const history = await this.historyLoader.loadHistory(sessionId, branchId, branchContext.nextFloorNo);
 
     // ── 2b. 记忆检索 ──
     const memorySummary = await this.retrieveMemorySummary(sessionId);
@@ -319,7 +326,7 @@ export class ChatService {
         updatedAt: now
       }).run();
 
-      this.saveUserMessageWithExecutor(tx, floorId, request.message, now);
+      this.messagePersistence.saveUserMessageWithExecutor(tx, floorId, request.message, now);
     });
 
     runtimeOptions.onStart?.({ floorId, floorNo: nextFloorNo, branchId });
@@ -353,7 +360,7 @@ export class ChatService {
     const generationParams: GenerationParams = {
       temperature: 0.7,
       maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
-      stream: true,
+      stream: !!runtimeOptions.onChunk,
       ...this.stripMaxContextTokens(narratorParams),
       ...request.generationParams,
     };
@@ -396,7 +403,7 @@ export class ChatService {
     await this.markTurnModelUsed(resolvedTurnModels, accountId);
 
     // ── 6. 保存助手回复 ──
-    await this.saveAssistantMessage(floorId, turnOutput.generatedText, now);
+    await this.messagePersistence.saveAssistantMessage(floorId, turnOutput.generatedText, now);
 
     // ── 6b. 记忆持久化 ──
     await this.persistMemory(turnOutput, sessionId, floorId);
@@ -413,14 +420,12 @@ export class ChatService {
       })
       .where(eq(floors.id, floorId));
 
-    const normalizedUsage = normalizeTokenUsage(turnOutput.totalUsage);
-
     return {
       floorId,
       floorNo: nextFloorNo,
       generatedText: turnOutput.generatedText,
       summaries: turnOutput.summaries,
-      totalUsage: normalizedUsage,
+      totalUsage: usage,
       finalState: turnOutput.finalState,
       branchId,
     };
@@ -446,7 +451,7 @@ export class ChatService {
       throw new ChatServiceError("session_archived", "Cannot dry-run in an archived session");
     }
 
-    const history = await this.loadHistory(sessionId);
+    const history = await this.historyLoader.loadHistory(sessionId);
     const memorySummary = await this.retrieveMemorySummary(sessionId);
     const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
@@ -529,7 +534,7 @@ export class ChatService {
     }
 
     // ── 2. 找到最后一个 committed 楼层 ──
-    const targetFloor = await this.getLastCommittedFloor(sessionId);
+    const targetFloor = await this.historyLoader.getLastCommittedFloor(sessionId);
     if (!targetFloor) {
       throw new ChatServiceError(
         "no_floor_to_regenerate",
@@ -547,7 +552,7 @@ export class ChatService {
     }
 
     // ── 4. 加载该楼层之前的历史 ──
-    const history = await this.loadHistoryBeforeFloor(sessionId, targetFloor.floorNo);
+    const history = await this.historyLoader.loadHistoryBeforeFloor(sessionId, targetFloor.floorNo);
 
     // ── 4b. 记忆检索 ──
     const memorySummary = await this.retrieveMemorySummary(sessionId);
@@ -580,7 +585,7 @@ export class ChatService {
         updatedAt: now
       }).run();
 
-      this.saveUserMessageWithExecutor(tx, newFloorId, userMessage, now);
+      this.messagePersistence.saveUserMessageWithExecutor(tx, newFloorId, userMessage, now);
     });
 
     // ── 8. 构建 TurnInput + 执行编排 ──
@@ -612,7 +617,6 @@ export class ChatService {
     const generationParams: GenerationParams = {
       temperature: 0.7,
       maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
-      stream: true,
       ...this.stripMaxContextTokens(narratorParams),
       ...request.generationParams,
     };
@@ -651,7 +655,7 @@ export class ChatService {
     await this.markTurnModelUsed(resolvedTurnModels, accountId);
 
     // ── 9. 保存助手回复 ──
-    await this.saveAssistantMessage(newFloorId, turnOutput.generatedText, now);
+    await this.messagePersistence.saveAssistantMessage(newFloorId, turnOutput.generatedText, now);
 
     // ── 9b. 记忆持久化 ──
     await this.persistMemory(turnOutput, sessionId, newFloorId);
@@ -668,15 +672,13 @@ export class ChatService {
       })
       .where(eq(floors.id, newFloorId));
 
-    const normalizedUsage = normalizeTokenUsage(turnOutput.totalUsage);
-
     return {
       floorId: newFloorId,
       floorNo: targetFloor.floorNo,
       previousFloorId: targetFloor.id,
       generatedText: turnOutput.generatedText,
       summaries: turnOutput.summaries,
-      totalUsage: normalizedUsage,
+      totalUsage: usage,
       finalState: turnOutput.finalState,
     };
   }
@@ -724,7 +726,7 @@ export class ChatService {
       throw new ChatServiceError("no_user_message", `No user message found in floor '${floorId}'`);
     }
 
-    const history = await this.loadHistoryBeforeFloor(
+    const history = await this.historyLoader.loadHistoryBeforeFloor(
       targetFloor.sessionId,
       targetFloor.floorNo,
       targetFloor.branchId
@@ -733,7 +735,7 @@ export class ChatService {
     const now = Date.now();
 
     this.db.transaction((tx) => {
-      this.clearOutputForRetry(tx, targetFloor.id);
+      this.messagePersistence.clearOutputForRetry(tx, targetFloor.id);
       tx
         .update(floors)
         .set({ state: "draft", tokenIn: 0, tokenOut: 0, updatedAt: now })
@@ -769,7 +771,6 @@ export class ChatService {
     const generationParams: GenerationParams = {
       temperature: 0.7,
       maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
-      stream: true,
       ...this.stripMaxContextTokens(narratorParams),
       ...request.generationParams,
     };
@@ -807,7 +808,7 @@ export class ChatService {
 
     await this.markTurnModelUsed(resolvedTurnModels, accountId);
 
-    await this.saveAssistantMessage(targetFloor.id, turnOutput.generatedText, now);
+    await this.messagePersistence.saveAssistantMessage(targetFloor.id, turnOutput.generatedText, now);
     await this.persistMemory(turnOutput, targetFloor.sessionId, targetFloor.id);
 
     const usage = normalizeTokenUsage(turnOutput.totalUsage);
@@ -822,7 +823,7 @@ export class ChatService {
       branchId: targetFloor.branchId,
       generatedText: turnOutput.generatedText,
       summaries: turnOutput.summaries,
-      totalUsage: normalizeTokenUsage(turnOutput.totalUsage),
+      totalUsage: usage,
       finalState: turnOutput.finalState,
     };
   }
@@ -876,7 +877,7 @@ export class ChatService {
       updatedAt: now,
     });
 
-    const history = await this.loadHistoryBeforeFloor(source.sessionId, source.floorNo, source.branchId);
+    const history = await this.historyLoader.loadHistoryBeforeFloor(source.sessionId, source.floorNo, source.branchId);
     const response = await this.generateForFloor({
       floorId: newFloorId,
       session,
@@ -965,23 +966,6 @@ export class ChatService {
     };
   }
 
-  private clearOutputForRetry(executor: any, floorId: string): void {
-    const outputPages = executor
-      .select({ id: messagePages.id })
-      .from(messagePages)
-      .where(and(eq(messagePages.floorId, floorId), ne(messagePages.pageKind, "input")))
-      .all() as Array<{ id: string }>;
-
-    if (outputPages.length === 0) {
-      return;
-    }
-
-    executor
-      .delete(messagePages)
-      .where(inArray(messagePages.id, outputPages.map((page) => page.id)))
-      .run();
-  }
-
   private async generateForFloor(args: {
     floorId: string;
     sessionId: string;
@@ -994,7 +978,7 @@ export class ChatService {
   }): Promise<RetryFloorResult> {
     const memorySummary = await this.retrieveMemorySummary(args.sessionId);
 
-    await this.saveUserMessage(args.floorId, args.userMessage, args.now);
+    await this.messagePersistence.saveUserMessage(args.floorId, args.userMessage, args.now);
 
     const sessionInfo: SessionPromptInfo = {
       presetId: args.session.presetId,
@@ -1024,7 +1008,6 @@ export class ChatService {
     const generationParams: GenerationParams = {
       temperature: 0.7,
       maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
-      stream: true,
       ...this.stripMaxContextTokens(narratorParams),
       ...args.request.generationParams,
     };
@@ -1060,7 +1043,7 @@ export class ChatService {
 
     await this.markTurnModelUsed(resolvedTurnModels, args.accountId);
 
-    await this.saveAssistantMessage(args.floorId, turnOutput.generatedText, args.now);
+    await this.messagePersistence.saveAssistantMessage(args.floorId, turnOutput.generatedText, args.now);
     await this.persistMemory(turnOutput, args.sessionId, args.floorId);
 
     const usage = normalizeTokenUsage(turnOutput.totalUsage);
@@ -1085,7 +1068,7 @@ export class ChatService {
       branchId: floorRow.branchId,
       generatedText: turnOutput.generatedText,
       summaries: turnOutput.summaries,
-      totalUsage: normalizeTokenUsage(turnOutput.totalUsage),
+      totalUsage: usage,
       finalState: turnOutput.finalState,
     };
   }
@@ -1318,135 +1301,6 @@ export class ChatService {
     }
   }
 
-  private async loadHistory(
-    sessionId: string,
-    branchId = "main",
-    beforeFloorNo?: number
-  ): Promise<ChatMessage[]> {
-    const floorScope = await this.selectHistoryFloorScope(sessionId, branchId, beforeFloorNo);
-    return this.loadMessagesFromFloorScope(floorScope);
-  }
-
-  private async loadHistoryBeforeFloor(
-    sessionId: string,
-    floorNo: number,
-    branchId = "main"
-  ): Promise<ChatMessage[]> {
-    return this.loadHistory(sessionId, branchId, floorNo);
-  }
-
-  private async selectHistoryFloorScope(
-    sessionId: string,
-    branchId: string,
-    beforeFloorNo?: number
-  ): Promise<Array<{ id: string; floorNo: number }>> {
-    const baseConditions = [eq(floors.sessionId, sessionId), eq(floors.state, "committed")];
-
-    if (beforeFloorNo !== undefined) {
-      baseConditions.push(lt(floors.floorNo, beforeFloorNo));
-    }
-
-    if (branchId === "main") {
-      const mainRows = await this.db
-        .select({ id: floors.id, floorNo: floors.floorNo })
-        .from(floors)
-        .where(and(...baseConditions, eq(floors.branchId, "main")))
-        .orderBy(desc(floors.floorNo));
-
-      const limitedRows =
-        this.historyMaxFloors === undefined ? mainRows : mainRows.slice(0, this.historyMaxFloors);
-
-      return limitedRows.reverse();
-    }
-
-    const branchRows = await this.db
-      .select({
-        id: floors.id,
-        floorNo: floors.floorNo,
-        branchId: floors.branchId,
-      })
-      .from(floors)
-      .where(and(...baseConditions, inArray(floors.branchId, ["main", branchId])))
-      .orderBy(asc(floors.floorNo), asc(floors.createdAt));
-
-    const mergedByFloorNo = new Map<number, { id: string; floorNo: number; branchId: string }>();
-
-    for (const row of branchRows) {
-      const existing = mergedByFloorNo.get(row.floorNo);
-
-      if (!existing) {
-        mergedByFloorNo.set(row.floorNo, row);
-        continue;
-      }
-
-      if (row.branchId === branchId && existing.branchId !== branchId) {
-        mergedByFloorNo.set(row.floorNo, row);
-      }
-    }
-
-    const mergedRows = Array.from(mergedByFloorNo.values()).sort((a, b) => a.floorNo - b.floorNo);
-    const limitedRows =
-      this.historyMaxFloors === undefined ? mergedRows : mergedRows.slice(-this.historyMaxFloors);
-
-    return limitedRows.map((row) => ({ id: row.id, floorNo: row.floorNo }));
-  }
-
-  private async loadMessagesFromFloorScope(
-    floorScope: Array<{ id: string; floorNo: number }>
-  ): Promise<ChatMessage[]> {
-    if (floorScope.length === 0) {
-      return [];
-    }
-
-    const floorIds = floorScope.map((row) => row.id);
-    const floorNoById = new Map(floorScope.map((row) => [row.id, row.floorNo]));
-
-    const historyRows = await this.db
-      .select({
-        floorId: messagePages.floorId,
-        role: messages.role,
-        content: messages.content,
-        pageNo: messagePages.pageNo,
-        seq: messages.seq,
-      })
-      .from(messagePages)
-      .innerJoin(
-        messages,
-        and(eq(messages.pageId, messagePages.id), eq(messages.isHidden, false))
-      )
-      .where(and(inArray(messagePages.floorId, floorIds), eq(messagePages.isActive, true)));
-
-    historyRows.sort((a, b) => {
-      const floorDelta = (floorNoById.get(a.floorId) ?? 0) - (floorNoById.get(b.floorId) ?? 0);
-      if (floorDelta !== 0) return floorDelta;
-      const pageDelta = a.pageNo - b.pageNo;
-      if (pageDelta !== 0) return pageDelta;
-      return a.seq - b.seq;
-    });
-
-    return historyRows.map((row) => ({ role: mapRole(row.role), content: row.content }));
-  }
-
-  /**
-   * 获取最后一个 committed 楼层（main 分支）。
-   */
-  private async getLastCommittedFloor(sessionId: string) {
-    const [row] = await this.db
-      .select()
-      .from(floors)
-      .where(
-        and(
-          eq(floors.sessionId, sessionId),
-          eq(floors.state, "committed"),
-          eq(floors.branchId, "main")
-        )
-      )
-      .orderBy(desc(floors.floorNo))
-      .limit(1);
-
-    return row ?? null;
-  }
-
   /**
    * 从指定楼层中提取用户消息文本。
    * 查找 input page 下的第一条 user 消息。
@@ -1488,7 +1342,7 @@ export class ChatService {
     branchId: string,
     sourceFloorId?: string
   ): Promise<{ nextFloorNo: number; parentFloorId: string | null }> {
-    const lastFloorInBranch = await this.getLatestFloorInBranch(sessionId, branchId);
+    const lastFloorInBranch = await this.historyLoader.getLatestFloorInBranch(sessionId, branchId);
 
     if (lastFloorInBranch) {
       return {
@@ -1542,111 +1396,6 @@ export class ChatService {
       parentFloorId: sourceFloor?.id ?? null,
     };
   }
-
-  private async getLatestFloorInBranch(sessionId: string, branchId: string) {
-    const [lastFloor] = await this.db
-      .select({ id: floors.id, floorNo: floors.floorNo })
-      .from(floors)
-      .where(and(eq(floors.sessionId, sessionId), eq(floors.branchId, branchId)))
-      .orderBy(desc(floors.floorNo))
-      .limit(1);
-
-    return lastFloor ?? null;
-  }
-
-  /**
-   * 保存用户消息：创建 input page + message。
-   */
-  private async saveUserMessage(
-    floorId: string,
-    content: string,
-    timestamp: number
-  ): Promise<void> {
-    this.db.transaction((tx) => {
-      this.saveUserMessageWithExecutor(tx, floorId, content, timestamp);
-    });
-  }
-
-  private saveUserMessageWithExecutor(
-    executor: any,
-    floorId: string,
-    content: string,
-    timestamp: number
-  ): void {
-    const pageId = nanoid();
-
-    executor.insert(messagePages).values({
-      id: pageId,
-      floorId,
-      pageNo: 0,
-      pageKind: "input",
-      isActive: true,
-      version: 1,
-      checksum: null,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    }).run();
-
-    executor.insert(messages).values({
-      id: nanoid(),
-      pageId,
-      seq: 0,
-      role: "user",
-      content,
-      contentFormat: "text",
-      tokenCount: this.tokenCounter.count(content),
-      isHidden: false,
-      source: "api",
-      createdAt: timestamp
-    }).run();
-  }
-
-  /**
-   * 保存助手回复：创建 output page + message。
-   */
-  private async saveAssistantMessage(
-    floorId: string,
-    content: string,
-    timestamp: number
-  ): Promise<void> {
-    this.db.transaction((tx) => {
-      this.saveAssistantMessageWithExecutor(tx, floorId, content, timestamp);
-    });
-  }
-
-  private saveAssistantMessageWithExecutor(
-    executor: any,
-    floorId: string,
-    content: string,
-    timestamp: number
-  ): void {
-    const pageId = nanoid();
-
-    executor.insert(messagePages).values({
-      id: pageId,
-      floorId,
-      pageNo: 1,
-      pageKind: "output",
-      isActive: true,
-      version: 1,
-      checksum: null,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    }).run();
-
-    executor.insert(messages).values({
-      id: nanoid(),
-      pageId,
-      seq: 0,
-      role: "assistant",
-      content,
-      contentFormat: "text",
-      tokenCount: this.tokenCounter.count(content),
-      isHidden: false,
-      source: "narrator",
-      createdAt: timestamp
-    }).run();
-  }
 }
 
 // ── 工具函数 ──────────────────────────────────────────
@@ -1684,24 +1433,6 @@ function parseUserSnapshotSummary(userSnapshotJson: string | null): { name: stri
   }
 }
 
-/**
- * 将 DB 的消息角色映射为 LLM ChatMessage 角色。
- * narrator → assistant, 其余保持。
- */
-function mapRole(dbRole: string): ChatMessage["role"] {
-  switch (dbRole) {
-    case "user":
-      return "user";
-    case "assistant":
-    case "narrator":
-      return "assistant";
-    case "system":
-      return "system";
-    default:
-      return "user";
-  }
-}
-
 function normalizeToken(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return 0;
@@ -1714,17 +1445,6 @@ function normalizeToken(value: unknown): number {
   return Math.trunc(value);
 }
 
-function normalizePositiveInt(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return undefined;
-  }
-
-  if (value <= 0) {
-    return undefined;
-  }
-
-  return Math.trunc(value);
-}
 
 function normalizeBranchId(value: string | undefined): string {
   const normalized = value?.trim();

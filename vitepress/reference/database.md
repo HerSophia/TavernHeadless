@@ -8,7 +8,7 @@ outline: [2, 3]
 
 - ORM: Drizzle ORM
 - 迁移目录: `apps/api/drizzle/`
-- 当前最新迁移: `0011_resource_account_isolation.sql`
+- 当前最新迁移: `0013_llm_instance_config.sql`
 
 ## account
 
@@ -228,6 +228,26 @@ LLM Profile 绑定表。
 | `profile_id` | `TEXT` | `NOT NULL`, FK → `llm_profile.id` | 被绑定 Profile |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+## llm_instance_config
+
+LLM 实例配置表。独立管理各实例槽位的配置（预设绑定、启用状态、生成参数）。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 配置记录 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK → `account.id` | 所属账号 |
+| `scope` | `TEXT` | `NOT NULL` | 作用域（`global \| session`） |
+| `scope_id` | `TEXT` | `NOT NULL` | 作用域 ID |
+| `instance_slot` | `TEXT` | `NOT NULL` | 槽位（`* \| narrator \| director \| verifier \| memory`） |
+| `preset_id` | `TEXT` | `NULL` | 关联预设 ID |
+| `enabled` | `INTEGER` | `NOT NULL`, default `1` | 是否启用 |
+| `params_json` | `TEXT` | `NULL` | 生成参数 JSON |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+优先级解析：`session(slot) > session(*) > global(slot) > global(*) > default`
+
 
 ## 列表接口约定
 

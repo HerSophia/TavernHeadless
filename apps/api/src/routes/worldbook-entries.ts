@@ -1,0 +1,1131 @@
+/**
+ * Worldbook Entry Routes
+ *
+ * 世界书条目管理路由：CRUD + 批量操作。
+ *
+ * GET    /worldbooks/:worldbook_id/entries              — 列出条目
+ * POST   /worldbooks/:worldbook_id/entries              — 创建条目
+ * GET    /worldbooks/:worldbook_id/entries/:id           — 获取条目
+ * PATCH  /worldbooks/:worldbook_id/entries/:id           — 更新条目
+ * DELETE /worldbooks/:worldbook_id/entries/:id           — 删除条目
+ * PATCH  /worldbooks/:worldbook_id/entries/batch/update  — 批量更新
+ * POST   /worldbooks/:worldbook_id/entries/batch/delete  — 批量删除
+ * PUT    /worldbooks/:worldbook_id/entries/batch/reorder — 批量重排序
+ */
+
+import { and, count, eq, inArray, like, max, or } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
+import { nanoid } from "nanoid";
+import { z } from "zod";
+
+import type { DatabaseConnection } from "../db/client";
+import { errorResponseJsonSchema } from "./schemas/common.js";
+import { worldbookEntries, worldbooks } from "../db/schema";
+import { parseJsonField, parseWithSchema, sendError } from "../lib/http";
+import { buildListMeta, toOrderBy } from "../lib/pagination";
+import { getRequestAuthContext } from "../plugins/auth.js";
+
+// ── Zod Schemas ───────────────────────────────────────
+
+const worldbookIdParamsSchema = z.object({
+  worldbook_id: z.string().min(1),
+});
+
+const entryParamsSchema = z.object({
+  worldbook_id: z.string().min(1),
+  id: z.string().min(1),
+});
+
+const createEntrySchema = z.object({
+  keys: z.array(z.string()),
+  content: z.string(),
+  comment: z.string().optional(),
+  keys_secondary: z.array(z.string()).optional(),
+  selective: z.boolean().optional(),
+  selective_logic: z.number().int().min(0).max(3).optional(),
+  constant: z.boolean().optional(),
+  position: z.number().int().min(0).max(6).optional(),
+  order: z.number().int().optional(),
+  depth: z.number().int().min(0).optional(),
+  role: z.number().int().min(0).max(2).optional(),
+  disable: z.boolean().optional(),
+  scan_depth: z.number().int().min(0).nullable().optional(),
+  case_sensitive: z.boolean().nullable().optional(),
+  match_whole_words: z.boolean().nullable().optional(),
+});
+
+const updateEntryFieldsShape = {
+  keys: z.array(z.string()).optional(),
+  content: z.string().optional(),
+  comment: z.string().optional(),
+  keys_secondary: z.array(z.string()).optional(),
+  selective: z.boolean().optional(),
+  selective_logic: z.number().int().min(0).max(3).optional(),
+  constant: z.boolean().optional(),
+  position: z.number().int().min(0).max(6).optional(),
+  order: z.number().int().optional(),
+  depth: z.number().int().min(0).optional(),
+  role: z.number().int().min(0).max(2).optional(),
+  disable: z.boolean().optional(),
+  scan_depth: z.number().int().min(0).nullable().optional(),
+  case_sensitive: z.boolean().nullable().optional(),
+  match_whole_words: z.boolean().nullable().optional(),
+};
+
+const updateEntrySchema = z
+  .object(updateEntryFieldsShape)
+  .refine((value) => Object.keys(value).length > 0, "At least one field is required");
+
+const listEntriesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  sort_order: z.enum(["asc", "desc"]).default("asc"),
+  sort_by: z.enum(["order", "updated_at", "uid"]).default("order"),
+  disable: z.coerce.boolean().optional(),
+  constant: z.coerce.boolean().optional(),
+  position: z.coerce.number().int().optional(),
+  q: z.string().trim().min(1).optional(),
+});
+
+const entryIdArraySchema = z
+  .array(z.string().min(1))
+  .min(1)
+  .max(100)
+  .superRefine((ids, ctx) => {
+    const seen = new Map<string, number>();
+    ids.forEach((id, index) => {
+      const firstIndex = seen.get(id);
+      if (firstIndex !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index],
+          message: `Duplicate entry id also appears at ids.${firstIndex}`,
+        });
+        return;
+      }
+      seen.set(id, index);
+    });
+  });
+
+const batchUpdateEntriesSchema = z.object({
+  ids: entryIdArraySchema,
+  fields: z
+    .object(updateEntryFieldsShape)
+    .refine((value) => Object.keys(value).length > 0, "At least one field is required"),
+});
+
+const batchDeleteEntriesSchema = z.object({
+  ids: entryIdArraySchema,
+});
+
+const batchReorderEntriesSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        order: z.number().int(),
+      })
+    )
+    .min(1)
+    .max(100)
+    .superRefine((items, ctx) => {
+      const seen = new Map<string, number>();
+      items.forEach((item, index) => {
+        const firstIndex = seen.get(item.id);
+        if (firstIndex !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [index, "id"],
+            message: `Duplicate entry id also appears at items.${firstIndex}`,
+          });
+          return;
+        }
+        seen.set(item.id, index);
+      });
+    }),
+});
+
+// ── Examples ──────────────────────────────────────────
+
+const entryExample = {
+  id: "ent_abc123",
+  worldbook_id: "wb_kingdom",
+  uid: 0,
+  comment: "Kingdom basics",
+  content: "The kingdom is vast and ancient.",
+  keys: ["kingdom", "realm"],
+  keys_secondary: ["history"],
+  selective: true,
+  selective_logic: 0,
+  constant: false,
+  position: 0,
+  order: 100,
+  depth: 4,
+  role: 0,
+  disable: false,
+  scan_depth: null,
+  case_sensitive: null,
+  match_whole_words: null,
+  created_at: 1735689600000,
+  updated_at: 1735689660000,
+} as const;
+
+const entryResponseExample = { data: entryExample } as const;
+
+const entryListResponseExample = {
+  data: [entryExample],
+  meta: {
+    total: 1,
+    limit: 50,
+    offset: 0,
+    has_more: false,
+    sort_by: "order",
+    sort_order: "asc",
+  },
+} as const;
+
+const deleteEntryResponseExample = {
+  data: { id: "ent_abc123", deleted: true },
+} as const;
+
+const batchUpdateEntriesBodyExample = {
+  ids: ["ent_abc123", "ent_missing"],
+  fields: { disable: true },
+} as const;
+
+const batchUpdateEntriesResponseExample = {
+  data: {
+    results: [
+      {
+        index: 0,
+        id: "ent_abc123",
+        action: "updated",
+        data: { ...entryExample, disable: true, updated_at: 1735689720000 },
+      },
+      { index: 1, id: "ent_missing", action: "not_found" },
+    ],
+    meta: { total: 2, updated: 1, not_found: 1 },
+  },
+} as const;
+
+const batchDeleteEntriesBodyExample = {
+  ids: ["ent_abc123", "ent_missing"],
+} as const;
+
+const batchDeleteEntriesResponseExample = {
+  data: {
+    results: [
+      { index: 0, id: "ent_abc123", action: "deleted" },
+      { index: 1, id: "ent_missing", action: "not_found" },
+    ],
+    meta: { total: 2, deleted: 1, not_found: 1 },
+  },
+} as const;
+
+const batchReorderEntriesBodyExample = {
+  items: [
+    { id: "ent_abc123", order: 10 },
+    { id: "ent_def456", order: 20 },
+  ],
+} as const;
+
+const batchReorderEntriesResponseExample = {
+  data: {
+    results: [
+      {
+        index: 0,
+        id: "ent_abc123",
+        action: "updated",
+        data: { ...entryExample, order: 10, updated_at: 1735689720000 },
+      },
+      { index: 1, id: "ent_def456", action: "not_found" },
+    ],
+    meta: { total: 2, updated: 1, not_found: 1 },
+  },
+} as const;
+
+// ── JSON Schemas (OpenAPI) ────────────────────────────
+
+const worldbookIdParamsJsonSchema = {
+  type: "object",
+  required: ["worldbook_id"],
+  properties: {
+    worldbook_id: { type: "string", minLength: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
+const entryParamsJsonSchema = {
+  type: "object",
+  required: ["worldbook_id", "id"],
+  properties: {
+    worldbook_id: { type: "string", minLength: 1 },
+    id: { type: "string", minLength: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
+const entryFieldsJsonSchemaProperties = {
+  keys: { type: "array", items: { type: "string" } },
+  content: { type: "string" },
+  comment: { type: "string" },
+  keys_secondary: { type: "array", items: { type: "string" } },
+  selective: { type: "boolean" },
+  selective_logic: { type: "integer", minimum: 0, maximum: 3 },
+  constant: { type: "boolean" },
+  position: { type: "integer", minimum: 0, maximum: 6 },
+  order: { type: "integer" },
+  depth: { type: "integer", minimum: 0 },
+  role: { type: "integer", minimum: 0, maximum: 2 },
+  disable: { type: "boolean" },
+  scan_depth: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+  case_sensitive: { anyOf: [{ type: "boolean" }, { type: "null" }] },
+  match_whole_words: { anyOf: [{ type: "boolean" }, { type: "null" }] },
+} as const;
+
+const entryJsonSchema = {
+  type: "object",
+  required: [
+    "id", "worldbook_id", "uid", "comment", "content",
+    "keys", "keys_secondary",
+    "selective", "selective_logic", "constant",
+    "position", "order", "depth", "role", "disable",
+    "scan_depth", "case_sensitive", "match_whole_words",
+    "created_at", "updated_at",
+  ],
+  properties: {
+    id: { type: "string" },
+    worldbook_id: { type: "string" },
+    uid: { type: "integer", minimum: 0 },
+    ...entryFieldsJsonSchemaProperties,
+    created_at: { type: "integer", minimum: 0 },
+    updated_at: { type: "integer", minimum: 0 },
+  },
+  examples: [entryExample],
+  additionalProperties: false,
+} as const;
+
+const listMetaJsonSchema = {
+  type: "object",
+  required: ["total", "limit", "offset", "has_more", "sort_by", "sort_order"],
+  properties: {
+    total: { type: "integer", minimum: 0 },
+    limit: { type: "integer", minimum: 1 },
+    offset: { type: "integer", minimum: 0 },
+    has_more: { type: "boolean" },
+    sort_by: { type: "string" },
+    sort_order: { type: "string", enum: ["asc", "desc"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const listEntriesQueryJsonSchema = {
+  type: "object",
+  properties: {
+    limit: { type: "integer", minimum: 1, maximum: 200 },
+    offset: { type: "integer", minimum: 0 },
+    sort_order: { type: "string", enum: ["asc", "desc"] },
+    sort_by: { type: "string", enum: ["order", "updated_at", "uid"] },
+    disable: { type: "boolean" },
+    constant: { type: "boolean" },
+    position: { type: "integer" },
+    q: { type: "string", minLength: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
+const createEntryBodyJsonSchema = {
+  type: "object",
+  required: ["keys", "content"],
+  properties: entryFieldsJsonSchemaProperties,
+  additionalProperties: false,
+} as const;
+
+const updateEntryBodyJsonSchema = {
+  type: "object",
+  properties: entryFieldsJsonSchemaProperties,
+  additionalProperties: false,
+  minProperties: 1,
+} as const;
+
+const entryResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: { data: entryJsonSchema },
+  examples: [entryResponseExample],
+  additionalProperties: false,
+} as const;
+
+const entryListResponseJsonSchema = {
+  type: "object",
+  required: ["data", "meta"],
+  properties: {
+    data: { type: "array", items: entryJsonSchema },
+    meta: listMetaJsonSchema,
+  },
+  examples: [entryListResponseExample],
+  additionalProperties: false,
+} as const;
+
+const deleteResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["id", "deleted"],
+      properties: {
+        id: { type: "string" },
+        deleted: { type: "boolean" },
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [deleteEntryResponseExample],
+  additionalProperties: false,
+} as const;
+
+const batchEntryIdsJsonSchema = {
+  type: "array",
+  minItems: 1,
+  maxItems: 100,
+  items: { type: "string", minLength: 1 },
+} as const;
+
+const batchUpdateEntryResultJsonSchema = {
+  type: "object",
+  required: ["index", "id", "action"],
+  properties: {
+    index: { type: "integer", minimum: 0 },
+    id: { type: "string" },
+    action: { type: "string", enum: ["updated", "not_found"] },
+    data: entryJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const batchUpdateEntriesMetaJsonSchema = {
+  type: "object",
+  required: ["total", "updated", "not_found"],
+  properties: {
+    total: { type: "integer", minimum: 1 },
+    updated: { type: "integer", minimum: 0 },
+    not_found: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchUpdateEntriesBodyJsonSchema = {
+  type: "object",
+  required: ["ids", "fields"],
+  properties: {
+    ids: batchEntryIdsJsonSchema,
+    fields: {
+      type: "object",
+      properties: entryFieldsJsonSchemaProperties,
+      additionalProperties: false,
+      minProperties: 1,
+    },
+  },
+  examples: [batchUpdateEntriesBodyExample],
+  additionalProperties: false,
+} as const;
+
+const batchUpdateEntriesResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["results", "meta"],
+      properties: {
+        results: { type: "array", items: batchUpdateEntryResultJsonSchema },
+        meta: batchUpdateEntriesMetaJsonSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [batchUpdateEntriesResponseExample],
+  additionalProperties: false,
+} as const;
+
+const batchDeleteEntryResultJsonSchema = {
+  type: "object",
+  required: ["index", "id", "action"],
+  properties: {
+    index: { type: "integer", minimum: 0 },
+    id: { type: "string" },
+    action: { type: "string", enum: ["deleted", "not_found"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchDeleteEntriesMetaJsonSchema = {
+  type: "object",
+  required: ["total", "deleted", "not_found"],
+  properties: {
+    total: { type: "integer", minimum: 1 },
+    deleted: { type: "integer", minimum: 0 },
+    not_found: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchDeleteEntriesBodyJsonSchema = {
+  type: "object",
+  required: ["ids"],
+  properties: {
+    ids: batchEntryIdsJsonSchema,
+  },
+  examples: [batchDeleteEntriesBodyExample],
+  additionalProperties: false,
+} as const;
+
+const batchDeleteEntriesResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["results", "meta"],
+      properties: {
+        results: { type: "array", items: batchDeleteEntryResultJsonSchema },
+        meta: batchDeleteEntriesMetaJsonSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [batchDeleteEntriesResponseExample],
+  additionalProperties: false,
+} as const;
+
+const batchReorderItemJsonSchema = {
+  type: "object",
+  required: ["id", "order"],
+  properties: {
+    id: { type: "string", minLength: 1 },
+    order: { type: "integer" },
+  },
+  additionalProperties: false,
+} as const;
+
+const batchReorderEntriesBodyJsonSchema = {
+  type: "object",
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      minItems: 1,
+      maxItems: 100,
+      items: batchReorderItemJsonSchema,
+    },
+  },
+  examples: [batchReorderEntriesBodyExample],
+  additionalProperties: false,
+} as const;
+
+const batchReorderEntriesResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["results", "meta"],
+      properties: {
+        results: { type: "array", items: batchUpdateEntryResultJsonSchema },
+        meta: batchUpdateEntriesMetaJsonSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [batchReorderEntriesResponseExample],
+  additionalProperties: false,
+} as const;
+
+// ── Helpers ───────────────────────────────────────────
+
+function toEntryResponse(row: typeof worldbookEntries.$inferSelect) {
+  return {
+    id: row.id,
+    worldbook_id: row.worldbookId,
+    uid: row.uid,
+    comment: row.comment,
+    content: row.content,
+    keys: parseJsonField(row.keysJson) as string[],
+    keys_secondary: parseJsonField(row.keysSecondaryJson) as string[],
+    selective: row.selective,
+    selective_logic: row.selectiveLogic,
+    constant: row.constant,
+    position: row.position,
+    order: row.order,
+    depth: row.depth,
+    role: row.role,
+    disable: row.disable,
+    scan_depth: row.scanDepth ?? null,
+    case_sensitive: row.caseSensitive ?? null,
+    match_whole_words: row.matchWholeWords ?? null,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+  };
+}
+
+type EntryUpdateFields = z.infer<typeof updateEntrySchema>;
+
+function buildEntryUpdates(
+  fields: EntryUpdateFields,
+  now: number
+): Partial<typeof worldbookEntries.$inferInsert> {
+  const updates: Partial<typeof worldbookEntries.$inferInsert> = {
+    updatedAt: now,
+  };
+
+  if (fields.keys !== undefined) updates.keysJson = JSON.stringify(fields.keys);
+  if (fields.content !== undefined) updates.content = fields.content;
+  if (fields.comment !== undefined) updates.comment = fields.comment;
+  if (fields.keys_secondary !== undefined) updates.keysSecondaryJson = JSON.stringify(fields.keys_secondary);
+  if (fields.selective !== undefined) updates.selective = fields.selective;
+  if (fields.selective_logic !== undefined) updates.selectiveLogic = fields.selective_logic;
+  if (fields.constant !== undefined) updates.constant = fields.constant;
+  if (fields.position !== undefined) updates.position = fields.position;
+  if (fields.order !== undefined) updates.order = fields.order;
+  if (fields.depth !== undefined) updates.depth = fields.depth;
+  if (fields.role !== undefined) updates.role = fields.role;
+  if (fields.disable !== undefined) updates.disable = fields.disable;
+  if (fields.scan_depth !== undefined) updates.scanDepth = fields.scan_depth;
+  if (fields.case_sensitive !== undefined) updates.caseSensitive = fields.case_sensitive;
+  if (fields.match_whole_words !== undefined) updates.matchWholeWords = fields.match_whole_words;
+
+  return updates;
+}
+
+// ── Route Registration ────────────────────────────────
+
+export async function registerWorldbookEntryRoutes(
+  app: FastifyInstance,
+  connection: DatabaseConnection
+): Promise<void> {
+  const { db } = connection;
+
+  // ── List entries ──────────────────────────────────
+
+  app.get("/worldbooks/:worldbook_id/entries", {
+    schema: {
+      tags: ["worldbook-entries"],
+      summary: "List worldbook entries",
+      operationId: "listWorldbookEntries",
+      params: worldbookIdParamsJsonSchema,
+      querystring: listEntriesQueryJsonSchema,
+      response: {
+        200: entryListResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(worldbookIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [wb] = await db
+      .select({ id: worldbooks.id })
+      .from(worldbooks)
+      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
+
+    if (!wb) {
+      return sendError(reply, 404, "not_found", "Worldbook not found");
+    }
+
+    const parsedQuery = parseWithSchema(listEntriesQuerySchema, request.query, reply);
+    if (!parsedQuery.ok) return;
+
+    const filters = [eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)];
+
+    if (parsedQuery.data.disable !== undefined) {
+      filters.push(eq(worldbookEntries.disable, parsedQuery.data.disable));
+    }
+
+    if (parsedQuery.data.constant !== undefined) {
+      filters.push(eq(worldbookEntries.constant, parsedQuery.data.constant));
+    }
+
+    if (parsedQuery.data.position !== undefined) {
+      filters.push(eq(worldbookEntries.position, parsedQuery.data.position));
+    }
+
+    if (parsedQuery.data.q !== undefined) {
+      const pattern = `%${parsedQuery.data.q}%`;
+      const searchCondition = or(
+        like(worldbookEntries.keysJson, pattern),
+        like(worldbookEntries.keysSecondaryJson, pattern),
+        like(worldbookEntries.comment, pattern),
+        like(worldbookEntries.content, pattern)
+      );
+      if (searchCondition) {
+        filters.push(searchCondition);
+      }
+    }
+
+    const whereClause = and(...filters);
+
+    const sortByColumn =
+      parsedQuery.data.sort_by === "updated_at"
+        ? worldbookEntries.updatedAt
+        : parsedQuery.data.sort_by === "uid"
+          ? worldbookEntries.uid
+          : worldbookEntries.order;
+
+    const rows = await db
+      .select()
+      .from(worldbookEntries)
+      .where(whereClause)
+      .orderBy(toOrderBy(sortByColumn, parsedQuery.data.sort_order))
+      .limit(parsedQuery.data.limit)
+      .offset(parsedQuery.data.offset);
+
+    const totalRows = await db
+      .select({ total: count() })
+      .from(worldbookEntries)
+      .where(whereClause);
+
+    const total = Number(totalRows[0]?.total ?? 0);
+
+    return reply.send({
+      data: rows.map(toEntryResponse),
+      meta: buildListMeta({
+        total,
+        limit: parsedQuery.data.limit,
+        offset: parsedQuery.data.offset,
+        sortBy: parsedQuery.data.sort_by,
+        sortOrder: parsedQuery.data.sort_order,
+      }),
+    });
+  });
+
+  // ── Create entry ─────────────────────────────────
+
+  app.post("/worldbooks/:worldbook_id/entries", {
+    schema: {
+      tags: ["worldbook-entries"],
+      summary: "Create worldbook entry",
+      operationId: "createWorldbookEntry",
+      params: worldbookIdParamsJsonSchema,
+      body: createEntryBodyJsonSchema,
+      response: {
+        201: entryResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(worldbookIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [wb] = await db
+      .select({ id: worldbooks.id })
+      .from(worldbooks)
+      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
+
+    if (!wb) {
+      return sendError(reply, 404, "not_found", "Worldbook not found");
+    }
+
+    const parsedBody = parseWithSchema(createEntrySchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const [maxUidRow] = await db
+      .select({ maxUid: max(worldbookEntries.uid) })
+      .from(worldbookEntries)
+      .where(eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id));
+
+    const nextUid = (maxUidRow?.maxUid ?? -1) + 1;
+    const now = Date.now();
+
+    const createdRows = await db
+      .insert(worldbookEntries)
+      .values({
+        id: nanoid(),
+        worldbookId: parsedParams.data.worldbook_id,
+        uid: nextUid,
+        comment: parsedBody.data.comment ?? "",
+        content: parsedBody.data.content,
+        keysJson: JSON.stringify(parsedBody.data.keys),
+        keysSecondaryJson: JSON.stringify(parsedBody.data.keys_secondary ?? []),
+        selective: parsedBody.data.selective ?? true,
+        selectiveLogic: parsedBody.data.selective_logic ?? 0,
+        constant: parsedBody.data.constant ?? false,
+        position: parsedBody.data.position ?? 0,
+        order: parsedBody.data.order ?? 100,
+        depth: parsedBody.data.depth ?? 4,
+        role: parsedBody.data.role ?? 0,
+        disable: parsedBody.data.disable ?? false,
+        scanDepth: parsedBody.data.scan_depth ?? null,
+        caseSensitive: parsedBody.data.case_sensitive ?? null,
+        matchWholeWords: parsedBody.data.match_whole_words ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    const created = createdRows[0];
+    if (!created) {
+      return sendError(reply, 500, "internal_error", "Failed to create entry");
+    }
+
+    return reply.code(201).send({ data: toEntryResponse(created) });
+  });
+
+  // ── Batch update ─────────────────────────────────
+
+  app.patch("/worldbooks/:worldbook_id/entries/batch/update", {
+    schema: {
+      tags: ["worldbook-entries"],
+      summary: "Batch update worldbook entries",
+      operationId: "batchUpdateWorldbookEntries",
+      params: worldbookIdParamsJsonSchema,
+      body: batchUpdateEntriesBodyJsonSchema,
+      response: {
+        200: batchUpdateEntriesResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(worldbookIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [wb] = await db
+      .select({ id: worldbooks.id })
+      .from(worldbooks)
+      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
+
+    if (!wb) {
+      return sendError(reply, 404, "not_found", "Worldbook not found");
+    }
+
+    const parsedBody = parseWithSchema(batchUpdateEntriesSchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const now = Date.now();
+    const updates = buildEntryUpdates(parsedBody.data.fields, now);
+
+    const updatedRows = await db
+      .update(worldbookEntries)
+      .set(updates)
+      .where(
+        and(
+          inArray(worldbookEntries.id, parsedBody.data.ids),
+          eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
+        )
+      )
+      .returning();
+
+    const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
+    const results = parsedBody.data.ids.map((id, index) => {
+      const row = updatedById.get(id);
+      if (!row) {
+        return { index, id, action: "not_found" as const };
+      }
+      return {
+        index,
+        id,
+        action: "updated" as const,
+        data: toEntryResponse(row),
+      };
+    });
+
+    return reply.send({
+      data: {
+        results,
+        meta: {
+          total: results.length,
+          updated: updatedRows.length,
+          not_found: results.length - updatedRows.length,
+        },
+      },
+    });
+  });
+
+  // ── Batch delete ─────────────────────────────────
+
+  app.post("/worldbooks/:worldbook_id/entries/batch/delete", {
+    schema: {
+      tags: ["worldbook-entries"],
+      summary: "Batch delete worldbook entries",
+      operationId: "batchDeleteWorldbookEntries",
+      params: worldbookIdParamsJsonSchema,
+      body: batchDeleteEntriesBodyJsonSchema,
+      response: {
+        200: batchDeleteEntriesResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(worldbookIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [wb] = await db
+      .select({ id: worldbooks.id })
+      .from(worldbooks)
+      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
+
+    if (!wb) {
+      return sendError(reply, 404, "not_found", "Worldbook not found");
+    }
+
+    const parsedBody = parseWithSchema(batchDeleteEntriesSchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const deletedRows = await db
+      .delete(worldbookEntries)
+      .where(
+        and(
+          inArray(worldbookEntries.id, parsedBody.data.ids),
+          eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
+        )
+      )
+      .returning();
+
+    const deletedIds = new Set(deletedRows.map((row) => row.id));
+    const results = parsedBody.data.ids.map((id, index) => ({
+      index,
+      id,
+      action: deletedIds.has(id) ? ("deleted" as const) : ("not_found" as const),
+    }));
+
+    return reply.send({
+      data: {
+        results,
+        meta: {
+          total: results.length,
+          deleted: deletedRows.length,
+          not_found: results.length - deletedRows.length,
+        },
+      },
+    });
+  });
+
+  // ── Batch reorder ────────────────────────────────
+
+  app.put("/worldbooks/:worldbook_id/entries/batch/reorder", {
+    schema: {
+      tags: ["worldbook-entries"],
+      summary: "Batch reorder worldbook entries",
+      operationId: "batchReorderWorldbookEntries",
+      params: worldbookIdParamsJsonSchema,
+      body: batchReorderEntriesBodyJsonSchema,
+      response: {
+        200: batchReorderEntriesResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(worldbookIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [wb] = await db
+      .select({ id: worldbooks.id })
+      .from(worldbooks)
+      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
+
+    if (!wb) {
+      return sendError(reply, 404, "not_found", "Worldbook not found");
+    }
+
+    const parsedBody = parseWithSchema(batchReorderEntriesSchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const now = Date.now();
+
+    const batchResult = db.transaction((tx) => {
+      let updated = 0;
+
+      const results = parsedBody.data.items.map((item, index) => {
+        const existing = tx
+          .select()
+          .from(worldbookEntries)
+          .where(
+            and(
+              eq(worldbookEntries.id, item.id),
+              eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
+            )
+          )
+          .get();
+
+        if (!existing) {
+          return { index, id: item.id, action: "not_found" as const };
+        }
+
+        tx.update(worldbookEntries)
+          .set({ order: item.order, updatedAt: now })
+          .where(eq(worldbookEntries.id, item.id))
+          .run();
+
+        updated += 1;
+        return {
+          index,
+          id: item.id,
+          action: "updated" as const,
+          data: toEntryResponse({ ...existing, order: item.order, updatedAt: now }),
+        };
+      });
+
+      return {
+        results,
+        meta: {
+          total: results.length,
+          updated,
+          not_found: results.length - updated,
+        },
+      };
+    });
+
+    return reply.send({ data: batchResult });
+  });
+
+  // ── Get entry ────────────────────────────────────
+
+  app.get("/worldbooks/:worldbook_id/entries/:id", {
+    schema: {
+      tags: ["worldbook-entries"],
+      summary: "Get worldbook entry",
+      operationId: "getWorldbookEntry",
+      params: entryParamsJsonSchema,
+      response: {
+        200: entryResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(entryParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [wb] = await db
+      .select({ id: worldbooks.id })
+      .from(worldbooks)
+      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
+
+    if (!wb) {
+      return sendError(reply, 404, "not_found", "Worldbook not found");
+    }
+
+    const [row] = await db
+      .select()
+      .from(worldbookEntries)
+      .where(
+        and(
+          eq(worldbookEntries.id, parsedParams.data.id),
+          eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
+        )
+      );
+
+    if (!row) {
+      return sendError(reply, 404, "not_found", "Worldbook entry not found");
+    }
+
+    return reply.send({ data: toEntryResponse(row) });
+  });
+
+  // ── Update entry ─────────────────────────────────
+
+  app.patch("/worldbooks/:worldbook_id/entries/:id", {
+    schema: {
+      tags: ["worldbook-entries"],
+      summary: "Update worldbook entry",
+      operationId: "updateWorldbookEntry",
+      params: entryParamsJsonSchema,
+      body: updateEntryBodyJsonSchema,
+      response: {
+        200: entryResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(entryParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [wb] = await db
+      .select({ id: worldbooks.id })
+      .from(worldbooks)
+      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
+
+    if (!wb) {
+      return sendError(reply, 404, "not_found", "Worldbook not found");
+    }
+
+    const parsedBody = parseWithSchema(updateEntrySchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const now = Date.now();
+    const updates = buildEntryUpdates(parsedBody.data, now);
+
+    const [updated] = await db
+      .update(worldbookEntries)
+      .set(updates)
+      .where(
+        and(
+          eq(worldbookEntries.id, parsedParams.data.id),
+          eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
+        )
+      )
+      .returning();
+
+    if (!updated) {
+      return sendError(reply, 404, "not_found", "Worldbook entry not found");
+    }
+
+    return reply.send({ data: toEntryResponse(updated) });
+  });
+
+  // ── Delete entry ─────────────────────────────────
+
+  app.delete("/worldbooks/:worldbook_id/entries/:id", {
+    schema: {
+      tags: ["worldbook-entries"],
+      summary: "Delete worldbook entry",
+      operationId: "deleteWorldbookEntry",
+      params: entryParamsJsonSchema,
+      response: {
+        200: deleteResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(entryParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [wb] = await db
+      .select({ id: worldbooks.id })
+      .from(worldbooks)
+      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
+
+    if (!wb) {
+      return sendError(reply, 404, "not_found", "Worldbook not found");
+    }
+
+    const deleted = await db
+      .delete(worldbookEntries)
+      .where(
+        and(
+          eq(worldbookEntries.id, parsedParams.data.id),
+          eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
+        )
+      )
+      .returning();
+
+    if (deleted.length === 0) {
+      return sendError(reply, 404, "not_found", "Worldbook entry not found");
+    }
+
+    return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
+  });
+}

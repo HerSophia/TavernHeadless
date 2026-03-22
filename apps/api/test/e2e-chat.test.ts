@@ -17,7 +17,7 @@ import { nanoid } from "nanoid";
 import { eq, asc } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { sessions, floors, messagePages, messages, presets, worldbooks, regexProfiles } from "../src/db/schema";
+import { sessions, floors, messagePages, messages, presets, worldbooks, worldbookEntries, regexProfiles } from "../src/db/schema";
 import { ChatService, ChatServiceError } from "../src/services/chat-service";
 import { SimpleTokenCounter, type TurnOrchestrator, type TurnOutput, type TurnInput } from "@tavern/core";
 
@@ -223,14 +223,38 @@ describe("E2E Chat with PromptAssembler", () => {
 
   async function importWorldbook(): Promise<string> {
     const id = nanoid();
+    const now = Date.now();
     await database.db.insert(worldbooks).values({
       id,
       name: "Test Worldbook",
       source: "sillytavern",
-      dataJson: JSON.stringify(SAMPLE_WORLDBOOK_DATA),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      dataJson: JSON.stringify({}),
+      createdAt: now,
+      updatedAt: now,
     });
+
+    // 条目已迁移到独立的 worldbook_entry 表
+    const entries = Object.values(SAMPLE_WORLDBOOK_DATA.entries);
+    for (const entry of entries) {
+      await database.db.insert(worldbookEntries).values({
+        id: nanoid(),
+        worldbookId: id,
+        uid: entry.uid,
+        comment: entry.comment,
+        content: entry.content,
+        keysJson: JSON.stringify(entry.key),
+        keysSecondaryJson: JSON.stringify(entry.keysecondary),
+        selective: entry.selective,
+        constant: entry.constant,
+        position: entry.position,
+        order: entry.order,
+        depth: entry.depth,
+        disable: entry.disable,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
     return id;
   }
 

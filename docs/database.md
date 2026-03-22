@@ -7,7 +7,7 @@
 - ORM: Drizzle ORM
 - 迁移目录: `apps/api/drizzle/`
 - 当前基础迁移: `0000_initial_schema.sql`
-- 当前最新迁移: `0010_memory_indexes.sql`
+- 当前最新迁移: `0013_llm_instance_config.sql`
 
 ## `account`
 
@@ -57,10 +57,14 @@
 | `id` | `TEXT` | PK | 角色 ID |
 | `name` | `TEXT` | `NOT NULL` | 角色名 |
 | `source` | `TEXT` | `NOT NULL`, default `sillytavern` | 来源 |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id`, default `default-admin` | 所属账号 |
 | `status` | `TEXT` | `NOT NULL`, default `active` | 状态 |
 | `deleted_at` | `INTEGER` | `NULL` | 软删除时间（ms） |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：
+- 普通索引 `character_account_updated_idx(account_id, updated_at)`
 
 枚举约束：
 - `status`: `active | deleted`
@@ -224,6 +228,7 @@
 | `confidence` | `REAL` | `NOT NULL`, default `1.0` | 置信度（0-1） |
 | `source_floor_id` | `TEXT` | `NULL` | 来源楼层 ID |
 | `source_message_id` | `TEXT` | `NULL` | 来源消息 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id`, default `default-admin` | 所属账号 |
 | `status` | `TEXT` | `NOT NULL`, default `active` | 条目状态 |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms）；deprecated 条目的 purge 以此字段作为最后变更时间 |
@@ -240,6 +245,7 @@
 
 索引：
 - 普通索引 `memory_item_status_updated_at_idx(status, updated_at)`
+- 普通索引 `memory_item_account_scope_idx(account_id, scope, scope_id)`
 - 普通索引 `memory_item_scope_id_status_type_importance_idx(scope_id, status, type, importance)`
 
 ## `memory_edge`
@@ -252,21 +258,39 @@
 | `from_id` | `TEXT` | `NOT NULL`, FK -> `memory_item.id` | 起始记忆 |
 | `to_id` | `TEXT` | `NOT NULL`, FK -> `memory_item.id` | 目标记忆 |
 | `relation` | `TEXT` | `NOT NULL` | 关系类型 |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id`, default `default-admin` | 所属账号 |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 
 枚举约束：
 - `relation`: `supports | contradicts | updates`
 
+索引：
+- 普通索引 `memory_edge_account_idx(account_id)`
+
 ## 导入资源表
 
 ### `preset`
-- 核心字段：`id`, `name`, `source`, `data_json`, `created_at`, `updated_at`
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 预设 ID |
+| `name` | `TEXT` | `NOT NULL` | 预设名称 |
+| `source` | `TEXT` | `NOT NULL`, default `sillytavern` | 来源 |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id`, default `default-admin` | 所属账号 |
+| `data_json` | `TEXT` | `NOT NULL` | 预设数据 JSON |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：
+- 普通索引 `preset_account_updated_idx(account_id, updated_at)`
 
 ### `worldbook`
-- 核心字段：`id`, `name`, `source`, `data_json`, `created_at`, `updated_at`
+- 同 `preset` 结构，字段含义对应世界书。
+- 索引：`worldbook_account_updated_idx(account_id, updated_at)`
 
 ### `regex_profile`
-- 核心字段：`id`, `name`, `source`, `data_json`, `created_at`, `updated_at`
+- 同 `preset` 结构，字段含义对应正则配置。
+- 索引：`regex_profile_account_updated_idx(account_id, updated_at)`
 
 ## `llm_profile`
 
@@ -316,6 +340,36 @@ LLM Profile 绑定表。
 
 索引：
 - 唯一索引 `llm_profile_binding_account_scope_scope_id_slot_uq(account_id, scope, scope_id, instance_slot)`
+
+## `llm_instance_config`
+
+LLM 实例配置表。独立管理各实例槽位的配置（预设绑定、启用状态、生成参数），与 `llm_profile_binding` 分离。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 配置记录 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id`, default `default-admin` | 所属账号 |
+| `scope` | `TEXT` | `NOT NULL` | 配置作用域 |
+| `scope_id` | `TEXT` | `NOT NULL` | 作用域 ID（global 时为 `"global"`，session 时为会话 ID） |
+| `instance_slot` | `TEXT` | `NOT NULL` | 实例槽位 |
+| `preset_id` | `TEXT` | `NULL` | 关联预设 ID |
+| `enabled` | `INTEGER` | `NOT NULL`, default `1` | 是否启用（布尔） |
+| `params_json` | `TEXT` | `NULL` | 生成参数 JSON |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+枚举约束：
+
+- `scope`: `global | session`
+- `instance_slot`: `* | narrator | director | verifier | memory`
+
+索引：
+
+- 唯一索引 `llm_instance_config_account_scope_slot_uq(account_id, scope, scope_id, instance_slot)`
+- 普通索引 `llm_instance_config_account_scope_idx(account_id, scope, scope_id)`
+
+优先级解析规则：`session(slot) > session(*) > global(slot) > global(*) > default`
+
 - 普通索引 `llm_profile_binding_profile_account_scope_idx(profile_id, account_id, scope, scope_id, instance_slot)`
 
 ## 列表接口约定

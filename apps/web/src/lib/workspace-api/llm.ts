@@ -1,4 +1,4 @@
-import { deleteJson, fetchJson, patchJson, postJson } from "./transport";
+import { deleteJson, fetchJson, patchJson, postJson, putJson } from "./transport";
 
 export type WorkspaceLlmInstanceSlot = "*" | "narrator" | "director" | "verifier" | "memory";
 
@@ -315,4 +315,196 @@ export async function activateLlmProfileBinding(
   );
 
   return response.data?.activated === true;
+}
+
+
+// ── LLM Instance Config types ──
+
+export type WorkspaceLlmInstanceScope = "global" | "session";
+
+export type WorkspaceLlmInstanceConfig = {
+  id: string;
+  scope: WorkspaceLlmInstanceScope;
+  scopeId: string;
+  instanceSlot: WorkspaceLlmInstanceSlot;
+  presetId: string | null;
+  enabled: boolean;
+  params: WorkspaceLlmGenerationParams | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type WorkspaceLlmResolvedInstanceSlot = {
+  slot: WorkspaceLlmInstanceSlot;
+  source: "session_config" | "global_config" | "default";
+  scope: WorkspaceLlmInstanceScope | null;
+  configId: string | null;
+  presetId: string | null;
+  enabled: boolean;
+  params: WorkspaceLlmGenerationParams | null;
+};
+
+// ── LLM Instance Config API response types ──
+
+type LlmInstanceConfigResponseRow = {
+  id: string;
+  scope: WorkspaceLlmInstanceScope;
+  scope_id: string;
+  instance_slot: WorkspaceLlmInstanceSlot;
+  preset_id: string | null;
+  enabled: boolean;
+  params: WorkspaceLlmGenerationParams | null;
+  created_at: number;
+  updated_at: number;
+};
+
+type LlmInstanceConfigListResponse = {
+  data?: LlmInstanceConfigResponseRow[];
+};
+
+type LlmInstanceConfigMutationResponse = {
+  data?: LlmInstanceConfigResponseRow;
+};
+
+type LlmResolvedSlotResponseRow = {
+  slot: WorkspaceLlmInstanceSlot;
+  source: "session_config" | "global_config" | "default";
+  scope: WorkspaceLlmInstanceScope | null;
+  config_id: string | null;
+  preset_id: string | null;
+  enabled: boolean;
+  params: WorkspaceLlmGenerationParams | null;
+};
+
+type LlmResolvedResponse = {
+  data?: {
+    session_id: string | null;
+    slots: LlmResolvedSlotResponseRow[];
+  };
+};
+
+type LlmInstanceDeleteResponse = {
+  data?: {
+    instance_slot: string;
+    scope: string;
+    deleted: boolean;
+  };
+};
+
+// ── LLM Instance Config conversion helpers ──
+
+function toWorkspaceLlmInstanceConfig(row: LlmInstanceConfigResponseRow): WorkspaceLlmInstanceConfig {
+  return {
+    id: row.id,
+    scope: row.scope,
+    scopeId: row.scope_id,
+    instanceSlot: row.instance_slot,
+    presetId: row.preset_id,
+    enabled: row.enabled,
+    params: row.params,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toWorkspaceLlmResolvedSlot(row: LlmResolvedSlotResponseRow): WorkspaceLlmResolvedInstanceSlot {
+  return {
+    slot: row.slot,
+    source: row.source,
+    scope: row.scope,
+    configId: row.config_id,
+    presetId: row.preset_id,
+    enabled: row.enabled,
+    params: row.params,
+  };
+}
+
+// ── LLM Instance Config API functions ──
+
+export async function fetchLlmInstanceConfigs(
+  scope?: WorkspaceLlmInstanceScope,
+  sessionId?: string,
+  accountId?: string
+): Promise<WorkspaceLlmInstanceConfig[]> {
+  const query = new URLSearchParams();
+  if (scope) query.set("scope", scope);
+  if (sessionId) query.set("session_id", sessionId);
+
+  const pathname = query.size > 0 ? `/llm-instances?${query.toString()}` : "/llm-instances";
+  const response = await fetchJson<LlmInstanceConfigListResponse>(pathname, accountId);
+  return (response.data ?? []).map(toWorkspaceLlmInstanceConfig);
+}
+
+export async function fetchLlmInstanceConfigsBySlot(
+  slot: WorkspaceLlmInstanceSlot,
+  scope?: WorkspaceLlmInstanceScope,
+  sessionId?: string,
+  accountId?: string
+): Promise<WorkspaceLlmInstanceConfig[]> {
+  const query = new URLSearchParams();
+  if (scope) query.set("scope", scope);
+  if (sessionId) query.set("session_id", sessionId);
+
+  const base = `/llm-instances/${encodeURIComponent(slot)}`;
+  const pathname = query.size > 0 ? `${base}?${query.toString()}` : base;
+  const response = await fetchJson<LlmInstanceConfigListResponse>(pathname, accountId);
+  return (response.data ?? []).map(toWorkspaceLlmInstanceConfig);
+}
+
+export async function fetchResolvedLlmInstanceConfigs(
+  sessionId?: string,
+  accountId?: string
+): Promise<WorkspaceLlmResolvedInstanceSlot[]> {
+  const query = new URLSearchParams();
+  if (sessionId) query.set("session_id", sessionId);
+
+  const pathname = query.size > 0 ? `/llm-instances/resolved?${query.toString()}` : "/llm-instances/resolved";
+  const response = await fetchJson<LlmResolvedResponse>(pathname, accountId);
+  return (response.data?.slots ?? []).map(toWorkspaceLlmResolvedSlot);
+}
+
+export async function upsertLlmInstanceConfig(
+  slot: WorkspaceLlmInstanceSlot,
+  payload: {
+    scope?: WorkspaceLlmInstanceScope;
+    sessionId?: string;
+    presetId?: string | null;
+    enabled?: boolean;
+    params?: WorkspaceLlmGenerationParams | null;
+  },
+  accountId?: string
+): Promise<WorkspaceLlmInstanceConfig> {
+  const response = await putJson<LlmInstanceConfigMutationResponse>(
+    `/llm-instances/${encodeURIComponent(slot)}`,
+    {
+      scope: payload.scope,
+      session_id: payload.sessionId,
+      preset_id: payload.presetId,
+      enabled: payload.enabled,
+      params: payload.params,
+    },
+    accountId
+  );
+
+  if (!response.data) {
+    throw new Error("Failed to upsert instance config");
+  }
+
+  return toWorkspaceLlmInstanceConfig(response.data);
+}
+
+export async function deleteLlmInstanceConfig(
+  slot: WorkspaceLlmInstanceSlot,
+  scope?: WorkspaceLlmInstanceScope,
+  sessionId?: string,
+  accountId?: string
+): Promise<boolean> {
+  const query = new URLSearchParams();
+  if (scope) query.set("scope", scope);
+  if (sessionId) query.set("session_id", sessionId);
+
+  const base = `/llm-instances/${encodeURIComponent(slot)}`;
+  const pathname = query.size > 0 ? `${base}?${query.toString()}` : base;
+  const response = await deleteJson<LlmInstanceDeleteResponse>(pathname, accountId);
+  return response.data?.deleted === true;
 }

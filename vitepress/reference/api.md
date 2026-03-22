@@ -2,104 +2,129 @@
 outline: [2, 3]
 ---
 
-# API 概览
+# API 参考
 
-所有接口都是 RESTful 风格，返回 JSON。启动后可通过 Swagger UI 查看完整文档：`http://localhost:3000/docs/`
+TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按资源分类，详细列出每个接口的路径、参数、请求体、响应体和错误码。
+
+## 基础信息
+
+| 项目 | 值 |
+| ---- | -- |
+| 基础 URL | `http://localhost:3000` |
+| OpenAPI 版本 | 3.0.3 |
+| API 版本 | `0.2.0-beta.2` |
+| OpenAPI JSON | `GET /openapi.json` |
+| Swagger UI | `GET /docs/` |
+| 中文文档 | `GET /docs-zh` |
+| 英文文档 | `GET /docs-en` |
+| Health | `GET /health` |
+| Version | `GET /version` |
 
 ## 认证
 
-在 `.env` 中设置 `AUTH_MODE`：
+通过 `.env` 中的 `AUTH_MODE` 控制认证模式：
 
-| 模式 | 说明 |
-| ---- | ---- |
-| `off` | 无认证（默认） |
-| `api_key` | API Key 认证（`Authorization: Bearer <key>`） |
-| `jwt` | JWT 认证 |
+| 模式 | 说明 | 请求头 |
+| ---- | ---- | ------ |
+| `off` | 无认证（默认） | 无需携带 |
+| `api_key` | API Key | `Authorization: Bearer <key>` 或 `x-api-key: <key>` |
+| `jwt` | JWT | `Authorization: Bearer <token>` |
 
-## 会话管理
+`api_key` 模式下，可在 `AUTH_API_KEYS` 中配置多个 key，逗号分隔。
 
-| 方法   | 路径            | 说明         |
-| ------ | --------------- | ------------ |
-| POST   | `/sessions`     | 创建会话     |
-| GET    | `/sessions`     | 列出会话     |
-| GET    | `/sessions/:id` | 获取会话详情 |
-| PATCH  | `/sessions/:id` | 更新会话配置 |
-| DELETE | `/sessions/:id` | 删除会话     |
+`jwt` 模式下，需要设置 `AUTH_JWT_SECRET`。
 
-## 用户卡管理
+多账号隔离时，`ACCOUNT_MODE=multi`，各资源自动按 `account_id` 隔离。
 
-| 方法   | 路径         | 说明 |
-| ------ | ------------ | ---- |
-| POST   | `/users`     | 创建用户卡 |
-| GET    | `/users`     | 列出用户卡 |
-| GET    | `/users/:id` | 获取用户卡详情 |
-| PATCH  | `/users/:id` | 更新用户卡 |
-| DELETE | `/users/:id` | 软删除用户卡 |
+## 响应格式
 
-## 生成与聊天
+### 成功响应
 
-| 方法 | 路径                            | 说明                                       |
-| ---- | ------------------------------- | ------------------------------------------ |
-| POST | `/sessions/:id/respond`         | 发送消息并获取 AI 回复（核心接口）         |
-| POST | `/sessions/:id/respond/stream`  | SSE 流式返回 AI 回复片段                   |
-| POST | `/sessions/:id/respond/dry-run` | 仅组装 Prompt 并返回调试元信息（无副作用） |
-| POST | `/sessions/:id/regenerate`      | 重新生成最后一个楼层                       |
-| GET  | `/sessions/:id/timeline`        | 获取完整时间线                             |
+所有成功响应都包裹在 `data` 字段中：
 
-## 楼层与消息
+```json
+{
+  "data": { }
+}
+```
 
-| 方法  | 路径                  | 说明                 |
-| ----- | --------------------- | -------------------- |
-| GET   | `/floors/:id`         | 获取楼层详情         |
-| POST  | `/floors/:id/branch`  | 从该楼层创建分支     |
-| GET   | `/floors/:id/pages`   | 列出楼层的所有消息页 |
-| PATCH | `/pages/:id/activate` | 切换当前生效的消息页 |
+列表接口额外包含 `meta` 字段：
 
-## 变量
+```json
+{
+  "data": [ ],
+  "meta": {
+    "total": 42,
+    "limit": 20,
+    "offset": 0,
+    "has_more": true,
+    "sort_by": "created_at",
+    "sort_order": "desc"
+  }
+}
+```
 
-| 方法   | 路径             | 说明                          |
-| ------ | ---------------- | ----------------------------- |
-| GET    | `/variables`     | 查询变量（支持按 scope 过滤） |
-| PUT    | `/variables`     | 设置变量                      |
-| PUT    | `/variables/batch` | 批量 upsert 变量            |
-| DELETE | `/variables/:id` | 删除变量                      |
+### 错误响应
 
-## 记忆
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Session not found"
+  }
+}
+```
 
-| 方法   | 路径                      | 说明              |
-| ------ | ------------------------- | ----------------- |
-| GET    | `/memories`               | 查询记忆条目      |
-| POST   | `/memories`               | 创建记忆条目      |
-| GET    | `/memories/stats`         | 记忆统计          |
-| PATCH  | `/memories/batch/status`  | 批量更新状态      |
-| POST   | `/memories/batch/delete`  | 批量删除          |
+常见 HTTP 状态码：
 
-## 导入（SillyTavern 兼容）
+| 状态码 | 含义 |
+| ------ | ---- |
+| `200` | 成功 |
+| `201` | 创建成功 |
+| `204` | 删除成功（无响应体） |
+| `400` | 请求参数错误 |
+| `401` | 未认证 |
+| `403` | 权限不足 |
+| `404` | 资源不存在 |
+| `409` | 冲突（如重名、乐观锁失败） |
+| `413` | 请求体过大 |
+| `500` | 服务端错误 |
+| `502` | 上游 LLM 服务错误 |
+| `503` | 服务不可用（如 LLM Vault 未配置） |
 
-| 方法 | 路径                | 说明             |
-| ---- | ------------------- | ---------------- |
-| POST | `/import/preset`    | 导入酒馆预设     |
-| POST | `/import/worldbook` | 导入酒馆世界书   |
-| POST | `/import/regex`     | 导入酒馆正则规则 |
-| POST | `/import/character` | 导入酒馆角色卡   |
+## 分页
 
-## LLM Profile
+所有列表接口支持以下查询参数：
 
-| 方法   | 路径                             | 说明               |
-| ------ | -------------------------------- | ------------------ |
-| POST   | `/llm-profiles`                  | 创建 Profile       |
-| GET    | `/llm-profiles`                  | 列出 Profile       |
-| PATCH  | `/llm-profiles/:id`              | 更新 Profile       |
-| DELETE | `/llm-profiles/:id`              | 删除 Profile       |
-| POST   | `/llm-profiles/:id/activate`     | 激活 Profile       |
-| GET    | `/llm-profiles/runtime`          | 运行时解析         |
-| POST   | `/llm-profiles/models/discover`  | 发现可用模型       |
-| POST   | `/llm-profiles/models/test`      | 测试模型连通性     |
+| 参数 | 类型 | 默认值 | 说明 |
+| ---- | ---- | ------ | ---- |
+| `limit` | integer | `20` | 每页条数，最大 `100` |
+| `offset` | integer | `0` | 偏移量 |
+| `sort_order` | string | `desc` | 排序方向，`asc` 或 `desc` |
+| `sort_by` | string | 因资源而异 | 排序字段，详见各资源文档 |
 
-## 账号
+响应的 `meta` 字段中，`has_more` 指示后续是否还有更多数据。
 
-| 方法   | 路径           | 说明         |
-| ------ | -------------- | ------------ |
-| GET    | `/accounts`    | 列出账号     |
-| GET    | `/accounts/me` | 获取当前账号 |
-| PATCH  | `/accounts/:id`| 更新账号     |
+## 时间戳
+
+所有时间戳字段均为 **Unix 毫秒时间戳**（integer），字段名通常为 `created_at`、`updated_at`。
+
+## 资源目录
+
+| 资源 | 说明 | 文档 |
+| ---- | ---- | ---- |
+| Sessions | 会话管理、时间线、分支 | [Sessions](./api/sessions) |
+| Chat | 对话生成、SSE 流、Dry-run | [Chat](./api/chat) |
+| Floors | 楼层管理、分支操作 | [Floors](./api/floors) |
+| Pages | 消息页管理、激活切换 | [Pages](./api/pages) |
+| Messages | 消息管理、批量操作 | [Messages](./api/messages) |
+| Characters | 角色卡管理、版本控制 | [Characters](./api/characters) |
+| Users | 用户卡管理 | [Users](./api/users) |
+| Variables | 四级变量系统 | [Variables](./api/variables) |
+| Memories | 记忆条目与边 | [Memories](./api/memories) |
+| Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
+| Presets | 预设管理、编辑器视图、条目级 CRUD | [Presets](./api/presets) |
+| Worldbooks | 世界书管理 | [Worldbooks](./api/worldbooks) |
+| Regex Profiles | 正则配置管理 | [Regex Profiles](./api/regex-profiles) |
+| LLM Profiles | LLM 配置管理、模型发现与测试 | [LLM Profiles](./api/llm-profiles) |
+| Accounts | 账号管理 | [Accounts](./api/accounts) |

@@ -1,0 +1,608 @@
+---
+outline: [2, 3]
+---
+
+# Presets（预设管理）
+
+管理通过 [导入接口](./imports#导入-preset) 导入的 SillyTavern 预设。预设有两种视图：原始数据视图和编辑器视图。
+
+编辑器视图将 SillyTavern 原始格式（包括 legacy 格式）转换为统一的结构化数据模型，便于前端编辑。更新时系统自动将编辑器文档转回原始格式存储。
+
+## 列出 Presets
+
+```http
+GET /presets
+```
+
+### 响应 `200`
+
+```json
+{
+  "data": [
+    {
+      "id": "preset_story",
+      "name": "Story Preset",
+      "source": "sillytavern",
+      "created_at": 1735689600000,
+      "updated_at": 1735689660000
+    }
+  ]
+}
+```
+
+## 获取 Preset 详情（原始数据）
+
+```http
+GET /presets/:id
+```
+
+返回原始 SillyTavern JSON 数据。
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "id": "preset_story",
+    "name": "Story Preset",
+    "source": "sillytavern",
+    "data": {
+      "prompts": [],
+      "prompt_order": []
+    },
+    "created_at": 1735689600000,
+    "updated_at": 1735689660000
+  }
+}
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 预设不存在 |
+
+## 获取 Preset 编辑器视图
+
+```http
+GET /presets/:id/editor
+```
+
+返回结构化的编辑器文档。系统会将原始 SillyTavern 格式（包括 legacy 格式）转换为统一的编辑器数据模型。
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "id": "preset_story",
+    "name": "Story Preset",
+    "source": "sillytavern",
+    "editor": {
+      "default_character_id": 100000,
+      "entries": [
+        {
+          "identifier": "main",
+          "name": "System Guidance",
+          "role": "system",
+          "content": "Stay in character and keep the tone warm.",
+          "system_prompt": true,
+          "marker": false,
+          "injection_position": 0,
+          "enabled": true,
+          "extra": {}
+        }
+      ],
+      "order_contexts": [
+        {
+          "character_id": 100000,
+          "order": [
+            { "identifier": "main", "enabled": true }
+          ],
+          "extra": {}
+        }
+      ],
+      "top_level": {
+        "temperature": 0.7
+      }
+    },
+    "created_at": 1735689600000,
+    "updated_at": 1735689660000
+  }
+}
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 预设不存在 |
+| `422` | 预设数据无法转换为编辑器格式 |
+
+## Editor Document 结构
+
+编辑器文档由以下部分组成：
+
+### entries（提示词条目数组）
+
+| 字段 | 类型 | 默认值 | 说明 |
+| ---- | ---- | ------ | ---- |
+| `identifier` | string | - | 条目唯一标识（必填） |
+| `name` | string | `""` | 显示名称 |
+| `role` | string | `"system"` | 角色：`system` / `user` / `assistant` |
+| `content` | string | `""` | 提示词内容 |
+| `system_prompt` | boolean | `false` | 是否为系统提示 |
+| `marker` | boolean | `false` | 是否为标记条目 |
+| `injection_position` | integer | `0` | 注入位置 |
+| `injection_depth` | integer | - | 注入深度（可选） |
+| `injection_order` | integer | - | 注入顺序（可选） |
+| `forbid_overrides` | boolean | - | 是否禁止覆盖（可选） |
+| `injection_trigger` | array | - | 注入触发条件（可选） |
+| `enabled` | boolean | `true` | 是否启用 |
+| `extra` | object | `{}` | 额外字段（透传未知属性） |
+
+### order_contexts（排序上下文数组）
+
+| 字段 | 类型 | 默认值 | 说明 |
+| ---- | ---- | ------ | ---- |
+| `character_id` | integer | - | 角色 ID（SillyTavern 内部编号，默认 `100000`） |
+| `order` | OrderItem[] | `[]` | 条目排序列表 |
+| `extra` | object | `{}` | 额外字段 |
+
+每个 OrderItem：
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `identifier` | string | 条目标识 |
+| `enabled` | boolean | 是否启用 |
+
+### top_level（顶层参数）
+
+`top_level` 是一个自由 key-value 对象，保存预设级的生成参数，如 `temperature`、`frequency_penalty` 等。
+
+## 更新 Preset
+
+```http
+PUT /presets/:id
+```
+
+使用编辑器格式更新预设。系统会将编辑器文档转回 SillyTavern 原始格式存储。
+
+支持乐观锁：传入 `expected_updated_at`，如果数据库中的 `updated_at` 不匹配则返回 `409`。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | **是** | 名称（至少 1 字符） |
+| `editor` | EditorDocument | **是** | 编辑器文档 |
+| `expected_updated_at` | integer | 否 | 乐观锁：期望的 `updated_at` 值 |
+
+### 请求示例
+
+```json
+{
+  "name": "Story Preset",
+  "expected_updated_at": 1735689660000,
+  "editor": {
+    "default_character_id": 100000,
+    "entries": [
+      {
+        "identifier": "main",
+        "name": "System Guidance",
+        "role": "system",
+        "content": "Stay in character and keep the tone warm.",
+        "system_prompt": true,
+        "marker": false,
+        "injection_position": 0,
+        "enabled": true,
+        "extra": {}
+      }
+    ],
+    "order_contexts": [
+      {
+        "character_id": 100000,
+        "order": [{ "identifier": "main", "enabled": true }],
+        "extra": {}
+      }
+    ],
+    "top_level": {
+      "temperature": 0.7
+    }
+  }
+}
+```
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "id": "preset_story",
+    "name": "Story Preset",
+    "source": "sillytavern",
+    "created_at": 1735689600000,
+    "updated_at": 1735690000000
+  }
+}
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败 |
+| `404` | 预设不存在 |
+| `409` | 乐观锁冲突：`expected_updated_at` 不匹配 |
+
+## 删除 Preset
+
+```http
+DELETE /presets/:id
+```
+
+### 响应 `204`
+
+无响应体。
+
+---
+
+# Preset Entries（提示词条目管理）
+
+对预设中的单个提示词条目进行增删改查和批量操作，无需通过编辑器视图操作整个预设。
+
+所有条目端点都挂载在 `/presets/:preset_id/entries` 下。
+
+::: tip 存储方式
+预设条目存储在 `preset.data_json` 的 JSON blob 内（即 SillyTavern 原始格式中的 `prompts[]` 和 `prompt_order[]`），通过 read-modify-write 模式操作。不同于世界书条目的独立表存储。这保证了与 SillyTavern 预设格式的无损兼容。
+:::
+
+## 条目字段说明
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `identifier` | string | 条目唯一标识（`[a-zA-Z0-9_-]`，1–64 字符） |
+| `name` | string | 显示名称 |
+| `role` | string | 角色：`system` / `user` / `assistant` |
+| `content` | string | 提示词内容 |
+| `system_prompt` | boolean | 是否为系统提示 |
+| `marker` | boolean | 是否为标记条目（如 `chatHistory`、`newChat`） |
+| `injection_position` | integer | 注入位置 |
+| `injection_depth` | integer | 注入深度（可选） |
+| `injection_order` | integer | 注入顺序（可选） |
+| `forbid_overrides` | boolean | 是否禁止覆盖（可选） |
+| `injection_trigger` | array | 注入触发条件（可选） |
+| `enabled` | boolean | 是否在默认排序上下文中启用 |
+| `extra` | object | 额外字段（透传 SillyTavern 未来新增的属性，保证前向兼容） |
+
+## 列出条目
+
+```http
+GET /presets/:preset_id/entries
+```
+
+返回按默认排序上下文（`prompt_order[0]`）排列的所有条目。
+
+### 查询参数
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `enabled` | string | 按启用状态过滤：`"true"` / `"false"` |
+| `marker` | string | 按标记状态过滤：`"true"` / `"false"` |
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "preset_id": "preset_story",
+    "default_character_id": 100000,
+    "entries": [
+      {
+        "identifier": "main",
+        "name": "System Guidance",
+        "role": "system",
+        "content": "Stay in character and keep the tone warm.",
+        "system_prompt": true,
+        "marker": false,
+        "injection_position": 0,
+        "enabled": true,
+        "extra": {}
+      },
+      {
+        "identifier": "chatHistory",
+        "name": "Chat History",
+        "role": "system",
+        "content": "",
+        "system_prompt": false,
+        "marker": true,
+        "injection_position": 0,
+        "enabled": true,
+        "extra": {}
+      }
+    ]
+  }
+}
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 预设不存在 |
+
+## 创建条目
+
+```http
+POST /presets/:preset_id/entries
+```
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `identifier` | string | **是** | 唯一标识（`[a-zA-Z0-9_-]`，1–64 字符） |
+| `name` | string | 否 | 显示名称，默认 `""` |
+| `role` | string | 否 | 角色，默认 `"system"` |
+| `content` | string | 否 | 提示词内容，默认 `""` |
+| `system_prompt` | boolean | 否 | 默认 `false` |
+| `marker` | boolean | 否 | 默认 `false` |
+| `injection_position` | integer | 否 | 默认 `0` |
+| `injection_depth` | integer | 否 | 可选 |
+| `injection_order` | integer | 否 | 可选 |
+| `forbid_overrides` | boolean | 否 | 可选 |
+| `injection_trigger` | array | 否 | 可选 |
+| `enabled` | boolean | 否 | 默认 `true` |
+| `extra` | object | 否 | 额外字段，默认 `{}` |
+
+### 请求示例
+
+```json
+{
+  "identifier": "worldInfo",
+  "name": "World Info Injection",
+  "role": "system",
+  "content": "[World context will be injected here]",
+  "enabled": true
+}
+```
+
+### 响应 `201`
+
+返回创建的完整条目对象（格式同列表中的单个条目）。
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败 |
+| `404` | 预设不存在 |
+| `409` | `identifier` 已存在 |
+
+## 获取条目
+
+```http
+GET /presets/:preset_id/entries/:identifier
+```
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "identifier": "main",
+    "name": "System Guidance",
+    "role": "system",
+    "content": "Stay in character and keep the tone warm.",
+    "system_prompt": true,
+    "marker": false,
+    "injection_position": 0,
+    "enabled": true,
+    "extra": {}
+  }
+}
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 预设或条目不存在 |
+
+## 更新条目
+
+```http
+PATCH /presets/:preset_id/entries/:identifier
+```
+
+部分更新，只传需要修改的字段。至少传一个字段。
+
+### 请求示例
+
+```json
+{
+  "content": "You are a helpful AI assistant in a fantasy world.",
+  "enabled": true
+}
+```
+
+### 响应 `200`
+
+返回更新后的完整条目对象。
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败或未传任何字段 |
+| `404` | 预设或条目不存在 |
+
+## 删除条目
+
+```http
+DELETE /presets/:preset_id/entries/:identifier
+```
+
+从 `prompts[]` 和所有 `prompt_order` 上下文中移除该条目。
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "identifier": "worldInfo",
+    "deleted": true
+  }
+}
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `404` | 预设或条目不存在 |
+
+## 重排序条目
+
+```http
+PUT /presets/:preset_id/entries/reorder
+```
+
+按传入的 `identifiers` 顺序重排默认排序上下文和 `prompts[]` 数组。未在列表中的条目会追加到末尾。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `identifiers` | string[] | **是** | 条目标识数组，表示期望的顺序 |
+
+### 请求示例
+
+```json
+{
+  "identifiers": ["main", "chatHistory", "worldInfo"]
+}
+```
+
+### 响应 `200`
+
+返回重排后的完整条目列表（格式同列出条目）。
+
+```json
+{
+  "data": {
+    "preset_id": "preset_story",
+    "default_character_id": 100000,
+    "entries": [
+      { "identifier": "main", "..." : "..." },
+      { "identifier": "chatHistory", "..." : "..." },
+      { "identifier": "worldInfo", "..." : "..." }
+    ]
+  }
+}
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败 |
+| `404` | 预设不存在 |
+
+## 批量更新条目
+
+```http
+PATCH /presets/:preset_id/entries/batch/update
+```
+
+对多个条目应用相同的字段更新。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `identifiers` | string[] | **是** | 条目标识数组 |
+| `fields` | object | **是** | 要更新的字段（同更新条目的请求体） |
+
+### 请求示例
+
+```json
+{
+  "identifiers": ["main", "worldInfo"],
+  "fields": {
+    "enabled": false
+  }
+}
+```
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "results": [
+      {
+        "index": 0,
+        "identifier": "main",
+        "action": "updated",
+        "data": { "...完整条目对象..." }
+      },
+      {
+        "index": 1,
+        "identifier": "worldInfo",
+        "action": "not_found"
+      }
+    ],
+    "meta": {
+      "total": 2,
+      "updated": 1,
+      "not_found": 1
+    }
+  }
+}
+```
+
+## 批量删除条目
+
+```http
+POST /presets/:preset_id/entries/batch/delete
+```
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `identifiers` | string[] | **是** | 条目标识数组 |
+
+### 请求示例
+
+```json
+{
+  "identifiers": ["worldInfo", "customPrompt"]
+}
+```
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "results": [
+      { "index": 0, "identifier": "worldInfo", "action": "deleted" },
+      { "index": 1, "identifier": "customPrompt", "action": "not_found" }
+    ],
+    "meta": {
+      "total": 2,
+      "deleted": 1,
+      "not_found": 1
+    }
+  }
+}
+```
+
+### 错误（所有批量端点通用）
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败 |
+| `404` | 预设不存在 |

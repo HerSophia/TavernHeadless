@@ -1,0 +1,181 @@
+/**
+ * Chat History Loader
+ *
+ * 负责从数据库加载聊天历史消息，包括分支合并与楼层范围选择。
+ * 从 ChatService 提取以降低单文件认知负荷。
+ */
+
+import { asc, eq, and, desc, lt, inArray } from "drizzle-orm";
+import type { ChatMessage } from "@tavern/core";
+
+import type { AppDb } from "../db/client.js";
+import { floors, messagePages, messages } from "../db/schema.js";
+
+export class ChatHistoryLoader {
+  constructor(
+    private readonly db: AppDb,
+    private readonly historyMaxFloors?: number
+  ) {}
+
+  async loadHistory(
+    sessionId: string,
+    branchId = "main",
+    beforeFloorNo?: number
+  ): Promise<ChatMessage[]> {
+    const floorScope = await this.selectHistoryFloorScope(sessionId, branchId, beforeFloorNo);
+    return this.loadMessagesFromFloorScope(floorScope);
+  }
+
+  async loadHistoryBeforeFloor(
+    sessionId: string,
+    floorNo: number,
+    branchId = "main"
+  ): Promise<ChatMessage[]> {
+    return this.loadHistory(sessionId, branchId, floorNo);
+  }
+
+  /**
+   * 获取最后一个 committed 楼层（main 分支）。
+   */
+  async getLastCommittedFloor(sessionId: string) {
+    const [row] = await this.db
+      .select()
+      .from(floors)
+      .where(
+        and(
+          eq(floors.sessionId, sessionId),
+          eq(floors.state, "committed"),
+          eq(floors.branchId, "main")
+        )
+      )
+      .orderBy(desc(floors.floorNo))
+      .limit(1);
+
+    return row ?? null;
+  }
+
+  async getLatestFloorInBranch(sessionId: string, branchId: string) {
+    const [lastFloor] = await this.db
+      .select({ id: floors.id, floorNo: floors.floorNo })
+      .from(floors)
+      .where(and(eq(floors.sessionId, sessionId), eq(floors.branchId, branchId)))
+      .orderBy(desc(floors.floorNo))
+      .limit(1);
+
+    return lastFloor ?? null;
+  }
+
+  // ── 私有方法 ────────────────────────────────────────
+
+  private async selectHistoryFloorScope(
+    sessionId: string,
+    branchId: string,
+    beforeFloorNo?: number
+  ): Promise<Array<{ id: string; floorNo: number }>> {
+    const baseConditions = [eq(floors.sessionId, sessionId), eq(floors.state, "committed")];
+
+    if (beforeFloorNo !== undefined) {
+      baseConditions.push(lt(floors.floorNo, beforeFloorNo));
+    }
+
+    if (branchId === "main") {
+      const mainRows = await this.db
+        .select({ id: floors.id, floorNo: floors.floorNo })
+        .from(floors)
+        .where(and(...baseConditions, eq(floors.branchId, "main")))
+        .orderBy(desc(floors.floorNo));
+
+      const limitedRows =
+        this.historyMaxFloors === undefined ? mainRows : mainRows.slice(0, this.historyMaxFloors);
+
+      return limitedRows.reverse();
+    }
+
+    const branchRows = await this.db
+      .select({
+        id: floors.id,
+        floorNo: floors.floorNo,
+        branchId: floors.branchId,
+      })
+      .from(floors)
+      .where(and(...baseConditions, inArray(floors.branchId, ["main", branchId])))
+      .orderBy(asc(floors.floorNo), asc(floors.createdAt));
+
+    const mergedByFloorNo = new Map<number, { id: string; floorNo: number; branchId: string }>();
+
+    for (const row of branchRows) {
+      const existing = mergedByFloorNo.get(row.floorNo);
+
+      if (!existing) {
+        mergedByFloorNo.set(row.floorNo, row);
+        continue;
+      }
+
+      if (row.branchId === branchId && existing.branchId !== branchId) {
+        mergedByFloorNo.set(row.floorNo, row);
+      }
+    }
+
+    const mergedRows = Array.from(mergedByFloorNo.values()).sort((a, b) => a.floorNo - b.floorNo);
+    const limitedRows =
+      this.historyMaxFloors === undefined ? mergedRows : mergedRows.slice(-this.historyMaxFloors);
+
+    return limitedRows.map((row) => ({ id: row.id, floorNo: row.floorNo }));
+  }
+
+  private async loadMessagesFromFloorScope(
+    floorScope: Array<{ id: string; floorNo: number }>
+  ): Promise<ChatMessage[]> {
+    if (floorScope.length === 0) {
+      return [];
+    }
+
+    const floorIds = floorScope.map((row) => row.id);
+    const floorNoById = new Map(floorScope.map((row) => [row.id, row.floorNo]));
+
+    const historyRows = await this.db
+      .select({
+        floorId: messagePages.floorId,
+        role: messages.role,
+        content: messages.content,
+        pageNo: messagePages.pageNo,
+        seq: messages.seq,
+      })
+      .from(messagePages)
+      .innerJoin(
+        messages,
+        and(eq(messages.pageId, messagePages.id), eq(messages.isHidden, false))
+      )
+      .where(and(inArray(messagePages.floorId, floorIds), eq(messagePages.isActive, true)));
+
+    historyRows.sort((a, b) => {
+      const floorDelta = (floorNoById.get(a.floorId) ?? 0) - (floorNoById.get(b.floorId) ?? 0);
+      if (floorDelta !== 0) return floorDelta;
+      const pageDelta = a.pageNo - b.pageNo;
+      if (pageDelta !== 0) return pageDelta;
+      return a.seq - b.seq;
+    });
+
+    return historyRows.map((row) => ({ role: mapRole(row.role), content: row.content }));
+  }
+}
+
+// ── 工具函数 ──────────────────────────────────────────
+
+/**
+ * 将 DB 的消息角色映射为 LLM ChatMessage 角色。
+ * narrator → assistant, 其余保持。
+ */
+function mapRole(dbRole: string): ChatMessage["role"] {
+  switch (dbRole) {
+    case "user":
+      return "user";
+    case "assistant":
+    case "narrator":
+      return "assistant";
+    case "system":
+      return "system";
+    default:
+      return "user";
+  }
+}
