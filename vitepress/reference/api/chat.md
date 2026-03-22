@@ -1,4 +1,4 @@
----
+·---
 outline: [2, 3]
 ---
 
@@ -121,7 +121,7 @@ POST /sessions/:id/respond/dry-run
     "available_for_reply": 1536,
     "memory_summary": "The party recently agreed to search the northern pass.",
     "assembly": {
-      "mode": "preset",
+      "mode": "compat_strict",
       "preset_used": true,
       "worldbook_hits": 1,
       "regex_pre_rules": ["trim_whitespace"],

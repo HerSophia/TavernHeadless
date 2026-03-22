@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitepress';
+import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   lang: 'zh-CN',
@@ -110,9 +110,7 @@ export default defineConfig({
       ],
     },
 
-    socialLinks: [
-      { icon: 'github', link: 'https://github.com/your-org/TavernHeadless' },
-    ],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/HerSophia/TavernHeadless' }],
 
     outline: {
       level: [2, 3],

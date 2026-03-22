@@ -11,11 +11,11 @@ outline: [2, 3]
 | scope | 说明 |
 | ----- | ---- |
 | `global` | 全局变量 |
-| `session` | 会话级变量 |
+| `chat` | 会话级变量 |
 | `floor` | 楼层级变量 |
 | `page` | 页级变量 |
 
-优先级从高到低：`page` > `floor` > `session` > `global`。
+优先级从高到低：`page` > `floor` > `chat` > `global`。
 
 ## Variable 对象
 
@@ -40,7 +40,7 @@ PUT /variables
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
-| `scope` | string | **是** | 作用域：`global` / `session` / `floor` / `page` |
+| `scope` | string | **是** | 作用域：`global` / `chat` / `floor` / `page` |
 | `scope_id` | string | **是** | 关联资源 ID |
 | `key` | string | **是** | 键名（至少 1 字符） |
 | `value` | any | **是** | 值（任意 JSON，不可为 `undefined`） |
@@ -83,8 +83,8 @@ PUT /variables/batch
 ```json
 {
   "items": [
-    { "scope": "session", "scope_id": "sess_001", "key": "mood", "value": "happy" },
-    { "scope": "session", "scope_id": "sess_001", "key": "score", "value": 42 }
+    { "scope": "chat", "scope_id": "sess_001", "key": "mood", "value": "happy" },
+    { "scope": "chat", "scope_id": "sess_001", "key": "score", "value": 42 }
   ]
 }
 ```
@@ -110,7 +110,7 @@ PUT /variables/batch
         "action": "updated",
         "data": {
           "id": "var_mood",
-          "scope": "session",
+          "scope": "chat",
           "scope_id": "sess_001",
           "key": "mood",
           "value": "happy",
@@ -122,7 +122,7 @@ PUT /variables/batch
         "action": "created",
         "data": {
           "id": "var_score",
-          "scope": "session",
+          "scope": "chat",
           "scope_id": "sess_001",
           "key": "score",
           "value": 42,

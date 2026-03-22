@@ -10,7 +10,7 @@
 
 ```bash
 # 克隆
-git clone https://github.com/your-org/TavernHeadless.git
+git clone https://github.com/HerSophia/TavernHeadless.git
 cd TavernHeadless
 
 # 安装依赖

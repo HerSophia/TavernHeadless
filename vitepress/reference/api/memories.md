@@ -11,7 +11,7 @@ outline: [2, 3]
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `id` | string | 记忆 ID |
-| `scope` | string | 作用域：`global` / `session` |
+| `scope` | string | 作用域：`global` / `chat` / `floor` |
 | `scope_id` | string | 关联资源 ID |
 | `type` | string | 类型：`fact` / `summary` / `open_loop` |
 | `content` | object | 记忆内容（任意 JSON） |
@@ -209,7 +209,7 @@ PATCH /memories/batch/status
         "action": "updated",
         "data": {
           "id": "mem_001",
-          "scope": "session",
+          "scope": "chat",
           "scope_id": "sess_001",
           "type": "fact",
           "content": { "text": "User prefers warm lighting" },

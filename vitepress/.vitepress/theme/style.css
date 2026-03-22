@@ -11,20 +11,6 @@
   --vp-c-brand-2: #14b8a6;
   --vp-c-brand-3: #0d9488;
   --vp-c-brand-soft: rgba(45, 212, 191, 0.14);
-
-  /* Home hero 渐变 */
-  --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: -webkit-linear-gradient(
-    120deg,
-    #2dd4bf 30%,
-    #818cf8
-  );
-  --vp-home-hero-image-background-image: linear-gradient(
-    -45deg,
-    #2dd4bf50 50%,
-    #818cf830 50%
-  );
-  --vp-home-hero-image-filter: blur(44px);
 }
 
 .dark {
@@ -46,17 +32,47 @@
     'Consolas', monospace;
 }
 
-/* 首页 Feature 卡片微调 */
-.VPFeature {
-  transition: border-color 0.25s, box-shadow 0.25s;
-}
-
-.dark .VPFeature:hover {
-  border-color: rgba(45, 212, 191, 0.3);
-  box-shadow: 0 0 16px -4px rgba(45, 212, 191, 0.15);
-}
-
 /* 侧边栏活跃项强调 */
 .VPSidebarItem.is-active > .item > .link > .text {
   color: var(--vp-c-brand-1);
+}
+
+/* ========================================================================
+ * Landing Page（layout: page 模式）
+ * ======================================================================== */
+
+/* 首页去掉 page 布局自带的上下边距和侧边栏留白 */
+.custom-landing-content {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+.custom-landing-content h2 {
+  text-align: center;
+  font-size: 24px;
+  font-weight: 700;
+  margin-top: 80px;
+  margin-bottom: 12px;
+  border: none;
+  padding-top: 0;
+}
+
+.custom-landing-content h2 + p {
+  text-align: center;
+  color: var(--vp-c-text-3);
+}
+
+/* 技术栈表格居中且不要太宽 */
+.custom-landing-content table {
+  margin: 24px auto;
+  max-width: 600px;
+}
+
+/* 项目结构代码块：适当收窄 */
+.custom-landing-content div[class*='language-'] {
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+  border-radius: 12px;
 }
