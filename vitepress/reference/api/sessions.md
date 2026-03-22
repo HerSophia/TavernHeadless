@@ -19,10 +19,10 @@ POST /sessions
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `title` | string | 否 | 会话标题，1-200 字符 |
-| `status` | string | 否 | 状态，`active`（默认）/ `archived` / `deleted` |
+| `status` | string | 否 | 状态，`active`（默认）/ `archived` |
 | `character_id` | string | 否 | 绑定角色 ID |
 | `character_version_id` | string | 否 | 指定角色版本 ID |
-| `character_sync_policy` | string | 否 | 同步策略：`snapshot` / `track_latest` / `manual` |
+| `character_sync_policy` | string | 否 | 同步策略：`pin`（默认）/ `manual` / `force` |
 | `character_snapshot` | object | 否 | 手动提供的角色快照（name, description, personality, scenario, exampleDialogue, greeting） |
 | `user_id` | string | 否 | 绑定用户卡 ID |
 | `user_snapshot` | object | 否 | 手动提供的用户快照 |
@@ -32,7 +32,7 @@ POST /sessions
 | `model_provider` | string | 否 | 模型供应商 |
 | `model_name` | string | 否 | 模型名称 |
 | `model_params` | object | 否 | 模型参数（如 temperature, top_p 等） |
-| `prompt_mode` | string | 否 | 提示词模式：`preset` / `native` |
+| `prompt_mode` | string | 否 | 提示词模式：`compat_strict` / `compat_plus` / `native` |
 | `metadata` | object | 否 | 自定义元数据 |
 
 ### 响应 `201`
@@ -64,7 +64,7 @@ POST /sessions
     "model_provider": "openai",
     "model_name": "gpt-4o-mini",
     "model_params": { "temperature": 0.7 },
-    "prompt_mode": "preset",
+    "prompt_mode": "compat_strict",
     "metadata": {},
     "created_at": 1735689600000,
     "updated_at": 1735689600000
@@ -90,9 +90,9 @@ GET /sessions
 
 | 参数 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `status` | string | 按状态过滤：`active` / `archived` / `deleted` |
+| `status` | string | 按状态过滤：`active` / `archived` |
 | `keyword` | string | 按标题模糊搜索，1-200 字符 |
-| `sort_by` | string | 排序字段：`created_at`（默认）/ `updated_at` / `title` |
+| `sort_by` | string | 排序字段：`created_at`（默认）/ `updated_at` |
 | `limit` | integer | 每页条数 |
 | `offset` | integer | 偏移量 |
 | `sort_order` | string | `asc` / `desc` |

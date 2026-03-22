@@ -16,6 +16,9 @@ TavernHeadless 是一个 Headless 的 AI 角色扮演系统。你可以把它理
 - 生态兼容可用：Preset/Worldbook/Regex/Character 导入，兼容模式与原生 Prompt 流水线并存。
 - 开发与调试能力可用：SSE、Prompt dry-run、OpenAPI、Typed SDK、`/docs-zh`、`/docs-en`。
 - 安全与隔离能力可用：`AUTH_MODE=off|api_key|jwt`、多账号隔离、`/accounts`、`/users`、`LLM Profile Vault`。
+- 首批 batch 能力已落地：`PUT /variables/batch`、`PATCH /memories/batch/status`、`POST /memories/batch/delete`、`PATCH /messages/batch/visibility`、`POST /messages/batch/delete`。
+- `apps/api` 当前采用 `0.2.0-beta.2` 作为 beta 预发布版本，OpenAPI 文档版本、导出产物、自动化验证与 SDK 校验已同步通过。
+- 当前重点：补做真实 provider 的最小回归，并继续保持多实例运维约束与公网部署责任文档同步。
 
 ## 主要特性
 
