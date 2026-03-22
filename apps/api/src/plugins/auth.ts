@@ -1,4 +1,5 @@
 import fastifyJwt from "@fastify/jwt";
+import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "../accounts/constants.js";
@@ -44,7 +45,9 @@ export async function registerAuth(
     });
   }
 
-  const apiKeys = auth.mode === "api_key" ? new Set(auth.apiKeys) : new Set<string>();
+  const apiKeyEntries = auth.mode === "api_key"
+    ? auth.apiKeys.map((k) => ({ key: k, buf: Buffer.from(k, "utf-8") }))
+    : [];
 
   app.addHook("onRequest", async (request, reply) => {
     const pathname = getPathname(request);
@@ -71,7 +74,8 @@ export async function registerAuth(
         return;
       }
 
-      if (!apiKeys.has(apiKey)) {
+      const matchedKey = timingSafeApiKeyMatch(apiKey, apiKeyEntries);
+      if (!matchedKey) {
         sendError(reply, 403, "auth_invalid_credentials", "Invalid API key");
         return;
       }
@@ -79,7 +83,7 @@ export async function registerAuth(
       const accountId =
         accountMode === "single"
           ? defaultAccountId
-          : auth.apiKeyAccountMap?.[apiKey]?.trim();
+          : auth.apiKeyAccountMap?.[matchedKey]?.trim();
 
       if (!accountId) {
         sendError(reply, 403, "auth_account_unresolved", "API key is not bound to an account");
@@ -179,6 +183,20 @@ function resolveRole(
   }
 
   return accountId === defaultAccountId ? "admin" : "user";
+}
+
+function timingSafeApiKeyMatch(
+  candidate: string,
+  entries: ReadonlyArray<{ key: string; buf: Buffer }>
+): string | undefined {
+  const candidateBuf = Buffer.from(candidate, "utf-8");
+  let matched: string | undefined;
+  for (const entry of entries) {
+    if (candidateBuf.length === entry.buf.length && timingSafeEqual(candidateBuf, entry.buf)) {
+      matched = entry.key;
+    }
+  }
+  return matched;
 }
 
 function extractApiKey(request: FastifyRequest): string | undefined {

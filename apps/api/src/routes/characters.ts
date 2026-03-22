@@ -5,9 +5,11 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
+import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { characters, characterVersions } from "../db/schema";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http";
+import { getRequestAuthContext } from "../plugins/auth.js";
 
 const characterStatusSchema = z.enum(["active", "deleted"]);
 
@@ -50,14 +52,6 @@ class CharacterRouteError extends Error {
   }
 }
 
-const idParamsJsonSchema = {
-  type: "object",
-  required: ["id"],
-  properties: {
-    id: { type: "string", minLength: 1 }
-  },
-  additionalProperties: false
-} as const;
 
 const versionParamsJsonSchema = {
   type: "object",
@@ -153,23 +147,6 @@ const listMetaJsonSchema = {
   additionalProperties: false
 } as const;
 
-const errorResponseJsonSchema = {
-  type: "object",
-  required: ["error"],
-  properties: {
-    error: {
-      type: "object",
-      required: ["code", "message"],
-      properties: {
-        code: { type: "string" },
-        message: { type: "string" },
-        details: {}
-      },
-      additionalProperties: true
-    }
-  },
-  additionalProperties: false
-} as const;
 
 const characterResponseJsonSchema = {
   type: "object",
@@ -220,17 +197,15 @@ export async function registerCharacterRoutes(
       return;
     }
 
-    const whereClause =
-      parsed.data.status && parsed.data.keyword
-        ? and(
-            eq(characters.status, parsed.data.status),
-            like(characters.name, `%${parsed.data.keyword}%`)
-          )
-        : parsed.data.status
-          ? eq(characters.status, parsed.data.status)
-          : parsed.data.keyword
-            ? like(characters.name, `%${parsed.data.keyword}%`)
-            : undefined;
+    const auth = getRequestAuthContext(request);
+    const conditions = [eq(characters.accountId, auth.accountId)];
+    if (parsed.data.status) {
+      conditions.push(eq(characters.status, parsed.data.status));
+    }
+    if (parsed.data.keyword) {
+      conditions.push(like(characters.name, `%${parsed.data.keyword}%`));
+    }
+    const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
 
     const sortByColumn =
       parsed.data.sort_by === "name"
@@ -317,7 +292,8 @@ export async function registerCharacterRoutes(
       return;
     }
 
-    const [character] = await db.select().from(characters).where(eq(characters.id, parsed.data.id)).limit(1);
+    const auth = getRequestAuthContext(request);
+    const [character] = await db.select().from(characters).where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId))).limit(1);
     if (!character) {
       return sendError(reply, 404, "not_found", "Character not found");
     }
@@ -372,6 +348,7 @@ export async function registerCharacterRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
     const parsedQuery = parseWithSchema(listVersionsQuerySchema, request.query, reply);
     if (!parsedQuery.ok) {
       return;
@@ -380,7 +357,7 @@ export async function registerCharacterRoutes(
     const [character] = await db
       .select({ id: characters.id })
       .from(characters)
-      .where(eq(characters.id, parsedParams.data.id))
+      .where(and(eq(characters.id, parsedParams.data.id), eq(characters.accountId, auth.accountId)))
       .limit(1);
 
     if (!character) {
@@ -449,10 +426,11 @@ export async function registerCharacterRoutes(
 
     try {
       const created = db.transaction((tx) => {
+        const auth = getRequestAuthContext(request);
         const character = tx
           .select()
           .from(characters)
-          .where(eq(characters.id, parsedParams.data.id))
+          .where(and(eq(characters.id, parsedParams.data.id), eq(characters.accountId, auth.accountId)))
           .limit(1)
           .get();
 
@@ -546,10 +524,11 @@ export async function registerCharacterRoutes(
 
     try {
       const rolledBack = db.transaction((tx) => {
+        const auth = getRequestAuthContext(request);
         const character = tx
           .select()
           .from(characters)
-          .where(eq(characters.id, parsed.data.id))
+          .where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId)))
           .limit(1)
           .get();
 
@@ -660,6 +639,7 @@ export async function registerCharacterRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
     const now = Date.now();
 
     const result = await db
@@ -669,7 +649,7 @@ export async function registerCharacterRoutes(
         deletedAt: now,
         updatedAt: now
       })
-      .where(eq(characters.id, parsed.data.id));
+      .where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId)));
 
     if (result.changes === 0) {
       return sendError(reply, 404, "not_found", "Character not found");
@@ -701,6 +681,7 @@ export async function registerCharacterRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
     const now = Date.now();
 
     const result = await db
@@ -710,7 +691,7 @@ export async function registerCharacterRoutes(
         deletedAt: null,
         updatedAt: now
       })
-      .where(eq(characters.id, parsed.data.id));
+      .where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId)));
 
     if (result.changes === 0) {
       return sendError(reply, 404, "not_found", "Character not found");

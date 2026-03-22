@@ -1,10 +1,11 @@
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, like, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { SimpleTokenCounter } from "@tavern/core";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
+import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchDeleteBodyJsonSchema, batchStatusBodyJsonSchema, batchResultResponseJsonSchema } from "./schemas/common.js";
 import { accountUsers, characterVersions, floors, messagePages, messages, sessions } from "../db/schema";
 import { ensureOptionalObjectBody, parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
@@ -33,6 +34,7 @@ const sessionParamsSchema = z.object({
 
 const listSessionsQuerySchema = listQuerySchemaBase.extend({
   status: sessionStatusSchema.optional(),
+  keyword: z.string().trim().min(1).max(200).optional(),
   sort_by: z.enum(["created_at", "updated_at"]).default("created_at")
 });
 
@@ -78,32 +80,7 @@ const branchDiffQuerySchema = z.object({
   target_branch_id: z.string().min(1)
 });
 
-const idParamsJsonSchema = {
-  type: "object",
-  required: ["id"],
-  properties: {
-    id: { type: "string", minLength: 1 },
-  },
-  additionalProperties: false,
-} as const;
 
-const errorResponseJsonSchema = {
-  type: "object",
-  required: ["error"],
-  properties: {
-    error: {
-      type: "object",
-      required: ["code", "message"],
-      properties: {
-        code: { type: "string" },
-        message: { type: "string" },
-        details: {},
-      },
-      additionalProperties: true,
-    },
-  },
-  additionalProperties: false,
-} as const;
 
 const listMetaJsonSchema = {
   type: "object",
@@ -1053,6 +1030,7 @@ export async function registerSessionRoutes(
           ...listQueryJsonSchema.properties,
           status: { type: "string", enum: ["active", "archived"] },
           sort_by: { type: "string", enum: ["created_at", "updated_at"] },
+          keyword: { type: "string", minLength: 1, maxLength: 200 },
         },
       },
       response: { 200: sessionListResponseJsonSchema, 400: errorResponseJsonSchema },
@@ -1069,6 +1047,10 @@ export async function registerSessionRoutes(
 
     if (parsedQuery.data.status !== undefined) {
       filters.push(eq(sessions.status, parsedQuery.data.status));
+    }
+
+    if (parsedQuery.data.keyword) {
+      filters.push(like(sessions.title, `%${parsedQuery.data.keyword}%`));
     }
 
     const whereClause = and(...filters);
@@ -1711,6 +1693,99 @@ export async function registerSessionRoutes(
         floors: timelineFloors,
       },
       meta: buildListMeta({ total, limit, offset, sortBy: "floor_no", sortOrder: "asc" }),
+    });
+  });
+
+  // ── Batch Operations ────────────────────────────────
+
+  /** PATCH /sessions/batch/status — 批量更新会话状态 */
+  app.patch("/sessions/batch/status", {
+    schema: {
+      tags: ["sessions"],
+      summary: "Batch update session status",
+      operationId: "batchUpdateSessionStatus",
+      body: batchStatusBodyJsonSchema(["active", "archived"]),
+      response: {
+        200: batchResultResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const bodyParsed = parseWithSchema(
+      z.object({ ids: batchIdArraySchema, status: sessionStatusSchema }),
+      request.body,
+      reply
+    );
+    if (!bodyParsed.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const { ids, status } = bodyParsed.data;
+    const results: { index: number; id: string; action: string }[] = [];
+    let updated = 0;
+    let notFound = 0;
+
+    db.transaction((tx) => {
+      ids.forEach((id, index) => {
+        const rows = tx
+          .update(sessions)
+          .set({ status, updatedAt: Date.now() })
+          .where(sessionOwnershipFilter(id, auth.accountId))
+          .returning({ id: sessions.id })
+          .all();
+
+        if (rows.length > 0) {
+          results.push({ index, id, action: "updated" });
+          updated++;
+        } else {
+          results.push({ index, id, action: "not_found" });
+          notFound++;
+        }
+      });
+    });
+
+    return reply.send({
+      data: { results, meta: { total: ids.length, updated, not_found: notFound, status } },
+    });
+  });
+
+  /** POST /sessions/batch/delete — 批量删除会话 */
+  app.post("/sessions/batch/delete", {
+    schema: {
+      tags: ["sessions"],
+      summary: "Batch delete sessions",
+      operationId: "batchDeleteSessions",
+      body: batchDeleteBodyJsonSchema,
+      response: {
+        200: batchResultResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const bodyParsed = parseWithSchema(z.object({ ids: batchIdArraySchema }), request.body, reply);
+    if (!bodyParsed.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const { ids } = bodyParsed.data;
+    const results: { index: number; id: string; action: string }[] = [];
+    let deleted = 0;
+    let notFound = 0;
+
+    db.transaction((tx) => {
+      ids.forEach((id, index) => {
+        const rows = tx.delete(sessions).where(sessionOwnershipFilter(id, auth.accountId)).returning({ id: sessions.id }).all();
+
+        if (rows.length > 0) {
+          results.push({ index, id, action: "deleted" });
+          deleted++;
+        } else {
+          results.push({ index, id, action: "not_found" });
+          notFound++;
+        }
+      });
+    });
+
+    return reply.send({
+      data: { results, meta: { total: ids.length, deleted, not_found: notFound } },
     });
   });
 }

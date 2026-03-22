@@ -12,6 +12,14 @@ const DEFAULT_DATABASE_PATH = "data/tavern-headless.db";
 const DEFAULT_MIGRATIONS_PATH = fileURLToPath(new URL("../../drizzle", import.meta.url));
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
+
+/**
+ * Transaction executor type — the `tx` parameter received inside
+ * `db.transaction(tx => ...)`.  Used to replace `any` in methods
+ * that accept a transaction callback parameter.
+ */
+export type DbExecutor = Parameters<Parameters<AppDb["transaction"]>[0]>[0];
+
 export type DatabaseConnection = {
   db: AppDb;
   close: () => void;

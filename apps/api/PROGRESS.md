@@ -6,8 +6,8 @@
 ## 当前里程碑
 
 \- 里程碑：`后端 Beta 阶段`
-\- 状态：`进行中（当前处于收口阶段，自动化验证已通过，当前以真实 provider 回归与发布收尾为主）`
-\- 最后更新：`2026-03-16`
+\- 状态：`进行中（当前处于收口阶段，LLM Instance Config API 已落地，当前以真实 provider 回归与发布收尾为主）`
+\- 最后更新：`2026-06-24`
 
 ## 当前判断（审计后）
 
@@ -15,6 +15,48 @@
 - 当前已覆盖的主能力包括：CRUD 与迁移、聊天生成与重生成、SSE、Prompt dry-run、分支治理、角色生命周期、多账号隔离与用户绑定、`LLM Profile Vault`、模型发现与连通性测试、记忆注入与维护任务、OpenAPI/Swagger、Typed SDK、CORS 与中英文化文档入口。
 - `apps/api/package.json` 与 OpenAPI `info.version` 已同步到 `0.2.0-beta.2`，用于表达后端 beta 预发布版本姿态。
 - 目前 beta 收口剩余的主差距已收敛为：真实 provider 的最小回归。`0.2.0-beta.2` 的版本同步、OpenAPI/SDK 产物同步与最终全量验证记录已完成；多实例记忆维护约束、公网部署责任、CRUD / batch 口径与首批 batch 接口也已在本次落地。
+
+## M22 增量：LLM Instance Config API
+
+### 1) 已完成
+
+- [x] 新增 `llm_instance_config` 数据库表及 migration `0013_llm_instance_config.sql`
+- [x] 新增 `LlmInstanceService`（CRUD + 多级优先级解析）
+- [x] 提取 `lib/llm-params.ts` 公共参数工具（从 `llm-profile-service.ts` 抽离）
+- [x] 新增独立路由 `/llm-instances`，5 个端点：
+  - `GET /llm-instances` — 列出配置
+  - `GET /llm-instances/resolved` — 解析各槽位生效配置
+  - `GET /llm-instances/:slot` — 查询指定槽位
+  - `PUT /llm-instances/:slot` — 创建或更新配置
+  - `DELETE /llm-instances/:slot` — 删除配置
+- [x] 新增 OpenAPI JSON Schema 与示例（`llm-instances-schemas.ts`）
+- [x] 前端 API 客户端（`apps/web/src/lib/workspace-api/llm.ts`）新增 5 个函数
+- [x] 数据库文档、API 参考文档、VitePress 侧边栏同步更新
+
+### 2) 测试与验证
+
+- [x] `pnpm --filter @tavern/api typecheck` 通过
+- [x] `pnpm --filter @tavern/web typecheck` 通过
+- [x] `pnpm --filter @tavern/api test` 通过（369 passed / 2 failed，2 个失败为既有世界书 E2E 问题）
+
+### 3) 修改文件
+
+- `apps/api/src/db/schema.ts` — 新增 `llmInstanceConfigs` 表定义
+- `apps/api/drizzle/0013_llm_instance_config.sql` — 数据库迁移
+- `apps/api/drizzle/meta/_journal.json` — 迁移索引
+- `apps/api/src/lib/llm-params.ts` — 参数工具提取（新文件）
+- `apps/api/src/services/llm-instance-service.ts` — 服务层（新文件）
+- `apps/api/src/services/llm-profile-service.ts` — 移除重复代码，改用 `llm-params` 导入
+- `apps/api/src/routes/llm-instances.ts` — 路由（新文件）
+- `apps/api/src/routes/schemas/llm-instances-schemas.ts` — JSON Schema（新文件）
+- `apps/api/src/routes/schemas/llm-profiles-schemas.ts` — 导出 `generationParamsJsonSchemaProperties`
+- `apps/api/src/routes/index.ts` — 注册新路由
+- `apps/web/src/lib/workspace-api/llm.ts` — 前端 API 客户端扩展
+- `docs/database.md` — 新增 `llm_instance_config` 表
+- `vitepress/reference/database.md` — 同步更新
+- `vitepress/reference/api/llm-instances.md` — API 参考（新文件）
+- `vitepress/.vitepress/config.ts` — 侧边栏新增入口
+
 
 ## Beta.2 范围冻结（本次）
 
@@ -1060,6 +1102,17 @@
 - `apps/api/test/api.integration.test.ts`
 
 ### 7) 数据字典文档（P1）
+
+
+### 2026-06-24（M22：LLM Instance Config API）
+
+- 新增 `llm_instance_config` 数据库表及 migration `0013_llm_instance_config.sql`
+- 新增 `LlmInstanceService`（CRUD + 多级优先级解析：session(slot) > session(*) > global(slot) > global(*) > default）
+- 提取 `lib/llm-params.ts` 公共参数工具，消除 `llm-profile-service.ts` 中的重复代码
+- 新增独立路由 `/llm-instances`（5 个端点），配套 OpenAPI JSON Schema、示例与 Zod 运行时验证
+- 前端 API 客户端扩展 5 个函数
+- 数据库文档、API 参考、VitePress 侧边栏同步更新
+- API / Web typecheck 通过，全量测试 369 passed（2 个既有世界书 E2E 失败不相关）
 
 - [x] 补充字段含义、枚举说明、索引说明
 - [x] 补充列表接口分页/排序/过滤约定说明

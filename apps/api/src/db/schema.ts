@@ -30,15 +30,22 @@ export const accountUsers = sqliteTable(
   })
 );
 
-export const characters = sqliteTable("character", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  source: text("source").notNull().default("sillytavern"),
-  status: text("status", { enum: ["active", "deleted"] }).notNull().default("active"),
-  deletedAt: integer("deleted_at"),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
+export const characters = sqliteTable(
+  "character",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    source: text("source").notNull().default("sillytavern"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    status: text("status", { enum: ["active", "deleted"] }).notNull().default("active"),
+    deletedAt: integer("deleted_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountUpdatedIdx: index("character_account_updated_idx").on(table.accountId, table.updatedAt),
+  })
+);
 
 export const characterVersions = sqliteTable(
   "character_version",
@@ -176,57 +183,124 @@ export const variables = sqliteTable(
   })
 );
 
-export const memoryItems = sqliteTable("memory_item", {
-  id: text("id").primaryKey(),
-  scope: text("scope", { enum: ["global", "chat", "floor"] }).notNull(),
-  scopeId: text("scope_id").notNull(),
-  type: text("type", { enum: ["fact", "summary", "open_loop"] }).notNull(),
-  contentJson: text("content_json").notNull(),
-  importance: real("importance").notNull().default(0.5),
-  confidence: real("confidence").notNull().default(1),
-  sourceFloorId: text("source_floor_id"),
-  sourceMessageId: text("source_message_id"),
-  status: text("status", { enum: ["active", "deprecated"] }).notNull().default("active"),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull()
-});
+export const memoryItems = sqliteTable(
+  "memory_item",
+  {
+    id: text("id").primaryKey(),
+    scope: text("scope", { enum: ["global", "chat", "floor"] }).notNull(),
+    scopeId: text("scope_id").notNull(),
+    type: text("type", { enum: ["fact", "summary", "open_loop"] }).notNull(),
+    contentJson: text("content_json").notNull(),
+    importance: real("importance").notNull().default(0.5),
+    confidence: real("confidence").notNull().default(1),
+    sourceFloorId: text("source_floor_id"),
+    sourceMessageId: text("source_message_id"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    status: text("status", { enum: ["active", "deprecated"] }).notNull().default("active"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountScopeIdx: index("memory_item_account_scope_idx").on(table.accountId, table.scope, table.scopeId),
+  })
+);
 
-export const memoryEdges = sqliteTable("memory_edge", {
-  id: text("id").primaryKey(),
-  fromId: text("from_id").notNull().references(() => memoryItems.id, { onDelete: "cascade" }),
-  toId: text("to_id").notNull().references(() => memoryItems.id, { onDelete: "cascade" }),
-  relation: text("relation", { enum: ["supports", "contradicts", "updates"] }).notNull(),
-  createdAt: integer("created_at").notNull()
-});
+export const memoryEdges = sqliteTable(
+  "memory_edge",
+  {
+    id: text("id").primaryKey(),
+    fromId: text("from_id").notNull().references(() => memoryItems.id, { onDelete: "cascade" }),
+    toId: text("to_id").notNull().references(() => memoryItems.id, { onDelete: "cascade" }),
+    relation: text("relation", { enum: ["supports", "contradicts", "updates"] }).notNull(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    accountIdx: index("memory_edge_account_idx").on(table.accountId),
+  })
+);
 
 // ── 导入资源表 ────────────────────────────────────────
 
-export const presets = sqliteTable("preset", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  source: text("source").notNull().default("sillytavern"),
-  dataJson: text("data_json").notNull(),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
+export const presets = sqliteTable(
+  "preset",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    source: text("source").notNull().default("sillytavern"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    dataJson: text("data_json").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountUpdatedIdx: index("preset_account_updated_idx").on(table.accountId, table.updatedAt),
+  })
+);
 
-export const worldbooks = sqliteTable("worldbook", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  source: text("source").notNull().default("sillytavern"),
-  dataJson: text("data_json").notNull(),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
+export const worldbooks = sqliteTable(
+  "worldbook",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    source: text("source").notNull().default("sillytavern"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    dataJson: text("data_json").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountUpdatedIdx: index("worldbook_account_updated_idx").on(table.accountId, table.updatedAt),
+  })
+);
 
-export const regexProfiles = sqliteTable("regex_profile", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  source: text("source").notNull().default("sillytavern"),
-  dataJson: text("data_json").notNull(),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
+export const worldbookEntries = sqliteTable(
+  "worldbook_entry",
+  {
+    id: text("id").primaryKey(),
+    worldbookId: text("worldbook_id")
+      .notNull()
+      .references(() => worldbooks.id, { onDelete: "cascade" }),
+    uid: integer("uid").notNull(),
+    comment: text("comment").notNull().default(""),
+    content: text("content").notNull().default(""),
+    keysJson: text("keys_json").notNull().default("[]"),
+    keysSecondaryJson: text("keys_secondary_json").notNull().default("[]"),
+    selective: integer("selective", { mode: "boolean" }).notNull().default(true),
+    selectiveLogic: integer("selective_logic").notNull().default(0),
+    constant: integer("constant", { mode: "boolean" }).notNull().default(false),
+    position: integer("position").notNull().default(0),
+    order: integer("order").notNull().default(100),
+    depth: integer("depth").notNull().default(4),
+    role: integer("role").notNull().default(0),
+    disable: integer("disable", { mode: "boolean" }).notNull().default(false),
+    scanDepth: integer("scan_depth"),
+    caseSensitive: integer("case_sensitive", { mode: "boolean" }),
+    matchWholeWords: integer("match_whole_words", { mode: "boolean" }),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    worldbookOrderIdx: index("wb_entry_worldbook_order_idx").on(table.worldbookId, table.order),
+    worldbookUpdatedIdx: index("wb_entry_worldbook_updated_idx").on(table.worldbookId, table.updatedAt),
+  })
+);
+
+export const regexProfiles = sqliteTable(
+  "regex_profile",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    source: text("source").notNull().default("sillytavern"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    dataJson: text("data_json").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountUpdatedIdx: index("regex_profile_account_updated_idx").on(table.accountId, table.updatedAt),
+  })
+);
 
 // ── LLM Profile Vault ──────────────────────────────────
 
@@ -269,5 +343,25 @@ export const llmProfileBindings = sqliteTable(
   (table) => ({
     scopeSlotUnique: uniqueIndex("llm_profile_binding_account_scope_scope_id_slot_uq").on(table.accountId, table.scope, table.scopeId, table.instanceSlot),
     profileScopeIdx: index("llm_profile_binding_profile_account_scope_idx").on(table.profileId, table.accountId, table.scope, table.scopeId, table.instanceSlot),
+  })
+);
+
+export const llmInstanceConfigs = sqliteTable(
+  "llm_instance_config",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    scope: text("scope", { enum: ["global", "session"] }).notNull(),
+    scopeId: text("scope_id").notNull(),
+    instanceSlot: text("instance_slot", { enum: ["*", "narrator", "director", "verifier", "memory"] }).notNull(),
+    presetId: text("preset_id"),
+    enabled: integer("enabled").notNull().default(1),
+    paramsJson: text("params_json"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    scopeSlotUnique: uniqueIndex("llm_instance_config_account_scope_slot_uq").on(table.accountId, table.scope, table.scopeId, table.instanceSlot),
+    scopeIdx: index("llm_instance_config_account_scope_idx").on(table.accountId, table.scope, table.scopeId),
   })
 );

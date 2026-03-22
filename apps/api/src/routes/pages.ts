@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
+import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchDeleteBodyJsonSchema, batchResultResponseJsonSchema } from "./schemas/common.js";
 import { messagePages } from "../db/schema";
 import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
@@ -40,14 +41,6 @@ const updatePageSchema = z
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 
-const idParamsJsonSchema = {
-  type: "object",
-  required: ["id"],
-  properties: {
-    id: { type: "string", minLength: 1 },
-  },
-  additionalProperties: false,
-} as const;
 
 const listPagesQueryJsonSchema = {
   type: "object",
@@ -93,23 +86,6 @@ const pageJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const errorResponseJsonSchema = {
-  type: "object",
-  required: ["error"],
-  properties: {
-    error: {
-      type: "object",
-      required: ["code", "message"],
-      properties: {
-        code: { type: "string" },
-        message: { type: "string" },
-        details: {},
-      },
-      additionalProperties: true,
-    },
-  },
-  additionalProperties: false,
-} as const;
 
 const listMetaJsonSchema = {
   type: "object",
@@ -478,5 +454,51 @@ export async function registerMessagePageRoutes(
     }
 
     return reply.send({ data: toPageResponse(updated) });
+  });
+
+  // ── Batch Operations ────────────────────────────────
+
+  /** POST /pages/batch/delete — 批量删除页 */
+  app.post("/pages/batch/delete", {
+    schema: {
+      tags: ["pages"],
+      summary: "Batch delete pages",
+      operationId: "batchDeletePages",
+      body: batchDeleteBodyJsonSchema,
+      response: {
+        200: batchResultResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const bodyParsed = parseWithSchema(z.object({ ids: batchIdArraySchema }), request.body, reply);
+    if (!bodyParsed.ok) return;
+
+    const { ids } = bodyParsed.data;
+    const results: { index: number; id: string; action: string }[] = [];
+    let deleted = 0;
+    let notFound = 0;
+
+    db.transaction((tx) => {
+      ids.forEach((id, index) => {
+        const rows = tx
+          .delete(messagePages)
+          .where(eq(messagePages.id, id))
+          .returning({ id: messagePages.id })
+          .all();
+
+        if (rows.length > 0) {
+          results.push({ index, id, action: "deleted" });
+          deleted++;
+        } else {
+          results.push({ index, id, action: "not_found" });
+          notFound++;
+        }
+      });
+    });
+
+    return reply.send({
+      data: { results, meta: { total: ids.length, deleted, not_found: notFound } },
+    });
   });
 }

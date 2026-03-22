@@ -302,7 +302,7 @@ POST /memories/batch/delete
 | `id` | string | 边 ID |
 | `from_id` | string | 起始记忆 ID |
 | `to_id` | string | 目标记忆 ID |
-| `relation` | string | 关系类型：`supersedes` / `contradicts` / `elaborates` / `causes` |
+| `relation` | string | 关系类型：`supports` / `contradicts` / `updates` |
 | `created_at` | integer | 创建时间 |
 
 ### 创建记忆边
@@ -351,6 +351,31 @@ GET /memory-edges/:id
 
 | 状态码 | 说明 |
 | ------ | ---- |
+| `404` | 记忆边不存在 |
+
+### 更新记忆边
+
+```http
+PATCH /memory-edges/:id
+```
+
+更新记忆边的关系类型。仅 `relation` 字段可更新；修改 `from_id` 或 `to_id` 应删除旧边并创建新边。
+
+#### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `relation` | string | **是** | 关系类型：`supports` / `contradicts` / `updates` |
+
+#### 响应 `200`
+
+返回 `{ "data": MemoryEdge }` 。
+
+#### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败 |
 | `404` | 记忆边不存在 |
 
 ### 删除记忆边

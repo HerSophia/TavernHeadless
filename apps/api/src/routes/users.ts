@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
+import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchDeleteBodyJsonSchema, batchStatusBodyJsonSchema, batchResultResponseJsonSchema } from "./schemas/common.js";
 import { accountUsers } from "../db/schema";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http";
@@ -84,14 +85,6 @@ const userDeleteResponseExample = {
   }
 } as const;
 
-const idParamsJsonSchema = {
-  type: "object",
-  required: ["id"],
-  properties: {
-    id: { type: "string", minLength: 1 }
-  },
-  additionalProperties: false
-} as const;
 
 const listQueryJsonSchema = {
   type: "object",
@@ -146,23 +139,6 @@ const listMetaJsonSchema = {
   additionalProperties: false
 } as const;
 
-const errorResponseJsonSchema = {
-  type: "object",
-  required: ["error"],
-  properties: {
-    error: {
-      type: "object",
-      required: ["code", "message"],
-      properties: {
-        code: { type: "string" },
-        message: { type: "string" },
-        details: {}
-      },
-      additionalProperties: true
-    }
-  },
-  additionalProperties: false
-} as const;
 
 const userResponseJsonSchema = {
   type: "object",
@@ -458,5 +434,103 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
     }
 
     return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
+  });
+
+  // ── Batch Operations ────────────────────────────────
+
+  /** PATCH /users/batch/status — 批量更新用户状态 */
+  app.patch("/users/batch/status", {
+    schema: {
+      tags: ["users"],
+      summary: "Batch update user status",
+      operationId: "batchUpdateUserStatus",
+      body: batchStatusBodyJsonSchema(["active", "disabled"]),
+      response: {
+        200: batchResultResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const bodyParsed = parseWithSchema(
+      z.object({ ids: batchIdArraySchema, status: z.enum(["active", "disabled"]) }),
+      request.body,
+      reply
+    );
+    if (!bodyParsed.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const { ids, status } = bodyParsed.data;
+    const results: { index: number; id: string; action: string }[] = [];
+    let updated = 0;
+    let notFound = 0;
+
+    db.transaction((tx) => {
+      ids.forEach((id, index) => {
+        const [row] = tx
+          .select({ id: accountUsers.id, status: accountUsers.status })
+          .from(accountUsers)
+          .where(and(eq(accountUsers.id, id), eq(accountUsers.accountId, auth.accountId)))
+          .all();
+
+        if (!row || row.status === "deleted") {
+          results.push({ index, id, action: "not_found" });
+          notFound++;
+        } else {
+          tx.update(accountUsers).set({ status, updatedAt: Date.now() }).where(eq(accountUsers.id, id)).run();
+          results.push({ index, id, action: "updated" });
+          updated++;
+        }
+      });
+    });
+
+    return reply.send({
+      data: { results, meta: { total: ids.length, updated, not_found: notFound, status } },
+    });
+  });
+
+  /** POST /users/batch/delete — 批量删除用户（软删除） */
+  app.post("/users/batch/delete", {
+    schema: {
+      tags: ["users"],
+      summary: "Batch delete users",
+      operationId: "batchDeleteUsers",
+      body: batchDeleteBodyJsonSchema,
+      response: {
+        200: batchResultResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const bodyParsed = parseWithSchema(z.object({ ids: batchIdArraySchema }), request.body, reply);
+    if (!bodyParsed.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const { ids } = bodyParsed.data;
+    const results: { index: number; id: string; action: string }[] = [];
+    let deleted = 0;
+    let notFound = 0;
+
+    db.transaction((tx) => {
+      ids.forEach((id, index) => {
+        const [row] = tx
+          .select({ id: accountUsers.id, status: accountUsers.status })
+          .from(accountUsers)
+          .where(and(eq(accountUsers.id, id), eq(accountUsers.accountId, auth.accountId)))
+          .all();
+
+        if (!row || row.status === "deleted") {
+          results.push({ index, id, action: "not_found" });
+          notFound++;
+        } else {
+          tx.update(accountUsers).set({ status: "deleted", updatedAt: Date.now() }).where(eq(accountUsers.id, id)).run();
+          results.push({ index, id, action: "deleted" });
+          deleted++;
+        }
+      });
+    });
+
+    return reply.send({
+      data: { results, meta: { total: ids.length, deleted, not_found: notFound } },
+    });
   });
 }

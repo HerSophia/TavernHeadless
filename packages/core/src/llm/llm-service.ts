@@ -58,13 +58,14 @@ function createTimeoutSignal(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new LLMTimeoutError(timeoutMs)), timeoutMs);
 
-  // 如果用户的信号触发，也中止
+  let onAbort: (() => void) | undefined;
+
   if (userSignal) {
     if (userSignal.aborted) {
       clearTimeout(timer);
       controller.abort(userSignal.reason);
     } else {
-      const onAbort = () => {
+      onAbort = () => {
         clearTimeout(timer);
         controller.abort(userSignal.reason);
       };
@@ -74,7 +75,12 @@ function createTimeoutSignal(
 
   return {
     signal: controller.signal,
-    cleanup: () => clearTimeout(timer),
+    cleanup: () => {
+      clearTimeout(timer);
+      if (userSignal && onAbort) {
+        userSignal.removeEventListener('abort', onAbort);
+      }
+    },
   };
 }
 

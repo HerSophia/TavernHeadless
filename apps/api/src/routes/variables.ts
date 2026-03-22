@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
+import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { variables } from "../db/schema";
 import { parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
@@ -133,14 +134,6 @@ const batchUpsertVariablesResponseExample = {
   }
 } as const;
 
-const idParamsJsonSchema = {
-  type: "object",
-  required: ["id"],
-  properties: {
-    id: { type: "string", minLength: 1 },
-  },
-  additionalProperties: false,
-} as const;
 
 const listVariablesQueryJsonSchema = {
   type: "object",
@@ -199,23 +192,6 @@ const variableJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const errorResponseJsonSchema = {
-  type: "object",
-  required: ["error"],
-  properties: {
-    error: {
-      type: "object",
-      required: ["code", "message"],
-      properties: {
-        code: { type: "string" },
-        message: { type: "string" },
-        details: {},
-      },
-      additionalProperties: true,
-    },
-  },
-  additionalProperties: false,
-} as const;
 
 const listMetaJsonSchema = {
   type: "object",

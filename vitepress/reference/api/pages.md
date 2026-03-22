@@ -89,3 +89,46 @@ PATCH /pages/:id/activate
 ### 响应 `200`
 
 返回激活后的 Page 对象。
+
+## 批量删除消息页
+
+```http
+POST /pages/batch/delete
+```
+
+批量硬删除消息页。每次最多 100 条，不允许重复 ID。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `ids` | string[] | **是** | 消息页 ID 数组，1-100 条，不允许重复 |
+
+### 请求示例
+
+```json
+{
+  "ids": ["page_001", "page_002", "page_missing"]
+}
+```
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "results": [
+      { "index": 0, "id": "page_001", "action": "deleted" },
+      { "index": 1, "id": "page_002", "action": "deleted" },
+      { "index": 2, "id": "page_missing", "action": "not_found" }
+    ],
+    "meta": { "total": 3, "deleted": 2, "not_found": 1 }
+  }
+}
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败、ids 为空或超过 100 条、存在重复 ID |

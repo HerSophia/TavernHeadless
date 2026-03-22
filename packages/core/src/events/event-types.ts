@@ -102,6 +102,12 @@ export interface MemoryConsolidatedEvent {
   deprecated: number;
 }
 
+/** 记忆整理失败事件（降级为警告，不阻断回合） */
+export interface MemoryConsolidationFailedEvent {
+  floorId: string;
+  error: Error;
+}
+
 /** Core 事件映射表（提供 emittery 强类型约束） */
 export interface CoreEventMap {
   'floor.stateChanged': FloorStateChangedEvent;
@@ -118,4 +124,5 @@ export interface CoreEventMap {
   'memory.updated': MemoryUpdatedEvent;
   'memory.deprecated': MemoryDeprecatedEvent;
   'memory.consolidated': MemoryConsolidatedEvent;
+  'memory.consolidation_failed': MemoryConsolidationFailedEvent;
 }
