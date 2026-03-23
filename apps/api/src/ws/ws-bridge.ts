@@ -78,6 +78,9 @@ export class WsBridge {
       'memory.updated',
       'memory.deprecated',
       'memory.consolidated',
+      'mcp.connected',
+      'mcp.disconnected',
+      'mcp.error',
     ];
 
     for (const eventName of events) {

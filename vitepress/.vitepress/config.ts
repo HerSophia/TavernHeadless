@@ -94,6 +94,7 @@ export default defineConfig({
             { text: 'LLM Profiles', link: '/reference/api/llm-profiles' },
             { text: 'LLM Instances（实例配置）', link: '/reference/api/llm-instances' },
             { text: 'Tools（工具调用）', link: '/reference/api/tools' },
+            { text: 'MCP Servers（MCP 服务器）', link: '/reference/api/mcp' },
             { text: 'Accounts（账号）', link: '/reference/api/accounts' },
           ],
         },

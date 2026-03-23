@@ -156,17 +156,29 @@ export interface ToolProvider {
 
 // ── MCP Reserved Types ────────────────────────────────
 
-/** MCP 工具提供者配置（预留，暂不实现） */
+/**
+ * MCP 工具提供者配置
+ *
+ * Core 层的轻量类型定义，不依赖 MCP SDK。
+ * 具体的连接管理和传输实现位于 apps/api/src/mcp/。
+ */
 export interface McpToolProviderConfig {
-  /** MCP 服务器地址 */
-  serverUrl: string;
-  /** 认证信息 */
-  auth?: {
-    type: 'bearer' | 'api_key';
-    token: string;
-  };
-  /** 超时（毫秒） */
-  timeoutMs?: number;
+  /** MCP 服务器 ID */
+  serverId: string;
+  /** 服务器显示名称 */
+  serverName: string;
+  /** 传输类型 */
+  transport: 'stdio' | 'http';
+  /** 工具名称前缀（避免与其他来源的工具冲突） */
+  toolPrefix?: string;
+  /** 连接超时（毫秒） */
+  connectTimeoutMs?: number;
+  /** 工具调用超时（毫秒） */
+  callTimeoutMs?: number;
+  /** 工具列表刷新间隔（毫秒，0 = 不自动刷新） */
+  toolRefreshIntervalMs?: number;
+  /** 该服务器工具的默认副作用级别 */
+  defaultSideEffectLevel?: ToolSideEffectLevel;
 }
 
 // ── Deny Reason ───────────────────────────────────────

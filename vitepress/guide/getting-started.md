@@ -47,6 +47,9 @@ AUTH_MODE=off
 # 记忆系统（可选）
 # ENABLE_MEMORY=true
 # ENABLE_MEMORY_CONSOLIDATION=true
+
+# MCP 工具集成（可选）
+# ENABLE_MCP=true
 ```
 
 ## 启动

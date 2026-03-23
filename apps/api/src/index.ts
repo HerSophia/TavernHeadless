@@ -25,6 +25,7 @@ const { app } = await buildApp({
   accountMode: config.accountMode,
   auth: config.auth,
   cors: config.cors,
+  enableMcp: config.enableMcp,
 });
 
 app

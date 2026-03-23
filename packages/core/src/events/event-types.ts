@@ -148,6 +148,31 @@ export interface ToolCallDeniedEvent {
   reason: string;
 }
 
+// ── MCP 事件 ─────────────────────────────────────────
+
+/** MCP 服务器连接成功事件 */
+export interface McpServerConnectedEvent {
+  serverId: string;
+  serverName: string;
+  transport: 'stdio' | 'http';
+  toolCount: number;
+}
+
+/** MCP 服务器断开连接事件 */
+export interface McpServerDisconnectedEvent {
+  serverId: string;
+  serverName: string;
+  reason: 'shutdown' | 'error' | 'manual';
+  error?: string;
+}
+
+/** MCP 服务器错误事件 */
+export interface McpServerErrorEvent {
+  serverId: string;
+  serverName: string;
+  error: string;
+}
+
 /** Core 事件映射表（提供 emittery 强类型约束） */
 export interface CoreEventMap {
   'floor.stateChanged': FloorStateChangedEvent;
@@ -169,4 +194,7 @@ export interface CoreEventMap {
   'tool.call_completed': ToolCallCompletedEvent;
   'tool.call_failed': ToolCallFailedEvent;
   'tool.call_denied': ToolCallDeniedEvent;
+  'mcp.connected': McpServerConnectedEvent;
+  'mcp.disconnected': McpServerDisconnectedEvent;
+  'mcp.error': McpServerErrorEvent;
 }

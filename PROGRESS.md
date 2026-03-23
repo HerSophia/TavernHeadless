@@ -4,9 +4,9 @@
 
 ## 当前里程碑
 
-- 里程碑：`M9-M12 - 后端高优先级能力 + Tool Calling`
-- 状态：`进行中（Tool Calling 系统已完成 Phase 1-5，文档收尾中）`
-- 最后更新：`2026-06-25`
+- 里程碑：`M9-M12 - 后端高优先级能力 + Tool Calling + MCP 集成`
+- 状态：`进行中（Tool Calling Phase 1-5 完成，MCP 集成已完成）`
+- 最后更新：`2026-07-01`
 
 ## Tool Calling 系统（已完成 Phase 1-5）
 
@@ -452,10 +452,23 @@ packages/core/src/
 | M4 Phase 1 (Chat Endpoint) | 10 | 410* |
 | M4 Phase 2 (Regenerate/Imports) | 32 | 442* |
 | Tool Calling Phase 1-5 | 80 | 522* |
+| MCP 集成 | 32 | 554* |
 
-*全量：core 315 + adapters 104 + api 413 = 832
+*全量：core 315 + adapters 104 + api 445 = 864
 
 ## 更新日志
+
+### 2026-07-01
+
+- 完成 MCP（Model Context Protocol）客户端集成
+- 新增 `@modelcontextprotocol/sdk` 依赖（仅 apps/api）
+- 新增 `mcp_server_config` 表（迁移 `0015_mcp_server_config.sql`）
+- 新增 `McpConnection`、`McpConnectionManager`、`McpToolProvider` 三个核心类
+- 新增 12 个 API 端点（6 配置 CRUD + 6 运行时操作）
+- 新增 3 个事件类型：`mcp.connected`、`mcp.disconnected`、`mcp.error`
+- 支持 stdio 和 Streamable HTTP 两种传输
+- MCP 工具通过 ToolProvider 接口注册，对上层完全透明
+- 新增 32 个测试（McpService 21 + McpToolProvider 11），全量 core 315 + api 445 = 760（含 adapters 864）
 
 ### 2026-06-26
 

@@ -20,4 +20,7 @@ export type {
   ToolCallCompletedEvent,
   ToolCallFailedEvent,
   ToolCallDeniedEvent,
+  McpServerConnectedEvent,
+  McpServerDisconnectedEvent,
+  McpServerErrorEvent,
 } from './event-types.js';

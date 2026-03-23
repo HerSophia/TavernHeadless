@@ -7,7 +7,7 @@
 
 \- 里程碑：`后端 Beta 阶段（收口完成）`
 \- 状态：`Beta 准入标准全部达成，可进入正式 sign-off`
-\- 最后更新：`2026-06-25`
+\- 最后更新：`2026-07-01`
 
 ## 当前判断（审计后）
 
@@ -56,6 +56,61 @@
 - `apps/api/src/routes/tools.ts` — 11 个 API 端点（新文件）
 - `apps/api/src/routes/index.ts` — 注册工具路由
 - `apps/api/test/tools.integration.test.ts` — 集成测试（新文件）
+
+## MCP 集成
+
+### 1) 已完成
+
+- [x] 安装 `@modelcontextprotocol/sdk` 依赖
+- [x] 新增 `mcp_server_config` 数据库表及迁移 `0015_mcp_server_config.sql`
+- [x] 新增 `McpService`（MCP 服务器配置 CRUD 业务层）
+- [x] 新增 `McpConnection`（单个 MCP 服务器连接封装，支持 stdio/HTTP 传输）
+- [x] 新增 `McpConnectionManager`（多连接生命周期管理，stdio 启动时连接，HTTP 按需连接）
+- [x] 新增 `McpToolProvider`（实现 `ToolProvider` 接口，对上层透明）
+- [x] 新增 12 个 API 端点（6 配置 CRUD + 6 运行时操作）
+- [x] 新增 `ENABLE_MCP` 环境变量和 `app.ts` 初始化流程
+- [x] 新增 3 个事件类型：`mcp.connected`、`mcp.disconnected`、`mcp.error`
+- [x] WsBridge 已追加 MCP 事件转发
+- [x] Core 层 `McpToolProviderConfig` 类型已从占位扩充为完整定义
+
+### 2) 测试
+
+- [x] McpService 单元测试：21 个（CRUD、唯一性校验、分页、enabled 过滤）
+- [x] McpToolProvider 单元测试：11 个（listTools 代理、executeTool 前缀处理、降级行为）
+- [x] 全量回归：core 315 + api 445 = 760（含 adapters 864），零回归
+
+### 3) 新增文件
+
+```text
+apps/api/src/mcp/
+├── index.ts                      — barrel export
+├── types.ts                      — MCP 类型定义
+├── mcp-connection.ts             — 单连接封装
+├── mcp-connection-manager.ts     — 多连接管理器
+├── mcp-tool-provider.ts          — ToolProvider 实现
+└── __tests__/
+    ├── mcp-service.test.ts       — McpService 单元测试
+    └── mcp-tool-provider.test.ts — McpToolProvider 单元测试
+
+apps/api/src/services/mcp-service.ts  — MCP 服务器配置 CRUD
+apps/api/src/routes/mcp.ts            — 12 个 API 端点
+apps/api/drizzle/0015_mcp_server_config.sql — 数据库迁移
+```
+
+### 4) 修改文件
+
+- `packages/core/src/tools/types.ts` — McpToolProviderConfig 类型扩充
+- `packages/core/src/events/event-types.ts` — +3 个 mcp.* 事件
+- `packages/core/src/events/index.ts` — 导出更新
+- `packages/core/src/index.ts` — 导出更新
+- `apps/api/package.json` — +@modelcontextprotocol/sdk 依赖
+- `apps/api/drizzle/meta/_journal.json` — 追加迁移条目
+- `apps/api/src/db/schema.ts` — +mcpServerConfigs 表定义
+- `apps/api/src/routes/index.ts` — 注册 MCP 配置路由
+- `apps/api/src/app.ts` — MCP 初始化流程、BuildAppOptions/Result 扩展
+- `apps/api/src/config.ts` — ENABLE_MCP 环境变量
+- `apps/api/src/index.ts` — 传入 enableMcp
+- `apps/api/src/ws/ws-bridge.ts` — 追加 mcp.* 事件转发
 
 ## M22 增量：LLM Instance Config API
 

@@ -80,5 +80,6 @@ outline: [2, 3]
 | M4 Chat Endpoint | 10 | 410 |
 | M4 Regenerate/Imports | 32 | 442 |
 | Tool Calling Phase 1-5 | 80 | 522 |
+| MCP 集成 | 32 | 554 |
 
-全量：core 315 + adapters 104 = 419（不含 API 测试）
+全量：core 315 + adapters 104 = 419（不含 API 测试），API 445
