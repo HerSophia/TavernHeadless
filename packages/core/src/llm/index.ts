@@ -13,6 +13,9 @@ export type {
   StreamCallbacks,
   LLMPort,
   ProviderFactory,
+  LLMToolDefinition,
+  LLMToolCall,
+  LLMStepResult,
 } from './types.js';
 
 // ── Provider Registry ─────────────────────────────────

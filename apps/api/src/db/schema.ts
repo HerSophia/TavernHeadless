@@ -365,3 +365,50 @@ export const llmInstanceConfigs = sqliteTable(
     scopeIdx: index("llm_instance_config_account_scope_idx").on(table.accountId, table.scope, table.scopeId),
   })
 );
+
+
+// ── Tool Calling ────────────────────────────────────────
+
+export const toolCallRecords = sqliteTable(
+  "tool_call_record",
+  {
+    id: text("id").primaryKey(),
+    pageId: text("page_id").notNull().references(() => messagePages.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    callerSlot: text("caller_slot").notNull(),
+    toolName: text("tool_name").notNull(),
+    argsJson: text("args_json").notNull().default('{}'),
+    resultJson: text("result_json").notNull().default('{}'),
+    status: text("status", { enum: ["success", "error", "denied"] }).notNull().default("success"),
+    durationMs: integer("duration_ms").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    pageSeqIdx: index("tool_call_record_page_seq_idx").on(table.pageId, table.seq),
+    toolNameIdx: index("tool_call_record_tool_name_idx").on(table.toolName),
+  })
+);
+
+export const toolDefinitions = sqliteTable(
+  "tool_definition",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(''),
+    parametersJson: text("parameters_json").notNull().default('{"type":"object","properties":{}}'),
+    sideEffectLevel: text("side_effect_level", { enum: ["none", "sandbox", "irreversible"] }).notNull().default("none"),
+    allowedSlotsJson: text("allowed_slots_json").notNull().default('[]'),
+    source: text("source", { enum: ["preset", "character", "custom"] }).notNull().default("preset"),
+    sourceId: text("source_id"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    handlerType: text("handler_type", { enum: ["script", "prompt", "delegate"] }).notNull().default("script"),
+    handlerJson: text("handler_json").notNull().default('{}'),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    nameSourceUnique: uniqueIndex("tool_definition_name_source_source_id_uq").on(table.name, table.source, table.sourceId),
+    accountSourceIdx: index("tool_definition_account_source_idx").on(table.accountId, table.source),
+  })
+);

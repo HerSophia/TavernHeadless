@@ -95,6 +95,8 @@ export interface LLMInstance {
 
 // ── Request / Response ────────────────────────────────
 
+import type { ToolParameterSchema } from '../tools/types.js';
+
 /** LLM 调用请求 */
 export interface LLMRequest {
   /** 消息数组 */
@@ -105,6 +107,30 @@ export interface LLMRequest {
   model?: ModelConfig;
   /** 中止信号 */
   abortSignal?: AbortSignal;
+  /** 可用工具列表（inline 模式使用，Vercel AI SDK 兼容格式） */
+  tools?: Record<string, LLMToolDefinition>;
+  /** 最大自动工具调用步数（对应 Vercel AI SDK maxSteps） */
+  maxSteps?: number;
+}
+
+/** Vercel AI SDK 兼容的工具定义 */
+export interface LLMToolDefinition {
+  description: string;
+  parameters: ToolParameterSchema;
+  execute: (args: Record<string, unknown>) => Promise<unknown>;
+}
+
+/** 单次工具调用信息 */
+export interface LLMToolCall {
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+/** 单步执行结果（多步时有多条） */
+export interface LLMStepResult {
+  text: string;
+  toolCalls: LLMToolCall[];
+  toolResults: unknown[];
 }
 
 /** Token 使用统计 */
@@ -122,6 +148,10 @@ export interface LLMResponse {
   usage: TokenUsage;
   /** 结束原因 */
   finishReason: string;
+  /** 工具调用历史（多步时有多条） */
+  toolCalls?: LLMToolCall[];
+  /** 各步结果（多步时有多条） */
+  steps?: LLMStepResult[];
 }
 
 /** LLM 流式回调 */

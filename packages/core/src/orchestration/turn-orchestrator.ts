@@ -8,6 +8,10 @@ import type { MemoryStore } from '../memory/memory-store.js';
 import type { MemoryConsolidator } from '../memory/memory-consolidator.js';
 import type { ConsolidationResult } from '../memory/memory-consolidator.js';
 import type { MemoryInjectionResult } from '../memory/types.js';
+import type { ToolCallRecord, ToolPermissions, ToolExecutionContext } from '../tools/types.js';
+import type { ToolRegistry } from '../tools/tool-registry.js';
+import type { LLMToolEntry } from '../tools/tool-executor.js';
+import { ToolExecutor } from '../tools/tool-executor.js';
 import type { Director } from './director.js';
 import type { DirectorResult } from './director.js';
 import type { Verifier } from './verifier.js';
@@ -34,6 +38,7 @@ export class TurnError extends Error {
 export type TurnPhase =
   | 'transition'
   | 'director'
+  | 'tool_setup'
   | 'memory_retrieval'
   | 'generation'
   | 'verifier'
@@ -82,6 +87,8 @@ function resolveConfig(config?: TurnConfig): Required<TurnConfig> {
     enableMemoryConsolidation: config?.enableMemoryConsolidation ?? false,
     verifierFailStrategy: config?.verifierFailStrategy ?? 'warn',
     maxRetries: config?.maxRetries ?? 1,
+    enableTools: config?.enableTools ?? false,
+    toolMode: config?.toolMode ?? 'inline',
   };
 }
 
@@ -151,6 +158,8 @@ export class TurnOrchestrator {
   async executeTurn(input: TurnInput): Promise<TurnOutput> {
     const cfg = resolveConfig(input.config);
     let totalUsage = zeroUsage();
+    let toolExecutor: ToolExecutor | undefined;
+    let narratorLLMTools: Record<string, LLMToolEntry> | undefined;
     let directorResult: DirectorResult | undefined;
     let verifierResult: VerifierResult | undefined;
     let memoryInjection: MemoryInjectionResult | undefined;
@@ -167,13 +176,43 @@ export class TurnOrchestrator {
         totalUsage = addUsage(totalUsage, directorResult.usage);
       }
 
+      // ── 2b. 构建工具（可选） ──
+      if (cfg.enableTools && input.toolRegistry && input.toolPermissions) {
+        try {
+          toolExecutor = new ToolExecutor(input.toolRegistry, this.deps.eventBus);
+          toolExecutor.resetTurnCounter();
+
+          const toolMode = cfg.toolMode;
+          if (toolMode === 'inline' || toolMode === 'both') {
+            const narratorTools = await input.toolRegistry.listForSlot(
+              'narrator',
+              input.toolPermissions,
+            );
+            if (narratorTools.length > 0) {
+              const toolContext = this.buildToolContext(input, 'narrator');
+              narratorLLMTools = toolExecutor.buildLLMTools(
+                narratorTools,
+                toolContext,
+                input.toolPermissions,
+              );
+            }
+          }
+        } catch (error) {
+          throw new TurnError(
+            `Tool setup failed: ${error instanceof Error ? error.message : String(error)}`,
+            'tool_setup',
+            error,
+          );
+        }
+      }
+
       // ── 3. Memory 检索 ──
       if (input.memoryOptions) {
         memoryInjection = await this.runMemoryRetrieval(input);
       }
 
-      // ── 4 & 5. 生成 + Verifier（含重试逻辑） ──
-      const genResult = await this.runGenerationWithVerifier(input, cfg);
+      // ── 4 & 5. 生成 + Verifier（含重试逻辑 + 工具注入） ──
+      const genResult = await this.runGenerationWithVerifier(input, cfg, narratorLLMTools);
       generation = genResult.generation;
       verifierResult = genResult.verifierResult;
       totalUsage = addUsage(totalUsage, generation.usage);
@@ -203,6 +242,7 @@ export class TurnOrchestrator {
         consolidationResult,
         totalUsage,
         finalState: 'committed',
+        toolCalls: this.collectToolCallRecords(generation, input, toolExecutor),
       };
     } catch (error) {
       // 尝试将楼层标记为 failed
@@ -272,6 +312,7 @@ export class TurnOrchestrator {
 
   private async runGeneration(
     input: TurnInput,
+    narratorLLMTools?: Record<string, LLMToolEntry>,
   ): Promise<GenerationOutput> {
     try {
       // 发出 generation.started 事件
@@ -289,6 +330,8 @@ export class TurnOrchestrator {
           model: resolveSlotModel(input, 'narrator'),
           abortSignal: input.abortSignal,
           summaryOptions: input.summaryOptions,
+          ...(narratorLLMTools ? { tools: narratorLLMTools } : {}),
+          ...(narratorLLMTools ? { maxSteps: input.toolPermissions?.maxStepsPerGeneration ?? 5 } : {}),
         },
         {
           onChunk: (chunk) => {
@@ -361,6 +404,7 @@ export class TurnOrchestrator {
   private async runGenerationWithVerifier(
     input: TurnInput,
     cfg: Required<TurnConfig>,
+    narratorLLMTools?: Record<string, LLMToolEntry>,
   ): Promise<{ generation: GenerationOutput; verifierResult?: VerifierResult }> {
     const maxAttempts = cfg.enableVerifier && cfg.verifierFailStrategy === 'retry'
       ? 1 + cfg.maxRetries
@@ -370,7 +414,7 @@ export class TurnOrchestrator {
     let lastVerifierResult: VerifierResult | undefined;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      lastGeneration = await this.runGeneration(input);
+      lastGeneration = await this.runGeneration(input, narratorLLMTools);
 
       if (!cfg.enableVerifier || !input.verifierInput) {
         return { generation: lastGeneration };
@@ -460,5 +504,59 @@ export class TurnOrchestrator {
     } catch {
       // fire-and-forget
     }
+  }
+
+  /**
+   * 构建工具执行上下文。
+   *
+   * pageId 目前使用 floorId 作为占位——实际的 pageId 在 ChatService 层才能确定，
+   * 但 ToolExecutor 仅用它做事件标记，不影响核心逻辑。
+   */
+  private buildToolContext(
+    input: TurnInput,
+    slot: InstanceSlot,
+  ): ToolExecutionContext {
+    return {
+      sessionId: input.sessionId,
+      floorId: input.floorId,
+      pageId: input.floorId,  // placeholder: 真正的 pageId 由上层注入
+      callerSlot: slot,
+      variableContext: {
+        sessionId: input.sessionId,
+        floorId: input.floorId,
+        pageId: input.floorId,
+      },
+      abortSignal: input.abortSignal,
+    };
+  }
+
+  /**
+   * 从 GenerationOutput 中收集工具调用记录。
+   *
+   * 目前仅收集 inline 模式下 LLM 返回的 toolCalls 信息，
+   * 转换为 ToolCallRecord 格式。如果没有工具调用，返回 undefined。
+   */
+  private collectToolCallRecords(
+    generation: GenerationOutput | undefined,
+    input: TurnInput,
+    toolExecutor: ToolExecutor | undefined,
+  ): ToolCallRecord[] | undefined {
+    if (!generation?.toolCalls || generation.toolCalls.length === 0) {
+      return undefined;
+    }
+
+    const now = Date.now();
+    return generation.toolCalls.map((tc, idx) => ({
+      id: `tcr-${input.floorId}-${idx}`,
+      pageId: input.floorId,  // placeholder
+      seq: idx + 1,
+      callerSlot: 'narrator' as InstanceSlot,
+      toolName: tc.toolName,
+      argsJson: JSON.stringify(tc.args),
+      resultJson: '{}',  // inline 模式下，实际结果由 Vercel AI SDK 内部处理
+      status: 'success' as const,
+      durationMs: 0,
+      createdAt: now,
+    }));
   }
 }

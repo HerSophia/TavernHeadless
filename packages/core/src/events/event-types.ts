@@ -2,6 +2,7 @@ import type { FloorState, VariableScope, VariableEntry } from '@tavern/shared';
 import type { FloorEntity } from '../types.js';
 import type { ModelConfig, TokenUsage } from '../llm/types.js';
 import type { MemoryItem } from '../memory/types.js';
+import type { InstanceSlot } from '../llm/types.js';
 
 /** 楼层状态变更事件 */
 export interface FloorStateChangedEvent {
@@ -108,6 +109,45 @@ export interface MemoryConsolidationFailedEvent {
   error: Error;
 }
 
+// ── Tool 事件 ────────────────────────────────────────
+
+/** 工具调用开始事件 */
+export interface ToolCallStartedEvent {
+  floorId: string;
+  pageId: string;
+  callerSlot: InstanceSlot;
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+/** 工具调用完成事件 */
+export interface ToolCallCompletedEvent {
+  floorId: string;
+  pageId: string;
+  callerSlot: InstanceSlot;
+  toolName: string;
+  result: unknown;
+  durationMs: number;
+}
+
+/** 工具调用失败事件 */
+export interface ToolCallFailedEvent {
+  floorId: string;
+  pageId: string;
+  callerSlot: InstanceSlot;
+  toolName: string;
+  error: Error;
+}
+
+/** 工具调用被拒绝事件 */
+export interface ToolCallDeniedEvent {
+  floorId: string;
+  pageId: string;
+  callerSlot: InstanceSlot;
+  toolName: string;
+  reason: string;
+}
+
 /** Core 事件映射表（提供 emittery 强类型约束） */
 export interface CoreEventMap {
   'floor.stateChanged': FloorStateChangedEvent;
@@ -125,4 +165,8 @@ export interface CoreEventMap {
   'memory.deprecated': MemoryDeprecatedEvent;
   'memory.consolidated': MemoryConsolidatedEvent;
   'memory.consolidation_failed': MemoryConsolidationFailedEvent;
+  'tool.call_started': ToolCallStartedEvent;
+  'tool.call_completed': ToolCallCompletedEvent;
+  'tool.call_failed': ToolCallFailedEvent;
+  'tool.call_denied': ToolCallDeniedEvent;
 }

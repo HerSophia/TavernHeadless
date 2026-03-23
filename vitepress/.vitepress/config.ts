@@ -93,6 +93,7 @@ export default defineConfig({
             { text: 'Regex Profiles（正则配置）', link: '/reference/api/regex-profiles' },
             { text: 'LLM Profiles', link: '/reference/api/llm-profiles' },
             { text: 'LLM Instances（实例配置）', link: '/reference/api/llm-instances' },
+            { text: 'Tools（工具调用）', link: '/reference/api/tools' },
             { text: 'Accounts（账号）', link: '/reference/api/accounts' },
           ],
         },

@@ -1,7 +1,7 @@
 // ── Generation 类型定义 ───────────────────────────────
 
 import type { ChatMessage, TokenCounter } from '../prompt/types.js';
-import type { GenerationParams, ModelConfig, TokenUsage } from '../llm/types.js';
+import type { GenerationParams, ModelConfig, TokenUsage, LLMToolDefinition, LLMToolCall } from '../llm/types.js';
 import type { SummaryExtractorOptions } from './summary-extractor.js';
 
 /**
@@ -43,6 +43,12 @@ export interface GenerationInput {
 
   /** 中止信号 */
   abortSignal?: AbortSignal;
+
+  /** 可用工具（inline 模式，Vercel AI SDK 兼容格式） */
+  tools?: Record<string, LLMToolDefinition>;
+
+  /** 最大自动工具调用步数 */
+  maxSteps?: number;
 }
 
 /** 拼装统计信息（由调用方提供，流水线透传） */
@@ -71,6 +77,9 @@ export interface GenerationOutput {
   usage: TokenUsage;
   /** 结束原因 */
   finishReason: string;
+
+  /** 本次生成中的工具调用记录 */
+  toolCalls?: LLMToolCall[];
 }
 
 /** 流水线回调 */

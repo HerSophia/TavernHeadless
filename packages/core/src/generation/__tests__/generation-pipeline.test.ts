@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GenerationPipeline, GenerationPipelineError } from '../generation-pipeline.js';
-import type { LLMPort, LLMRequest, LLMResponse, StreamCallbacks } from '../../llm/types.js';
+import type { LLMPort, LLMRequest, LLMResponse, LLMToolCall, StreamCallbacks } from '../../llm/types.js';
 import type { GenerationInput } from '../types.js';
 
 // ── Mock LLM ──────────────────────────────────────────
@@ -10,6 +10,7 @@ function createMockLLM(responseText: string, options?: {
   finishReason?: string;
   streamChunks?: string[];
   throwError?: Error;
+  toolCalls?: LLMToolCall[];
 }): LLMPort {
   const usage = options?.usage ?? { promptTokens: 10, completionTokens: 5, totalTokens: 15 };
   const finishReason = options?.finishReason ?? 'stop';
@@ -17,7 +18,7 @@ function createMockLLM(responseText: string, options?: {
   return {
     async generate(_request: LLMRequest): Promise<LLMResponse> {
       if (options?.throwError) throw options.throwError;
-      return { text: responseText, usage, finishReason };
+      return { text: responseText, usage, finishReason, toolCalls: options?.toolCalls };
     },
     async stream(request: LLMRequest, callbacks: StreamCallbacks): Promise<LLMResponse> {
       if (options?.throwError) throw options.throwError;
@@ -25,7 +26,7 @@ function createMockLLM(responseText: string, options?: {
       for (const chunk of chunks) {
         callbacks.onChunk?.(chunk);
       }
-      const response = { text: responseText, usage, finishReason };
+      const response: LLMResponse = { text: responseText, usage, finishReason, toolCalls: options?.toolCalls };
       callbacks.onFinish?.(response);
       return response;
     },
@@ -281,6 +282,67 @@ describe('GenerationPipeline', () => {
       });
 
       expect(output.text).toBe('output');
+    });
+  });
+
+  describe('tool calling support', () => {
+    it('passes tools and maxSteps to LLM request', async () => {
+      let capturedRequest: LLMRequest | undefined;
+      const llm: LLMPort = {
+        async generate(request) {
+          capturedRequest = request;
+          return { text: 'ok', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, finishReason: 'stop' };
+        },
+        async stream(request, callbacks) {
+          capturedRequest = request;
+          const response: LLMResponse = { text: 'ok', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, finishReason: 'stop' };
+          callbacks.onFinish?.(response);
+          return response;
+        },
+      };
+
+      const fakeTool = {
+        description: 'test tool',
+        parameters: { type: 'object' as const, properties: {} },
+        execute: async () => 'result',
+      };
+
+      const pipeline = new GenerationPipeline(llm);
+      await pipeline.run(baseInput({
+        params: { stream: false },
+        tools: { my_tool: fakeTool },
+        maxSteps: 3,
+      }));
+
+      expect(capturedRequest).toBeDefined();
+      expect(capturedRequest!.tools).toBeDefined();
+      expect(capturedRequest!.tools!['my_tool']).toBeDefined();
+      expect(capturedRequest!.maxSteps).toBe(3);
+    });
+
+    it('propagates toolCalls from LLM response to output', async () => {
+      const mockToolCalls: LLMToolCall[] = [
+        { toolName: 'roll_dice', args: { sides: 6 } },
+        { toolName: 'get_variable', args: { key: 'hp' } },
+      ];
+
+      const llm = createMockLLM('The dice shows 4.', { toolCalls: mockToolCalls });
+      const pipeline = new GenerationPipeline(llm);
+
+      const output = await pipeline.run(baseInput({ params: { stream: false } }));
+
+      expect(output.toolCalls).toBeDefined();
+      expect(output.toolCalls).toHaveLength(2);
+      expect(output.toolCalls![0]!.toolName).toBe('roll_dice');
+      expect(output.toolCalls![1]!.toolName).toBe('get_variable');
+    });
+
+    it('output.toolCalls is undefined when LLM returns no tool calls', async () => {
+      const llm = createMockLLM('No tools used.');
+      const pipeline = new GenerationPipeline(llm);
+
+      const output = await pipeline.run(baseInput({ params: { stream: false } }));
+      expect(output.toolCalls).toBeUndefined();
     });
   });
 });

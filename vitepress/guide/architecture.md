@@ -464,8 +464,81 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 | `worldbook.matched`    | 世界书条目命中 | 命中的条目列表        |
 | `regex.applied`        | 正则规则执行   | 规则 ID + 替换结果    |
 
+| `tool.call_started`    | 工具调用开始   | 工具名 + 参数 + 调用方实例 |
+| `tool.call_completed`  | 工具调用完成   | 工具名 + 返回值 + 耗时     |
+| `tool.call_failed`     | 工具调用失败   | 工具名 + 错误信息           |
+| `tool.call_denied`     | 工具调用被拒绝 | 工具名 + 拒绝原因           |
+
 这些事件可以用来：
 
 - 在前端实时显示生成进度（通过 WebSocket 转发）。
 - 记录日志和调试信息。
 - 触发自定义逻辑（插件系统的基础）。
+
+---
+
+## 11. 工具调用（Tool Calling）
+
+工具调用让 LLM 实例在 RP 回合中执行结构化操作——读写变量、掷骰、查询记忆等——而不仅仅是生成自由文本。
+
+### 设计目标
+
+- 所有 LLM 实例（Narrator / Director / Verifier / Memory）都可以调用工具，每个实例的权限独立配置。
+- 工具调用记录绑定到 MessagePage，遵循三层消息结构的隔离原则。
+- 支持两种执行模式，按场景灵活切换。
+
+### 工具来源
+
+| 来源 | 说明 |
+| ---- | ---- |
+| **内置工具** | 引擎自带的 7 个工具：`get_variable`、`set_variable`、`roll_dice`、`random_choice`、`get_time`、`query_memory`、`get_character_info` |
+| **预设/角色卡工具** | 从数据库加载的自定义工具定义，支持脚本执行 |
+| **MCP 工具（预留）** | 通过 `ToolProvider` 接口预留 MCP 扩展位 |
+
+### 两种执行模式
+
+通过 `TurnConfig.toolMode` 控制：
+
+| 模式 | 说明 |
+| ---- | ---- |
+| `inline` | 工具定义传入 Vercel AI SDK 的 `tools` 参数，LLM 在生成过程中自主调用。默认模式。 |
+| `standalone` | 工具在 LLM 生成前后独立执行。 |
+| `both` | 同时启用两种模式。 |
+
+### 权限控制
+
+工具权限通过 `ToolPermissions` 配置，存储在会话的 `metadata_json.tool_permissions` 中：
+
+- **`slotAllowList`**：按实例槽位的工具白名单。
+- **`slotDenyList`**：按实例槽位的工具黑名单。
+- **`allowIrreversible`**：是否允许不可撤销的工具。
+- **`maxCallsPerTurn`**：单回合最大调用次数。
+- **`maxStepsPerGeneration`**：`maxSteps` 上限（默认 5）。
+
+### 副作用级别
+
+| 级别 | 说明 | 示例 |
+| ---- | ---- | ---- |
+| `none` | 纯查询 | `get_variable`、`roll_dice` |
+| `sandbox` | 副作用写入 page scope，提交时提升 | `set_variable` |
+| `irreversible` | 不可撤销的外部操作 | MCP 外部 API |
+
+### 消息页隔离
+
+- 工具调用记录通过 `page_id` 外键绑定到 `MessagePage`。
+- 重新生成创建新楼层，工具重新执行，不复用旧记录。
+- 每个消息页有自己独立的工具调用快照。
+
+### API 端点
+
+| 方法 | 路径 | 说明 |
+| ---- | ---- | ---- |
+| GET | `/tools/builtin` | 列出内置工具 |
+| GET | `/tools/definitions` | 列出自定义工具定义 |
+| POST | `/tools/definitions` | 创建自定义工具 |
+| PATCH | `/tools/definitions/:id` | 更新工具定义 |
+| DELETE | `/tools/definitions/:id` | 删除工具定义 |
+| GET | `/tools/call-records` | 查询工具调用记录 |
+| GET | `/sessions/:id/tool-permissions` | 获取会话工具权限 |
+| PUT | `/sessions/:id/tool-permissions` | 替换会话工具权限 |
+| PATCH | `/sessions/:id/tool-permissions` | 合并更新会话工具权限 |

@@ -127,4 +127,6 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | Worldbooks | 世界书管理 | [Worldbooks](./api/worldbooks) |
 | Regex Profiles | 正则配置管理 | [Regex Profiles](./api/regex-profiles) |
 | LLM Profiles | LLM 配置管理、模型发现与测试 | [LLM Profiles](./api/llm-profiles) |
+| LLM Instances | LLM 实例配置 | [LLM Instances](./api/llm-instances) |
+| Tools | 工具调用（定义/权限/调用记录） | [Tools](./api/tools) |
 | Accounts | 账号管理 | [Accounts](./api/accounts) |

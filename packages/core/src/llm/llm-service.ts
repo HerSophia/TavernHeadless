@@ -4,6 +4,8 @@ import type {
   LLMPort,
   LLMRequest,
   LLMResponse,
+  LLMToolCall,
+  LLMStepResult,
   StreamCallbacks,
   ModelConfig,
   GenerationParams,
@@ -187,6 +189,8 @@ export class LLMService implements LLMPort {
       const result = await generateText({
         model: languageModel,
         messages: request.messages,
+        ...(request.tools ? { tools: request.tools as any } : {}),
+        ...(request.maxSteps ? { maxSteps: request.maxSteps } : {}),
         abortSignal: signal,
         ...settings,
       });
@@ -195,6 +199,8 @@ export class LLMService implements LLMPort {
         text: result.text,
         usage: normalizeUsage(result.usage),
         finishReason: result.finishReason ?? 'unknown',
+        toolCalls: extractToolCalls(result),
+        steps: extractSteps(result),
       };
     } catch (error) {
       throw this.wrapError(error);
@@ -218,6 +224,8 @@ export class LLMService implements LLMPort {
       const result = streamText({
         model: languageModel,
         messages: request.messages,
+        ...(request.tools ? { tools: request.tools as any } : {}),
+        ...(request.maxSteps ? { maxSteps: request.maxSteps } : {}),
         abortSignal: signal,
         ...settings,
       });
@@ -243,6 +251,8 @@ export class LLMService implements LLMPort {
         text: fullText,
         usage: normalizeUsage(usage),
         finishReason: finishReason ?? 'unknown',
+        toolCalls: extractToolCallsFromStream(result),
+        steps: extractStepsFromStream(result),
       };
 
       callbacks.onFinish?.(response);
@@ -279,4 +289,100 @@ export class LLMService implements LLMPort {
       error,
     );
   }
+}
+
+
+// ── Tool Call 提取辅助函数 ─────────────────────────────
+
+/**
+ * 从 generateText 结果中提取工具调用记录。
+ * Vercel AI SDK generateText 的结果中可能包含 toolCalls 和 steps。
+ */
+function extractToolCalls(result: any): LLMToolCall[] | undefined {
+  // result.toolCalls 是当前步的 tool calls
+  // result.steps 每步各有 toolCalls
+  const calls: LLMToolCall[] = [];
+
+  // 优先从 steps 中收集所有 tool calls
+  if (Array.isArray(result.steps)) {
+    for (const step of result.steps) {
+      if (Array.isArray(step.toolCalls)) {
+        for (const tc of step.toolCalls) {
+          calls.push({ toolName: tc.toolName, args: tc.args });
+        }
+      }
+    }
+  } else if (Array.isArray(result.toolCalls)) {
+    // 没有 steps 时，直接从顶层取
+    for (const tc of result.toolCalls) {
+      calls.push({ toolName: tc.toolName, args: tc.args });
+    }
+  }
+
+  return calls.length > 0 ? calls : undefined;
+}
+
+/**
+ * 从 generateText 结果中提取各步结果。
+ */
+function extractSteps(result: any): LLMStepResult[] | undefined {
+  if (!Array.isArray(result.steps) || result.steps.length === 0) return undefined;
+
+  return result.steps.map((step: any) => ({
+    text: step.text ?? '',
+    toolCalls: Array.isArray(step.toolCalls)
+      ? step.toolCalls.map((tc: any) => ({ toolName: tc.toolName, args: tc.args }))
+      : [],
+    toolResults: Array.isArray(step.toolResults)
+      ? step.toolResults.map((tr: any) => tr.result ?? tr)
+      : [],
+  }));
+}
+
+/**
+ * 从 streamText 结果中提取工具调用记录。
+ * streamText 返回的对象结构与 generateText 略有不同，
+ * 某些字段是 promise。这里做安全提取。
+ */
+function extractToolCallsFromStream(result: any): LLMToolCall[] | undefined {
+  // streamText 的 toolCalls 可能是 promise，这里只取已经 resolve 的同步数据
+  // 在 stream() 方法中，流已经完全消费完毕，所以 steps 应该已就绪
+  try {
+    if (result._stepsResult && Array.isArray(result._stepsResult)) {
+      const calls: LLMToolCall[] = [];
+      for (const step of result._stepsResult) {
+        if (Array.isArray(step.toolCalls)) {
+          for (const tc of step.toolCalls) {
+            calls.push({ toolName: tc.toolName, args: tc.args });
+          }
+        }
+      }
+      return calls.length > 0 ? calls : undefined;
+    }
+  } catch {
+    // 安全降级：流式模式下提取失败不影响主流程
+  }
+  return undefined;
+}
+
+/**
+ * 从 streamText 结果中提取各步结果。
+ */
+function extractStepsFromStream(result: any): LLMStepResult[] | undefined {
+  try {
+    if (result._stepsResult && Array.isArray(result._stepsResult) && result._stepsResult.length > 0) {
+      return result._stepsResult.map((step: any) => ({
+        text: step.text ?? '',
+        toolCalls: Array.isArray(step.toolCalls)
+          ? step.toolCalls.map((tc: any) => ({ toolName: tc.toolName, args: tc.args }))
+          : [],
+        toolResults: Array.isArray(step.toolResults)
+          ? step.toolResults.map((tr: any) => tr.result ?? tr)
+          : [],
+      }));
+    }
+  } catch {
+    // 安全降级
+  }
+  return undefined;
 }

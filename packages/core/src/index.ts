@@ -17,6 +17,10 @@ export type {
   MemoryUpdatedEvent,
   MemoryDeprecatedEvent,
   MemoryConsolidatedEvent,
+  ToolCallStartedEvent,
+  ToolCallCompletedEvent,
+  ToolCallFailedEvent,
+  ToolCallDeniedEvent,
 } from './events/index.js';
 
 // ── Floor ─────────────────────────────────────────────
@@ -82,6 +86,9 @@ export type {
   StreamCallbacks,
   LLMPort,
   ProviderFactory,
+  LLMToolDefinition,
+  LLMToolCall,
+  LLMStepResult,
 } from './llm/index.js';
 export { ProviderRegistry, ProviderNotFoundError, ProviderInitError } from './llm/index.js';
 export { LLMService, LLMServiceError, LLMTimeoutError, LLMAbortError } from './llm/index.js';
@@ -133,6 +140,7 @@ export type {
   TurnInput,
   TurnOutput,
   VerifierFailStrategy,
+  ToolMode,
 } from './orchestration/index.js';
 
 // ── Ports ─────────────────────────────────────────────
@@ -152,3 +160,27 @@ export {
   InvalidScopePromotionError,
   MissingScopeIdError,
 } from './errors.js';
+
+// ── Tools ─────────────────────────────────────────────
+export type {
+  ToolSideEffectLevel,
+  ToolParameterProperty,
+  ToolParameterSchema,
+  ToolDefinition,
+  ToolCallResult,
+  ToolCallStatus,
+  ToolCallRecord,
+  ToolExecutionContext,
+  ToolPermissions,
+  ToolProviderType,
+  ToolProvider,
+  McpToolProviderConfig,
+  ToolDenyReason,
+} from './tools/index.js';
+export { ToolRegistry } from './tools/index.js';
+export { ToolExecutor } from './tools/index.js';
+export type { LLMToolEntry } from './tools/index.js';
+export { BuiltinToolProvider } from './tools/index.js';
+export { PresetToolProvider } from './tools/index.js';
+export type { PresetToolInput } from './tools/index.js';
+

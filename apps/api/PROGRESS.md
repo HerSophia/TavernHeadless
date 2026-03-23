@@ -16,6 +16,47 @@
 - `apps/api/package.json` 与 OpenAPI `info.version` 已同步到 `0.2.0-beta.2`，用于表达后端 beta 预发布版本姿态。
 - 真实 provider 最小回归已执行完毕，结果良好，Beta 准入标准全部满足。后续工作转入正式发布准备与文档完善。
 
+## Tool Calling 系统（本次增量）
+
+### 1) 已完成
+
+- [x] 新增 `tool_call_record` 和 `tool_definition` 数据库表及迁移 `0014_tool_calling.sql`
+- [x] 新增 `DrizzleToolRepository`（工具调用记录和工具定义的 CRUD）
+- [x] 新增 `ToolService`（内置工具列表、自定义工具 CRUD、调用记录查询）
+- [x] 新增 `tools.ts` 路由，11 个端点：
+  - `GET /tools/builtin` — 列出内置工具
+  - `GET /tools/definitions` — 列出自定义工具定义（支持 source/enabled 过滤、分页）
+  - `GET /tools/definitions/:id` — 获取单个工具定义
+  - `POST /tools/definitions` — 创建自定义工具
+  - `PATCH /tools/definitions/:id` — 更新工具定义
+  - `DELETE /tools/definitions/:id` — 删除工具定义
+  - `PATCH /tools/definitions/:id/toggle` — 启用/禁用工具
+  - `GET /tools/call-records` — 按 page_id/floor_id 查询调用记录
+  - `GET /sessions/:id/tool-permissions` — 获取会话工具权限
+  - `PUT /sessions/:id/tool-permissions` — 替换会话工具权限
+  - `PATCH /sessions/:id/tool-permissions` — 合并更新会话工具权限
+- [x] `ChatService` 集成工具系统：权限解析、工具注入 TurnInput、调用记录持久化
+- [x] `routes/index.ts` 注册工具路由
+
+### 2) 测试与验证
+
+- [x] 新增 `test/tools.integration.test.ts`（11 个集成测试）
+- [x] `pnpm --filter @tavern/api typecheck` 通过
+- [x] `pnpm --filter @tavern/api test` 通过（32 files, 413 tests）
+
+### 3) 修改文件
+
+- `apps/api/src/db/schema.ts` — 新增 `toolCallRecords`、`toolDefinitions` 表定义
+- `apps/api/drizzle/0014_tool_calling.sql` — 数据库迁移
+- `apps/api/drizzle/meta/_journal.json` — 迁移索引
+- `apps/api/src/adapters/drizzle-tool-repository.ts` — 工具数据库操作（新文件）
+- `apps/api/src/adapters/index.ts` — 导出 DrizzleToolRepository
+- `apps/api/src/services/tool-service.ts` — 工具管理业务层（新文件）
+- `apps/api/src/services/chat-service.ts` — 工具系统集成
+- `apps/api/src/routes/tools.ts` — 11 个 API 端点（新文件）
+- `apps/api/src/routes/index.ts` — 注册工具路由
+- `apps/api/test/tools.integration.test.ts` — 集成测试（新文件）
+
 ## M22 增量：LLM Instance Config API
 
 ### 1) 已完成
@@ -1153,6 +1194,14 @@
 - 当前 batch 仍保持“首批安全动作”范围：`PUT /variables/batch`、`PATCH /memories/batch/status`、`POST /memories/batch/delete`、`PATCH /messages/batch/visibility`、`POST /messages/batch/delete`；尚未扩展到 `pages` / `users` / `sessions` 等第二批资源。
 
 ## 更新日志
+
+### 2026-06-26（Tool Calling 系统）
+
+- 新增 `tool_call_record` 和 `tool_definition` 数据库表及迁移 `0014_tool_calling.sql`
+- 新增 `DrizzleToolRepository`、`ToolService`、`tools.ts` 路由（11 个端点）
+- `ChatService` 集成工具权限解析、工具注入和调用记录持久化
+- 新增 11 个集成测试，全量 32 文件 413 tests 通过
+- 零回归
 
 ### 2026-06-25（Beta 准入完成：真实 provider 回归 + 世界书测试修复 + 进度文档同步）
 
