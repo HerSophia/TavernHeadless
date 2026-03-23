@@ -21,6 +21,9 @@ export type {
   ToolCallCompletedEvent,
   ToolCallFailedEvent,
   ToolCallDeniedEvent,
+  McpServerConnectedEvent,
+  McpServerDisconnectedEvent,
+  McpServerErrorEvent,
 } from './events/index.js';
 
 // ── Floor ─────────────────────────────────────────────

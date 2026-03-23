@@ -1,0 +1,92 @@
+/**
+ * McpToolProvider
+ *
+ * 实现 ToolProvider 接口，将 MCP 服务器的工具注册到 ToolRegistry 中。
+ * 对上层（ToolExecutor、TurnOrchestrator、ChatService）完全透明。
+ */
+
+import type {
+  ToolProvider,
+  ToolDefinition,
+  ToolCallResult,
+  ToolExecutionContext,
+  ToolProviderType,
+} from '@tavern/core';
+
+import type { McpServerConfig } from './types.js';
+import type { McpConnectionManager } from './mcp-connection-manager.js';
+
+export class McpToolProvider implements ToolProvider {
+  readonly id: string;
+  readonly type: ToolProviderType = 'mcp';
+
+  constructor(
+    private config: McpServerConfig,
+    private connectionManager: McpConnectionManager,
+  ) {
+    this.id = `mcp:${config.id}`;
+  }
+
+  /**
+   * 列出该 MCP 服务器的所有工具。
+   * 如果连接不可用，返回空数组而不抛异常。
+   */
+  async listTools(): Promise<ToolDefinition[]> {
+    try {
+      const connection = await this.connectionManager.getConnection(this.config.id);
+      if (!connection || connection.state !== 'connected') {
+        return [];
+      }
+
+      return connection.getTools();
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 执行工具调用。
+   * 如果配置了 toolPrefix，会先去除前缀还原 MCP 原始工具名。
+   * 不抛异常——失败时返回 { error }。
+   */
+  async executeTool(
+    name: string,
+    args: Record<string, unknown>,
+    _context: ToolExecutionContext,
+  ): Promise<ToolCallResult> {
+    try {
+      const connection = await this.connectionManager.getConnection(this.config.id);
+      if (!connection || connection.state !== 'connected') {
+        return { error: `MCP server "${this.config.name}" is not connected` };
+      }
+
+      // 去除 toolPrefix 还原 MCP 原始工具名
+      const rawName = this.stripPrefix(name);
+
+      const result = await connection.callTool(rawName, args);
+
+      if (result.error) {
+        return { error: result.error };
+      }
+
+      return { data: result.data };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // ── 内部辅助 ─────────────────────────────────────
+
+  /**
+   * 去除 toolPrefix。
+   * 例如：工具名 "github_list_repos"，前缀 "github_"，
+   * 返回 "list_repos"。
+   */
+  private stripPrefix(name: string): string {
+    const prefix = this.config.toolPrefix;
+    if (prefix && name.startsWith(prefix)) {
+      return name.slice(prefix.length);
+    }
+    return name;
+  }
+}

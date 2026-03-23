@@ -28,6 +28,9 @@ import { findNativePipelineError } from "./lib/native-pipeline-error";
 import { ensureDefaultAdminAccount } from "./accounts/service";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "./accounts/constants";
 import { registerCors, type CorsConfig } from "./plugins/cors";
+import { McpService } from "./services/mcp-service";
+import { McpConnectionManager, McpToolProvider } from "./mcp";
+import { registerMcpRuntimeRoutes } from "./routes/mcp";
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
 const API_VERSION: string = _pkgJson.version ?? "unknown";
@@ -104,6 +107,8 @@ export type BuildAppOptions = {
   accountMode?: AccountMode;
   /** CORS 配置 */
   cors?: CorsConfig;
+  /** 是否启用 MCP 工具集成（默认 false） */
+  enableMcp?: boolean;
 };
 
 export type BuildAppResult = {
@@ -112,6 +117,8 @@ export type BuildAppResult = {
   orchestrationContext?: OrchestrationContext;
   /** 如果启用了 WebSocket，返回 WsBridge 实例 */
   wsBridge?: WsBridge;
+  /** 如果启用了 MCP，返回连接管理器 */
+  mcpManager?: McpConnectionManager;
 };
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppResult> {
@@ -270,6 +277,30 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
   await registerCrudRoutes(app, database);
 
+  // ── 可选：MCP 工具集成 ──
+  let mcpManager: McpConnectionManager | undefined;
+
+  if (options.enableMcp) {
+    const mcpService = new McpService(database.db);
+    const mcpConfigs = await mcpService.listEnabledConfigs();
+
+    mcpManager = new McpConnectionManager(app.log);
+    await mcpManager.initialize(mcpConfigs);
+
+    // 注册 MCP 运行时路由
+    await registerMcpRuntimeRoutes(app, mcpManager, database);
+
+    // 应用关闭时断开所有 MCP 连接
+    app.addHook('onClose', async () => {
+      await mcpManager!.shutdown();
+    });
+
+    app.log.info(
+      { serverCount: mcpConfigs.length },
+      'MCP integration enabled',
+    );
+  }
+
   // ── 可选：记忆维护任务（deprecate / purge） ──
   // 注意：当前实现为进程内定时器，不带分布式锁。
   // 多实例部署时，只允许一个实例启用记忆维护；
@@ -391,5 +422,5 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     }
   }
 
-  return { app, orchestrationContext, wsBridge };
+  return { app, orchestrationContext, wsBridge, mcpManager };
 }

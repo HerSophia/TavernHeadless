@@ -25,6 +25,7 @@
  * - MEMORY_MAINTENANCE_DEPRECATE_OPEN_LOOP_DAYS: 可选，open_loop 超过 N 天自动 deprecated（默认 7，设为 0 禁用）
  * - MEMORY_MAINTENANCE_PURGE_DEPRECATED_DAYS: 可选，deprecated 且自上次更新后超过 N 天自动删除（以 updatedAt 作为最后变更时间，默认 90，设为 0 禁用）
  * - MEMORY_MAINTENANCE_DRY_RUN: 可选，仅统计不执行写入/删除（默认 false）
+ * - ENABLE_MCP: 是否启用 MCP 工具集成（默认 false）
  * - AUTH_MODE: 认证模式（off | api_key | jwt，默认 off）
  * - AUTH_API_KEYS: API Key 模式下的 key 列表（逗号分隔）
  * - AUTH_API_KEY_ACCOUNTS: 多账号 + API Key 模式下的账号映射（key:account_id，逗号分隔）
@@ -80,6 +81,8 @@ export interface AppConfig {
   accountMode: AccountMode;
   /** CORS 配置 */
   cors: CorsConfig;
+  /** 是否启用 MCP 工具集成 */
+  enableMcp: boolean;
 }
 
 // ── 加载函数 ──────────────────────────────────────────
@@ -101,6 +104,7 @@ export function loadConfig(): AppConfig {
   const accountMode = parseAccountMode(process.env.ACCOUNT_MODE);
   const enableMemoryConsolidation = process.env.ENABLE_MEMORY_CONSOLIDATION === "true";
   const cors = parseCorsConfig(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN, process.env.CORS_CREDENTIALS);
+  const enableMcp = process.env.ENABLE_MCP === "true";
   const memoryInjectionDecay = parseMemoryInjectionDecay(
     process.env.MEMORY_INJECTION_DECAY_HALF_LIFE_DAYS,
     process.env.MEMORY_INJECTION_DECAY_MIN_FACTOR,
@@ -151,6 +155,7 @@ export function loadConfig(): AppConfig {
       auth,
       accountMode,
       cors,
+      enableMcp,
     };
   }
 
@@ -207,6 +212,7 @@ export function loadConfig(): AppConfig {
     auth,
     accountMode,
     cors,
+    enableMcp,
   };
 }
 

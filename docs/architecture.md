@@ -678,7 +678,7 @@ CREATE TABLE memory_edge (
 | ---- | ---- |
 | **内置工具（builtin）** | 引擎自带的 7 个工具：`get_variable`、`set_variable`、`roll_dice`、`random_choice`、`get_time`、`query_memory`、`get_character_info` |
 | **预设/角色卡工具（preset）** | 从数据库加载的自定义工具定义，支持脚本执行 |
-| **MCP 工具（预留）** | 通过 `ToolProvider` 接口预留 MCP（Model Context Protocol）扩展位，当前不实现传输层 |
+| **MCP 工具** | 通过 MCP（Model Context Protocol）连接外部工具服务器。支持 stdio 和 Streamable HTTP 两种传输方式。通过 `ENABLE_MCP=true` 启用，需通过 API 配置 MCP 服务器后才会注册工具。 |
 
 ### 两种执行模式
 
@@ -744,7 +744,9 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
 | `ToolExecutor` | `packages/core/src/tools/` | 执行工具调用，权限检查，事件发射，计数限制 |
 | `BuiltinToolProvider` | `packages/core/src/tools/` | 内置 7 个工具的实现 |
 | `PresetToolProvider` | `packages/core/src/tools/` | 从数据库加载的自定义工具提供者 |
-| `ToolProvider` 接口 | `packages/core/src/tools/` | 工具提供者抽象接口，MCP 可通过实现此接口扩展 |
+| `ToolProvider` 接口 | `packages/core/src/tools/` | 工具提供者抽象接口 |
+| `McpToolProvider` | `apps/api/src/mcp/` | MCP 工具提供者，通过 McpConnectionManager 代理工具调用 |
+| `McpConnectionManager` | `apps/api/src/mcp/` | 管理多个 MCP 服务器连接的生命周期 |
 | `DrizzleToolRepository` | `apps/api/src/adapters/` | 工具调用记录和工具定义的数据库操作 |
 | `ToolService` | `apps/api/src/services/` | 工具管理业务层 |
 | 工具路由 | `apps/api/src/routes/tools.ts` | 11 个 API 端点 |
@@ -764,3 +766,15 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
 | GET | `/sessions/:id/tool-permissions` | 获取会话工具权限 |
 | PUT | `/sessions/:id/tool-permissions` | 替换会话工具权限 |
 | PATCH | `/sessions/:id/tool-permissions` | 合并更新会话工具权限 |
+| GET | `/mcp/servers` | 列出 MCP 服务器配置 |
+| GET | `/mcp/servers/:id` | 获取单个 MCP 服务器配置 |
+| POST | `/mcp/servers` | 创建 MCP 服务器配置 |
+| PATCH | `/mcp/servers/:id` | 更新 MCP 服务器配置 |
+| DELETE | `/mcp/servers/:id` | 删除 MCP 服务器配置 |
+| PATCH | `/mcp/servers/:id/toggle` | 启用/禁用 MCP 服务器 |
+| GET | `/mcp/servers/:id/status` | 查看连接状态 |
+| GET | `/mcp/statuses` | 查看所有连接状态 |
+| POST | `/mcp/servers/:id/connect` | 连接/重连 |
+| POST | `/mcp/servers/:id/disconnect` | 断开连接 |
+| GET | `/mcp/servers/:id/tools` | 查看服务器工具列表 |
+| POST | `/mcp/servers/:id/test` | 测试连接 |

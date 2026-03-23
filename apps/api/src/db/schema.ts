@@ -412,3 +412,28 @@ export const toolDefinitions = sqliteTable(
     accountSourceIdx: index("tool_definition_account_source_idx").on(table.accountId, table.source),
   })
 );
+
+// ── MCP Server Configuration ────────────────────────────
+
+export const mcpServerConfigs = sqliteTable(
+  "mcp_server_config",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    transport: text("transport", { enum: ["stdio", "http"] }).notNull(),
+    configJson: text("config_json").notNull(),
+    toolPrefix: text("tool_prefix"),
+    enabled: integer("enabled").notNull().default(1),
+    connectTimeoutMs: integer("connect_timeout_ms").notNull().default(30000),
+    callTimeoutMs: integer("call_timeout_ms").notNull().default(60000),
+    toolRefreshIntervalMs: integer("tool_refresh_interval_ms").notNull().default(300000),
+    defaultSideEffectLevel: text("default_side_effect_level", {
+      enum: ["none", "sandbox", "irreversible"],
+    }).notNull().default("irreversible"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    nameUnique: uniqueIndex("mcp_server_config_name_uq").on(table.name),
+  })
+);

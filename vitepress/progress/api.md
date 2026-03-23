@@ -33,6 +33,19 @@ outline: [2, 3]
 - [x] 4 个工具事件类型（started/completed/failed/denied）
 - [x] 11 个集成测试，零回归
 
+### MCP 集成
+
+- [x] `mcp_server_config` 数据库表及迁移（`0015_mcp_server_config.sql`）
+- [x] `McpService`（MCP 服务器配置 CRUD 业务层）
+- [x] `McpConnection`（单连接封装，支持 stdio/HTTP 传输）
+- [x] `McpConnectionManager`（多连接生命周期管理，stdio 启动时连接，HTTP 按需连接）
+- [x] `McpToolProvider`（实现 `ToolProvider` 接口，对上层透明）
+- [x] 12 个 API 端点（6 配置 CRUD + 6 运行时操作）
+- [x] `ENABLE_MCP` 环境变量与 `app.ts` 初始化流程
+- [x] 3 个事件类型：`mcp.connected`、`mcp.disconnected`、`mcp.error`
+- [x] WsBridge 追加 MCP 事件转发
+- [x] 32 个测试（McpService 21 + McpToolProvider 11），零回归
+
 ### M22：LLM Instance Config API
 
 - [x] `llm_instance_config` 数据库表及 migration
@@ -122,8 +135,8 @@ outline: [2, 3]
 
 ## 测试统计
 
-- 全量测试：**413 passed**（32 个测试文件）
-- 覆盖范围：CRUD 集成、认证、聊天链路、分支管理、角色生命周期、导入、LLM Profile/Instance、记忆、Prompt dry-run、OpenAPI、请求日志、安全、WebSocket、工具调用
+- 全量测试：**445 passed**（34 个测试文件）
+- 覆盖范围：CRUD 集成、认证、聊天链路、分支管理、角色生命周期、导入、LLM Profile/Instance、记忆、Prompt dry-run、OpenAPI、请求日志、安全、WebSocket、工具调用、MCP 集成
 
 ## 已知限制
 

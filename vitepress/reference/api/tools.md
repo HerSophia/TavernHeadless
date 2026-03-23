@@ -47,6 +47,8 @@ outline: [2, 3]
 | `query_memory` | 查询记忆条目 | `none` |
 | `get_character_info` | 获取角色信息 | `none` |
 
+> 除内置工具外，还支持通过 [MCP 服务器](./mcp) 注册外部工具。MCP 工具通过 `ToolProvider` 接口注册，对上层透明，行为与内置工具一致。详见 [MCP Servers](./mcp)。
+
 ## 工具定义 CRUD
 
 ### GET /tools/definitions

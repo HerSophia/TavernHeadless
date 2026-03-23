@@ -469,6 +469,10 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 | `tool.call_failed`     | 工具调用失败   | 工具名 + 错误信息           |
 | `tool.call_denied`     | 工具调用被拒绝 | 工具名 + 拒绝原因           |
 
+| `mcp.connected`        | MCP 服务器连接成功 | serverId, serverName, toolCount |
+| `mcp.disconnected`     | MCP 服务器断开连接 | serverId, serverName            |
+| `mcp.error`            | MCP 服务器连接出错 | serverId, serverName, error     |
+
 这些事件可以用来：
 
 - 在前端实时显示生成进度（通过 WebSocket 转发）。
@@ -493,7 +497,7 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 | ---- | ---- |
 | **内置工具** | 引擎自带的 7 个工具：`get_variable`、`set_variable`、`roll_dice`、`random_choice`、`get_time`、`query_memory`、`get_character_info` |
 | **预设/角色卡工具** | 从数据库加载的自定义工具定义，支持脚本执行 |
-| **MCP 工具（预留）** | 通过 `ToolProvider` 接口预留 MCP 扩展位 |
+| **MCP 工具** | 通过 MCP（Model Context Protocol）连接外部工具服务器。支持 stdio 和 Streamable HTTP 两种传输方式。通过 `ENABLE_MCP=true` 启用。 |
 
 ### 两种执行模式
 
@@ -542,3 +546,15 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 | GET | `/sessions/:id/tool-permissions` | 获取会话工具权限 |
 | PUT | `/sessions/:id/tool-permissions` | 替换会话工具权限 |
 | PATCH | `/sessions/:id/tool-permissions` | 合并更新会话工具权限 |
+| GET | `/mcp/servers` | 列出 MCP 服务器配置 |
+| GET | `/mcp/servers/:id` | 获取单个 MCP 服务器配置 |
+| POST | `/mcp/servers` | 创建 MCP 服务器配置 |
+| PATCH | `/mcp/servers/:id` | 更新 MCP 服务器配置 |
+| DELETE | `/mcp/servers/:id` | 删除 MCP 服务器配置 |
+| PATCH | `/mcp/servers/:id/toggle` | 启用/禁用 MCP 服务器 |
+| GET | `/mcp/servers/:id/status` | 查看连接状态 |
+| GET | `/mcp/statuses` | 查看所有连接状态 |
+| POST | `/mcp/servers/:id/connect` | 连接/重连 |
+| POST | `/mcp/servers/:id/disconnect` | 断开连接 |
+| GET | `/mcp/servers/:id/tools` | 查看服务器工具列表 |
+| POST | `/mcp/servers/:id/test` | 测试连接 |

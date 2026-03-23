@@ -15,8 +15,8 @@
 | ---- | ---- |
 | `packages/core` | 315 |
 | `packages/adapters-sillytavern` | 104 |
-| `apps/api` | 413 |
-| **合计** | **832** |
+| `apps/api` | 445 |
+| **合计** | **864** |
 
 ## 后端 Beta 已覆盖能力
 
@@ -36,6 +36,7 @@
 - CORS 与中英文化文档入口
 - 首批 batch 接口（variables/memories/messages）
 - 工具调用（Tool Calling）系统（内置工具 + 自定义工具 + 权限配置 + 11 个 API 端点）
+- MCP 集成（MCP 服务器配置 CRUD + 运行时连接管理 + 12 个 API 端点）
 - 真实 LLM provider 回归测试通过
 
 ## 详细进度
