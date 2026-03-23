@@ -9,4 +9,8 @@ export const CoreEvents = {
   MEMORY_UPDATED: 'memory.updated',
   MEMORY_DEPRECATED: 'memory.deprecated',
   MEMORY_CONSOLIDATED: 'memory.consolidated',
+  TOOL_CALL_STARTED: 'tool.call_started',
+  TOOL_CALL_COMPLETED: 'tool.call_completed',
+  TOOL_CALL_FAILED: 'tool.call_failed',
+  TOOL_CALL_DENIED: 'tool.call_denied',
 } as const;

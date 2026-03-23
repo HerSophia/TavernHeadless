@@ -9,7 +9,15 @@ outline: [2, 3]
 ## 当前里程碑
 
 - 里程碑：M9-M12 后端高优先级能力
-- 状态：进行中（Phase 1-3 已完成，core/adapters 支撑已落地）
+- 状态：进行中（Tool Calling 系统 Phase 1-5 已完成）
+
+## Tool Calling 系统（已完成 Phase 1-5）
+
+- [x] Phase 1：核心类型（`ToolRegistry`、`ToolExecutor`、4 个事件类型，33 tests）
+- [x] Phase 2：LLM 层改造（`LLMRequest.tools`/`maxSteps`、`LLMResponse.toolCalls`/`steps`，3 tests）
+- [x] Phase 3：内置工具提供者（`BuiltinToolProvider`，7 个工具，22 tests）
+- [x] Phase 4：编排层集成（`TurnOrchestrator` 工具接线，11 tests）
+- [x] Phase 5：`PresetToolProvider`（自定义工具执行器）
 
 ## M12 Phase 4：Native Pipeline 错误定位与执行轨迹
 
@@ -71,3 +79,6 @@ outline: [2, 3]
 | M3 WebSocket | 14 | 400 |
 | M4 Chat Endpoint | 10 | 410 |
 | M4 Regenerate/Imports | 32 | 442 |
+| Tool Calling Phase 1-5 | 80 | 522 |
+
+全量：core 315 + adapters 104 = 419（不含 API 测试）

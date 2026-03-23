@@ -21,6 +21,18 @@ outline: [2, 3]
 
 ## 已完成能力一览
 
+### Tool Calling：工具调用系统
+
+- [x] `tool_call_record` + `tool_definition` 数据库表及迁移
+- [x] `DrizzleToolRepository`（调用记录与工具定义 CRUD）
+- [x] `ToolService`（内置工具列表、自定义工具管理、调用记录查询）
+- [x] 11 个 API 端点（内置工具、定义 CRUD、启用/禁用、调用记录、会话权限）
+- [x] `ChatService` 集成工具权限解析与调用持久化
+- [x] Core 层：`ToolRegistry`、`ToolExecutor`、`BuiltinToolProvider`（7 个内置工具）、`PresetToolProvider`
+- [x] `TurnOrchestrator` 工具初始化与调用收集
+- [x] 4 个工具事件类型（started/completed/failed/denied）
+- [x] 11 个集成测试，零回归
+
 ### M22：LLM Instance Config API
 
 - [x] `llm_instance_config` 数据库表及 migration
@@ -110,8 +122,8 @@ outline: [2, 3]
 
 ## 测试统计
 
-- 全量测试：**371 passed**（27 个测试文件）
-- 覆盖范围：CRUD 集成、认证、聊天链路、分支管理、角色生命周期、导入、LLM Profile/Instance、记忆、Prompt dry-run、OpenAPI、请求日志、安全、WebSocket
+- 全量测试：**413 passed**（32 个测试文件）
+- 覆盖范围：CRUD 集成、认证、聊天链路、分支管理、角色生命周期、导入、LLM Profile/Instance、记忆、Prompt dry-run、OpenAPI、请求日志、安全、WebSocket、工具调用
 
 ## 已知限制
 

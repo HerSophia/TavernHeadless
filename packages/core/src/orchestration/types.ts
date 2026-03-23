@@ -3,6 +3,8 @@ import type { ChatMessage } from '../prompt/types.js';
 import type { GenerationParams, InstanceSlot, ModelConfig, TokenUsage } from '../llm/types.js';
 import type { SummaryExtractorOptions } from '../generation/summary-extractor.js';
 import type { MemoryInjectionOptions, MemoryInjectionResult, MemoryItem } from '../memory/types.js';
+import type { ToolPermissions, ToolCallRecord } from '../tools/types.js';
+import type { ToolRegistry } from '../tools/tool-registry.js';
 import type { DirectorInput, DirectorResult } from './director.js';
 import type { VerifierInput, VerifierResult } from './verifier.js';
 import type { ConsolidationResult } from '../memory/memory-consolidator.js';
@@ -11,6 +13,9 @@ import type { ConsolidationResult } from '../memory/memory-consolidator.js';
 
 /** Verifier 不通过时的策略 */
 export type VerifierFailStrategy = 'warn' | 'block' | 'retry';
+
+/** 工具调用模式 */
+export type ToolMode = 'inline' | 'standalone' | 'both';
 
 /** 回合配置 */
 export interface TurnConfig {
@@ -24,6 +29,10 @@ export interface TurnConfig {
   verifierFailStrategy?: VerifierFailStrategy;
   /** 最大重试次数（retry 策略时，默认 1） */
   maxRetries?: number;
+  /** 是否启用工具调用（默认 false） */
+  enableTools?: boolean;
+  /** 工具调用模式（默认 'inline'） */
+  toolMode?: ToolMode;
 }
 
 // ── Turn Input ────────────────────────────────────────
@@ -64,6 +73,12 @@ export interface TurnInput {
     existingFacts: MemoryItem[];
   };
 
+  // ── 工具调用 ──
+
+  /** 工具权限配置（由外部注入，控制各槽位可用工具） */
+  toolPermissions?: ToolPermissions;
+  /** 工具注册表（由外部注入，持有所有已注册的工具提供者） */
+  toolRegistry?: ToolRegistry;
   // ── 回调 ──
 
   /** 前处理：在 LLM 调用前对消息进行处理 */
@@ -102,4 +117,6 @@ export interface TurnOutput {
   totalUsage: TokenUsage;
   /** 楼层最终状态 */
   finalState: FloorState;
+  /** 本回合所有工具调用记录 */
+  toolCalls?: ToolCallRecord[];
 }

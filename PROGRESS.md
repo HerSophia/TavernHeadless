@@ -4,9 +4,59 @@
 
 ## 当前里程碑
 
-- 里程碑：`M9-M12 - 后端高优先级能力`
-- 状态：`进行中（Phase 1-3 已完成，core/adapters 支撑已落地）`
+- 里程碑：`M9-M12 - 后端高优先级能力 + Tool Calling`
+- 状态：`进行中（Tool Calling 系统已完成 Phase 1-5，文档收尾中）`
 - 最后更新：`2026-06-25`
+
+## Tool Calling 系统（已完成 Phase 1-5）
+
+### 概述
+
+为所有 LLM 实例（Narrator / Director / Verifier / Memory）实现了工具调用能力。支持内置工具和自定义工具，兼容 Vercel AI SDK 的 `tools` / `maxSteps` 多步执行。
+
+### 已完成清单
+
+- [x] Phase 1：核心类型和基础设施（`ToolRegistry`、`ToolExecutor`、4 个事件类型，33 个测试）
+- [x] Phase 2：LLM 层改造（`LLMRequest.tools`/`maxSteps`、`LLMResponse.toolCalls`/`steps`，3 个测试）
+- [x] Phase 3：内置工具提供者（`BuiltinToolProvider`，7 个工具，22 个测试）
+- [x]集成（`TurnOrchestrator` 工具接线、DB 迁移、`ChatService` 工具持久化，11 个测试）
+- [x] Phase 5：API 路由（`ToolService`、11 个端点、`PresetToolProvider`，11 个集成测试）
+
+### 新增文件清单
+
+```text
+packages/core/src/tools/
+├── types.ts                          # 核心类型定义
+├── tool-registry.ts                  # 工具注册表
+├── tool-executor.ts                  # 工具执行器
+├── builtin-provider.ts               # 内置 7 个工具
+├── preset-provider.ts                # 预设/自定义工具提供者
+├── index.ts                          # barrel export
+└── __tests__/
+    ├── tool-registry.test.ts          # 16 tests
+    ├── tool-executor.test.ts          # 17 tests
+    └── builtin-provider.test.ts       # 22 tests
+
+apps/api/
+├── drizzle/0014_tool_calling.sql      # DB 迁移
+├── src/adapters/drizzle-tool-repository.ts  # 工具数据库操作
+├── src/services/tool-service.ts       # 工具管理业务层
+├── src/routes/tools.ts                # 11 个 API 端点
+└── test/tools.integration.test.ts     # 11 个集成测试
+```
+
+### 修改文件
+
+- `packages/core/src/events/event-types.ts` — +4 工具事件
+- `packages/core/src/llm/types.ts` — +tools/maxSteps/toolCalls/steps
+- `packages/core/src/llm/llm-service.ts` — 工具参数透传
+- `packages/core/src/generation/types.ts` — +tools/maxSteps/toolCalls
+- `packages/core/src/generation/generation-pipeline.ts` — 工具参数透传
+- `packages/core/src/orchestration/types.ts` — +ToolMode/enableTools/toolPermissions
+- `packages/core/src/orchestration/turn-orchestrator.ts` — 工具初始化和调用收集
+- `apps/api/src/db/schema.ts` — +tool_call_record/tool_definition 表
+- `apps/api/src/services/chat-service.ts` — 工具权限解析和调用持久化
+- `apps/api/src/routes/index.ts` — 注册工具路由
 
 ## M12 Phase 4 进行中（Core 增量）：Native Pipeline 错误定位与执行轨迹
 
@@ -401,10 +451,17 @@ packages/core/src/
 | M3 Phase 3 (WebSocket) | 14 | 400* |
 | M4 Phase 1 (Chat Endpoint) | 10 | 410* |
 | M4 Phase 2 (Regenerate/Imports) | 32 | 442* |
+| Tool Calling Phase 1-5 | 80 | 522* |
 
-*全量：core 232 + adapters 104 + api 371 = 707
+*全量：core 315 + adapters 104 + api 413 = 832
 
 ## 更新日志
+
+### 2026-06-26
+
+- 完成 Tool Calling 系统 Phase 1-5：核心类型、LLM 层改造、内置工具、编排层集成、API 路由
+- 新增 80 个测试（core 83 + api 11 集成测试），全量 core 315 + api 413 = 728（含 adapters 832）
+- 新增数据库迁移 `0014_tool_calling.sql`，包含 `tool_call_record` 和 `tool_definition` 两张表
 
 ### 2026-06-25
 

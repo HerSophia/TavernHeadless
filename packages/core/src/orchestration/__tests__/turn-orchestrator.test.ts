@@ -3,6 +3,10 @@ import { TurnOrchestrator, TurnError } from '../turn-orchestrator.js';
 import type { TurnOrchestratorDeps } from '../turn-orchestrator.js';
 import type { TurnInput } from '../types.js';
 import type { GenerationOutput } from '../../generation/types.js';
+import type { ToolDefinition, ToolProvider, ToolCallResult, ToolPermissions, ToolExecutionContext } from '../../tools/types.js';
+import { ToolRegistry } from '../../tools/tool-registry.js';
+import type { LLMToolCall } from '../../llm/types.js';
+import type { InstanceSlot } from '../../llm/types.js';
 import type { DirectorResult } from '../director.js';
 import type { VerifierResult } from '../verifier.js';
 import type { ConsolidationResult } from '../../memory/memory-consolidator.js';
@@ -570,5 +574,264 @@ describe('TurnOrchestrator', () => {
         error: expect.any(Error),
       }),
     );
+  });
+});
+
+
+// ── Tool Integration Tests ────────────────────────────
+
+describe('TurnOrchestrator — Tool Integration', () => {
+  // 工具测试专用工厂
+  function makeTestToolProvider(): ToolProvider {
+    const tools: ToolDefinition[] = [
+      {
+        name: 'roll_dice',
+        description: 'Roll a dice',
+        parameters: { type: 'object', properties: { sides: { type: 'number' } }, required: ['sides'] },
+        sideEffectLevel: 'none',
+        allowedSlots: [],
+        source: 'builtin',
+      },
+      {
+        name: 'get_variable',
+        description: 'Get a variable',
+        parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
+        sideEffectLevel: 'none',
+        allowedSlots: [],
+        source: 'builtin',
+      },
+    ];
+
+    return {
+      id: 'test-builtin',
+      type: 'builtin',
+      listTools: vi.fn().mockResolvedValue(tools),
+      executeTool: vi.fn().mockResolvedValue({ data: { result: 42 } }),
+    };
+  }
+
+  function makeToolPermissions(overrides: Partial<ToolPermissions> = {}): ToolPermissions {
+    return {
+      enabled: true,
+      maxCallsPerTurn: 10,
+      maxStepsPerGeneration: 3,
+      ...overrides,
+    };
+  }
+
+  let deps: TurnOrchestratorDeps;
+  let orchestrator: TurnOrchestrator;
+
+  beforeEach(() => {
+    deps = makeDeps();
+    orchestrator = new TurnOrchestrator(deps);
+  });
+
+  it('passes tools to generation pipeline when enableTools is true (inline mode)', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const input = makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+    });
+
+    await orchestrator.executeTurn(input);
+
+    // generationPipeline.run 应该收到 tools 和 maxSteps
+    const runCall = (deps.generationPipeline.run as any).mock.calls[0][0];
+    expect(runCall.tools).toBeDefined();
+    expect(typeof runCall.tools).toBe('object');
+    expect(runCall.tools['roll_dice']).toBeDefined();
+    expect(runCall.tools['get_variable']).toBeDefined();
+    expect(runCall.maxSteps).toBe(3);
+  });
+
+  it('does not pass tools when enableTools is false', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const input = makeInput({
+      config: { enableTools: false },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+    });
+
+    await orchestrator.executeTurn(input);
+
+    const runCall = (deps.generationPipeline.run as any).mock.calls[0][0];
+    expect(runCall.tools).toBeUndefined();
+    expect(runCall.maxSteps).toBeUndefined();
+  });
+
+  it('does not pass tools when toolRegistry is not provided', async () => {
+    const input = makeInput({
+      config: { enableTools: true },
+      // no toolRegistry
+      toolPermissions: makeToolPermissions(),
+    });
+
+    await orchestrator.executeTurn(input);
+
+    const runCall = (deps.generationPipeline.run as any).mock.calls[0][0];
+    expect(runCall.tools).toBeUndefined();
+  });
+
+  it('does not pass tools when toolPermissions is not provided', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const input = makeInput({
+      config: { enableTools: true },
+      toolRegistry: registry,
+      // no toolPermissions
+    });
+
+    await orchestrator.executeTurn(input);
+
+    const runCall = (deps.generationPipeline.run as any).mock.calls[0][0];
+    expect(runCall.tools).toBeUndefined();
+  });
+
+  it('does not pass tools in standalone mode', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const input = makeInput({
+      config: { enableTools: true, toolMode: 'standalone' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+    });
+
+    await orchestrator.executeTurn(input);
+
+    const runCall = (deps.generationPipeline.run as any).mock.calls[0][0];
+    expect(runCall.tools).toBeUndefined();
+  });
+
+  it('collects toolCalls from generation output into TurnOutput', async () => {
+    const toolCalls: LLMToolCall[] = [
+      { toolName: 'roll_dice', args: { sides: 20 } },
+      { toolName: 'get_variable', args: { key: 'hp' } },
+    ];
+
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn().mockResolvedValue(makeGenOutput({ toolCalls })),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const input = makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+    });
+
+    const result = await orchestrator.executeTurn(input);
+
+    expect(result.toolCalls).toBeDefined();
+    expect(result.toolCalls).toHaveLength(2);
+    expect(result.toolCalls![0]!.toolName).toBe('roll_dice');
+    expect(result.toolCalls![1]!.toolName).toBe('get_variable');
+    expect(result.toolCalls![0]!.callerSlot).toBe('narrator');
+  });
+
+  it('returns undefined toolCalls when generation has no tool calls', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const input = makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+    });
+
+    const result = await orchestrator.executeTurn(input);
+
+    expect(result.toolCalls).toBeUndefined();
+  });
+
+  it('respects permissions: disabled tools = no tools passed', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const input = makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions({ enabled: false }),
+    });
+
+    await orchestrator.executeTurn(input);
+
+    const runCall = (deps.generationPipeline.run as any).mock.calls[0][0];
+    // listForSlot returns [] when permissions.enabled is false
+    expect(runCall.tools).toBeUndefined();
+  });
+
+  it('wraps tool setup errors in TurnError with tool_setup phase', async () => {
+    const badProvider: ToolProvider = {
+      id: 'bad-provider',
+      type: 'builtin',
+      listTools: vi.fn().mockRejectedValue(new Error('Provider init failed')),
+      executeTool: vi.fn(),
+    };
+
+    const registry = new ToolRegistry();
+    registry.register(badProvider);
+
+    const input = makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+    });
+
+    try {
+      await orchestrator.executeTurn(input);
+      expect.unreachable('Should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(TurnError);
+      expect((error as TurnError).phase).toBe('tool_setup');
+      expect((error as TurnError).message).toContain('Tool setup failed');
+    }
+  });
+
+  it('uses maxStepsPerGeneration from permissions', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const input = makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions({ maxStepsPerGeneration: 8 }),
+    });
+
+    await orchestrator.executeTurn(input);
+
+    const runCall = (deps.generationPipeline.run as any).mock.calls[0][0];
+    expect(runCall.maxSteps).toBe(8);
+  });
+
+  it('defaults maxSteps to 5 when maxStepsPerGeneration is not set', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const input = makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: {
+        enabled: true,
+        // maxStepsPerGeneration not set
+      },
+    });
+
+    await orchestrator.executeTurn(input);
+
+    const runCall = (deps.generationPipeline.run as any).mock.calls[0][0];
+    expect(runCall.maxSteps).toBe(5);
   });
 });

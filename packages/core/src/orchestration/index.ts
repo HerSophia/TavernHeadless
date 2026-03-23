@@ -23,4 +23,5 @@ export type {
   TurnInput,
   TurnOutput,
   VerifierFailStrategy,
+  ToolMode,
 } from './types.js';

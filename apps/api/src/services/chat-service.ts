@@ -29,7 +29,10 @@ import type {
   TokenCounter,
   MemoryInjectionOptions,
   MemoryStore,
+  ToolPermissions,
+  ToolCallRecord,
 } from "@tavern/core";
+import { ToolRegistry, BuiltinToolProvider } from "@tavern/core";
 
 import type { AppDb } from "../db/client.js";
 import { sessions, floors, messagePages, messages } from "../db/schema.js";
@@ -37,6 +40,7 @@ import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js";
 import { normalizePositiveInt } from "../lib/utils.js";
 import { ChatHistoryLoader } from "./chat-history-loader.js";
 import { ChatMessagePersistence } from "./chat-message-persistence.js";
+import { DrizzleToolRepository } from "../adapters/drizzle-tool-repository.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
@@ -227,6 +231,15 @@ export interface ChatServiceOptions {
    * 可选：本轮生成成功后回调（例如更新 profile last_used_at）。
    */
   onTurnModelUsed?: OnTurnModelUsedFn;
+  /**
+   * 可选：工具注册表实例。
+   * 提供后可在生成时向 LLM 提供可用工具。
+   */
+  toolRegistry?: ToolRegistry;
+  /**
+   * 可选：解析会话的工具权限。默认从 session metadata_json 读取。
+   */
+  resolveToolPermissions?: (sessionId: string, accountId: string) => Promise<ToolPermissions | null>;
 }
 
 // ── ChatService ───────────────────────────────────────
@@ -241,6 +254,9 @@ export class ChatService {
   private readonly resolveTurnModel?: ResolveTurnModelFn;
   private readonly resolveTurnModels?: ResolveTurnModelsFn;
   private readonly onTurnModelUsed?: OnTurnModelUsedFn;
+  private readonly toolRegistry?: ToolRegistry;
+  private readonly resolveToolPermissions?: (sessionId: string, accountId: string) => Promise<ToolPermissions | null>;
+  private readonly toolRepo: DrizzleToolRepository;
 
   constructor(
     private readonly db: AppDb,
@@ -258,6 +274,9 @@ export class ChatService {
     this.resolveTurnModel = options.resolveTurnModel;
     this.resolveTurnModels = options.resolveTurnModels;
     this.onTurnModelUsed = options.onTurnModelUsed;
+    this.toolRegistry = options.toolRegistry;
+    this.resolveToolPermissions = options.resolveToolPermissions;
+    this.toolRepo = new DrizzleToolRepository(db);
   }
 
   /**
@@ -385,6 +404,8 @@ export class ChatService {
       generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
       onChunk: runtimeOptions.onChunk,
       abortSignal: runtimeOptions.abortSignal,
+      toolRegistry: this.toolRegistry,
+      toolPermissions: await this.resolveToolPermissionsForSession(sessionId, accountId),
     };
 
     let turnOutput: TurnOutput;
@@ -407,6 +428,9 @@ export class ChatService {
 
     // ── 6b. 记忆持久化 ──
     await this.persistMemory(turnOutput, sessionId, floorId);
+
+    // ── 6c. 工具调用记录持久化 ──
+    await this.persistToolCalls(turnOutput.toolCalls);
 
     // ── 7. 更新楼层 token 统计 ──
     const usage = normalizeTokenUsage(turnOutput.totalUsage);
@@ -639,6 +663,8 @@ export class ChatService {
       postProcess: assembled.postProcess,
       modelOverrides: this.buildModelOverrides(resolvedTurnModels),
       generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
+      toolRegistry: this.toolRegistry,
+      toolPermissions: await this.resolveToolPermissionsForSession(sessionId, accountId),
     };
 
     let turnOutput: TurnOutput;
@@ -659,6 +685,9 @@ export class ChatService {
 
     // ── 9b. 记忆持久化 ──
     await this.persistMemory(turnOutput, sessionId, newFloorId);
+
+    // ── 9c. 工具调用记录持久化 ──
+    await this.persistToolCalls(turnOutput.toolCalls);
 
     // ── 10. 更新楼层 token 统计 ──
     const usage = normalizeTokenUsage(turnOutput.totalUsage);
@@ -793,6 +822,8 @@ export class ChatService {
       postProcess: assembled.postProcess,
       modelOverrides: this.buildModelOverrides(resolvedTurnModels),
       generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
+      toolRegistry: this.toolRegistry,
+      toolPermissions: await this.resolveToolPermissionsForSession(targetFloor.sessionId, accountId),
     };
 
     let turnOutput: TurnOutput;
@@ -810,6 +841,7 @@ export class ChatService {
 
     await this.messagePersistence.saveAssistantMessage(targetFloor.id, turnOutput.generatedText, now);
     await this.persistMemory(turnOutput, targetFloor.sessionId, targetFloor.id);
+    await this.persistToolCalls(turnOutput.toolCalls);
 
     const usage = normalizeTokenUsage(turnOutput.totalUsage);
     await this.db
@@ -1032,6 +1064,8 @@ export class ChatService {
         postProcess: assembled.postProcess,
         modelOverrides: this.buildModelOverrides(resolvedTurnModels),
         generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
+        toolRegistry: this.toolRegistry,
+        toolPermissions: await this.resolveToolPermissionsForSession(args.sessionId, args.accountId),
       });
     } catch (error) {
       throw new ChatServiceError(
@@ -1045,6 +1079,7 @@ export class ChatService {
 
     await this.messagePersistence.saveAssistantMessage(args.floorId, turnOutput.generatedText, args.now);
     await this.persistMemory(turnOutput, args.sessionId, args.floorId);
+    await this.persistToolCalls(turnOutput.toolCalls);
 
     const usage = normalizeTokenUsage(turnOutput.totalUsage);
     await this.db
@@ -1121,6 +1156,58 @@ export class ChatService {
       }
     } catch {
       // 记忆持久化失败不应阻断聊天流程
+    }
+  }
+
+  /**
+   * 解析当前会话的工具权限。
+   *
+   * 优先级：外部注入的 resolveToolPermissions → session metadata_json → undefined。
+   * 如果 ToolRegistry 未配置则直接返回 undefined。
+   */
+  private async resolveToolPermissionsForSession(
+    sessionId: string,
+    accountId: string,
+  ): Promise<ToolPermissions | undefined> {
+    if (!this.toolRegistry) return undefined;
+
+    // 外部解析器
+    if (this.resolveToolPermissions) {
+      const permissions = await this.resolveToolPermissions(sessionId, accountId);
+      if (permissions) return permissions;
+    }
+
+    // 从 session metadata_json 读取
+    try {
+      const [session] = await this.db
+        .select({ metadataJson: sessions.metadataJson })
+        .from(sessions)
+        .where(eq(sessions.id, sessionId))
+        .limit(1);
+
+      if (session?.metadataJson) {
+        const metadata = JSON.parse(session.metadataJson) as Record<string, unknown>;
+        if (metadata.tool_permissions && typeof metadata.tool_permissions === 'object') {
+          return metadata.tool_permissions as ToolPermissions;
+        }
+      }
+    } catch {
+      // JSON 解析失败时返回 undefined
+    }
+
+    return undefined;
+  }
+
+  /**
+   * 持久化工具调用记录。
+   */
+  private async persistToolCalls(toolCalls?: ToolCallRecord[]): Promise<void> {
+    if (!toolCalls || toolCalls.length === 0) return;
+
+    try {
+      await this.toolRepo.insertCallRecords(toolCalls);
+    } catch {
+      // 工具调用记录持久化失败不应阻断聊天流程
     }
   }
 

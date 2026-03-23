@@ -1,0 +1,182 @@
+// ── Tool Calling 核心类型定义 ─────────────────────────
+
+import type { InstanceSlot } from '../llm/types.js';
+import type { VariableContext } from '../types.js';
+
+// ── Side Effect Level ─────────────────────────────────
+
+/**
+ * 工具的副作用级别
+ *
+ * - `'none'` — 纯查询，无副作用。
+ * - `'sandbox'` — 副作用写入 page scope，commit 时提升。
+ * - `'irreversible'` — 不可撤销的外部副作用（如 MCP 调用）。
+ */
+export type ToolSideEffectLevel = 'none' | 'sandbox' | 'irreversible';
+
+// ── Parameter Schema ──────────────────────────────────
+
+/** 工具参数 schema 中单个属性的描述 */
+export interface ToolParameterProperty {
+  type: string;
+  description?: string;
+  enum?: string[];
+  default?: unknown;
+  /** 数组元素的类型描述（type 为 array 时使用） */
+  items?: { type: string; description?: string };
+}
+
+/**
+ * 工具参数 schema（JSON Schema 子集，与 Vercel AI SDK 兼容）
+ */
+export interface ToolParameterSchema {
+  type: 'object';
+  properties: Record<string, ToolParameterProperty>;
+  required?: string[];
+}
+
+// ── Tool Definition ───────────────────────────────────
+
+/** 工具定义 */
+export interface ToolDefinition {
+  /** 工具名称（唯一标识） */
+  name: string;
+  /** 工具描述（发送给 LLM，帮助其理解何时使用） */
+  description: string;
+  /** 参数 schema */
+  parameters: ToolParameterSchema;
+  /** 副作用级别 */
+  sideEffectLevel: ToolSideEffectLevel;
+  /** 允许使用此工具的实例槽位（空数组 = 所有槽位均可使用） */
+  allowedSlots: InstanceSlot[];
+  /** 工具来源标识 */
+  source: 'builtin' | 'preset' | 'mcp';
+}
+
+// ── Tool Call Result ──────────────────────────────────
+
+/** 工具执行结果 */
+export interface ToolCallResult {
+  /** 执行成功时的返回数据 */
+  data?: unknown;
+  /** 执行失败时的错误信息 */
+  error?: string;
+}
+
+// ── Tool Call Record ──────────────────────────────────
+
+/** 工具调用状态 */
+export type ToolCallStatus = 'success' | 'error' | 'denied';
+
+/** 单次工具调用记录（绑定到 MessagePage） */
+export interface ToolCallRecord {
+  /** 记录 ID */
+  id: string;
+  /** 所属消息页 ID */
+  pageId: string;
+  /** 调用序号（同一页内递增） */
+  seq: number;
+  /** 调用者实例槽位 */
+  callerSlot: InstanceSlot;
+  /** 工具名称 */
+  toolName: string;
+  /** 调用参数（JSON 字符串） */
+  argsJson: string;
+  /** 执行结果（JSON 字符串） */
+  resultJson: string;
+  /** 执行状态 */
+  status: ToolCallStatus;
+  /** 执行耗时（毫秒） */
+  durationMs: number;
+  /** 创建时间（epoch ms） */
+  createdAt: number;
+}
+
+// ── Execution Context ─────────────────────────────────
+
+/** 传递给工具执行函数的上下文 */
+export interface ToolExecutionContext {
+  /** 当前会话 ID */
+  sessionId: string;
+  /** 当前楼层 ID */
+  floorId: string;
+  /** 当前消息页 ID */
+  pageId: string;
+  /** 调用者实例槽位 */
+  callerSlot: InstanceSlot;
+  /** 变量上下文（用于 get/set variable 工具） */
+  variableContext: VariableContext;
+  /** 中止信号 */
+  abortSignal?: AbortSignal;
+}
+
+// ── Permissions ───────────────────────────────────────
+
+/** 工具权限配置（per session 或 per turn） */
+export interface ToolPermissions {
+  /** 是否启用工具调用（总开关） */
+  enabled: boolean;
+  /** 各槽位的工具白名单（不配置 = 使用工具定义自身的 allowedSlots） */
+  slotAllowList?: Partial<Record<InstanceSlot, string[]>>;
+  /** 各槽位的工具黑名单 */
+  slotDenyList?: Partial<Record<InstanceSlot, string[]>>;
+  /** 单次回合的最大工具调用次数（防止无限循环） */
+  maxCallsPerTurn?: number;
+  /** Narrator inline 模式的最大自动步数（对应 Vercel AI SDK maxSteps） */
+  maxStepsPerGeneration?: number;
+  /** 是否允许 irreversible 副作用的工具 */
+  allowIrreversible?: boolean;
+}
+
+// ── Tool Provider ─────────────────────────────────────
+
+/** 工具提供者类型 */
+export type ToolProviderType = 'builtin' | 'preset' | 'mcp';
+
+/**
+ * 工具提供者接口
+ *
+ * 所有工具来源（内置、预设/角色卡、MCP）都实现此接口。
+ * ToolRegistry 持有多个 ToolProvider，统一管理。
+ */
+export interface ToolProvider {
+  /** 提供者 ID（全局唯一） */
+  readonly id: string;
+  /** 提供者类型标识 */
+  readonly type: ToolProviderType;
+  /** 列出该提供者下所有可用工具 */
+  listTools(): Promise<ToolDefinition[]>;
+  /** 执行工具调用 */
+  executeTool(
+    name: string,
+    args: Record<string, unknown>,
+    context: ToolExecutionContext,
+  ): Promise<ToolCallResult>;
+}
+
+// ── MCP Reserved Types ────────────────────────────────
+
+/** MCP 工具提供者配置（预留，暂不实现） */
+export interface McpToolProviderConfig {
+  /** MCP 服务器地址 */
+  serverUrl: string;
+  /** 认证信息 */
+  auth?: {
+    type: 'bearer' | 'api_key';
+    token: string;
+  };
+  /** 超时（毫秒） */
+  timeoutMs?: number;
+}
+
+// ── Deny Reason ───────────────────────────────────────
+
+/** 工具调用被拒绝的原因 */
+export type ToolDenyReason =
+  | 'disabled'               // 工具调用总开关关闭
+  | 'tool_not_found'         // 工具不存在
+  | 'slot_not_allowed'       // 该槽位不允许使用此工具
+  | 'deny_listed'            // 在黑名单中
+  | 'not_in_allow_list'      // 不在白名单中
+  | 'max_calls_exceeded'     // 超过单次回合最大调用次数
+  | 'irreversible_blocked';  // irreversible 工具被禁止

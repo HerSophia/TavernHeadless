@@ -16,4 +16,8 @@ export type {
   MemoryUpdatedEvent,
   MemoryDeprecatedEvent,
   MemoryConsolidatedEvent,
+  ToolCallStartedEvent,
+  ToolCallCompletedEvent,
+  ToolCallFailedEvent,
+  ToolCallDeniedEvent,
 } from './event-types.js';

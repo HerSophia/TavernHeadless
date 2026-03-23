@@ -13,10 +13,10 @@
 
 | 模块 | 测试数 |
 | ---- | ---- |
-| `packages/core` | 232 |
+| `packages/core` | 315 |
 | `packages/adapters-sillytavern` | 104 |
-| `apps/api` | 371 |
-| **合计** | **707** |
+| `apps/api` | 413 |
+| **合计** | **832** |
 
 ## 后端 Beta 已覆盖能力
 
@@ -35,6 +35,7 @@
 - Typed SDK
 - CORS 与中英文化文档入口
 - 首批 batch 接口（variables/memories/messages）
+- 工具调用（Tool Calling）系统（内置工具 + 自定义工具 + 权限配置 + 11 个 API 端点）
 - 真实 LLM provider 回归测试通过
 
 ## 详细进度

@@ -85,10 +85,12 @@ export class GenerationPipeline {
     let rawText: string;
     let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
     let finishReason = 'unknown';
+    let toolCalls: GenerationOutput['toolCalls'];
 
     try {
       const request = {
         ...(input.model ? { model: input.model } : {}),
+        ...(input.tools ? { tools: input.tools, maxSteps: input.maxSteps } : {}),
         messages: messages.map((m) => ({
           role: m.role as 'system' | 'user' | 'assistant',
           content: m.content,
@@ -105,11 +107,13 @@ export class GenerationPipeline {
         rawText = response.text;
         usage = response.usage;
         finishReason = response.finishReason;
+        toolCalls = response.toolCalls;
       } else {
         const response = await this.llm.generate(request);
         rawText = response.text;
         usage = response.usage;
         finishReason = response.finishReason;
+        toolCalls = response.toolCalls;
       }
     } catch (e) {
       if (e instanceof GenerationPipelineError) throw e;
@@ -143,6 +147,7 @@ export class GenerationPipeline {
       summaries,
       usage,
       finishReason,
+      toolCalls,
     };
   }
 }

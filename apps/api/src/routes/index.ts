@@ -15,6 +15,7 @@ import { registerSessionRoutes } from "./sessions";
 import { registerVariableRoutes } from "./variables";
 import { registerAccountRoutes } from "./accounts";
 import { registerUserRoutes } from "./users";
+import { registerToolRoutes } from "./tools";
 
 export async function registerCrudRoutes(
   app: FastifyInstance,
@@ -34,4 +35,5 @@ export async function registerCrudRoutes(
   await registerLlmInstanceRoutes(app, connection);
   await registerWorldbookEntryRoutes(app, connection);
   await registerPresetEntryRoutes(app, connection);
+  await registerToolRoutes(app, connection);
 }

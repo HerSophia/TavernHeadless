@@ -1,0 +1,712 @@
+/**
+ * Tool Management API Routes
+ *
+ * 11 endpoints:
+ *   GET    /tools/builtin                       — List built-in tools
+ *   GET    /tools/definitions                    — List custom tool definitions
+ *   GET    /tools/definitions/:id                — Get single definition
+ *   POST   /tools/definitions                    — Create definition
+ *   PATCH  /tools/definitions/:id                — Update definition
+ *   DELETE /tools/definitions/:id                — Delete definition
+ *   PATCH  /tools/definitions/:id/toggle         — Toggle enable/disable
+ *   GET    /tools/call-records                   — Query tool call records
+ *   GET    /sessions/:id/tool-permissions        — Get session tool permissions
+ *   PUT    /sessions/:id/tool-permissions        — Replace session tool permissions
+ *   PATCH  /sessions/:id/tool-permissions        — Partial update session tool permissions
+ */
+
+import { eq } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+
+import type { DatabaseConnection } from "../db/client.js";
+import { sessions } from "../db/schema.js";
+import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
+import { parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http.js";
+import { buildListMeta, listQuerySchemaBase } from "../lib/pagination.js";
+import { getRequestAuthContext } from "../plugins/auth.js";
+import { ToolService } from "../services/tool-service.js";
+
+// ══════════════════════════════════════════════════════════
+// Zod Schemas
+// ══════════════════════════════════════════════════════════
+
+const sideEffectLevelSchema = z.enum(["none", "sandbox", "irreversible"]);
+const toolSourceSchema = z.enum(["preset", "character", "custom"]);
+const handlerTypeSchema = z.enum(["script", "prompt", "delegate"]);
+const instanceSlotSchema = z.enum(["narrator", "director", "verifier", "memory"]);
+const callRecordStatusSchema = z.enum(["success", "error", "denied"]);
+
+const definitionParamsSchema = z.object({ id: z.string().min(1) });
+
+const listDefinitionsQuerySchema = listQuerySchemaBase.extend({
+  source: toolSourceSchema.optional(),
+  source_id: z.string().min(1).optional(),
+  enabled: z.preprocess(
+    (v) => (v === "true" ? true : v === "false" ? false : v),
+    z.boolean().optional(),
+  ),
+  sort_by: z.enum(["updated_at", "name"]).default("updated_at"),
+});
+
+const createDefinitionSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  description: z.string().max(2000).default(""),
+  parameters: z.record(z.unknown()).default({ type: "object", properties: {} }),
+  side_effect_level: sideEffectLevelSchema.default("none"),
+  allowed_slots: z.array(z.string()).default([]),
+  source: toolSourceSchema.default("custom"),
+  source_id: z.string().min(1).nullish(),
+  enabled: z.boolean().optional(),
+  handler_type: handlerTypeSchema.default("script"),
+  handler: z.record(z.unknown()).default({}),
+});
+
+const updateDefinitionSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  description: z.string().max(2000).optional(),
+  parameters: z.record(z.unknown()).optional(),
+  side_effect_level: sideEffectLevelSchema.optional(),
+  allowed_slots: z.array(z.string()).optional(),
+  source: toolSourceSchema.optional(),
+  source_id: z.string().min(1).nullish(),
+  handler_type: handlerTypeSchema.optional(),
+  handler: z.record(z.unknown()).optional(),
+}).refine((v) => Object.keys(v).length > 0, "At least one field is required");
+
+const toggleDefinitionSchema = z.object({
+  enabled: z.boolean(),
+});
+
+const callRecordsQuerySchema = listQuerySchemaBase.extend({
+  page_id: z.string().min(1).optional(),
+  floor_id: z.string().min(1).optional(),
+  caller_slot: z.string().min(1).optional(),
+  status: callRecordStatusSchema.optional(),
+  sort_by: z.enum(["seq", "created_at"]).default("seq"),
+}).refine(
+  (v) => v.page_id !== undefined || v.floor_id !== undefined,
+  "Either page_id or floor_id must be provided",
+);
+
+const sessionIdParamsSchema = z.object({ id: z.string().min(1) });
+
+const toolPermissionsSchema = z.object({
+  enabled: z.boolean().optional(),
+  max_calls_per_turn: z.number().int().min(1).max(1000).optional(),
+  max_steps_per_generation: z.number().int().min(1).max(50).optional(),
+  allow_irreversible: z.boolean().optional(),
+  slot_allow_list: z.record(z.array(z.string())).optional(),
+  slot_deny_list: z.record(z.array(z.string())).optional(),
+});
+
+const toolPermissionsPutSchema = toolPermissionsSchema;
+const toolPermissionsPatchSchema = toolPermissionsSchema;
+
+// ══════════════════════════════════════════════════════════
+// JSON Schemas (OpenAPI)
+// ══════════════════════════════════════════════════════════
+
+const listMetaJsonSchema = {
+  type: "object",
+  required: ["total", "limit", "offset", "has_more", "sort_by", "sort_order"],
+  properties: {
+    total: { type: "integer", minimum: 0 },
+    limit: { type: "integer", minimum: 1 },
+    offset: { type: "integer", minimum: 0 },
+    has_more: { type: "boolean" },
+    sort_by: { type: "string" },
+    sort_order: { type: "string", enum: ["asc", "desc"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const builtinToolJsonSchema = {
+  type: "object",
+  required: ["name", "description", "parameters", "side_effect_level", "allowed_slots", "source"],
+  properties: {
+    name: { type: "string" },
+    description: { type: "string" },
+    parameters: { type: "object" },
+    side_effect_level: { type: "string", enum: ["none", "sandbox", "irreversible"] },
+    allowed_slots: { type: "array", items: { type: "string" } },
+    source: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const builtinListResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: { type: "array", items: builtinToolJsonSchema },
+  },
+  additionalProperties: false,
+} as const;
+
+const definitionJsonSchema = {
+  type: "object",
+  required: ["id", "name", "description", "parameters", "side_effect_level", "allowed_slots", "source", "source_id", "enabled", "handler_type", "handler", "created_at", "updated_at"],
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+    description: { type: "string" },
+    parameters: { type: "object" },
+    side_effect_level: { type: "string", enum: ["none", "sandbox", "irreversible"] },
+    allowed_slots: {},
+    source: { type: "string", enum: ["preset", "character", "custom"] },
+    source_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    enabled: { type: "boolean" },
+    handler_type: { type: "string", enum: ["script", "prompt", "delegate"] },
+    handler: {},
+    created_at: { type: "integer", minimum: 0 },
+    updated_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const definitionResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: definitionJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const definitionListResponseJsonSchema = {
+  type: "object",
+  required: ["data", "meta"],
+  properties: {
+    data: { type: "array", items: definitionJsonSchema },
+    meta: listMetaJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const deleteResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["id", "deleted"],
+      properties: {
+        id: { type: "string" },
+        deleted: { type: "boolean" },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const callRecordJsonSchema = {
+  type: "object",
+  required: ["id", "page_id", "seq", "caller_slot", "tool_name", "args", "result", "status", "duration_ms", "created_at"],
+  properties: {
+    id: { type: "string" },
+    page_id: { type: "string" },
+    seq: { type: "integer", minimum: 0 },
+    caller_slot: { type: "string" },
+    tool_name: { type: "string" },
+    args: {},
+    result: {},
+    status: { type: "string", enum: ["success", "error", "denied"] },
+    duration_ms: { type: "integer", minimum: 0 },
+    created_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const callRecordListResponseJsonSchema = {
+  type: "object",
+  required: ["data", "meta"],
+  properties: {
+    data: { type: "array", items: callRecordJsonSchema },
+    meta: listMetaJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const toolPermissionsJsonSchema = {
+  type: "object",
+  properties: {
+    enabled: { type: "boolean" },
+    max_calls_per_turn: { type: "integer", minimum: 1 },
+    max_steps_per_generation: { type: "integer", minimum: 1 },
+    allow_irreversible: { type: "boolean" },
+    slot_allow_list: { type: "object", additionalProperties: { type: "array", items: { type: "string" } } },
+    slot_deny_list: { type: "object", additionalProperties: { type: "array", items: { type: "string" } } },
+  },
+  additionalProperties: false,
+} as const;
+
+const toolPermissionsResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: toolPermissionsJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const callRecordsQueryJsonSchema = {
+  type: "object",
+  properties: {
+    page_id: { type: "string", minLength: 1 },
+    floor_id: { type: "string", minLength: 1 },
+    caller_slot: { type: "string", minLength: 1 },
+    status: { type: "string", enum: ["success", "error", "denied"] },
+    limit: { type: "integer", minimum: 1, maximum: 100 },
+    offset: { type: "integer", minimum: 0 },
+    sort_order: { type: "string", enum: ["asc", "desc"] },
+    sort_by: { type: "string", enum: ["seq", "created_at"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const listDefinitionsQueryJsonSchema = {
+  type: "object",
+  properties: {
+    source: { type: "string", enum: ["preset", "character", "custom"] },
+    source_id: { type: "string", minLength: 1 },
+    enabled: { type: "string", enum: ["true", "false"] },
+    limit: { type: "integer", minimum: 1, maximum: 100 },
+    offset: { type: "integer", minimum: 0 },
+    sort_order: { type: "string", enum: ["asc", "desc"] },
+    sort_by: { type: "string", enum: ["updated_at", "name"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const createDefinitionBodyJsonSchema = {
+  type: "object",
+  required: ["name"],
+  properties: {
+    name: { type: "string", minLength: 1, maxLength: 200 },
+    description: { type: "string", maxLength: 2000 },
+    parameters: { type: "object" },
+    side_effect_level: { type: "string", enum: ["none", "sandbox", "irreversible"] },
+    allowed_slots: { type: "array", items: { type: "string" } },
+    source: { type: "string", enum: ["preset", "character", "custom"] },
+    source_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
+    enabled: { type: "boolean" },
+    handler_type: { type: "string", enum: ["script", "prompt", "delegate"] },
+    handler: { type: "object" },
+  },
+  additionalProperties: false,
+} as const;
+
+const updateDefinitionBodyJsonSchema = {
+  ...createDefinitionBodyJsonSchema,
+  required: [] as string[],
+  minProperties: 1,
+} as const;
+
+const toggleBodyJsonSchema = {
+  type: "object",
+  required: ["enabled"],
+  properties: {
+    enabled: { type: "boolean" },
+  },
+  additionalProperties: false,
+} as const;
+
+const toolPermissionsBodyJsonSchema = {
+  type: "object",
+  properties: {
+    enabled: { type: "boolean" },
+    max_calls_per_turn: { type: "integer", minimum: 1, maximum: 1000 },
+    max_steps_per_generation: { type: "integer", minimum: 1, maximum: 50 },
+    allow_irreversible: { type: "boolean" },
+    slot_allow_list: { type: "object", additionalProperties: { type: "array", items: { type: "string" } } },
+    slot_deny_list: { type: "object", additionalProperties: { type: "array", items: { type: "string" } } },
+  },
+  additionalProperties: false,
+} as const;
+
+// ══════════════════════════════════════════════════════════
+// Route Registration
+// ══════════════════════════════════════════════════════════
+
+export async function registerToolRoutes(
+  app: FastifyInstance,
+  connection: DatabaseConnection,
+): Promise<void> {
+  const { db } = connection;
+  const toolService = new ToolService(db);
+
+  // ── GET /tools/builtin ─────────────────────���────────
+
+  app.get("/tools/builtin", {
+    schema: {
+      tags: ["tools"],
+      summary: "List built-in tools",
+      operationId: "listBuiltinTools",
+      response: {
+        200: builtinListResponseJsonSchema,
+      },
+    },
+  }, async (_request, reply) => {
+    const tools = await toolService.listBuiltinTools();
+    return reply.send({ data: tools });
+  });
+
+  // ── GET /tools/definitions ──────────────────────────
+
+  app.get("/tools/definitions", {
+    schema: {
+      tags: ["tools"],
+      summary: "List tool definitions",
+      operationId: "listToolDefinitions",
+      querystring: listDefinitionsQueryJsonSchema,
+      response: {
+        200: definitionListResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedQuery = parseWithSchema(listDefinitionsQuerySchema, request.query, reply);
+    if (!parsedQuery.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const { definitions, total } = await toolService.listDefinitions({
+      accountId: auth.accountId,
+      source: parsedQuery.data.source,
+      sourceId: parsedQuery.data.source_id,
+      enabled: parsedQuery.data.enabled,
+      limit: parsedQuery.data.limit,
+      offset: parsedQuery.data.offset,
+    });
+
+    return reply.send({
+      data: definitions,
+      meta: buildListMeta({
+        total,
+        limit: parsedQuery.data.limit,
+        offset: parsedQuery.data.offset,
+        sortBy: parsedQuery.data.sort_by,
+        sortOrder: parsedQuery.data.sort_order,
+      }),
+    });
+  });
+
+  // ── GET /tools/definitions/:id ──────────────────────
+
+  app.get("/tools/definitions/:id", {
+    schema: {
+      tags: ["tools"],
+      summary: "Get tool definition",
+      operationId: "getToolDefinition",
+      params: idParamsJsonSchema,
+      response: {
+        200: definitionResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(definitionParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const def = await toolService.getDefinition(parsedParams.data.id);
+    if (!def) {
+      return sendError(reply, 404, "not_found", "Tool definition not found");
+    }
+
+    return reply.send({ data: def });
+  });
+
+  // ── POST /tools/definitions ─────────────────────────
+
+  app.post("/tools/definitions", {
+    schema: {
+      tags: ["tools"],
+      summary: "Create tool definition",
+      operationId: "createToolDefinition",
+      body: createDefinitionBodyJsonSchema,
+      response: {
+        201: definitionResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedBody = parseWithSchema(createDefinitionSchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const def = await toolService.createDefinition(parsedBody.data, auth.accountId);
+
+    return reply.code(201).send({ data: def });
+  });
+
+  // ── PATCH /tools/definitions/:id ────────────────────
+
+  app.patch("/tools/definitions/:id", {
+    schema: {
+      tags: ["tools"],
+      summary: "Update tool definition",
+      operationId: "updateToolDefinition",
+      params: idParamsJsonSchema,
+      body: updateDefinitionBodyJsonSchema,
+      response: {
+        200: definitionResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(definitionParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const parsedBody = parseWithSchema(updateDefinitionSchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const def = await toolService.updateDefinition(parsedParams.data.id, parsedBody.data);
+    if (!def) {
+      return sendError(reply, 404, "not_found", "Tool definition not found");
+    }
+
+    return reply.send({ data: def });
+  });
+
+  // ── DELETE /tools/definitions/:id ───────────────────
+
+  app.delete("/tools/definitions/:id", {
+    schema: {
+      tags: ["tools"],
+      summary: "Delete tool definition",
+      operationId: "deleteToolDefinition",
+      params: idParamsJsonSchema,
+      response: {
+        200: deleteResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(definitionParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const deleted = await toolService.deleteDefinition(parsedParams.data.id);
+    if (!deleted) {
+      return sendError(reply, 404, "not_found", "Tool definition not found");
+    }
+
+    return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
+  });
+
+  // ── PATCH /tools/definitions/:id/toggle ─────────────
+
+  app.patch("/tools/definitions/:id/toggle", {
+    schema: {
+      tags: ["tools"],
+      summary: "Toggle tool definition enabled/disabled",
+      operationId: "toggleToolDefinition",
+      params: idParamsJsonSchema,
+      body: toggleBodyJsonSchema,
+      response: {
+        200: definitionResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(definitionParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const parsedBody = parseWithSchema(toggleDefinitionSchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const def = await toolService.toggleDefinition(parsedParams.data.id, parsedBody.data.enabled);
+    if (!def) {
+      return sendError(reply, 404, "not_found", "Tool definition not found");
+    }
+
+    return reply.send({ data: def });
+  });
+
+  // ── GET /tools/call-records ─────────────────────────
+
+  app.get("/tools/call-records", {
+    schema: {
+      tags: ["tools"],
+      summary: "Query tool call records",
+      operationId: "queryToolCallRecords",
+      querystring: callRecordsQueryJsonSchema,
+      response: {
+        200: callRecordListResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedQuery = parseWithSchema(callRecordsQuerySchema, request.query, reply);
+    if (!parsedQuery.ok) return;
+
+    const { records, total } = await toolService.queryCallRecords({
+      pageId: parsedQuery.data.page_id,
+      floorId: parsedQuery.data.floor_id,
+      callerSlot: parsedQuery.data.caller_slot,
+      status: parsedQuery.data.status as any,
+      limit: parsedQuery.data.limit,
+      offset: parsedQuery.data.offset,
+      sortOrder: parsedQuery.data.sort_order,
+    });
+
+    return reply.send({
+      data: records,
+      meta: buildListMeta({
+        total,
+        limit: parsedQuery.data.limit,
+        offset: parsedQuery.data.offset,
+        sortBy: parsedQuery.data.sort_by,
+        sortOrder: parsedQuery.data.sort_order,
+      }),
+    });
+  });
+
+  // ── GET /sessions/:id/tool-permissions ──────────────
+
+  app.get("/sessions/:id/tool-permissions", {
+    schema: {
+      tags: ["tools"],
+      summary: "Get session tool permissions",
+      operationId: "getSessionToolPermissions",
+      params: idParamsJsonSchema,
+      response: {
+        200: toolPermissionsResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [session] = await db
+      .select({ id: sessions.id, metadataJson: sessions.metadataJson })
+      .from(sessions)
+      .where(eq(sessions.id, parsedParams.data.id))
+      .limit(1);
+
+    if (!session) {
+      return sendError(reply, 404, "not_found", "Session not found");
+    }
+
+    const metadata = parseJsonField(session.metadataJson) as Record<string, unknown> | null;
+    const permissions = (metadata?.tool_permissions as Record<string, unknown>) ?? {};
+
+    return reply.send({ data: permissions });
+  });
+
+  // ── PUT /sessions/:id/tool-permissions ──────────────
+
+  app.put("/sessions/:id/tool-permissions", {
+    schema: {
+      tags: ["tools"],
+      summary: "Replace session tool permissions",
+      operationId: "replaceSessionToolPermissions",
+      params: idParamsJsonSchema,
+      body: toolPermissionsBodyJsonSchema,
+      response: {
+        200: toolPermissionsResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const parsedBody = parseWithSchema(toolPermissionsPutSchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [session] = await db
+      .select({ id: sessions.id, metadataJson: sessions.metadataJson })
+      .from(sessions)
+      .where(eq(sessions.id, parsedParams.data.id))
+      .limit(1);
+
+    if (!session) {
+      return sendError(reply, 404, "not_found", "Session not found");
+    }
+
+    const metadata = (parseJsonField(session.metadataJson) as Record<string, unknown>) ?? {};
+    metadata.tool_permissions = parsedBody.data;
+
+    await db
+      .update(sessions)
+      .set({
+        metadataJson: stringifyJsonField(metadata),
+        updatedAt: Date.now(),
+      })
+      .where(eq(sessions.id, session.id));
+
+    return reply.send({ data: parsedBody.data });
+  });
+
+  // ── PATCH /sessions/:id/tool-permissions ─────────────
+
+  app.patch("/sessions/:id/tool-permissions", {
+    schema: {
+      tags: ["tools"],
+      summary: "Partial update session tool permissions",
+      operationId: "patchSessionToolPermissions",
+      params: idParamsJsonSchema,
+      body: toolPermissionsBodyJsonSchema,
+      response: {
+        200: toolPermissionsResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const parsedBody = parseWithSchema(toolPermissionsPatchSchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const [session] = await db
+      .select({ id: sessions.id, metadataJson: sessions.metadataJson })
+      .from(sessions)
+      .where(eq(sessions.id, parsedParams.data.id))
+      .limit(1);
+
+    if (!session) {
+      return sendError(reply, 404, "not_found", "Session not found");
+    }
+
+    const metadata = (parseJsonField(session.metadataJson) as Record<string, unknown>) ?? {};
+    const existing = (metadata.tool_permissions as Record<string, unknown>) ?? {};
+
+    // Deep merge: top-level fields from patch override existing,
+    // slot_allow_list / slot_deny_list are merged at slot key level.
+    const merged = { ...existing };
+
+    const patchData = parsedBody.data as Record<string, unknown>;
+    for (const [key, value] of Object.entries(patchData)) {
+      if (value === undefined) continue;
+
+      if ((key === "slot_allow_list" || key === "slot_deny_list") && typeof value === "object" && value !== null) {
+        const existingSlots = (merged[key] as Record<string, unknown>) ?? {};
+        merged[key] = { ...existingSlots, ...value };
+      } else {
+        merged[key] = value;
+      }
+    }
+
+    metadata.tool_permissions = merged;
+
+    await db
+      .update(sessions)
+      .set({
+        metadataJson: stringifyJsonField(metadata),
+        updatedAt: Date.now(),
+      })
+      .where(eq(sessions.id, session.id));
+
+    return reply.send({ data: merged });
+  });
+}

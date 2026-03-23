@@ -251,6 +251,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     }
   );
 
+  // ── 开发用：内嵌 API 测试页面 ──
+  app.get(
+    "/test",
+    {
+      schema: {
+        tags: ["system"],
+        summary: "Built-in API test page (dev only)",
+        security: [],
+        hide: true,
+      },
+    },
+    async (_request, reply) => {
+      const html = readFileSync(new URL("../../../test.html", import.meta.url), "utf-8");
+      reply.type("text/html; charset=utf-8").send(html);
+    }
+  );
+
   await registerCrudRoutes(app, database);
 
   // ── 可选：记忆维护任务（deprecate / purge） ──
