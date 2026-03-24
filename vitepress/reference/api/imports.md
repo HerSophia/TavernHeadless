@@ -225,3 +225,120 @@ POST /import/character
 | ------ | ---- |
 | `400` | 请求体校验失败或角色卡格式错误 |
 | `413` | 请求体超过 200KB 限制 |
+
+## 导入聊天文件
+
+```http
+POST /import/chat
+```
+
+导入一个聊天文件。支持两种格式的自动识别：
+
+- **TavernHeadless 原生格式（`.thchat`）**：JSON 文件，信封字段 `spec === "tavern_headless_chat"`
+- **SillyTavern JSONL 格式（`.jsonl`）**：每行一个 JSON 对象，第一行为头部信息
+
+系统通过 `JSON.parse` 尝试解析整个内容，如果成功且 `spec` 字段为 `"tavern_headless_chat"`，则走原生格式导入路径；否则按 ST JSONL 格式处理。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `data` | string | **是** | 聊天文件的文本内容（JSONL 或 JSON） |
+| `character_id` | string | 否 | 绑定角色 ID，导入后会话关联该角色 |
+| `title` | string | 否 | 自定义会话标题，不传则从文件中推断 |
+
+### 请求示例
+
+```json
+{
+  "data": "{\"user_name\":\"Player\",\"character_name\":\"Luna\",\"chat_metadata\":{}}\n{\"name\":\"Player\",\"is_user\":true,\"mes\":\"Hello!\"}\n{\"name\":\"Luna\",\"is_user\":false,\"mes\":\"Hi there!\"}",
+  "character_id": "char_luna",
+  "title": "Imported Chat"
+}
+```
+
+### 响应 `200`
+
+**ST JSONL 格式导入响应：**
+
+```json
+{
+  "data": {
+    "session_id": "sess_import_001",
+    "title": "Luna",
+    "floor_count": 1,
+    "message_count": 2,
+    "swipe_count": 0,
+    "skipped_lines": 0,
+    "import_source": "sillytavern_jsonl",
+    "format": "sillytavern_jsonl"
+  }
+}
+```
+
+**TavernHeadless 原生格式导入响应：**
+
+```json
+{
+  "data": {
+    "session_id": "sess_import_002",
+    "title": "Campfire Scene",
+    "floor_count": 5,
+    "message_count": 10,
+    "swipe_count": 3,
+    "skipped_lines": 0,
+    "import_source": "thchat",
+    "format": "thchat",
+    "page_count": 13,
+    "variable_count": 2,
+    "memory_item_count": 4,
+    "memory_edge_count": 1
+  }
+}
+```
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `session_id` | string | 创建的会话 ID |
+| `title` | string | 会话标题 |
+| `floor_count` | integer | 导入的楼层数 |
+| `message_count` | integer | 导入的消息数 |
+| `swipe_count` | integer | 导入的 swipe（多版本消息页）数 |
+| `skipped_lines` | integer | 跳过的无法解析的行数（仅 ST JSONL） |
+| `import_source` | string | 导入来源标识 |
+| `format` | string | 检测到的格式：`thchat` 或 `sillytavern_jsonl` |
+| `page_count` | integer | 消息页总数（仅 thchat） |
+| `variable_count` | integer | 导入的变量数（仅 thchat） |
+| `memory_item_count` | integer | 导入的记忆条目数（仅 thchat） |
+| `memory_edge_count` | integer | 导入的记忆关系边数（仅 thchat） |
+
+### ST JSONL 格式处理细节
+
+**消息分组规则：**
+
+- 用户消息（`is_user: true`）开始一个新楼层，对应 `pageKind: "input"`
+- 助手消息（`is_user: false`）归入当前楼层，对应 `pageKind: "output"`
+- 开头的助手消息（没有前置用户消息）映射为 floor 0（greeting）
+- `is_system: true` 的消息标记为 `isHidden: true`
+
+**Swipe 处理：**
+
+- 消息的 `swipes` 数组中的每个条目创建为独立的 `message_page`，`version` 递增
+- `swipe_id` 指定的版本标记为 `isActive: true`
+
+**时间解析：**
+
+- `send_date` 支持数值（Unix 毫秒）、ISO 8601 字符串、人类可读字符串
+- 无法解析时回退到 `Date.now()`
+
+**容错处理：**
+
+- 空行和无法解析的行跳过而非报错
+- Chub Chat 格式的对象型 `mes` 字段自动展平
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败、文件内容为空、头部缺少必需字段 |
+| `400` | thchat 格式版本不兼容（主版本号不匹配） |

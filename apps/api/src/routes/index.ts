@@ -17,6 +17,7 @@ import { registerAccountRoutes } from "./accounts";
 import { registerUserRoutes } from "./users";
 import { registerToolRoutes } from "./tools";
 import { registerMcpConfigRoutes } from "./mcp";
+import { registerExportRoutes } from "./exports";
 
 export async function registerCrudRoutes(
   app: FastifyInstance,
@@ -38,4 +39,5 @@ export async function registerCrudRoutes(
   await registerPresetEntryRoutes(app, connection);
   await registerToolRoutes(app, connection);
   await registerMcpConfigRoutes(app, connection);
+  await registerExportRoutes(app, connection);
 }

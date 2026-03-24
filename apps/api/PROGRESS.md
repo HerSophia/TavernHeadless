@@ -16,6 +16,76 @@
 - `apps/api/package.json` 与 OpenAPI `info.version` 已同步到 `0.2.0-beta.2`，用于表达后端 beta 预发布版本姿态。
 - 真实 provider 最小回归已执行完毕，结果良好，Beta 准入标准全部满足。后续工作转入正式发布准备与文档完善。
 
+## 聊天文件导入导出 + 全资源导出系统
+
+### 1) 已完成
+
+- [x] ST JSONL 聊天解析器（adapters-sillytavern）
+  - `parseChatFile(jsonlContent)` — 逐行解析，Zod 验证，Chub Chat 展平
+  - `groupMessagesIntoFloors(messages)` — 用户→新楼层，助手→同楼层，开头助手→floor 0
+  - `parseSendDate(value)` — 容错时间解析（数值/字符串/回退到 Date.now()）
+- [x] `POST /import/chat` 路由
+  - 格式自动检测：`JSON.parse` → `spec === "tavern_headless_chat"` → 原生路径，否则 → ST JSONL
+  - ST JSONL 导入：解析 → 分组 → 单事务创建 session + floors + pages + messages
+  - 原生格式导入：`_original_id` → nanoid 映射，完整导入四层树 + 变量 + 记忆
+  - Swipe 处理：`swipes[]` → 多 `message_page`，`swipe_id` 确定 `isActive`
+- [x] TavernHeadless 原生聊天格式类型定义（packages/shared）
+  - `TH_CHAT_SPEC = "tavern_headless_chat"`，`TH_CHAT_SPEC_VERSION = "1.0.0"`
+  - 10 个 Zod schema，9 个推导类型
+- [x] 聊天导出序列化（`apps/api/src/services/chat-export.ts`）
+  - `serializeSessionToThChat()` — 无损导出完整四层树 + 变量 + 记忆
+  - `serializeSessionToStJsonl()` — 仅 main 分支 committed 楼层，多版本合并为 swipes
+- [x] `GET /export/chat/:id` 路由
+  - query: `format=thchat|st_jsonl`，`include_variables`，`include_memories`
+  - thchat → JSON + `.thchat` 扩展名；st_jsonl → NDJSON + `.jsonl` 扩展名
+- [x] `GET /export/preset/:id` — 直接输出 `parseJsonField(row.dataJson)`
+- [x] `GET /export/worldbook/:id` — entries 对象形式 + V2 extensions 嵌套
+- [x] `GET /export/regex/:id` — `scriptsToStRegexArray()` 补回 3 个字段
+- [x] `GET /export/character/:id` — `snapshotToStCharacterCard()` 构造 V2 JSON，支持 `?version_id=`
+- [x] Serializer 函数（adapters-sillytavern）
+  - `snapshotToStCharacterCard()` — CharacterSnapshot → ST Character Card V2
+  - `scriptsToStRegexArray()` — TH 精简格式 → ST 原始格式（+markdownOnly/promptOnly/runOnEdit）
+
+### 2) 测试
+
+- [x] `packages/adapters-sillytavern/src/__tests__/chat-parser.test.ts`（25 个测试）
+- [x] `packages/shared/src/types/__tests__/chat-file.test.ts`（14 个测试）
+- [x] `apps/api/src/services/__tests__/chat-export.test.ts`（11 个测试）
+- [x] `packages/adapters-sillytavern/src/__tests__/serializers.test.ts`（8 个测试）
+- [x] 全量回归：adapters 142 + shared 32 + api 613 = 787，零回归
+
+### 3) 新增文件
+
+```text
+packages/adapters-sillytavern/src/
+├── types/chat.ts                           — ST 聊天消息/头部类型
+├── parsers/chat-parser.ts                  — ST JSONL 解析 + 消息分组
+├── serializers/
+│   ├── character-serializer.ts             — CharacterSnapshot → ST V2 Card
+│   └── regex-serializer.ts                 — TH 精简 → ST 原始正则格式
+└── __tests__/
+    ├── chat-parser.test.ts                 — 25 个测试
+    └── serializers.test.ts                 — 8 个测试
+
+packages/shared/src/types/
+├── chat-file.ts                            — .thchat 格式类型 + Zod schemas
+└── __tests__/chat-file.test.ts             — 14 个测试
+
+apps/api/src/
+├── services/chat-export.ts                 — 聊天导出序列化
+├── services/__tests__/chat-export.test.ts  — 11 个测试
+└── routes/exports.ts                       — 5 个导出路由
+```
+
+### 4) 修改文件
+
+- `packages/adapters-sillytavern/src/index.ts` — 新增 chat parser + serializer 导出
+- `packages/shared/src/types/index.ts` — 新增 chat-file 类型导出
+- `packages/shared/src/index.ts` — 新增顶层 re-export
+- `apps/api/src/routes/imports.ts` — 新增 `POST /import/chat` + 格式自动检测 + 原生格式导入
+- `apps/api/src/routes/exports.ts` — 新增 5 个导出路由（从初始 chat 扩展到 preset/worldbook/regex/character）
+- `apps/api/src/routes/index.ts` — 注册 `registerExportRoutes()`
+
 ## Tool Calling 系统（本次增量）
 
 ### 1) 已完成
@@ -1296,6 +1366,21 @@ apps/api/src/tools/
 - 当前 batch 仍保持“首批安全动作”范围：`PUT /variables/batch`、`PATCH /memories/batch/status`、`POST /memories/batch/delete`、`PATCH /messages/batch/visibility`、`POST /messages/batch/delete`；尚未扩展到 `pages` / `users` / `sessions` 等第二批资源。
 
 ## 更新日志
+
+### 2026-07-12（聊天文件导入导出 + 全资源导出系统）
+
+- 完成 ST JSONL 聊天文件导入：`POST /import/chat`，解析、分组、事务写入
+- 完成 TavernHeadless 原生聊天格式（`.thchat`）设计与实现：10 个 Zod schema + 完整导入导出路径
+- 完成 `GET /export/chat/:id`：支持 `thchat`（无损）和 `st_jsonl`（ST 兼容）两种格式
+- 完成 4 个新增导出路由：
+  - `GET /export/preset/:id` — ST 原始 JSON
+  - `GET /export/worldbook/:id` — ST 格式 JSON（entries 对象形式 + V2 extensions）
+  - `GET /export/regex/:id` — ST 格式 JSON 数组（补回 markdownOnly/promptOnly/runOnEdit）
+  - `GET /export/character/:id` — ST Character Card V2 JSON（支持 `?version_id=`）
+- 新增 serializer 函数：`snapshotToStCharacterCard()`、`scriptsToStRegexArray()`
+- 新增 58 个测试（chat-parser 25 + chat-file 14 + chat-export 11 + serializers 8）
+- 全量 adapters 142 + shared 32 + api 613 = 787，零回归
+- 文档更新：新增 `vitepress/reference/api/exports.md`，更新 imports.md、架构文档、侧边栏
 
 ### 2026-06-26（Tool Calling 系统）
 

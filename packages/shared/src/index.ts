@@ -8,6 +8,20 @@ export {
   MEMORY_RELATIONS,
 } from './types/index.js';
 
+export {
+  TH_CHAT_SPEC,
+  TH_CHAT_SPEC_VERSION,
+  thChatMessageSchema,
+  thChatPageSchema,
+  thChatFloorSchema,
+  thChatVariableSchema,
+  thChatMemoryItemSchema,
+  thChatMemoryEdgeSchema,
+  thChatMemoriesSchema,
+  thChatDataSchema,
+  thChatFileSchema,
+} from './types/index.js';
+
 export type {
   FloorState,
   VariableScope,
@@ -16,6 +30,18 @@ export type {
   MemoryType,
   MemoryStatus,
   MemoryRelation,
+} from './types/index.js';
+
+export type {
+  ThChatMessage,
+  ThChatPage,
+  ThChatFloor,
+  ThChatVariable,
+  ThChatMemoryItem,
+  ThChatMemoryEdge,
+  ThChatMemories,
+  ThChatData,
+  ThChatFile,
 } from './types/index.js';
 
 export {

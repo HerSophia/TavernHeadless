@@ -80,6 +80,19 @@ outline: [2, 3]
 - [x] 认证插件（`AUTH_MODE=off|api_key|jwt`）
 - [x] 多账号隔离收口
 
+### 聊天文件导入导出 + 全资源导出
+
+- [x] ST JSONL 聊天解析器（`parseChatFile` + `groupMessagesIntoFloors`）
+- [x] `POST /import/chat`（格式自动检测：`.thchat` 原生 / ST `.jsonl`）
+- [x] TavernHeadless 原生聊天格式类型定义（10 个 Zod schema，`.thchat` 后缀）
+- [x] `GET /export/chat/:id`（`.thchat` 无损 / `.jsonl` ST 兼容）
+- [x] `GET /export/preset/:id`（ST 原始 JSON）
+- [x] `GET /export/worldbook/:id`（ST 格式 + V2 extensions）
+- [x] `GET /export/regex/:id`（ST 格式，补回 3 个字段）
+- [x] `GET /export/character/:id`（ST Character Card V2，支持指定版本）
+- [x] Serializer 函数：`snapshotToStCharacterCard()`、`scriptsToStRegexArray()`
+- [x] 58 个测试（chat-parser 25 + chat-file 14 + chat-export 11 + serializers 8）
+
 ### M17：OpenAPI + SDK
 
 - [x] OpenAPI 导出 + Swagger UI
@@ -135,8 +148,8 @@ outline: [2, 3]
 
 ## 测试统计
 
-- 全量测试：**445 passed**（34 个测试文件）
-- 覆盖范围：CRUD 集成、认证、聊天链路、分支管理、角色生命周期、导入、LLM Profile/Instance、记忆、Prompt dry-run、OpenAPI、请求日志、安全、WebSocket、工具调用、MCP 集成
+- 全量测试：**613 passed**（41 个测试文件）
+- 覆盖范围：CRUD 集成、认证、聊天链路、分支管理、角色生命周期、导入导出、聊天文件导入导出、LLM Profile/Instance、记忆、Prompt dry-run、OpenAPI、请求日志、安全、WebSocket、工具调用、MCP 集成
 
 ## 已知限制
 

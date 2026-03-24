@@ -123,6 +123,7 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | Variables | 四级变量系统 | [Variables](./api/variables) |
 | Memories | 记忆条目与边 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
+| Exports | 资源导出（聊天、预设、世界书、正则、角色卡） | [Exports](./api/exports) |
 | Presets | 预设管理、编辑器视图、条目级 CRUD | [Presets](./api/presets) |
 | Worldbooks | 世界书管理 | [Worldbooks](./api/worldbooks) |
 | Regex Profiles | 正则配置管理 | [Regex Profiles](./api/regex-profiles) |

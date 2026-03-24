@@ -8,3 +8,27 @@ export { CoreEvents } from './events.js';
 
 export { MEMORY_SCOPES, MEMORY_TYPES, MEMORY_STATUSES, MEMORY_RELATIONS } from './memory.js';
 export type { MemoryScope, MemoryType, MemoryStatus, MemoryRelation } from './memory.js';
+
+export { TH_CHAT_SPEC, TH_CHAT_SPEC_VERSION } from './chat-file.js';
+export {
+  thChatMessageSchema,
+  thChatPageSchema,
+  thChatFloorSchema,
+  thChatVariableSchema,
+  thChatMemoryItemSchema,
+  thChatMemoryEdgeSchema,
+  thChatMemoriesSchema,
+  thChatDataSchema,
+  thChatFileSchema,
+} from './chat-file.js';
+export type {
+  ThChatMessage,
+  ThChatPage,
+  ThChatFloor,
+  ThChatVariable,
+  ThChatMemoryItem,
+  ThChatMemoryEdge,
+  ThChatMemories,
+  ThChatData,
+  ThChatFile,
+} from './chat-file.js';

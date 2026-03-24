@@ -455,10 +455,40 @@ packages/core/src/
 | MCP 集成 | 32 | 554* |
 | ResourceToolProvider (batch 2) | 42 | 596* |
 | ResourceToolProvider (batch 3) | 38 | 634* |
+| Chat Import/Export + Resource Export | 53 | 687* |
 
-*全量：core 315 + adapters 109 + api 525 = 949
+*全量：core 315 + adapters 142 + shared 32 + api 613 = 1102
 
 ## 更新日志
+
+### 2026-07-12
+
+- 完成聊天文件导入导出系统（跨多轮对话实现）
+  - 新增 ST JSONL 聊天解析器 `parseChatFile()`、`groupMessagesIntoFloors()`（adapters-sillytavern）
+  - 新增 `POST /import/chat` 路由，支持 ST JSONL 格式聊天文件导入
+  - 新增 TavernHeadless 原生聊天格式类型定义（`packages/shared/src/types/chat-file.ts`），含 10 个 Zod schema
+  - 新增 `GET /export/chat/:id` 路由，支持 `.thchat` 原生格式和 `.jsonl` ST 兼容格式导出
+  - 新增 `serializeSessionToThChat()` 和 `serializeSessionToStJsonl()` 序列化函数
+  - 导入端支持格式自动检测：`JSON.parse` 成功且 `spec === "tavern_headless_chat"` → 原生路径，否则 → ST JSONL
+  - 原生格式导入支持完整四层树（session → floors → pages → messages）+ 变量 + 记忆（items + edges）
+  - 通过 `_original_id` 机制在导入时重建内部引用关系
+- 完成全资源导出路由系统
+  - 新增 `GET /export/preset/:id`（直接输出 ST 原始 JSON）
+  - 新增 `GET /export/worldbook/:id`（重组 entries 为对象形式 + V2 extensions）
+  - 新增 `GET /export/regex/:id`（补回 `markdownOnly`/`promptOnly`/`runOnEdit` 三个字段）
+  - 新增 `GET /export/character/:id`（构造 ST Character Card V2 JSON，支持 `?version_id=` 指定版本）
+  - 新增 `snapshotToStCharacterCard()` 和 `scriptsToStRegexArray()` 序列化函数（adapters-sillytavern）
+- 新增测试：
+  - `chat-parser.test.ts`：25 个测试（adapters-sillytavern）
+  - `chat-file.test.ts`：14 个测试（shared）
+  - `chat-export.test.ts`：11 个测试（api）
+  - `serializers.test.ts`：8 个测试（adapters-sillytavern）
+- 全量测试 adapters 142 + shared 32 + api 613 = 787（含 core 315 = 1102），零回归
+- 文档更新：
+  - 新增 `vitepress/reference/api/exports.md`（5 个导出路由 API 文档）
+  - 更新 `vitepress/reference/api/imports.md`（补充 POST /import/chat）
+  - 更新架构文档（docs + vitepress）补充导入导出概述
+  - 更新 VitePress 侧边栏和 API 资源索引
 
 ### 2026-07-03
 

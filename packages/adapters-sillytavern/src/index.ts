@@ -1,5 +1,6 @@
 // ── Types ─────────────────────────────────────────────
 export type { STPreset, STPromptEntry } from './types/preset.js';
+export type { STChatHeader, STChatMessage } from './types/chat.js';
 export type { STWorldBook, STWorldBookEntry } from './types/worldbook.js';
 export { WI_POSITION, WI_LOGIC, WI_ROLE } from './types/worldbook.js';
 export type { WIPosition, WILogic, WIRole } from './types/worldbook.js';
@@ -13,6 +14,14 @@ export { parsePreset } from './parsers/preset-parser.js';
 export { parseWorldBook } from './parsers/worldbook-parser.js';
 export { parseRegexScripts } from './parsers/regex-parser.js';
 export { parseCharacterCard } from './parsers/character-parser.js';
+export { parseChatFile, parseSendDate, groupMessagesIntoFloors } from './parsers/chat-parser.js';
+export type { ParsedChat, FloorGroup, GroupedMessage } from './parsers/chat-parser.js';
+
+// ── Serializers ───────────────────────────────────────
+export { snapshotToStCharacterCard } from './serializers/character-serializer.js';
+export type { CharacterSnapshotInput, STCharacterCardV2 } from './serializers/character-serializer.js';
+export { scriptsToStRegexArray } from './serializers/regex-serializer.js';
+export type { STRawRegexScript } from './serializers/regex-serializer.js';
 
 // ── Engines ───────────────────────────────────────────
 export { triggerWorldBook } from './worldbook/trigger-engine.js';
