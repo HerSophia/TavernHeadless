@@ -4,13 +4,44 @@ import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
 
 import { registerChatRoutes } from "../src/routes/chat";
-import { ChatService, type ChatService as ChatServiceType, type DryRunResult } from "../src/services/chat-service";
+import { ChatService, ChatServiceError, type ChatService as ChatServiceType, type DryRunResult } from "../src/services/chat-service";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import { sessions, floors, messagePages, messages as messageTable } from "../src/db/schema";
 import { SimpleTokenCounter, type TurnOrchestrator } from "@tavern/core";
 
+interface ChatServiceStub {
+  respond: ReturnType<typeof vi.fn>;
+  regenerate: ReturnType<typeof vi.fn>;
+  dryRun: ReturnType<typeof vi.fn>;
+  retryFloor: ReturnType<typeof vi.fn>;
+  editAndRegenerate: ReturnType<typeof vi.fn>;
+}
+
+function createRouteChatService(overrides: Partial<ChatServiceStub> = {}): ChatServiceStub {
+  return {
+    respond: vi.fn(),
+    regenerate: vi.fn(),
+    dryRun: vi.fn(),
+    retryFloor: vi.fn(),
+    editAndRegenerate: vi.fn(),
+    ...overrides,
+  };
+}
+
 describe("POST /sessions/:id/respond/dry-run", () => {
   let app: FastifyInstance;
+
+  async function mountChatRoutes(
+    chatService: ChatServiceStub,
+    options: { enablePromptDryRun?: boolean; enableSseChat?: boolean } = {}
+  ) {
+    app = Fastify({ logger: false });
+    await registerChatRoutes(
+      app,
+      chatService as unknown as ChatServiceType,
+      { enablePromptDryRun: true, enableSseChat: false, ...options }
+    );
+  }
 
   afterEach(async () => {
     vi.restoreAllMocks();
@@ -20,15 +51,9 @@ describe("POST /sessions/:id/respond/dry-run", () => {
   });
 
   it("returns 404 when dry-run endpoint is disabled", async () => {
-    app = Fastify({ logger: false });
+    const chatService = createRouteChatService();
 
-    const chatService = {
-      respond: vi.fn(),
-      regenerate: vi.fn(),
-      dryRun: vi.fn(),
-    } as unknown as ChatServiceType;
-
-    await registerChatRoutes(app, chatService, { enablePromptDryRun: false });
+    await mountChatRoutes(chatService, { enablePromptDryRun: false });
 
     const response = await app.inject({
       method: "POST",
@@ -46,8 +71,6 @@ describe("POST /sessions/:id/respond/dry-run", () => {
   });
 
   it("returns assembled prompt debug payload when enabled", async () => {
-    app = Fastify({ logger: false });
-
     const result: DryRunResult = {
       messages: [
         { role: "system", content: "You are a helpful assistant." },
@@ -67,15 +90,11 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       },
     };
 
-    const dryRun = vi.fn(async () => result);
+    const chatService = createRouteChatService({
+      dryRun: vi.fn(async () => result),
+    });
 
-    const chatService = {
-      respond: vi.fn(),
-      regenerate: vi.fn(),
-      dryRun,
-    } as unknown as ChatServiceType;
-
-    await registerChatRoutes(app, chatService, { enablePromptDryRun: true });
+    await mountChatRoutes(chatService, { enablePromptDryRun: true });
 
     const response = await app.inject({
       method: "POST",
@@ -84,8 +103,8 @@ describe("POST /sessions/:id/respond/dry-run", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(dryRun).toHaveBeenCalledOnce();
-    expect(dryRun).toHaveBeenCalledWith("s1", { message: "hello" }, "default-admin");
+    expect(chatService.dryRun).toHaveBeenCalledOnce();
+    expect(chatService.dryRun).toHaveBeenCalledWith("s1", { message: "hello" }, "default-admin");
 
     const body = response.json() as { data: Record<string, unknown> };
     expect(body.data.token_estimate).toBe(42);
@@ -102,6 +121,78 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       preprocessed_user_message: "hello",
     });
   });
+
+  it("returns null for optional debug fields when they are absent", async () => {
+    const result: DryRunResult = {
+      messages: [{ role: "user", content: "hello" }],
+      tokenEstimate: 12,
+      availableForReply: 256,
+      assembly: {
+        mode: "preset",
+        presetUsed: true,
+        worldbookHits: 1,
+        regexPreRules: [],
+        regexPostRules: ["Output Rule"],
+        memorySummaryInjected: false,
+      },
+    };
+
+    const chatService = createRouteChatService({
+      dryRun: vi.fn(async () => result),
+    });
+
+    await mountChatRoutes(chatService, { enablePromptDryRun: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/respond/dry-run",
+      payload: { message: "hello" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      data: {
+        messages: [{ role: "user", content: "hello" }],
+        token_estimate: 12,
+        available_for_reply: 256,
+        memory_summary: null,
+        assembly: {
+          mode: "preset",
+          preset_used: true,
+          worldbook_hits: 1,
+          regex_pre_rules: [],
+          regex_post_rules: ["Output Rule"],
+          memory_summary_injected: false,
+          preprocessed_user_message: null,
+        },
+      },
+    });
+  });
+
+  it("maps chat service errors when enabled", async () => {
+    const chatService = createRouteChatService({
+      dryRun: vi.fn(async () => {
+        throw new ChatServiceError("session_archived", "Cannot dry-run in an archived session");
+      }),
+    });
+
+    await mountChatRoutes(chatService, { enablePromptDryRun: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/respond/dry-run",
+      payload: { message: "hello" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: {
+        code: "session_archived",
+        message: "Cannot dry-run in an archived session",
+      },
+    });
+  });
+
 });
 
 describe("ChatService.dryRun", () => {

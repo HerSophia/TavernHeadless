@@ -85,6 +85,71 @@ describe("LLM Profile Routes", () => {
     expect(body.error.code).toBe("profile_conflict");
   });
 
+  it("gets and updates a profile and covers get/patch error branches", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Patchable Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        base_url: "https://api.openai.com/v1",
+        api_key_name: "patchable-key",
+        api_key: "sk-test-patchable",
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const profileId = (createRes.json() as { data: { id: string } }).data.id;
+
+    const getRes = await app.inject({
+      method: "GET",
+      url: `/llm-profiles/${profileId}`,
+    });
+    expect(getRes.statusCode).toBe(200);
+    expect((getRes.json() as { data: { id: string; preset_name: string } }).data).toMatchObject({
+      id: profileId,
+      preset_name: "Patchable Profile",
+    });
+
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/llm-profiles/${profileId}`,
+      payload: {
+        preset_name: "Patched Profile",
+        model_id: "gpt-4o",
+        base_url: null,
+        api_key_name: null,
+      },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    expect((patchRes.json() as { data: { preset_name: string; model_id: string; base_url: string | null; api_key_name: string | null } }).data).toMatchObject({
+      preset_name: "Patched Profile",
+      model_id: "gpt-4o",
+      base_url: null,
+      api_key_name: null,
+    });
+
+    const emptyPatchRes = await app.inject({
+      method: "PATCH",
+      url: `/llm-profiles/${profileId}`,
+      payload: {},
+    });
+    expect(emptyPatchRes.statusCode).toBe(400);
+    expect((emptyPatchRes.json() as { error: { code: string } }).error.code).toBe("validation_error");
+
+    const missingGetRes = await app.inject({ method: "GET", url: "/llm-profiles/missing-profile" });
+    expect(missingGetRes.statusCode).toBe(404);
+    expect((missingGetRes.json() as { error: { code: string } }).error.code).toBe("profile_not_found");
+
+    const missingPatchRes = await app.inject({
+      method: "PATCH",
+      url: "/llm-profiles/missing-profile",
+      payload: { preset_name: "Missing" },
+    });
+    expect(missingPatchRes.statusCode).toBe(404);
+    expect((missingPatchRes.json() as { error: { code: string } }).error.code).toBe("profile_not_found");
+  });
+
   it("prevents deleting an active-bound profile", async () => {
     const createRes = await app.inject({
       method: "POST",
@@ -219,6 +284,179 @@ describe("LLM Profile Routes", () => {
 
     expect(activateRes.statusCode).toBe(400);
     expect((activateRes.json() as { error: { code: string } }).error.code).toBe("validation_error");
+  });
+
+  it("deletes a profile and supports status filters with include_deleted", async () => {
+    const deletableRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Deleted Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        api_key: "sk-test-deleted",
+      },
+    });
+    expect(deletableRes.statusCode).toBe(201);
+    const deletedProfileId = (deletableRes.json() as { data: { id: string } }).data.id;
+
+    const deleteRes = await app.inject({
+      method: "DELETE",
+      url: `/llm-profiles/${deletedProfileId}`,
+    });
+    expect(deleteRes.statusCode).toBe(200);
+    expect((deleteRes.json() as { data: { id: string; deleted: boolean } }).data).toEqual({
+      id: deletedProfileId,
+      deleted: true,
+    });
+
+    const disabledRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Disabled Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        api_key: "sk-test-disabled",
+      },
+    });
+    expect(disabledRes.statusCode).toBe(201);
+    const disabledProfileId = (disabledRes.json() as { data: { id: string } }).data.id;
+
+    const disablePatchRes = await app.inject({
+      method: "PATCH",
+      url: `/llm-profiles/${disabledProfileId}`,
+      payload: { status: "disabled" },
+    });
+    expect(disablePatchRes.statusCode).toBe(200);
+
+    const defaultListRes = await app.inject({ method: "GET", url: "/llm-profiles" });
+    expect(defaultListRes.statusCode).toBe(200);
+    const defaultList = (defaultListRes.json() as { data: Array<{ id: string }> }).data;
+    expect(defaultList.some((profile) => profile.id === deletedProfileId)).toBe(false);
+    expect(defaultList.some((profile) => profile.id === disabledProfileId)).toBe(true);
+
+    const disabledListRes = await app.inject({ method: "GET", url: "/llm-profiles?status=disabled" });
+    expect(disabledListRes.statusCode).toBe(200);
+    const disabledList = (disabledListRes.json() as { data: Array<{ id: string; status: string }> }).data;
+    expect(disabledList).toHaveLength(1);
+    expect(disabledList[0]).toMatchObject({ id: disabledProfileId, status: "disabled" });
+
+    const includeDeletedRes = await app.inject({ method: "GET", url: "/llm-profiles?include_deleted=true" });
+    expect(includeDeletedRes.statusCode).toBe(200);
+    const includeDeleted = (includeDeletedRes.json() as { data: Array<{ id: string }> }).data;
+    expect(includeDeleted.some((profile) => profile.id === deletedProfileId)).toBe(true);
+    expect(includeDeleted.some((profile) => profile.id === disabledProfileId)).toBe(true);
+
+    const deletedListRes = await app.inject({
+      method: "GET",
+      url: "/llm-profiles?include_deleted=true&status=deleted",
+    });
+    expect(deletedListRes.statusCode).toBe(200);
+    const deletedList = (deletedListRes.json() as { data: Array<{ id: string; status: string }> }).data;
+    expect(deletedList).toHaveLength(1);
+    expect(deletedList[0]).toMatchObject({ id: deletedProfileId, status: "deleted" });
+  });
+
+  it("requires session_id for session activation and returns 404 for missing profile", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Session Activation Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        api_key: "sk-test-session-activate",
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const profileId = (createRes.json() as { data: { id: string } }).data.id;
+
+    const missingSessionIdRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${profileId}/activate`,
+      payload: { scope: "session", instance_slot: "narrator" },
+    });
+    expect(missingSessionIdRes.statusCode).toBe(400);
+    expect((missingSessionIdRes.json() as { error: { code: string } }).error.code).toBe("validation_error");
+
+    const missingProfileRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles/missing-profile/activate",
+      payload: { scope: "global" },
+    });
+    expect(missingProfileRes.statusCode).toBe(404);
+    expect((missingProfileRes.json() as { error: { code: string } }).error.code).toBe("profile_not_found");
+  });
+
+  it("prefers session profile over global profile in runtime resolution", async () => {
+    const globalProfileRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Global Runtime Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        api_key: "sk-test-runtime-global",
+      },
+    });
+    expect(globalProfileRes.statusCode).toBe(201);
+    const globalProfileId = (globalProfileRes.json() as { data: { id: string } }).data.id;
+
+    const sessionProfileRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Session Runtime Profile",
+        provider: "openai",
+        model_id: "gpt-4o",
+        api_key: "sk-test-runtime-session",
+      },
+    });
+    expect(sessionProfileRes.statusCode).toBe(201);
+    const sessionProfileId = (sessionProfileRes.json() as { data: { id: string } }).data.id;
+
+    const globalActivateRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${globalProfileId}/activate`,
+      payload: { scope: "global", instance_slot: "narrator" },
+    });
+    expect(globalActivateRes.statusCode).toBe(200);
+
+    const sessionActivateRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${sessionProfileId}/activate`,
+      payload: { scope: "session", session_id: "sess-override", instance_slot: "narrator" },
+    });
+    expect(sessionActivateRes.statusCode).toBe(200);
+
+    const runtimeSessionRes = await app.inject({
+      method: "GET",
+      url: "/llm-profiles/runtime?session_id=sess-override",
+    });
+    expect(runtimeSessionRes.statusCode).toBe(200);
+    const sessionNarrator = (runtimeSessionRes.json() as {
+      data: { slots: Array<{ slot: string; source: string; profile_id: string | null; model_id: string }> };
+    }).data.slots.find((slot) => slot.slot === "narrator");
+    expect(sessionNarrator).toMatchObject({
+      source: "session_profile",
+      profile_id: sessionProfileId,
+      model_id: "gpt-4o",
+    });
+
+    const runtimeFallbackRes = await app.inject({
+      method: "GET",
+      url: "/llm-profiles/runtime?session_id=sess-other",
+    });
+    expect(runtimeFallbackRes.statusCode).toBe(200);
+    const fallbackNarrator = (runtimeFallbackRes.json() as {
+      data: { slots: Array<{ slot: string; source: string; profile_id: string | null; model_id: string }> };
+    }).data.slots.find((slot) => slot.slot === "narrator");
+    expect(fallbackNarrator).toMatchObject({
+      source: "global_profile",
+      profile_id: globalProfileId,
+      model_id: "gpt-4o-mini",
+    });
   });
 
   it("isolates profiles by account in multi-account mode", async () => {

@@ -200,6 +200,39 @@ describe("Tool Routes", () => {
     expect(page1.json<ListResponse<ToolDefinitionData>>().meta.has_more).toBe(true);
   });
 
+  it("filters definitions by enabled=false and source_id", async () => {
+    await createDefinition(app, {
+      name: "disabled_tool_a",
+      source: "preset",
+      source_id: "preset-1",
+      enabled: false,
+    });
+    await createDefinition(app, {
+      name: "enabled_tool_b",
+      source: "preset",
+      source_id: "preset-1",
+      enabled: true,
+    });
+    await createDefinition(app, {
+      name: "disabled_tool_c",
+      source: "preset",
+      source_id: "preset-2",
+      enabled: false,
+    });
+
+    const disabledRes = await app.inject({ method: "GET", url: "/tools/definitions?enabled=false" });
+    expect(disabledRes.statusCode).toBe(200);
+    const disabledBody = disabledRes.json<ListResponse<ToolDefinitionData>>();
+    expect(disabledBody.meta.total).toBe(2);
+    expect(disabledBody.data.every((definition) => definition.enabled === false)).toBe(true);
+
+    const sourceIdRes = await app.inject({ method: "GET", url: "/tools/definitions?source_id=preset-1" });
+    expect(sourceIdRes.statusCode).toBe(200);
+    const sourceIdBody = sourceIdRes.json<ListResponse<ToolDefinitionData>>();
+    expect(sourceIdBody.meta.total).toBe(2);
+    expect(sourceIdBody.data.every((definition) => definition.source_id === "preset-1")).toBe(true);
+  });
+
   it("toggles a tool definition enabled/disabled", async () => {
     const createRes = await createDefinition(app, { name: "toggle_tool" });
     const created = createRes.json<ItemResponse<ToolDefinitionData>>().data;
@@ -237,6 +270,35 @@ describe("Tool Routes", () => {
       payload: { enabled: true },
     });
     expect(toggleRes.statusCode).toBe(404);
+  });
+
+  it("returns validation errors for empty definition patch and invalid toggle body", async () => {
+    const createRes = await createDefinition(app, { name: "validate_patch_tool" });
+    const created = createRes.json<ItemResponse<ToolDefinitionData>>().data;
+
+    const emptyPatchRes = await app.inject({
+      method: "PATCH",
+      url: `/tools/definitions/${created.id}`,
+      payload: {},
+    });
+    expect(emptyPatchRes.statusCode).toBe(400);
+    expect(emptyPatchRes.json<ErrorResponse>().error.code).toBe("validation_error");
+
+    const missingPatchRes = await app.inject({
+      method: "PATCH",
+      url: "/tools/definitions/nonexistent",
+      payload: { description: "missing" },
+    });
+    expect(missingPatchRes.statusCode).toBe(404);
+    expect(missingPatchRes.json<ErrorResponse>().error.code).toBe("not_found");
+
+    const invalidToggleRes = await app.inject({
+      method: "PATCH",
+      url: `/tools/definitions/${created.id}/toggle`,
+      payload: {},
+    });
+    expect(invalidToggleRes.statusCode).toBe(400);
+    expect(invalidToggleRes.json<ErrorResponse>().error.code).toBe("validation_error");
   });
 
   // ── Session Tool Permissions ──────────────────────
@@ -285,16 +347,18 @@ describe("Tool Routes", () => {
         enabled: true,
         max_calls_per_turn: 5,
         slot_allow_list: { narrator: ["roll_dice"] },
+        slot_deny_list: { narrator: ["delete_memory"] },
       },
     });
 
-    // Patch: add verifier slot, change max_calls_per_turn
+    // Patch: add verifier slot, merge deny list, change max_calls_per_turn
     const patchRes = await app.inject({
       method: "PATCH",
       url: `/sessions/${session.id}/tool-permissions`,
       payload: {
         max_calls_per_turn: 20,
         slot_allow_list: { verifier: ["get_variable"] },
+        slot_deny_list: { verifier: ["shutdown_system"] },
       },
     });
     expect(patchRes.statusCode).toBe(200);
@@ -304,6 +368,8 @@ describe("Tool Routes", () => {
     // slot_allow_list should be merged: both narrator and verifier
     expect((merged.slot_allow_list as Record<string, string[]>).narrator).toEqual(["roll_dice"]);
     expect((merged.slot_allow_list as Record<string, string[]>).verifier).toEqual(["get_variable"]);
+    expect((merged.slot_deny_list as Record<string, string[]>).narrator).toEqual(["delete_memory"]);
+    expect((merged.slot_deny_list as Record<string, string[]>).verifier).toEqual(["shutdown_system"]);
   });
 
   it("returns 404 for permissions of non-existent session", async () => {
@@ -316,6 +382,78 @@ describe("Tool Routes", () => {
       payload: { enabled: true },
     });
     expect(putRes.statusCode).toBe(404);
+  });
+
+  it("returns 400 for invalid tool permission bounds", async () => {
+    const session = await createSession(app);
+
+    const putRes = await app.inject({
+      method: "PUT",
+      url: `/sessions/${session.id}/tool-permissions`,
+      payload: { max_calls_per_turn: 0 },
+    });
+    expect(putRes.statusCode).toBe(400);
+    expect(putRes.json<ErrorResponse>().error.code).toBe("validation_error");
+
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/sessions/${session.id}/tool-permissions`,
+      payload: { max_steps_per_generation: 99 },
+    });
+    expect(patchRes.statusCode).toBe(400);
+    expect(patchRes.json<ErrorResponse>().error.code).toBe("validation_error");
+  });
+
+  it("isolates session tool permissions by account in multi-account mode", async () => {
+    await app.close();
+    ({ app } = await buildApp({
+      databasePath: ":memory:",
+      logger: false,
+      accountMode: "multi",
+      auth: { mode: "jwt", jwtSecret: "test-secret" },
+    }));
+
+    const tokenA = app.jwt.sign({ sub: "user-a", role: "admin", account_id: "acc-a" });
+    const tokenB = app.jwt.sign({ sub: "user-b", role: "admin", account_id: "acc-b" });
+
+    await app.inject({
+      method: "POST",
+      url: "/accounts",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { id: "acc-a", name: "Account A" },
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/accounts",
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { id: "acc-b", name: "Account B" },
+    });
+
+    const sessionRes = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { title: "Account A Session" },
+    });
+    const sessionId = sessionRes.json<ItemResponse<{ id: string }>>().data.id;
+
+    const ownerPutRes = await app.inject({
+      method: "PUT",
+      url: `/sessions/${sessionId}/tool-permissions`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { enabled: true },
+    });
+    expect(ownerPutRes.statusCode).toBe(200);
+
+    const foreignGetRes = await app.inject({ method: "GET", url: `/sessions/${sessionId}/tool-permissions`, headers: { authorization: `Bearer ${tokenB}` } });
+    expect(foreignGetRes.statusCode).toBe(404);
+
+    const foreignPutRes = await app.inject({ method: "PUT", url: `/sessions/${sessionId}/tool-permissions`, headers: { authorization: `Bearer ${tokenB}` }, payload: { enabled: false } });
+    expect(foreignPutRes.statusCode).toBe(404);
+
+    const foreignPatchRes = await app.inject({ method: "PATCH", url: `/sessions/${sessionId}/tool-permissions`, headers: { authorization: `Bearer ${tokenB}` }, payload: { allow_irreversible: true } });
+    expect(foreignPatchRes.statusCode).toBe(404);
   });
 
   // ── Validation Errors ─────────────────────────────
