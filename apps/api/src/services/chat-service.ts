@@ -394,6 +394,7 @@ export class ChatService {
     const turnInput: TurnInput = {
       sessionId,
       floorId,
+      accountId,
       messages: assembled.messages,
       generationParams,
       config: turnConfig,
@@ -655,6 +656,7 @@ export class ChatService {
     const turnInput: TurnInput = {
       sessionId,
       floorId: newFloorId,
+      accountId,
       messages: assembled.messages,
       generationParams,
       config: turnConfig,
@@ -814,6 +816,7 @@ export class ChatService {
     const turnInput: TurnInput = {
       sessionId: targetFloor.sessionId,
       floorId: targetFloor.id,
+      accountId,
       messages: assembled.messages,
       generationParams,
       config: turnConfig,
@@ -1056,6 +1059,7 @@ export class ChatService {
       turnOutput = await this.orchestrator.executeTurn({
         sessionId: args.sessionId,
         floorId: args.floorId,
+        accountId: args.accountId,
         messages: assembled.messages,
         generationParams,
         config: turnConfig,

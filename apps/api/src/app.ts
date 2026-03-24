@@ -31,6 +31,9 @@ import { registerCors, type CorsConfig } from "./plugins/cors";
 import { McpService } from "./services/mcp-service";
 import { McpConnectionManager, McpToolProvider } from "./mcp";
 import { registerMcpRuntimeRoutes } from "./routes/mcp";
+import { ToolRegistry, BuiltinToolProvider } from "@tavern/core";
+import { ResourceToolProvider } from "./tools/index.js";
+
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
 const API_VERSION: string = _pkgJson.version ?? "unknown";
@@ -355,6 +358,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
     const llmProfileService = new LlmProfileService(database.db);
 
+    // ── 构建 ToolRegistry ──
+    const toolRegistry = new ToolRegistry();
+    toolRegistry.register(new BuiltinToolProvider({
+      memoryStore: options.enableMemory ? activeOrchestrationContext.memoryStore : undefined,
+    }));
+    toolRegistry.register(new ResourceToolProvider(database.db));
+    // MCP 工具提供者在 mcpManager 初始化后通过 mcpManager 注册（见下方）
+
     const chatService = new ChatService(
       database.db,
       activeOrchestrationContext.orchestrator,
@@ -406,6 +417,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
           }
           await llmProfileService.touchLastUsed(resolvedModel.profileId, accountId);
         },
+        toolRegistry,
       }
     );
 

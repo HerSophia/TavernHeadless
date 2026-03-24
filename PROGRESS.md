@@ -5,7 +5,7 @@
 ## 当前里程碑
 
 - 里程碑：`M9-M12 - 后端高优先级能力 + Tool Calling + MCP 集成`
-- 状态：`进行中（Tool Calling Phase 1-5 完成，MCP 集成已完成）`
+- 状态：`进行中（Tool Calling Phase 1-5 完成，MCP 集成已完成，ResourceToolProvider 已完成）`
 - 最后更新：`2026-07-01`
 
 ## Tool Calling 系统（已完成 Phase 1-5）
@@ -453,10 +453,30 @@ packages/core/src/
 | M4 Phase 2 (Regenerate/Imports) | 32 | 442* |
 | Tool Calling Phase 1-5 | 80 | 522* |
 | MCP 集成 | 32 | 554* |
+| ResourceToolProvider (batch 2) | 42 | 596* |
+| ResourceToolProvider (batch 3) | 38 | 634* |
 
-*全量：core 315 + adapters 104 + api 445 = 864
+*全量：core 315 + adapters 109 + api 525 = 949
 
 ## 更新日志
+
+### 2026-07-03
+
+- 完成 ResourceToolProvider 第三批：11 个新增工具（列表补全 4 + 细粒度读取 4 + 预设/正则写入 3），总计 23 个
+- 新增工具：`list_regex_profiles`、`list_presets`、`list_worldbook_entries`、`list_character_versions`、`get_worldbook_entry`、`get_regex_rule`、`get_preset`、`get_preset_entry`、`create_regex_profile`、`create_preset_entry`、`update_preset_entry`
+- `list_worldbook_entries` 仅返回条目摘要（comment + keys），不含 content，显著节省 token
+- 预设工具使用 `preset-utils.ts` 工具函数实现 read-modify-write 模式
+- 新增 38 个测试，resource-tool-provider.test.ts 共 80 个
+- 全量测试 core 315 + adapters 109 + api 525 = 949，零回归
+
+### 2026-07-02
+
+- 完成 ResourceToolProvider：12 个资源管理工具（角色卡 4 + 世界书 5 + 正则 3）
+- Core 层新增 `ToolExecutionContext.accountId` 和 `TurnInput.accountId`，编排层透传
+- `app.ts` 创建 `ToolRegistry`，注册 `BuiltinToolProvider` + `ResourceToolProvider`，传入 `ChatService`
+- 创建的资源标记 `source = 'tool'`，写入工具 `sideEffectLevel = 'irreversible'`
+- 新增 42 个测试（资源工具正常路径 + 错误路径 + 多账户隔离）
+- 全量测试 core 315 + adapters 109 + api 487 = 911，零回归
 
 ### 2026-07-01
 
