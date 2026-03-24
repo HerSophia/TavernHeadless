@@ -7,6 +7,7 @@
  * POST /import/worldbook  — 导入酒馆世界书
  * POST /import/regex      — 导入酒馆正则脚本
  * POST /import/character  — 导入酒馆角色卡
+ * POST /import/chat       — 导入酒馆聊天记录 (.jsonl)
  *
  * GET    /presets          — 列出所有预设
  * GET    /presets/:id      — 获取预设详情（原始）
@@ -35,11 +36,21 @@ import { SimpleTokenCounter } from "@tavern/core";
 import { z } from "zod";
 
 import {
+  TH_CHAT_SPEC,
+  thChatFileSchema,
+  type ThChatFile,
+} from "@tavern/shared";
+
+import {
   parsePreset,
   parseWorldBook,
   parseRegexScripts,
   parseCharacterCard,
   type STCharacterCard,
+  parseChatFile,
+  groupMessagesIntoFloors,
+  parseSendDate,
+  type FloorGroup,
 } from "@tavern/adapters-sillytavern";
 
 import type { DatabaseConnection } from "../db/client.js";
@@ -56,6 +67,7 @@ import {
   characters,
   characterVersions,
 } from "../db/schema.js";
+import { variables, memoryItems, memoryEdges } from "../db/schema.js";
 import { parseWithSchema, sendError, parseJsonField, stringifyJsonField } from "../lib/http.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { type JsonRecord, toPresetEditorDocument, toRawPresetFromEditor } from "../lib/preset-utils.js";
@@ -86,6 +98,15 @@ const importRegexSchema = z.object({
 const importCharacterSchema = z.object({
   payload: z.record(z.unknown()),
   create_session: z.boolean().default(true),
+  title: z.string().trim().min(1).max(200).optional(),
+});
+
+const importChatSchema = z.object({
+  /** jsonl 文件内容字符串 */
+  data: z.string().min(1, "JSONL content is required"),
+  /** 绑定到已有角色（可选） */
+  character_id: z.string().min(1).optional(),
+  /** 会话标题（可选） */
   title: z.string().trim().min(1).max(200).optional(),
 });
 
@@ -502,6 +523,60 @@ const importCharacterResponseJsonSchema = {
   additionalProperties: false
 } as const;
 
+const importChatBodyExample = {
+  data: '{"chat_metadata":{},"user_name":"unused","character_name":"unused"}\n{"name":"User","is_user":true,"mes":"Hello"}\n{"name":"Alice","is_user":false,"mes":"Hi there!","swipes":["Hi there!","Hey!"]}',
+  character_id: "char_abc123",
+  title: "Imported Chat",
+};
+
+const importChatResponseExample = {
+  data: {
+    session_id: "sess_abc123",
+    title: "Imported Chat",
+    floor_count: 1,
+    message_count: 2,
+    swipe_count: 2,
+    skipped_lines: 0,
+    import_source: "sillytavern_jsonl",
+  },
+};
+
+const importChatBodyJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: { type: "string", minLength: 1 },
+    character_id: { type: "string", minLength: 1 },
+    title: { type: "string", minLength: 1, maxLength: 200 },
+  },
+  examples: [importChatBodyExample],
+  additionalProperties: false,
+} as const;
+
+const importChatResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["session_id", "title", "floor_count", "message_count", "format"],
+      properties: {
+        session_id: { type: "string" },
+        title: { type: "string" },
+        floor_count: { type: "integer", minimum: 0 },
+        message_count: { type: "integer", minimum: 0 },
+        swipe_count: { type: "integer", minimum: 0 },
+        skipped_lines: { type: "integer", minimum: 0 },
+        import_source: { type: "string" },
+        format: { type: "string", enum: ["thchat", "sillytavern_jsonl"] },
+      },
+      additionalProperties: true,
+    },
+  },
+  examples: [importChatResponseExample],
+  additionalProperties: false,
+} as const;
+
 const presetEditorBodyJsonSchema = {
   type: "object",
   required: ["name", "editor"],
@@ -876,6 +951,142 @@ export async function registerImportRoutes(
         character: toCharacterResponse(characterCard),
         session: imported.session
       }
+    });
+  });
+
+  // ──────────────────────────────────────────────────────
+  // POST /import/chat — 导入聊天记录（自动识别 .thchat / .jsonl）
+  // ──────────────────────────────────────────────────────
+
+  /**
+   * POST /import/chat
+   *
+   * 支持两种格式：
+   * - .thchat（原生格式，JSON）：自动识别 spec === "tavern_headless_chat"
+   * - .jsonl（SillyTavern 格式）：其他情况走 ST 解析
+   */
+  app.post("/import/chat", {
+    schema: {
+      tags: ["imports"],
+      summary: "Import chat file (.thchat or .jsonl)",
+      operationId: "importChat",
+      body: importChatBodyJsonSchema,
+      response: {
+        201: importChatResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsed = parseWithSchema(importChatSchema, request.body, reply);
+    if (!parsed.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const now = Date.now();
+
+    // ── 自动格式识别 ──
+    let detectedThChat: ThChatFile | null = null;
+    try {
+      const jsonObj = JSON.parse(parsed.data.data);
+      if (jsonObj && typeof jsonObj === "object" && jsonObj.spec === TH_CHAT_SPEC) {
+        // 验证 schema
+        const validation = thChatFileSchema.safeParse(jsonObj);
+        if (!validation.success) {
+          return sendError(reply, 400, "import_parse_error",
+            `Invalid .thchat file: ${validation.error.issues.map(i => i.message).join("; ")}`);
+        }
+        // 检查 spec_version 主版本号
+        const majorVersion = parseInt(validation.data.spec_version.split(".")[0] ?? "0", 10);
+        if (majorVersion !== 1) {
+ return sendError(reply, 400, "import_unsupported_version",
+            `Unsupported spec_version "${validation.data.spec_version}". Only major version 1 is supported.`);
+        }
+        detectedThChat = validation.data;
+      }
+    } catch {
+      // JSON.parse 失败 → 不是 JSON → 走 ST jsonl 路径
+    }
+
+    // ── 原生格式导入路径 ──
+    if (detectedThChat) {
+      return handleThChatImport(db, detectedThChat, parsed.data, auth.accountId, now, reply);
+    }
+
+    // ── ST jsonl 导入路径（原有逻辑） ──
+    let chatData: ReturnType<typeof parseChatFile>;
+    try {
+      chatData = parseChatFile(parsed.data.data);
+    } catch (error) {
+      return sendError(reply, 400, "import_parse_error",
+        `Failed to parse chat file: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    if (chatData.messages.length === 0) {
+      return sendError(reply, 400, "import_empty", "Chat file contains no messages");
+    }
+
+    // 2. 如果提供了 character_id，查询角色快照
+    let characterId: string | null = null;
+    let characterVersionId: string | null = null;
+    let characterSnapshotJson: string | null = null;
+
+    if (parsed.data.character_id) {
+      const charRow = await db.select({
+        id: characters.id,
+        name: characters.name,
+      }).from(characters).where(
+        and(eq(characters.id, parsed.data.character_id), eq(characters.accountId, auth.accountId))
+      ).get();
+
+      if (!charRow) {
+        return sendError(reply, 400, "character_not_found", `Character ${parsed.data.character_id} not found`);
+      }
+
+      const versionRow = await db.select({
+        id: characterVersions.id,
+        dataJson: characterVersions.dataJson,
+      }).from(characterVersions).where(
+        eq(characterVersions.characterId, charRow.id)
+      ).orderBy(asc(characterVersions.createdAt)).limit(1).get();
+
+      characterId = charRow.id;
+      if (versionRow) {
+        characterVersionId = versionRow.id;
+        characterSnapshotJson = versionRow.dataJson;
+      }
+    }
+
+    // 3. 消息分组
+    const floorGroups = groupMessagesIntoFloors(chatData.messages);
+
+    // 4. 推断标题
+    const title = parsed.data.title
+      ?? chatData.header.character_name
+      ?? chatData.header.name
+      ?? "Imported Chat";
+
+    // 5. 事务写入
+    const result = createSessionFromChatImport(db, {
+      header: chatData.header,
+      floorGroups,
+      accountId: auth.accountId,
+      characterId,
+      characterVersionId,
+      characterSnapshotJson,
+      title,
+      now,
+    });
+
+    return reply.code(201).send({
+      data: {
+        session_id: result.sessionId,
+        title,
+        floor_count: result.floorCount,
+        message_count: result.messageCount,
+        swipe_count: result.swipeCount,
+        skipped_lines: chatData.skippedLines,
+        import_source: "sillytavern_jsonl",
+        format: "sillytavern_jsonl",
+      },
     });
   });
 
@@ -1727,3 +1938,467 @@ function createSessionFromCharacterImportInternal(
     updated_at: input.now
   };
 }
+
+// ── Chat Import Helpers ─────────────────────────────────
+
+function createSessionFromChatImport(
+  db: DatabaseConnection["db"],
+  input: {
+    header: { chat_metadata?: Record<string, unknown> };
+    floorGroups: FloorGroup[];
+    accountId: string;
+    characterId: string | null;
+    characterVersionId: string | null;
+    characterSnapshotJson: string | null;
+    title: string;
+    now: number;
+  }
+): { sessionId: string; floorCount: number; messageCount: number; swipeCount: number } {
+  return db.transaction((tx) => {
+    const sessionId = nanoid();
+    const tokenCounter = new SimpleTokenCounter();
+
+    // 1. 创建 session
+    tx.insert(sessions).values({
+      id: sessionId,
+      title: input.title,
+      status: "active",
+      accountId: input.accountId,
+      characterId: input.characterId,
+      characterVersionId: input.characterVersionId,
+      characterSnapshotJson: input.characterSnapshotJson,
+      characterSyncPolicy: "pin",
+      presetId: null,
+      regexProfileId: null,
+      worldbookProfileId: null,
+      modelProvider: null,
+      modelName: null,
+      modelParamsJson: null,
+      metadataJson: stringifyJsonField({
+        st_chat_metadata: input.header.chat_metadata ?? {},
+        import_source: "sillytavern_jsonl",
+        imported_at: input.now,
+      }),
+      createdAt: input.now,
+      updatedAt: input.now,
+    }).run();
+
+    let totalMessageCount = 0;
+    let totalSwipeCount = 0;
+
+    // 2. 遍历楼层组
+    for (const group of input.floorGroups) {
+      const floorId = nanoid();
+      let floorTokenIn = 0;
+      let floorTokenOut = 0;
+
+      tx.insert(floors).values({
+        id: floorId,
+        sessionId,
+        floorNo: group.floorNo,
+        branchId: "main",
+        parentFloorId: null,
+        state: "committed",
+        metadataJson: null,
+        tokenIn: 0, // 先占位，后面更新
+        tokenOut: 0,
+        createdAt: input.now,
+        updatedAt: input.now,
+      }).run();
+
+      // 3. 遍历每条消息
+      for (const msg of group.messages) {
+        const hasSwipes = msg.swipes && msg.swipes.length > 1;
+
+        if (hasSwipes) {
+          // 多个 swipe → 多个 message_page
+          const swipes = msg.swipes!;
+          const activeIndex = msg.swipeId ?? 0;
+          totalSwipeCount += swipes.length;
+
+          for (let i = 0; i < swipes.length; i++) {
+            const pageId = nanoid();
+            const isActive = i === activeIndex;
+            const content = swipes[i]!;
+            const tokens = tokenCounter.count(content);
+
+            tx.insert(messagePages).values({
+              id: pageId,
+              floorId,
+              pageNo: msg.pageNo,
+              pageKind: msg.pageKind,
+              isActive,
+              version: i + 1,
+              checksum: null,
+              createdAt: input.now,
+              updatedAt: input.now,
+            }).run();
+
+            tx.insert(messages).values({
+              id: nanoid(),
+              pageId,
+              seq: 0,
+              role: msg.role === 'system' ? 'system' : msg.role,
+              content,
+              contentFormat: "text",
+              tokenCount: tokens,
+              isHidden: msg.isHidden,
+              source: `st_import:${msg.name}`,
+              createdAt: msg.sendDate,
+            }).run();
+
+            // 只统计 active 页的 token
+            if (isActive) {
+              if (msg.role === 'user') floorTokenIn += tokens;
+              else floorTokenOut += tokens;
+            }
+            totalMessageCount++;
+          }
+        } else {
+          // 单条消息 → 单个 page
+          const pageId = nanoid();
+          const content = msg.content;
+          const tokens = tokenCounter.count(content);
+
+          tx.insert(messagePages).values({
+            id: pageId,
+            floorId,
+            pageNo: msg.pageNo,
+            pageKind: msg.pageKind,
+            isActive: true,
+            version: 1,
+            checksum: null,
+            createdAt: input.now,
+            updatedAt: input.now,
+          }).run();
+
+          tx.insert(messages).values({
+            id: nanoid(),
+            pageId,
+            seq: 0,
+            role: msg.role === 'system' ? 'system' : msg.role,
+            content,
+            contentFormat: "text",
+            tokenCount: tokens,
+            isHidden: msg.isHidden,
+            source: `st_import:${msg.name}`,
+            createdAt: msg.sendDate,
+          }).run();
+
+          if (msg.role === 'user') floorTokenIn += tokens;
+          else floorTokenOut += tokens;
+          totalMessageCount++;
+        }
+      }
+
+      // 更新楼层 token 统计
+      tx.update(floors).set({
+        tokenIn: floorTokenIn,
+        tokenOut: floorTokenOut,
+      }).where(eq(floors.id, floorId)).run();
+    }
+
+    return {
+      sessionId,
+      floorCount: input.floorGroups.length,
+      messageCount: totalMessageCount,
+      swipeCount: totalSwipeCount,
+    };
+  });
+}
+
+// ── ThChat Import Helpers ────────────────────────────────
+
+/**
+ * 处理 .thchat 原生格式导入路由逻辑。
+ * 从主 handler 中提取以保持可读性。
+ */
+async function handleThChatImport(
+  db: DatabaseConnection["db"],
+  file: ThChatFile,
+  params: { character_id?: string; title?: string },
+  accountId: string,
+  now: number,
+  reply: import("fastify").FastifyReply,
+) {
+  // 构建 _original_id → new nanoid 映射表
+  const idMap = new Map<string, string>();
+  for (const floor of file.data.floors) {
+    idMap.set(floor._original_id, nanoid());
+    for (const page of floor.pages) {
+      idMap.set(page._original_id, nanoid());
+      for (const msg of page.messages) {
+        idMap.set(msg._original_id, nanoid());
+      }
+    }
+  }
+  if (file.data.memories) {
+    for (const item of file.data.memories.items) {
+      idMap.set(item._original_id, nanoid());
+    }
+  }
+
+  // 查询角色快照（如果外部传入 character_id）
+  let characterId: string | null = null;
+  let characterVersionId: string | null = null;
+
+  if (params.character_id) {
+    const charRow = await db.select({
+      id: characters.id,
+    }).from(characters).where(
+      and(eq(characters.id, params.character_id), eq(characters.accountId, accountId))
+    ).get();
+
+    if (!charRow) {
+      return sendError(reply, 400, "character_not_found", `Character ${params.character_id} not found`);
+    }
+    characterId = charRow.id;
+
+    const versionRow = await db.select({
+      id: characterVersions.id,
+    }).from(characterVersions).where(
+      eq(characterVersions.characterId, charRow.id)
+    ).orderBy(asc(characterVersions.createdAt)).limit(1).get();
+
+    if (versionRow) {
+      characterVersionId = versionRow.id;
+    }
+  }
+
+  const result = createSessionFromThChatImport(db, {
+    file,
+    idMap,
+    accountId,
+    characterId,
+    characterVersionId,
+    titleOverride: params.title ?? null,
+    now,
+  });
+
+  return reply.code(201).send({
+    data: {
+      session_id: result.sessionId,
+      title: result.title,
+      floor_count: result.floorCount,
+      message_count: result.messageCount,
+      page_count: result.pageCount,
+      variable_count: result.variableCount,
+      memory_item_count: result.memoryItemCount,
+      memory_edge_count: result.memoryEdgeCount,
+      skipped_lines: 0,
+      import_source: "thchat",
+      format: "thchat",
+    },
+  });
+}
+
+function createSessionFromThChatImport(
+  db: DatabaseConnection["db"],
+  input: {
+    file: ThChatFile;
+    idMap: Map<string, string>;
+    accountId: string;
+    characterId: string | null;
+    characterVersionId: string | null;
+    titleOverride: string | null;
+    now: number;
+  },
+): {
+  sessionId: string;
+  title: string;
+  floorCount: number;
+  pageCount: number;
+  messageCount: number;
+  variableCount: number;
+  memoryItemCount: number;
+  memoryEdgeCount: number;
+} {
+  return db.transaction((tx) => {
+    const sessionId = nanoid();
+    const data = input.file.data;
+
+    const title = input.titleOverride ?? data.title ?? "Imported Chat";
+
+    // 合并 metadata：保留文件原始 metadata，追加导入来源信息
+    const existingMeta = (data.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata))
+      ? data.metadata as Record<string, unknown>
+      : {};
+    const metadataJson = stringifyJsonField({
+      ...existingMeta,
+      import_source: "thchat",
+      imported_at: input.now,
+    });
+
+    // 1. 创建 session
+    tx.insert(sessions).values({
+      id: sessionId,
+      title,
+      status: "active",
+      accountId: input.accountId,
+      characterId: input.characterId,
+      characterVersionId: input.characterVersionId,
+      characterSnapshotJson: data.character_snapshot
+        ? stringifyJsonField(data.character_snapshot)
+        : null,
+      userSnapshotJson: data.user_snapshot
+        ? stringifyJsonField(data.user_snapshot)
+        : null,
+      characterSyncPolicy: data.character_sync_policy,
+      presetId: null,
+      regexProfileId: null,
+      worldbookProfileId: null,
+      promptMode: data.prompt_mode ?? null,
+      modelProvider: data.model_provider ?? null,
+      modelName: data.model_name ?? null,
+      modelParamsJson: null,
+      metadataJson,
+      createdAt: input.now,
+      updatedAt: input.now,
+    }).run();
+
+    let totalPageCount = 0;
+    let totalMessageCount = 0;
+
+    // 2. 遍历 floors
+    for (const floor of data.floors) {
+      const floorId = input.idMap.get(floor._original_id)!;
+      const parentFloorId = floor.parent_floor_id_ref
+        ? (input.idMap.get(floor.parent_floor_id_ref) ?? null)
+        : null;
+
+      tx.insert(floors).values({
+        id: floorId,
+        sessionId,
+        floorNo: floor.floor_no,
+        branchId: floor.branch_id,
+        parentFloorId,
+        state: floor.state,
+        metadataJson: floor.metadata != null
+          ? stringifyJsonField(floor.metadata)
+          : null,
+        tokenIn: floor.token_in,
+        tokenOut: floor.token_out,
+        createdAt: floor.created_at,
+        updatedAt: floor.updated_at,
+      }).run();
+
+      // 3. 遍历 pages
+      for (const page of floor.pages) {
+        const pageId = input.idMap.get(page._original_id)!;
+        totalPageCount++;
+
+        tx.insert(messagePages).values({
+          id: pageId,
+          floorId,
+          pageNo: page.page_no,
+          pageKind: page.page_kind,
+          isActive: page.is_active,
+          version: page.version,
+          checksum: page.checksum,
+          createdAt: page.created_at,
+          updatedAt: page.updated_at,
+        }).run();
+
+        // 4. 遍历 messages
+        for (const msg of page.messages) {
+          const msgId = input.idMap.get(msg._original_id)!;
+          totalMessageCount++;
+
+          tx.insert(messages).values({
+            id: msgId,
+            pageId,
+            seq: msg.seq,
+            role: msg.role,
+            content: msg.content,
+            contentFormat: msg.content_format,
+            tokenCount: msg.token_count,
+            isHidden: msg.is_hidden,
+            source: msg.source,
+            createdAt: msg.created_at,
+          }).run();
+        }
+      }
+    }
+
+    // 5. 导入变量
+    let variableCount = 0;
+    if (data.variables && data.variables.length > 0) {
+      for (const v of data.variables) {
+        const scopeId = v.scope === "chat"
+          ? sessionId
+          : (v.scope_id_ref ? (input.idMap.get(v.scope_id_ref) ?? v.scope_id_ref) : sessionId);
+
+        tx.insert(variables).values({
+          id: nanoid(),
+          scope: v.scope,
+          scopeId,
+          key: v.key,
+          valueJson: JSON.stringify(v.value),
+          updatedAt: v.updated_at,
+        }).run();
+        variableCount++;
+      }
+    }
+
+    // 6. 导入记忆
+    let memoryItemCount = 0;
+    let memoryEdgeCount = 0;
+    if (data.memories) {
+      for (const item of data.memories.items) {
+        const itemId = input.idMap.get(item._original_id)!;
+        const scopeId = item.scope === "chat"
+          ? sessionId
+          : (item.scope_id_ref ? (input.idMap.get(item.scope_id_ref) ?? item.scope_id_ref) : sessionId);
+
+        tx.insert(memoryItems).values({
+          id: itemId,
+          scope: item.scope,
+          scopeId,
+          type: item.type,
+          contentJson: JSON.stringify(item.content),
+          importance: item.importance,
+          confidence: item.confidence,
+          sourceFloorId: item.source_floor_id_ref
+            ? (input.idMap.get(item.source_floor_id_ref) ?? null)
+            : null,
+          sourceMessageId: item.source_message_id_ref
+            ? (input.idMap.get(item.source_message_id_ref) ?? null)
+            : null,
+          accountId: input.accountId,
+          status: item.status,
+          createdAt: item.created_at,
+          updatedAt: item.updated_at,
+        }).run();
+        memoryItemCount++;
+      }
+
+      for (const edge of data.memories.edges) {
+        const fromId = input.idMap.get(edge.from_id_ref);
+        const toId = input.idMap.get(edge.to_id_ref);
+        if (!fromId || !toId) continue; // 跳过悬空引用
+
+        tx.insert(memoryEdges).values({
+          id: nanoid(),
+          fromId,
+          toId,
+          relation: edge.relation,
+          accountId: input.accountId,
+          createdAt: edge.created_at,
+        }).run();
+        memoryEdgeCount++;
+      }
+    }
+
+    return {
+      sessionId,
+      title,
+      floorCount: data.floors.length,
+      pageCount: totalPageCount,
+      messageCount: totalMessageCount,
+      variableCount,
+      memoryItemCount,
+      memoryEdgeCount,
+    };
+  });
+}
+

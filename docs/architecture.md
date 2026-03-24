@@ -619,12 +619,25 @@ CREATE TABLE memory_edge (
 
 ### 导入导出（酒馆兼容）
 
-| 方法 | 路径                | 说明             |
-| ---- | ------------------- | ---------------- |
-| POST | `/import/preset`    | 导入酒馆预设     |
-| POST | `/import/worldbook` | 导入酒馆世界书   |
-| POST | `/import/regex`     | 导入酒馆正则规则 |
-| POST | `/import/character` | 导入酒馆角色卡   |
+| 方法 | 路径                | 说明                                               |
+| ---- | ------------------- | -------------------------------------------------- |
+| POST | `/import/preset`    | 导入酒馆预设                                       |
+| POST | `/import/worldbook` | 导入酒馆世界书                                     |
+| POST | `/import/regex`     | 导入酒馆正则规则                                   |
+| POST | `/import/character` | 导入酒馆角色卡                                     |
+| POST | `/import/chat`      | 导入聊天文件（自动识别 `.thchat` 原生 / ST `.jsonl`） |
+
+### 导出
+
+| 方法 | 路径                     | 说明                                          |
+| ---- | ------------------------ | --------------------------------------------- |
+| GET  | `/export/chat/:id`       | 导出会话（`.thchat` 无损 / `.jsonl` ST 兼容） |
+| GET  | `/export/preset/:id`     | 导出预设（ST 原始 JSON）                      |
+| GET  | `/export/worldbook/:id`  | 导出世界书（ST 格式 JSON）                    |
+| GET  | `/export/regex/:id`      | 导出正则配置（ST 格式 JSON 数组）             |
+| GET  | `/export/character/:id`  | 导出角色卡（ST Character Card V2 JSON）       |
+
+导入和导出形成对称关系：导入解析外部格式写入数据库，导出从数据库序列化为标准文件。聊天文件额外有一套 TavernHeadless 原生格式（`.thchat`），能无损保留完整四层数据结构、变量和记忆。
 
 ---
 

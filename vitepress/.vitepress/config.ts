@@ -88,6 +88,7 @@ export default defineConfig({
             { text: 'Variables（变量）', link: '/reference/api/variables' },
             { text: 'Memories（记忆）', link: '/reference/api/memories' },
             { text: 'Imports（导入）', link: '/reference/api/imports' },
+            { text: 'Exports（导出）', link: '/reference/api/exports' },
             { text: 'Presets（预设）', link: '/reference/api/presets' },
             { text: 'Worldbooks（世界书）', link: '/reference/api/worldbooks' },
             { text: 'Regex Profiles（正则配置）', link: '/reference/api/regex-profiles' },
