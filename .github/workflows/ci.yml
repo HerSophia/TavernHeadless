@@ -48,6 +48,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: checks
+    env:
+      PORT: "3000"
+      AUTH_MODE: "off"
+      ENABLE_SSE_CHAT: "true"
+      ENABLE_PROMPT_DRY_RUN: "true"
+      ENABLE_MCP: "true"
+      ENABLE_MEMORY: "false"
+      CORS_ORIGINS: "*"
+      CORS_CREDENTIALS: "false"
+      APP_SECRETS_MASTER_KEY: "ci-smoke-test-only"
+      # No LLM_API_KEY — chat routes stay disabled; CRUD-only is fine for smoke.
 
     steps:
       - name: Checkout
