@@ -47,6 +47,124 @@ outline: [2, 3]
 | `query_memory` | 查询记忆条目 | `none` |
 | `get_character_info` | 获取角色信息 | `none` |
 
+### 资源管理工具
+
+除上述 7 个通用内置工具外，引擎还提供 23 个**资源管理工具**，允许 LLM 在对话过程中读写角色卡、世界书、正则配置文件和预设。这些工具由 `ResourceToolProvider` 提供，`source` 同样为 `builtin`。
+
+#### 角色卡工具
+
+| 工具名 | 说明 | 副作用级别 |
+| ------ | ---- | ---------- |
+| `create_character` | 创建角色卡（含初始版本） | `irreversible` |
+| `update_character` | 为已有角色卡创建新版本快照 | `irreversible` |
+| `get_character` | 读取角色卡及其最新版本 | `none` |
+| `list_characters` | 列出当前账户的角色卡 | `none` |
+
+**`create_character` 参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | ✅ | 角色名称 |
+| `description` | string | | 角色描述 |
+| `personality` | string | | 性格概要 |
+| `scenario` | string | | 场景设定 |
+| `first_mes` | string | | 首条（问候）消息 |
+| `mes_example` | string | | 对话示例 |
+
+**`update_character` 参数**：同上，额外必填 `character_id`。只传需要修改的字段，未传字段保留原值。
+
+#### 世界书工具
+
+| 工具名 | 说明 | 副作用级别 |
+| ------ | ---- | ---------- |
+| `create_worldbook` | 创建空世界书 | `irreversible` |
+| `create_worldbook_entry` | 在世界书中创建条目 | `irreversible` |
+| `update_worldbook_entry` | 更新世界书条目 | `irreversible` |
+| `get_worldbook` | 读取世界书及其所有条目 | `none` |
+| `list_worldbooks` | 列出当前账户的世界书 | `none` |
+
+**`create_worldbook_entry` 参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `worldbook_id` | string | ✅ | 世界书 ID |
+| `keys` | string[] | ✅ | 触发关键词 |
+| `content` | string | ✅ | 条目内容 |
+| `comment` | string | | 注释 / 标签 |
+| `keys_secondary` | string[] | | 二级关键词（选择性模式） |
+| `selective` | boolean | | 启用选择性模式（默认 `true`） |
+| `constant` | boolean | | 常驻激活（默认 `false`） |
+| `position` | number | | 注入位置 0-6（默认 `0`） |
+| `order` | number | | 优先级（默认 `100`） |
+| `depth` | number | | 注入深度（默认 `4`） |
+| `disable` | boolean | | 禁用该条目（默认 `false`） |
+
+#### 正则配置文件工具
+
+| 工具名 | 说明 | 副作用级别 |
+| ------ | ---- | ---------- |
+| `create_regex_rule` | 向正则配置文件追加规则 | `irreversible` |
+| `update_regex_rule` | 按索引更新正则规则 | `irreversible` |
+| `get_regex_profile` | 读取正则配置文件及其规则 | `none` |
+
+**`create_regex_rule` 参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `profile_id` | string | ✅ | 正则配置文件 ID |
+| `find_regex` | string | ✅ | 匹配用的正则表达式 |
+| `replace_string` | string | ✅ | 替换字符串 |
+| `script_name` | string | | 规则名称 |
+| `trim_strings` | string[] | | 需要修剪的字符串 |
+| `placement` | number[] | | 应用位置（默认 `[2]`，即 AI 输出） |
+| `disabled` | boolean | | 禁用该规则（默认 `false`） |
+
+#### 列表补全工具（第三批）
+
+| 工具名 | 说明 | 副作用级别 |
+| ------ | ---- | ---------- |
+| `list_regex_profiles` | 列出当前账户的正则配置文件 | `none` |
+| `list_presets` | 列出当前账户的预设 | `none` |
+| `list_worldbook_entries` | 列出世界书条目摘要（不含 content） | `none` |
+| `list_character_versions` | 列出角色卡版本历史 | `none` |
+
+`list_worldbook_entries` 只返回每个条目的 `id`、`uid`、`comment`、`keys`、`keys_secondary`、`order`、`disable`，不返回 `content`。用于浏览世界书索引后按需调用 `get_worldbook_entry` 读取完整内容。
+
+#### 细粒度读取工具（第三批）
+
+| 工具名 | 说明 | 副作用级别 |
+| ------ | ---- | ---------- |
+| `get_worldbook_entry` | 读取世界书单个条目（含 content） | `none` |
+| `get_regex_rule` | 读取正则配置文件的单条规则 | `none` |
+| `get_preset` | 读取预设详情（含条目列表） | `none` |
+| `get_preset_entry` | 读取预设的单个条目 | `none` |
+
+#### 预设与正则配置写入工具（第三批）
+
+| 工具名 | 说明 | 副作用级别 |
+| ------ | ---- | ---------- |
+| `create_regex_profile` | 创建空的正则配置文件 | `irreversible` |
+| `create_preset_entry` | 在预设中创建提示词条目 | `irreversible` |
+| `update_preset_entry` | 更新预设中的条目 | `irreversible` |
+
+**`create_preset_entry` 参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `preset_id` | string | ✅ | 预设 ID |
+| `identifier` | string | ✅ | 条目唯一标识符 |
+| `name` | string | | 显示名称 |
+| `role` | string | | 消息角色（`system` / `assistant` / `user`，默认 `system`） |
+| `content` | string | | 提示词文本 |
+| `system_prompt` | boolean | | 是否为系统提示词（默认 `false`） |
+| `marker` | boolean | | 是否为标记条目（默认 `false`） |
+| `injection_position` | integer | | 注入位置（默认 `0`） |
+| `enabled` | boolean | | 是否启用（默认 `true`） |
+
+**`update_preset_entry` 参数**：同上，`identifier` 用于定位要更新的条目，只传需要修改的字段。
+
+> 所有写入工具通过 `accountId` 进行多账户隔离，创建的资源 `source` 标记为 `tool`。
+
 > 除内置工具外，还支持通过 [MCP 服务器](./mcp) 注册外部工具。MCP 工具通过 `ToolProvider` 接口注册，对上层透明，行为与内置工具一致。详见 [MCP Servers](./mcp)。
 
 ## 工具定义 CRUD

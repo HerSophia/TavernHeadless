@@ -518,6 +518,7 @@ export class TurnOrchestrator {
   ): ToolExecutionContext {
     return {
       sessionId: input.sessionId,
+      accountId: input.accountId,
       floorId: input.floorId,
       pageId: input.floorId,  // placeholder: 真正的 pageId 由上层注入
       callerSlot: slot,

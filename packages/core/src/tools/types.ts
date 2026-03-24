@@ -98,6 +98,8 @@ export interface ToolCallRecord {
 export interface ToolExecutionContext {
   /** 当前会话 ID */
   sessionId: string;
+  /** 当前账户 ID（资源类工具需要，用于多账户隔离） */
+  accountId?: string;
   /** 当前楼层 ID */
   floorId: string;
   /** 当前消息页 ID */

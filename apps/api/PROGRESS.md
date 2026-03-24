@@ -112,6 +112,53 @@ apps/api/drizzle/0015_mcp_server_config.sql — 数据库迁移
 - `apps/api/src/index.ts` — 传入 enableMcp
 - `apps/api/src/ws/ws-bridge.ts` — 追加 mcp.* 事件转发
 
+## ResourceToolProvider — 23 个资源管理工具
+
+### 1) 已完成
+
+- [x] Core 层类型扩展：`ToolExecutionContext.accountId`、`TurnInput.accountId`、`buildToolContext()` 透传
+- [x] 新增 `ResourceToolProvider`（实现 `ToolProvider` 接口，`id = 'resource'`，`type = 'builtin'`）
+- [x] 23 个工具定义及对应 handler：
+  - 角色卡：`create_character`、`update_character`、`get_character`、`list_characters`
+  - 世界书：`create_worldbook`、`create_worldbook_entry`、`update_worldbook_entry`、`get_worldbook`、`list_worldbooks`
+  - 正则配置文件：`create_regex_rule`、`update_regex_rule`、`get_regex_profile`
+  - 第三批 — 列表补全：`list_regex_profiles`、`list_presets`、`list_worldbook_entries`、`list_character_versions`
+  - 第三批 — 细粒度读取：`get_worldbook_entry`、`get_regex_rule`、`get_preset`、`get_preset_entry`
+  - 第三批 — 创建/写入：`create_regex_profile`、`create_preset_entry`、`update_preset_entry`
+- [x] `ChatService` 4 处 `TurnInput` 构造追加 `accountId` 字段
+- [x] `app.ts` 创建 `ToolRegistry`，注册 `BuiltinToolProvider` + `ResourceToolProvider`，传入 `ChatService`
+- [x] 创建的资源 `source = 'tool'`，与导入来源 `'sillytavern'` 区分
+- [x] 所有写入工具 `sideEffectLevel = 'irreversible'`，读取工具 `sideEffectLevel = 'none'`
+- [x] 多账户隔离：所有操作通过 `accountId` 过滤
+- [x] 第三批新增功能：`list_worldbook_entries` 只返回条目摘要（comment + keys），不含 content，省 token
+- [x] 第三批新增功能：预设工具使用 `preset-utils.ts` 中的 `loadPresetRaw` / `savePresetRaw` 等价逻辑，read-modify-write 模式
+
+### 2) 测试
+
+- [x] `src/tools/__tests__/resource-tool-provider.test.ts`（80 个测试）
+  - 第二批 12 工具：42 个测试（正常路径 + 错误路径 + accountId 隔离）
+  - 第三批 11 工具：38 个测试（列表/细粒度读取/预设写入/正则创建）
+  - accountId 隔离测试（跨账户不可读/写/列出）
+- [x] 全量回归：core 315 + adapters 109 + api 525 = 949，零回归
+
+### 3) 新增文件
+
+```text
+apps/api/src/tools/
+├── index.ts                          — barrel export
+├── resource-tool-provider.ts         — 23 个资源工具定义 + handler（~1990 行）
+└── __tests__/
+    └── resource-tool-provider.test.ts — 80 个测试
+```
+
+### 4) 修改文件
+
+- `packages/core/src/tools/types.ts` — `ToolExecutionContext` 新增 `accountId?: string`
+- `packages/core/src/orchestration/types.ts` — `TurnInput` 新增 `accountId?: string`
+- `packages/core/src/orchestration/turn-orchestrator.ts` — `buildToolContext()` 透传 `accountId`
+- `apps/api/src/services/chat-service.ts` — 4 处 `TurnInput` 构造追加 `accountId`
+- `apps/api/src/app.ts` — 创建 `ToolRegistry`，注册两个 Provider，传入 `ChatService`
+
 ## M22 增量：LLM Instance Config API
 
 ### 1) 已完成

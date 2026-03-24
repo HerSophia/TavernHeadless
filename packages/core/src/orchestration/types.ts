@@ -79,6 +79,8 @@ export interface TurnInput {
   toolPermissions?: ToolPermissions;
   /** 工具注册表（由外部注入，持有所有已注册的工具提供者） */
   toolRegistry?: ToolRegistry;
+  /** 账户 ID（透传给工具执行上下文，资源类工具需要） */
+  accountId?: string;
   // ── 回调 ──
 
   /** 前处理：在 LLM 调用前对消息进行处理 */
