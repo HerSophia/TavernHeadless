@@ -135,6 +135,41 @@ describe("LLM Instance Config Routes", () => {
     expect(body.data[0]!.instance_slot).toBe("narrator");
   });
 
+  it("supports session-scope slot queries with and without session_id", async () => {
+    await app.inject({
+      method: "PUT",
+      url: "/llm-instances/narrator",
+      payload: { scope: "session", session_id: "sess-1", enabled: true },
+    });
+    await app.inject({
+      method: "PUT",
+      url: "/llm-instances/narrator",
+      payload: { scope: "session", session_id: "sess-2", enabled: false },
+    });
+    await app.inject({
+      method: "PUT",
+      url: "/llm-instances/director",
+      payload: { scope: "session", session_id: "sess-1", enabled: true },
+    });
+
+    const allSessionRes = await app.inject({ method: "GET", url: "/llm-instances?scope=session" });
+    expect(allSessionRes.statusCode).toBe(200);
+    expect(allSessionRes.json<ConfigListResponse>().data).toHaveLength(3);
+
+    const slotAllSessionRes = await app.inject({ method: "GET", url: "/llm-instances/narrator?scope=session" });
+    expect(slotAllSessionRes.statusCode).toBe(200);
+    expect(slotAllSessionRes.json<ConfigListResponse>().data).toHaveLength(2);
+
+    const slotSingleSessionRes = await app.inject({
+      method: "GET",
+      url: "/llm-instances/narrator?scope=session&session_id=sess-1",
+    });
+    expect(slotSingleSessionRes.statusCode).toBe(200);
+    const sessionBody = slotSingleSessionRes.json<ConfigListResponse>();
+    expect(sessionBody.data).toHaveLength(1);
+    expect(sessionBody.data[0]!.scope_id).toBe("sess-1");
+  });
+
   // ── GET resolved ──
 
   it("returns resolved defaults when no configs exist", async () => {
@@ -199,6 +234,20 @@ describe("LLM Instance Config Routes", () => {
     expect(narrator?.params).toMatchObject({ temperature: 0.9 });
   });
 
+  it("stores params as null when upserting with params: null", async () => {
+    const putRes = await app.inject({
+      method: "PUT",
+      url: "/llm-instances/narrator",
+      payload: { scope: "global", enabled: true, params: null },
+    });
+
+    expect(putRes.statusCode).toBe(200);
+    expect(putRes.json<ConfigResponse>().data.params).toBeNull();
+
+    const getRes = await app.inject({ method: "GET", url: "/llm-instances/narrator" });
+    expect(getRes.json<ConfigListResponse>().data[0]!.params).toBeNull();
+  });
+
   // ── DELETE ──
 
   it("deletes an existing config", async () => {
@@ -248,6 +297,24 @@ describe("LLM Instance Config Routes", () => {
     expect(body.error.code).toBe("invalid_slot");
   });
 
+  it("returns 400 for invalid slot on GET and DELETE", async () => {
+    const getRes = await app.inject({
+      method: "GET",
+      url: "/llm-instances/invalid_slot",
+    });
+
+    expect(getRes.statusCode).toBe(400);
+    expect(getRes.json<ErrorResponse>().error.code).toBe("invalid_slot");
+
+    const deleteRes = await app.inject({
+      method: "DELETE",
+      url: "/llm-instances/invalid_slot?scope=global",
+    });
+
+    expect(deleteRes.statusCode).toBe(400);
+    expect(deleteRes.json<ErrorResponse>().error.code).toBe("invalid_slot");
+  });
+
   it("returns 400 when session scope misses session_id on PUT", async () => {
     const res = await app.inject({
       method: "PUT",
@@ -294,5 +361,52 @@ describe("LLM Instance Config Routes", () => {
     });
     expect(sessionRes.json<ConfigListResponse>().data).toHaveLength(1);
     expect(sessionRes.json<ConfigListResponse>().data[0]!.instance_slot).toBe("director");
+  });
+
+  it("isolates instance configs by account in multi-account mode", async () => {
+    await app.close();
+    ({ app } = await buildApp({
+      databasePath: ":memory:",
+      logger: false,
+      accountMode: "multi",
+      auth: { mode: "jwt", jwtSecret: "test-secret" },
+    }));
+
+    const tokenA = app.jwt.sign({ sub: "user-a", role: "admin", account_id: "acc-a" });
+    const tokenB = app.jwt.sign({ sub: "user-b", role: "admin", account_id: "acc-b" });
+
+    const accountARes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { id: "acc-a", name: "Account A" },
+    });
+    expect(accountARes.statusCode).toBe(201);
+
+    const accountBRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { id: "acc-b", name: "Account B" },
+    });
+    expect(accountBRes.statusCode).toBe(201);
+
+    const putRes = await app.inject({
+      method: "PUT",
+      url: "/llm-instances/narrator",
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { scope: "global", enabled: true, params: { temperature: 0.7 } },
+    });
+    expect(putRes.statusCode).toBe(200);
+
+    const listB = await app.inject({ method: "GET", url: "/llm-instances", headers: { authorization: `Bearer ${tokenB}` } });
+    expect(listB.json<ConfigListResponse>().data).toHaveLength(0);
+
+    const slotB = await app.inject({ method: "GET", url: "/llm-instances/narrator", headers: { authorization: `Bearer ${tokenB}` } });
+    expect(slotB.json<ConfigListResponse>().data).toHaveLength(0);
+
+    const resolvedB = await app.inject({ method: "GET", url: "/llm-instances/resolved", headers: { authorization: `Bearer ${tokenB}` } });
+    const narrator = resolvedB.json<ResolvedResponse>().data.slots.find((slot) => slot.slot === "narrator");
+    expect(narrator?.source).toBe("default");
   });
 });

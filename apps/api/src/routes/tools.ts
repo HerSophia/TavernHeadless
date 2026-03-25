@@ -15,7 +15,7 @@
  *   PATCH  /sessions/:id/tool-permissions        — Partial update session tool permissions
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
@@ -585,7 +585,10 @@ export async function registerToolRoutes(
     const [session] = await db
       .select({ id: sessions.id, metadataJson: sessions.metadataJson })
       .from(sessions)
-      .where(eq(sessions.id, parsedParams.data.id))
+      .where(and(
+        eq(sessions.id, parsedParams.data.id),
+        eq(sessions.accountId, auth.accountId),
+      ))
       .limit(1);
 
     if (!session) {
@@ -624,7 +627,10 @@ export async function registerToolRoutes(
     const [session] = await db
       .select({ id: sessions.id, metadataJson: sessions.metadataJson })
       .from(sessions)
-      .where(eq(sessions.id, parsedParams.data.id))
+      .where(and(
+        eq(sessions.id, parsedParams.data.id),
+        eq(sessions.accountId, auth.accountId),
+      ))
       .limit(1);
 
     if (!session) {
@@ -671,7 +677,10 @@ export async function registerToolRoutes(
     const [session] = await db
       .select({ id: sessions.id, metadataJson: sessions.metadataJson })
       .from(sessions)
-      .where(eq(sessions.id, parsedParams.data.id))
+      .where(and(
+        eq(sessions.id, parsedParams.data.id),
+        eq(sessions.accountId, auth.accountId),
+      ))
       .limit(1);
 
     if (!session) {

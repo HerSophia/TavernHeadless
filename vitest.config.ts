@@ -13,6 +13,7 @@ export default defineConfig({
         "**/node_modules/**",
         "vitepress/**",
         "coverage/**",
+        "**/db/migrate.ts",
       ],
     },
   },

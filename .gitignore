@@ -8,6 +8,7 @@ coverage/
 .turbo/
 .nyc_output/
 *.tsbuildinfo
+test.html
 
 # Runtime / local databases
 apps/api/data/*
