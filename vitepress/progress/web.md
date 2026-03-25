@@ -75,4 +75,6 @@ outline: [2, 3]
 ### P2
 
 - [ ] Character Lab、Memory Explorer
-- [ ] 迁移到 typed API client
+- [ ] 继续审查 `apps/web/src/lib/workspace-api/*` 中仍然保留的薄封装，确认哪些属于应用层映射，哪些应继续收敛到 `@tavern/sdk` 或 `@tavern/client-helpers`
+- [ ] 保持前端接入基线与官方包同步；如果引擎、后端、SSE、OpenAPI、Tools、MCP 等接入语义变化，优先更新官方包与文档，再处理前端迁移
+- [ ] 仅在确有必要时直接使用内部包 `@tavern/shared`，不把它当作前端公开接入面的替代品

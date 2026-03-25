@@ -1,4 +1,4 @@
-import { deleteJson, fetchJson, patchJson, postJson, putJson } from "./transport";
+import { apiClient } from "../api";
 
 export type WorkspaceLlmInstanceSlot = "*" | "narrator" | "director" | "verifier" | "memory";
 
@@ -54,92 +54,8 @@ export type WorkspaceLlmModelTestResult = {
   responseText: string;
 };
 
-type LlmProfileResponseRow = {
-  api_key_masked: string;
-  api_key_name: string | null;
-  base_url: string | null;
-  created_at: number;
-  id: string;
-  last_used_at: number | null;
-  model_id: string;
-  preset_name: string;
-  provider: WorkspaceLlmProvider;
-  status: WorkspaceLlmProfileStatus;
-  updated_at: number;
-};
-
-type LlmProfileMutationResponse = {
-  data?: LlmProfileResponseRow;
-};
-
-type LlmProfileDeleteResponse = {
-  data?: {
-    deleted?: boolean;
-    id?: string;
-  };
-};
-
-type LlmProfileListResponse = {
-  data?: LlmProfileResponseRow[];
-};
-
-type LlmRuntimeResponse = {
-  data?: {
-    slots?: Array<{
-      params: WorkspaceLlmGenerationParams | null;
-      model_id: string;
-      preset_name: string | null;
-      profile_id: string | null;
-      provider: string;
-      scope: "global" | "session" | null;
-      slot: WorkspaceLlmInstanceSlot;
-      source: "env" | "global_profile" | "session_profile";
-    }>;
-  };
-};
-
-type LlmDiscoveredModelResponse = {
-  id: string;
-  label: string;
-};
-
-type LlmDiscoverModelsResponse = {
-  data?: LlmDiscoveredModelResponse[];
-};
-
-type LlmTestModelResponse = {
-  data?: {
-    request_text?: string;
-    response_text?: string;
-  };
-};
-
-type LlmActivateResponse = {
-  data?: {
-    activated?: boolean;
-  };
-};
-
-function toWorkspaceLlmProfile(row: LlmProfileResponseRow): WorkspaceLlmProfile {
-  return {
-    apiKeyMasked: row.api_key_masked,
-    apiKeyName: row.api_key_name,
-    baseUrl: row.base_url,
-    createdAt: row.created_at,
-    id: row.id,
-    lastUsedAt: row.last_used_at,
-    modelId: row.model_id,
-    presetName: row.preset_name,
-    provider: row.provider,
-    status: row.status,
-    updatedAt: row.updated_at
-  };
-}
-
 export async function fetchLlmProfiles(accountId?: string): Promise<WorkspaceLlmProfile[]> {
-  const response = await fetchJson<LlmProfileListResponse>("/llm-profiles", accountId);
-  const rows = response.data ?? [];
-  return rows.map(toWorkspaceLlmProfile);
+  return apiClient.llmProfiles.list({ accountId });
 }
 
 export async function createLlmProfile(
@@ -153,24 +69,15 @@ export async function createLlmProfile(
   },
   accountId?: string
 ): Promise<WorkspaceLlmProfile> {
-  const response = await postJson<LlmProfileMutationResponse>(
-    "/llm-profiles",
-    {
-      api_key: payload.apiKey,
-      api_key_name: payload.apiKeyName,
-      base_url: payload.baseUrl,
-      model_id: payload.modelId,
-      preset_name: payload.presetName,
-      provider: payload.provider
-    },
-    accountId
-  );
-
-  if (!response.data) {
-    throw new Error("Failed to create profile");
-  }
-
-  return toWorkspaceLlmProfile(response.data);
+  return apiClient.llmProfiles.create({
+    accountId,
+    apiKey: payload.apiKey,
+    apiKeyName: payload.apiKeyName,
+    baseUrl: payload.baseUrl,
+    modelId: payload.modelId,
+    presetName: payload.presetName,
+    provider: payload.provider
+  });
 }
 
 export async function updateLlmProfile(
@@ -186,30 +93,24 @@ export async function updateLlmProfile(
   },
   accountId?: string
 ): Promise<WorkspaceLlmProfile> {
-  const response = await patchJson<LlmProfileMutationResponse>(
-    `/llm-profiles/${encodeURIComponent(profileId)}`,
-    {
-      api_key: payload.apiKey,
-      api_key_name: payload.apiKeyName,
-      base_url: payload.baseUrl,
-      model_id: payload.modelId,
-      preset_name: payload.presetName,
-      provider: payload.provider,
-      status: payload.status
-    },
-    accountId
-  );
-
-  if (!response.data) {
-    throw new Error("Failed to update profile");
-  }
-
-  return toWorkspaceLlmProfile(response.data);
+  return apiClient.llmProfiles.update({
+    accountId,
+    apiKey: payload.apiKey,
+    apiKeyName: payload.apiKeyName,
+    baseUrl: payload.baseUrl,
+    modelId: payload.modelId,
+    presetName: payload.presetName,
+    profileId,
+    provider: payload.provider,
+    status: payload.status
+  });
 }
 
 export async function deleteLlmProfile(profileId: string, accountId?: string): Promise<boolean> {
-  const response = await deleteJson<LlmProfileDeleteResponse>(`/llm-profiles/${encodeURIComponent(profileId)}`, accountId);
-  return response.data?.deleted === true;
+  return apiClient.llmProfiles.delete({
+    accountId,
+    profileId
+  });
 }
 
 export async function discoverLlmModels(
@@ -220,23 +121,12 @@ export async function discoverLlmModels(
   },
   accountId?: string
 ): Promise<WorkspaceLlmDiscoveredModel[]> {
-  const response = await postJson<LlmDiscoverModelsResponse>(
-    "/llm-profiles/models/discover",
-    {
-      api_key: payload.apiKey,
-      base_url: payload.baseUrl,
-      provider: payload.provider
-    },
-    accountId
-  );
-
-  const rows = response.data ?? [];
-  return rows
-    .filter((row): row is LlmDiscoveredModelResponse => Boolean(row?.id) && Boolean(row?.label))
-    .map((row) => ({
-      id: row.id,
-      label: row.label
-    }));
+  return apiClient.llmProfiles.discoverModels({
+    accountId,
+    apiKey: payload.apiKey,
+    baseUrl: payload.baseUrl,
+    provider: payload.provider
+  });
 }
 
 export async function testLlmModel(
@@ -248,49 +138,20 @@ export async function testLlmModel(
   },
   accountId?: string
 ): Promise<WorkspaceLlmModelTestResult> {
-  const response = await postJson<LlmTestModelResponse>(
-    "/llm-profiles/models/test",
-    {
-      api_key: payload.apiKey,
-      base_url: payload.baseUrl,
-      model_id: payload.modelId,
-      provider: payload.provider
-    },
-    accountId
-  );
-
-  const requestText = response.data?.request_text?.trim() ?? "";
-  const responseText = response.data?.response_text?.trim() ?? "";
-  if (!requestText || !responseText) {
-    throw new Error("Failed to test model");
-  }
-
-  return {
-    requestText,
-    responseText
-  };
+  return apiClient.llmProfiles.testModel({
+    accountId,
+    apiKey: payload.apiKey,
+    baseUrl: payload.baseUrl,
+    modelId: payload.modelId,
+    provider: payload.provider
+  });
 }
 
 export async function fetchLlmRuntime(sessionId: string | undefined, accountId?: string): Promise<WorkspaceLlmRuntimeSlot[]> {
-  const query = new URLSearchParams();
-  if (sessionId) {
-    query.set("session_id", sessionId);
-  }
-
-  const pathname = query.size > 0 ? `/llm-profiles/runtime?${query.toString()}` : "/llm-profiles/runtime";
-  const response = await fetchJson<LlmRuntimeResponse>(pathname, accountId);
-  const rows = response.data?.slots ?? [];
-
-  return rows.map((row) => ({
-    modelId: row.model_id,
-    params: row.params ?? null,
-    presetName: row.preset_name,
-    profileId: row.profile_id,
-    provider: row.provider,
-    scope: row.scope,
-    slot: row.slot,
-    source: row.source
-  }));
+  return apiClient.llmProfiles.runtime({
+    accountId,
+    sessionId
+  });
 }
 
 export async function activateLlmProfileBinding(
@@ -303,22 +164,15 @@ export async function activateLlmProfileBinding(
   },
   accountId?: string
 ): Promise<boolean> {
-  const response = await postJson<LlmActivateResponse>(
-    `/llm-profiles/${encodeURIComponent(profileId)}/activate`,
-    {
-      instance_slot: payload.instanceSlot,
-      params: payload.params,
-      scope: payload.scope,
-      session_id: payload.sessionId
-    },
-    accountId
-  );
-
-  return response.data?.activated === true;
+  return apiClient.llmProfiles.activate({
+    accountId,
+    params: payload.params,
+    profileId,
+    scope: payload.scope,
+    sessionId: payload.sessionId,
+    slot: payload.instanceSlot
+  });
 }
-
-
-// ── LLM Instance Config types ──
 
 export type WorkspaceLlmInstanceScope = "global" | "session";
 
@@ -344,95 +198,16 @@ export type WorkspaceLlmResolvedInstanceSlot = {
   params: WorkspaceLlmGenerationParams | null;
 };
 
-// ── LLM Instance Config API response types ──
-
-type LlmInstanceConfigResponseRow = {
-  id: string;
-  scope: WorkspaceLlmInstanceScope;
-  scope_id: string;
-  instance_slot: WorkspaceLlmInstanceSlot;
-  preset_id: string | null;
-  enabled: boolean;
-  params: WorkspaceLlmGenerationParams | null;
-  created_at: number;
-  updated_at: number;
-};
-
-type LlmInstanceConfigListResponse = {
-  data?: LlmInstanceConfigResponseRow[];
-};
-
-type LlmInstanceConfigMutationResponse = {
-  data?: LlmInstanceConfigResponseRow;
-};
-
-type LlmResolvedSlotResponseRow = {
-  slot: WorkspaceLlmInstanceSlot;
-  source: "session_config" | "global_config" | "default";
-  scope: WorkspaceLlmInstanceScope | null;
-  config_id: string | null;
-  preset_id: string | null;
-  enabled: boolean;
-  params: WorkspaceLlmGenerationParams | null;
-};
-
-type LlmResolvedResponse = {
-  data?: {
-    session_id: string | null;
-    slots: LlmResolvedSlotResponseRow[];
-  };
-};
-
-type LlmInstanceDeleteResponse = {
-  data?: {
-    instance_slot: string;
-    scope: string;
-    deleted: boolean;
-  };
-};
-
-// ── LLM Instance Config conversion helpers ──
-
-function toWorkspaceLlmInstanceConfig(row: LlmInstanceConfigResponseRow): WorkspaceLlmInstanceConfig {
-  return {
-    id: row.id,
-    scope: row.scope,
-    scopeId: row.scope_id,
-    instanceSlot: row.instance_slot,
-    presetId: row.preset_id,
-    enabled: row.enabled,
-    params: row.params,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function toWorkspaceLlmResolvedSlot(row: LlmResolvedSlotResponseRow): WorkspaceLlmResolvedInstanceSlot {
-  return {
-    slot: row.slot,
-    source: row.source,
-    scope: row.scope,
-    configId: row.config_id,
-    presetId: row.preset_id,
-    enabled: row.enabled,
-    params: row.params,
-  };
-}
-
-// ── LLM Instance Config API functions ──
-
 export async function fetchLlmInstanceConfigs(
   scope?: WorkspaceLlmInstanceScope,
   sessionId?: string,
   accountId?: string
 ): Promise<WorkspaceLlmInstanceConfig[]> {
-  const query = new URLSearchParams();
-  if (scope) query.set("scope", scope);
-  if (sessionId) query.set("session_id", sessionId);
-
-  const pathname = query.size > 0 ? `/llm-instances?${query.toString()}` : "/llm-instances";
-  const response = await fetchJson<LlmInstanceConfigListResponse>(pathname, accountId);
-  return (response.data ?? []).map(toWorkspaceLlmInstanceConfig);
+  return apiClient.llmInstances.list({
+    accountId,
+    scope,
+    sessionId
+  });
 }
 
 export async function fetchLlmInstanceConfigsBySlot(
@@ -441,26 +216,22 @@ export async function fetchLlmInstanceConfigsBySlot(
   sessionId?: string,
   accountId?: string
 ): Promise<WorkspaceLlmInstanceConfig[]> {
-  const query = new URLSearchParams();
-  if (scope) query.set("scope", scope);
-  if (sessionId) query.set("session_id", sessionId);
-
-  const base = `/llm-instances/${encodeURIComponent(slot)}`;
-  const pathname = query.size > 0 ? `${base}?${query.toString()}` : base;
-  const response = await fetchJson<LlmInstanceConfigListResponse>(pathname, accountId);
-  return (response.data ?? []).map(toWorkspaceLlmInstanceConfig);
+  return apiClient.llmInstances.listBySlot({
+    accountId,
+    scope,
+    sessionId,
+    slot
+  });
 }
 
 export async function fetchResolvedLlmInstanceConfigs(
   sessionId?: string,
   accountId?: string
 ): Promise<WorkspaceLlmResolvedInstanceSlot[]> {
-  const query = new URLSearchParams();
-  if (sessionId) query.set("session_id", sessionId);
-
-  const pathname = query.size > 0 ? `/llm-instances/resolved?${query.toString()}` : "/llm-instances/resolved";
-  const response = await fetchJson<LlmResolvedResponse>(pathname, accountId);
-  return (response.data?.slots ?? []).map(toWorkspaceLlmResolvedSlot);
+  return apiClient.llmInstances.listResolved({
+    accountId,
+    sessionId
+  });
 }
 
 export async function upsertLlmInstanceConfig(
@@ -474,23 +245,15 @@ export async function upsertLlmInstanceConfig(
   },
   accountId?: string
 ): Promise<WorkspaceLlmInstanceConfig> {
-  const response = await putJson<LlmInstanceConfigMutationResponse>(
-    `/llm-instances/${encodeURIComponent(slot)}`,
-    {
-      scope: payload.scope,
-      session_id: payload.sessionId,
-      preset_id: payload.presetId,
-      enabled: payload.enabled,
-      params: payload.params,
-    },
-    accountId
-  );
-
-  if (!response.data) {
-    throw new Error("Failed to upsert instance config");
-  }
-
-  return toWorkspaceLlmInstanceConfig(response.data);
+  return apiClient.llmInstances.upsert({
+    accountId,
+    enabled: payload.enabled,
+    params: payload.params,
+    presetId: payload.presetId,
+    scope: payload.scope,
+    sessionId: payload.sessionId,
+    slot
+  });
 }
 
 export async function deleteLlmInstanceConfig(
@@ -499,12 +262,10 @@ export async function deleteLlmInstanceConfig(
   sessionId?: string,
   accountId?: string
 ): Promise<boolean> {
-  const query = new URLSearchParams();
-  if (scope) query.set("scope", scope);
-  if (sessionId) query.set("session_id", sessionId);
-
-  const base = `/llm-instances/${encodeURIComponent(slot)}`;
-  const pathname = query.size > 0 ? `${base}?${query.toString()}` : base;
-  const response = await deleteJson<LlmInstanceDeleteResponse>(pathname, accountId);
-  return response.data?.deleted === true;
+  return apiClient.llmInstances.remove({
+    accountId,
+    scope,
+    sessionId,
+    slot
+  });
 }

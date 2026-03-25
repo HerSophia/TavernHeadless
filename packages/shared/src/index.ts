@@ -51,3 +51,8 @@ export {
   type ApiRequestResult,
   type CreateApiClientOptions,
 } from './api/index.js';
+
+export type {
+  OpenApiOperations,
+  OpenApiPaths,
+} from './api/index.js';

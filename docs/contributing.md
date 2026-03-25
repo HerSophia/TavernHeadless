@@ -1,21 +1,31 @@
 # 协作指南
 
-这份文档约束项目的开发协作方式。所有参与开发的人请先读完这篇。
+这份文档说明 TavernHeadless 当前的协作规则。
+
+这不是单纯的 Git 说明文档。它同时约束：
+
+- 仓库分层
+- 依赖方向
+- 引擎、后端、前端、官方包之间的边界
+- 代码改动与文档改动的同步要求
+
+所有参与开发的人，在提交代码前都应先读完这份文档。
 
 ---
 
 ## 目录
 
 1. [开发环境](#1-开发环境)
-2. [项目结构约定](#2-项目结构约定)
-3. [Git 工作流](#3-git-工作流)
-4. [Commit 规范](#4-commit-规范)
-5. [分支策略](#5-分支策略)
-6. [Pull Request 流程](#6-pull-request-流程)
-7. [代码风格](#7-代码风格)
-8. [文档维护](#8-文档维护)
-9. [Issue 规范](#9-issue-规范)
-10. [发布流程](#10-发布流程)
+2. [项目结构与分层](#2-项目结构与分层)
+3. [依赖方向与公开边界](#3-依赖方向与公开边界)
+4. [官方集成层协作规则](#4-官方集成层协作规则)
+5. [开发工作流](#5-开发工作流)
+6. [Commit 与分支规范](#6-commit-与分支规范)
+7. [Pull Request 流程](#7-pull-request-流程)
+8. [代码风格](#8-代码风格)
+9. [文档维护规则](#9-文档维护规则)
+10. [验证要求](#10-验证要求)
+11. [Issue 与发布](#11-issue-与发布)
 
 ---
 
@@ -24,7 +34,7 @@
 ### 必须
 
 - Node.js >= 20
-- pnpm >= 9（不要用 npm 或 yarn）
+- pnpm >= 9
 - Git >= 2.30
 
 ### 推荐
@@ -36,85 +46,233 @@
 ### 初始化
 
 ```bash
-# 克隆后第一件事
 pnpm install
+pnpm dev:api
+pnpm dev:web
+```
 
-# 启动后端开发
-pnpm --filter api dev
+常用命令：
 
-# 启动前端开发
-pnpm --filter web dev
+```bash
+pnpm dev
+pnpm dev:api
+pnpm dev:web
+pnpm dev:both
+pnpm typecheck
+pnpm test:ci
+pnpm lint
+pnpm sdk:generate
+pnpm sdk:check
+pnpm docs:build
 ```
 
 ---
 
-## 2. 项目结构约定
+## 2. 项目结构与分层
 
 ```text
 TavernHeadless/
 ├── apps/
-│   ├── api/                  # 后端服务
-│   └── web/                  # 管理前端
+│   ├── api/                                  # Fastify 后端
+│   └── web/                                  # Vue 管理前端
 ├── packages/
-│   ├── core/                 # 核心引擎（纯逻辑，不依赖 HTTP 框架）
-│   ├── adapters-sillytavern/ # 酒馆兼容层
-│   └── shared/               # 公共类型、工具函数、常量
-├── docs/                     # 所有文档
-├── scripts/                  # 构建/部署/迁移脚本
+│   ├── core/                                 # 核心引擎逻辑
+│   ├── adapters-sillytavern/                 # SillyTavern 兼容适配层
+│   ├── shared/                               # 内部共享类型、OpenAPI 生成、API Client
+│   └── official-integration-kit/
+│       ├── sdk/                              # 第一方官方接入基础层
+│       └── client-helpers/                   # 第一方官方接入语义层
+├── docs/                                     # 仓库级文档
+├── vitepress/                                # 文档站
+├── scripts/                                  # 根脚本
 └── README.md
 ```
 
-### 几条硬规则
+### 分层说明
 
-- `packages/core` **不允许**依赖 `apps/api` 或任何 HTTP 框架。它是纯逻辑层，要能脱离 Fastify 独立运行和测试。
-- `packages/shared` **不允许**依赖 `core` 或 `adapters-*`。它只放类型定义、工具函数和常量。
-- `apps/api` 可以依赖 `core`、`shared`、`adapters-*`。
-- `apps/web` 只依赖 `shared`（通过 API 和后端通信，不直接引用 core）。
-- 依赖方向永远是 **apps → packages**，不能反过来。
+- `packages/core`：纯引擎逻辑。
+- `packages/adapters-sillytavern`：兼容导入与兼容编排。
+- `packages/shared`：内部共享类型、OpenAPI 生成物、类型化 API Client。
+- `packages/official-integration-kit/sdk`：官方第一方 HTTP / SSE / 错误 / 资源接入层。
+- `packages/official-integration-kit/client-helpers`：官方第一方语义辅助层。
+- `apps/api`：后端服务，对外提供 API。
+- `apps/web`：管理前端，不是唯一消费方，也不是官方接入语义的定义来源。
+
+---
+
+## 3. 依赖方向与公开边界
+
+### 依赖方向
+
+必须遵守下面的依赖方向：
 
 ```text
 apps/api  ──→  packages/core  ──→  packages/shared
    │               │
-   └──→  packages/adapters-sillytavern ──→  packages/shared
+   └──────────→  packages/adapters-sillytavern ──→ packages/shared
 
+apps/web  ──→  packages/official-integration-kit/*
 apps/web  ──→  packages/shared
 ```
 
+### 几条硬规则
+
+- `packages/core` 不允许依赖 `apps/api`、`apps/web` 或任何前端框架。
+- `packages/shared` 不允许依赖 `core` 或 `adapters-*`。它只放共享类型、内部工具和生成物。
+- `apps/api` 可以依赖 `core`、`shared`、`adapters-*`。
+- `apps/web` 不应重新发明一套可复用请求层或语义层。
+- 依赖方向只能是 `apps -> packages`，不能反过来。
+
+### 公开边界
+
+当前只保留两个官方公开接入包：
+
+- `@tavern/sdk`
+- `@tavern/client-helpers`
+
+同时必须记住：
+
+- `@tavern/shared` 是内部包，不是公开接入面。
+- 不要把新的公开接入能力放到 `@tavern/shared`。
+- 不要再新增第三个“官方接入包”来绕开边界。
+
 ---
 
-## 3. Git 工作流
+## 4. 官方集成层协作规则
 
-我们用 **GitHub Flow 变体**：一条主干 + 短命特性分支。
+这一节是当前最重要的新增规则。
+
+### 4.1 官方集成层的职责
+
+`@tavern/sdk` 负责：
+
+- HTTP 请求
+- 默认请求头
+- 错误归一化
+- SSE 读取
+- 第一方资源包装
+
+`@tavern/client-helpers` 负责：
+
+- usage 归一化
+- timeline 构建
+- 流式状态 reducer
+- active page 选择
+- API 错误到界面状态的映射
+
+### 4.2 不允许混淆边界
+
+不允许把下面这些内容放进官方包：
+
+- Vue 组件
+- React hooks
+- Pinia store
+- Zustand store
+- TanStack Query 绑定
+- 只服务于一个页面的界面逻辑
+
+### 4.3 引擎内部实现一改，官方包自然也要跟着检查
+
+这是当前协作要求里必须明确的一条。
+
+如果你改动了下面这些内容：
+
+- 核心引擎的对外可见行为
+- `apps/api` 的路由、请求体、响应体、错误语义
+- SSE 事件结构
+- OpenAPI 生成结果
+- Tool Calling 或 MCP 的接入语义
+- 会影响 `apps/web` 已迁入官方包的逻辑
+
+就必须同时判断：
+
+1. `@tavern/sdk` 是否需要同步改动
+2. `@tavern/client-helpers` 是否需要同步改动
+3. 包内文档和外部文档是否需要同步改动
+
+不能只改引擎或后端，然后把接入层留在旧状态。
+
+也不能只在 `apps/web` 里补一个局部适配，就跳过官方包。
+
+### 4.4 什么时候优先改官方包
+
+如果一个改动已经满足下面任意一条，应优先进入官方包，而不是继续堆在 `apps/web`：
+
+- 这个逻辑会被多个接入方重复使用
+- 这个逻辑已经直接对应后端某组资源
+- 这个逻辑不是界面行为，而是接入行为
+- 这个逻辑与 HTTP、SSE、错误、资源读写有关
+- 这个逻辑与 timeline、usage、流式中间态、错误映射有关，并且与框架无关
+
+### 4.5 文档同步顺序
+
+只要官方包发生变化，文档更新顺序应保持一致：
+
+1. 先更新包内文档
+   - `packages/official-integration-kit/sdk/README.md`
+   - `packages/official-integration-kit/client-helpers/README.md`
+2. 再更新外部文档
+   - `vitepress/guide/integration-kit.md`
+   - `vitepress/guide/introduction.md`
+   - `vitepress/reference/api.md`
+   - `README.md`
+3. 如果边界、流程或协作方式也变了，再更新协作文档
+   - `docs/contributing.md`
+   - `vitepress/development/contributing.md`
+   - `.github/CONTRIBUTING.md`
+
+### 4.6 `apps/web` 的处理原则
+
+`apps/web` 仍然可以保留这些内容：
+
+- 组件和页面逻辑
+- 本地表单状态
+- 只在一个界面里使用的显示映射
+- 菜单和交互行为
+
+但下面这些内容，如果已经稳定并且可复用，应尽量迁入官方包：
+
+- 资源请求封装
+- SSE 解析与归一化
+- 通用错误映射
+- 时间线语义整理
+- 与后端资源一一对应的高层方法
+
+---
+
+## 5. 开发工作流
+
+我们使用一条主干加短分支的工作方式。
 
 ### 日常流程
 
 ```text
 1. 从 main 拉新分支
 2. 在分支上开发
-3. 提交 PR
-4. Code Review（至少一人）
-5. 合并到 main
-6. 删除分支
+3. 本地自查
+4. 提交 PR
+5. Code Review
+6. 合并到 main
+7. 删除分支
 ```
 
 ### 禁止事项
 
-- **不要直接推 main**。所有改动必须走 PR。
-- **不要 force push 到别人也在用的分支**。自己的分支随意。
-- **不要在 PR 里夹带无关改动**。一个 PR 只做一件事。
+- 不要直接推送到 `main`
+- 不要在共享分支上强制推送
+- 不要把无关改动塞进同一个 PR
+- 不要把代码改动和本应同步更新的文档拆成两个长期分离的 PR
 
 ---
 
-## 4. Commit 规范
+## 6. Commit 与分支规范
 
-使用 [Conventional Commits](https://www.conventionalcommits.org/) 格式：
+### Commit 格式
+
+使用 Conventional Commits：
 
 ```text
 <类型>(<范围>): <描述>
-
-<正文（可选）>
-
-<脚注（可选）>
 ```
 
 ### 类型
@@ -122,36 +280,39 @@ apps/web  ──→  packages/shared
 | 类型 | 用途 |
 | ---- | ---- |
 | `feat` | 新功能 |
-| `fix` | 修复 bug |
-| `refactor` | 重构（不改功能、不修 bug） |
+| `fix` | 修复问题 |
+| `refactor` | 重构 |
 | `docs` | 只改文档 |
 | `test` | 只改测试 |
-| `chore` | 构建、依赖、配置等杂活 |
-| `style` | 代码格式（空格、分号、换行等，不影响逻辑） |
+| `chore` | 构建、依赖、配置 |
+| `style` | 格式调整 |
 | `perf` | 性能优化 |
 
 ### 范围
 
-用包名或模块名：`core`、`api`、`web`、`shared`、`adapters-st`、`db`、`memory`、`orchestrator`。
+建议直接使用真实模块名。常见范围：
+
+- `core`
+- `api`
+- `web`
+- `shared`
+- `sdk`
+- `client-helpers`
+- `integration-kit`
+- `docs`
+- `mcp`
+- `tools`
+- `memory`
+- `llm`
 
 ### 示例
 
 ```text
-feat(core): 实现楼层状态机
-fix(adapters-st): 修复世界书导入时标签丢失
-docs: 更新架构文档的记忆系统章节
-chore: 升级 Drizzle ORM 到 0.35
+feat(sdk): add exports tools and mcp resources
+fix(api): keep tool permission patch merge semantics
+docs(integration-kit): refresh sdk surface and collaboration rules
+refactor(web): migrate workspace api callers to sdk resources
 ```
-
-### Commit 粒度
-
-- 一个 commit 做一件事。
-- 写了一半不想提交？用 `git stash`，别提交半成品。
-- 如果你的 PR 里有 20 个 commit 且大部分是 "fix typo"，合并前请 squash。
-
----
-
-## 5. 分支策略
 
 ### 分支命名
 
@@ -159,206 +320,228 @@ chore: 升级 Drizzle ORM 到 0.35
 <类型>/<简短描述>
 ```
 
-示例：
+例如：
 
-- `feat/floor-state-machine`
-- `fix/worldbook-import-tags`
-- `refactor/prompt-ir-types`
-- `docs/add-contributing-guide`
-
-### 特殊分支
-
-| 分支 | 用途 | 谁能推 |
-| ---- | ---- | ---- |
-| `main` | 稳定主干 | 只通过 PR 合并 |
-| `release/*` | 发版准备（如有需要） | 维护者 |
-| `hotfix/*` | 紧急修复 | 维护者 |
+- `feat/sdk-batch4-resources`
+- `fix/mcp-status-mapping`
+- `docs/integration-kit-refresh`
+- `refactor/web-use-sdk-resources`
 
 ---
 
-## 6. Pull Request 流程
+## 7. Pull Request 流程
 
 ### PR 标题
 
-和 commit 一样用 Conventional 格式：
+与 commit 一样使用 Conventional 格式。
 
-```text
-feat(core): 实现楼层状态机
-```
+### PR 描述至少应说明
 
-### PR 描述模板
+- 做了什么
+- 为什么要做
+- 影响了哪些模块
+- 如何验证
+- 是否更新了文档
+- 是否影响了官方包边界
 
-```markdown
-## 做了什么
+### 如果涉及引擎、后端契约或官方包，请额外说明
 
-简要说明这个 PR 做了什么。
-
-## 为什么
-
-为什么要做这个改动。如果有对应 Issue，写 `Closes #123`。
-
-## 怎么测试
-
-说明怎么验证这个改动是正确的。
-
-## 截图（如果涉及前端）
-
-贴图。
-
-## 注意事项
-
-有什么需要 reviewer 特别关注的。
-```
+- 是否影响 `@tavern/sdk`
+- 是否影响 `@tavern/client-helpers`
+- 是否影响 `apps/web`
+- 是否影响 OpenAPI 生成物
+- 是否需要迁移已有接入代码
 
 ### Review 规则
 
-- 每个 PR 至少需要 **1 人 approve** 才能合并。
-- Reviewer 应在 **48 小时内**给出第一轮反馈。
-- 有争议的设计问题，拉到 Issue 或讨论区单独聊，不要在 PR 里打持久战。
-- 合并方式：优先 **Squash and Merge**（保持 main 历史干净）。
+- 每个 PR 至少需要 1 人 approve 才能合并
+- Reviewer 应尽快给出第一轮反馈
+- 有争议的设计问题，应转为单独讨论，不要在 PR 中长期拉扯
+- 合并方式优先使用 `Squash and Merge`
 
 ---
 
-## 7. 代码风格
+## 8. 代码风格
 
 ### 基本原则
 
-- **TypeScript 严格模式**：`tsconfig.json` 开启 `strict: true`，不要用 `any`（实在需要用 `unknown` + 类型守卫）。
-- **ESLint + Prettier**：保存时自动格式化。具体规则以项目根目录的配置文件为准。
-- **命名风格**：
-  - 文件名：`kebab-case`（如 `floor-state-machine.ts`）
-  - 类型/接口/类：`PascalCase`（如 `FloorState`）
-  - 变量/函数：`camelCase`（如 `createFloor`）
-  - 常量：`UPPER_SNAKE_CASE`（如 `MAX_TOKEN_BUDGET`）
-  - 数据库表/列名：`snake_case`（如 `message_page`）
+- TypeScript 严格模式，不要随意使用 `any`
+- 以现有 ESLint 与 Prettier 配置为准
+- 命名保持稳定，不随意更换同一概念的叫法
+- 新增资源包装时，尽量延续既有命名：`list`、`getDetail`、`create`、`update`、`remove`
+- 动作型接口保持后端原词，不强行抽象
+
+### 命名风格
+
+- 文件名：`kebab-case`
+- 类型、接口、类：`PascalCase`
+- 变量、函数：`camelCase`
+- 常量：`UPPER_SNAKE_CASE`
+- 数据库表与列：`snake_case`
+- API 协议字段：以后端为准，通常是 `snake_case`
+- SDK 对外返回字段：遵循当前资源文件的映射风格
 
 ### 导入顺序
 
-```typescript
+```ts
 // 1. Node.js 内置模块
-import { readFile } from 'node:fs/promises';
+import { readFile } from "node:fs/promises";
 
 // 2. 第三方库
-import Fastify from 'fastify';
-import { eq } from 'drizzle-orm';
+import { eq } from "drizzle-orm";
 
-// 3. 项目内部包（packages/*）
-import type { Session } from '@tavern/shared';
-import { createFloor } from '@tavern/core';
+// 3. 仓库内部包
+import type { OpenApiPaths } from "@tavern/shared";
 
-// 4. 当前包内的相对导入
-import { validateInput } from './utils';
+// 4. 当前包内相对导入
+import { mapRecord } from "./utils.js";
 ```
-
-### 错误处理
-
-- 不要吞异常。捕获了就处理或往上抛。
-- 自定义错误类型统一放在 `packages/shared/errors.ts`。
-- API 层统一错误格式：`{ error: { code: string, message: string, details?: any } }`。
 
 ### 注释
 
-- 不要写废话注释（`// 创建用户` 上面一行就是 `createUser()`，没必要）。
-- 写**为什么**，不写**是什么**。代码本身说明「是什么」，注释解释「为什么这么做」。
-- 公共 API 和复杂逻辑用 JSDoc。
+- 不写重复代码含义的注释
+- 注释主要说明为什么这样做
+- 公共 API 和复杂逻辑使用 JSDoc
+- 协议兼容、返回语义保持、历史包袱处理要写清楚原因
 
 ---
 
-## 8. 文档维护
+## 9. 文档维护规则
 
-### 文档放哪
+### 文档放置位置
 
-- 项目级文档放 `docs/` 目录。
-- API 接口文档跟着代码走（JSDoc + 自动生成）。
-- 包级别的说明放各自包的 `README.md`。
+- 仓库级文档：`docs/`
+- 文档站页面：`vitepress/`
+- 包级说明：各自包目录下的 `README.md`
+- 对外入口：根 `README.md`
 
-### 什么时候更新文档
+### 文档更新的硬要求
 
-- 改了公共 API？更新对应文档。
-- 改了数据库 schema？更新架构文档的数据库章节。
-- 加了新概念或新模块？在架构文档里加对应章节。
-- **PR 里如果涉及文档更新，和代码改动放在同一个 PR 里**，不要拆开。
+出现下面任意情况，必须更新文档：
+
+- 改了公共 API
+- 改了 OpenAPI
+- 改了官方包导出面
+- 改了资源覆盖范围
+- 改了依赖边界
+- 改了协作流程
+- 改了发布与验证要求
+
+### 代码和文档必须同 PR 提交的情况
+
+下面这些情况，代码与文档必须放在同一个 PR：
+
+- 新增或删除官方资源方法
+- 调整 `@tavern/sdk` 或 `@tavern/client-helpers` 的职责边界
+- 后端语义变化导致接入层变化
+- `apps/web` 从本地逻辑迁移到官方包
+- 文档中已经公开承诺的行为发生变化
 
 ### 文档风格
 
-- 说人话，少用缩写和黑话。
-- 用表格和示例代替大段文字。
-- Markdown 代码块注明语言标签（如 `` ```typescript `` 而不是光秃秃的 `` ``` ``）。
+- 用简单直接的文字
+- 先讲边界，再讲细节
+- 用表格和例子说明规则
+- 只写已经上线或已经落地的内容，不预先写未来设计
 
 ---
 
-## 9. Issue 规范
+## 10. 验证要求
+
+按改动范围执行最小但完整的验证。
+
+### 改 `apps/api`
+
+至少运行：
+
+```bash
+pnpm --filter @tavern/api typecheck
+pnpm --filter @tavern/api test
+```
+
+### 改 `@tavern/sdk`
+
+至少运行：
+
+```bash
+pnpm --filter @tavern/sdk typecheck
+pnpm --filter @tavern/sdk test
+```
+
+如果改动会影响前端接入，还应运行：
+
+```bash
+pnpm --filter @tavern/web typecheck
+```
+
+### 改 OpenAPI 或官方包生成面
+
+至少运行：
+
+```bash
+pnpm sdk:generate
+pnpm sdk:check
+pnpm --filter @tavern/sdk typecheck
+pnpm --filter @tavern/sdk test
+```
+
+### 只改文档
+
+建议至少运行：
+
+```bash
+pnpm docs:build
+```
+
+### 提交 PR 前的通用检查
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test:ci
+```
+
+如果 PR 只改局部模块，也可以在说明里写清楚为什么采用更小范围的验证。
+
+---
+
+## 11. Issue 与发布
 
 ### Issue 标题
 
-清晰描述问题或需求，不要写「有个 bug」。
+标题要能直接说明问题，不要写空泛标题。
 
-好的标题：
+好的例子：
 
-- `世界书导入时如果条目超过 500 条会超时`
-- `希望支持从 JSON 批量导入变量`
+- `tools call records query ignores floor_id when page_id is absent`
+- `sdk export resource should preserve raw response semantics`
+- `web timeline flow still duplicates sdk behavior`
 
-### Issue 标签
+### 标签建议
 
 | 标签 | 用途 |
 | ---- | ---- |
-| `bug` | 确认的 bug |
-| `feature` | 新功能需求 |
-| `discussion` | 需要讨论的设计问题 |
-| `good first issue` | 适合新人的入门任务 |
-| `help wanted` | 需要社区帮忙 |
-| `wontfix` | 不打算修 |
+| `bug` | 已确认问题 |
+| `feature` | 新需求 |
+| `discussion` | 需要讨论 |
+| `docs` | 文档更新 |
+| `integration-kit` | 官方包相关 |
+| `help wanted` | 需要协助 |
 
-### Bug 报告模板
+### 发布原则
 
-```markdown
-## 环境
+项目仍在 `0.x` 阶段：
 
-- 操作系统：
-- Node.js 版本：
-- pnpm 版本：
+- 可以继续迭代
+- 但公开文档中已经承诺的行为，不应随意改动
+- 如果要调整公开行为，应同时更新官方包、文档和迁移说明
 
-## 复现步骤
+### 发版前检查
 
-1. ...
-2. ...
-3. ...
+至少确认：
 
-## 期望行为
-
-...
-
-## 实际行为
-
-...
-
-## 错误日志（如有）
-
-...
-```
-
----
-
-## 10. 发布流程
-
-> 🚧 项目早期阶段，发布流程待完善。以下为初步规划。
-
-### 版本号
-
-使用 [语义化版本](https://semver.org/lang/zh-CN/)：`MAJOR.MINOR.PATCH`。
-
-- `0.x.y` 阶段：API 随时可能变，不保证向后兼容。
-- `1.0.0` 之后：遵循语义化版本严格规则。
-
-### 发版步骤
-
-1. 从 `main` 创建 `release/vX.Y.Z` 分支。
-2. 更新版本号和 CHANGELOG。
-3. 跑一遍完整测试。
-4. 合并到 `main`，打 Git Tag。
-5. 删除 release 分支。
-
-### CHANGELOG
-
-- 每个版本记录 `新增`、`修复`、`变更`、`移除` 四类。
-- 基于 commit 历史生成，但需要人工审阅措辞。
+1. 相关模块 typecheck 通过
+2. 相关模块测试通过
+3. 官方包导出面与文档一致
+4. `apps/web` 没有被留在旧语义上
+5. 需要迁移的地方已经在 PR 中说明清楚

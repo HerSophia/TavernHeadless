@@ -21,10 +21,11 @@ TavernHeadless 是一个 Headless 的 AI 角色扮演系统。你可以把它理
 - 会话管理、分支治理、重试、编辑再生成、时间线查询。
 - SillyTavern 生态导入：预设、世界书、正则、角色卡。
 - SSE 流式输出、Prompt dry-run 调试、OpenAPI 文档、Typed SDK。
+- 官方集成层两包：`@tavern/sdk`、`@tavern/client-helpers`，并已覆盖会话、内容结构、变量、记忆、导出、Tools、MCP 等主要接入域。
 - 三种认证模式（`off` / `api_key` / `jwt`）、多账号隔离、LLM 密钥加密存储。
 - 记忆系统（摘要提取、衰减排序、自动维护）、变量系统（四级级联）。
 - LLM Profile Vault、Instance Slot 多模型配置、模型发现与连通性测试。
-- 首批 batch 接口（variables / memories / messages）。
+- batch 接口与状态类接口（variables / memories / messages / sessions / users 等）。
 
 当前重点：部署文档完善、正式发布准备。
 
@@ -219,6 +220,32 @@ SillyTavern 兼容适配层。负责：
 - 事件名称常量（CoreEvents）。
 - 自动生成的 OpenAPI 类型和类型化 API 客户端（createApiClient）。
 
+### `packages/official-integration-kit/sdk`
+
+官方接入基础层。负责：
+
+- 类型安全 API Client。
+- 默认请求头和基础 transport。
+- SSE 事件流读取与错误归一化。
+- 面向接入方的第一方资源调用入口。
+- 当前已覆盖会话、页面、分支、角色、预设、世界书、正则、账号、变量、记忆、导出、Tools、MCP、LLM 配置等主要域。
+- 保留底层 `request/get/post/put/patch/delete` 能力，供需要精确访问底层协议的接入方使用。
+
+### `packages/official-integration-kit/client-helpers`
+
+官方接入语义层。负责：
+
+- usage 归一化。
+- timeline 构建。
+- 流式状态 reducer。
+- active page 选择和错误映射。
+
+这两个包是当前唯一官方公开接入面。
+
+`packages/shared` 仍然是内部包，不作为公开接入承诺的一部分。
+
+当引擎内部实现、后端路由、SSE 事件或 OpenAPI 契约变化并影响接入语义时，应同步检查这两个官方包和对应文档，而不是只在某一个前端里做局部补丁。
+
 ### `apps/api`
 
 Fastify 后端服务。负责：
@@ -266,6 +293,9 @@ apps/api  ──→  packages/core  ──→  packages/shared
    └──→  packages/adapters-sillytavern ──→  packages/shared
 
 apps/web  ──→  packages/shared
+         └──→  packages/official-integration-kit
+                    ├──→  sdk
+                    └──→  client-helpers
 ```
 
 依赖方向永远是 **apps → packages**，不能反过来。`core` 不知道 `api` 的存在，`api` 通过实现 `core` 定义的 Port 接口来对接数据库。
@@ -274,5 +304,6 @@ apps/web  ──→  packages/shared
 
 - 想了解完整的架构设计细节，请阅读 [架构设计](/guide/architecture)。
 - 想动手试一试，请阅读 [快速开始](/guide/getting-started)。
+- 想了解官方集成包，请阅读 [官方集成层](/guide/integration-kit)。
 - 想查阅 API 接口，请阅读 [API 参考](/reference/api)。
 - 想了解当前进度，请查看 [进度总览](/progress/)。
