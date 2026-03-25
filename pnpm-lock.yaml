@@ -208,6 +208,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@tavern/client-helpers':
+        specifier: workspace:*
+        version: link:../../packages/official-integration-kit/client-helpers
+      '@tavern/sdk':
+        specifier: workspace:*
+        version: link:../../packages/official-integration-kit/sdk
       '@tavern/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -312,6 +318,38 @@ importers:
       zod:
         specifier: ^3.24.1
         version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.10
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.10)
+
+  packages/official-integration-kit/client-helpers:
+    dependencies:
+      '@tavern/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.10
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.10)
+
+  packages/official-integration-kit/sdk:
+    dependencies:
+      '@tavern/shared':
+        specifier: workspace:*
+        version: link:../../shared
     devDependencies:
       '@types/node':
         specifier: ^22.10.2

@@ -1,8 +1,6 @@
+import { apiClient } from "../api";
 import { asRecordPayload } from "./mappers";
-import { postJson, fetchJson, resolvePath, extractErrorMessage, buildAccountHeaders } from "./transport";
 import type {
-  CharacterDetailResponse,
-  CharacterVersionMutationResponse,
   WorkspaceCharacterAssetDetail,
   WorkspaceCharacterAssetSnapshot,
   WorkspaceCharacterVersionResult
@@ -12,24 +10,19 @@ export async function fetchCharacterAssetDetail(
   characterId: string,
   accountId?: string
 ): Promise<WorkspaceCharacterAssetDetail> {
-  const response = await fetchJson<CharacterDetailResponse>(`/characters/${encodeURIComponent(characterId)}`, accountId);
-  const detail = response.data;
-  if (!detail) {
-    throw new Error("Character detail payload is missing");
-  }
+  const detail = await apiClient.characters.getDetail({
+    accountId,
+    characterId
+  });
 
-  const snapshot = detail.latest_version?.snapshot;
-  const snapshotRecord =
-    snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
-      ? (snapshot as Record<string, unknown>)
-      : null;
+  const snapshotRecord = detail.latestVersion?.snapshot ?? null;
 
   return {
-    createdAt: detail.created_at,
-    deletedAt: detail.deleted_at,
+    createdAt: detail.createdAt,
+    deletedAt: detail.deletedAt,
     id: detail.id,
-    latestVersionId: detail.latest_version?.id ?? null,
-    latestVersionNo: detail.latest_version_no,
+    latestVersionId: detail.latestVersion?.id ?? null,
+    latestVersionNo: detail.latestVersionNo,
     name: detail.name,
     snapshot: snapshotRecord
       ? {
@@ -42,7 +35,7 @@ export async function fetchCharacterAssetDetail(
       : null,
     source: detail.source,
     status: detail.status,
-    updatedAt: detail.updated_at
+    updatedAt: detail.updatedAt
   };
 }
 
@@ -51,39 +44,30 @@ export async function createCharacterAssetVersion(
   snapshot: WorkspaceCharacterAssetSnapshot,
   accountId?: string
 ): Promise<WorkspaceCharacterVersionResult> {
-  const response = await postJson<CharacterVersionMutationResponse>(
-    `/characters/${encodeURIComponent(characterId)}/versions`,
-    {
-      snapshot
-    },
-    accountId
-  );
-  const payload = response.data;
-  if (!payload) {
-    throw new Error("Character update returned an invalid payload");
-  }
+  const payload = await apiClient.characters.createVersion({
+    accountId,
+    characterId,
+    snapshot
+  });
 
   return {
-    createdAt: payload.created_at,
+    createdAt: payload.createdAt,
     id: payload.id,
     snapshot: asRecordPayload(payload.snapshot, "character") as WorkspaceCharacterAssetSnapshot,
-    versionNo: payload.version_no
+    versionNo: payload.versionNo
   };
 }
 
 export async function deleteCharacterAsset(characterId: string, accountId?: string): Promise<void> {
-  const response = await fetch(resolvePath(`/characters/${encodeURIComponent(characterId)}`), {
-    headers: {
-      ...buildAccountHeaders(accountId)
-    },
-    method: "DELETE"
+  await apiClient.characters.remove({
+    accountId,
+    characterId
   });
-
-  if (!response.ok) {
-    throw new Error(await extractErrorMessage(response));
-  }
 }
 
 export async function restoreCharacterAsset(characterId: string, accountId?: string): Promise<void> {
-  await postJson(`/characters/${encodeURIComponent(characterId)}/restore`, {}, accountId);
+  await apiClient.characters.restore({
+    accountId,
+    characterId
+  });
 }

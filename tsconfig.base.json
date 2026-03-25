@@ -18,7 +18,9 @@
     "paths": {
       "@tavern/core": ["packages/core/src/index.ts"],
       "@tavern/shared": ["packages/shared/src/index.ts"],
-      "@tavern/adapters-sillytavern": ["packages/adapters-sillytavern/src/index.ts"]
+      "@tavern/adapters-sillytavern": ["packages/adapters-sillytavern/src/index.ts"],
+      "@tavern/sdk": ["packages/official-integration-kit/sdk/src/index.ts"],
+      "@tavern/client-helpers": ["packages/official-integration-kit/client-helpers/src/index.ts"]
     }
   }
 }

@@ -120,7 +120,7 @@
 
 ## 6) 关键文件分层（当前）
 
-- API 访问：`apps/web/src/lib/workspace-api.ts`
+- API 访问：`apps/web/src/lib/workspace-api.ts`（内部薄封装，底层统一走 `@tavern/sdk` / `@tavern/client-helpers`）
 - 状态与业务：`apps/web/src/stores/workspace.ts`、`apps/web/src/stores/workspace-ui.ts`
 - 工作区主编排：`apps/web/src/App.vue`
 - 组件层：`apps/web/src/components/workspace/*`
@@ -166,7 +166,9 @@
 ### P2（后续路线）
 
 - [ ] `fw-13` 到 `fw-17`：Character Lab、Memory Explorer、交互测试与性能优化。
-- [ ] 持续迁移到 `packages/shared` typed API client，减少直接 fetch。
+- [ ] 继续审查 `apps/web/src/lib/workspace-api/*` 中仍然保留的薄封装，确认哪些属于应用层映射，哪些应继续收敛到 `@tavern/sdk` 或 `@tavern/client-helpers`。
+- [ ] 保持前端接入基线与官方包同步；如果引擎、后端、SSE、OpenAPI、Tools、MCP 等接入语义变化，优先更新官方包与文档，再处理前端迁移。
+- [ ] 仅在确有必要时直接使用内部包 `@tavern/shared`；不把它当作前端公开接入面的替代品。
 - [ ] 可选：夹具脱敏脚本化（保 key 换 value）以支撑大样本回归迭代。
 
 ## 8) 已知约束（维护时不可破坏）

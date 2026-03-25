@@ -5,6 +5,8 @@
     { "path": "packages/shared" },
     { "path": "packages/core" },
     { "path": "packages/adapters-sillytavern" },
+    { "path": "packages/official-integration-kit/sdk" },
+    { "path": "packages/official-integration-kit/client-helpers" },
     { "path": "apps/api" }
   ]
 }

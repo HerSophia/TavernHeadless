@@ -132,3 +132,24 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | Tools | 工具调用（定义/权限/调用记录） | [Tools](./api/tools) |
 | MCP Servers | MCP 服务器管理（配置/连接/工具查询） | [MCP Servers](./api/mcp) |
 | Accounts | 账号管理 | [Accounts](./api/accounts) |
+
+## 官方集成层
+
+如果需要在前端、桌面端或脚本中接入 TavernHeadless，建议优先使用官方集成层，而不是直接重复编写请求层和 SSE 处理逻辑。
+
+当前官方集成层包含两个包：
+
+- `@tavern/sdk`：负责 API 调用、默认请求头、统一错误和 SSE。
+- `@tavern/client-helpers`：负责 usage、timeline、流式状态和错误展示映射。
+
+其中，`@tavern/sdk` 当前已经覆盖：
+
+- 会话与内容结构：`sessions`、`messages`、`floors`、`pages`、`branches`
+- 角色、资料与配置：`characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles`
+- 导入、导出与模型配置：`imports`、`exports`、`llmProfiles`、`llmInstances`
+- 账号、变量与记忆：`accounts`、`variables`、`memories`、`memoryEdges`
+- 工具与运行集成：`tools`、`mcp`
+
+如果 API 路由、OpenAPI、SSE 事件或其他接入方可见语义发生变化，应同步检查官方包与文档，而不是只在某一个前端里做局部适配。
+
+详细说明请参考：[官方集成层](/guide/integration-kit)

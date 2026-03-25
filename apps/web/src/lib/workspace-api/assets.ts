@@ -1,16 +1,10 @@
+import { apiClient } from "../api";
 import {
   asRecordPayload,
   deriveAssetName,
   normalizeUserSnapshot
 } from "./mappers";
-import {
-  fetchJson,
-  postJson
-} from "./transport";
 import type {
-  CharacterListResponse,
-  ResourceListResponse,
-  UserListResponse,
   WorkspaceAssetImportInput,
   WorkspaceAssetImportResult,
   WorkspaceLibraryAsset
@@ -39,126 +33,124 @@ export async function importLibraryAsset(
   const name = deriveAssetName(input.fileName);
 
   if (input.kind === "preset") {
-    const response = await postJson("/import/preset", {
+    const item = await apiClient.imports.preset({
+      accountId,
       data: asRecordPayload(input.payload, input.kind),
       name
-    }, accountId);
-    const item = (response as { data?: { id?: string; name?: string; source?: string } }).data;
-    if (!item?.id) {
-      throw new Error("Preset import returned an invalid payload");
-    }
+    });
+
     return {
       id: item.id,
       kind: "preset",
-      name: item.name ?? name,
-      source: item.source ?? "sillytavern"
+      name: item.name,
+      source: item.source
     };
   }
 
   if (input.kind === "worldbook") {
-    const response = await postJson("/import/worldbook", {
+    const item = await apiClient.imports.worldbook({
+      accountId,
       data: asRecordPayload(input.payload, input.kind),
       name
-    }, accountId);
-    const item = (response as { data?: { id?: string; name?: string; source?: string } }).data;
-    if (!item?.id) {
-      throw new Error("Worldbook import returned an invalid payload");
-    }
+    });
+
     return {
       id: item.id,
       kind: "worldbook",
-      name: item.name ?? name,
-      source: item.source ?? "sillytavern"
+      name: item.name,
+      source: item.source
     };
   }
 
   if (input.kind === "character") {
-    const response = await postJson("/import/character", {
-      create_session: false,
+    const item = await apiClient.imports.character({
+      accountId,
       payload: asRecordPayload(input.payload, input.kind),
       title: name
-    }, accountId);
-    const item = response as { data?: { character?: { name?: string }; character_id?: string } };
-    if (!item.data?.character_id) {
-      throw new Error("Character import returned an invalid payload");
-    }
+    });
+
     return {
-      id: item.data.character_id,
+      id: item.characterId,
       kind: "character",
-      name: item.data.character?.name ?? name,
-      source: "sillytavern"
+      name: item.name,
+      source: item.source
     };
   }
 
-  const response = await postJson("/users", {
+  const item = await apiClient.users.create({
+    accountId,
     snapshot: normalizeUserSnapshot(input.payload, name)
-  }, accountId);
-  const item = (response as { data?: { id?: string; name?: string } }).data;
-  if (!item?.id) {
-    throw new Error("User import returned an invalid payload");
-  }
-  return { id: item.id, kind: "user", name: item.name ?? name, source: "account" };
+  });
+
+  return {
+    id: item.id,
+    kind: "user",
+    name: item.name,
+    source: "account"
+  };
 }
 
 async function fetchCharacterAssets(accountId?: string): Promise<WorkspaceLibraryAsset[]> {
-  const query = new URLSearchParams({
-    limit: "100",
-    offset: "0",
-    sort_by: "updated_at",
-    sort_order: "desc",
+  const response = await apiClient.characters.list({
+    accountId,
+    limit: 100,
+    offset: 0,
+    sortBy: "updated_at",
+    sortOrder: "desc",
     status: "active"
   });
-  const response = await fetchJson<CharacterListResponse>(`/characters?${query.toString()}`, accountId);
-  return (response.data ?? []).map((item) => ({
-    createdAt: item.created_at,
+
+  return response.map((item) => ({
+    createdAt: item.createdAt,
     id: item.id,
     kind: "character",
     name: item.name,
     source: item.source,
     status: item.status,
-    updatedAt: item.updated_at
+    updatedAt: item.updatedAt
   }));
 }
 
 export async function fetchPresetAssets(accountId?: string): Promise<WorkspaceLibraryAsset[]> {
-  const response = await fetchJson<ResourceListResponse>("/presets", accountId);
-  return (response.data ?? []).map((item) => ({
-    createdAt: item.created_at,
+  const response = await apiClient.presets.list({ accountId });
+  return response.map((item) => ({
+    createdAt: item.createdAt,
     id: item.id,
     kind: "preset",
     name: item.name,
     source: item.source,
-    updatedAt: item.updated_at
+    updatedAt: item.updatedAt
   }));
 }
 
 async function fetchWorldbookAssets(accountId?: string): Promise<WorkspaceLibraryAsset[]> {
-  const response = await fetchJson<ResourceListResponse>("/worldbooks", accountId);
-  return (response.data ?? []).map((item) => ({
-    createdAt: item.created_at,
+  const response = await apiClient.worldbooks.list({ accountId });
+  return response.map((item) => ({
+    createdAt: item.createdAt,
     id: item.id,
     kind: "worldbook",
     name: item.name,
     source: item.source,
-    updatedAt: item.updated_at
+    updatedAt: item.updatedAt
   }));
 }
 
 async function fetchUserAssets(accountId?: string): Promise<WorkspaceLibraryAsset[]> {
-  const query = new URLSearchParams({
-    limit: "100",
-    offset: "0",
-    sort_by: "updated_at",
-    sort_order: "desc"
+  const response = await apiClient.users.list({
+    accountId,
+    limit: 100,
+    offset: 0,
+    sortBy: "updated_at",
+    sortOrder: "desc"
   });
-  const response = await fetchJson<UserListResponse>(`/users?${query.toString()}`, accountId);
-  return (response.data ?? []).map((item) => ({
-    createdAt: item.created_at,
+
+  return response.map((item) => ({
+    createdAt: item.createdAt,
     id: item.id,
     kind: "user",
     name: item.name,
     source: "account",
     status: item.status,
-    updatedAt: item.updated_at
+    updatedAt: item.updatedAt
   }));
 }

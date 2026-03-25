@@ -21,8 +21,9 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 - 会话管理、分支、重试、时间线等核心功能
 - SillyTavern 生态导入（预设、世界书、正则、角色卡）
 - 流式输出（SSE）、Prompt 调试（dry-run）、OpenAPI 文档
+- 官方集成层两包：`@tavern/sdk`、`@tavern/client-helpers`，并已覆盖会话、内容结构、变量、记忆、导出、Tools、MCP 等主要接入域
 - 三种认证模式、多账号隔离、LLM 密钥加密存储
-- 变量、记忆、消息的批量操作接口
+- 变量、记忆、消息、会话、用户等批量操作接口
 
 当前重点：部署文档完善、正式发布准备。真实 LLM 集成回归已通过。
 
@@ -34,6 +35,7 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 - **提示词编排** — 兼容模式（复刻酒馆行为）和原生模式并存
 - **记忆系统** — 自动提取摘要、结构化存储、按需注入上下文
 - **开发者友好** — TypeScript 全栈、OpenAPI 导出、类型化 SDK
+- **官方集成层** — 提供 `@tavern/sdk` 和 `@tavern/client-helpers`
 
 ## 技术栈
 
@@ -55,9 +57,12 @@ TavernHeadless/
 │   ├── api/                  # 后端服务（Fastify）
 │   └── web/                  # 管理前端（Vue 3）
 ├── packages/
-│   ├── core/                 # 核心引擎逻辑
-│   ├── adapters-sillytavern/ # 酒馆兼容层
-│   └── shared/               # 公共类型和工具
+│   ├── core/                           # 核心引擎逻辑
+│   ├── adapters-sillytavern/           # 酒馆兼容层
+│   ├── shared/                         # 公共类型和内部共享工具
+│   └── official-integration-kit/
+│       ├── sdk/                        # 官方接入基础层
+│       └── client-helpers/             # 官方接入语义层
 ├── docs/                     # 设计文档
 └── vitepress/                # 在线文档站
 ```
@@ -129,8 +134,10 @@ pnpm sdk:check                    # 检查 SDK 是否最新
 - [架构设计](docs/architecture.md) — 系统架构、核心概念、数据模型
 - [前端设计](docs/frontend-vision.md) — 管理前端的视觉方案和技术路线
 - [数据库字典](docs/database.md) — 表结构和字段说明
-- [协作指南](docs/contributing.md) — Git 工作流、代码规范、PR 流程
+- [协作指南](docs/contributing.md) — Git 工作流、代码规范、PR 流程、官方包边界和文档同步规则
 - [测试与 CI](docs/testing-and-ci.md) — 测试策略和 CI 配置
+
+如果改动影响了引擎对外语义、后端路由、SSE、OpenAPI 或官方接入行为，请同时检查 `@tavern/sdk`、`@tavern/client-helpers` 和对应文档是否需要同步更新。
 
 **进度追踪**：
 
