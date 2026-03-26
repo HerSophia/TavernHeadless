@@ -21,6 +21,7 @@ export type { TurnOrchestratorDeps, TurnPhase } from './turn-orchestrator.js';
 export type {
   TurnConfig,
   TurnInput,
+  TurnExecutionResult,
   TurnOutput,
   VerifierFailStrategy,
   ToolMode,

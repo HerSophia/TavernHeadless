@@ -36,14 +36,14 @@ async function main(): Promise<void> {
       completionTokens: 30,
       totalTokens: 130,
     },
-    finalState: "committed",
+    finalState: "generating",
   };
 
   const mockOrchestrator: TurnOrchestrator = {
     executeTurn: async (input) => {
       await database.db
         .update(floors)
-        .set({ state: "committed", updatedAt: Date.now() })
+        .set({ state: "generating", updatedAt: Date.now() })
         .where(eq(floors.id, input.floorId));
 
       return {

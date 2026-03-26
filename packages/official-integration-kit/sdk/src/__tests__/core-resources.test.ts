@@ -128,9 +128,11 @@ describe("sdk core resources", () => {
       jsonResponse({
         data: {
           branch_id: "branch-1",
+          final_state: "committed",
           floor_id: "floor-1",
           floor_no: 3,
           generated_text: "Hello",
+          summaries: ["summary-1"],
         },
       }),
     );
@@ -154,11 +156,13 @@ describe("sdk core resources", () => {
 
     expect(result).toEqual({
       branchId: "branch-1",
+      finalState: "committed",
       floorId: "floor-1",
       floorNo: 3,
       generatedText: "Hello",
       inputTokens: 0,
       outputTokens: 0,
+      summaries: ["summary-1"],
       totalTokens: 0,
       totalUsage: {},
     });
@@ -208,7 +212,7 @@ describe("sdk core resources", () => {
       "event: summary\n",
       'data: {"summaries":["sum-1"]}\n\n',
       "event: done\n",
-      'data: {"floor_id":"floor-1","floor_no":2,"generated_text":"Hello","total_usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}\n\n',
+      'data: {"branch_id":"branch-1","final_state":"committed","floor_id":"floor-1","floor_no":2,"generated_text":"Hello","summaries":["sum-1","sum-2"],"total_usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}\n\n',
     ].join("");
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(stream, {
@@ -244,11 +248,14 @@ describe("sdk core resources", () => {
     expect(summaries).toEqual([["sum-1"]]);
     expect(events).toEqual(["start", "chunk", "summary", "done"]);
     expect(result).toEqual({
+      branchId: "branch-1",
+      finalState: "committed",
       floorId: "floor-1",
       floorNo: 2,
       generatedText: "Hello",
       inputTokens: 10,
       outputTokens: 5,
+      summaries: ["sum-1", "sum-2"],
       totalTokens: 15,
       totalUsage: {
         inputTokens: 10,
@@ -448,8 +455,13 @@ describe("sdk core resources", () => {
       jsonResponse({
         data: {
           branch_id: "branch-2",
+          final_state: "committed",
           floor_id: "floor-2",
           floor_no: 4,
+          generated_text: "Rewrite complete",
+          source_floor_id: "floor-1",
+          source_message_id: "msg-1",
+          summaries: ["summary-1"],
         },
       }),
     );
@@ -462,8 +474,15 @@ describe("sdk core resources", () => {
       }),
     ).resolves.toEqual({
       branchId: "branch-2",
+      finalState: "committed",
       floorId: "floor-2",
       floorNo: 4,
+      generatedText: "Rewrite complete",
+      inputTokens: 0,
+      outputTokens: 0,
+      sourceFloorId: "floor-1",
+      sourceMessageId: "msg-1",
+      summaries: ["summary-1"],
       totalTokens: 0,
       totalUsage: {},
     });
@@ -491,8 +510,11 @@ describe("sdk core resources", () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
         data: {
+          final_state: "committed",
           floor_id: "floor-3",
           floor_no: 5,
+          generated_text: "Retry complete",
+          summaries: ["summary-1"],
         },
       }),
     );
@@ -500,8 +522,13 @@ describe("sdk core resources", () => {
 
     await expect(client.floors.retry({ floorId: "floor-3" })).resolves.toEqual({
       branchId: undefined,
+      finalState: "committed",
       floorId: "floor-3",
       floorNo: 5,
+      generatedText: "Retry complete",
+      inputTokens: 0,
+      outputTokens: 0,
+      summaries: ["summary-1"],
       totalTokens: 0,
       totalUsage: {},
     });

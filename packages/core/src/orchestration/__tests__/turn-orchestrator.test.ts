@@ -3,9 +3,8 @@ import { TurnOrchestrator, TurnError } from '../turn-orchestrator.js';
 import type { TurnOrchestratorDeps } from '../turn-orchestrator.js';
 import type { TurnInput } from '../types.js';
 import type { GenerationOutput } from '../../generation/types.js';
-import type { ToolDefinition, ToolProvider, ToolCallResult, ToolPermissions, ToolExecutionContext } from '../../tools/types.js';
+import type { ToolDefinition, ToolProvider, ToolPermissions } from '../../tools/types.js';
 import { ToolRegistry } from '../../tools/tool-registry.js';
-import type { LLMToolCall } from '../../llm/types.js';
 import type { InstanceSlot } from '../../llm/types.js';
 import type { DirectorResult } from '../director.js';
 import type { VerifierResult } from '../verifier.js';
@@ -15,6 +14,7 @@ import type { MemoryInjectionResult } from '../../memory/types.js';
 // ── MemoryItem 工厂 ──────────────────────────────────
 
 import type { MemoryItem } from '../../memory/types.js';
+import { InvalidStateTransitionError } from '../../errors.js';
 
 function makeMemoryItem(content: string, overrides: Partial<MemoryItem> = {}): MemoryItem {
   return {
@@ -106,6 +106,18 @@ function makeDeps(overrides: Partial<TurnOrchestratorDeps> = {}): TurnOrchestrat
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }),
+      fail: vi.fn().mockResolvedValue({
+        id: 'floor-1',
+        sessionId: 'session-1',
+        floorNo: 1,
+        branchId: 'main',
+        parentFloorId: null,
+        state: 'failed',
+        tokenIn: 0,
+        tokenOut: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
     } as any,
     generationPipeline: {
       run: vi.fn().mockResolvedValue(makeGenOutput()),
@@ -163,16 +175,15 @@ describe('TurnOrchestrator', () => {
     expect(result.floorId).toBe('floor-1');
     expect(result.generatedText).toBe('Generated text');
     expect(result.rawText).toBe('Generated text');
-    expect(result.finalState).toBe('committed');
+    expect(result.finalState).toBe('generating');
     expect(result.directorResult).toBeUndefined();
     expect(result.verifierResult).toBeUndefined();
     expect(result.consolidationResult).toBeUndefined();
     expect(result.memoryInjection).toBeUndefined();
 
-    // 状态转移：draft → generating → committed
-    expect(deps.floorStateMachine.transition).toHaveBeenCalledTimes(2);
+    // 状态转移：draft → generating
+    expect(deps.floorStateMachine.transition).toHaveBeenCalledTimes(1);
     expect(deps.floorStateMachine.transition).toHaveBeenNthCalledWith(1, 'floor-1', 'generating');
-    expect(deps.floorStateMachine.transition).toHaveBeenNthCalledWith(2, 'floor-1', 'committed');
   });
 
   it('emits generation events', async () => {
@@ -226,7 +237,7 @@ describe('TurnOrchestrator', () => {
     expect(result.verifierResult).toBeDefined();
     expect(result.memoryInjection).toBeDefined();
     expect(result.consolidationResult).toBeDefined();
-    expect(result.finalState).toBe('committed');
+    expect(result.finalState).toBe('generating');
 
     // Token usage = generation (150) + director (50) + verifier (70) + consolidation (90)
     expect(result.totalUsage.totalTokens).toBe(150 + 50 + 70 + 90);
@@ -302,9 +313,7 @@ describe('TurnOrchestrator', () => {
     await expect(orchestrator.executeTurn(input)).rejects.toThrow('Director failed');
 
     // Should try to mark floor as failed
-    const transitionCalls = (deps.floorStateMachine.transition as any).mock.calls;
-    const failedCalls = transitionCalls.filter((c: any[]) => c[1] === 'failed');
-    expect(failedCalls.length).toBeGreaterThan(0);
+    expect(deps.floorStateMachine.fail).toHaveBeenCalled();
   });
 
   // ── Memory Retrieval ────────────────────────────────
@@ -338,7 +347,7 @@ describe('TurnOrchestrator', () => {
 
     const result = await orchestrator.executeTurn(input);
 
-    expect(result.finalState).toBe('committed');
+    expect(result.finalState).toBe('generating');
     expect(result.verifierResult).toBeDefined();
     expect(result.verifierResult!.output.passed).toBe(false);
   });
@@ -379,7 +388,7 @@ describe('TurnOrchestrator', () => {
 
     const result = await orchestrator.executeTurn(input);
 
-    expect(result.finalState).toBe('committed');
+    expect(result.finalState).toBe('generating');
     expect(verifyMock).toHaveBeenCalledTimes(2);
     expect(deps.generationPipeline.run).toHaveBeenCalledTimes(2);
     expect(result.verifierResult!.output.passed).toBe(true);
@@ -448,6 +457,39 @@ describe('TurnOrchestrator', () => {
     expect(consolidateCall.recentSummaries).toEqual(['Old summary', 'New summary']);
   });
 
+  it('emits memory.consolidation_json_parse_failed when consolidation degrades on JSON parsing', async () => {
+    deps = makeDeps({
+      memoryConsolidator: {
+        consolidate: vi.fn().mockResolvedValue({
+          output: {
+            turnSummary: 'raw fallback summary',
+            factsAdd: [],
+            factsUpdate: [],
+            factsDeprecate: [],
+          },
+          usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+          degraded: {
+            reason: 'json_parse_failed',
+            rawText: 'not-json',
+            error: new Error('Unexpected token n in JSON at position 0'),
+          },
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    await orchestrator.executeTurn(makeInput({
+      config: { enableMemoryConsolidation: true },
+      consolidationContext: { currentFloorContent: 'Content', recentSummaries: [], existingFacts: [] },
+    }));
+
+    expect(deps.eventBus.emit).toHaveBeenCalledWith('memory.consolidation_json_parse_failed', expect.objectContaining({
+      floorId: 'floor-1',
+      rawText: 'not-json',
+      error: expect.any(Error),
+    }));
+  });
+
   // ── 错误处理 ────────────────────────────────────────
 
   it('marks floor as failed on generation error', async () => {
@@ -464,6 +506,28 @@ describe('TurnOrchestrator', () => {
     const emitCalls = (deps.eventBus.emit as any).mock.calls;
     const failedEvents = emitCalls.filter((c: any[]) => c[0] === 'generation.failed');
     expect(failedEvents.length).toBeGreaterThan(0);
+  });
+
+  it('does not mask the original generation error when fail compensation cannot overwrite a committed floor', async () => {
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn().mockRejectedValue(new Error('LLM timeout')),
+      } as any,
+      floorStateMachine: {
+        transition: vi.fn().mockResolvedValue(undefined),
+        canTransition: vi.fn().mockReturnValue(true),
+        fail: vi.fn().mockRejectedValue(new InvalidStateTransitionError('committed', 'failed')),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    await expect(orchestrator.executeTurn(makeInput())).rejects.toMatchObject({
+      name: 'TurnError',
+      phase: 'generation',
+      message: 'Generation failed: LLM timeout',
+    });
+
+    expect(deps.floorStateMachine.fail).toHaveBeenCalledWith('floor-1', expect.any(Error));
   });
 
   it('marks floor as failed on state transition error', async () => {
@@ -561,7 +625,7 @@ describe('TurnOrchestrator', () => {
     const result = await orchestrator.executeTurn(input);
 
     // Turn should succeed with consolidationResult undefined
-    expect(result.finalState).toBe('committed');
+    expect(result.finalState).toBe('generating');
     expect(result.consolidationResult).toBeUndefined();
 
     // memory.consolidation_failed event should have been emitted
@@ -710,15 +774,55 @@ describe('TurnOrchestrator — Tool Integration', () => {
     expect(runCall.tools).toBeUndefined();
   });
 
-  it('collects toolCalls from generation output into TurnOutput', async () => {
-    const toolCalls: LLMToolCall[] = [
-      { toolName: 'roll_dice', args: { sides: 20 } },
-      { toolName: 'get_variable', args: { key: 'hp' } },
-    ];
-
+  it('collects real toolExecutionRecords from ToolExecutor', async () => {
     deps = makeDeps({
       generationPipeline: {
-        run: vi.fn().mockResolvedValue(makeGenOutput({ toolCalls })),
+        run: vi.fn(async (runInput) => {
+          await runInput.tools?.roll_dice?.execute({ sides: 20 });
+          await runInput.tools?.get_variable?.execute({ key: 'hp' });
+          return makeGenOutput();
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const input = makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      pageId: 'input-page-1',
+    });
+
+    const result = await orchestrator.executeTurn(input);
+
+    expect(result.toolExecutionRecords).toBeDefined();
+    expect(result.toolExecutionRecords).toHaveLength(2);
+    expect(result.toolExecutionRecords![0]).toMatchObject({
+      floorId: 'floor-1',
+      pageId: 'input-page-1',
+      callerSlot: 'narrator',
+      providerId: 'test-builtin',
+      toolName: 'roll_dice',
+      status: 'success',
+    });
+    expect(result.toolExecutionRecords![1]).toMatchObject({
+      toolName: 'get_variable',
+      status: 'success',
+    });
+    expect(JSON.parse(result.toolExecutionRecords![0]!.argsJson)).toEqual({ sides: 20 });
+    expect(JSON.parse(result.toolExecutionRecords![0]!.resultJson)).toEqual({ result: 42 });
+  });
+
+  it('does not use floorId as a fake pageId when no real pageId is provided', async () => {
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (runInput) => {
+          await runInput.tools?.roll_dice?.execute({ sides: 20 });
+          return makeGenOutput();
+        }),
       } as any,
     });
     orchestrator = new TurnOrchestrator(deps);
@@ -734,26 +838,9 @@ describe('TurnOrchestrator — Tool Integration', () => {
 
     const result = await orchestrator.executeTurn(input);
 
-    expect(result.toolCalls).toBeDefined();
-    expect(result.toolCalls).toHaveLength(2);
-    expect(result.toolCalls![0]!.toolName).toBe('roll_dice');
-    expect(result.toolCalls![1]!.toolName).toBe('get_variable');
-    expect(result.toolCalls![0]!.callerSlot).toBe('narrator');
-  });
-
-  it('returns undefined toolCalls when generation has no tool calls', async () => {
-    const registry = new ToolRegistry();
-    registry.register(makeTestToolProvider());
-
-    const input = makeInput({
-      config: { enableTools: true, toolMode: 'inline' },
-      toolRegistry: registry,
-      toolPermissions: makeToolPermissions(),
-    });
-
-    const result = await orchestrator.executeTurn(input);
-
-    expect(result.toolCalls).toBeUndefined();
+    expect(result.toolExecutionRecords).toBeDefined();
+    expect(result.toolExecutionRecords).toHaveLength(1);
+    expect(result.toolExecutionRecords![0]!.pageId).toBeUndefined();
   });
 
   it('respects permissions: disabled tools = no tools passed', async () => {

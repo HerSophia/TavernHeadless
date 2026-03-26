@@ -9,6 +9,7 @@ export type {
   ToolCallResult,
   ToolCallStatus,
   ToolCallRecord,
+  ExecutedToolCallRecord,
   ToolExecutionContext,
   ToolPermissions,
   ToolProviderType,

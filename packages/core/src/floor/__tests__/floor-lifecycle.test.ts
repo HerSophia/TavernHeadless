@@ -50,6 +50,21 @@ class InMemoryFloorRepository implements FloorRepository {
     f.updatedAt = updatedAt;
     return { ...f };
   }
+
+  async updateStateCas(
+    id: string,
+    expectedState: FloorState,
+    targetState: FloorState,
+    updatedAt: number
+  ): Promise<FloorEntity | null> {
+    const f = this.store.get(id);
+    if (!f) return null;
+    if (f.state !== expectedState) return null;
+
+    f.state = targetState;
+    f.updatedAt = updatedAt;
+    return { ...f };
+  }
 }
 
 class InMemoryVariableRepository implements VariableRepository {

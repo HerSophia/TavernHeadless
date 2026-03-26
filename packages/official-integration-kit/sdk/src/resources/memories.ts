@@ -18,6 +18,7 @@ export type MemoryRecord = {
   confidence: number;
   content: unknown;
   createdAt: number;
+  factKey?: string | null;
   id: string;
   importance: number;
   scope: MemoryScope;
@@ -77,6 +78,7 @@ export type MemoriesListOptions = {
   confidenceMin?: number;
   createdFrom?: number;
   createdTo?: number;
+  factKey?: string;
   importanceMax?: number;
   importanceMin?: number;
   limit?: number;
@@ -101,6 +103,7 @@ export type MemoriesResource = {
     accountId?: string;
     confidence?: number;
     content: unknown;
+    factKey?: string | null;
     importance?: number;
     scope: MemoryScope;
     scopeId: string;
@@ -117,6 +120,7 @@ export type MemoriesResource = {
     accountId?: string;
     confidence?: number;
     content?: unknown;
+    factKey?: string | null;
     importance?: number;
     memoryId: string;
     scope?: MemoryScope;
@@ -158,6 +162,7 @@ export function createMemoriesResource(client: TransportClient): MemoriesResourc
         body: compactObject({
           confidence: options.confidence,
           content: options.content,
+          fact_key: options.factKey,
           importance: options.importance,
           scope: options.scope,
           scope_id: options.scopeId,
@@ -245,6 +250,7 @@ export function createMemoriesResource(client: TransportClient): MemoriesResourc
         body: compactObject({
           confidence: options.confidence,
           content: options.content,
+          fact_key: options.factKey,
           importance: options.importance,
           scope: options.scope,
           scope_id: options.scopeId,
@@ -273,6 +279,7 @@ function buildMemoryQuery(options: MemoriesListOptions): Record<string, unknown>
     confidence_min: options.confidenceMin,
     created_from: options.createdFrom,
     created_to: options.createdTo,
+    fact_key: options.factKey,
     importance_max: options.importanceMax,
     importance_min: options.importanceMin,
     q: options.q,
@@ -296,6 +303,7 @@ function mapMemoryRecord(value: unknown): MemoryRecord | null {
   return {
     confidence: readNumber(record.confidence),
     content: record.content,
+    factKey: readNullableString(record.fact_key),
     createdAt: readNumber(record.created_at),
     id: readString(record.id),
     importance: readNumber(record.importance),

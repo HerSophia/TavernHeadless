@@ -29,6 +29,11 @@ export interface ConsolidationInput {
 export interface ConsolidationResult {
   /** 结构化输出 */
   output: MemoryConsolidationOutput;
+  /**
+   * 降级信息。
+   * 当前仅用于标记 JSON 解析失败但主流程继续的场景。
+   */
+  degraded?: { reason: 'json_parse_failed'; rawText: string; error: Error };
   /** Token 使用统计 */
   usage: TokenUsage;
 }
@@ -47,7 +52,7 @@ You must respond with a JSON object in the following format:
 {
   "turnSummary": "A brief summary of what happened in this turn",
   "factsAdd": [
-    { "key": "fact name", "value": "fact description", "scope": "chat", "importance": 0.7 }
+    { "factKey": "fact name", "value": "fact description", "scope": "chat", "importance": 0.7 }
   ],
   "factsUpdate": [
     { "id": "existing_fact_id", "value": "updated description", "importance": 0.8 }
@@ -60,9 +65,76 @@ You must respond with a JSON object in the following format:
 Rules:
 - importance is a number between 0 and 1 (0.5 = normal, 0.8+ = very important, 0.3- = minor)
 - scope should be "chat" for most facts, "global" only for world-building facts
+- factsAdd items must always include a structured factKey field
 - Only deprecate facts that are clearly contradicted or no longer relevant
 - Keep summaries concise but informative
 - Respond ONLY with valid JSON, no additional text`;
+
+function normalizeFactKey(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeFactAddEntries(value: unknown): MemoryConsolidationOutput['factsAdd'] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return [];
+    }
+
+    const record = entry as Record<string, unknown>;
+    const factKey = normalizeFactKey(record.factKey ?? record.fact_key ?? record.key);
+    const rawValue = typeof record.value === 'string' ? record.value : undefined;
+    const rawScope = record.scope;
+    const importance = typeof record.importance === 'number' ? record.importance : undefined;
+
+    if (!factKey || !rawValue || (rawScope !== 'global' && rawScope !== 'chat' && rawScope !== 'floor')) {
+      return [];
+    }
+
+    return [{
+      factKey,
+      key: factKey,
+      value: rawValue,
+      scope: rawScope,
+      ...(importance !== undefined ? { importance } : {}),
+    }];
+  });
+}
+
+function normalizeFactUpdateEntries(value: unknown): MemoryConsolidationOutput['factsUpdate'] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return [];
+    }
+
+    const record = entry as Record<string, unknown>;
+    const id = typeof record.id === 'string' ? record.id : undefined;
+    const rawValue = typeof record.value === 'string' ? record.value : undefined;
+    const importance = typeof record.importance === 'number' ? record.importance : undefined;
+    const factKey = normalizeFactKey(record.factKey ?? record.fact_key);
+
+    if (!id || !rawValue) {
+      return [];
+    }
+
+    return [{
+      id,
+      value: rawValue,
+      ...(factKey ? { factKey } : {}),
+      ...(importance !== undefined ? { importance } : {}),
+    }];
+  });
+}
 
 /**
  * 构建用户消息：包含当前内容、最近摘要、已有 facts
@@ -89,7 +161,10 @@ function buildUserMessage(
     parts.push('');
     parts.push('## Known Facts');
     for (const fact of existingFacts) {
-      parts.push(`- [${fact.id}] (importance: ${fact.importance}) ${fact.content}`);
+      const factKeyLabel = fact.factKey ? ` [factKey=${fact.factKey}]` : '';
+      parts.push(
+        `- [${fact.id}]${factKeyLabel} (importance: ${fact.importance}) ${fact.content}`,
+      );
     }
   }
 
@@ -112,12 +187,8 @@ function parseConsolidationJSON(text: string): MemoryConsolidationOutput {
     turnSummary: typeof parsed.turnSummary === 'string'
       ? parsed.turnSummary
       : (typeof parsed.turn_summary === 'string' ? parsed.turn_summary : ''),
-    factsAdd: Array.isArray(parsed.factsAdd ?? parsed.facts_add)
-      ? (parsed.factsAdd ?? parsed.facts_add) as MemoryConsolidationOutput['factsAdd']
-      : [],
-    factsUpdate: Array.isArray(parsed.factsUpdate ?? parsed.facts_update)
-      ? (parsed.factsUpdate ?? parsed.facts_update) as MemoryConsolidationOutput['factsUpdate']
-      : [],
+    factsAdd: normalizeFactAddEntries(parsed.factsAdd ?? parsed.facts_add),
+    factsUpdate: normalizeFactUpdateEntries(parsed.factsUpdate ?? parsed.facts_update),
     factsDeprecate: Array.isArray(parsed.factsDeprecate ?? parsed.facts_deprecate)
       ? (parsed.factsDeprecate ?? parsed.facts_deprecate) as MemoryConsolidationOutput['factsDeprecate']
       : [],
@@ -132,15 +203,15 @@ function parseConsolidationJSON(text: string): MemoryConsolidationOutput {
  * 使用 Memory 角色的 LLM 实例，将最近的故事内容和已有记忆
  * 整理成结构化的记忆操作（新增/更新/标记过时）。
  *
- * 流程：
+ * 生成阶段流程：
  * 1. 构建 Memory 实例的提示词（包含当前内容 + 已有 facts）
  * 2. 调用 LLM（要求输出 JSON）
  * 3. 解析 JSON 输出
- * 4. 通过 MemoryStore.applyConsolidation 落库
+ * 4. 返回结构化结果，交由上层 commit 阶段统一落库
  *
  * @example
  * ```typescript
- * const consolidator = new MemoryConsolidator(memoryLLM, memoryStore);
+ * const consolidator = new MemoryConsolidator(memoryLLM);
  * const result = await consolidator.consolidate({
  *   currentFloorContent: '角色A向角色B表白...',
  *   recentSummaries: ['上一轮的摘要'],
@@ -154,7 +225,7 @@ function parseConsolidationJSON(text: string): MemoryConsolidationOutput {
 export class MemoryConsolidator {
   constructor(
     private readonly llm: LLMPort,
-    private readonly memoryStore: MemoryStore,
+    _memoryStore?: MemoryStore,
   ) {}
 
   /**
@@ -169,9 +240,6 @@ export class MemoryConsolidator {
       currentFloorContent,
       recentSummaries,
       existingFacts,
-      scope,
-      scopeId,
-      sourceFloorId,
       params,
       model,
     } = input;
@@ -197,28 +265,24 @@ export class MemoryConsolidator {
     });
 
     let output: MemoryConsolidationOutput;
+    let degraded: ConsolidationResult['degraded'];
     try {
       output = parseConsolidationJSON(response.text);
-    } catch {
+    } catch (error) {
       // JSON 解析失败 → 优雅降级：把整个输出作为 turnSummary
+      const parseError = error instanceof Error ? error : new Error(String(error));
       output = {
         turnSummary: response.text.trim(),
         factsAdd: [],
         factsUpdate: [],
         factsDeprecate: [],
       };
+      degraded = { reason: 'json_parse_failed', rawText: response.text.trim(), error: parseError };
     }
-
-    // 应用到 MemoryStore
-    await this.memoryStore.applyConsolidation(
-      output,
-      scope,
-      scopeId,
-      sourceFloorId,
-    );
 
     return {
       output,
+      ...(degraded ? { degraded } : {}),
       usage: response.usage,
     };
   }

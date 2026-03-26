@@ -158,6 +158,20 @@ export async function registerChatRoutes(
           token_estimate: result.tokenEstimate,
           available_for_reply: result.availableForReply,
           memory_summary: result.memorySummary ?? null,
+          prompt_snapshot: {
+            preset_id: result.promptSnapshot.presetId,
+            preset_updated_at: result.promptSnapshot.presetUpdatedAt,
+            worldbook_id: result.promptSnapshot.worldbookId,
+            worldbook_updated_at: result.promptSnapshot.worldbookUpdatedAt,
+            regex_profile_id: result.promptSnapshot.regexProfileId,
+            regex_profile_updated_at: result.promptSnapshot.regexProfileUpdatedAt,
+            worldbook_activated_entry_uids: result.promptSnapshot.worldbookActivatedEntryUids,
+            regex_pre_rule_names: result.promptSnapshot.regexPreRuleNames,
+            regex_post_rule_names: result.promptSnapshot.regexPostRuleNames,
+            prompt_mode: result.promptSnapshot.promptMode,
+            prompt_digest: result.promptSnapshot.promptDigest,
+            token_estimate: result.promptSnapshot.tokenEstimate,
+          },
           assembly: {
             mode: result.assembly.mode,
             preset_used: result.assembly.presetUsed,
@@ -567,6 +581,8 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
       return { statusCode: 400, code: error.code, message: error.message };
     case "invalid_state":
     case "branch_exists":
+    case "generation_conflict":
+    case "commit_conflict":
       return { statusCode: 409, code: error.code, message: error.message };
     case "profile_not_found":
     case "profile_disabled":
@@ -574,7 +590,8 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
     case "secret_unavailable":
       return { statusCode: 503, code: error.code, message: error.message };
     case "orchestration_failed":
-      return { statusCode: 500, code: "orchestration_failed", message: error.message };
+    case "turn_commit_failed":
+      return { statusCode: 500, code: error.code, message: error.message };
     default:
       return { statusCode: 500, code: "internal_error", message: error.message };
   }

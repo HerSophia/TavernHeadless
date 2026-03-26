@@ -68,7 +68,7 @@
 
 - **分支**：从任意楼层新开一条故事线，不影响原来的内容。
 - **状态机**：每个楼层有状态——`draft`（草稿）→ `generating`（生成中）→ `committed`（已提交）或 `failed`（失败）。
-- **提交后不可改**：一旦提交，楼层内容就锁定了。想改？新建一个楼层。
+- **提交后不可改**：一旦提交，楼层内容就锁定了。这里的 `committed` 表示 assistant 输出、usage、Prompt 快照、工具审计、变量提升和记忆写回已经完成落库。想改？新建一个楼层。
 
 ### 消息页（MessagePage）
 
@@ -178,6 +178,19 @@ page → floor → chat → global
 - 酒馆预设和原生编排共享同一个渲染器。
 - 加新功能只需要加新节点，不需要改兼容层。
 - 调试时可以看到中间格式的完整内容，方便排查问题。
+
+### Prompt 快照与 dry-run 对齐
+
+无论是兼容模式还是原生模式，每次真实生成都会冻结一份 `prompt_snapshot`。
+
+这份快照至少记录：
+
+- 当前使用的 preset / worldbook / regex profile 及其更新时间
+- 命中的 worldbook entry uid 列表
+- 正则前处理和后处理命中的规则名
+- `prompt_mode`、`prompt_digest`、`token_estimate`
+
+`/sessions/:id/respond/dry-run` 走的是同一条 Prompt 组装路径，但只返回快照预览，不写入数据库。真实生成则会在 commit 阶段把同字段模型写入 `prompt_snapshot` 表。因此 dry-run 返回的 `prompt_snapshot` 可以直接拿来和已提交楼层的快照对比。
 
 ---
 
@@ -314,7 +327,7 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 {
   "turn_summary": "角色A向角色B表白被拒，角色B将离开城市",
   "facts_add": [
-    { "key": "角色B即将离开", "value": "计划下周离开", "scope": "chat" }
+    { "factKey": "角色B即将离开", "value": "计划下周离开", "scope": "chat" }
   ],
   "facts_update": [
     { "id": "fact_001", "value": "角色A的心情变为沮丧" }
@@ -337,6 +350,9 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 
 记忆之间还可以有关系：「支持」「矛盾」「更新」。
 
+对于 `fact` 类型，系统还会额外保存结构化 `factKey`（数据库列名为 `fact_key`）。
+`content` 继续保留给展示和注入使用，但更新、冲突消解和主查询路径都以 `factKey` 为准，不再依赖从文本内容反解 key。
+
 ### 记忆怎么用
 
 每次组装提示词时，编排器会：
@@ -349,8 +365,13 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 ### 安全机制
 
 - Memory 实例的输出需要经过校验才会写入数据库，不会直接落库。
+- 记忆整理阶段只产出结构化结果，不直接写库；真正写入发生在楼层 commit 的短事务里。
 - 摘要文本会做基本的清洗，过滤掉可能的提示词注入（比如「忽略以上所有指令」这种内容）。
 - 所有记忆操作都有完整的来源追溯，可以知道每条记忆是什么时候、从哪个楼层产生的。
+- 如果记忆注入失败，系统会发出 `memory.injection_failed`，但主聊天流程继续。
+- 如果记忆整理上下文加载失败，系统会发出 `memory.consolidation_context_failed`，并跳过本轮整理。
+- 如果整理 JSON 解析失败，系统会发出 `memory.consolidation_json_parse_failed`，并降级为仅保留 `turnSummary`。
+- 如果事务内记忆持久化失败，系统会发出 `memory.persist_failed`，并回滚整个 commit。
 
 ---
 
@@ -396,20 +417,23 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
     │
     ▼
 ⑧ Memory 实例整理
-   归一化记忆，输出 facts_add / update / deprecate
-   校验通过后从 page 提升到 floor / chat
+   归一化记忆，输出 turn_summary / facts_add / update / deprecate
+   这里只产出结构化结果，不直接写库
     │
     ▼
-⑨ 提交楼层
-   楼层状态 → committed
-   页级变量按策略提升
-   触发 floor.committed 事件
+⑨ 短事务提交
+   写入 output page + assistant message + usage
+   写入 prompt_snapshot 与 tool_execution_record
+   页级变量按策略提升到 floor
+   写入记忆结果并创建必要的 memory_edge
+   楼层状态 generating → committed（CAS）
+   触发 floor.committed 事件（携带 promotedVariables）
     │
     ▼
 返回结果给用户
 ```
 
-如果中间任何步骤失败，楼层标记为 `failed`，保留现场方便排查。
+如果生成阶段失败，楼层会标记为 `failed`，保留现场方便排查。如果生成已经成功但提交事务失败，`committed` 不会出现；系统只会在楼层仍可变更时 best-effort 标记 `failed`，不会把已经提交的楼层再覆盖回 `failed`。
 
 ---
 
@@ -542,15 +566,19 @@ CREATE TABLE memory_item (
   scope_id          TEXT NOT NULL,
   type              TEXT NOT NULL,      -- fact / summary / open_loop
   content_json      TEXT NOT NULL,
+  fact_key          TEXT,
   importance        REAL DEFAULT 0.5,
   confidence        REAL DEFAULT 1.0,
   source_floor_id   TEXT,
   source_message_id TEXT,
+  account_id        TEXT NOT NULL REFERENCES account(id),
   status            TEXT DEFAULT 'active',  -- active / deprecated
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL
 );
 ```
+
+其中 `fact_key` 只对 `fact` 类型有意义。新写入会对 key 做归一化，冲突消解与批量查询使用 `(account_id, scope, scope_id, type, status, fact_key)` 索引，不再依赖从 `content_json` 反解 key。
 
 ### 记忆关系表（memory_edge）
 
@@ -563,6 +591,52 @@ CREATE TABLE memory_edge (
   created_at INTEGER NOT NULL
 );
 ```
+
+### Prompt 快照表（prompt_snapshot）
+
+```sql
+CREATE TABLE prompt_snapshot (
+  floor_id     TEXT PRIMARY KEY REFERENCES floor(id) ON DELETE CASCADE,
+  session_id   TEXT NOT NULL REFERENCES session(id) ON DELETE CASCADE,
+  preset_id    TEXT REFERENCES preset(id) ON DELETE SET NULL,
+  preset_updated_at INTEGER,
+  worldbook_id TEXT REFERENCES worldbook(id) ON DELETE SET NULL,
+  worldbook_updated_at INTEGER,
+  regex_profile_id TEXT REFERENCES regex_profile(id) ON DELETE SET NULL,
+  regex_profile_updated_at INTEGER,
+  worldbook_activated_entry_uids_json TEXT NOT NULL DEFAULT '[]',
+  regex_pre_rule_names_json  TEXT NOT NULL DEFAULT '[]',
+  regex_post_rule_names_json TEXT NOT NULL DEFAULT '[]',
+  prompt_mode   TEXT NOT NULL,
+  prompt_digest TEXT NOT NULL,
+  token_estimate INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL
+);
+```
+
+`prompt_snapshot` 用来冻结某个 floor 实际生成时使用的 Prompt 资源版本和摘要信息。dry-run 返回的是同字段模型的预览，不写库。
+
+### 工具执行记录表（tool_execution_record）
+
+```sql
+CREATE TABLE tool_execution_record (
+  id            TEXT PRIMARY KEY,
+  run_id        TEXT NOT NULL,
+  floor_id      TEXT NOT NULL REFERENCES floor(id) ON DELETE CASCADE,
+  page_id       TEXT REFERENCES message_page(id) ON DELETE SET NULL,
+  caller_slot   TEXT NOT NULL,
+  provider_id   TEXT NOT NULL,
+  tool_name     TEXT NOT NULL,
+  args_json     TEXT NOT NULL DEFAULT '{}',
+  result_json   TEXT NOT NULL DEFAULT '{}',
+  status        TEXT NOT NULL DEFAULT 'success',
+  error_message TEXT,
+  duration_ms   INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL
+);
+```
+
+主审计模型已经是 `tool_execution_record`。它以 `floor_id` 为主归属，`page_id` 只在上层已有真实页上下文时写入，因此允许为空。
 
 ---
 
@@ -647,25 +721,26 @@ CREATE TABLE memory_edge (
 
 | 事件名                 | 触发时机       | 携带数据              |
 | ---------------------- | -------------- | --------------------- |
-| `session.created`      | 创建会话后     | session 对象          |
-| `floor.created`        | 创建楼层后     | floor 对象            |
-| `floor.committed`      | 楼层提交后     | floor 对象 + 变量变更 |
-| `floor.failed`         | 楼层生成失败   | floor 对象 + 错误信息 |
-| `page.activated`       | 切换生效消息页 | page 对象             |
-| `message.appended`     | 新消息写入     | message 对象          |
-| `generation.started`   | 开始调用 LLM   | 模型配置 + token 预算 |
-| `generation.chunk`     | 收到流式片段   | 文本片段              |
-| `generation.completed` | 生成完成       | 完整文本 + token 统计 |
-| `generation.failed`    | 生成失败       | 错误信息              |
-| `memory.extracted`     | 提取到摘要     | 摘要内容 + 来源       |
-| `memory.committed`     | 记忆写入数据库 | 记忆操作列表          |
-| `worldbook.matched`    | 世界书条目命中 | 命中的条目列表        |
-| `regex.applied`        | 正则规则执行   | 规则 ID + 替换结果    |
-
-| `tool.call_started`    | 工具调用开始   | 工具名 + 参数 + 调用方实例 |
-| `tool.call_completed`  | 工具调用完成   | 工具名 + 返回值 + 耗时     |
-| `tool.call_failed`     | 工具调用失败   | 工具名 + 错误信息           |
-| `tool.call_denied`     | 工具调用被拒绝 | 工具名 + 拒绝原因           |
+| `floor.stateChanged`   | 楼层状态变化   | floor + previousState + newState |
+| `floor.committed`      | 短事务提交完成 | floor + promotedVariables |
+| `floor.failed`         | 楼层失败       | floor + error |
+| `generation.started`   | 开始调用 LLM   | floorId |
+| `generation.chunk`     | 收到流式片段   | floorId + chunk + accumulatedLength |
+| `generation.completed` | 生成完成       | floorId + text + usage + summaries |
+| `generation.failed`    | 生成失败       | floorId + error |
+| `memory.created`       | 创建记忆       | item + source |
+| `memory.updated`       | 更新记忆       | item + previousContent |
+| `memory.deprecated`    | 记忆废弃       | item + reason |
+| `memory.consolidated`  | consolidation 写回完成 | floorId + created / updated / deprecated |
+| `memory.injection_failed` | 记忆注入失败但主流程继续 | sessionId + error |
+| `memory.persist_failed` | 记忆事务写回失败并触发回滚 | floorId + sessionId + error |
+| `memory.consolidation_context_failed` | 整理上下文加载失败 | sessionId + error |
+| `memory.consolidation_json_parse_failed` | 整理 JSON 解析失败并降级 | floorId + rawText + error |
+| `memory.consolidation_failed` | 整理阶段异常但回合继续 | floorId + error |
+| `tool.call_started`    | 工具调用开始   | floorId + pageId? + toolName + args |
+| `tool.call_completed`  | 工具调用完成   | floorId + pageId? + toolName + result + durationMs |
+| `tool.call_failed`     | 工具调用失败   | floorId + pageId? + toolName + error |
+| `tool.call_denied`     | 工具调用被拒绝 | floorId + pageId? + toolName + reason |
 
 这些事件可以用来：
 
@@ -682,8 +757,9 @@ CREATE TABLE memory_edge (
 ### 设计目标
 
 - 所有 LLM 实例（Narrator / Director / Verifier / Memory）都可以调用工具，但每个实例的工具权限独立配置。
-- 工具调用记录绑定到 MessagePage，遵循三层消息结构的隔离原则。
+- 主审计模型是 `tool_execution_record`，以 floor 为主归属，并允许附带可空的 `page_id`。
 - 支持两种执行模式，可按场景切换。
+- 兼容期内仍保留 `tool_call_record` 供旧查询接口使用，但它不是长期主模型。
 
 ### 工具来源
 
@@ -730,10 +806,11 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
 
 ### 调用记录与消息页隔离
 
-- 每次工具调用生成一条 `ToolCallRecord`，通过 `page_id` 外键绑定到 `MessagePage`。
+- 每次真实工具调用都会生成一条 `tool_execution_record`，通过 `floor_id` 归属到当前楼层。
+- `page_id` 是可选绑定：当工具发生在 output page 创建之前，它可以为空；如果上层已经持有真实 input page，会一并透传写入。
 - 重新生成（regen）会创建新楼层，工具重新执行，不复用之前的调用记录。
-- 切换消息页时，每个页面有自己独立的工具调用快照。
 - 工具的副作用（如写变量）先写入 page scope，只有在楼层提交时才提升到更高层级。
+- 兼容期仍会补写 `tool_call_record`，旧查询接口继续按 page 维度读取；新路径应优先使用 `tool_execution_record`。
 
 ### 回合流程中的位置
 
@@ -747,7 +824,7 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
     ↓
 ⑤ Narrator 生成（inline 模式下工具调用嵌入此步骤）
     ↓
-⑤b 收集工具调用记录
+⑤b 收集真实工具执行记录 → commit 阶段写入 tool_execution_record
 ```
 
 ### 架构组件
@@ -761,7 +838,8 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
 | `ToolProvider` 接口 | `packages/core/src/tools/` | 工具提供者抽象接口 |
 | `McpToolProvider` | `apps/api/src/mcp/` | MCP 工具提供者，通过 McpConnectionManager 代理工具调用 |
 | `McpConnectionManager` | `apps/api/src/mcp/` | 管理多个 MCP 服务器连接的生命周期 |
-| `DrizzleToolRepository` | `apps/api/src/adapters/` | 工具调用记录和工具定义的数据库操作 |
+| `DrizzleToolExecutionRepository` | `apps/api/src/adapters/` | `tool_execution_record` 的数据库操作 |
+| `DrizzleToolRepository` | `apps/api/src/adapters/` | 兼容期 `tool_call_record` 与工具定义的数据库操作 |
 | `ToolService` | `apps/api/src/services/` | 工具管理业务层 |
 | 工具路由 | `apps/api/src/routes/tools.ts` | 11 个 API 端点 |
 

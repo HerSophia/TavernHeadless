@@ -86,6 +86,15 @@ describe("DrizzleMemoryRepository", () => {
     expect(found!.sourceMessageId).toBeUndefined();
   });
 
+  it("stores factKey when provided", async () => {
+    const item = await repo.create(makeItem({ content: "Weather: sunny", factKey: "weather" }));
+
+    const found = await repo.findById(item.id);
+
+    expect(found).not.toBeNull();
+    expect(found!.factKey).toBe("weather");
+  });
+
   // ── findMany ────────────────────────────────────────
 
   it("returns empty array when no items match", async () => {
@@ -207,6 +216,15 @@ describe("DrizzleMemoryRepository", () => {
 
     expect(updated!.content).toBe("Keep");
     expect(updated!.importance).toBe(0.9);
+  });
+
+  it("updates factKey", async () => {
+    const created = await repo.create(makeItem({ content: "Location: town", factKey: "location" }));
+
+    const updated = await repo.update(created.id, { factKey: "home_location" });
+
+    expect(updated).not.toBeNull();
+    expect(updated!.factKey).toBe("home_location");
   });
 
   // ── deprecate ───────────────────────────────────────

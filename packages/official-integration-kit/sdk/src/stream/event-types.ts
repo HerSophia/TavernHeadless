@@ -1,3 +1,4 @@
+import type { RespondFinalState } from "../resources/sessions.js";
 import type { ApiUsage } from "../types/usage.js";
 
 export type TavernRespondStartPayload = {
@@ -20,9 +21,12 @@ export type TavernRespondErrorPayload = {
 };
 
 export type TavernRespondDonePayload = {
+  branchId?: string;
+  finalState?: RespondFinalState;
   floorId: string;
   floorNo: number;
   generatedText?: string;
+  summaries: string[];
   totalUsage: ApiUsage;
 };
 

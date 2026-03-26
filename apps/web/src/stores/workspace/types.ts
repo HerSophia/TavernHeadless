@@ -2,6 +2,7 @@ import type {
   WorkspaceCharacterAssetSnapshot,
   WorkspaceMessageRole,
   WorkspacePresetEditorDocument,
+  WorkspaceRespondResult,
   WorkspaceRegenerateResult
 } from "../../lib/workspace-api";
 
@@ -192,6 +193,7 @@ export type SendMessageResult = {
   localFallback: boolean;
   ok: boolean;
   streamFallback: boolean;
+  result?: WorkspaceRespondResult;
   tokens: number;
   reason?: "empty" | "failed" | "guarded" | "no_session";
 };

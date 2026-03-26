@@ -113,6 +113,13 @@
       "when": 1761500000000,
       "tag": "0015_mcp_server_config",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1761600000000,
+      "tag": "0016_consistency_boundary_foundations",
+      "breakpoints": true
     }
   ]
 }

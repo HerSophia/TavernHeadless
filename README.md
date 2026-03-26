@@ -27,6 +27,14 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 
 当前重点：部署文档完善、正式发布准备。真实 LLM 集成回归已通过。
 
+## 生成与提交语义
+
+当前主链路已经收口为统一提交边界：
+
+- `TurnOrchestrator.executeTurn(...)` 只负责生成阶段，成功返回时 floor 仍停留在 `generating`
+- `committed` 只会在 assistant message、usage、`prompt_snapshot`、`tool_execution_record`、页级变量提升和记忆写回完成后出现
+- `/sessions/:id/respond/dry-run` 返回的 `prompt_snapshot` 预览与真实生成写入的快照字段保持一致
+
 ## 主要特性
 
 - **兼容 SillyTavern 生态** — 导入现有的预设和世界书就能用

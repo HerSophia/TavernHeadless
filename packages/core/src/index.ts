@@ -16,7 +16,12 @@ export type {
   MemoryCreatedEvent,
   MemoryUpdatedEvent,
   MemoryDeprecatedEvent,
+  MemoryInjectionFailedEvent,
+  MemoryPersistFailedEvent,
+  MemoryConsolidationContextFailedEvent,
+  MemoryConsolidationJsonParseFailedEvent,
   MemoryConsolidatedEvent,
+  MemoryConsolidationFailedEvent,
   ToolCallStartedEvent,
   ToolCallCompletedEvent,
   ToolCallFailedEvent,
@@ -44,6 +49,7 @@ export type {
   TokenCounter,
   ChatMessage,
   AssembledPrompt,
+  PromptSnapshotRecord,
   TemplateOptions,
   MessageBuilderOptions,
 } from './prompt/index.js';
@@ -141,6 +147,7 @@ export type {
   TurnPhase,
   TurnConfig,
   TurnInput,
+  TurnExecutionResult,
   TurnOutput,
   VerifierFailStrategy,
   ToolMode,
@@ -150,6 +157,8 @@ export type {
 export type { FloorRepository } from './ports/index.js';
 export type { VariableRepository } from './ports/index.js';
 export type { MemoryRepository } from './ports/index.js';
+export type { PromptSnapshotRepository } from './ports/index.js';
+export type { ToolExecutionRepository } from './ports/index.js';
 
 // ── Types ─────────────────────────────────────────────
 export type { VariableContext, FloorEntity } from './types.js';
@@ -159,6 +168,7 @@ export {
   InvalidStateTransitionError,
   FloorImmutableError,
   FloorNotFoundError,
+  FloorStateConflictError,
   VariableNotFoundError,
   InvalidScopePromotionError,
   MissingScopeIdError,
@@ -173,6 +183,7 @@ export type {
   ToolCallResult,
   ToolCallStatus,
   ToolCallRecord,
+  ExecutedToolCallRecord,
   ToolExecutionContext,
   ToolPermissions,
   ToolProviderType,

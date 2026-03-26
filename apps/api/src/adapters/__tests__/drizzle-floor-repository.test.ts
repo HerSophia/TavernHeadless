@@ -135,4 +135,23 @@ describe("DrizzleFloorRepository", () => {
     const result = await repo.updateState("floor-5", "failed", Date.now());
     expect(result!.state).toBe("failed");
   });
+
+  it("updateStateCas updates when expected state matches", async () => {
+    await insertFloor({ id: "floor-6", state: "draft" as const });
+
+    const result = await repo.updateStateCas("floor-6", "draft", "generating", Date.now());
+
+    expect(result).not.toBeNull();
+    expect(result!.state).toBe("generating");
+  });
+
+  it("updateStateCas returns null when expected state mismatches", async () => {
+    await insertFloor({ id: "floor-7", state: "generating" as const });
+
+    const result = await repo.updateStateCas("floor-7", "draft", "committed", Date.now());
+
+    expect(result).toBeNull();
+    const persisted = await repo.findById("floor-7");
+    expect(persisted!.state).toBe("generating");
+  });
 });

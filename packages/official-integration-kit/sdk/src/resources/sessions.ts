@@ -124,21 +124,23 @@ export type SessionTimeline = {
   sessionId?: string;
 };
 
+export type RespondFinalState = "draft" | "generating" | "committed" | "failed";
+
 export type RespondResult = {
   branchId?: string;
+  finalState?: RespondFinalState;
   floorId: string;
   floorNo: number;
   generatedText: string;
   inputTokens: number;
   outputTokens: number;
+  summaries: string[];
   totalTokens: number;
   totalUsage: ApiUsage;
 };
 
 export type SessionRegenerateResult = RespondResult & {
-  finalState?: string;
   previousFloorId?: string;
-  summaries: string[];
 };
 
 export type SessionBranchSummary = {
@@ -176,21 +178,42 @@ export type SessionToolPermissions = {
   slotDenyList?: Record<string, string[]>;
 };
 
+export type RespondDryRunMessage = {
+  content: string;
+  role: "system" | "user" | "assistant";
+};
+
+export type RespondDryRunPromptSnapshot = {
+  presetId: string | null;
+  presetUpdatedAt: number | null;
+  worldbookId: string | null;
+  worldbookUpdatedAt: number | null;
+  regexProfileId: string | null;
+  regexProfileUpdatedAt: number | null;
+  worldbookActivatedEntryUids: number[];
+  regexPreRuleNames: string[];
+  regexPostRuleNames: string[];
+  promptMode: "compat_strict" | "compat_plus" | "native";
+  promptDigest: string;
+  tokenEstimate: number;
+};
+
 export type RespondDryRunAssembly = {
   memorySummaryInjected: boolean;
-  mode: string;
+  mode: "preset" | "fallback";
   preprocessedUserMessage: string | null;
   presetUsed: boolean;
-  regexPostRules: unknown[];
-  regexPreRules: unknown[];
-  worldbookHits: unknown[];
+  regexPostRules: string[];
+  regexPreRules: string[];
+  worldbookHits: number;
 };
 
 export type RespondDryRunResult = {
   assembly: RespondDryRunAssembly;
-  availableForReply: boolean;
+  availableForReply: number;
   memorySummary: string | null;
-  messages: unknown[];
+  messages: RespondDryRunMessage[];
+  promptSnapshot: RespondDryRunPromptSnapshot;
   tokenEstimate: number;
 };
 
@@ -621,18 +644,34 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
   };
 }
 
-function mapDonePayload(payload: { floorId: string; floorNo: number; generatedText?: string; totalUsage?: unknown }): RespondResult {
+function mapDonePayload(payload: {
+  branchId?: string;
+  finalState?: RespondFinalState;
+  floorId: string;
+  floorNo: number;
+  generatedText?: string;
+  summaries?: string[];
+  totalUsage?: unknown;
+}): RespondResult {
   const totalUsage = toApiUsage(payload.totalUsage);
 
   return {
+    branchId: payload.branchId,
+    finalState: payload.finalState,
     floorId: payload.floorId,
     floorNo: payload.floorNo,
     generatedText: payload.generatedText ?? "",
     inputTokens: resolveInputTokens(totalUsage),
     outputTokens: resolveOutputTokens(totalUsage),
+    summaries: payload.summaries ?? [],
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
   };
+}
+
+function readRespondFinalState(value: unknown): RespondFinalState | undefined {
+  const state = readOptionalString(value);
+  return state === "draft" || state === "generating" || state === "committed" || state === "failed" ? state : undefined;
 }
 
 function mapGenerationParams(generationParams?: RespondGenerationParams): Record<string, unknown> | undefined {
@@ -665,23 +704,82 @@ function mapRespondRequestBody(options: SessionsRespondOptions | SessionsRespond
   });
 }
 
+function mapStringArray(value: unknown): string[] {
+  return readArray(value)
+    .map((item) => readOptionalString(item))
+    .filter((item): item is string => item !== undefined);
+}
+
+function mapNumberArray(value: unknown): number[] {
+  return readArray(value)
+    .map((item) => (typeof item === "number" ? item : undefined))
+    .filter((item): item is number => item !== undefined);
+}
+
+function readDryRunMode(value: unknown): RespondDryRunAssembly["mode"] {
+  return readString(value) === "preset" ? "preset" : "fallback";
+}
+
+function readPromptMode(value: unknown): RespondDryRunPromptSnapshot["promptMode"] {
+  const mode = readString(value);
+  if (mode === "native" || mode === "compat_plus") {
+    return mode;
+  }
+
+  return "compat_strict";
+}
+
+function mapDryRunMessage(value: unknown): RespondDryRunMessage | null {
+  const record = readRecord(value);
+  const role = readString(record?.role);
+  if (role !== "system" && role !== "user" && role !== "assistant") {
+    return null;
+  }
+
+  return {
+    role,
+    content: readString(record?.content),
+  };
+}
+
+function mapDryRunPromptSnapshot(value: Record<string, unknown> | null): RespondDryRunPromptSnapshot {
+  return {
+    presetId: readNullableString(value?.preset_id),
+    presetUpdatedAt: readNullableNumber(value?.preset_updated_at),
+    worldbookId: readNullableString(value?.worldbook_id),
+    worldbookUpdatedAt: readNullableNumber(value?.worldbook_updated_at),
+    regexProfileId: readNullableString(value?.regex_profile_id),
+    regexProfileUpdatedAt: readNullableNumber(value?.regex_profile_updated_at),
+    worldbookActivatedEntryUids: mapNumberArray(value?.worldbook_activated_entry_uids),
+    regexPreRuleNames: mapStringArray(value?.regex_pre_rule_names),
+    regexPostRuleNames: mapStringArray(value?.regex_post_rule_names),
+    promptMode: readPromptMode(value?.prompt_mode),
+    promptDigest: readString(value?.prompt_digest),
+    tokenEstimate: readNumber(value?.token_estimate),
+  };
+}
+
 function mapDryRunPayload(payload: Record<string, unknown> | null): RespondDryRunResult {
   const data = readRecord(payload?.data);
   const assembly = readRecord(data?.assembly);
+  const promptSnapshot = readRecord(data?.prompt_snapshot);
 
   return {
     assembly: {
       memorySummaryInjected: readBoolean(assembly?.memory_summary_injected),
-      mode: readString(assembly?.mode),
+      mode: readDryRunMode(assembly?.mode),
       preprocessedUserMessage: readNullableString(assembly?.preprocessed_user_message),
       presetUsed: readBoolean(assembly?.preset_used),
-      regexPostRules: readArray(assembly?.regex_post_rules),
-      regexPreRules: readArray(assembly?.regex_pre_rules),
-      worldbookHits: readArray(assembly?.worldbook_hits),
+      regexPostRules: mapStringArray(assembly?.regex_post_rules),
+      regexPreRules: mapStringArray(assembly?.regex_pre_rules),
+      worldbookHits: readNumber(assembly?.worldbook_hits),
     },
-    availableForReply: readBoolean(data?.available_for_reply),
+    availableForReply: readNumber(data?.available_for_reply),
     memorySummary: readNullableString(data?.memory_summary),
-    messages: readArray(data?.messages),
+    messages: readArray(data?.messages)
+      .map(mapDryRunMessage)
+      .filter((message): message is RespondDryRunMessage => message !== null),
+    promptSnapshot: mapDryRunPromptSnapshot(promptSnapshot),
     tokenEstimate: readNumber(data?.token_estimate),
   };
 }
@@ -702,11 +800,13 @@ function mapRespondPayload(payload: Record<string, unknown> | null, errorMessage
 
   return {
     branchId: readOptionalString(data?.branch_id),
+    finalState: readRespondFinalState(data?.final_state),
     floorId,
     floorNo,
     generatedText: readString(data?.generated_text),
     inputTokens: resolveInputTokens(totalUsage),
     outputTokens: resolveOutputTokens(totalUsage),
+    summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
   };
@@ -728,16 +828,14 @@ function mapRegeneratePayload(payload: Record<string, unknown> | null, errorMess
 
   return {
     branchId: readOptionalString(data?.branch_id),
-    finalState: readOptionalString(data?.final_state),
+    finalState: readRespondFinalState(data?.final_state),
     floorId,
     floorNo,
     generatedText: readString(data?.generated_text),
     inputTokens: resolveInputTokens(totalUsage),
     outputTokens: resolveOutputTokens(totalUsage),
     previousFloorId: readOptionalString(data?.previous_floor_id),
-    summaries: readArray(data?.summaries)
-      .map((item) => readOptionalString(item))
-      .filter((item): item is string => item !== undefined),
+    summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
   };

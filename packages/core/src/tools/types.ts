@@ -92,6 +92,27 @@ export interface ToolCallRecord {
   createdAt: number;
 }
 
+/**
+ * 真实工具执行记录。
+ *
+ * 与旧的 ToolCallRecord 不同，此结构以 floor 为主归属，记录来源应为真实执行器。
+ */
+export interface ExecutedToolCallRecord {
+  id: string;
+  runId: string;
+  floorId: string;
+  pageId?: string;
+  callerSlot: InstanceSlot;
+  providerId: string;
+  toolName: string;
+  argsJson: string;
+  resultJson: string;
+  status: ToolCallStatus;
+  errorMessage?: string;
+  durationMs: number;
+  createdAt: number;
+}
+
 // ── Execution Context ─────────────────────────────────
 
 /** 传递给工具执行函数的上下文 */
@@ -102,8 +123,13 @@ export interface ToolExecutionContext {
   accountId?: string;
   /** 当前楼层 ID */
   floorId: string;
-  /** 当前消息页 ID */
-  pageId: string;
+  /**
+   * 当前消息页 ID（可选）。
+   *
+   * 工具调用通常发生在 output page 创建之前，因此此字段允许为空。
+   * 当上层已经持有真实 pageId（例如 input page）时，可透传进来作为执行上下文。
+   */
+  pageId?: string;
   /** 调用者实例槽位 */
   callerSlot: InstanceSlot;
   /** 变量上下文（用于 get/set variable 工具） */

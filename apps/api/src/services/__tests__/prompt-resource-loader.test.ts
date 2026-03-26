@@ -1,0 +1,203 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { nanoid } from "nanoid";
+
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
+import { createDatabase, type DatabaseConnection } from "../../db/client.js";
+import {
+  accounts,
+  presets,
+  regexProfiles,
+  worldbookEntries,
+  worldbooks,
+} from "../../db/schema.js";
+import { PromptResourceLoader } from "../prompt-resource-loader.js";
+
+const SAMPLE_PRESET_DATA = {
+  prompts: [
+    {
+      identifier: "main",
+      name: "Main Prompt",
+      role: "system",
+      content: "Stay in character.",
+    },
+    { identifier: "chatHistory", name: "Chat History", marker: true },
+  ],
+  prompt_order: [
+    {
+      character_id: 100000,
+      order: [
+        { identifier: "main", enabled: true },
+        { identifier: "chatHistory", enabled: true },
+      ],
+    },
+  ],
+  openai_max_context: 2048,
+  openai_max_tokens: 300,
+  temperature: 0.7,
+  top_p: 1,
+  top_k: 0,
+  min_p: 0,
+  frequency_penalty: 0,
+  presence_penalty: 0,
+  repetition_penalty: 1,
+  new_chat_prompt: "",
+  new_example_chat_prompt: "",
+  continue_nudge_prompt: "",
+  assistant_prefill: "",
+  wi_format: "{0}",
+  names_behavior: 0,
+  stream_openai: true,
+};
+
+const SAMPLE_REGEX_DATA = [
+  {
+    id: "regex-1",
+    scriptName: "Input Rule",
+    findRegex: "/hello/g",
+    replaceString: "HELLO",
+    trimStrings: [],
+    placement: [1],
+    disabled: false,
+    substituteRegex: 0,
+    minDepth: 0,
+    maxDepth: 0,
+  },
+];
+
+describe("PromptResourceLoader", () => {
+  let database: DatabaseConnection;
+  let loader: PromptResourceLoader;
+
+  beforeEach(async () => {
+    database = createDatabase(":memory:");
+    loader = new PromptResourceLoader(database.db);
+
+    const now = Date.now();
+    await database.db.insert(accounts).values({
+      id: "acc-other",
+      name: "Other Account",
+      role: "user",
+      status: "active",
+      isDefault: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  it("loads prompt resources for the matching account with parsed data and updatedAt metadata", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+    const regexProfileId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Preset A",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Worldbook A",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 7,
+      comment: "Sword",
+      content: "A blessed sword rests in the shrine.",
+      keysJson: JSON.stringify(["sword"]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: false,
+      selectiveLogic: 0,
+      constant: false,
+      position: 0,
+      order: 100,
+      depth: 4,
+      role: 0,
+      disable: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(regexProfiles).values({
+      id: regexProfileId,
+      name: "Regex A",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_REGEX_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const preset = await loader.loadPreset(DEFAULT_ADMIN_ACCOUNT_ID, presetId);
+    const worldbook = await loader.loadWorldbookData(DEFAULT_ADMIN_ACCOUNT_ID, worldbookId);
+    const regexProfile = await loader.loadRegexScripts(DEFAULT_ADMIN_ACCOUNT_ID, regexProfileId);
+
+    expect(preset).not.toBeNull();
+    expect(preset).toMatchObject({ id: presetId, updatedAt: now });
+    expect(preset!.preset.promptOrder).toEqual(["main", "chatHistory"]);
+
+    expect(worldbook).not.toBeNull();
+    expect(worldbook).toMatchObject({ id: worldbookId, updatedAt: now });
+    expect(worldbook!.worldbook.scanDepth).toBe(3);
+    expect(worldbook!.worldbook.entries).toHaveLength(1);
+    expect(worldbook!.worldbook.entries[0]).toMatchObject({ uid: 7, content: "A blessed sword rests in the shrine." });
+
+    expect(regexProfile).not.toBeNull();
+    expect(regexProfile).toMatchObject({ id: regexProfileId, updatedAt: now });
+    expect(regexProfile!.scripts).toHaveLength(1);
+    expect(regexProfile!.scripts[0]).toMatchObject({ scriptName: "Input Rule", placement: [1] });
+  });
+
+  it("returns null when prompt resources belong to another account", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+    const regexProfileId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Preset B",
+      source: "sillytavern",
+      accountId: "acc-other",
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Worldbook B",
+      source: "sillytavern",
+      accountId: "acc-other",
+      dataJson: JSON.stringify({}),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(regexProfiles).values({
+      id: regexProfileId,
+      name: "Regex B",
+      source: "sillytavern",
+      accountId: "acc-other",
+      dataJson: JSON.stringify(SAMPLE_REGEX_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expect(loader.loadPreset(DEFAULT_ADMIN_ACCOUNT_ID, presetId)).resolves.toBeNull();
+    await expect(loader.loadWorldbookData(DEFAULT_ADMIN_ACCOUNT_ID, worldbookId)).resolves.toBeNull();
+    await expect(loader.loadRegexScripts(DEFAULT_ADMIN_ACCOUNT_ID, regexProfileId)).resolves.toBeNull();
+  });
+});

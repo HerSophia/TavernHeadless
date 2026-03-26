@@ -8,8 +8,21 @@ export type UiStateError = {
   status?: number;
 };
 
+type KnownApiErrorCode = "generation_conflict" | "commit_conflict" | "turn_commit_failed";
+
+const KNOWN_API_ERROR_CODE_MAP: Record<KnownApiErrorCode, Pick<UiStateError, "kind" | "retryable">> = {
+  generation_conflict: { kind: "conflict", retryable: true },
+  commit_conflict: { kind: "conflict", retryable: true },
+  turn_commit_failed: { kind: "server", retryable: true },
+};
+
 export function mapApiErrorToUiState(error: unknown): UiStateError {
   if (isTavernApiError(error)) {
+    const knownCodeState = resolveKnownApiErrorCode(error.code);
+    if (knownCodeState) {
+      return buildState(error, knownCodeState.kind, knownCodeState.retryable);
+    }
+
     if (error.status === 401) {
       return buildState(error, "authentication", false);
     }
@@ -58,6 +71,18 @@ export function mapApiErrorToUiState(error: unknown): UiStateError {
     message: "Unknown error",
     retryable: false,
   };
+}
+
+function resolveKnownApiErrorCode(code: string | undefined): Pick<UiStateError, "kind" | "retryable"> | undefined {
+  if (!code) {
+    return undefined;
+  }
+
+  if (code === "generation_conflict" || code === "commit_conflict" || code === "turn_commit_failed") {
+    return KNOWN_API_ERROR_CODE_MAP[code];
+  }
+
+  return undefined;
 }
 
 function buildState(

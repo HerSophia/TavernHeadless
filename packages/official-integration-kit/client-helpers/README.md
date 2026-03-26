@@ -1,27 +1,29 @@
 # @tavern/client-helpers
 
-TavernHeadless 官方接入语义层。
+TavernHeadless 官方接入的语义层。
 
-这个包建立在 `@tavern/sdk` 之上，用来整理接入侧的常用领域语义。
+它建立在 `@tavern/sdk` 之上，把接入侧常见的数据整理工作收拢到一块。
 
-它的职责是：
+简单来说：SDK 负责把数据从后端拿过来，这个包负责把数据整理成前端好用的形态。
 
-- 统一 usage 归一化
+## 它做什么
+
+- 归一化 usage（不管后端返回的是 `prompt_tokens` 还是 `inputTokens`，都能整理成统一结构）
 - 构建时间线展示模型
-- 累积流式生成状态
+- 累积流式生成的中间状态
 - 选择 active page
 - 把 API 错误映射成更适合界面消费的状态
 
-它不负责：
+## 它不做什么
 
-- 发起 HTTP 请求
-- 依赖 `fetch`
-- 依赖 Vue / React / Pinia
-- 提供组件、hooks、composables
+- 不发 HTTP 请求
+- 不依赖 `fetch`
+- 不依赖 Vue / React / Pinia
+- 不提供组件、hooks、composables
 
-## 安装和依赖
+所有导出都是纯函数，不绑任何框架。
 
-本包目前作为 monorepo 内部官方包使用：
+## 安装
 
 ```json
 {
@@ -35,18 +37,20 @@ TavernHeadless 官方接入语义层。
 
 ## 当前导出
 
-当前已经提供这些函数：
+| 函数 | 用途 |
+| ---- | ---- |
+| `resolveUsage` | 把各种格式的 usage 归一化成统一结构 |
+| `buildTimelineMessages` | 把楼层数据平展成时间线消息列表 |
+| `createInitialRespondStreamState` | 创建流式生成的初始状态 |
+| `reduceRespondStream` | 根据 SSE 事件累积流式状态 |
+| `getActivePage` | 从楼层中选出当前活动页 |
+| `mapApiErrorToUiState` | 把 API 错误转换成界面可用的错误状态 |
 
-- `resolveUsage`
-- `buildTimelineMessages`
-- `createInitialRespondStreamState`
-- `reduceRespondStream`
-- `getActivePage`
-- `mapApiErrorToUiState`
-
-## 用法示例
+## 用法
 
 ### usage 归一化
+
+后端和不同 LLM 提供商返回的 token 计数格式不一样，有的用 `prompt_tokens`，有的用 `inputTokens`。`resolveUsage` 把它们统一整理成一个结构：
 
 ```ts
 import { resolveUsage } from "@tavern/client-helpers";
@@ -56,20 +60,43 @@ const usage = resolveUsage({
   completion_tokens: 8,
 });
 
-console.log(usage.inputTokens);
-console.log(usage.outputTokens);
-console.log(usage.totalTokens);
+console.log(usage.inputTokens);  // 12
+console.log(usage.outputTokens); // 8
+console.log(usage.totalTokens);  // 20
 ```
 
+返回的 `NormalizedUsage` 同时保留了原始字段（`promptTokens`、`completionTokens`）和归一化后的字段（`inputTokens`、`outputTokens`、`totalTokens`），都能访问。
+
 ### 构建时间线
+
+`buildTimelineMessages` 把后端返回的楼层结构平展成一个线性的消息列表，适合直接渲染到聊天界面：
 
 ```ts
 import { buildTimelineMessages } from "@tavern/client-helpers";
 
 const viewMessages = buildTimelineMessages(timeline.floors);
+
+// 每条消息都带着 floorId、floorNo、pageId、role、content 等字段
+// 只保留 user / assistant / narrator / system 角色的消息
 ```
 
+返回的 `TimelineMessageView` 每条包含：
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `id` | 消息 ID |
+| `role` | `"user"` / `"assistant"` / `"narrator"` / `"system"` |
+| `content` | 消息内容 |
+| `contentFormat` | `"text"` / `"markdown"` / `"json"` |
+| `floorId` / `floorNo` | 所属楼层 |
+| `pageId` | 所属页面 |
+| `seq` | 消息序号 |
+| `tokenIn` / `tokenOut` | token 统计 |
+| `at` | 时间戳 |
+
 ### 累积流式状态
+
+流式回复时，前端需要随着 SSE 事件逐步累积状态。`reduceRespondStream` 是一个纯函数 reducer，每收到一个事件就返回新状态：
 
 ```ts
 import {
@@ -82,9 +109,30 @@ let state = createInitialRespondStreamState();
 for (const event of events) {
   state = reduceRespondStream(state, event);
 }
+
+// state.status 会经历 "idle" → "streaming" → "done"(或 "error")
+// state.content 是已累积的文本
+// state.result 在 done 时填充完整结果
+// state.result.summaries 和 state.result.finalState 会保留最终 done payload
 ```
 
+如果 `done` 事件已经带回完整 `summaries`，reducer 会直接采用最终结果；如果旧服务端只在 `summary` 事件里提供摘要，reducer 会回退到已累积的摘要列表。
+
+`RespondStreamState` 的结构：
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `status` | `"idle"` / `"streaming"` / `"done"` / `"error"` |
+| `content` | 已累积的生成文本 |
+| `floorId` / `floorNo` | 当前楼层信息 |
+| `branchId` | 分支 ID |
+| `summaries` | 已收到的摘要列表 |
+| `error` | 错误信息（仅 error 状态） |
+| `result` | 最终结果（仅 done 状态，保留 `generatedText` / `summaries` / `finalState`） |
+
 ### 选择 active page
+
+一个楼层可以有多个页面（分支）。`getActivePage` 帮你从楼层数据中取出当前活动页：
 
 ```ts
 import { getActivePage } from "@tavern/client-helpers";
@@ -95,7 +143,11 @@ const page = getActivePage({
 });
 ```
 
+如果 `activePage` 存在就直接返回，否则回退到 `pages` 数组的第一个。都没有则返回 `null`。
+
 ### 错误映射
+
+`mapApiErrorToUiState` 把各种错误转换成统一的界面状态，前端可以根据 `kind` 和 `retryable` 决定怎么展示：
 
 ```ts
 import { mapApiErrorToUiState } from "@tavern/client-helpers";
@@ -107,22 +159,46 @@ try {
   });
 } catch (error) {
   const uiError = mapApiErrorToUiState(error);
-  console.log(uiError.kind);
-  console.log(uiError.retryable);
+  console.log(uiError.kind);      // "not_found" / "validation" / "server" / ...
+  console.log(uiError.retryable);  // true / false
+  console.log(uiError.message);    // 错误信息
+  console.log(uiError.code);       // 原始 API 错误码
 }
 ```
 
+默认映射规则：
+
+| HTTP 状态码 | `kind` | `retryable` |
+| ---- | ---- | ---- |
+| 401 | `authentication` | 否 |
+| 403 | `authorization` | 否 |
+| 404 | `not_found` | 否 |
+| 409 | `conflict` | 是 |
+| 400 / 422 | `validation` | 否 |
+| 5xx | `server` | 是 |
+| 网络错误 | `network` | 是 |
+
+对于当前已知的业务错误码，helper 会优先采用 code-aware 映射，再回退到通用状态码规则：
+
+| API 错误码 | `kind` | `retryable` |
+| ---- | ---- | ---- |
+| `generation_conflict` | `conflict` | 是 |
+| `commit_conflict` | `conflict` | 是 |
+| `turn_commit_failed` | `server` | 是 |
+
+这样做的目的是让界面默认语义更稳定。同时，原始 `code` 仍会保留在返回结果里，接入方如果需要更细的 UI 分支，仍可继续自行判断。
+
 ## 设计边界
 
-适合放进本包的内容：
+**适合放进来的：**
 
 - 纯函数形式的语义整理
 - 时间线构建
 - 流式 reducer
-- 错误展示状态映射
+- 错误状态映射
 - 与框架无关的 selector
 
-不适合放进本包的内容：
+**不适合放进来的：**
 
 - HTTP 请求
 - DOM 操作
@@ -130,19 +206,17 @@ try {
 - React state
 - Pinia / Zustand / TanStack Query 绑定
 
-## 与应用层的关系
+## 和应用层的关系
 
-`apps/web` 可以继续保留这些内容在应用层：
+`apps/web` 可以继续保留这些内容：
 
-- 页面和组件交互逻辑
+- 页面和组件的交互逻辑
 - 表单状态
-- 本地菜单行为
-- 只在一个界面里使用的临时映射
+- 菜单行为
+- 只在某一个界面里用到的临时映射
 
-只有已经稳定、可复用、与具体框架无关的逻辑，才适合继续沉淀到本包。
+只有已经稳定、可复用、与框架无关的逻辑，才适合沉淀到这个包里。
 
 ## 当前状态
 
-当前包已经开始替换 `apps/web` 中的 timeline 和流式状态整理逻辑。
-
-后续会继续按这个原则扩展，但不会引入框架绑定层。
+已开始替换 `apps/web` 中的 timeline 和流式状态整理逻辑。后续会继续按这个原则扩展，但不会引入框架绑定层。

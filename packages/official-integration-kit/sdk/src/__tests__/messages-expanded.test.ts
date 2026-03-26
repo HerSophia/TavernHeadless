@@ -342,8 +342,15 @@ describe("sdk messages expanded resource", () => {
       }),
     ).resolves.toEqual({
       branchId: "branch-1",
+      finalState: undefined,
       floorId: "floor-2",
       floorNo: 2,
+      generatedText: "",
+      inputTokens: 0,
+      outputTokens: 0,
+      sourceFloorId: undefined,
+      sourceMessageId: undefined,
+      summaries: [],
       totalTokens: 33,
       totalUsage: {
         completionTokens: undefined,

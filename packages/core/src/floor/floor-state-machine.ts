@@ -1,6 +1,6 @@
 import type { FloorState } from '@tavern/shared';
 import type { CoreEventBus } from '../events/index.js';
-import { FloorNotFoundError, InvalidStateTransitionError } from '../errors.js';
+import { FloorNotFoundError, FloorStateConflictError, InvalidStateTransitionError } from '../errors.js';
 import type { FloorEntity } from '../types.js';
 import type { FloorRepository } from '../ports/index.js';
 
@@ -59,10 +59,16 @@ export class FloorStateMachine {
       throw new InvalidStateTransitionError(previousState, targetState);
     }
 
-    const updated = await this.floorRepo.updateState(floorId, targetState, Date.now());
+    const updated = await this.floorRepo.updateStateCas(
+      floorId,
+      previousState,
+      targetState,
+      Date.now(),
+    );
 
     if (!updated) {
-      throw new FloorNotFoundError(floorId);
+      const current = await this.floorRepo.findById(floorId);
+      throw current ? new FloorStateConflictError(floorId, previousState, current.state) : new FloorNotFoundError(floorId);
     }
 
     // 广播通用状态变更事件
@@ -110,10 +116,16 @@ export class FloorStateMachine {
       throw new InvalidStateTransitionError(previousState, 'failed');
     }
 
-    const updated = await this.floorRepo.updateState(floorId, 'failed', Date.now());
+    const updated = await this.floorRepo.updateStateCas(
+      floorId,
+      previousState,
+      'failed',
+      Date.now(),
+    );
 
     if (!updated) {
-      throw new FloorNotFoundError(floorId);
+      const current = await this.floorRepo.findById(floorId);
+      throw current ? new FloorStateConflictError(floorId, previousState, current.state) : new FloorNotFoundError(floorId);
     }
 
     await this.eventBus.emit('floor.stateChanged', {

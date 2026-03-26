@@ -1,100 +1,41 @@
 # @tavern/sdk
 
-TavernHeadless Official Integration Kit 的基础层。
+TavernHeadless 官方集成层的基础包。
 
-这个包面向接入方，负责把后端 HTTP API、SSE 事件流、错误对象和资源访问整理成稳定的第一方调用面。
+它把后端的 HTTP API、SSE 事件流、错误处理和资源访问整合成一个稳定的调用层，让接入方不用自己再写一套。
 
-## 这个包的定位
+## 先说定位
 
-TavernHeadless 当前只保留两个官方公开接入包：
+TavernHeadless 有且只有两个官方公开接入包：
 
-- `@tavern/sdk`
-- `@tavern/client-helpers`
+| 包名 | 职责 |
+| ---- | ---- |
+| `@tavern/sdk` | 请求、SSE、错误、资源访问 |
+| `@tavern/client-helpers` | 与框架无关的语义整理 |
 
-其中：
+另外一个经常出现的 `@tavern/shared` 是内部包，不属于公开接入面。
 
-- `@tavern/sdk` 负责请求、SSE、错误和资源访问。
-- `@tavern/client-helpers` 负责与框架无关的语义整理。
-- `@tavern/shared` 仍然是内部包，不是公开接入面的一部分。
+## 它做什么
 
-## 这个包负责什么
+- 提供统一客户端 `createTavernClient()`
+- 自动处理 transport 和默认请求头
+- 按资源分组提供类型化的调用方法
+- 统一 HTTP 错误对象（`TavernApiError`）
+- 内置 SSE 读取和事件解析
+- 保留底层请求能力，需要的时候可以直接用
 
-- 创建统一客户端：`createTavernClient(...)`
-- 处理基础 transport 和默认请求头
-- 保留底层类型化请求能力
-- 统一 HTTP 错误对象
-- 统一 SSE 读取逻辑
-- 按资源分组提供第一方方法
+## 它不做什么
 
-## 这个包不负责什么
+- 不做 Vue / React / Pinia / Zustand / TanStack Query 的绑定
+- 不提供组件、页面、hooks、composables
+- 不管应用层的状态管理
+- 不包含只服务于某个特定界面的临时逻辑
 
-- Vue / React / Pinia / Zustand / TanStack Query 绑定
-- 组件、页面、hooks、composables
-- 应用层状态管理
-- 只适用于某一个前端界面的临时映射
+这些事情应该留在应用层。
 
-## 当前资源范围
+## 安装
 
-当前 `@tavern/sdk` 已覆盖这些资源。
-
-### 会话与内容结构
-
-- `health`
-- `sessions`
-- `messages`
-- `floors`
-- `pages`
-- `branches`
-
-### 角色、资料与配置
-
-- `characters`
-- `users`
-- `presets`
-- `presetEntries`
-- `worldbooks`
-- `worldbookEntries`
-- `regexProfiles`
-
-### 导入、导出与模型配置
-
-- `imports`
-- `exports`
-- `llmProfiles`
-- `llmInstances`
-
-### 账号、变量与记忆
-
-- `accounts`
-- `variables`
-- `memories`
-- `memoryEdges`
-
-### 工具与运行集成
-
-- `tools`
-- `mcp`
-
-## 当前基础能力
-
-除了资源方法，这个包还提供：
-
-- `TavernApiError`
-- `isTavernApiError(...)`
-- `readSseStream(...)`
-- usage 归一化相关工具
-- OpenAPI 类型导出
-- 保留底层 `ApiClient` 方法：
-  - `request(...)`
-  - `get(...)`
-  - `post(...)`
-  - `put(...)`
-  - `patch(...)`
-  - `delete(...)`
-
-## 安装与依赖
-
-当前仓库内使用方式：
+仓库内直接引用：
 
 ```json
 {
@@ -104,7 +45,7 @@ TavernHeadless 当前只保留两个官方公开接入包：
 }
 ```
 
-## 基本用法
+## 快速上手
 
 ### 创建客户端
 
@@ -116,11 +57,13 @@ const client = createTavernClient({
 });
 ```
 
-### 注入默认请求头
+`createTavernClient()` 返回的对象上挂着所有资源方法，同时也保留了底层的通用请求方法。
+
+### 带上认证头
+
+如果后端开启了认证，可以通过 `getHeaders` 注入默认请求头：
 
 ```ts
-import { createTavernClient } from "@tavern/sdk";
-
 const client = createTavernClient({
   baseUrl: "http://localhost:3000",
   getHeaders: () => ({
@@ -130,22 +73,29 @@ const client = createTavernClient({
 });
 ```
 
-### 保留底层请求能力
+这个函数支持返回 `Promise`，所以异步取 token 也没问题。
+
+### 用底层方法直接请求
+
+有些场景下你可能不想走资源方法，想直接发请求：
 
 ```ts
 const rawHealth = await client.get("/health");
+
 const rawSession = await client.request("GET", "/sessions/{id}", {
   params: {
-    path: {
-      id: "session-1",
-    },
+    path: { id: "session-1" },
   },
 });
 ```
 
-## 资源调用示例
+底层方法有 `request()`、`get()`、`post()`、`put()`、`patch()`、`delete()`，都是类型化的。
 
-### 读取会话并生成一次回复
+## 资源调用
+
+下面用几个常见场景展示资源方法的用法。
+
+### 列出会话，然后生成一次回复
 
 ```ts
 const sessions = await client.sessions.list({
@@ -166,10 +116,19 @@ const result = await client.sessions.respond({
   },
 });
 
-console.log(sessions.length);
 console.log(result.generatedText);
+console.log(result.summaries);
+console.log(result.finalState);
 console.log(result.totalTokens);
 ```
+
+Chat 相关方法会保留后端返回的这些字段：
+
+- `generatedText`
+- `summaries`
+- `finalState`
+
+其中 `finalState === "committed"` 表示生成结果已经越过提交边界，相关持久化写入已经完成。
 
 ### 流式回复
 
@@ -190,11 +149,33 @@ const result = await client.sessions.respondStream({
 });
 
 console.log(result.floorId);
+console.log(result.summaries);
+console.log(result.finalState);
 ```
 
-### 变量与记忆
+`respondStream()` 内部已经处理好 SSE 解析，你只管写回调就行。
+
+### 生成前 dry-run 与 `promptSnapshot`
 
 ```ts
+const preview = await client.sessions.respondDryRun({
+  accountId: "account-1",
+  sessionId: "session-1",
+  message: "继续",
+});
+
+console.log(preview.messages);
+console.log(preview.promptSnapshot.promptMode);
+console.log(preview.promptSnapshot.promptDigest);
+console.log(preview.promptSnapshot.tokenEstimate);
+```
+
+`respondDryRun()` 返回的 `promptSnapshot` 预览字段与真实提交后的 `prompt_snapshot` 对齐，适合在生成前检查 preset、worldbook、regex 和摘要注入结果。
+
+### 变量和记忆
+
+```ts
+// 写入变量
 await client.variables.upsert({
   accountId: "account-1",
   key: "mood",
@@ -203,17 +184,22 @@ await client.variables.upsert({
   value: { score: 20 },
 });
 
+// 读取记忆
 const memories = await client.memories.list({
   accountId: "account-1",
+  factKey: "relationship",
   scope: "chat",
   scopeId: "session-1",
   status: "active",
+  type: "fact",
 });
 
-console.log(memories.length);
+console.log(memories[0]?.factKey);
 ```
 
-### 页面、分支与条目资源
+`factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。
+
+### 页面、分支和条目
 
 ```ts
 const pages = await client.pages.list({
@@ -230,15 +216,11 @@ const worldbookEntries = await client.worldbookEntries.list({
   accountId: "account-1",
   worldbookId: "worldbook-1",
 });
-
-console.log(pages.length);
-console.log(presetEntries.entries.length);
-console.log(worldbookEntries.length);
 ```
 
-### 导出资源
+### 导出
 
-`exports` 资源直接返回原始 `Response`，以保留后端导出行为。
+`exports` 资源比较特殊——它直接返回原始 `Response`，因为导出本身就是文件下载语义，你可能需要自己决定用 `text()`、`blob()` 还是别的方式读取：
 
 ```ts
 const response = await client.exports.chat({
@@ -247,11 +229,10 @@ const response = await client.exports.chat({
   format: "thchat",
 });
 
-console.log(response.status);
 console.log(response.headers.get("content-disposition"));
 ```
 
-### Tool Calling 相关资源
+### Tool Calling
 
 ```ts
 const builtinTools = await client.tools.listBuiltin({
@@ -271,13 +252,11 @@ const records = await client.tools.listCallRecords({
   limit: 20,
   offset: 0,
 });
-
-console.log(builtinTools.length);
-console.log(definitions.meta.total);
-console.log(records.records.length);
 ```
 
-### MCP 相关资源
+`listCallRecords()` 当前仍对应公开兼容查询面 `/tools/call-records`。在后端公开新的 `tool_execution_record` 查询路由前，SDK 不会提前发明新的 execution records 资源方法。
+
+### MCP
 
 ```ts
 const servers = await client.mcp.listServers({
@@ -292,67 +271,77 @@ const status = await client.mcp.getServerStatus({
 const tools = await client.mcp.listServerTools({
   serverId: "mcp-1",
 });
-
-console.log(servers.meta.total);
-console.log(status.state);
-console.log(tools.length);
 ```
 
 ## 错误处理
 
-HTTP 非 2xx 响应会归一化为 `TavernApiError`。
+后端返回非 2xx 响应时，SDK 会把它归一化为 `TavernApiError`：
 
 ```ts
 import { isTavernApiError } from "@tavern/sdk";
 
 try {
-  await client.sessions.getDetail({
-    sessionId: "missing",
-  });
+  await client.sessions.getDetail({ sessionId: "missing" });
 } catch (error) {
   if (isTavernApiError(error)) {
-    console.log(error.status);
-    console.log(error.code);
-    console.log(error.message);
+    console.log(error.status);   // HTTP 状态码
+    console.log(error.code);     // 后端错误码
+    console.log(error.message);  // 错误信息
   }
 }
 ```
 
-## SSE 能力
+`TavernApiError` 上还有可选的 `details` 和 `requestId` 字段，后端返回了就会带上。
 
-对于 `respond/stream` 这类接口，SDK 已经负责：
+## SSE
+
+对于流式接口（比如 `respond/stream`），SDK 内部已经完成了这些事：
 
 - 发起 `text/event-stream` 请求
-- 解析 `start` / `chunk` / `summary` / `error` / `done`
-- 在缺少最终 `done` 事件时抛出一致错误
+- 逐行解析 `start` → `chunk` → `summary` → `done` 事件
+- 遇到 `error` 事件时抛出 `TavernApiError`
+- 在 `done` 中保留 `branchId`、`generatedText`、`summaries`、`totalUsage`、`finalState`
+- 流结束但没收到 `done` 时也会抛出错误
 
-如果只关心业务结果，直接使用 `client.sessions.respondStream()` 即可。
+一般场景直接用 `client.sessions.respondStream()` 就够了。如果需要更底层的控制，可以自己调 `readSseStream()`。
 
-如果需要更底层的流解析，也可以直接使用 `readSseStream()`。
+## 资源覆盖范围
 
-## 与 `@tavern/client-helpers` 的关系
+目前 SDK 已经覆盖这些资源：
 
-- `@tavern/sdk` 负责 API 调用
-- `@tavern/client-helpers` 负责语义整理
+| 分类 | 资源 |
+| ---- | ---- |
+| 会话与内容结构 | `health`、`sessions`、`messages`、`floors`、`pages`、`branches` |
+| 角色、资料与配置 | `characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles` |
+| 导入、导出与模型 | `imports`、`exports`、`llmProfiles`、`llmInstances` |
+| 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges` |
+| 工具与运行集成 | `tools`、`mcp` |
 
-建议顺序：
+## 和 `@tavern/client-helpers` 怎么配合
 
-1. 先用 `@tavern/sdk` 获取或写入数据
-2. 再用 `@tavern/client-helpers` 整理时间线、流式状态和错误展示状态
-3. 最后在应用层接入 store、组件和页面逻辑
+两个包各管各的：
+
+- **SDK** 负责和后端打交道——发请求、收数据、处理错误
+- **client-helpers** 负责整理数据给前端用——构建时间线、累积流式状态、归一化 usage、映射错误状态
+
+建议的使用顺序：
+
+1. 先用 SDK 拿到数据
+2. 再用 client-helpers 整理成前端需要的形态
+3. 最后在应用层接入 store、组件、页面
 
 ## 设计边界
 
-适合放进本包的内容：
+**适合放进这个包的：**
 
-- 资源调用
-- Header 注入
+- 资源调用方法
+- 请求头注入
 - 错误对象
-- SSE 事件解析
+- SSE 解析
 - API 输入输出映射
-- 保留后端语义的轻量资源包装
+- 保留后端语义的轻量包装
 
-不适合放进本包的内容：
+**不适合放进这个包的：**
 
 - timeline 视图构建
 - active page 选择
@@ -361,35 +350,35 @@ try {
 - Vue / React hooks
 - 应用层缓存策略
 
-## 与后端变更的关系
+## 和后端变更的关系
 
-这个包是第一方官方接入层，不是随意堆放工具函数的目录。
+这个包是第一方官方接入层，不是一个随便堆工具函数的地方。
 
-当后端路由、SSE 事件、OpenAPI 契约、资源返回形态、Tool Calling、MCP、导入导出行为发生变化时，应优先检查 `@tavern/sdk` 是否需要同步更新。
+当后端的路由、SSE 事件、OpenAPI 契约、资源返回结构、Tool Calling、MCP、导入导出行为发生变化时，需要优先检查这个包是否需要同步更新。
 
-如果这些变化已经影响到接入方可见的行为，就应同时更新：
+如果变化已经影响到接入方能感知到的行为，应同时更新：
 
-- `@tavern/sdk` 实现
-- `@tavern/sdk` 文档
+- SDK 实现
+- SDK 文档
 - 外部接入文档
 
-不能只改后端或只改 `apps/web` 的局部适配，而让官方包继续停留在旧语义上。
+不能只改后端或只在 `apps/web` 里补个局部适配，把官方包留在旧语义上。
 
 ## 版本兼容
-
-当前建议按下面的关系理解兼容范围：
 
 | 后端 API | `@tavern/sdk` |
 | ---- | ---- |
 | `v0.2.x-beta` | `0.1.x` |
 
-OpenAPI 生成仍然沿用仓库根目录工作流：
+OpenAPI 生成沿用仓库根目录的工作流：
 
-- `pnpm sdk:generate`
-- `pnpm sdk:check`
+```bash
+pnpm sdk:generate
+pnpm sdk:check
+```
 
 ## 当前状态
 
-当前包已经覆盖 Batch 1 到 Batch 4 的主要第一方资源接入面。
+已覆盖 Batch 1 到 Batch 4 的主要资源。`apps/web` 中可复用的请求逻辑已在逐步迁入。
 
-`apps/web` 已经开始把可复用的请求逻辑迁入这个包。后续如果后端继续扩展资源，仍按同样原则扩充，而不是在各个前端中重复写一套新的请求层。
+后续如果后端继续扩展资源，按同样的方式在这里扩充就好，不需要在各个前端里重复写请求层。

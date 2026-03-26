@@ -274,6 +274,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/export/character/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export character as ST Character Card V2 JSON file */
+        get: operations["exportCharacter"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/export/chat/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export chat session
+         * @description Export a session as .thchat (native, lossless) or .jsonl (ST-compatible, lossy).
+         */
+        get: operations["exportChat"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/export/preset/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export preset as ST-compatible JSON file */
+        get: operations["exportPreset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/export/regex/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export regex profile as ST-compatible JSON file */
+        get: operations["exportRegex"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/export/worldbook/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export worldbook as ST-compatible JSON file */
+        get: operations["exportWorldbook"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/floors": {
         parameters: {
             query?: never;
@@ -777,6 +865,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import chat file (.thchat or .jsonl) */
+        post: operations["importChat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/import/preset": {
         parameters: {
             query?: never;
@@ -986,6 +1091,427 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp/servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List MCP server configs */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                call_timeout_ms?: number;
+                                connect_timeout_ms?: number;
+                                created_at?: number;
+                                default_side_effect_level?: string;
+                                enabled?: boolean;
+                                http?: Record<string, never> | null;
+                                id?: string;
+                                name?: string;
+                                stdio?: Record<string, never> | null;
+                                tool_prefix?: string | null;
+                                tool_refresh_interval_ms?: number;
+                                /** @enum {string} */
+                                transport?: "stdio" | "http";
+                                updated_at?: number;
+                            }[];
+                            meta?: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create MCP server config */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                call_timeout_ms?: number;
+                                connect_timeout_ms?: number;
+                                created_at?: number;
+                                default_side_effect_level?: string;
+                                enabled?: boolean;
+                                http?: Record<string, never> | null;
+                                id?: string;
+                                name?: string;
+                                stdio?: Record<string, never> | null;
+                                tool_prefix?: string | null;
+                                tool_refresh_interval_ms?: number;
+                                /** @enum {string} */
+                                transport?: "stdio" | "http";
+                                updated_at?: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/servers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get MCP server config */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                call_timeout_ms?: number;
+                                connect_timeout_ms?: number;
+                                created_at?: number;
+                                default_side_effect_level?: string;
+                                enabled?: boolean;
+                                http?: Record<string, never> | null;
+                                id?: string;
+                                name?: string;
+                                stdio?: Record<string, never> | null;
+                                tool_prefix?: string | null;
+                                tool_refresh_interval_ms?: number;
+                                /** @enum {string} */
+                                transport?: "stdio" | "http";
+                                updated_at?: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Delete MCP server config */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                deleted?: boolean;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Update MCP server config */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                call_timeout_ms?: number;
+                                connect_timeout_ms?: number;
+                                created_at?: number;
+                                default_side_effect_level?: string;
+                                enabled?: boolean;
+                                http?: Record<string, never> | null;
+                                id?: string;
+                                name?: string;
+                                stdio?: Record<string, never> | null;
+                                tool_prefix?: string | null;
+                                tool_refresh_interval_ms?: number;
+                                /** @enum {string} */
+                                transport?: "stdio" | "http";
+                                updated_at?: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/mcp/servers/{id}/toggle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Enable/disable MCP server */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                call_timeout_ms?: number;
+                                connect_timeout_ms?: number;
+                                created_at?: number;
+                                default_side_effect_level?: string;
+                                enabled?: boolean;
+                                http?: Record<string, never> | null;
+                                id?: string;
+                                name?: string;
+                                stdio?: Record<string, never> | null;
+                                tool_prefix?: string | null;
+                                tool_refresh_interval_ms?: number;
+                                /** @enum {string} */
+                                transport?: "stdio" | "http";
+                                updated_at?: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/memories": {
         parameters: {
             query?: never;
@@ -1005,6 +1531,7 @@ export interface paths {
                     scope_id?: string;
                     type?: "fact" | "summary" | "open_loop";
                     status?: "active" | "deprecated";
+                    fact_key?: string;
                     source_floor_id?: string;
                     source_message_id?: string;
                     created_from?: number;
@@ -1038,6 +1565,7 @@ export interface paths {
                          *             "text": "Alice carries a silver sword."
                          *           },
                          *           "created_at": 1735689600000,
+                         *           "fact_key": "equipment",
                          *           "id": "mem_fact_1",
                          *           "importance": 0.8,
                          *           "scope": "chat",
@@ -1064,6 +1592,7 @@ export interface paths {
                                 confidence: number;
                                 content: unknown;
                                 created_at: number;
+                                fact_key?: string | null;
                                 id: string;
                                 importance: number;
                                 /** @enum {string} */
@@ -1122,6 +1651,7 @@ export interface paths {
                     "application/json": {
                         confidence?: number;
                         content: unknown;
+                        fact_key?: string | null;
                         importance?: number;
                         /** @enum {string} */
                         scope: "global" | "chat" | "floor";
@@ -1150,6 +1680,7 @@ export interface paths {
                          *           "text": "Alice carries a silver sword."
                          *         },
                          *         "created_at": 1735689600000,
+                         *         "fact_key": "equipment",
                          *         "id": "mem_fact_1",
                          *         "importance": 0.8,
                          *         "scope": "chat",
@@ -1170,6 +1701,7 @@ export interface paths {
                              *         "text": "Alice carries a silver sword."
                              *       },
                              *       "created_at": 1735689600000,
+                             *       "fact_key": "equipment",
                              *       "id": "mem_fact_1",
                              *       "importance": 0.8,
                              *       "scope": "chat",
@@ -1185,6 +1717,7 @@ export interface paths {
                                 confidence: number;
                                 content: unknown;
                                 created_at: number;
+                                fact_key?: string | null;
                                 id: string;
                                 importance: number;
                                 /** @enum {string} */
@@ -1276,6 +1809,7 @@ export interface paths {
                          *           "text": "Alice carries a silver sword."
                          *         },
                          *         "created_at": 1735689600000,
+                         *         "fact_key": "equipment",
                          *         "id": "mem_fact_1",
                          *         "importance": 0.8,
                          *         "scope": "chat",
@@ -1296,6 +1830,7 @@ export interface paths {
                              *         "text": "Alice carries a silver sword."
                              *       },
                              *       "created_at": 1735689600000,
+                             *       "fact_key": "equipment",
                              *       "id": "mem_fact_1",
                              *       "importance": 0.8,
                              *       "scope": "chat",
@@ -1311,6 +1846,7 @@ export interface paths {
                                 confidence: number;
                                 content: unknown;
                                 created_at: number;
+                                fact_key?: string | null;
                                 id: string;
                                 importance: number;
                                 /** @enum {string} */
@@ -1418,6 +1954,7 @@ export interface paths {
                     "application/json": {
                         confidence?: number;
                         content?: unknown;
+                        fact_key?: string | null;
                         importance?: number;
                         /** @enum {string} */
                         scope?: "global" | "chat" | "floor";
@@ -1446,6 +1983,7 @@ export interface paths {
                          *           "text": "Alice carries a silver sword."
                          *         },
                          *         "created_at": 1735689600000,
+                         *         "fact_key": "equipment",
                          *         "id": "mem_fact_1",
                          *         "importance": 0.8,
                          *         "scope": "chat",
@@ -1466,6 +2004,7 @@ export interface paths {
                              *         "text": "Alice carries a silver sword."
                              *       },
                              *       "created_at": 1735689600000,
+                             *       "fact_key": "equipment",
                              *       "id": "mem_fact_1",
                              *       "importance": 0.8,
                              *       "scope": "chat",
@@ -1481,6 +2020,7 @@ export interface paths {
                                 confidence: number;
                                 content: unknown;
                                 created_at: number;
+                                fact_key?: string | null;
                                 id: string;
                                 importance: number;
                                 /** @enum {string} */
@@ -1584,6 +2124,7 @@ export interface paths {
                     scope_id?: string;
                     type?: "fact" | "summary" | "open_loop";
                     status?: "active" | "deprecated";
+                    fact_key?: string;
                     source_floor_id?: string;
                     source_message_id?: string;
                     created_from?: number;
@@ -1916,7 +2457,79 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update memory edge relation */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        relation: "supports" | "contradicts" | "updates";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                created_at: number;
+                                from_id: string;
+                                id: string;
+                                /** @enum {string} */
+                                relation: "supports" | "contradicts" | "updates";
+                                to_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/messages": {
@@ -2287,6 +2900,7 @@ export interface paths {
                     sort_order?: "asc" | "desc";
                     sort_by?: "created_at" | "updated_at";
                     status?: "active" | "archived";
+                    keyword?: string;
                 };
                 header?: never;
                 path?: never;
@@ -3687,6 +4301,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{id}/tool-permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get session tool permissions */
+        get: operations["getSessionToolPermissions"];
+        /** Replace session tool permissions */
+        put: operations["replaceSessionToolPermissions"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Partial update session tool permissions */
+        patch: operations["patchSessionToolPermissions"];
+        trace?: never;
+    };
     "/sessions/batch/delete": {
         parameters: {
             query?: never;
@@ -3719,6 +4352,94 @@ export interface paths {
         head?: never;
         /** Batch update session status */
         patch: operations["batchUpdateSessionStatus"];
+        trace?: never;
+    };
+    "/tools/builtin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List built-in tools */
+        get: operations["listBuiltinTools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tools/call-records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Query tool call records */
+        get: operations["queryToolCallRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tools/definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List tool definitions */
+        get: operations["listToolDefinitions"];
+        put?: never;
+        /** Create tool definition */
+        post: operations["createToolDefinition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tools/definitions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get tool definition */
+        get: operations["getToolDefinition"];
+        put?: never;
+        post?: never;
+        /** Delete tool definition */
+        delete: operations["deleteToolDefinition"];
+        options?: never;
+        head?: never;
+        /** Update tool definition */
+        patch: operations["updateToolDefinition"];
+        trace?: never;
+    };
+    "/tools/definitions/{id}/toggle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Toggle tool definition enabled/disabled */
+        patch: operations["toggleToolDefinition"];
         trace?: never;
     };
     "/users": {
@@ -4300,6 +5021,46 @@ export interface paths {
         get?: never;
         /** Batch upsert variables */
         put: operations["batchUpsertVariables"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get service version */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            node_version: string;
+                            service: string;
+                            version: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -5421,6 +6182,179 @@ export interface operations {
             };
         };
     };
+    exportCharacter: {
+        parameters: {
+            query?: {
+                version_id?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    exportChat: {
+        parameters: {
+            query?: {
+                format?: "thchat" | "st_jsonl";
+                include_variables?: "true" | "false";
+                include_memories?: "true" | "false";
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    exportPreset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    exportRegex: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    exportWorldbook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     importCharacter: {
         parameters: {
             query?: never;
@@ -5531,6 +6465,85 @@ export interface operations {
             };
             /** @description Default Response */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    importChat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "character_id": "char_abc123",
+                 *       "data": "{\"chat_metadata\":{},\"user_name\":\"unused\",\"character_name\":\"unused\"}\n{\"name\":\"User\",\"is_user\":true,\"mes\":\"Hello\"}\n{\"name\":\"Alice\",\"is_user\":false,\"mes\":\"Hi there!\",\"swipes\":[\"Hi there!\",\"Hey!\"]}",
+                 *       "title": "Imported Chat"
+                 *     }
+                 */
+                "application/json": {
+                    character_id?: string;
+                    data: string;
+                    title?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "floor_count": 1,
+                     *         "import_source": "sillytavern_jsonl",
+                     *         "message_count": 2,
+                     *         "session_id": "sess_abc123",
+                     *         "skipped_lines": 0,
+                     *         "swipe_count": 2,
+                     *         "title": "Imported Chat"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            floor_count: number;
+                            /** @enum {string} */
+                            format: "thchat" | "sillytavern_jsonl";
+                            import_source?: string;
+                            message_count: number;
+                            session_id: string;
+                            skipped_lines?: number;
+                            swipe_count?: number;
+                            title: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7374,6 +8387,7 @@ export interface operations {
                      *                 "text": "Alice carries a silver sword."
                      *               },
                      *               "created_at": 1735689600000,
+                     *               "fact_key": "equipment",
                      *               "id": "mem_fact_1",
                      *               "importance": 0.8,
                      *               "scope": "chat",
@@ -7415,6 +8429,7 @@ export interface operations {
                                  *         "text": "Alice carries a silver sword."
                                  *       },
                                  *       "created_at": 1735689600000,
+                                 *       "fact_key": "equipment",
                                  *       "id": "mem_fact_1",
                                  *       "importance": 0.8,
                                  *       "scope": "chat",
@@ -7430,6 +8445,7 @@ export interface operations {
                                     confidence: number;
                                     content: unknown;
                                     created_at: number;
+                                    fact_key?: string | null;
                                     id: string;
                                     importance: number;
                                     /** @enum {string} */
@@ -9825,6 +10841,226 @@ export interface operations {
             };
         };
     };
+    getSessionToolPermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            allow_irreversible?: boolean;
+                            enabled?: boolean;
+                            max_calls_per_turn?: number;
+                            max_steps_per_generation?: number;
+                            slot_allow_list?: {
+                                [key: string]: string[];
+                            };
+                            slot_deny_list?: {
+                                [key: string]: string[];
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    replaceSessionToolPermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    allow_irreversible?: boolean;
+                    enabled?: boolean;
+                    max_calls_per_turn?: number;
+                    max_steps_per_generation?: number;
+                    slot_allow_list?: {
+                        [key: string]: string[];
+                    };
+                    slot_deny_list?: {
+                        [key: string]: string[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            allow_irreversible?: boolean;
+                            enabled?: boolean;
+                            max_calls_per_turn?: number;
+                            max_steps_per_generation?: number;
+                            slot_allow_list?: {
+                                [key: string]: string[];
+                            };
+                            slot_deny_list?: {
+                                [key: string]: string[];
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    patchSessionToolPermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    allow_irreversible?: boolean;
+                    enabled?: boolean;
+                    max_calls_per_turn?: number;
+                    max_steps_per_generation?: number;
+                    slot_allow_list?: {
+                        [key: string]: string[];
+                    };
+                    slot_deny_list?: {
+                        [key: string]: string[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            allow_irreversible?: boolean;
+                            enabled?: boolean;
+                            max_calls_per_turn?: number;
+                            max_steps_per_generation?: number;
+                            slot_allow_list?: {
+                                [key: string]: string[];
+                            };
+                            slot_deny_list?: {
+                                [key: string]: string[];
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     batchDeleteSessions: {
         parameters: {
             query?: never;
@@ -9918,6 +11154,528 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listBuiltinTools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            allowed_slots: string[];
+                            description: string;
+                            name: string;
+                            parameters: Record<string, never>;
+                            /** @enum {string} */
+                            side_effect_level: "none" | "sandbox" | "irreversible";
+                            source: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    queryToolCallRecords: {
+        parameters: {
+            query?: {
+                page_id?: string;
+                floor_id?: string;
+                caller_slot?: string;
+                status?: "success" | "error" | "denied";
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+                sort_by?: "seq" | "created_at";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            args: unknown;
+                            caller_slot: string;
+                            created_at: number;
+                            duration_ms: number;
+                            id: string;
+                            page_id: string;
+                            result: unknown;
+                            seq: number;
+                            /** @enum {string} */
+                            status: "success" | "error" | "denied";
+                            tool_name: string;
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listToolDefinitions: {
+        parameters: {
+            query?: {
+                source?: "preset" | "character" | "custom";
+                source_id?: string;
+                enabled?: "true" | "false";
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+                sort_by?: "updated_at" | "name";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            allowed_slots: unknown;
+                            created_at: number;
+                            description: string;
+                            enabled: boolean;
+                            handler: unknown;
+                            /** @enum {string} */
+                            handler_type: "script" | "prompt" | "delegate";
+                            id: string;
+                            name: string;
+                            parameters: Record<string, never>;
+                            /** @enum {string} */
+                            side_effect_level: "none" | "sandbox" | "irreversible";
+                            /** @enum {string} */
+                            source: "preset" | "character" | "custom";
+                            source_id: string | null;
+                            updated_at: number;
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createToolDefinition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    allowed_slots?: string[];
+                    description?: string;
+                    enabled?: boolean;
+                    handler?: Record<string, never>;
+                    /** @enum {string} */
+                    handler_type?: "script" | "prompt" | "delegate";
+                    name: string;
+                    parameters?: Record<string, never>;
+                    /** @enum {string} */
+                    side_effect_level?: "none" | "sandbox" | "irreversible";
+                    /** @enum {string} */
+                    source?: "preset" | "character" | "custom";
+                    source_id?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            allowed_slots: unknown;
+                            created_at: number;
+                            description: string;
+                            enabled: boolean;
+                            handler: unknown;
+                            /** @enum {string} */
+                            handler_type: "script" | "prompt" | "delegate";
+                            id: string;
+                            name: string;
+                            parameters: Record<string, never>;
+                            /** @enum {string} */
+                            side_effect_level: "none" | "sandbox" | "irreversible";
+                            /** @enum {string} */
+                            source: "preset" | "character" | "custom";
+                            source_id: string | null;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getToolDefinition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            allowed_slots: unknown;
+                            created_at: number;
+                            description: string;
+                            enabled: boolean;
+                            handler: unknown;
+                            /** @enum {string} */
+                            handler_type: "script" | "prompt" | "delegate";
+                            id: string;
+                            name: string;
+                            parameters: Record<string, never>;
+                            /** @enum {string} */
+                            side_effect_level: "none" | "sandbox" | "irreversible";
+                            /** @enum {string} */
+                            source: "preset" | "character" | "custom";
+                            source_id: string | null;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deleteToolDefinition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            deleted: boolean;
+                            id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    updateToolDefinition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    allowed_slots?: string[];
+                    description?: string;
+                    enabled?: boolean;
+                    handler?: Record<string, never>;
+                    /** @enum {string} */
+                    handler_type?: "script" | "prompt" | "delegate";
+                    name?: string;
+                    parameters?: Record<string, never>;
+                    /** @enum {string} */
+                    side_effect_level?: "none" | "sandbox" | "irreversible";
+                    /** @enum {string} */
+                    source?: "preset" | "character" | "custom";
+                    source_id?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            allowed_slots: unknown;
+                            created_at: number;
+                            description: string;
+                            enabled: boolean;
+                            handler: unknown;
+                            /** @enum {string} */
+                            handler_type: "script" | "prompt" | "delegate";
+                            id: string;
+                            name: string;
+                            parameters: Record<string, never>;
+                            /** @enum {string} */
+                            side_effect_level: "none" | "sandbox" | "irreversible";
+                            /** @enum {string} */
+                            source: "preset" | "character" | "custom";
+                            source_id: string | null;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    toggleToolDefinition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            allowed_slots: unknown;
+                            created_at: number;
+                            description: string;
+                            enabled: boolean;
+                            handler: unknown;
+                            /** @enum {string} */
+                            handler_type: "script" | "prompt" | "delegate";
+                            id: string;
+                            name: string;
+                            parameters: Record<string, never>;
+                            /** @enum {string} */
+                            side_effect_level: "none" | "sandbox" | "irreversible";
+                            /** @enum {string} */
+                            source: "preset" | "character" | "custom";
+                            source_id: string | null;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

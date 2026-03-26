@@ -4,86 +4,67 @@ outline: [2, 3]
 
 # 官方集成层
 
-TavernHeadless 当前提供一套官方维护的第一方接入层，用来统一前端、桌面客户端、脚本和其他消费方的接入方式。
+TavernHeadless 提供了一套官方维护的第一方接入层，用来统一前端、桌面客户端、脚本和其他消费方的接入方式。
 
-当前只有两个官方公开接入包：
+当前只有两个包：
 
-- `@tavern/sdk`
-- `@tavern/client-helpers`
+- `@tavern/sdk` —— 基础层，负责和后端打交道
+- `@tavern/client-helpers` —— 语义层，负责把数据整理成前端好用的形态
 
-这两个包合在一起，就是当前的 TavernHeadless Official Integration Kit。
+合在一起就是 TavernHeadless Official Integration Kit。
 
 ## 为什么要有这层
 
-后端 API 可以直接使用，但接入方通常会重复写这些代码：
+后端 API 可以直接调，但接入方通常会重复写这些东西：
 
-- 请求封装
-- 账号头注入
+- 请求封装和账号头注入
 - SSE 解析
 - 错误处理
 - 时间线整理
 - usage 归一化
-- 流式中间态累计
-- Tool Calling 与 MCP 的接入包装
+- 流式生成的中间状态累积
+- Tool Calling 和 MCP 的接入包装
 
 如果这些逻辑散落在每个前端里，接入方式会越来越分散，行为也会不一致。
 
-官方集成层的目标，是把已经稳定、已经重复出现、已经属于接入层的问题收住，形成统一的第一方调用面。
+官方集成层把这些已经稳定、已经重复出现、属于接入层的问题收拢住，统一提供。
 
 ## 两个包的边界
 
 ### `@tavern/sdk`
 
-`@tavern/sdk` 是基础层。
+基础层。
 
-它负责：
-
-- HTTP API 调用
-- 默认请求头
-- 统一错误对象
-- SSE 读取与解析
-- 第一方资源方法
-- 保留底层类型化请求能力
-
-它不负责：
-
-- 时间线视图整理
-- active page 选择
-- store 状态管理
-- hooks、composables、组件
-- Vue / React / Pinia 绑定
+| 负责 | 不负责 |
+| ---- | ---- |
+| HTTP API 调用 | 时间线视图整理 |
+| 默认请求头注入 | active page 选择 |
+| 统一错误对象 | store 状态管理 |
+| SSE 读取与解析 | hooks、composables、组件 |
+| 资源方法 | Vue / React / Pinia 绑定 |
+| 保留底层请求能力 | |
 
 ### `@tavern/client-helpers`
 
-`@tavern/client-helpers` 是语义层。
+语义层。
 
-它负责：
-
-- usage 归一化
-- 时间线构建
-- 流式状态 reducer
-- active page 选择
-- API 错误到界面状态的映射
-
-它不负责：
-
-- 发请求
-- 依赖 `fetch`
-- 依赖 Vue / React / Pinia
+| 负责 | 不负责 |
+| ---- | ---- |
+| usage 归一化 | 发请求 |
+| 时间线构建 | 依赖 `fetch` |
+| 流式状态 reducer | 依赖 Vue / React / Pinia |
+| active page 选择 | |
+| API 错误到界面状态的映射 | |
 
 ### `@tavern/shared`
 
-`@tavern/shared` 仍然是内部包。
+`@tavern/shared` 是内部包，仓库内部可以复用，但不属于公开接入面。
 
-它可以被仓库内部复用，但不作为公开接入面的组成部分来对外承诺。
-
-## 推荐使用顺序
-
-建议按下面的顺序使用：
+## 建议的使用顺序
 
 1. 用 `@tavern/sdk` 读取或写入资源
-2. 用 `@tavern/client-helpers` 整理接入侧语义
-3. 最后在应用层接入具体的 store、组件和页面
+2. 用 `@tavern/client-helpers` 整理数据
+3. 在应用层接入 store、组件、页面
 
 ## 基本示例
 
@@ -97,96 +78,158 @@ const client = createTavernClient({
 });
 ```
 
-### 调用资源
+如果后端开启了认证，可以通过 `getHeaders` 注入：
 
 ```ts
-const sessionResult = await client.sessions.respond({
-  sessionId: "session-1",
-  message: "你好",
+const client = createTavernClient({
+  baseUrl: "http://localhost:3000",
+  getHeaders: () => ({
+    authorization: "Bearer <token>",
+    "x-account-id": "account-1",
+  }),
 });
 ```
 
-### 整理语义
+### 调用资源
 
 ```ts
-import { resolveUsage } from "@tavern/client-helpers";
+// 非流式回复
+const result = await client.sessions.respond({
+  sessionId: "session-1",
+  message: "你好",
+});
 
-const usage = resolveUsage(sessionResult.totalUsage);
+console.log(result.generatedText);
+console.log(result.summaries);
+console.log(result.finalState);
 ```
 
-## 当前 SDK 资源覆盖范围
+`finalState === "committed"` 表示公开提交边界已经完成，相关持久化写入已经结束。
 
-目前 `@tavern/sdk` 已覆盖这些资源。
+```ts
+// 流式回复
+const result = await client.sessions.respondStream({
+  sessionId: "session-1",
+  message: "继续",
+  onChunk(payload) {
+    process.stdout.write(payload.chunk);
+  },
+});
 
-### 会话与内容结构
+console.log(result.summaries);
+console.log(result.finalState);
+```
 
-- `health`
-- `sessions`
-- `messages`
-- `floors`
-- `pages`
-- `branches`
+```ts
+// 生成前 dry-run
+const preview = await client.sessions.respondDryRun({
+  sessionId: "session-1",
+  message: "继续",
+});
 
-### 角色、资料与配置
+console.log(preview.promptSnapshot.promptMode);
+console.log(preview.promptSnapshot.promptDigest);
+```
 
-- `characters`
-- `users`
-- `presets`
-- `presetEntries`
-- `worldbooks`
-- `worldbookEntries`
-- `regexProfiles`
+```ts
+// 读取带结构化 factKey 的事实记忆
+const memories = await client.memories.list({
+  scope: "chat",
+  scopeId: "session-1",
+  type: "fact",
+  factKey: "relationship",
+});
+```
 
-### 导入、导出与模型配置
+`factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。
 
-- `imports`
-- `exports`
-- `llmProfiles`
-- `llmInstances`
+### 整理数据
 
-### 账号、变量与记忆
+```ts
+import { resolveUsage, buildTimelineMessages } from "@tavern/client-helpers";
 
-- `accounts`
-- `variables`
-- `memories`
-- `memoryEdges`
+// 归一化 usage
+const usage = resolveUsage(result.totalUsage);
+console.log(usage.inputTokens, usage.outputTokens, usage.totalTokens);
 
-### 工具与运行集成
+// 构建时间线
+const messages = buildTimelineMessages(timeline.floors);
+```
 
-- `tools`
-- `mcp`
+### 累积流式状态
+
+```ts
+import {
+  createInitialRespondStreamState,
+  reduceRespondStream,
+} from "@tavern/client-helpers";
+
+let state = createInitialRespondStreamState();
+
+for (const event of events) {
+  state = reduceRespondStream(state, event);
+}
+// state.status: "idle" → "streaming" → "done"(或 "error")
+// state.content: 已累积的生成文本
+```
+
+### 错误映射
+
+```ts
+import { mapApiErrorToUiState } from "@tavern/client-helpers";
+
+try {
+  await client.sessions.respond({ sessionId: "missing", message: "hello" });
+} catch (error) {
+  const uiError = mapApiErrorToUiState(error);
+  // uiError.kind: "not_found" / "validation" / "server" / "network" / ...
+  // uiError.retryable: true / false
+  // uiError.code: 原始 API 错误码
+}
+```
+
+`mapApiErrorToUiState()` 默认按 HTTP 状态码分桶，但会对部分已知业务错误码优先做 code-aware 映射：
+
+- `generation_conflict` → `conflict`
+- `commit_conflict` → `conflict`
+- `turn_commit_failed` → `server`
+
+## SDK 资源覆盖范围
+
+目前 `@tavern/sdk` 已覆盖这些资源：
+
+| 分类 | 资源 |
+| ---- | ---- |
+| 会话与内容结构 | `health`、`sessions`、`messages`、`floors`、`pages`、`branches` |
+| 角色、资料与配置 | `characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles` |
+| 导入、导出与模型 | `imports`、`exports`、`llmProfiles`、`llmInstances` |
+| 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges` |
+| 工具与运行集成 | `tools`、`mcp` |
 
 ### 底层能力
 
-除了资源方法，`@tavern/sdk` 还保留：
+除了资源方法，`@tavern/sdk` 还保留了通用的底层请求方法：
 
-- `request(...)`
-- `get(...)`
-- `post(...)`
-- `put(...)`
-- `patch(...)`
-- `delete(...)`
-- `TavernApiError`
-- `readSseStream(...)`
+- `request()`、`get()`、`post()`、`put()`、`patch()`、`delete()`
+- `TavernApiError` 和 `isTavernApiError()`
+- `readSseStream()`
 
-## 当前 `@tavern/client-helpers` 能力
+## `@tavern/client-helpers` 当前导出
 
-目前 `@tavern/client-helpers` 已提供：
-
-- `resolveUsage`
-- `buildTimelineMessages`
-- `createInitialRespondStreamState`
-- `reduceRespondStream`
-- `getActivePage`
-- `mapApiErrorToUiState`
+| 函数 | 用途 |
+| ---- | ---- |
+| `resolveUsage` | usage 归一化 |
+| `buildTimelineMessages` | 楼层数据 → 时间线消息列表 |
+| `createInitialRespondStreamState` | 流式状态初始值 |
+| `reduceRespondStream` | SSE 事件 → 流式状态累积 |
+| `getActivePage` | 从楼层取当前活动页 |
+| `mapApiErrorToUiState` | API 错误 → 界面错误状态 |
 
 ## 导出、Tools、MCP 的处理原则
 
 ### 导出资源
 
-`exports` 资源直接返回原始 `Response`。
-
-原因很简单：导出接口本身就是文件下载语义，调用方可能需要自己决定用 `text()`、`blob()`、`arrayBuffer()` 还是其他读取方式。
+`exports` 资源直接返回原始 `Response`。导出本身是文件下载语义，调用方可能需要自己用 `text()`、`blob()` 或其他方式读取。
 
 ### Tools 资源
 
@@ -195,66 +238,63 @@ const usage = resolveUsage(sessionResult.totalUsage);
 - 内置工具列表
 - 自定义工具定义 CRUD
 - 启用和停用
-- 调用记录查询
+- 兼容调用记录查询
 
-会话级工具权限仍保留在 `sessions` 资源下，不挪到 `tools` 中。
+会话级工具权限仍保留在 `sessions` 资源下。
+
+当前 `tools.listCallRecords()` 仍对应公开兼容查询面 `/tools/call-records`。在 API 对外公开新的 execution records 路由前，官方包继续保持兼容行为，不提前发明新的查询方法。
 
 ### MCP 资源
 
 `mcp` 资源同时覆盖：
 
 - 服务器配置 CRUD
-- 启用和停用
-- 连接状态读取
+- 启用、停用、连接状态
 - connect / disconnect / test
 - 服务器工具列表
 
-## 与 `apps/web` 的关系
+## 和 `apps/web` 的关系
 
-这两个包首先用于收敛仓库内部已经重复出现的接入逻辑。
+这两个包首先用于收拢仓库内已经重复出现的接入逻辑。
 
-当前 `apps/web` 已经开始改用这两个包：
+`apps/web` 已经开始用这两个包：
 
 - 请求层逻辑逐步迁入 `@tavern/sdk`
-- 时间线和流式整理逻辑逐步迁入 `@tavern/client-helpers`
+- 时间线和流式状态整理逻辑逐步迁入 `@tavern/client-helpers`
 
-应用层仍然保留这些内容：
+应用层仍然保留：
 
 - Vue 组件和页面逻辑
 - 表单状态
 - 菜单交互
-- 只在单一界面中使用的局部映射
+- 只在单一界面中用到的局部映射
 
-## 这套文档需要怎样跟着代码变化
+## 这套文档怎么跟着代码变化
 
-这点需要明确说明。
+当引擎内部实现、后端路由、SSE 事件、OpenAPI、Tool Calling、MCP 或其他接入方可见的语义发生变化时，不能只改引擎或只改某个前端。
 
-当引擎内部实现、后端路由、SSE 事件、OpenAPI、Tool Calling、MCP 或其他接入方可见语义发生变化时，不能只改引擎或只改某个前端。
-
-此时应同时检查并按需要更新：
+应同时检查并按需要更新：
 
 - `@tavern/sdk`
 - `@tavern/client-helpers`
 - 包内 README
 - 外部接入文档
 
-也就是说，引擎内部实现一改，官方包自然也要跟着检查；如果变化已经影响公开接入语义，官方包和文档就应同步更新。
+引擎内部实现一改，官方包自然也要跟着检查。变化已经影响公开接入语义的，就应同步更新。
 
 ## 文档入口
 
-包内文档位于：
+包内文档：
 
 - `packages/official-integration-kit/sdk/README.md`
 - `packages/official-integration-kit/client-helpers/README.md`
 
-协作规则位于：
+协作规则：
 
 - `docs/contributing.md`
 - [协作指南](/development/contributing)
 
 ## 版本兼容
-
-当前建议按下面的关系理解兼容范围：
 
 | 后端 API | `@tavern/sdk` | `@tavern/client-helpers` |
 | ---- | ---- | ---- |
@@ -262,7 +302,7 @@ const usage = resolveUsage(sessionResult.totalUsage);
 
 ## 继续阅读
 
-如果需要查看 API 本身，请继续参考：
+如果需要查看 API 本身：
 
 - [API 参考](/reference/api)
 - [Sessions（会话）](/reference/api/sessions)

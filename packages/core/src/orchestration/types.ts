@@ -1,9 +1,8 @@
-import type { FloorState } from '@tavern/shared';
 import type { ChatMessage } from '../prompt/types.js';
 import type { GenerationParams, InstanceSlot, ModelConfig, TokenUsage } from '../llm/types.js';
 import type { SummaryExtractorOptions } from '../generation/summary-extractor.js';
 import type { MemoryInjectionOptions, MemoryInjectionResult, MemoryItem } from '../memory/types.js';
-import type { ToolPermissions, ToolCallRecord } from '../tools/types.js';
+import type { ExecutedToolCallRecord, ToolPermissions, ToolCallRecord } from '../tools/types.js';
 import type { ToolRegistry } from '../tools/tool-registry.js';
 import type { DirectorInput, DirectorResult } from './director.js';
 import type { VerifierInput, VerifierResult } from './verifier.js';
@@ -43,6 +42,12 @@ export interface TurnInput {
   sessionId: string;
   /** 楼层 ID（已创建好的 draft 楼层） */
   floorId: string;
+  /**
+   * 当前工具执行的页上下文 ID（可选）。
+   *
+   * 当上层已经持有真实 pageId（例如 input page）时，可传给工具执行上下文。
+   */
+  pageId?: string;
   /** 已拼装好的 messages（由外部编排器产生） */
   messages: ChatMessage[];
   /** Generation 参数 */
@@ -95,12 +100,23 @@ export interface TurnInput {
   abortSignal?: AbortSignal;
 }
 
-// ── Turn Output ───────────────────────────────────────
+// ── Turn Execution Result ─────────────────────────────
 
-/** 回合输出 */
-export interface TurnOutput {
+/**
+ * 回合执行结果。
+ *
+ * 表示生成阶段的产物，不代表楼层已经 committed。
+ * 成功返回时，floor 应仍处于 generating，最终 commit 由上层服务负责。
+ */
+export interface TurnExecutionResult {
   /** 楼层 ID */
   floorId: string;
+  /**
+   * 执行阶段结束时的楼层状态。
+   *
+   * 统一提交边界改造后，TurnOrchestrator 成功返回时固定为 generating。
+   */
+  finalState: 'generating';
   /** Narrator 最终输出文本（后处理后） */
   generatedText: string;
   /** 原始 LLM 输出文本 */
@@ -117,8 +133,16 @@ export interface TurnOutput {
   consolidationResult?: ConsolidationResult;
   /** 总 Token 用量 */
   totalUsage: TokenUsage;
-  /** 楼层最终状态 */
-  finalState: FloorState;
-  /** 本回合所有工具调用记录 */
+  /** 本回合真实执行过的工具调用记录 */
+  toolExecutionRecords?: ExecutedToolCallRecord[];
+  /**
+   * 旧的摘要式工具调用记录。
+   *
+   * @deprecated 新路径应使用 toolExecutionRecords。
+   */
   toolCalls?: ToolCallRecord[];
 }
+
+/** @deprecated 使用 TurnExecutionResult。 */
+export type TurnOutput = TurnExecutionResult;
+

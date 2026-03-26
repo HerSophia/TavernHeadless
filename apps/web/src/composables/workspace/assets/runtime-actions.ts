@@ -1,5 +1,6 @@
 import type { ComputedRef, Ref } from "vue";
 
+import { countTurnSummaries, resolveTurnCompletionEventKey } from "../messages/turn-result-events";
 import type {
   AssetApplyResult,
   AssetFavoriteResult,
@@ -168,10 +169,19 @@ export function useWorkspaceRuntimeActions(options: UseWorkspaceRuntimeActionsOp
       options.addEvent("events.timelineSyncFailed", "warn");
     }
 
-    options.addEvent("events.respondDone", "success", {
+    const successVars: Record<string, number | string> = {
       ms: result.latencyMs,
       tokens: result.tokens
-    });
+    };
+    const summaryCount = countTurnSummaries(result.result);
+    if (summaryCount > 0) {
+      successVars.summaries = summaryCount;
+    }
+    if (result.result?.finalState && result.result.finalState !== "committed") {
+      successVars.state = result.result.finalState;
+    }
+
+    options.addEvent(resolveTurnCompletionEventKey("events.respondDone", result.result), "success", successVars);
   }
 
   return {

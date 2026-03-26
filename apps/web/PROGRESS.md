@@ -7,7 +7,7 @@
 
 - 里程碑：`FW-P0/P1 + WFD - Narrative Workspace 主工作流与前端解耦收口`
 - 状态：`进行中（解耦整体约 95%：wfd-01~wfd-04 已完成，wfd-05 收口中，wfd-06 文档与残余清理进行中）`
-- 最后更新：`2026-02-15`
+- 最后更新：`2026-03-26`
 
 ## 1) 产品形态与硬约束对齐（已落地）
 
@@ -112,11 +112,12 @@
 ## 5) 测试与验证（当前稳定状态）
 
 - [x] `pnpm --filter @tavern/web typecheck`
+- [x] `pnpm --filter @tavern/web test`
 - [x] `pnpm --filter @tavern/api test -- imports.test.ts`（Preset editor/update 相关用例已增补）
 - [x] `pnpm --filter @tavern/adapters-sillytavern test -- preset-parser.test.ts`（legacy alias 兼容）
 - [x] `pnpm --filter @tavern/api typecheck`
 
-备注：Web 侧现阶段验证以类型与交互链路为主；Preset 结构兼容与回归由 API/adapter 测试协同覆盖。
+备注：Web 侧现阶段验证以类型与交互链路为主；Preset 结构兼容与回归由 API/adapter 测试协同覆盖。消息动作成功事件现已消费 `finalState` / `summaries`，并在时间线同步失败时保留本地 floor 元数据。
 
 ## 6) 关键文件分层（当前）
 

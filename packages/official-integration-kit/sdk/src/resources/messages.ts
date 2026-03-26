@@ -1,7 +1,7 @@
 import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
 import { TavernApiError } from "../errors/tavern-api-error.js";
-import { resolveTotalTokens, toApiUsage, type ApiUsage } from "../types/usage.js";
-import type { RespondGenerationParams, RespondTurnConfig } from "./sessions.js";
+import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
+import type { RespondGenerationParams, RespondResult, RespondTurnConfig } from "./sessions.js";
 import {
   compactObject,
   readArray,
@@ -35,12 +35,9 @@ export type MessageUpdateResult = {
   role: string;
 };
 
-export type RegenerateResult = {
-  branchId?: string;
-  floorId: string;
-  floorNo: number;
-  totalTokens: number;
-  totalUsage: ApiUsage;
+export type RegenerateResult = RespondResult & {
+  sourceFloorId?: string;
+  sourceMessageId?: string;
 };
 
 export type MessagesCreateOptions = {
@@ -385,6 +382,12 @@ function mapDeleteBatchItem(value: unknown): MessagesBatchDeleteResult["results"
   };
 }
 
+function mapStringArray(value: unknown): string[] {
+  return readArray(value)
+    .map((item) => readOptionalString(item))
+    .filter((item): item is string => item !== undefined);
+}
+
 function mapRegeneratePayload(payload: Record<string, unknown> | null, errorMessage: string): RegenerateResult {
   const data = readRecord(payload?.data);
   const floorId = readOptionalString(data?.floor_id);
@@ -401,8 +404,21 @@ function mapRegeneratePayload(payload: Record<string, unknown> | null, errorMess
 
   return {
     branchId: readOptionalString(data?.branch_id),
+    finalState:
+      data?.final_state === "draft" ||
+      data?.final_state === "generating" ||
+      data?.final_state === "committed" ||
+      data?.final_state === "failed"
+        ? data.final_state
+        : undefined,
     floorId,
     floorNo,
+    generatedText: readString(data?.generated_text),
+    inputTokens: resolveInputTokens(totalUsage),
+    outputTokens: resolveOutputTokens(totalUsage),
+    sourceFloorId: readOptionalString(data?.source_floor_id),
+    sourceMessageId: readOptionalString(data?.source_message_id),
+    summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
   };

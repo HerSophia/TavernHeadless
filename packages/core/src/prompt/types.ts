@@ -102,3 +102,26 @@ export interface AssembledPrompt {
   /** 被裁剪的消息数量 */
   prunedCount: number;
 }
+
+/**
+ * 单轮 Prompt 快照记录。
+ *
+ * 用于记录某个 floor 在实际生成时冻结使用的 Prompt 资源版本与摘要信息。
+ */
+export interface PromptSnapshotRecord {
+  floorId: string;
+  sessionId: string;
+  presetId: string | null;
+  presetUpdatedAt: number | null;
+  worldbookId: string | null;
+  worldbookUpdatedAt: number | null;
+  regexProfileId: string | null;
+  regexProfileUpdatedAt: number | null;
+  worldbookActivatedEntryUids: number[];
+  regexPreRuleNames: string[];
+  regexPostRuleNames: string[];
+  promptMode: 'native' | 'compat_plus' | 'compat_strict';
+  promptDigest: string;
+  tokenEstimate: number;
+  createdAt: number;
+}

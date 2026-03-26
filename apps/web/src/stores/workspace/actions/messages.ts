@@ -6,6 +6,8 @@ import {
   respondInSession,
   retryFloor as retryFloorApi,
   streamSessionResponse,
+  type StreamStartPayload,
+  type WorkspaceRespondResult,
   updateMessageContent
 } from "../../../lib/workspace-api";
 import { animateMockAssistantReply } from "../timeline-draft";
@@ -29,6 +31,46 @@ type MessageActionsContext = {
   hydrateSessionTimeline: (sessionId: string, accountId?: string) => Promise<TimelineHydrationResult>;
   isStreaming: ComputedRef<boolean>;
 };
+
+function applyDraftFloorMetadata(
+  message: TimelineMessage,
+  metadata: {
+    floorId?: string;
+    floorNo?: number;
+    floorState?: string;
+  }
+): void {
+  if (metadata.floorId) {
+    message.floorId = metadata.floorId;
+  }
+
+  if (metadata.floorNo !== undefined) {
+    message.floorNo = metadata.floorNo;
+  }
+
+  if (metadata.floorState) {
+    message.floorState = metadata.floorState;
+  }
+}
+
+function applyStreamStartMetadata(messages: TimelineMessage[], payload: StreamStartPayload): void {
+  messages.forEach((message) => {
+    applyDraftFloorMetadata(message, {
+      floorId: payload.floor_id,
+      floorNo: payload.floor_no
+    });
+  });
+}
+
+function applyRespondResultMetadata(messages: TimelineMessage[], result: WorkspaceRespondResult): void {
+  messages.forEach((message) => {
+    applyDraftFloorMetadata(message, {
+      floorId: result.floorId,
+      floorNo: result.floorNo,
+      floorState: result.finalState
+    });
+  });
+}
 
 export function createMessageActions(context: MessageActionsContext) {
   async function updateTimelineMessage(messageId: string, nextContent: string): Promise<UpdateOrDeleteResult> {
@@ -311,7 +353,7 @@ export function createMessageActions(context: MessageActionsContext) {
     }
 
     const bucket = context.ensureTimeline(session.id);
-    bucket.push({
+    const userMessage: TimelineMessage = {
       at: Date.now(),
       contentFormat: "text",
       content: text,
@@ -323,7 +365,8 @@ export function createMessageActions(context: MessageActionsContext) {
       role: "user",
       seq: bucket.length,
       source: "local"
-    });
+    };
+    bucket.push(userMessage);
 
     const assistantMessage: TimelineMessage = {
       at: Date.now(),
@@ -340,6 +383,7 @@ export function createMessageActions(context: MessageActionsContext) {
       streaming: true
     };
     bucket.push(assistantMessage);
+    const draftMessages = [userMessage, assistantMessage];
 
     const startAt = Date.now();
 
@@ -348,9 +392,13 @@ export function createMessageActions(context: MessageActionsContext) {
         accountId: context.currentAccount.value,
         onChunk: (chunk) => {
           assistantMessage.content += chunk;
+        },
+        onStart: (payload) => {
+          applyStreamStartMetadata(draftMessages, payload);
         }
       });
 
+      applyRespondResultMetadata(draftMessages, result);
       assistantMessage.content = result.generatedText || assistantMessage.content;
       assistantMessage.streaming = false;
       assistantMessage.latencyMs = Date.now() - startAt;
@@ -363,6 +411,7 @@ export function createMessageActions(context: MessageActionsContext) {
         localFallback: false,
         timelineSyncFailed: timelineResult.apiSyncFailed,
         ok: true,
+        result,
         streamFallback: false,
         tokens: assistantMessage.tokens
       };
@@ -372,6 +421,7 @@ export function createMessageActions(context: MessageActionsContext) {
 
     try {
       const result = await respondInSession(session.id, text, context.currentAccount.value);
+      applyRespondResultMetadata(draftMessages, result);
       assistantMessage.content = result.generatedText;
       assistantMessage.streaming = false;
       assistantMessage.latencyMs = Date.now() - startAt;
@@ -384,6 +434,7 @@ export function createMessageActions(context: MessageActionsContext) {
         localFallback: false,
         timelineSyncFailed: timelineResult.apiSyncFailed,
         ok: true,
+        result,
         streamFallback: true,
         tokens: assistantMessage.tokens
       };

@@ -1,5 +1,7 @@
 import { computed, reactive, type ComputedRef } from "vue";
 
+import { countTurnSummaries, resolveTurnCompletionEventKey } from "./turn-result-events";
+
 import type {
   RegenerateFromMessageResult,
   TimelineMessage,
@@ -79,6 +81,24 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
 
     return getMessageRoleLabel(messageDialog.targetRole);
   });
+
+  function buildTurnCompletionEventVars(
+    role: string,
+    result?: RegenerateFromMessageResult["result"]
+  ): Record<string, number | string> {
+    const vars: Record<string, number | string> = {
+      role,
+      tokens: result?.totalTokens ?? 0
+    };
+    const summaryCount = countTurnSummaries(result);
+    if (summaryCount > 0) {
+      vars.summaries = summaryCount;
+    }
+    if (result?.finalState && result.finalState !== "committed") {
+      vars.state = result.finalState;
+    }
+    return vars;
+  }
 
   function openEditMessageDialog(messageId: string): void {
     const target = getTimelineMessage(messageId);
@@ -222,10 +242,11 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
       options.addEvent("events.timelineSyncFailed", "warn");
     }
 
-    options.addEvent("events.messageRegenerated", "success", {
-      role: getMessageRoleLabel(target.role),
-      tokens: result.result?.totalTokens ?? 0
-    });
+    options.addEvent(
+      resolveTurnCompletionEventKey("events.messageRegenerated", result.result),
+      "success",
+      buildTurnCompletionEventVars(getMessageRoleLabel(target.role), result.result)
+    );
   }
 
   async function confirmDeleteMessage(): Promise<void> {
@@ -304,10 +325,11 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
       options.addEvent("events.timelineSyncFailed", "warn");
     }
 
-    options.addEvent("events.messageRetried", "success", {
-      role: getMessageRoleLabel(target.role),
-      tokens: result.result?.totalTokens ?? 0
-    });
+    options.addEvent(
+      resolveTurnCompletionEventKey("events.messageRetried", result.result),
+      "success",
+      buildTurnCompletionEventVars(getMessageRoleLabel(target.role), result.result)
+    );
   }
 
   return {

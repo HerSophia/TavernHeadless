@@ -20,6 +20,7 @@ describe("sdk memory resources", () => {
       content: { text: "Alice carries a silver sword." },
       created_at: 100,
       id: "mem-1",
+      fact_key: "relationship",
       importance: 0.8,
       scope: "chat",
       scope_id: "session-1",
@@ -51,7 +52,7 @@ describe("sdk memory resources", () => {
         }),
       )
       .mockResolvedValueOnce(jsonResponse({ data: memoryPayload }))
-      .mockResolvedValueOnce(jsonResponse({ data: { ...memoryPayload, status: "deprecated" } }))
+      .mockResolvedValueOnce(jsonResponse({ data: { ...memoryPayload, fact_key: null, status: "deprecated" } }))
       .mockResolvedValueOnce(jsonResponse({ data: { id: "mem-1", deleted: true } }))
       .mockResolvedValueOnce(
         jsonResponse({
@@ -65,7 +66,7 @@ describe("sdk memory resources", () => {
             results: [
               {
                 action: "updated",
-                data: { ...memoryPayload, status: "deprecated" },
+                data: { ...memoryPayload, fact_key: null, status: "deprecated" },
                 id: "mem-1",
                 index: 0,
               },
@@ -102,6 +103,7 @@ describe("sdk memory resources", () => {
         confidence: 0.9,
         content: { text: "Alice carries a silver sword." },
         importance: 0.8,
+        factKey: "relationship",
         scope: "chat",
         scopeId: "session-1",
         sourceFloorId: "floor-1",
@@ -113,6 +115,7 @@ describe("sdk memory resources", () => {
       confidence: 0.9,
       content: { text: "Alice carries a silver sword." },
       createdAt: 100,
+      factKey: "relationship",
       id: "mem-1",
       importance: 0.8,
       scope: "chat",
@@ -130,6 +133,7 @@ describe("sdk memory resources", () => {
         createdFrom: 10,
         importanceMax: 0.9,
         limit: 10,
+        factKey: "relationship",
         offset: 1,
         q: "silver",
         scope: "chat",
@@ -147,6 +151,7 @@ describe("sdk memory resources", () => {
         confidence: 0.9,
         content: { text: "Alice carries a silver sword." },
         createdAt: 100,
+        factKey: "relationship",
         id: "mem-1",
         importance: 0.8,
         scope: "chat",
@@ -162,6 +167,7 @@ describe("sdk memory resources", () => {
     await expect(
       memories.getStats({
         q: "silver",
+        factKey: "relationship",
         scope: "chat",
         status: "active",
       }),
@@ -183,6 +189,7 @@ describe("sdk memory resources", () => {
       confidence: 0.9,
       content: { text: "Alice carries a silver sword." },
       createdAt: 100,
+      factKey: "relationship",
       id: "mem-1",
       importance: 0.8,
       scope: "chat",
@@ -197,12 +204,14 @@ describe("sdk memory resources", () => {
     await expect(
       memories.update({
         memoryId: "mem-1",
+        factKey: null,
         status: "deprecated",
       }),
     ).resolves.toEqual({
       confidence: 0.9,
       content: { text: "Alice carries a silver sword." },
       createdAt: 100,
+      factKey: null,
       id: "mem-1",
       importance: 0.8,
       scope: "chat",
@@ -235,6 +244,7 @@ describe("sdk memory resources", () => {
             confidence: 0.9,
             content: { text: "Alice carries a silver sword." },
             createdAt: 100,
+            factKey: null,
             id: "mem-1",
             importance: 0.8,
             scope: "chat",
@@ -279,6 +289,7 @@ describe("sdk memory resources", () => {
     expect(createInit?.body).toBe(JSON.stringify({
       confidence: 0.9,
       content: { text: "Alice carries a silver sword." },
+      fact_key: "relationship",
       importance: 0.8,
       scope: "chat",
       scope_id: "session-1",
@@ -288,6 +299,7 @@ describe("sdk memory resources", () => {
       type: "fact",
     }));
     expect(updateInit?.body).toBe(JSON.stringify({
+      fact_key: null,
       status: "deprecated",
     }));
     expect(batchStatusInit?.body).toBe(JSON.stringify({
@@ -303,6 +315,7 @@ describe("sdk memory resources", () => {
     expect(listRequestUrl.searchParams.get("confidence_min")).toBe("0.5");
     expect(listRequestUrl.searchParams.get("created_from")).toBe("10");
     expect(listRequestUrl.searchParams.get("importance_max")).toBe("0.9");
+    expect(listRequestUrl.searchParams.get("fact_key")).toBe("relationship");
     expect(listRequestUrl.searchParams.get("limit")).toBe("10");
     expect(listRequestUrl.searchParams.get("offset")).toBe("1");
     expect(listRequestUrl.searchParams.get("q")).toBe("silver");
@@ -318,6 +331,7 @@ describe("sdk memory resources", () => {
 
     const statsRequestUrl = new URL(statsUrl as string);
     expect(statsRequestUrl.pathname).toBe("/memories/stats");
+    expect(statsRequestUrl.searchParams.get("fact_key")).toBe("relationship");
     expect(statsRequestUrl.searchParams.get("q")).toBe("silver");
     expect(statsRequestUrl.searchParams.get("scope")).toBe("chat");
     expect(statsRequestUrl.searchParams.get("status")).toBe("active");
