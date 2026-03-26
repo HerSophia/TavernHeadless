@@ -8,6 +8,7 @@ export type {
   TokenCounter,
   ChatMessage,
   AssembledPrompt,
+  PromptSnapshotRecord,
 } from './types.js';
 
 // ── Template Engine ───────────────────────────────────

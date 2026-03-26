@@ -14,6 +14,7 @@ outline: [2, 3]
 | `scope` | string | 作用域：`global` / `chat` / `floor` |
 | `scope_id` | string | 关联资源 ID |
 | `type` | string | 类型：`fact` / `summary` / `open_loop` |
+| `fact_key` | string \| null | 结构化事实键。仅对 `type=fact` 有意义；未提供或非 fact 类型时返回 `null` |
 | `content` | object | 记忆内容（任意 JSON） |
 | `importance` | number | 重要度，0-1 |
 | `confidence` | number | 置信度，0-1 |
@@ -22,6 +23,8 @@ outline: [2, 3]
 | `status` | string | 状态：`active` / `deprecated` |
 | `created_at` | integer | 创建时间 |
 | `updated_at` | integer | 更新时间 |
+
+`fact_key` 会按后端规则规范化并以小写形式存储，`content` 仍然保留为展示和注入内容。
 
 ## 创建记忆条目
 
@@ -37,6 +40,7 @@ POST /memories
 | `scope_id` | string | **是** | 关联 ID |
 | `type` | string | **是** | 记忆类型 |
 | `content` | object | **是** | 记忆内容 |
+| `fact_key` | string \| null | 否 | 结构化事实键，仅对 `type=fact` 有意义 |
 | `importance` | number | 否 | 重要度（默认 0.5） |
 | `confidence` | number | 否 | 置信度（默认 0.5） |
 | `source_floor_id` | string | 否 | 来源楼层 |
@@ -67,6 +71,7 @@ GET /memories
 | `scope_id` | string | 按关联 ID 过滤 |
 | `type` | string | 按类型过滤 |
 | `status` | string | 按状态过滤 |
+| `fact_key` | string | 按结构化事实键过滤 |
 | `source_floor_id` | string | 按来源楼层过滤 |
 | `source_message_id` | string | 按来源消息过滤 |
 | `created_from` | integer | 创建时间下限 |
@@ -212,6 +217,7 @@ PATCH /memories/batch/status
           "scope": "chat",
           "scope_id": "sess_001",
           "type": "fact",
+          "fact_key": "preference",
           "content": { "text": "User prefers warm lighting" },
           "importance": 0.7,
           "confidence": 0.9,

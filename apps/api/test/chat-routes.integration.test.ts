@@ -192,6 +192,52 @@ describe("chat routes", () => {
     });
   });
 
+  it("maps commit_conflict on /sessions/:id/respond", async () => {
+    const chatService = createChatService({
+      respond: vi.fn(async () => {
+        throw new ChatServiceError("commit_conflict", "Turn commit failed: floor state conflict");
+      }),
+    });
+
+    await mountChatRoutes(chatService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/respond",
+      payload: { message: "hello" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ error: { code: string; message: string } }>()).toEqual({
+      error: {
+        code: "commit_conflict",
+        message: "Turn commit failed: floor state conflict",
+      },
+    });
+  });
+
+  it("maps turn_commit_failed on /sessions/:id/respond", async () => {
+    const chatService = createChatService({
+      respond: vi.fn(async () => {
+        throw new ChatServiceError("turn_commit_failed", "Turn commit failed: sqlite busy");
+      }),
+    });
+
+    await mountChatRoutes(chatService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/respond",
+      payload: { message: "hello" },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json<{ error: { code: string; message: string } }>().error).toEqual({
+      code: "turn_commit_failed",
+      message: "Turn commit failed: sqlite busy",
+    });
+  });
+
   it("returns 500 when /sessions/:id/respond raises an unexpected error", async () => {
     const chatService = createChatService({
       respond: vi.fn(async () => {

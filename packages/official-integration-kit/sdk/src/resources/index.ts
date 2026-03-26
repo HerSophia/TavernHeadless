@@ -117,7 +117,11 @@ export {
 } from "./regex-profiles.js";
 export {
   createSessionsResource,
+  type RespondDryRunAssembly,
+  type RespondDryRunMessage,
+  type RespondDryRunPromptSnapshot,
   type RespondDryRunResult,
+  type RespondFinalState,
   type RespondGenerationParams,
   type RespondTurnConfig,
   type RespondResult,

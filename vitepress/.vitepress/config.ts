@@ -43,6 +43,15 @@ export default defineConfig({
           { text: 'API 资源索引', link: '/reference/api/sessions' },
         ],
       },
+      {
+        text: 'SDK',
+        items: [
+          { text: '总览', link: '/sdk/' },
+          { text: 'Sessions', link: '/sdk/sessions' },
+          { text: 'Chat', link: '/sdk/chat' },
+          { text: 'Client Helpers', link: '/sdk/client-helpers' },
+        ],
+      },
       { text: '进度', link: '/progress/' },
     ],
 
@@ -99,6 +108,46 @@ export default defineConfig({
             { text: 'Tools（工具调用）', link: '/reference/api/tools' },
             { text: 'MCP Servers（MCP 服务器）', link: '/reference/api/mcp' },
             { text: 'Accounts（账号）', link: '/reference/api/accounts' },
+          ],
+        },
+      ],
+      '/sdk/': [
+        {
+          text: 'SDK 总览',
+          items: [
+            { text: '安装与配置', link: '/sdk/' },
+            { text: '错误处理', link: '/sdk/errors' },
+            { text: 'SSE 流', link: '/sdk/sse' },
+          ],
+        },
+        {
+          text: '资源方法',
+          items: [
+            { text: 'Sessions（会话）', link: '/sdk/sessions' },
+            { text: 'Chat（对话生成）', link: '/sdk/chat' },
+            { text: 'Floors（楼层）', link: '/sdk/floors' },
+            { text: 'Pages（消息页）', link: '/sdk/pages' },
+            { text: 'Messages（消息）', link: '/sdk/messages' },
+            { text: 'Characters（角色卡）', link: '/sdk/characters' },
+            { text: 'Users（用户卡）', link: '/sdk/users' },
+            { text: 'Accounts（账号）', link: '/sdk/accounts' },
+            { text: 'Variables（变量）', link: '/sdk/variables' },
+            { text: 'Memories（记忆）', link: '/sdk/memories' },
+            { text: 'Imports（导入）', link: '/sdk/imports' },
+            { text: 'Exports（导出）', link: '/sdk/exports' },
+            { text: 'Presets（预设）', link: '/sdk/presets' },
+            { text: 'Worldbooks（世界书）', link: '/sdk/worldbooks' },
+            { text: 'Regex Profiles（正则配置）', link: '/sdk/regex-profiles' },
+            { text: 'LLM Profiles', link: '/sdk/llm-profiles' },
+            { text: 'LLM Instances（实例配置）', link: '/sdk/llm-instances' },
+            { text: 'Tools（工具调用）', link: '/sdk/tools' },
+            { text: 'MCP Servers', link: '/sdk/mcp' },
+          ],
+        },
+        {
+          text: 'Client Helpers',
+          items: [
+            { text: 'Client Helpers', link: '/sdk/client-helpers' },
           ],
         },
       ],

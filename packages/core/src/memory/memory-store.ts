@@ -26,25 +26,32 @@ function formatMemoryItems(items: MemoryItem[]): string {
   if (items.length === 0) return '';
 
   const lines = items.map((item) => {
+    if (item.type === 'fact' && item.factKey) {
+      const normalizedContent = item.content.trim().toLowerCase();
+      const startsWithKey = normalizedContent.startsWith(`${item.factKey}:`)
+        || normalizedContent.startsWith(`${item.factKey}：`);
+
+      return `- (${item.type}) ${startsWithKey ? item.content : `${item.factKey}: ${item.content}`}`;
+    }
+
     return `- (${item.type}) ${item.content}`;
   });
 
   return `[Memory]\n${lines.join('\n')}`;
 }
 
-function normalizeFactKey(value: string): string {
-  return value.trim().toLowerCase();
+function normalizeFactKey(value: string | undefined): string {
+  return (value ?? '').trim().toLowerCase();
 }
 
-function parseFactKeyFromContent(content: string): string | undefined {
-  const match = /^\s*([^:：]+?)\s*[:：]\s*/.exec(content);
-  if (!match) return undefined;
-
-  const rawKey = match[1];
+function resolveFactAddKey(
+  fact: MemoryConsolidationOutput['factsAdd'][number],
+): string | undefined {
+  const rawKey = fact.factKey ?? fact.key;
   if (!rawKey) return undefined;
 
-  const key = normalizeFactKey(rawKey);
-  return key.length > 0 ? key : undefined;
+  const normalized = normalizeFactKey(rawKey);
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 function compareFactItemsForConflictResolution(
@@ -376,13 +383,15 @@ export class MemoryStore {
 
     // 2. 新增 facts
     for (const fact of output.factsAdd) {
-      markTouchedFactKey(fact.scope ?? scope, fact.key);
-      const factContent = fact.key ? `${fact.key}: ${fact.value}` : fact.value;
+      const factKey = resolveFactAddKey(fact);
+      markTouchedFactKey(fact.scope ?? scope, factKey);
+      const factContent = factKey ? `${factKey}: ${fact.value}` : fact.value;
       const item = await this.repo.create({
         scope: fact.scope ?? scope,
         scopeId,
         type: 'fact',
         content: factContent,
+        factKey,
         importance: fact.importance ?? 0.5,
         confidence: 1.0,
         sourceFloorId,
@@ -404,8 +413,9 @@ export class MemoryStore {
       if (!existing) continue;
 
       const previousContent = existing.content;
-      const patch: Partial<Pick<MemoryItem, 'content' | 'importance' | 'confidence' | 'status'>> = {
+      const patch: Partial<Pick<MemoryItem, 'content' | 'factKey' | 'importance' | 'confidence' | 'status'>> = {
         content: update.value,
+        ...(update.factKey !== undefined ? { factKey: normalizeFactKey(update.factKey) } : {}),
       };
       if (update.importance !== undefined) {
         patch.importance = update.importance;
@@ -414,7 +424,7 @@ export class MemoryStore {
       const updated = await this.repo.update(update.id, patch);
       if (updated) {
         touchedFactItemIds.add(updated.id);
-        markTouchedFactKey(updated.scope, parseFactKeyFromContent(updated.content));
+        markTouchedFactKey(updated.scope, updated.factKey ?? normalizeFactKey(update.factKey));
 
         await this.eventBus.emit('memory.updated', {
           item: updated,
@@ -452,7 +462,7 @@ export class MemoryStore {
 
       const grouped = new Map<string, MemoryItem[]>();
       for (const item of activeFacts) {
-        const key = parseFactKeyFromContent(item.content);
+        const key = item.factKey;
         if (!key || !touchedKeys.has(key)) continue;
 
         const bucket = grouped.get(key);

@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FloorState } from "@tavern/shared";
 import type { FloorEntity, FloorRepository } from "@tavern/core";
 
-import type { AppDb } from "../db/client.js";
+import type { AppDb, DbExecutor } from "../db/client.js";
 import { floors } from "../db/schema.js";
 
 // ── 内部映射 ──────────────────────────────────────────
@@ -27,7 +27,7 @@ function toEntity(row: FloorRow): FloorEntity {
 // ── Adapter ───────────────────────────────────────────
 
 export class DrizzleFloorRepository implements FloorRepository {
-  constructor(private readonly db: AppDb) {}
+  constructor(private readonly db: AppDb | DbExecutor) {}
 
   async findById(id: string): Promise<FloorEntity | null> {
     const [row] = await this.db
@@ -47,6 +47,21 @@ export class DrizzleFloorRepository implements FloorRepository {
       .update(floors)
       .set({ state, updatedAt })
       .where(eq(floors.id, id))
+      .returning();
+
+    return row ? toEntity(row) : null;
+  }
+
+  async updateStateCas(
+    id: string,
+    expectedState: FloorState,
+    targetState: FloorState,
+    updatedAt: number,
+  ): Promise<FloorEntity | null> {
+    const [row] = await this.db
+      .update(floors)
+      .set({ state: targetState, updatedAt })
+      .where(and(eq(floors.id, id), eq(floors.state, expectedState)))
       .returning();
 
     return row ? toEntity(row) : null;

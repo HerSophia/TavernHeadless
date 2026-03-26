@@ -4,7 +4,7 @@ import type { FloorEntity } from '../../types.js';
 import type { FloorRepository } from '../../ports/index.js';
 import { FloorStateMachine } from '../floor-state-machine.js';
 import { createEventBus, type CoreEventBus } from '../../events/index.js';
-import { FloorNotFoundError, InvalidStateTransitionError } from '../../errors.js';
+import { FloorNotFoundError, FloorStateConflictError, InvalidStateTransitionError } from '../../errors.js';
 
 // ─── Helpers ──────────────────────────────────────────
 
@@ -29,6 +29,7 @@ function makeFloor(overrides: Partial<FloorEntity> = {}): FloorEntity {
  */
 class InMemoryFloorRepository implements FloorRepository {
   private store = new Map<string, FloorEntity>();
+  private failNextCasUpdate = false;
 
   add(floor: FloorEntity): void {
     this.store.set(floor.id, { ...floor });
@@ -39,6 +40,10 @@ class InMemoryFloorRepository implements FloorRepository {
     return f ? { ...f } : null;
   }
 
+  simulateNextCasConflict(): void {
+    this.failNextCasUpdate = true;
+  }
+
   async updateState(
     id: string,
     state: FloorState,
@@ -47,6 +52,26 @@ class InMemoryFloorRepository implements FloorRepository {
     const f = this.store.get(id);
     if (!f) return null;
     f.state = state;
+    f.updatedAt = updatedAt;
+    return { ...f };
+  }
+
+  async updateStateCas(
+    id: string,
+    expectedState: FloorState,
+    targetState: FloorState,
+    updatedAt: number
+  ): Promise<FloorEntity | null> {
+    const f = this.store.get(id);
+    if (this.failNextCasUpdate) {
+      this.failNextCasUpdate = false;
+      return null;
+    }
+
+    if (!f) return null;
+    if (f.state !== expectedState) return null;
+
+    f.state = targetState;
     f.updatedAt = updatedAt;
     return { ...f };
   }
@@ -141,6 +166,15 @@ describe('FloorStateMachine', () => {
 
       await expect(sm.transition('f1', 'draft')).rejects.toThrow(
         InvalidStateTransitionError
+      );
+    });
+
+    it('throws FloorStateConflictError when CAS update loses the race', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'draft' }));
+      repo.simulateNextCasConflict();
+
+      await expect(sm.transition('f1', 'generating')).rejects.toThrow(
+        FloorStateConflictError
       );
     });
   });
@@ -248,6 +282,15 @@ describe('FloorStateMachine', () => {
     it('throws FloorNotFoundError for missing floor', async () => {
       await expect(sm.fail('nonexistent', new Error('x'))).rejects.toThrow(
         FloorNotFoundError
+      );
+    });
+
+    it('throws FloorStateConflictError when fail CAS update loses the race', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'generating' }));
+      repo.simulateNextCasConflict();
+
+      await expect(sm.fail('f1', new Error('x'))).rejects.toThrow(
+        FloorStateConflictError
       );
     });
   });

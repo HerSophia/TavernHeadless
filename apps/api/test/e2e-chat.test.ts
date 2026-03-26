@@ -17,7 +17,7 @@ import { nanoid } from "nanoid";
 import { eq, asc } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { sessions, floors, messagePages, messages, presets, worldbooks, worldbookEntries, regexProfiles } from "../src/db/schema";
+import { sessions, floors, messagePages, messages, presets, promptSnapshots, worldbooks, worldbookEntries, regexProfiles } from "../src/db/schema";
 import { ChatService, ChatServiceError } from "../src/services/chat-service";
 import { SimpleTokenCounter, type TurnOrchestrator, type TurnOutput, type TurnInput } from "@tavern/core";
 
@@ -36,7 +36,7 @@ function createMockOrchestrator(database: DatabaseConnection) {
       const { db } = database;
       await db
         .update(floors)
-        .set({ state: "committed", updatedAt: Date.now() })
+        .set({ state: "generating", updatedAt: Date.now() })
         .where(eq(floors.id, input.floorId));
 
       return {
@@ -45,7 +45,7 @@ function createMockOrchestrator(database: DatabaseConnection) {
         rawText: MOCK_GENERATED_TEXT,
         summaries: [],
         totalUsage: { promptTokens: 50, completionTokens: 20, totalTokens: 70 },
-        finalState: "committed",
+        finalState: "generating",
       } satisfies TurnOutput;
     }),
   } as unknown as TurnOrchestrator;
@@ -457,6 +457,46 @@ describe("E2E Chat with PromptAssembler", () => {
     expect(allContent).toContain("Write Knight's next response in this roleplay.");
     expect(allContent).not.toContain("Stay in character at all times.");
     expect(dryRun.assembly.presetUsed).toBe(true);
+  });
+
+  it("should align dry-run prompt snapshot with the committed prompt_snapshot row", async () => {
+    const presetId = await importPreset();
+    const worldbookId = await importWorldbook();
+    const regexId = await importRegex();
+    const sessionId = await createSession({
+      presetId,
+      worldbookId,
+      regexId,
+      character: { name: "Knight" },
+    });
+
+    const dryRun = await chatService.dryRun(sessionId, { message: "hello sword" });
+    const result = await chatService.respond(sessionId, { message: "hello sword" });
+
+    const [snapshotRow] = await database.db
+      .select()
+      .from(promptSnapshots)
+      .where(eq(promptSnapshots.floorId, result.floorId));
+
+    expect(snapshotRow).toBeDefined();
+    expect(snapshotRow!.presetId).toBe(dryRun.promptSnapshot.presetId);
+    expect(snapshotRow!.presetUpdatedAt).toBe(dryRun.promptSnapshot.presetUpdatedAt);
+    expect(snapshotRow!.worldbookId).toBe(dryRun.promptSnapshot.worldbookId);
+    expect(snapshotRow!.worldbookUpdatedAt).toBe(dryRun.promptSnapshot.worldbookUpdatedAt);
+    expect(snapshotRow!.regexProfileId).toBe(dryRun.promptSnapshot.regexProfileId);
+    expect(snapshotRow!.regexProfileUpdatedAt).toBe(dryRun.promptSnapshot.regexProfileUpdatedAt);
+    expect(JSON.parse(snapshotRow!.worldbookActivatedEntryUidsJson)).toEqual(
+      dryRun.promptSnapshot.worldbookActivatedEntryUids
+    );
+    expect(JSON.parse(snapshotRow!.regexPreRuleNamesJson)).toEqual(
+      dryRun.promptSnapshot.regexPreRuleNames
+    );
+    expect(JSON.parse(snapshotRow!.regexPostRuleNamesJson)).toEqual(
+      dryRun.promptSnapshot.regexPostRuleNames
+    );
+    expect(snapshotRow!.promptMode).toBe(dryRun.promptSnapshot.promptMode);
+    expect(snapshotRow!.promptDigest).toBe(dryRun.promptSnapshot.promptDigest);
+    expect(snapshotRow!.tokenEstimate).toBe(dryRun.promptSnapshot.tokenEstimate);
   });
 
   // ── 测试：世界书触发 ──

@@ -40,6 +40,10 @@ export type ToolDefinitionRecord = {
   updatedAt: number;
 };
 
+/**
+ * 兼容查询记录模型，对应公开路由 `/tools/call-records`。
+ * 当前主审计模型已经是内部的 `tool_execution_record`，但在 API 对外公开新的查询路由前，SDK 继续保留这组兼容期结果类型。
+ */
 export type ToolCallRecord = {
   args: unknown;
   callerSlot: string;
@@ -88,6 +92,9 @@ export type ToolsResource = {
   }): Promise<ToolDefinitionRecord>;
   getDefinition(options: { accountId?: string; definitionId: string }): Promise<ToolDefinitionRecord>;
   listBuiltin(options?: { accountId?: string }): Promise<BuiltinToolRecord[]>;
+  /**
+   * 兼容查询入口。仅承接当前公开的 `/tools/call-records`，不代表长期主审计模型。
+   */
   listCallRecords(options: {
     accountId?: string;
     callerSlot?: string;

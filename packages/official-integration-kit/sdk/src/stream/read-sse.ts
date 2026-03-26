@@ -32,6 +32,8 @@ export async function readSseStream(
   let eventName = "message";
   let dataLines: string[] = [];
   let donePayload: TavernRespondDonePayload | null = null;
+  let startPayload: TavernRespondStartPayload | null = null;
+  let collectedSummaries: string[] = [];
 
   const flushEvent = (): void => {
     if (dataLines.length === 0) {
@@ -51,6 +53,7 @@ export async function readSseStream(
     callbacks.onEvent?.(event);
 
     if (event.type === "start") {
+      startPayload = event.payload;
       callbacks.onStart?.(event.payload);
       return;
     }
@@ -61,6 +64,7 @@ export async function readSseStream(
     }
 
     if (event.type === "summary") {
+      collectedSummaries = [...collectedSummaries, ...event.payload.summaries];
       callbacks.onSummary?.(event.payload);
       return;
     }
@@ -74,7 +78,11 @@ export async function readSseStream(
       });
     }
 
-    donePayload = event.payload;
+    donePayload = {
+      ...event.payload,
+      branchId: event.payload.branchId ?? startPayload?.branchId,
+      summaries: event.payload.summaries.length > 0 ? event.payload.summaries : collectedSummaries,
+    };
   };
 
   while (true) {
@@ -152,9 +160,7 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
   if (eventName === "summary") {
     const payload = parsed as Record<string, unknown> | null;
     const summaryPayload: TavernRespondSummaryPayload = {
-      summaries: Array.isArray(payload?.summaries)
-        ? payload.summaries.filter((item): item is string => typeof item === "string")
-        : [],
+      summaries: readStringArray(payload?.summaries),
     };
 
     return { payload: summaryPayload, type: "summary" };
@@ -180,9 +186,12 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
     }
 
     const donePayload: TavernRespondDonePayload = {
+      branchId: readOptionalString(payload?.branch_id),
+      finalState: readOptionalFinalState(payload?.final_state),
       floorId,
       floorNo,
       generatedText: readOptionalString(payload?.generated_text),
+      summaries: readStringArray(payload?.summaries),
       totalUsage: toApiUsage(payload?.total_usage),
     };
 
@@ -205,6 +214,16 @@ function parseJson(value: string): Record<string, unknown> | null {
 
 function readOptionalNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+function readOptionalFinalState(value: unknown): TavernRespondDonePayload["finalState"] | undefined {
+  return value === "draft" || value === "generating" || value === "committed" || value === "failed"
+    ? value
+    : undefined;
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function readOptionalString(value: unknown): string | undefined {

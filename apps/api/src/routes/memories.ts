@@ -14,7 +14,25 @@ import { getRequestAuthContext } from "../plugins/auth.js";
 const memoryScopeSchema = z.enum(["global", "chat", "floor"]);
 const memoryTypeSchema = z.enum(["fact", "summary", "open_loop"]);
 const memoryStatusSchema = z.enum(["active", "deprecated"]);
+const memoryFactKeyInputSchema = z.string().trim().min(1).nullable().optional();
+const memoryFactKeyFilterSchema = z.string().trim().min(1).optional();
 const memoryRelationSchema = z.enum(["supports", "contradicts", "updates"]);
+
+function normalizeFactKey(value: string | null | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function resolveStoredFactKey(
+  type: z.infer<typeof memoryTypeSchema>,
+  value: string | null | undefined
+): string | null {
+  if (type !== "fact") {
+    return null;
+  }
+
+  return normalizeFactKey(value) ?? null;
+}
 
 const memoryItemParamsSchema = z.object({
   id: z.string().min(1)
@@ -30,6 +48,7 @@ const createMemoryItemSchema = z.object({
   type: memoryTypeSchema,
   content: z.unknown(),
   importance: z.number().min(0).max(1).optional(),
+  fact_key: memoryFactKeyInputSchema,
   confidence: z.number().min(0).max(1).optional(),
   source_floor_id: z.string().min(1).optional(),
   source_message_id: z.string().min(1).optional(),
@@ -43,6 +62,7 @@ const updateMemoryItemSchema = z
     type: memoryTypeSchema.optional(),
     content: z.unknown().optional(),
     importance: z.number().min(0).max(1).optional(),
+    fact_key: memoryFactKeyInputSchema,
     confidence: z.number().min(0).max(1).optional(),
     source_floor_id: z.string().min(1).optional(),
     source_message_id: z.string().min(1).optional(),
@@ -83,6 +103,7 @@ const memoryFilterSchemaShape = {
   scope_id: z.string().min(1).optional(),
   type: memoryTypeSchema.optional(),
   status: memoryStatusSchema.optional(),
+  fact_key: memoryFactKeyFilterSchema,
   source_floor_id: z.string().min(1).optional(),
   source_message_id: z.string().min(1).optional(),
   created_from: z.coerce.number().int().min(0).optional(),
@@ -168,6 +189,7 @@ const memoryItemExample = {
   scope_id: "session-memory",
   type: "fact",
   content: { text: "Alice carries a silver sword." },
+  fact_key: "equipment",
   importance: 0.8,
   confidence: 0.9,
   source_floor_id: "floor_12",
@@ -295,6 +317,7 @@ const memoryItemJsonSchema = {
     type: { type: "string", enum: ["fact", "summary", "open_loop"] },
     content: {},
     importance: { type: "number", minimum: 0, maximum: 1 },
+    fact_key: { anyOf: [{ type: "string" }, { type: "null" }] },
     confidence: { type: "number", minimum: 0, maximum: 1 },
     source_floor_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     source_message_id: { anyOf: [{ type: "string" }, { type: "null" }] },
@@ -324,6 +347,7 @@ const memoryFilterJsonSchemaProperties = {
   scope_id: { type: "string", minLength: 1 },
   type: { type: "string", enum: ["fact", "summary", "open_loop"] },
   status: { type: "string", enum: ["active", "deprecated"] },
+  fact_key: { type: "string", minLength: 1 },
   source_floor_id: { type: "string", minLength: 1 },
   source_message_id: { type: "string", minLength: 1 },
   created_from: { type: "integer", minimum: 0 },
@@ -346,6 +370,7 @@ const createMemoryBodyJsonSchema = {
     type: { type: "string", enum: ["fact", "summary", "open_loop"] },
     content: {},
     importance: { type: "number", minimum: 0, maximum: 1 },
+    fact_key: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
     confidence: { type: "number", minimum: 0, maximum: 1 },
     source_floor_id: { type: "string", minLength: 1 },
     source_message_id: { type: "string", minLength: 1 },
@@ -629,6 +654,7 @@ function toMemoryItemResponse(row: typeof memoryItems.$inferSelect) {
     scope_id: row.scopeId,
     type: row.type,
     content: parseJsonField(row.contentJson),
+    fact_key: row.factKey,
     importance: row.importance,
     confidence: row.confidence,
     source_floor_id: row.sourceFloorId,
@@ -657,6 +683,7 @@ function buildMemoryFilters(
     | "scope_id"
     | "type"
     | "status"
+    | "fact_key"
     | "source_floor_id"
     | "source_message_id"
     | "created_from"
@@ -687,6 +714,10 @@ function buildMemoryFilters(
 
   if (query.status !== undefined) {
     filters.push(eq(memoryItems.status, query.status));
+  }
+
+  if (query.fact_key !== undefined) {
+    filters.push(eq(memoryItems.factKey, normalizeFactKey(query.fact_key) ?? query.fact_key));
   }
 
   if (query.source_floor_id !== undefined) {
@@ -779,6 +810,7 @@ export async function registerMemoryRoutes(
         scopeId: parsedBody.data.scope_id,
         type: parsedBody.data.type,
         contentJson,
+        factKey: resolveStoredFactKey(parsedBody.data.type, parsedBody.data.fact_key),
         importance: parsedBody.data.importance ?? 0.5,
         confidence: parsedBody.data.confidence ?? 1,
         sourceFloorId: parsedBody.data.source_floor_id ?? null,
@@ -1109,9 +1141,19 @@ export async function registerMemoryRoutes(
       return;
     }
 
+    const [existing] = await db
+      .select()
+      .from(memoryItems)
+      .where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId)));
+
+    if (!existing) {
+      return sendError(reply, 404, "not_found", "Memory item not found");
+    }
+
     const updates: Partial<typeof memoryItems.$inferInsert> = {
       updatedAt: Date.now()
     };
+    const nextType = parsedBody.data.type ?? existing.type;
 
     if (parsedBody.data.scope !== undefined) {
       updates.scope = parsedBody.data.scope;
@@ -1143,6 +1185,14 @@ export async function registerMemoryRoutes(
       updates.confidence = parsedBody.data.confidence;
     }
 
+    if (nextType === "fact") {
+      if (parsedBody.data.fact_key !== undefined) {
+        updates.factKey = resolveStoredFactKey(nextType, parsedBody.data.fact_key);
+      }
+    } else if (parsedBody.data.type !== undefined || parsedBody.data.fact_key !== undefined) {
+      updates.factKey = null;
+    }
+
     if (parsedBody.data.source_floor_id !== undefined) {
       updates.sourceFloorId = parsedBody.data.source_floor_id;
     }
@@ -1155,16 +1205,13 @@ export async function registerMemoryRoutes(
       updates.status = parsedBody.data.status;
     }
 
-    const [updated] = await db
+    const updatedRows = await db
       .update(memoryItems)
       .set(updates)
       .where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId)))
       .returning();
 
-    if (!updated) {
-      return sendError(reply, 404, "not_found", "Memory item not found");
-    }
-
+    const updated = requireRow(updatedRows[0], "Failed to update memory item");
     return reply.send({ data: toMemoryItemResponse(updated) });
   });
 

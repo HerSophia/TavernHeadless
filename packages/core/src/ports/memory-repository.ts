@@ -17,7 +17,7 @@ export interface MemoryRepository {
   /** 更新记忆字段（部分更新），返回更新后对象 */
   update(
     id: string,
-    patch: Partial<Pick<MemoryItem, 'content' | 'importance' | 'confidence' | 'status'>>,
+    patch: Partial<Pick<MemoryItem, 'content' | 'factKey' | 'importance' | 'confidence' | 'status'>>,
   ): Promise<MemoryItem | null>;
 
   /** 标记记忆为 deprecated */

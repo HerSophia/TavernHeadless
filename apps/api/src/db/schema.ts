@@ -191,6 +191,7 @@ export const memoryItems = sqliteTable(
     scopeId: text("scope_id").notNull(),
     type: text("type", { enum: ["fact", "summary", "open_loop"] }).notNull(),
     contentJson: text("content_json").notNull(),
+    factKey: text("fact_key"),
     importance: real("importance").notNull().default(0.5),
     confidence: real("confidence").notNull().default(1),
     sourceFloorId: text("source_floor_id"),
@@ -202,6 +203,7 @@ export const memoryItems = sqliteTable(
   },
   (table) => ({
     accountScopeIdx: index("memory_item_account_scope_idx").on(table.accountId, table.scope, table.scopeId),
+    factLookupIdx: index("memory_item_fact_lookup_idx").on(table.accountId, table.scope, table.scopeId, table.type, table.status, table.factKey),
   })
 );
 
@@ -302,6 +304,31 @@ export const regexProfiles = sqliteTable(
   })
 );
 
+export const promptSnapshots = sqliteTable(
+  "prompt_snapshot",
+  {
+    floorId: text("floor_id").primaryKey().references(() => floors.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    presetId: text("preset_id").references(() => presets.id, { onDelete: "set null" }),
+    presetUpdatedAt: integer("preset_updated_at"),
+    worldbookId: text("worldbook_id").references(() => worldbooks.id, { onDelete: "set null" }),
+    worldbookUpdatedAt: integer("worldbook_updated_at"),
+    regexProfileId: text("regex_profile_id").references(() => regexProfiles.id, { onDelete: "set null" }),
+    regexProfileUpdatedAt: integer("regex_profile_updated_at"),
+    worldbookActivatedEntryUidsJson: text("worldbook_activated_entry_uids_json").notNull().default("[]"),
+    regexPreRuleNamesJson: text("regex_pre_rule_names_json").notNull().default("[]"),
+    regexPostRuleNamesJson: text("regex_post_rule_names_json").notNull().default("[]"),
+    promptMode: text("prompt_mode", { enum: ["compat_strict", "compat_plus", "native"] }).notNull(),
+    promptDigest: text("prompt_digest").notNull(),
+    tokenEstimate: integer("token_estimate").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    sessionCreatedIdx: index("prompt_snapshot_session_created_idx").on(table.sessionId, table.createdAt),
+    digestIdx: index("prompt_snapshot_digest_idx").on(table.promptDigest),
+  })
+);
+
 // ── LLM Profile Vault ──────────────────────────────────
 
 export const llmProfiles = sqliteTable(
@@ -386,6 +413,31 @@ export const toolCallRecords = sqliteTable(
   (table) => ({
     pageSeqIdx: index("tool_call_record_page_seq_idx").on(table.pageId, table.seq),
     toolNameIdx: index("tool_call_record_tool_name_idx").on(table.toolName),
+  })
+);
+
+export const toolExecutionRecords = sqliteTable(
+  "tool_execution_record",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull(),
+    floorId: text("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+    pageId: text("page_id").references(() => messagePages.id, { onDelete: "set null" }),
+    callerSlot: text("caller_slot").notNull(),
+    providerId: text("provider_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    argsJson: text("args_json").notNull().default("{}"),
+    resultJson: text("result_json").notNull().default("{}"),
+    status: text("status", { enum: ["success", "error", "denied"] }).notNull().default("success"),
+    errorMessage: text("error_message"),
+    durationMs: integer("duration_ms").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    floorCreatedIdx: index("tool_execution_record_floor_created_idx").on(table.floorId, table.createdAt),
+    runIdx: index("tool_execution_record_run_idx").on(table.runId),
+    pageCreatedIdx: index("tool_execution_record_page_created_idx").on(table.pageId, table.createdAt),
+    toolNameIdx: index("tool_execution_record_tool_name_idx").on(table.toolName),
   })
 );
 

@@ -1,6 +1,6 @@
 import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
 import { TavernApiError } from "../errors/tavern-api-error.js";
-import { resolveTotalTokens, toApiUsage } from "../types/usage.js";
+import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
 import type { RegenerateResult } from "./messages.js";
 import type { RespondGenerationParams, RespondTurnConfig } from "./sessions.js";
 import {
@@ -260,6 +260,12 @@ function mapFloorRecord(value: unknown): FloorRecord | null {
   };
 }
 
+function mapStringArray(value: unknown): string[] {
+  return readArray(value)
+    .map((item) => readOptionalString(item))
+    .filter((item): item is string => item !== undefined);
+}
+
 function mapRetryPayload(payload: Record<string, unknown> | null): RegenerateResult {
   const data = readRecord(payload?.data);
   const floorId = readOptionalString(data?.floor_id);
@@ -276,8 +282,19 @@ function mapRetryPayload(payload: Record<string, unknown> | null): RegenerateRes
 
   return {
     branchId: readOptionalString(data?.branch_id),
+    finalState:
+      data?.final_state === "draft" ||
+      data?.final_state === "generating" ||
+      data?.final_state === "committed" ||
+      data?.final_state === "failed"
+        ? data.final_state
+        : undefined,
     floorId,
     floorNo,
+    generatedText: readString(data?.generated_text),
+    inputTokens: resolveInputTokens(totalUsage),
+    outputTokens: resolveOutputTokens(totalUsage),
+    summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
   };

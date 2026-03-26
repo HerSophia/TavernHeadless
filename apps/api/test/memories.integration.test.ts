@@ -39,6 +39,7 @@ type MemoryDto = {
   type: MemoryType;
   content: unknown;
   importance: number;
+  fact_key: string | null;
   confidence: number;
   source_floor_id: string | null;
   source_message_id: string | null;
@@ -149,6 +150,7 @@ async function createMemory(
     type: MemoryType;
     content: unknown;
     importance?: number;
+    factKey?: string | null;
     confidence?: number;
     sourceFloorId?: string;
     sourceMessageId?: string;
@@ -166,6 +168,7 @@ async function createMemory(
       type: args.type,
       content: args.content,
       ...(args.importance !== undefined ? { importance: args.importance } : {}),
+      ...(args.factKey !== undefined ? { fact_key: args.factKey } : {}),
       ...(args.confidence !== undefined ? { confidence: args.confidence } : {}),
       ...(args.sourceFloorId !== undefined ? { source_floor_id: args.sourceFloorId } : {}),
       ...(args.sourceMessageId !== undefined ? { source_message_id: args.sourceMessageId } : {}),
@@ -228,6 +231,7 @@ describe("memory routes", () => {
       type: "fact",
       content: { text: "silver fact" },
       importance: 0.2,
+      factKey: "Relationship",
       confidence: 0.95,
       sourceFloorId: floorId,
       sourceMessageId: message.id,
@@ -258,7 +262,7 @@ describe("memory routes", () => {
 
     const filteredListResponse = await app.inject({
       method: "GET",
-      url: `/memories?scope=chat&scope_id=${sessionId}&type=fact&status=active&source_floor_id=${floorId}&source_message_id=${message.id}&created_from=0&created_to=${maxTimestamp}&updated_from=0&updated_to=${maxTimestamp}&importance_min=0.1&importance_max=0.3&confidence_min=0.9&confidence_max=1&q=silver&limit=10&offset=0&sort_by=updated_at&sort_order=desc`
+      url: `/memories?scope=chat&scope_id=${sessionId}&type=fact&status=active&fact_key=relationship&source_floor_id=${floorId}&source_message_id=${message.id}&created_from=0&created_to=${maxTimestamp}&updated_from=0&updated_to=${maxTimestamp}&importance_min=0.1&importance_max=0.3&confidence_min=0.9&confidence_max=1&q=silver&limit=10&offset=0&sort_by=updated_at&sort_order=desc`
     });
 
     expect(filteredListResponse.statusCode, filteredListResponse.body).toBe(200);
@@ -277,11 +281,19 @@ describe("memory routes", () => {
         scope: "chat",
         scope_id: sessionId,
         type: "fact",
+        fact_key: "relationship",
         source_floor_id: floorId,
         source_message_id: message.id,
         status: "active"
       })
     ]);
+
+    const detailResponse = await app.inject({
+      method: "GET",
+      url: `/memories/${factMemory.id}`
+    });
+    expect(detailResponse.statusCode, detailResponse.body).toBe(200);
+    expect(detailResponse.json<ItemResponse<MemoryDto>>().data.fact_key).toBe("relationship");
 
     const confidenceListResponse = await app.inject({
       method: "GET",
@@ -431,6 +443,7 @@ describe("memory routes", () => {
       scopeId: sessionId,
       type: "fact",
       content: { text: "initial memory" },
+      factKey: "location",
       sourceFloorId: floorId,
       sourceMessageId: message.id
     });
@@ -441,8 +454,9 @@ describe("memory routes", () => {
       payload: {
         scope: "floor",
         scope_id: floorId,
-        type: "open_loop",
+        type: "fact",
         content: { text: "updated silver memory" },
+        fact_key: "current_location",
         importance: 0.9,
         confidence: 0.25,
         source_floor_id: floorId,
@@ -457,8 +471,9 @@ describe("memory routes", () => {
         id: memory.id,
         scope: "floor",
         scope_id: floorId,
-        type: "open_loop",
+        type: "fact",
         content: { text: "updated silver memory" },
+        fact_key: "current_location",
         importance: 0.9,
         confidence: 0.25,
         source_floor_id: floorId,
@@ -466,6 +481,14 @@ describe("memory routes", () => {
         status: "deprecated"
       })
     );
+
+    const clearFactKeyResponse = await app.inject({
+      method: "PATCH",
+      url: `/memories/${memory.id}`,
+      payload: { type: "open_loop" }
+    });
+    expect(clearFactKeyResponse.statusCode, clearFactKeyResponse.body).toBe(200);
+    expect(clearFactKeyResponse.json<ItemResponse<MemoryDto>>().data).toEqual(expect.objectContaining({ type: "open_loop", fact_key: null }));
 
     const invalidPatchResponse = await app.inject({
       method: "PATCH",

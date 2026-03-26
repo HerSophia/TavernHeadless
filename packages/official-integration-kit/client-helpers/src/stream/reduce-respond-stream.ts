@@ -44,24 +44,30 @@ export function reduceRespondStream(
   }
 
   const usage = resolveUsage(event.payload.totalUsage);
+  const branchId = event.payload.branchId ?? state.branchId;
+  const summaries = event.payload.summaries.length > 0 ? event.payload.summaries : state.summaries;
   const result: RespondResult = {
-    branchId: state.branchId,
+    branchId,
+    finalState: event.payload.finalState,
     floorId: event.payload.floorId,
     floorNo: event.payload.floorNo,
     generatedText: event.payload.generatedText ?? state.content,
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
+    summaries,
     totalTokens: usage.totalTokens,
     totalUsage: usage.usage,
   };
 
   return {
     ...state,
+    branchId: result.branchId,
     content: result.generatedText,
     floorId: result.floorId,
     floorNo: result.floorNo,
     result,
     status: "done",
+    summaries,
   };
 }
 

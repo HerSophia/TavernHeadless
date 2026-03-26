@@ -8,7 +8,7 @@ import type { MemoryStore } from '../memory/memory-store.js';
 import type { MemoryConsolidator } from '../memory/memory-consolidator.js';
 import type { ConsolidationResult } from '../memory/memory-consolidator.js';
 import type { MemoryInjectionResult } from '../memory/types.js';
-import type { ToolCallRecord, ToolPermissions, ToolExecutionContext } from '../tools/types.js';
+import type { ToolExecutionContext } from '../tools/types.js';
 import type { ToolRegistry } from '../tools/tool-registry.js';
 import type { LLMToolEntry } from '../tools/tool-executor.js';
 import { ToolExecutor } from '../tools/tool-executor.js';
@@ -18,8 +18,8 @@ import type { Verifier } from './verifier.js';
 import type { VerifierResult } from './verifier.js';
 import type {
   TurnConfig,
+  TurnExecutionResult,
   TurnInput,
-  TurnOutput,
 } from './types.js';
 
 // ── 错误类 ────────────────────────────────────────────
@@ -137,9 +137,9 @@ function resolveSlotGenerationParams(
  * 4. Narrator 生成：调用 GenerationPipeline
  * 5. Verifier（可选）：检查生成内容一致性
  * 6. Memory 整理（可选）：整理/新增/更新/废弃事实
- * 7. generating → committed（状态转移）
+ * 7. 返回生成阶段结果（floor 保持 generating）
  *
- * 任何步骤失败都会将楼层标记为 failed。
+ * 任何步骤失败都会将楼层标记为 failed。最终 committed 由上层提交服务负责。
  */
 export class TurnOrchestrator {
   private readonly deps: TurnOrchestratorDeps;
@@ -155,7 +155,7 @@ export class TurnOrchestrator {
    * @returns 回合输出（包含生成结果、各组件结果、token 统计）
    * @throws {TurnError} 回合执行中的错误（楼层已标记为 failed）
    */
-  async executeTurn(input: TurnInput): Promise<TurnOutput> {
+  async executeTurn(input: TurnInput): Promise<TurnExecutionResult> {
     const cfg = resolveConfig(input.config);
     let totalUsage = zeroUsage();
     let toolExecutor: ToolExecutor | undefined;
@@ -228,11 +228,11 @@ export class TurnOrchestrator {
         }
       }
 
-      // ── 7. generating → committed ──
-      await this.transitionOrFail(input.floorId, 'committed');
+      const toolExecutionRecords = toolExecutor?.getExecutionRecords();
 
       return {
         floorId: input.floorId,
+        finalState: 'generating',
         generatedText: generation.text,
         rawText: generation.rawText,
         summaries: generation.summaries,
@@ -241,8 +241,9 @@ export class TurnOrchestrator {
         memoryInjection,
         consolidationResult,
         totalUsage,
-        finalState: 'committed',
-        toolCalls: this.collectToolCallRecords(generation, input, toolExecutor),
+        ...(toolExecutionRecords && toolExecutionRecords.length > 0
+          ? { toolExecutionRecords }
+          : {}),
       };
     } catch (error) {
       // 尝试将楼层标记为 failed
@@ -460,7 +461,7 @@ export class TurnOrchestrator {
     generation: GenerationOutput,
   ): Promise<ConsolidationResult | undefined> {
     try {
-      return await this.deps.memoryConsolidator.consolidate({
+      const result = await this.deps.memoryConsolidator.consolidate({
         currentFloorContent: input.consolidationContext!.currentFloorContent,
         recentSummaries: [
           ...input.consolidationContext!.recentSummaries,
@@ -473,6 +474,20 @@ export class TurnOrchestrator {
         params: resolveSlotGenerationParams(input, 'memory'),
         model: resolveSlotModel(input, 'memory'),
       });
+
+      if (result.degraded?.reason === 'json_parse_failed') {
+        try {
+          await this.deps.eventBus.emit('memory.consolidation_json_parse_failed', {
+            floorId: input.floorId,
+            rawText: result.degraded.rawText,
+            error: result.degraded.error,
+          });
+        } catch {
+          // fire-and-forget
+        }
+      }
+
+      return result;
     } catch (error) {
       // Memory 整理失败不应阻断回合，降级处理
       // 发出事件供外部监控，但不抛出异常
@@ -489,28 +504,20 @@ export class TurnOrchestrator {
   }
 
   private async tryMarkFailed(floorId: string, error: unknown): Promise<void> {
-    try {
-      await this.deps.floorStateMachine.transition(floorId, 'failed');
-    } catch {
-      // 如果标记失败也失败了（比如已经是 committed），忽略
-    }
+    const normalizedError = error instanceof Error ? error : new Error(String(error));
 
     try {
-      // 尝试获取楼层信息发事件
-      await this.deps.eventBus.emit('floor.failed', {
-        floor: { id: floorId } as any,
-        error: error instanceof Error ? error : new Error(String(error)),
-      });
+      await this.deps.floorStateMachine.fail(floorId, normalizedError);
     } catch {
-      // fire-and-forget
+      // 如果标记失败也失败了（比如已经是 committed），忽略
     }
   }
 
   /**
    * 构建工具执行上下文。
    *
-   * pageId 目前使用 floorId 作为占位——实际的 pageId 在 ChatService 层才能确定，
-   * 但 ToolExecutor 仅用它做事件标记，不影响核心逻辑。
+   * 工具记录以 floor 为主归属。
+   * 当上层已经持有真实 pageId（例如 input page）时，可一并透传。
    */
   private buildToolContext(
     input: TurnInput,
@@ -520,44 +527,14 @@ export class TurnOrchestrator {
       sessionId: input.sessionId,
       accountId: input.accountId,
       floorId: input.floorId,
-      pageId: input.floorId,  // placeholder: 真正的 pageId 由上层注入
+      pageId: input.pageId,
       callerSlot: slot,
       variableContext: {
         sessionId: input.sessionId,
         floorId: input.floorId,
-        pageId: input.floorId,
+        pageId: input.pageId,
       },
       abortSignal: input.abortSignal,
     };
-  }
-
-  /**
-   * 从 GenerationOutput 中收集工具调用记录。
-   *
-   * 目前仅收集 inline 模式下 LLM 返回的 toolCalls 信息，
-   * 转换为 ToolCallRecord 格式。如果没有工具调用，返回 undefined。
-   */
-  private collectToolCallRecords(
-    generation: GenerationOutput | undefined,
-    input: TurnInput,
-    toolExecutor: ToolExecutor | undefined,
-  ): ToolCallRecord[] | undefined {
-    if (!generation?.toolCalls || generation.toolCalls.length === 0) {
-      return undefined;
-    }
-
-    const now = Date.now();
-    return generation.toolCalls.map((tc, idx) => ({
-      id: `tcr-${input.floorId}-${idx}`,
-      pageId: input.floorId,  // placeholder
-      seq: idx + 1,
-      callerSlot: 'narrator' as InstanceSlot,
-      toolName: tc.toolName,
-      argsJson: JSON.stringify(tc.args),
-      resultJson: '{}',  // inline 模式下，实际结果由 Vercel AI SDK 内部处理
-      status: 'success' as const,
-      durationMs: 0,
-      createdAt: now,
-    }));
   }
 }

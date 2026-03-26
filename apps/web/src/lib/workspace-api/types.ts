@@ -4,7 +4,9 @@ import type {
   PresetEditorDocument,
   PresetEditorEntry,
   PresetEditorOrderContext,
+  RegenerateResult,
   RespondGenerationParams,
+  RespondResult,
   WorldbookDetail,
 } from "@tavern/sdk";
 
@@ -97,27 +99,39 @@ export type WorkspaceTimelineMessage = {
   tokenOut: number;
 };
 
-export type WorkspaceRegenerateResult = {
-  branchId?: string;
-  floorId: string;
-  floorNo: number;
-  totalTokens: number;
-};
-
 export type WorkspaceMessageUpdateResult = {
   content: string;
   id: string;
   role: WorkspaceMessageRole;
 };
 
-export type WorkspaceRespondResult = {
-  floorId: string;
-  floorNo: number;
-  generatedText: string;
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-};
+export type WorkspaceRespondResult = Pick<
+  RespondResult,
+  | "branchId"
+  | "finalState"
+  | "floorId"
+  | "floorNo"
+  | "generatedText"
+  | "inputTokens"
+  | "outputTokens"
+  | "summaries"
+  | "totalTokens"
+>;
+
+export type WorkspaceRegenerateResult = Pick<
+  RegenerateResult,
+  | "branchId"
+  | "finalState"
+  | "floorId"
+  | "floorNo"
+  | "generatedText"
+  | "inputTokens"
+  | "outputTokens"
+  | "summaries"
+  | "sourceFloorId"
+  | "sourceMessageId"
+  | "totalTokens"
+>;
 
 export type WorkspaceGenerationParams = RespondGenerationParams;
 

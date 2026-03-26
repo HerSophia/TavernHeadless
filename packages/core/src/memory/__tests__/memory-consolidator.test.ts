@@ -1,11 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { MemoryConsolidator } from '../memory-consolidator.js';
-import type { MemoryStore } from '../memory-store.js';
 import type { LLMPort, LLMRequest, LLMResponse, StreamCallbacks } from '../../llm/types.js';
 import type { MemoryItem, MemoryConsolidationOutput } from '../types.js';
 import type { ConsolidationInput } from '../memory-consolidator.js';
-
-// ── Test Helpers ──────────────────────────────────────
 
 function createMockLLM(responseText: string): LLMPort {
   return {
@@ -24,17 +21,6 @@ function createMockLLM(responseText: string): LLMPort {
       };
     },
   };
-}
-
-function createMockMemoryStore(): MemoryStore {
-  return {
-    applyConsolidation: vi.fn().mockResolvedValue(undefined),
-    ingestSummaries: vi.fn().mockResolvedValue([]),
-    prepareInjection: vi.fn().mockResolvedValue({ items: [], formattedText: '', tokenCount: 0 }),
-    query: vi.fn().mockResolvedValue([]),
-    deprecate: vi.fn().mockResolvedValue(undefined),
-    create: vi.fn().mockResolvedValue({}),
-  } as unknown as MemoryStore;
 }
 
 function makeFact(id: string, content: string, importance = 0.5): MemoryItem {
@@ -64,34 +50,25 @@ function baseInput(overrides?: Partial<ConsolidationInput>): ConsolidationInput 
   };
 }
 
-// ── Tests ─────────────────────────────────────────────
-
 describe('MemoryConsolidator', () => {
   describe('consolidate', () => {
-    it('parses valid JSON output and applies to MemoryStore', async () => {
+    it('parses valid JSON output and returns structured result', async () => {
       const validOutput: MemoryConsolidationOutput = {
         turnSummary: 'Alice entered the library',
-        factsAdd: [{ key: 'location', value: 'library', scope: 'chat', importance: 0.6 }],
+        factsAdd: [{ factKey: 'location', value: 'library', scope: 'chat', importance: 0.6 }],
         factsUpdate: [],
         factsDeprecate: [],
       };
       const llm = createMockLLM(JSON.stringify(validOutput));
-      const store = createMockMemoryStore();
-      const consolidator = new MemoryConsolidator(llm, store);
+      const consolidator = new MemoryConsolidator(llm);
 
       const result = await consolidator.consolidate(baseInput());
 
       expect(result.output.turnSummary).toBe('Alice entered the library');
       expect(result.output.factsAdd).toHaveLength(1);
+      expect(result.output.factsAdd[0]!.factKey).toBe('location');
       expect(result.output.factsAdd[0]!.key).toBe('location');
       expect(result.usage.totalTokens).toBe(150);
-
-      expect(store.applyConsolidation).toHaveBeenCalledWith(
-        result.output,
-        'chat',
-        'session-1',
-        'floor-5',
-      );
     });
 
     it('handles JSON wrapped in markdown code block', async () => {
@@ -103,8 +80,7 @@ describe('MemoryConsolidator', () => {
       };
       const wrappedText = '```json\n' + JSON.stringify(validOutput) + '\n```';
       const llm = createMockLLM(wrappedText);
-      const store = createMockMemoryStore();
-      const consolidator = new MemoryConsolidator(llm, store);
+      const consolidator = new MemoryConsolidator(llm);
 
       const result = await consolidator.consolidate(baseInput());
 
@@ -114,35 +90,35 @@ describe('MemoryConsolidator', () => {
     it('handles snake_case JSON keys (turn_summary, facts_add)', async () => {
       const snakeCaseOutput = {
         turn_summary: 'Snake case summary',
-        facts_add: [{ key: 'k', value: 'v', scope: 'chat' }],
+        facts_add: [{ fact_key: 'k', value: 'v', scope: 'chat' }],
         facts_update: [],
         facts_deprecate: [],
       };
       const llm = createMockLLM(JSON.stringify(snakeCaseOutput));
-      const store = createMockMemoryStore();
-      const consolidator = new MemoryConsolidator(llm, store);
+      const consolidator = new MemoryConsolidator(llm);
 
       const result = await consolidator.consolidate(baseInput());
 
       expect(result.output.turnSummary).toBe('Snake case summary');
       expect(result.output.factsAdd).toHaveLength(1);
+      expect(result.output.factsAdd[0]!.factKey).toBe('k');
     });
 
     it('gracefully degrades when LLM returns invalid JSON', async () => {
       const llm = createMockLLM('This is not JSON at all. Just some text about the story.');
-      const store = createMockMemoryStore();
-      const consolidator = new MemoryConsolidator(llm, store);
+      const consolidator = new MemoryConsolidator(llm);
 
       const result = await consolidator.consolidate(baseInput());
 
-      // Should use entire text as turnSummary
       expect(result.output.turnSummary).toBe('This is not JSON at all. Just some text about the story.');
       expect(result.output.factsAdd).toEqual([]);
       expect(result.output.factsUpdate).toEqual([]);
       expect(result.output.factsDeprecate).toEqual([]);
-
-      // Should still apply to store (with just turnSummary)
-      expect(store.applyConsolidation).toHaveBeenCalledOnce();
+      expect(result.degraded).toEqual(expect.objectContaining({
+        reason: 'json_parse_failed',
+        rawText: 'This is not JSON at all. Just some text about the story.',
+        error: expect.any(Error),
+      }));
     });
 
     it('works with empty facts and summaries', async () => {
@@ -153,8 +129,7 @@ describe('MemoryConsolidator', () => {
         factsDeprecate: [],
       };
       const llm = createMockLLM(JSON.stringify(validOutput));
-      const store = createMockMemoryStore();
-      const consolidator = new MemoryConsolidator(llm, store);
+      const consolidator = new MemoryConsolidator(llm);
 
       const result = await consolidator.consolidate(
         baseInput({
@@ -181,8 +156,7 @@ describe('MemoryConsolidator', () => {
           throw new Error('not used');
         },
       };
-      const store = createMockMemoryStore();
-      const consolidator = new MemoryConsolidator(llm, store);
+      const consolidator = new MemoryConsolidator(llm);
 
       await consolidator.consolidate(
         baseInput({ params: { temperature: 0.1, maxOutputTokens: 500 } }),
@@ -209,14 +183,13 @@ describe('MemoryConsolidator', () => {
           throw new Error('not used');
         },
       };
-      const store = createMockMemoryStore();
-      const consolidator = new MemoryConsolidator(llm, store);
+      const consolidator = new MemoryConsolidator(llm);
 
       await consolidator.consolidate(baseInput());
 
       expect(capturedRequest!.messages).toHaveLength(2);
       expect(capturedRequest!.messages[0]!.role).toBe('system');
-      expect(capturedRequest!.messages[0]!.content).toContain('Memory Manager');
+      expect(capturedRequest!.messages[0]!.content).toContain('Memory');
       expect(capturedRequest!.messages[1]!.role).toBe('user');
       expect(capturedRequest!.messages[1]!.content).toContain('Alice walked into the library');
       expect(capturedRequest!.messages[1]!.content).toContain('Alice is a student');
@@ -227,24 +200,24 @@ describe('MemoryConsolidator', () => {
       const fullOutput: MemoryConsolidationOutput = {
         turnSummary: 'Alice found a book',
         factsAdd: [
-          { key: 'book', value: 'ancient tome', scope: 'chat', importance: 0.8 },
+          { factKey: 'book', value: 'ancient tome', scope: 'chat', importance: 0.8 },
         ],
         factsUpdate: [
-          { id: 'fact_1', value: 'Alice is a student who found a book' },
+          { id: 'fact_1', value: 'Alice is a student who found a book', factKey: 'identity' },
         ],
         factsDeprecate: [
           { id: 'fact_old', reason: 'no longer relevant' },
         ],
       };
       const llm = createMockLLM(JSON.stringify(fullOutput));
-      const store = createMockMemoryStore();
-      const consolidator = new MemoryConsolidator(llm, store);
+      const consolidator = new MemoryConsolidator(llm);
 
       const result = await consolidator.consolidate(baseInput());
 
       expect(result.output.turnSummary).toBe('Alice found a book');
       expect(result.output.factsAdd).toHaveLength(1);
       expect(result.output.factsUpdate).toHaveLength(1);
+      expect(result.output.factsUpdate[0]!.factKey).toBe('identity');
       expect(result.output.factsDeprecate).toHaveLength(1);
     });
 
@@ -257,11 +230,9 @@ describe('MemoryConsolidator', () => {
           throw new Error('not used');
         },
       };
-      const store = createMockMemoryStore();
-      const consolidator = new MemoryConsolidator(llm, store);
+      const consolidator = new MemoryConsolidator(llm);
 
       await expect(consolidator.consolidate(baseInput())).rejects.toThrow('API down');
-      expect(store.applyConsolidation).not.toHaveBeenCalled();
     });
   });
 });

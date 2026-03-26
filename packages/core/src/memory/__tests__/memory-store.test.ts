@@ -26,6 +26,7 @@ function createMockRepo(): MemoryRepository {
       if (query.minImportance !== undefined) {
         items = items.filter((i) => i.importance >= query.minImportance!);
       }
+      if (query.factKey !== undefined) items = items.filter((i) => i.factKey === query.factKey);
 
       if (query.orderBy === 'importance') {
         items.sort((a, b) =>
@@ -38,6 +39,12 @@ function createMockRepo(): MemoryRepository {
           query.orderDir === 'asc'
             ? a.createdAt - b.createdAt
             : b.createdAt - a.createdAt,
+        );
+      } else if (query.orderBy === 'updatedAt') {
+        items.sort((a, b) =>
+          query.orderDir === 'asc'
+            ? a.updatedAt - b.updatedAt
+            : b.updatedAt - a.updatedAt,
         );
       }
 
@@ -445,8 +452,10 @@ describe('MemoryStore', () => {
       );
       expect(createdCalls).toHaveLength(2);
       expect(createdCalls[0]![1].item.content).toBe('mood: happy');
+      expect(createdCalls[0]![1].item.factKey).toBe('mood');
       expect(createdCalls[0]![1].item.importance).toBe(0.7);
       expect(createdCalls[1]![1].item.content).toBe('location: library');
+      expect(createdCalls[1]![1].item.factKey).toBe('location');
       expect(createdCalls[1]![1].item.importance).toBe(0.5); // default
     });
 
@@ -458,6 +467,7 @@ describe('MemoryStore', () => {
         scopeId: 'session-1',
         type: 'fact',
         content: 'mood: sad',
+        factKey: 'mood',
         importance: 0.5,
         confidence: 1.0,
         status: 'active',

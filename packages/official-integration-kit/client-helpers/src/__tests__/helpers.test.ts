@@ -240,9 +240,11 @@ describe("reduceRespondStream", () => {
     });
     const state3 = reduceRespondStream(state2, {
       payload: {
+        finalState: "committed",
         floorId: "floor-1",
         floorNo: 2,
         generatedText: "Hello",
+        summaries: ["summary-1"],
         totalUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
       },
       type: "done",
@@ -250,7 +252,9 @@ describe("reduceRespondStream", () => {
 
     expect(state3.branchId).toBe("branch-1");
     expect(state3.status).toBe("done");
+    expect(state3.result?.finalState).toBe("committed");
     expect(state3.result?.generatedText).toBe("Hello");
+    expect(state3.result?.summaries).toEqual(["summary-1"]);
     expect(state3.result?.totalTokens).toBe(15);
   });
 
@@ -271,6 +275,7 @@ describe("reduceRespondStream", () => {
       payload: {
         floorId: "floor-9",
         floorNo: 9,
+        summaries: [],
         totalUsage: {},
       },
       type: "done",
@@ -278,6 +283,7 @@ describe("reduceRespondStream", () => {
 
     expect(state1.status).toBe("streaming");
     expect(state3.summaries).toEqual(["s1", "s2"]);
+    expect(state4.summaries).toEqual(["s1", "s2"]);
     expect(state4.content).toBe("Hello world");
     expect(state4.result).toMatchObject({
       floorId: "floor-9",
@@ -286,6 +292,7 @@ describe("reduceRespondStream", () => {
       inputTokens: 0,
       outputTokens: 0,
       totalTokens: 0,
+      summaries: ["s1", "s2"],
     });
   });
 
@@ -331,6 +338,40 @@ describe("mapApiErrorToUiState", () => {
       retryable,
       status,
     });
+  });
+
+  it.each([
+    ["generation_conflict", 500, "conflict", true],
+    ["commit_conflict", 500, "conflict", true],
+    ["turn_commit_failed", 409, "server", true],
+  ] as const)("prefers known api code mapping for %s", (code, status, kind, retryable) => {
+    const mapped = mapApiErrorToUiState(
+      new TavernApiError({
+        code,
+        message: code,
+        status,
+      }),
+    );
+
+    expect(mapped).toEqual({
+      code,
+      kind,
+      message: code,
+      retryable,
+      status,
+    });
+  });
+
+  it("falls back to generic status mapping for unknown api codes", () => {
+    expect(
+      mapApiErrorToUiState(
+        new TavernApiError({
+          code: "something_else",
+          message: "Conflict",
+          status: 409,
+        }),
+      ),
+    ).toEqual({ code: "something_else", kind: "conflict", message: "Conflict", retryable: true, status: 409 });
   });
 
   it("maps TypeError to network state", () => {

@@ -35,6 +35,21 @@ export class FloorNotFoundError extends Error {
 }
 
 /**
+ * 楼层状态 CAS 冲突错误
+ * 当数据库中的楼层状态已被其他流程改写时抛出
+ */
+export class FloorStateConflictError extends Error {
+  constructor(
+    floorId: string,
+    expectedState: string,
+    actualState?: string
+  ) {
+    super(`Floor ${floorId} state conflict: expected ${expectedState}${actualState ? `, actual ${actualState}` : ''}`);
+    this.name = 'FloorStateConflictError';
+  }
+}
+
+/**
  * 变量未找到错误
  */
 export class VariableNotFoundError extends Error {

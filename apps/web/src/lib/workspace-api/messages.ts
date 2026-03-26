@@ -1,9 +1,11 @@
+import type { RegenerateResult, RespondResult } from "@tavern/sdk";
+
 import { apiClient } from "../api";
 import type {
   StreamRespondOptions,
   StreamStartPayload,
-  WorkspaceMessageUpdateResult,
   WorkspaceGenerationParams,
+  WorkspaceMessageUpdateResult,
   WorkspaceRegenerateResult,
   WorkspaceRespondResult
 } from "./types";
@@ -41,12 +43,7 @@ export async function editAndRegenerateMessage(
     messageId
   });
 
-  return {
-    branchId: result.branchId,
-    floorId: result.floorId,
-    floorNo: result.floorNo,
-    totalTokens: result.totalTokens
-  };
+  return toWorkspaceRegenerateResult(result);
 }
 
 export async function retryFloor(floorId: string, accountId?: string): Promise<WorkspaceRegenerateResult> {
@@ -55,12 +52,7 @@ export async function retryFloor(floorId: string, accountId?: string): Promise<W
     floorId
   });
 
-  return {
-    branchId: result.branchId,
-    floorId: result.floorId,
-    floorNo: result.floorNo,
-    totalTokens: result.totalTokens
-  };
+  return toWorkspaceRegenerateResult(result);
 }
 
 export async function respondInSession(
@@ -76,14 +68,7 @@ export async function respondInSession(
     sessionId
   });
 
-  return {
-    floorId: result.floorId,
-    floorNo: result.floorNo,
-    generatedText: result.generatedText,
-    inputTokens: result.inputTokens,
-    outputTokens: result.outputTokens,
-    totalTokens: result.totalTokens
-  };
+  return toWorkspaceRespondResult(result);
 }
 
 export async function streamSessionResponse(
@@ -103,14 +88,7 @@ export async function streamSessionResponse(
     signal: options.signal
   });
 
-  const workspaceResult: WorkspaceRespondResult = {
-    floorId: result.floorId,
-    floorNo: result.floorNo,
-    generatedText: result.generatedText,
-    inputTokens: result.inputTokens,
-    outputTokens: result.outputTokens,
-    totalTokens: result.totalTokens
-  };
+  const workspaceResult = toWorkspaceRespondResult(result);
 
   options.onDone?.(workspaceResult);
   return workspaceResult;
@@ -132,5 +110,35 @@ function toLegacyStartPayload(payload: {
     branch_id: payload.branchId,
     floor_id: payload.floorId,
     floor_no: payload.floorNo
+  };
+}
+
+function toWorkspaceRespondResult(result: RespondResult): WorkspaceRespondResult {
+  return {
+    branchId: result.branchId,
+    finalState: result.finalState,
+    floorId: result.floorId,
+    floorNo: result.floorNo,
+    generatedText: result.generatedText,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    summaries: result.summaries,
+    totalTokens: result.totalTokens
+  };
+}
+
+function toWorkspaceRegenerateResult(result: RegenerateResult): WorkspaceRegenerateResult {
+  return {
+    branchId: result.branchId,
+    finalState: result.finalState,
+    floorId: result.floorId,
+    floorNo: result.floorNo,
+    generatedText: result.generatedText,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    summaries: result.summaries,
+    sourceFloorId: result.sourceFloorId,
+    sourceMessageId: result.sourceMessageId,
+    totalTokens: result.totalTokens
   };
 }

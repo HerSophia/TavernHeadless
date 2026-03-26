@@ -15,6 +15,8 @@ export interface MemoryItem {
   type: MemoryType;
   /** 纯文本内容 */
   content: string;
+  /** fact 类型的结构化键。summary / open_loop 通常为空 */
+  factKey?: string;
   /** 重要度 0-1 */
   importance: number;
   /** 置信度 0-1 */
@@ -58,6 +60,8 @@ export interface MemoryQuery {
   status?: MemoryStatus;
   /** 最低重要度阈值 */
   minImportance?: number;
+  /** 限定结构化 factKey（仅 fact 类型有效） */
+  factKey?: string;
   /** 最大返回条数 */
   limit?: number;
   /** 排序字段 */
@@ -74,17 +78,25 @@ export interface MemoryQuery {
 export interface MemoryConsolidationOutput {
   /** 本回合摘要 */
   turnSummary: string;
-  /** 新增事实 */
+  /** 新增事实。factKey 为推荐字段，key 为兼容旧输出。 */
   factsAdd: {
-    key: string;
+    factKey?: string;
+    /** @deprecated 使用 factKey。 */
+    key?: string;
     value: string;
     scope: MemoryScope;
     importance?: number;
   }[];
-  /** 更新已有事实 */
+  /**
+   * 更新已有事实。
+   *
+   * 事实的主键仍以已落库的 factKey 为准。
+   * 对于旧数据或需要显式回填 factKey 的场景，可附带 factKey。
+   */
   factsUpdate: {
     id: string;
     value: string;
+    factKey?: string;
     importance?: number;
   }[];
   /** 标记过时 */

@@ -8,7 +8,7 @@ import type {
 } from "@tavern/core";
 import type { MemoryRelation, MemoryScope, MemoryStatus, MemoryType } from "@tavern/shared";
 
-import type { AppDb } from "../db/client.js";
+import type { AppDb, DbExecutor } from "../db/client.js";
 import { memoryItems, memoryEdges } from "../db/schema.js";
 
 // ── 内部映射 ──────────────────────────────────────────
@@ -23,6 +23,7 @@ function toMemoryItem(row: MemoryItemRow): MemoryItem {
     scopeId: row.scopeId,
     type: row.type as MemoryType,
     content: parseContent(row.contentJson),
+    factKey: row.factKey ?? undefined,
     importance: row.importance,
     confidence: row.confidence,
     sourceFloorId: row.sourceFloorId ?? undefined,
@@ -61,13 +62,19 @@ function toMemoryEdge(row: MemoryEdgeRow): MemoryEdge {
   };
 }
 
+function normalizeFactKey(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
 // ── Adapter ───────────────────────────────────────────
 
 export class DrizzleMemoryRepository implements MemoryRepository {
   private readonly accountId: string;
 
   constructor(db: AppDb, accountId?: string);
-  constructor(private readonly db: AppDb, accountId?: string) {
+  constructor(db: DbExecutor, accountId?: string);
+  constructor(private readonly db: AppDb | DbExecutor, accountId?: string) {
     this.accountId = accountId ?? "default-admin";
   }
 
@@ -94,6 +101,9 @@ export class DrizzleMemoryRepository implements MemoryRepository {
     }
     if (query.status !== undefined) {
       conditions.push(eq(memoryItems.status, query.status));
+    }
+    if (query.factKey !== undefined) {
+      conditions.push(eq(memoryItems.factKey, normalizeFactKey(query.factKey) ?? query.factKey));
     }
     if (query.minImportance !== undefined) {
       conditions.push(gte(memoryItems.importance, query.minImportance));
@@ -134,6 +144,7 @@ export class DrizzleMemoryRepository implements MemoryRepository {
     item: Omit<MemoryItem, "id" | "createdAt" | "updatedAt">,
   ): Promise<MemoryItem> {
     const now = Date.now();
+    const normalizedFactKey = item.type === "fact" ? normalizeFactKey(item.factKey) : undefined;
 
     const [row] = await this.db
       .insert(memoryItems)
@@ -143,6 +154,7 @@ export class DrizzleMemoryRepository implements MemoryRepository {
         scope: item.scope,
         scopeId: item.scopeId,
         type: item.type,
+        factKey: normalizedFactKey ?? null,
         contentJson: toContentJson(item.content),
         importance: item.importance,
         confidence: item.confidence,
@@ -159,14 +171,18 @@ export class DrizzleMemoryRepository implements MemoryRepository {
 
   async update(
     id: string,
-    patch: Partial<Pick<MemoryItem, "content" | "importance" | "confidence" | "status">>,
+    patch: Partial<Pick<MemoryItem, "content" | "factKey" | "importance" | "confidence" | "status">>,
   ): Promise<MemoryItem | null> {
     const updates: Record<string, unknown> = {
       updatedAt: Date.now(),
     };
+    const normalizedFactKey = normalizeFactKey(patch.factKey);
 
     if (patch.content !== undefined) {
       updates.contentJson = toContentJson(patch.content);
+    }
+    if (patch.factKey !== undefined) {
+      updates.factKey = normalizedFactKey ?? null;
     }
     if (patch.importance !== undefined) {
       updates.importance = patch.importance;

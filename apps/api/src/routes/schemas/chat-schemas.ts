@@ -94,6 +94,20 @@ export const dryRunSuccessResponseExample = {
     token_estimate: 512,
     available_for_reply: 1536,
     memory_summary: "The party recently agreed to search the northern pass.",
+    prompt_snapshot: {
+      preset_id: "preset-1",
+      preset_updated_at: 1710000000000,
+      worldbook_id: "worldbook-1",
+      worldbook_updated_at: 1710000001000,
+      regex_profile_id: "regex-1",
+      regex_profile_updated_at: 1710000002000,
+      worldbook_activated_entry_uids: [7, 9],
+      regex_pre_rule_names: ["trim_whitespace"],
+      regex_post_rule_names: [],
+      prompt_mode: "compat_strict",
+      prompt_digest: "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+      token_estimate: 512,
+    },
     assembly: {
       mode: "preset",
       preset_used: true,
@@ -263,7 +277,14 @@ export const regenerateDataJsonSchema = {
 
 export const dryRunDataJsonSchema = {
   type: "object",
-  required: ["messages", "token_estimate", "available_for_reply", "memory_summary", "assembly"],
+  required: [
+    "messages",
+    "token_estimate",
+    "available_for_reply",
+    "memory_summary",
+    "prompt_snapshot",
+    "assembly",
+  ],
   properties: {
     messages: {
       type: "array",
@@ -280,6 +301,38 @@ export const dryRunDataJsonSchema = {
     token_estimate: { type: "integer", minimum: 0 },
     available_for_reply: { type: "integer", minimum: 0 },
     memory_summary: { anyOf: [{ type: "string" }, { type: "null" }] },
+    prompt_snapshot: {
+      type: "object",
+      required: [
+        "preset_id",
+        "preset_updated_at",
+        "worldbook_id",
+        "worldbook_updated_at",
+        "regex_profile_id",
+        "regex_profile_updated_at",
+        "worldbook_activated_entry_uids",
+        "regex_pre_rule_names",
+        "regex_post_rule_names",
+        "prompt_mode",
+        "prompt_digest",
+        "token_estimate",
+      ],
+      properties: {
+        preset_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+        preset_updated_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
+        worldbook_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+        worldbook_updated_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
+        regex_profile_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+        regex_profile_updated_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
+        worldbook_activated_entry_uids: { type: "array", items: { type: "integer" } },
+        regex_pre_rule_names: { type: "array", items: { type: "string" } },
+        regex_post_rule_names: { type: "array", items: { type: "string" } },
+        prompt_mode: { type: "string", enum: ["compat_strict", "compat_plus", "native"] },
+        prompt_digest: { type: "string" },
+        token_estimate: { type: "integer", minimum: 0 },
+      },
+      additionalProperties: false,
+    },
     assembly: {
       type: "object",
       required: [

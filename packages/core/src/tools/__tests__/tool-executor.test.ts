@@ -1,16 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createEventBus } from '../../events/event-bus.js';
+import type { CoreEventBus } from '../../events/event-bus.js';
 import { ToolExecutor } from '../tool-executor.js';
 import { ToolRegistry } from '../tool-registry.js';
 import type {
   ToolDefinition,
-  ToolProvider,
-  ToolPermissions,
   ToolExecutionContext,
+  ToolPermissions,
+  ToolProvider,
 } from '../types.js';
-import { createEventBus } from '../../events/event-bus.js';
-import type { CoreEventBus } from '../../events/event-bus.js';
-
-// ── Helpers ─────────────────────────────────────────
 
 function makeTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
   return {
@@ -24,12 +23,16 @@ function makeTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
   };
 }
 
-function makeProvider(tools: ToolDefinition[], executeFn?: ToolProvider['executeTool']): ToolProvider {
+function makeProvider(args: {
+  tools: ToolDefinition[];
+  executeFn?: ToolProvider['executeTool'];
+  id?: string;
+}): ToolProvider {
   return {
-    id: 'test-provider',
+    id: args.id ?? 'test-provider',
     type: 'builtin',
-    listTools: vi.fn(async () => tools),
-    executeTool: executeFn ?? vi.fn(async () => ({ data: 'result_data' })),
+    listTools: vi.fn(async () => args.tools),
+    executeTool: args.executeFn ?? vi.fn(async () => ({ data: 'result_data' })),
   };
 }
 
@@ -51,8 +54,6 @@ function makePermissions(overrides: Partial<ToolPermissions> = {}): ToolPermissi
   };
 }
 
-// ── Tests ──────────────────────────────────────────
-
 describe('ToolExecutor', () => {
   let registry: ToolRegistry;
   let eventBus: CoreEventBus;
@@ -65,9 +66,9 @@ describe('ToolExecutor', () => {
   });
 
   describe('execute', () => {
-    it('正常执行工具并返回结果', async () => {
+    it('executes a tool and collects a real success record', async () => {
       const tool = makeTool({ name: 'my_tool' });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
       const result = await executor.execute(
         'my_tool',
@@ -79,11 +80,45 @@ describe('ToolExecutor', () => {
       expect(result.data).toBe('result_data');
       expect(result.error).toBeUndefined();
       expect(executor.getTurnCallCount()).toBe(1);
+
+      const records = executor.getExecutionRecords();
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        floorId: 'floor-1',
+        pageId: 'page-1',
+        callerSlot: 'narrator',
+        providerId: 'test-provider',
+        toolName: 'my_tool',
+        status: 'success',
+      });
+      expect(JSON.parse(records[0]!.argsJson)).toEqual({ key: 'val' });
+      expect(JSON.parse(records[0]!.resultJson)).toBe('result_data');
+      expect(records[0]!.durationMs).toBeGreaterThanOrEqual(0);
+      expect(records[0]!.runId).toBeTruthy();
     });
 
-    it('总开关关闭时拒绝', async () => {
+    it('keeps pageId undefined when the context has no real page binding', async () => {
       const tool = makeTool({ name: 'my_tool' });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
+
+      await executor.execute(
+        'my_tool',
+        { key: 'val' },
+        makeContext({
+          pageId: undefined,
+          variableContext: { sessionId: 'sess-1', floorId: 'floor-1' },
+        }),
+        makePermissions(),
+      );
+
+      const records = executor.getExecutionRecords();
+      expect(records).toHaveLength(1);
+      expect(records[0]!.pageId).toBeUndefined();
+    });
+
+    it('returns denied when the global switch is disabled and records it', async () => {
+      const tool = makeTool({ name: 'my_tool' });
+      registry.register(makeProvider({ tools: [tool] }));
 
       const result = await executor.execute(
         'my_tool',
@@ -93,11 +128,21 @@ describe('ToolExecutor', () => {
       );
 
       expect(result.denied).toBe('disabled');
-      expect(result.error).toContain('denied');
+      expect(result.error).toBe('Tool call denied: disabled');
+
+      const [record] = executor.getExecutionRecords();
+      expect(record).toMatchObject({
+        providerId: 'unknown',
+        toolName: 'my_tool',
+        status: 'denied',
+        errorMessage: 'Tool call denied: disabled',
+      });
+      expect(JSON.parse(record!.resultJson)).toEqual({ denied: 'disabled' });
+      expect(executor.getTurnCallCount()).toBe(0);
     });
 
-    it('工具不存在时拒绝', async () => {
-      registry.register(makeProvider([]));
+    it('returns denied when the tool is not found', async () => {
+      registry.register(makeProvider({ tools: [] }));
 
       const result = await executor.execute(
         'nonexistent',
@@ -107,11 +152,16 @@ describe('ToolExecutor', () => {
       );
 
       expect(result.denied).toBe('tool_not_found');
+      expect(executor.getExecutionRecords()[0]).toMatchObject({
+        providerId: 'unknown',
+        toolName: 'nonexistent',
+        status: 'denied',
+      });
     });
 
-    it('槽位不在 allowedSlots 中时拒绝', async () => {
+    it('returns denied when slot is not allowed', async () => {
       const tool = makeTool({ name: 'dir_tool', allowedSlots: ['director'] });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
       const result = await executor.execute(
         'dir_tool',
@@ -121,11 +171,16 @@ describe('ToolExecutor', () => {
       );
 
       expect(result.denied).toBe('slot_not_allowed');
+      expect(executor.getExecutionRecords()[0]).toMatchObject({
+        providerId: 'test-provider',
+        toolName: 'dir_tool',
+        status: 'denied',
+      });
     });
 
-    it('不在白名单中时拒绝', async () => {
+    it('returns denied when a tool is not in the allow list', async () => {
       const tool = makeTool({ name: 'my_tool' });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
       const result = await executor.execute(
         'my_tool',
@@ -137,9 +192,9 @@ describe('ToolExecutor', () => {
       expect(result.denied).toBe('not_in_allow_list');
     });
 
-    it('在黑名单中时拒绝', async () => {
+    it('returns denied when a tool is in the deny list', async () => {
       const tool = makeTool({ name: 'my_tool' });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
       const result = await executor.execute(
         'my_tool',
@@ -151,25 +206,25 @@ describe('ToolExecutor', () => {
       expect(result.denied).toBe('deny_listed');
     });
 
-    it('超过 maxCallsPerTurn 时拒绝', async () => {
+    it('returns denied when maxCallsPerTurn is exceeded', async () => {
       const tool = makeTool({ name: 'my_tool' });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
-      const perms = makePermissions({ maxCallsPerTurn: 2 });
-      const ctx = makeContext();
+      const permissions = makePermissions({ maxCallsPerTurn: 2 });
+      const context = makeContext();
 
-      // 前两次成功
-      await executor.execute('my_tool', {}, ctx, perms);
-      await executor.execute('my_tool', {}, ctx, perms);
+      await executor.execute('my_tool', {}, context, permissions);
+      await executor.execute('my_tool', {}, context, permissions);
+      const result = await executor.execute('my_tool', {}, context, permissions);
 
-      // 第三次被拒绝
-      const result = await executor.execute('my_tool', {}, ctx, perms);
       expect(result.denied).toBe('max_calls_exceeded');
+      expect(executor.getExecutionRecords()).toHaveLength(3);
+      expect(executor.getExecutionRecords()[2]!.status).toBe('denied');
     });
 
-    it('irreversible 工具在 allowIrreversible=false 时拒绝', async () => {
+    it('returns denied for irreversible tools when allowIrreversible=false', async () => {
       const tool = makeTool({ name: 'danger', sideEffectLevel: 'irreversible' });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
       const result = await executor.execute(
         'danger',
@@ -181,9 +236,9 @@ describe('ToolExecutor', () => {
       expect(result.denied).toBe('irreversible_blocked');
     });
 
-    it('irreversible 工具在 allowIrreversible=true 时允许', async () => {
+    it('allows irreversible tools when allowIrreversible=true', async () => {
       const tool = makeTool({ name: 'danger', sideEffectLevel: 'irreversible' });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
       const result = await executor.execute(
         'danger',
@@ -196,12 +251,14 @@ describe('ToolExecutor', () => {
       expect(result.denied).toBeUndefined();
     });
 
-    it('provider 执行报错时返回 error', async () => {
+    it('treats provider returned error payload as an error record', async () => {
       const tool = makeTool({ name: 'failing' });
-      const provider = makeProvider([tool], async () => {
-        throw new Error('execution failed');
-      });
-      registry.register(provider);
+      registry.register(
+        makeProvider({
+          tools: [tool],
+          executeFn: async () => ({ error: 'execution failed' }),
+        }),
+      );
 
       const result = await executor.execute(
         'failing',
@@ -211,29 +268,65 @@ describe('ToolExecutor', () => {
       );
 
       expect(result.error).toBe('execution failed');
+      expect(executor.getTurnCallCount()).toBe(1);
+      expect(executor.getExecutionRecords()[0]).toMatchObject({
+        providerId: 'test-provider',
+        toolName: 'failing',
+        status: 'error',
+        errorMessage: 'execution failed',
+      });
+      expect(JSON.parse(executor.getExecutionRecords()[0]!.resultJson)).toEqual({ error: 'execution failed' });
     });
 
-    it('resetTurnCounter 重置计数器', async () => {
-      const tool = makeTool({ name: 'my_tool' });
-      registry.register(makeProvider([tool]));
+    it('records thrown provider errors as error records', async () => {
+      const tool = makeTool({ name: 'failing' });
+      registry.register(
+        makeProvider({
+          tools: [tool],
+          executeFn: async () => {
+            throw new Error('boom');
+          },
+        }),
+      );
 
-      const perms = makePermissions({ maxCallsPerTurn: 1 });
-      await executor.execute('my_tool', {}, makeContext(), perms);
+      const result = await executor.execute(
+        'failing',
+        {},
+        makeContext(),
+        makePermissions(),
+      );
+
+      expect(result.error).toBe('boom');
       expect(executor.getTurnCallCount()).toBe(1);
+      expect(executor.getExecutionRecords()[0]).toMatchObject({
+        providerId: 'test-provider',
+        toolName: 'failing',
+        status: 'error',
+        errorMessage: 'boom',
+      });
+    });
+
+    it('resetTurnCounter clears count and collected records', async () => {
+      const tool = makeTool({ name: 'my_tool' });
+      registry.register(makeProvider({ tools: [tool] }));
+
+      await executor.execute('my_tool', {}, makeContext(), makePermissions());
+      const runIdBeforeReset = executor.getExecutionRecords()[0]!.runId;
 
       executor.resetTurnCounter();
-      expect(executor.getTurnCallCount()).toBe(0);
 
-      // 重置后可以再次调用
-      const result = await executor.execute('my_tool', {}, makeContext(), perms);
-      expect(result.data).toBe('result_data');
+      expect(executor.getTurnCallCount()).toBe(0);
+      expect(executor.getExecutionRecords()).toEqual([]);
+
+      await executor.execute('my_tool', {}, makeContext(), makePermissions());
+      expect(executor.getExecutionRecords()[0]!.runId).not.toBe(runIdBeforeReset);
     });
   });
 
-  describe('事件发射', () => {
-    it('成功执行时发射 started 和 completed', async () => {
+  describe('events', () => {
+    it('emits started and completed on success', async () => {
       const tool = makeTool({ name: 'my_tool' });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
       const started = vi.fn();
       const completed = vi.fn();
@@ -260,12 +353,14 @@ describe('ToolExecutor', () => {
       );
     });
 
-    it('执行失败时发射 started 和 failed', async () => {
+    it('emits started and failed when the provider returns an error payload', async () => {
       const tool = makeTool({ name: 'fail_tool' });
-      const provider = makeProvider([tool], async () => {
-        throw new Error('boom');
-      });
-      registry.register(provider);
+      registry.register(
+        makeProvider({
+          tools: [tool],
+          executeFn: async () => ({ error: 'boom' }),
+        }),
+      );
 
       const started = vi.fn();
       const failed = vi.fn();
@@ -284,9 +379,9 @@ describe('ToolExecutor', () => {
       );
     });
 
-    it('权限拒绝时发射 denied，不发射 started', async () => {
+    it('emits denied and does not emit started when permission check blocks the call', async () => {
       const tool = makeTool({ name: 'blocked', allowedSlots: ['director'] });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
       const started = vi.fn();
       const denied = vi.fn();
@@ -312,7 +407,7 @@ describe('ToolExecutor', () => {
   });
 
   describe('buildLLMTools', () => {
-    it('将 ToolDefinition 转为 Vercel AI SDK 格式', () => {
+    it('converts ToolDefinition into the Vercel AI SDK compatible shape', () => {
       const tool = makeTool({
         name: 'dice',
         description: 'Roll a dice',
@@ -324,7 +419,7 @@ describe('ToolExecutor', () => {
           required: ['sides'],
         },
       });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
       const llmTools = executor.buildLLMTools(
         [tool],
@@ -333,14 +428,14 @@ describe('ToolExecutor', () => {
       );
 
       expect(Object.keys(llmTools)).toEqual(['dice']);
-      expect(llmTools['dice']!.description).toBe('Roll a dice');
-      expect(llmTools['dice']!.parameters).toEqual(tool.parameters);
-      expect(typeof llmTools['dice']!.execute).toBe('function');
+      expect(llmTools.dice!.description).toBe('Roll a dice');
+      expect(llmTools.dice!.parameters).toEqual(tool.parameters);
+      expect(typeof llmTools.dice!.execute).toBe('function');
     });
 
-    it('execute 函数内部调用 ToolExecutor.execute', async () => {
+    it('delegates execute back into ToolExecutor.execute', async () => {
       const tool = makeTool({ name: 'dice' });
-      registry.register(makeProvider([tool]));
+      registry.register(makeProvider({ tools: [tool] }));
 
       const llmTools = executor.buildLLMTools(
         [tool],
@@ -348,17 +443,20 @@ describe('ToolExecutor', () => {
         makePermissions(),
       );
 
-      const result = await llmTools['dice']!.execute({ sides: 6 });
+      const result = await llmTools.dice!.execute({ sides: 6 });
       expect(result).toBe('result_data');
       expect(executor.getTurnCallCount()).toBe(1);
+      expect(executor.getExecutionRecords()).toHaveLength(1);
     });
 
-    it('execute 函数在工具报错时返回错误对象', async () => {
+    it('returns an error object to the model when the tool fails', async () => {
       const tool = makeTool({ name: 'broken' });
-      const provider = makeProvider([tool], async () => {
-        throw new Error('broken tool');
-      });
-      registry.register(provider);
+      registry.register(
+        makeProvider({
+          tools: [tool],
+          executeFn: async () => ({ error: 'broken tool' }),
+        }),
+      );
 
       const llmTools = executor.buildLLMTools(
         [tool],
@@ -366,7 +464,7 @@ describe('ToolExecutor', () => {
         makePermissions(),
       );
 
-      const result = await llmTools['broken']!.execute({});
+      const result = await llmTools.broken!.execute({});
       expect(result).toEqual({ error: 'broken tool' });
     });
   });

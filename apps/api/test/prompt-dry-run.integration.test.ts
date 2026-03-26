@@ -6,7 +6,18 @@ import { eq } from "drizzle-orm";
 import { registerChatRoutes } from "../src/routes/chat";
 import { ChatService, ChatServiceError, type ChatService as ChatServiceType, type DryRunResult } from "../src/services/chat-service";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { sessions, floors, messagePages, messages as messageTable } from "../src/db/schema";
+import {
+  accounts,
+  floors,
+  messagePages,
+  messages as messageTable,
+  presets,
+  promptSnapshots,
+  regexProfiles,
+  sessions,
+  worldbookEntries,
+  worldbooks,
+} from "../src/db/schema";
 import { SimpleTokenCounter, type TurnOrchestrator } from "@tavern/core";
 
 interface ChatServiceStub {
@@ -27,6 +38,58 @@ function createRouteChatService(overrides: Partial<ChatServiceStub> = {}): ChatS
     ...overrides,
   };
 }
+
+const SAMPLE_PRESET_DATA = {
+  prompts: [
+    {
+      identifier: "main",
+      name: "Main Prompt",
+      role: "system",
+      content: "Write {{char}}'s next response.",
+    },
+    { identifier: "chatHistory", name: "Chat History", marker: true },
+  ],
+  prompt_order: [
+    {
+      character_id: 100000,
+      order: [
+        { identifier: "main", enabled: true },
+        { identifier: "chatHistory", enabled: true },
+      ],
+    },
+  ],
+  openai_max_context: 2048,
+  openai_max_tokens: 300,
+  temperature: 0.7,
+  top_p: 1,
+  top_k: 0,
+  min_p: 0,
+  frequency_penalty: 0,
+  presence_penalty: 0,
+  repetition_penalty: 1,
+  new_chat_prompt: "",
+  new_example_chat_prompt: "",
+  continue_nudge_prompt: "",
+  assistant_prefill: "",
+  wi_format: "{0}",
+  names_behavior: 0,
+  stream_openai: true,
+};
+
+const SAMPLE_REGEX_DATA = [
+  {
+    id: "regex-1",
+    scriptName: "Input Rule",
+    findRegex: "/hello/g",
+    replaceString: "HELLO",
+    trimStrings: [],
+    placement: [1],
+    disabled: false,
+    substituteRegex: 0,
+    minDepth: 0,
+    maxDepth: 0,
+  },
+];
 
 describe("POST /sessions/:id/respond/dry-run", () => {
   let app: FastifyInstance;
@@ -79,6 +142,20 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       tokenEstimate: 42,
       availableForReply: 1000,
       memorySummary: "[Memory] hello",
+      promptSnapshot: {
+        presetId: "preset-1",
+        presetUpdatedAt: 1710000000000,
+        worldbookId: "worldbook-1",
+        worldbookUpdatedAt: 1710000001000,
+        regexProfileId: "regex-1",
+        regexProfileUpdatedAt: 1710000002000,
+        worldbookActivatedEntryUids: [7],
+        regexPreRuleNames: ["Input Rule"],
+        regexPostRuleNames: [],
+        promptMode: "compat_strict",
+        promptDigest: "digest-1",
+        tokenEstimate: 42,
+      },
       assembly: {
         mode: "fallback",
         presetUsed: false,
@@ -111,6 +188,20 @@ describe("POST /sessions/:id/respond/dry-run", () => {
     expect(body.data.available_for_reply).toBe(1000);
     expect(body.data.memory_summary).toBe("[Memory] hello");
     expect(body.data.messages).toEqual(result.messages);
+    expect(body.data.prompt_snapshot).toEqual({
+      preset_id: "preset-1",
+      preset_updated_at: 1710000000000,
+      worldbook_id: "worldbook-1",
+      worldbook_updated_at: 1710000001000,
+      regex_profile_id: "regex-1",
+      regex_profile_updated_at: 1710000002000,
+      worldbook_activated_entry_uids: [7],
+      regex_pre_rule_names: ["Input Rule"],
+      regex_post_rule_names: [],
+      prompt_mode: "compat_strict",
+      prompt_digest: "digest-1",
+      token_estimate: 42,
+    });
     expect(body.data.assembly).toEqual({
       mode: "fallback",
       preset_used: false,
@@ -127,6 +218,20 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       messages: [{ role: "user", content: "hello" }],
       tokenEstimate: 12,
       availableForReply: 256,
+      promptSnapshot: {
+        presetId: null,
+        presetUpdatedAt: null,
+        worldbookId: null,
+        worldbookUpdatedAt: null,
+        regexProfileId: null,
+        regexProfileUpdatedAt: null,
+        worldbookActivatedEntryUids: [],
+        regexPreRuleNames: [],
+        regexPostRuleNames: ["Output Rule"],
+        promptMode: "compat_strict",
+        promptDigest: "digest-2",
+        tokenEstimate: 12,
+      },
       assembly: {
         mode: "preset",
         presetUsed: true,
@@ -156,6 +261,20 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         token_estimate: 12,
         available_for_reply: 256,
         memory_summary: null,
+        prompt_snapshot: {
+          preset_id: null,
+          preset_updated_at: null,
+          worldbook_id: null,
+          worldbook_updated_at: null,
+          regex_profile_id: null,
+          regex_profile_updated_at: null,
+          worldbook_activated_entry_uids: [],
+          regex_pre_rule_names: [],
+          regex_post_rule_names: ["Output Rule"],
+          prompt_mode: "compat_strict",
+          prompt_digest: "digest-2",
+          token_estimate: 12,
+        },
         assembly: {
           mode: "preset",
           preset_used: true,
@@ -270,17 +389,196 @@ describe("ChatService.dryRun", () => {
   it("does not call orchestrator and does not write floor/message side effects", async () => {
     const floorsBefore = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
     const messagesBefore = await database.db.select().from(messageTable);
+    const promptSnapshotsBefore = await database.db.select().from(promptSnapshots);
 
     const result = await chatService.dryRun(sessionId, { message: "hello dry run" });
 
     expect(result.messages[result.messages.length - 1]?.content).toBe("hello dry run");
     expect(result.tokenEstimate).toBeGreaterThan(0);
+    expect(result.promptSnapshot.presetId).toBeNull();
+    expect(result.promptSnapshot.worldbookActivatedEntryUids).toEqual([]);
+    expect(result.promptSnapshot.promptDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(mockOrchestrator.executeTurn).not.toHaveBeenCalled();
 
     const floorsAfter = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
     const messagesAfter = await database.db.select().from(messageTable);
+    const promptSnapshotsAfter = await database.db.select().from(promptSnapshots);
 
     expect(floorsAfter).toEqual(floorsBefore);
     expect(messagesAfter).toEqual(messagesBefore);
+    expect(promptSnapshotsAfter).toEqual(promptSnapshotsBefore);
+  });
+
+  it("returns prompt snapshot preview for loaded resources without persisting prompt_snapshot rows", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+    const regexProfileId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Preset",
+      source: "sillytavern",
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Dry Run Worldbook",
+      source: "sillytavern",
+      dataJson: JSON.stringify({ scanDepth: 3 }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 7,
+      comment: "Sword",
+      content: "A blessed sword rests in the shrine.",
+      keysJson: JSON.stringify(["sword"]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: false,
+      selectiveLogic: 0,
+      constant: false,
+      position: 0,
+      order: 100,
+      depth: 4,
+      role: 0,
+      disable: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(regexProfiles).values({
+      id: regexProfileId,
+      name: "Dry Run Regex",
+      source: "sillytavern",
+      dataJson: JSON.stringify(SAMPLE_REGEX_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        worldbookProfileId: worldbookId,
+        regexProfileId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    const result = await chatService.dryRun(sessionId, { message: "hello sword" });
+
+    expect(result.promptSnapshot).toMatchObject({
+      presetId,
+      presetUpdatedAt: now,
+      worldbookId,
+      worldbookUpdatedAt: now,
+      regexProfileId,
+      regexProfileUpdatedAt: now,
+      worldbookActivatedEntryUids: [7],
+      regexPreRuleNames: ["Input Rule"],
+      regexPostRuleNames: [],
+      promptMode: "compat_strict",
+      tokenEstimate: result.tokenEstimate,
+    });
+    expect(result.promptSnapshot.promptDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(await database.db.select().from(promptSnapshots)).toEqual([]);
+  });
+
+  it("does not load prompt resources owned by another account", async () => {
+    const now = Date.now();
+    const otherAccountId = "acc-other";
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+    const regexProfileId = nanoid();
+
+    await database.db.insert(accounts).values({
+      id: otherAccountId,
+      name: "Other Account",
+      role: "user",
+      status: "active",
+      isDefault: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Foreign Preset",
+      source: "sillytavern",
+      accountId: otherAccountId,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Foreign Worldbook",
+      source: "sillytavern",
+      accountId: otherAccountId,
+      dataJson: JSON.stringify({}),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 9,
+      comment: "Foreign entry",
+      content: "Hidden foreign lore.",
+      keysJson: JSON.stringify(["foreign"]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: false,
+      selectiveLogic: 0,
+      constant: true,
+      position: 0,
+      order: 100,
+      depth: 4,
+      role: 0,
+      disable: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(regexProfiles).values({
+      id: regexProfileId,
+      name: "Foreign Regex",
+      source: "sillytavern",
+      accountId: otherAccountId,
+      dataJson: JSON.stringify(SAMPLE_REGEX_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        worldbookProfileId: worldbookId,
+        regexProfileId,
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    const result = await chatService.dryRun(sessionId, { message: "hello foreign" });
+
+    expect(result.messages[0]).toEqual({ role: "system", content: "You are a helpful assistant." });
+    expect(result.promptSnapshot).toMatchObject({
+      presetId: null,
+      worldbookId: null,
+      regexProfileId: null,
+      worldbookActivatedEntryUids: [],
+      regexPreRuleNames: [],
+      regexPostRuleNames: [],
+    });
   });
 });

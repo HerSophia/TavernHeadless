@@ -13,14 +13,15 @@ import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { floors, messagePages, messages, sessions } from "../src/db/schema";
+import { floors, memoryItems, messagePages, messages, sessions } from "../src/db/schema";
 import { ChatService } from "../src/services/chat-service";
 import {
+  createEventBus,
   SimpleTokenCounter,
+  type MemoryStore,
   type TurnOrchestrator,
   type TurnOutput,
   type TurnInput,
-  type MemoryStore,
 } from "@tavern/core";
 
 // ── Mock Setup ────────────────────────────────────────
@@ -32,7 +33,7 @@ function createMockOrchestrator(database: DatabaseConnection) {
     executeTurn: vi.fn(async (input: TurnInput) => {
       await database.db
         .update(floors)
-        .set({ state: "committed", updatedAt: Date.now() })
+        .set({ state: "generating", updatedAt: Date.now() })
         .where(eq(floors.id, input.floorId));
 
       return {
@@ -41,7 +42,7 @@ function createMockOrchestrator(database: DatabaseConnection) {
         rawText: MOCK_GENERATED_TEXT,
         summaries: ["Alice met Bob at the tavern."],
         totalUsage: { promptTokens: 80, completionTokens: 30, totalTokens: 110 },
-        finalState: "committed",
+        finalState: "generating",
       } satisfies TurnOutput;
     }),
   } as unknown as TurnOrchestrator;
@@ -233,7 +234,7 @@ describe("Memory Injection", () => {
     expect(msgs[2].content).toBe("Hello");
   });
 
-  it("should persist summaries via ingestSummaries after respond", async () => {
+  it("should persist summary memories inside the commit boundary after respond", async () => {
     const orchestrator = createMockOrchestrator(database);
     const memoryStore = createMockMemoryStore();
     const chatService = new ChatService(
@@ -245,13 +246,21 @@ describe("Memory Injection", () => {
 
     const result = await chatService.respond(sessionId, { message: "Hello" });
 
-    expect(memoryStore.ingestSummaries).toHaveBeenCalledOnce();
-    expect(memoryStore.ingestSummaries).toHaveBeenCalledWith(
-      ["Alice met Bob at the tavern."],
-      "chat",
-      sessionId,
-      result.floorId
-    );
+    const rows = await database.db
+      .select()
+      .from(memoryItems)
+      .where(eq(memoryItems.sourceFloorId, result.floorId));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      scope: "chat",
+      scopeId: sessionId,
+      type: "summary",
+      status: "active",
+      sourceFloorId: result.floorId,
+    });
+    expect(JSON.parse(rows[0]!.contentJson)).toBe("Alice met Bob at the tavern.");
+    expect(memoryStore.ingestSummaries).not.toHaveBeenCalled();
   });
 
   it("should NOT inject memory when memoryStore is not provided", async () => {
@@ -275,6 +284,9 @@ describe("Memory Injection", () => {
     expect(turnInput.messages.length).toBe(2);
     expect(turnInput.messages[0].role).toBe("system");
     expect(turnInput.messages[1].role).toBe("user");
+
+    const rows = await database.db.select().from(memoryItems);
+    expect(rows).toEqual([]);
   });
 
   it("should gracefully handle memoryStore.prepareInjection failure", async () => {
@@ -283,17 +295,22 @@ describe("Memory Injection", () => {
     (memoryStore.prepareInjection as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("DB connection lost")
     );
+    const eventBus = createEventBus();
+    const injectionFailedHandler = vi.fn();
+    eventBus.on("memory.injection_failed", injectionFailedHandler);
 
     const chatService = new ChatService(
       database.db,
       orchestrator,
       new SimpleTokenCounter(),
-      { memoryStore }
+      { memoryStore, eventBus }
     );
 
     // Should not throw, just skip memory injection
     const result = await chatService.respond(sessionId, { message: "Hello" });
     expect(result.generatedText).toBe(MOCK_GENERATED_TEXT);
+    expect(injectionFailedHandler).toHaveBeenCalledOnce();
+    expect(injectionFailedHandler).toHaveBeenCalledWith(expect.objectContaining({ sessionId, error: expect.any(Error) }));
 
     // No memory message injected
     const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
@@ -301,14 +318,44 @@ describe("Memory Injection", () => {
       (m: { role: string; content: string }) => m.content.includes("[Memory Summary]")
     );
     expect(memoryMsg).toBeUndefined();
+
+    const rows = await database.db
+      .select()
+      .from(memoryItems)
+      .where(eq(memoryItems.sourceFloorId, result.floorId));
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]!.contentJson)).toBe("Alice met Bob at the tavern.");
   });
 
-  it("should gracefully handle ingestSummaries failure", async () => {
-    const orchestrator = createMockOrchestrator(database);
+  it("should persist consolidation memories inside the commit boundary", async () => {
+    const orchestrator = {
+      executeTurn: vi.fn(async (input: TurnInput) => {
+        await database.db
+          .update(floors)
+          .set({ state: "generating", updatedAt: Date.now() })
+          .where(eq(floors.id, input.floorId));
+
+        return {
+          floorId: input.floorId,
+          generatedText: MOCK_GENERATED_TEXT,
+          rawText: MOCK_GENERATED_TEXT,
+          summaries: ["Alice met Bob at the tavern."],
+          totalUsage: { promptTokens: 80, completionTokens: 30, totalTokens: 110 },
+          finalState: "generating",
+          consolidationResult: {
+            output: {
+              turnSummary: "Alice and Bob became allies.",
+              factsAdd: [{ key: "relationship", value: "Alice and Bob are allies", scope: "chat" }],
+              factsUpdate: [],
+              factsDeprecate: [],
+            },
+            usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+          },
+        } satisfies TurnOutput;
+      }),
+    } as unknown as TurnOrchestrator;
+
     const memoryStore = createMockMemoryStore();
-    (memoryStore.ingestSummaries as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error("Write failed")
-    );
 
     const chatService = new ChatService(
       database.db,
@@ -317,10 +364,59 @@ describe("Memory Injection", () => {
       { memoryStore }
     );
 
-    // Should not throw
-    const result = await chatService.respond(sessionId, { message: "Hello" });
+    const result = await chatService.respond(sessionId, {
+      message: "Hello",
+      config: {
+        enableMemoryConsolidation: true,
+      },
+    });
+
+    const rows = await database.db
+      .select()
+      .from(memoryItems)
+      .where(eq(memoryItems.sourceFloorId, result.floorId));
+
+    expect(rows).toHaveLength(3);
+    expect(rows.map((row) => JSON.parse(row.contentJson))).toEqual(expect.arrayContaining([
+      "Alice met Bob at the tavern.",
+      "Alice and Bob became allies.",
+      "relationship: Alice and Bob are allies",
+    ]));
+    const factRow = rows.find((row) => row.type === "fact");
+    expect(factRow?.factKey).toBe("relationship");
+  });
+
+  it("should emit memory.consolidation_context_failed and continue when context loading fails", async () => {
+    const orchestrator = createMockOrchestrator(database);
+    const memoryStore = createMockMemoryStore();
+    (memoryStore.query as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("summary lookup failed"));
+    const eventBus = createEventBus();
+    const contextFailedHandler = vi.fn();
+    eventBus.on("memory.consolidation_context_failed", contextFailedHandler);
+
+    const chatService = new ChatService(
+      database.db,
+      orchestrator,
+      new SimpleTokenCounter(),
+      { memoryStore, eventBus }
+    );
+
+    const result = await chatService.respond(sessionId, {
+      message: "Hello",
+      config: {
+        enableMemoryConsolidation: true,
+      },
+    });
+
     expect(result.generatedText).toBe(MOCK_GENERATED_TEXT);
-    expect(result.finalState).toBe("committed");
+    expect(contextFailedHandler).toHaveBeenCalledOnce();
+    expect(contextFailedHandler).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId,
+      error: expect.any(Error),
+    }));
+
+    const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.consolidationContext).toBeUndefined();
   });
 
   it("should pass consolidation context when memory consolidation is enabled", async () => {
@@ -441,7 +537,7 @@ describe("Memory Injection", () => {
     expect(turnInput.consolidationContext?.recentSummaries).toContain("Alice visited the old tower.");
   });
 
-  it("should skip ingestSummaries when turnOutput has no summaries", async () => {
+  it("should skip memory writes when turn output has no summaries", async () => {
     const database2 = createDatabase(":memory:");
 
     // Create orchestrator that returns empty summaries
@@ -449,7 +545,7 @@ describe("Memory Injection", () => {
       executeTurn: vi.fn(async (input: TurnInput) => {
         await database2.db
           .update(floors)
-          .set({ state: "committed", updatedAt: Date.now() })
+          .set({ state: "generating", updatedAt: Date.now() })
           .where(eq(floors.id, input.floorId));
 
         return {
@@ -458,7 +554,7 @@ describe("Memory Injection", () => {
           rawText: MOCK_GENERATED_TEXT,
           summaries: [],
           totalUsage: { promptTokens: 50, completionTokens: 20, totalTokens: 70 },
-          finalState: "committed",
+          finalState: "generating",
         } satisfies TurnOutput;
       }),
     } as unknown as TurnOrchestrator;
@@ -483,9 +579,10 @@ describe("Memory Injection", () => {
 
     await chatService.respond(sid, { message: "Hello" });
 
-    // prepareInjection is called, but ingestSummaries is NOT called
     expect(memoryStore.prepareInjection).toHaveBeenCalledOnce();
-    expect(memoryStore.ingestSummaries).not.toHaveBeenCalled();
+
+    const rows = await database2.db.select().from(memoryItems);
+    expect(rows).toEqual([]);
 
     database2.close();
   });

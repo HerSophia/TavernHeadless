@@ -103,6 +103,32 @@ export interface MemoryConsolidatedEvent {
   deprecated: number;
 }
 
+/** 记忆注入失败事件（降级为跳过，不阻断主流程） */
+export interface MemoryInjectionFailedEvent {
+  sessionId: string;
+  error: Error;
+}
+
+/** 记忆持久化失败事件（提交事务将回滚） */
+export interface MemoryPersistFailedEvent {
+  floorId: string;
+  sessionId: string;
+  error: Error;
+}
+
+/** 记忆整理上下文加载失败事件（降级为跳过整理） */
+export interface MemoryConsolidationContextFailedEvent {
+  sessionId: string;
+  error: Error;
+}
+
+/** 记忆整理 JSON 解析失败事件（降级为仅写 turnSummary） */
+export interface MemoryConsolidationJsonParseFailedEvent {
+  floorId: string;
+  rawText: string;
+  error: Error;
+}
+
 /** 记忆整理失败事件（降级为警告，不阻断回合） */
 export interface MemoryConsolidationFailedEvent {
   floorId: string;
@@ -114,7 +140,7 @@ export interface MemoryConsolidationFailedEvent {
 /** 工具调用开始事件 */
 export interface ToolCallStartedEvent {
   floorId: string;
-  pageId: string;
+  pageId?: string;
   callerSlot: InstanceSlot;
   toolName: string;
   args: Record<string, unknown>;
@@ -123,7 +149,7 @@ export interface ToolCallStartedEvent {
 /** 工具调用完成事件 */
 export interface ToolCallCompletedEvent {
   floorId: string;
-  pageId: string;
+  pageId?: string;
   callerSlot: InstanceSlot;
   toolName: string;
   result: unknown;
@@ -133,7 +159,7 @@ export interface ToolCallCompletedEvent {
 /** 工具调用失败事件 */
 export interface ToolCallFailedEvent {
   floorId: string;
-  pageId: string;
+  pageId?: string;
   callerSlot: InstanceSlot;
   toolName: string;
   error: Error;
@@ -142,7 +168,7 @@ export interface ToolCallFailedEvent {
 /** 工具调用被拒绝事件 */
 export interface ToolCallDeniedEvent {
   floorId: string;
-  pageId: string;
+  pageId?: string;
   callerSlot: InstanceSlot;
   toolName: string;
   reason: string;
@@ -188,6 +214,10 @@ export interface CoreEventMap {
   'memory.created': MemoryCreatedEvent;
   'memory.updated': MemoryUpdatedEvent;
   'memory.deprecated': MemoryDeprecatedEvent;
+  'memory.injection_failed': MemoryInjectionFailedEvent;
+  'memory.persist_failed': MemoryPersistFailedEvent;
+  'memory.consolidation_context_failed': MemoryConsolidationContextFailedEvent;
+  'memory.consolidation_json_parse_failed': MemoryConsolidationJsonParseFailedEvent;
   'memory.consolidated': MemoryConsolidatedEvent;
   'memory.consolidation_failed': MemoryConsolidationFailedEvent;
   'tool.call_started': ToolCallStartedEvent;

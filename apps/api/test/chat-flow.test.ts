@@ -35,7 +35,7 @@ import type { ProviderConfig, ProviderFactory } from "@tavern/core";
 // 只测试路由层 + ChatService 的 DB 逻辑。
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { sessions, floors, messagePages, messages } from "../src/db/schema";
+import { sessions, floors, messagePages, messages, promptSnapshots, toolExecutionRecords, variables } from "../src/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
@@ -122,7 +122,7 @@ describe("ChatService", () => {
       completionTokens: 20,
       totalTokens: 70,
     },
-    finalState: "committed",
+    finalState: "generating",
   };
 
   beforeEach(async () => {
@@ -140,12 +140,28 @@ describe("ChatService", () => {
 
         await db
           .update(floors)
-          .set({ state: "committed", updatedAt: Date.now() })
+          .set({ state: "generating", updatedAt: Date.now() })
           .where(eq(floors.id, input.floorId));
 
         return {
           ...MOCK_TURN_OUTPUT,
           floorId: input.floorId,
+          toolExecutionRecords: [
+            {
+              id: `tec-${input.floorId}`,
+              runId: `run-${input.floorId}`,
+              floorId: input.floorId,
+              pageId: input.pageId,
+              callerSlot: "narrator",
+              providerId: "builtin",
+              toolName: "roll_dice",
+              argsJson: JSON.stringify({ sides: 20 }),
+              resultJson: JSON.stringify({ total: 12 }),
+              status: "success",
+              durationMs: 5,
+              createdAt: Date.now(),
+            },
+          ],
         };
       }),
     } as unknown as TurnOrchestrator;
@@ -227,6 +243,7 @@ describe("ChatService", () => {
     expect(userMsg).toBeDefined();
     expect(userMsg!.role).toBe("user");
     expect(userMsg!.content).toBe("Hello, brave knight!");
+    expect(turnInput.pageId).toBe(inputPage!.id);
 
     // 验证 DB 中的助手消息
     const outputPage = allPages.find((p) => p.pageKind === "output");
@@ -240,6 +257,156 @@ describe("ChatService", () => {
     expect(assistantMsg!.role).toBe("assistant");
     expect(assistantMsg!.content).toBe(MOCK_GENERATED_TEXT);
     expect(assistantMsg!.source).toBe("narrator");
+  });
+
+  it("should pass a generating execution result into the commit service", async () => {
+    const commitSpy = vi.spyOn((chatService as any).turnCommitService, "commit");
+
+    await chatService.respond(sessionId, { message: "Commit boundary" });
+
+    expect(commitSpy).toHaveBeenCalledOnce();
+    expect(commitSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId,
+        variableCommit: { pageId: expect.any(String) },
+        promptSnapshot: expect.objectContaining({
+          sessionId,
+          promptMode: "compat_strict",
+          presetId: null,
+        }),
+        toolExecutionRecords: [
+          expect.objectContaining({
+            floorId: expect.any(String),
+            providerId: "builtin",
+            toolName: "roll_dice",
+            status: "success",
+          }),
+        ],
+        execution: expect.objectContaining({
+          finalState: "generating",
+          generatedText: MOCK_GENERATED_TEXT,
+          toolExecutionRecords: [
+            expect.objectContaining({
+              providerId: "builtin",
+              toolName: "roll_dice",
+            }),
+          ],
+        }),
+      })
+    );
+  });
+
+  it("should persist tool_execution_record inside the commit boundary after respond", async () => {
+    const result = await chatService.respond(sessionId, { message: "Record boundary" });
+
+    const [toolExecutionRow] = await database.db
+      .select()
+      .from(toolExecutionRecords)
+      .where(eq(toolExecutionRecords.floorId, result.floorId));
+
+    expect(toolExecutionRow).toBeDefined();
+    expect(toolExecutionRow!.floorId).toBe(result.floorId);
+    expect(toolExecutionRow!.pageId).not.toBeNull();
+    expect(toolExecutionRow!.providerId).toBe("builtin");
+    expect(toolExecutionRow!.toolName).toBe("roll_dice");
+    expect(toolExecutionRow!.status).toBe("success");
+  });
+
+  it("should persist prompt_snapshot inside the commit boundary after respond", async () => {
+    const result = await chatService.respond(sessionId, { message: "Snapshot boundary" });
+
+    const [snapshotRow] = await database.db
+      .select()
+      .from(promptSnapshots)
+      .where(eq(promptSnapshots.floorId, result.floorId));
+
+    expect(snapshotRow).toBeDefined();
+    expect(snapshotRow!.sessionId).toBe(sessionId);
+    expect(snapshotRow!.presetId).toBeNull();
+    expect(snapshotRow!.promptMode).toBe("compat_strict");
+    expect(snapshotRow!.promptDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(snapshotRow!.tokenEstimate).toBeGreaterThan(0);
+  });
+
+  it("should promote page variables to floor inside the commit boundary after respond", async () => {
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (input) => {
+        await database.db
+          .update(floors)
+          .set({ state: "generating", updatedAt: Date.now() })
+          .where(eq(floors.id, input.floorId));
+
+        await database.db.insert(variables).values({
+          id: nanoid(),
+          scope: "page",
+          scopeId: input.pageId!,
+          key: "mood",
+          valueJson: JSON.stringify("focused"),
+          updatedAt: Date.now(),
+        });
+
+        return {
+          ...MOCK_TURN_OUTPUT,
+          floorId: input.floorId,
+        };
+      }
+    );
+
+    const result = await chatService.respond(sessionId, { message: "Promote mood" });
+
+    const [floorVariable] = await database.db
+      .select()
+      .from(variables)
+      .where(
+        and(
+          eq(variables.scope, "floor"),
+          eq(variables.scopeId, result.floorId),
+          eq(variables.key, "mood")
+        )
+      );
+
+    expect(floorVariable).toBeDefined();
+    expect(JSON.parse(floorVariable!.valueJson)).toBe("focused");
+  });
+
+  it("should reject concurrent respond calls on the same session branch", async () => {
+    let releaseGeneration: (() => void) | undefined;
+    let enteredGeneration = false;
+
+    const blockingOrchestrator = {
+      executeTurn: vi.fn(async (input) => {
+        enteredGeneration = true;
+
+        await new Promise<void>((resolve) => {
+          releaseGeneration = resolve;
+        });
+
+        await database.db
+          .update(floors)
+          .set({ state: "generating", updatedAt: Date.now() })
+          .where(eq(floors.id, input.floorId));
+
+        return {
+          ...MOCK_TURN_OUTPUT,
+          floorId: input.floorId,
+        };
+      }),
+    } as unknown as TurnOrchestrator;
+
+    const service = new ChatService(database.db, blockingOrchestrator, new SimpleTokenCounter());
+
+    const firstPromise = service.respond(sessionId, { message: "First message" });
+    for (let i = 0; i < 50 && !enteredGeneration; i += 1) {
+      await Promise.resolve();
+    }
+
+    await expect(service.respond(sessionId, { message: "Second message" })).rejects.toMatchObject({
+      code: "generation_conflict",
+    });
+
+    releaseGeneration?.();
+    await expect(firstPromise).resolves.toMatchObject({ generatedText: MOCK_GENERATED_TEXT });
+    expect(blockingOrchestrator.executeTurn).toHaveBeenCalledTimes(1);
   });
 
   it("should resolve per-turn model override and mark profile as used", async () => {
@@ -446,6 +613,55 @@ describe("ChatService", () => {
     }
   });
 
+  it("should throw commit_conflict when the floor is no longer generating before commit", async () => {
+    const conflictingOrchestrator = {
+      executeTurn: vi.fn(async (input) => {
+        await database.db
+          .update(floors)
+          .set({ state: "committed", updatedAt: Date.now() })
+          .where(eq(floors.id, input.floorId));
+
+        return {
+          ...MOCK_TURN_OUTPUT,
+          floorId: input.floorId,
+        };
+      }),
+    } as unknown as TurnOrchestrator;
+
+    const service = new ChatService(database.db, conflictingOrchestrator, new SimpleTokenCounter());
+
+    await expect(service.respond(sessionId, { message: "Conflict me" })).rejects.toMatchObject({
+      code: "commit_conflict",
+    });
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
+    expect(floor?.state).toBe("committed");
+
+    const pages = await database.db.select().from(messagePages).where(eq(messagePages.floorId, floor!.id));
+    expect(pages).toHaveLength(1);
+    expect(pages[0]?.pageKind).toBe("input");
+  });
+
+  it("should mark the floor failed when commit persistence fails unexpectedly", async () => {
+    const commitSpy = vi
+      .spyOn((chatService as any).turnCommitService, "commit")
+      .mockRejectedValueOnce(new Error("sqlite busy"));
+
+    await expect(chatService.respond(sessionId, { message: "Commit failure" })).rejects.toMatchObject({
+      code: "turn_commit_failed",
+    });
+
+    expect(commitSpy).toHaveBeenCalledOnce();
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
+    expect(floor?.state).toBe("failed");
+
+    const pages = await database.db.select().from(messagePages).where(eq(messagePages.floorId, floor!.id));
+    expect(pages).toHaveLength(1);
+    expect(pages[0]?.pageKind).toBe("input");
+  });
+
+
   it("should pass generation params to orchestrator", async () => {
     await chatService.respond(sessionId, {
       message: "Hello",
@@ -484,8 +700,14 @@ describe("ChatService", () => {
     await chatService.respond(sessionId, { message: "Hello" });
 
     const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const tokenCounter = new SimpleTokenCounter();
+    const expectedPromptTokens = turnInput.messages.reduce(
+      (sum: number, message: { content: string }) => sum + tokenCounter.count(message.content),
+      0
+    );
+
     expect(turnInput.generationParams.temperature).toBe(0.7);
-    expect(turnInput.generationParams.maxOutputTokens).toBe(1000);
+    expect(turnInput.generationParams.maxOutputTokens).toBe(1000 - expectedPromptTokens);
     expect(turnInput.generationParams.stream).toBe(false);
   });
 
@@ -505,7 +727,7 @@ describe("ChatService", () => {
         async (input: any) => {
           await database.db
             .update(floors)
-            .set({ state: "committed", updatedAt: Date.now() })
+            .set({ state: "generating", updatedAt: Date.now() })
             .where(eq(floors.id, input.floorId));
 
           return {
@@ -525,6 +747,36 @@ describe("ChatService", () => {
       expect(regenResult.floorNo).toBe(0); // 同 floorNo
       expect(regenResult.previousFloorId).toBe(respondResult.floorId);
       expect(regenResult.generatedText).toBe(REGEN_TEXT);
+    });
+
+    it("should use the same generating commit boundary during regenerate", async () => {
+      await chatService.respond(sessionId, { message: "Seed for regenerate" });
+
+      const commitSpy = vi.spyOn((chatService as any).turnCommitService, "commit");
+      const regenResult = await chatService.regenerate(sessionId);
+
+      expect(commitSpy).toHaveBeenCalledOnce();
+      expect(commitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          floorId: regenResult.floorId,
+          sessionId,
+          variableCommit: { pageId: expect.any(String) },
+          promptSnapshot: expect.objectContaining({
+            floorId: regenResult.floorId,
+            sessionId,
+            promptMode: "compat_strict",
+          }),
+          toolExecutionRecords: [
+            expect.objectContaining({
+              floorId: regenResult.floorId,
+              providerId: "builtin",
+              toolName: "roll_dice",
+              status: "success",
+            }),
+          ],
+          execution: expect.objectContaining({ floorId: regenResult.floorId, finalState: "generating" }),
+        })
+      );
     });
 
     it("should reuse the original user message", async () => {
@@ -692,6 +944,70 @@ describe("ChatService", () => {
       expect(pages.some((page) => page.pageKind === "output")).toBe(true);
     });
 
+    it("should use the same generating commit boundary during retryFloor", async () => {
+      const baseTurn = await chatService.respond(sessionId, { message: "Retry seed" });
+
+      await database.db
+        .update(floors)
+        .set({ state: "failed", updatedAt: Date.now() })
+        .where(eq(floors.id, baseTurn.floorId));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockImplementationOnce(async (input) => {
+        await database.db
+          .update(floors)
+          .set({ state: "generating", updatedAt: Date.now() })
+          .where(eq(floors.id, input.floorId));
+
+        return {
+          ...MOCK_TURN_OUTPUT,
+          floorId: input.floorId,
+          toolExecutionRecords: [
+            {
+              id: nanoid(),
+              runId: `retry-run-${input.floorId}`,
+              floorId: input.floorId,
+              pageId: input.pageId,
+              callerSlot: "narrator",
+              providerId: "builtin",
+              toolName: "roll_dice",
+              argsJson: JSON.stringify({ sides: 20 }),
+              resultJson: JSON.stringify({ total: 12 }),
+              status: "success",
+              durationMs: 5,
+              createdAt: Date.now(),
+            },
+          ],
+        };
+      });
+
+      const commitSpy = vi.spyOn((chatService as any).turnCommitService, "commit");
+      const retryResult = await chatService.retryFloor(baseTurn.floorId);
+
+      expect(retryResult.floorId).toBe(baseTurn.floorId);
+      expect(commitSpy).toHaveBeenCalledOnce();
+      expect(commitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          floorId: baseTurn.floorId,
+          sessionId,
+          variableCommit: { pageId: expect.any(String) },
+          promptSnapshot: expect.objectContaining({
+            floorId: baseTurn.floorId,
+            sessionId,
+            promptMode: "compat_strict",
+          }),
+          toolExecutionRecords: [
+            expect.objectContaining({
+              floorId: baseTurn.floorId,
+              providerId: "builtin",
+              toolName: "roll_dice",
+              status: "success",
+            }),
+          ],
+          execution: expect.objectContaining({ floorId: baseTurn.floorId, finalState: "generating" }),
+        })
+      );
+    });
+
     it("should edit user message and regenerate into a new branch", async () => {
       const baseTurn = await chatService.respond(sessionId, { message: "Original user line" });
 
@@ -731,6 +1047,49 @@ describe("ChatService", () => {
         .where(and(eq(messages.pageId, newInputPage!.id), eq(messages.role, "user")));
 
       expect(editedUserMessage?.content).toBe("Edited user line");
+    });
+
+    it("should use the same generating commit boundary during editAndRegenerate", async () => {
+      const baseTurn = await chatService.respond(sessionId, { message: "Editable seed" });
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, baseTurn.floorId), eq(messagePages.pageKind, "input")));
+
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      const commitSpy = vi.spyOn((chatService as any).turnCommitService, "commit");
+      const editedResult = await chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited boundary line",
+        branchId: "edit-boundary",
+      });
+
+      expect(commitSpy).toHaveBeenCalledOnce();
+      expect(commitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          floorId: editedResult.floorId,
+          sessionId,
+          variableCommit: { pageId: expect.any(String) },
+          promptSnapshot: expect.objectContaining({
+            floorId: editedResult.floorId,
+            sessionId,
+            promptMode: "compat_strict",
+          }),
+          toolExecutionRecords: [
+            expect.objectContaining({
+              floorId: editedResult.floorId,
+              providerId: "builtin",
+              toolName: "roll_dice",
+              status: "success",
+            }),
+          ],
+          execution: expect.objectContaining({ floorId: editedResult.floorId, finalState: "generating" }),
+        })
+      );
     });
   });
 });

@@ -19,13 +19,15 @@
  * { messages, preProcess, postProcess }
  */
 
-import { asc, eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
+
 import { normalizePositiveInt } from "../lib/utils.js";
 import {
   assembleNativePrompt,
   MessageBuilder,
   type ChatMessage,
   type NativeWorldbookEntry,
+  type PromptSnapshotRecord,
   type TokenCounter,
 } from "@tavern/core";
 import {
@@ -33,17 +35,17 @@ import {
   type TriggerResult,
   triggerWorldBook,
   applyRegexScripts,
-  parsePreset,
-  parseWorldBook,
-  parseRegexScripts,
   REGEX_PLACEMENT,
   type STPreset,
-  type STWorldBook,
-  type STRegexScript,
 } from "@tavern/adapters-sillytavern";
 
 import type { AppDb } from "../db/client.js";
-import { presets, worldbooks, worldbookEntries, regexProfiles } from "../db/schema.js";
+import {
+  PromptResourceLoader,
+  type LoadedPromptPreset,
+  type LoadedPromptRegexProfile,
+  type LoadedPromptWorldbook,
+} from "./prompt-resource-loader.js";
 
 // ── 类型 ──────────────────────────────────────────────
 
@@ -87,6 +89,39 @@ export interface SessionMetadata {
   [key: string]: unknown;
 }
 
+export interface PromptSnapshotPreview {
+  presetId: string | null;
+  presetUpdatedAt: number | null;
+  worldbookId: string | null;
+  worldbookUpdatedAt: number | null;
+  regexProfileId: string | null;
+  regexProfileUpdatedAt: number | null;
+  worldbookActivatedEntryUids: number[];
+  regexPreRuleNames: string[];
+  regexPostRuleNames: string[];
+  promptMode: PromptMode;
+  promptDigest: string;
+  tokenEstimate: number;
+}
+
+/**
+ * 单轮 Prompt 组装快照。
+ *
+ * 该对象在组装开始时冻结本轮使用的 prompt 资源与解析结果，
+ * 后续组装逻辑只消费这份内存快照，不再回源读取 DB。
+ */
+export interface PromptAssemblySnapshot extends PromptSnapshotPreview {
+  createdAt: number;
+  preset: LoadedPromptPreset | null;
+  worldbook: LoadedPromptWorldbook | null;
+  regexProfile: LoadedPromptRegexProfile | null;
+  metadata: SessionMetadata;
+  character?: CharacterSnapshot;
+  userSnapshot?: UserSnapshot;
+  persona?: PersonaInfo;
+  variables: Record<string, string>;
+}
+
 /** 编排结果 */
 export interface AssembleResult {
   /** 裁剪后的最终消息数组 */
@@ -102,6 +137,8 @@ export interface AssembleResult {
   };
   /** 调试元信息（dry-run 场景可选） */
   debug?: AssembleDebugInfo;
+  /** 本轮冻结的 prompt 快照 */
+  promptSnapshot: PromptAssemblySnapshot;
 }
 
 export interface AssembleDebugInfo {
@@ -142,6 +179,7 @@ const DEFAULT_MAX_TOKENS = 1000;
  * 从 DB 加载资源并编排 Prompt。
  *
  * @param db - 数据库实例
+ * @param accountId - 当前账号 ID，用于 prompt 资源 ownership 校验
  * @param session - Session 的编排相关字段
  * @param chatHistory - 已加载的聊天历史（不含当前用户消息）
  * @param userMessage - 当前用户消息
@@ -151,6 +189,7 @@ const DEFAULT_MAX_TOKENS = 1000;
  */
 export async function assemblePrompt(
   db: AppDb,
+  accountId: string,
   session: SessionPromptInfo,
   chatHistory: ChatMessage[],
   userMessage: string,
@@ -158,277 +197,243 @@ export async function assemblePrompt(
   memorySummary?: string,
   options: AssemblePromptOptions = {}
 ): Promise<AssembleResult> {
-  // ── 1. 加载资源 ──
-  const [preset, worldbookEntries, regexScriptList] = await Promise.all([
-    loadPreset(db, session.presetId),
-    loadWorldbookData(db, session.worldbookProfileId),
-    loadRegexScripts(db, session.regexProfileId),
+  const resourceLoader = new PromptResourceLoader(db);
+
+  // ── 1. 加载资源并冻结本轮快照 ──
+  const [preset, worldbook, regexProfile] = await Promise.all([
+    resourceLoader.loadPreset(accountId, session.presetId),
+    resourceLoader.loadWorldbookData(accountId, session.worldbookProfileId),
+    resourceLoader.loadRegexScripts(accountId, session.regexProfileId),
   ]);
 
-  // ── 2. 解析 metadata（角色卡信息）──
   const metadata = parseSessionMetadata(session.metadataJson);
   const character = parseCharacterSnapshot(session.characterSnapshotJson);
   const userSnapshot = parseUserSnapshot(session.userSnapshotJson ?? null);
   const persona = userSnapshot ?? metadata.persona;
-
-  // ── 3. 模板变量 ──
+  const promptMode = resolvePromptMode(session, metadata);
   const variables: Record<string, string> = {
     char: character?.name ?? "Assistant",
     user: persona?.name ?? "User",
   };
 
-  // ── 3b. 编排模式 ──
-  const promptMode = resolvePromptMode(session, metadata);
+  const promptSnapshot: PromptAssemblySnapshot = {
+    createdAt: Date.now(),
+    preset,
+    worldbook,
+    regexProfile,
+    metadata,
+    character,
+    userSnapshot,
+    persona,
+    variables,
+    presetId: preset?.id ?? null,
+    presetUpdatedAt: preset?.updatedAt ?? null,
+    worldbookId: worldbook?.id ?? null,
+    worldbookUpdatedAt: worldbook?.updatedAt ?? null,
+    regexProfileId: regexProfile?.id ?? null,
+    regexProfileUpdatedAt: regexProfile?.updatedAt ?? null,
+    worldbookActivatedEntryUids: [],
+    regexPreRuleNames: [],
+    regexPostRuleNames: [],
+    promptMode,
+    promptDigest: "",
+    tokenEstimate: 0,
+  };
 
-  // ── 4. 准备聊天历史（含当前用户消息）──
+  // ── 2. 准备聊天历史（含当前用户消息）──
   const fullHistory: { role: "user" | "assistant"; content: string }[] = [
     ...chatHistory
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-    { role: "user" as const, content: userMessage },
+      .filter((message) => message.role === "user" || message.role === "assistant")
+      .map((message) => ({
+        role: message.role as "user" | "assistant",
+        content: message.content,
+      })),
+    { role: "user", content: userMessage },
   ];
 
-  // ── 5. 编排 ──
+  // ── 3. 编排 ──
   let messages: ChatMessage[];
-  let tokenUsage = { total: 0, availableForReply: DEFAULT_MAX_TOKENS };
+  let maxPromptTokens = normalizePositiveInt(options.maxContextTokensOverride) ?? DEFAULT_MAX_TOKENS;
   let mode: AssembleDebugInfo["mode"] = "fallback";
   let worldbookHits = 0;
   let usedNativePipeline = false;
 
-  if (preset) {
-    // 5a. 世界书触发
-    let worldBookResults;
-    if (worldbookEntries && worldbookEntries.entries.length > 0) {
-      const triggerMessages = fullHistory
-        .map((m) => m.content)
-        .reverse(); // 从新到旧
+  const presetData = promptSnapshot.preset?.preset ?? null;
 
-      worldBookResults = triggerWorldBook(worldbookEntries.entries, {
+  if (presetData) {
+    let worldBookResults: TriggerResult | undefined;
+    const worldbookData = promptSnapshot.worldbook?.worldbook;
+
+    if (worldbookData && worldbookData.entries.length > 0) {
+      const triggerMessages = fullHistory.map((message) => message.content).reverse();
+
+      worldBookResults = triggerWorldBook(worldbookData.entries, {
         messages: triggerMessages,
-        scanDepth: worldbookEntries.scanDepth,
+        scanDepth: worldbookData.scanDepth,
         caseSensitive: false,
         matchWholeWords: false,
       });
     }
 
-    worldbookHits = worldBookResults?.activated.length ?? 0;
+    promptSnapshot.worldbookActivatedEntryUids = collectActivatedEntryUids(worldBookResults);
+    worldbookHits = promptSnapshot.worldbookActivatedEntryUids.length;
 
-    const useNativePipeline = promptMode === "native";
+    const useNativePipeline = promptSnapshot.promptMode === "native";
     usedNativePipeline = useNativePipeline;
 
     const promptIR = useNativePipeline
       ? assembleNativePrompt({
-        systemPrompt: buildNativeSystemPrompt(preset, character, persona),
-        chatHistory: fullHistory,
-        worldbookEntries: toNativeWorldbookEntries(worldBookResults),
-        variables,
-        memorySummary,
-        maxTokens: normalizePositiveInt(options.maxContextTokensOverride) ?? preset.maxContext,
-        reservedForReply: preset.maxTokens,
-        tokenCounter,
-      })
+          systemPrompt: buildNativeSystemPrompt(presetData, character, persona),
+          chatHistory: fullHistory,
+          worldbookEntries: toNativeWorldbookEntries(worldBookResults),
+          variables,
+          memorySummary,
+          maxTokens: normalizePositiveInt(options.maxContextTokensOverride) ?? presetData.maxContext,
+          reservedForReply: presetData.maxTokens,
+          tokenCounter,
+        })
       : assembleCompat({
-        preset,
-        worldBookResults,
-        chatHistory: fullHistory,
-        characterDescription: character?.description,
-        characterPersonality: character?.personality,
-        scenario: character?.scenario,
-        exampleDialogue: character?.exampleDialogue,
-        personaDescription: persona?.description,
-        variables,
-      });
+          preset: presetData,
+          worldBookResults,
+          chatHistory: fullHistory,
+          characterDescription: character?.description,
+          characterPersonality: character?.personality,
+          scenario: character?.scenario,
+          exampleDialogue: character?.exampleDialogue,
+          personaDescription: persona?.description,
+          variables,
+        });
 
-    // 5c. Token 裁剪
     const builder = new MessageBuilder(tokenCounter, {
       mergeAdjacentSameRole: true,
     });
     const assembled = builder.build(promptIR);
 
     messages = assembled.messages;
-    tokenUsage = {
-      total: assembled.tokenUsage.total,
-      availableForReply: assembled.tokenUsage.availableForReply,
-    };
+    maxPromptTokens = promptIR.metadata.maxTokens;
     mode = "preset";
   } else {
-    // 无预设：使用默认 system prompt + 历史 + 用户消息
+    maxPromptTokens = normalizePositiveInt(options.maxContextTokensOverride) ?? DEFAULT_MAX_TOKENS;
     messages = buildFallbackMessages(fullHistory, character, persona);
-    tokenUsage = {
-      total: messages.reduce((sum, m) => sum + tokenCounter.count(m.content), 0),
-      availableForReply: DEFAULT_MAX_TOKENS,
-    };
   }
 
-  // ── 5d. 记忆摘要注入 ──
+  // ── 4. 记忆摘要注入 ──
   if (memorySummary && !usedNativePipeline) {
     messages = injectMemorySummary(messages, memorySummary);
   }
 
-  // ── 6. 正则处理函数 ──
+  // ── 5. 正则处理函数 ──
+  const enabledRegexScripts = (promptSnapshot.regexProfile?.scripts ?? []).filter(
+    (script) => !script.disabled
+  );
+
+  promptSnapshot.regexPreRuleNames = collectRegexRuleNames(
+    enabledRegexScripts,
+    REGEX_PLACEMENT.USER_INPUT
+  );
+  promptSnapshot.regexPostRuleNames = collectRegexRuleNames(
+    enabledRegexScripts,
+    REGEX_PLACEMENT.AI_OUTPUT
+  );
+
   let preProcess: AssembleResult["preProcess"];
   let postProcess: AssembleResult["postProcess"];
-  const enabledRegexScripts = regexScriptList.filter((script) => !script.disabled);
-  const memorySummaryInjected = typeof memorySummary === "string" && memorySummary.trim().length > 0;
 
   if (enabledRegexScripts.length > 0) {
-    // 前处理：对用户消息应用 USER_INPUT 正则
-    preProcess = (msgs: ChatMessage[]): ChatMessage[] => {
-      return msgs.map((msg) => {
-        if (msg.role === "user") {
+    preProcess = (candidateMessages: ChatMessage[]): ChatMessage[] => {
+      return candidateMessages.map((message) => {
+        if (message.role === "user") {
           return {
-            ...msg,
+            ...message,
             content: applyRegexScripts(
-              msg.content,
+              message.content,
               enabledRegexScripts,
               REGEX_PLACEMENT.USER_INPUT
             ),
           };
         }
-        return msg;
+
+        return message;
       });
     };
 
-    // 后处理：对 AI 输出应用 AI_OUTPUT 正则
     postProcess = (text: string): string => {
-      return applyRegexScripts(
-        text,
-        enabledRegexScripts,
-        REGEX_PLACEMENT.AI_OUTPUT
-      );
+      return applyRegexScripts(text, enabledRegexScripts, REGEX_PLACEMENT.AI_OUTPUT);
     };
   }
 
-  const debug = options.includeDebug ? {
-    mode,
-    presetUsed: preset !== null,
-    worldbookHits,
-    regexPreRules: enabledRegexScripts
-      .filter((script) => script.placement.includes(REGEX_PLACEMENT.USER_INPUT))
-      .map((script) => script.scriptName || script.id),
-    regexPostRules: enabledRegexScripts
-      .filter((script) => script.placement.includes(REGEX_PLACEMENT.AI_OUTPUT))
-      .map((script) => script.scriptName || script.id),
-    memorySummaryInjected,
-  } : undefined;
+  const effectiveMessages = previewPromptMessages(messages, preProcess);
+  const tokenUsage = buildPromptTokenUsage(effectiveMessages, tokenCounter, maxPromptTokens);
+  promptSnapshot.promptDigest = computePromptDigest(effectiveMessages);
+  promptSnapshot.tokenEstimate = tokenUsage.total;
 
-  return { messages, preProcess, postProcess, tokenUsage, debug };
-}
+  const memorySummaryInjected =
+    typeof memorySummary === "string" && memorySummary.trim().length > 0;
 
-
-// ── DB 加载函数 ────────────────────────────────────────
-
-/**
- * 从 DB 加载预设并解析为 STPreset。
- * 如果 presetId 为空或找不到记录，返回 null。
- */
-async function loadPreset(
-  db: AppDb,
-  presetId: string | null
-): Promise<STPreset | null> {
-  if (!presetId) return null;
-
-  const [row] = await db
-    .select({ dataJson: presets.dataJson })
-    .from(presets)
-    .where(eq(presets.id, presetId))
-    .limit(1);
-
-  if (!row) return null;
-
-  try {
-    const rawData = JSON.parse(row.dataJson);
-    return parsePreset(rawData);
-  } catch {
-    // 解析失败，降级为无预设
-    return null;
-  }
-}
-
-/**
- * 从 DB 加载世界书（全局设置 + 条目表）并组装为 STWorldBook。
- * 如果 worldbookProfileId 为空或找不到记录，返回空数组。
- */
-async function loadWorldbookData(
-  db: AppDb,
-  worldbookProfileId: string | null
-): Promise<STWorldBook | null> {
-  if (!worldbookProfileId) return null;
-
-  const [row] = await db
-    .select({ id: worldbooks.id, name: worldbooks.name, dataJson: worldbooks.dataJson })
-    .from(worldbooks)
-    .where(eq(worldbooks.id, worldbookProfileId))
-    .limit(1);
-
-  if (!row) return null;
-
-  // Load entries from the dedicated table
-  const entryRows = await db
-    .select()
-    .from(worldbookEntries)
-    .where(eq(worldbookEntries.worldbookId, row.id))
-    .orderBy(asc(worldbookEntries.order));
-
-  // Parse global settings from dataJson
-  let globalSettings: Record<string, unknown> = {};
-  try {
-    const parsed = JSON.parse(row.dataJson);
-    if (parsed && typeof parsed === "object") globalSettings = parsed;
-  } catch { /* ignore malformed JSON */ }
+  const debug = options.includeDebug
+    ? {
+        mode,
+        presetUsed: promptSnapshot.preset !== null,
+        worldbookHits,
+        regexPreRules: promptSnapshot.regexPreRuleNames,
+        regexPostRules: promptSnapshot.regexPostRuleNames,
+        memorySummaryInjected,
+      }
+    : undefined;
 
   return {
-    name: row.name,
-    entries: entryRows.map((e) => ({
-      uid: e.uid,
-      key: safeParsJsonArray(e.keysJson),
-      keysecondary: safeParsJsonArray(e.keysSecondaryJson),
-      selective: e.selective,
-      selectiveLogic: e.selectiveLogic as STWorldBook["entries"][number]["selectiveLogic"],
-      constant: e.constant,
-      content: e.content,
-      comment: e.comment,
-      position: e.position as STWorldBook["entries"][number]["position"],
-      order: e.order,
-      depth: e.depth,
-      role: e.role as STWorldBook["entries"][number]["role"],
-      disable: e.disable,
-      scanDepth: e.scanDepth ?? null,
-      caseSensitive: e.caseSensitive ?? null,
-      matchWholeWords: e.matchWholeWords ?? null,
-    })),
-    scanDepth: typeof globalSettings.scanDepth === "number" ? globalSettings.scanDepth : 2,
-    caseSensitive: typeof globalSettings.caseSensitive === "boolean" ? globalSettings.caseSensitive : false,
-    matchWholeWords: typeof globalSettings.matchWholeWords === "boolean" ? globalSettings.matchWholeWords : false,
-    recursive: typeof globalSettings.recursive === "boolean" ? globalSettings.recursive : false,
-    maxRecursionSteps: typeof globalSettings.maxRecursionSteps === "number" ? globalSettings.maxRecursionSteps : 0,
+    messages,
+    preProcess,
+    postProcess,
+    tokenUsage,
+    debug,
+    promptSnapshot,
   };
 }
 
-/**
- * 从 DB 加载正则脚本列表并解析为 STRegexScript[]。
- * 如果 regexProfileId 为空或找不到记录，返回空数组。
- */
-async function loadRegexScripts(
-  db: AppDb,
-  regexProfileId: string | null
-): Promise<STRegexScript[]> {
-  if (!regexProfileId) return [];
+export function buildPromptSnapshotPreview(
+  snapshot: PromptAssemblySnapshot
+): PromptSnapshotPreview {
+  return {
+    presetId: snapshot.presetId,
+    presetUpdatedAt: snapshot.presetUpdatedAt,
+    worldbookId: snapshot.worldbookId,
+    worldbookUpdatedAt: snapshot.worldbookUpdatedAt,
+    regexProfileId: snapshot.regexProfileId,
+    regexProfileUpdatedAt: snapshot.regexProfileUpdatedAt,
+    worldbookActivatedEntryUids: [...snapshot.worldbookActivatedEntryUids],
+    regexPreRuleNames: [...snapshot.regexPreRuleNames],
+    regexPostRuleNames: [...snapshot.regexPostRuleNames],
+    promptMode: snapshot.promptMode,
+    promptDigest: snapshot.promptDigest,
+    tokenEstimate: snapshot.tokenEstimate,
+  };
+}
 
-  const [row] = await db
-    .select({ dataJson: regexProfiles.dataJson })
-    .from(regexProfiles)
-    .where(eq(regexProfiles.id, regexProfileId))
-    .limit(1);
+export function buildPromptSnapshotRecord(args: {
+  floorId: string;
+  sessionId: string;
+  snapshot: PromptAssemblySnapshot;
+}): PromptSnapshotRecord {
+  const preview = buildPromptSnapshotPreview(args.snapshot);
 
-  if (!row) return [];
-
-  try {
-    const rawData = JSON.parse(row.dataJson);
-    return parseRegexScripts(rawData);
-  } catch {
-    return [];
-  }
+  return {
+    floorId: args.floorId,
+    sessionId: args.sessionId,
+    presetId: preview.presetId,
+    presetUpdatedAt: preview.presetUpdatedAt,
+    worldbookId: preview.worldbookId,
+    worldbookUpdatedAt: preview.worldbookUpdatedAt,
+    regexProfileId: preview.regexProfileId,
+    regexProfileUpdatedAt: preview.regexProfileUpdatedAt,
+    worldbookActivatedEntryUids: preview.worldbookActivatedEntryUids,
+    regexPreRuleNames: preview.regexPreRuleNames,
+    regexPostRuleNames: preview.regexPostRuleNames,
+    promptMode: preview.promptMode,
+    promptDigest: preview.promptDigest,
+    tokenEstimate: preview.tokenEstimate,
+    createdAt: args.snapshot.createdAt,
+  };
 }
 
 // ── 工具函数 ──────────────────────────────────────────
@@ -503,9 +508,7 @@ function buildNativeSystemPrompt(
   character?: CharacterSnapshot,
   persona?: PersonaInfo
 ): string {
-  const mainPrompt = preset.prompts
-    .find((entry) => entry.identifier === "main")
-    ?.content?.trim();
+  const mainPrompt = preset.prompts.find((entry) => entry.identifier === "main")?.content?.trim();
 
   const parts: string[] = [];
 
@@ -568,7 +571,6 @@ function buildFallbackMessages(
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
-  // System prompt
   let systemPrompt = DEFAULT_SYSTEM_PROMPT;
 
   if (character?.description || character?.personality) {
@@ -593,9 +595,8 @@ function buildFallbackMessages(
 
   messages.push({ role: "system", content: systemPrompt });
 
-  // Chat history
-  for (const msg of chatHistory) {
-    messages.push({ role: msg.role, content: msg.content });
+  for (const message of chatHistory) {
+    messages.push({ role: message.role, content: message.content });
   }
 
   return messages;
@@ -625,8 +626,7 @@ function injectMemorySummary(
     content: `[Memory Summary]\n${trimmed}`,
   };
 
-  // 在第一条 system 消息之后插入
-  const firstSystemIdx = messages.findIndex((m) => m.role === "system");
+  const firstSystemIdx = messages.findIndex((message) => message.role === "system");
   const insertAt = firstSystemIdx >= 0 ? firstSystemIdx + 1 : 0;
 
   const result = [...messages];
@@ -634,15 +634,55 @@ function injectMemorySummary(
   return result;
 }
 
-
-/**
- * 安全解析 JSON 字符串数组。如果解析失败或结果不是数组，返回空数组。
- */
-function safeParsJsonArray(jsonStr: string): string[] {
-  try {
-    const parsed = JSON.parse(jsonStr);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
+function collectActivatedEntryUids(worldBookResults: TriggerResult | undefined): number[] {
+  if (!worldBookResults) {
     return [];
   }
+
+  const uids = new Set<number>();
+  for (const entry of worldBookResults.activated) {
+    uids.add(entry.uid);
+  }
+
+  return [...uids].sort((left, right) => left - right);
+}
+
+function collectRegexRuleNames(scripts: { id: string; scriptName: string; placement: number[] }[], placement: number): string[] {
+  return scripts
+    .filter((script) => script.placement.includes(placement))
+    .map((script) => script.scriptName || script.id);
+}
+
+function previewPromptMessages(
+  messages: ChatMessage[],
+  preProcess?: (messages: ChatMessage[]) => ChatMessage[]
+): ChatMessage[] {
+  if (!preProcess) {
+    return [...messages];
+  }
+
+  try {
+    return preProcess(messages);
+  } catch {
+    return [...messages];
+  }
+}
+
+function buildPromptTokenUsage(
+  messages: ChatMessage[],
+  tokenCounter: TokenCounter,
+  maxPromptTokens: number
+): { total: number; availableForReply: number } {
+  const total = messages.reduce((sum, message) => sum + tokenCounter.count(message.content), 0);
+
+  return {
+    total,
+    availableForReply: Math.max(0, maxPromptTokens - total),
+  };
+}
+
+function computePromptDigest(messages: ChatMessage[]): string {
+  return createHash("sha256")
+    .update(JSON.stringify(messages))
+    .digest("hex");
 }

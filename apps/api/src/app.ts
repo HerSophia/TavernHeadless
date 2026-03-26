@@ -418,6 +418,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
           await llmProfileService.touchLastUsed(resolvedModel.profileId, accountId);
         },
         toolRegistry,
+        eventBus: activeOrchestrationContext.eventBus,
       }
     );
 

@@ -12,6 +12,11 @@ import type { TokenCounter } from "@tavern/core";
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { messagePages, messages } from "../db/schema.js";
 
+export interface PersistedMessageRef {
+  pageId: string;
+  messageId: string;
+}
+
 export class ChatMessagePersistence {
   constructor(
     private readonly db: AppDb,
@@ -25,9 +30,9 @@ export class ChatMessagePersistence {
     floorId: string,
     content: string,
     timestamp: number
-  ): Promise<void> {
-    this.db.transaction((tx) => {
-      this.saveUserMessageWithExecutor(tx, floorId, content, timestamp);
+  ): Promise<PersistedMessageRef> {
+    return this.db.transaction((tx) => {
+      return this.saveUserMessageWithExecutor(tx, floorId, content, timestamp);
     });
   }
 
@@ -36,8 +41,9 @@ export class ChatMessagePersistence {
     floorId: string,
     content: string,
     timestamp: number
-  ): void {
+  ): PersistedMessageRef {
     const pageId = nanoid();
+    const messageId = nanoid();
 
     executor.insert(messagePages).values({
       id: pageId,
@@ -52,7 +58,7 @@ export class ChatMessagePersistence {
     }).run();
 
     executor.insert(messages).values({
-      id: nanoid(),
+      id: messageId,
       pageId,
       seq: 0,
       role: "user",
@@ -63,6 +69,11 @@ export class ChatMessagePersistence {
       source: "api",
       createdAt: timestamp
     }).run();
+
+    return {
+      pageId,
+      messageId,
+    };
   }
 
   /**
@@ -72,9 +83,9 @@ export class ChatMessagePersistence {
     floorId: string,
     content: string,
     timestamp: number
-  ): Promise<void> {
-    this.db.transaction((tx) => {
-      this.saveAssistantMessageWithExecutor(tx, floorId, content, timestamp);
+  ): Promise<PersistedMessageRef> {
+    return this.db.transaction((tx) => {
+      return this.saveAssistantMessageWithExecutor(tx, floorId, content, timestamp);
     });
   }
 
@@ -83,8 +94,9 @@ export class ChatMessagePersistence {
     floorId: string,
     content: string,
     timestamp: number
-  ): void {
+  ): PersistedMessageRef {
     const pageId = nanoid();
+    const messageId = nanoid();
 
     executor.insert(messagePages).values({
       id: pageId,
@@ -99,7 +111,7 @@ export class ChatMessagePersistence {
     }).run();
 
     executor.insert(messages).values({
-      id: nanoid(),
+      id: messageId,
       pageId,
       seq: 0,
       role: "assistant",
@@ -110,6 +122,11 @@ export class ChatMessagePersistence {
       source: "narrator",
       createdAt: timestamp
     }).run();
+
+    return {
+      pageId,
+      messageId,
+    };
   }
 
   clearOutputForRetry(executor: DbExecutor, floorId: string): void {

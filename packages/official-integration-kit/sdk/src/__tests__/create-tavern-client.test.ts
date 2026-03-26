@@ -36,7 +36,7 @@ describe("createTavernClient", () => {
       "event: summary\n",
       'data: {"summaries":["one"]}\n\n',
       "event: done\n",
-      'data: {"floor_id":"floor-1","floor_no":3,"generated_text":"Hello","total_usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}\n\n',
+      'data: {"branch_id":"branch-1","final_state":"committed","floor_id":"floor-1","floor_no":3,"generated_text":"Hello","summaries":["one","two"],"total_usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}\n\n',
     ].join("");
 
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
@@ -63,7 +63,10 @@ describe("createTavernClient", () => {
 
     expect(chunks).toEqual(["Hello"]);
     expect(summaries).toEqual([["one"]]);
+    expect(result.branchId).toBe("branch-1");
+    expect(result.finalState).toBe("committed");
     expect(result.generatedText).toBe("Hello");
+    expect(result.summaries).toEqual(["one", "two"]);
     expect(result.totalTokens).toBe(15);
   });
 
