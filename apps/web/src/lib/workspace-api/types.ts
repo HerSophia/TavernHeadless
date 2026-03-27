@@ -33,6 +33,7 @@ export type WorkspaceLibraryAsset = {
   source: string;
   status?: string;
   updatedAt: number;
+  version?: number;
 };
 
 export type WorkspaceAssetImportInput = {

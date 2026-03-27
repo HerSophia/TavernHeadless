@@ -18,7 +18,8 @@ export async function fetchPresetAssetDetail(presetId: string, accountId?: strin
     id: detail.id,
     name: detail.name,
     source: detail.source,
-    updatedAt: detail.updatedAt
+    updatedAt: detail.updatedAt,
+    version: detail.version
   };
 }
 
@@ -37,7 +38,8 @@ export async function fetchPresetAssetEditorDetail(
     id: detail.id,
     name: detail.name,
     source: detail.source,
-    updatedAt: detail.updatedAt
+    updatedAt: detail.updatedAt,
+    version: detail.version
   };
 }
 
@@ -67,7 +69,8 @@ export async function updatePresetAsset(
     kind: "preset",
     name: payload.name,
     source: payload.source,
-    updatedAt: payload.updatedAt
+    updatedAt: payload.updatedAt,
+    version: payload.version
   };
 }
 
