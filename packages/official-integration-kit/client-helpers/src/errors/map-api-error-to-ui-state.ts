@@ -8,10 +8,19 @@ export type UiStateError = {
   status?: number;
 };
 
-type KnownApiErrorCode = "generation_conflict" | "commit_conflict" | "turn_commit_failed";
+type KnownApiErrorCode =
+  | "generation_conflict"
+  | "generation_queue_timeout"
+  | "generation_timeout"
+  | "commit_busy"
+  | "commit_conflict"
+  | "turn_commit_failed";
 
 const KNOWN_API_ERROR_CODE_MAP: Record<KnownApiErrorCode, Pick<UiStateError, "kind" | "retryable">> = {
   generation_conflict: { kind: "conflict", retryable: true },
+  generation_queue_timeout: { kind: "server", retryable: true },
+  generation_timeout: { kind: "server", retryable: true },
+  commit_busy: { kind: "server", retryable: true },
   commit_conflict: { kind: "conflict", retryable: true },
   turn_commit_failed: { kind: "server", retryable: true },
 };
@@ -78,8 +87,8 @@ function resolveKnownApiErrorCode(code: string | undefined): Pick<UiStateError, 
     return undefined;
   }
 
-  if (code === "generation_conflict" || code === "commit_conflict" || code === "turn_commit_failed") {
-    return KNOWN_API_ERROR_CODE_MAP[code];
+  if (Object.prototype.hasOwnProperty.call(KNOWN_API_ERROR_CODE_MAP, code)) {
+    return KNOWN_API_ERROR_CODE_MAP[code as KnownApiErrorCode];
   }
 
   return undefined;

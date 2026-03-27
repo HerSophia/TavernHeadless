@@ -98,6 +98,15 @@ const editAndRegenerateBodySchema = regenerateBodySchema.extend({
 const retryFloorBodySchema = regenerateBodySchema;
 
 
+const chatMutationErrorResponses = {
+  400: errorResponseJsonSchema,
+  404: errorResponseJsonSchema,
+  409: errorResponseJsonSchema,
+  500: errorResponseJsonSchema,
+  503: errorResponseJsonSchema,
+  504: errorResponseJsonSchema,
+} as const;
+
 interface RegisterChatRoutesOptions {
   enableSseChat?: boolean;
   enablePromptDryRun?: boolean;
@@ -307,10 +316,7 @@ export async function registerChatRoutes(
       body: respondBodyJsonSchema,
       response: {
         200: respondSuccessResponseJsonSchema,
-        400: errorResponseJsonSchema,
-        404: errorResponseJsonSchema,
-        409: errorResponseJsonSchema,
-        500: errorResponseJsonSchema,
+        ...chatMutationErrorResponses,
       },
     },
   }, async (request, reply) => {
@@ -366,10 +372,7 @@ export async function registerChatRoutes(
       body: regenerateBodyJsonSchema,
       response: {
         200: regenerateSuccessResponseJsonSchema,
-        400: errorResponseJsonSchema,
-        404: errorResponseJsonSchema,
-        409: errorResponseJsonSchema,
-        500: errorResponseJsonSchema,
+        ...chatMutationErrorResponses,
       },
     },
     preValidation: (request, _reply, done) => {
@@ -421,10 +424,7 @@ export async function registerChatRoutes(
       body: regenerateBodyJsonSchema,
       response: {
         200: respondSuccessResponseJsonSchema,
-        400: errorResponseJsonSchema,
-        404: errorResponseJsonSchema,
-        409: errorResponseJsonSchema,
-        500: errorResponseJsonSchema,
+        ...chatMutationErrorResponses,
       },
     },
     preValidation: (request, _reply, done) => {
@@ -475,10 +475,7 @@ export async function registerChatRoutes(
       body: editAndRegenerateBodyJsonSchema,
       response: {
         200: editAndRegenerateSuccessResponseJsonSchema,
-        400: errorResponseJsonSchema,
-        404: errorResponseJsonSchema,
-        409: errorResponseJsonSchema,
-        500: errorResponseJsonSchema,
+        ...chatMutationErrorResponses,
       },
     },
   }, async (request, reply) => {
@@ -588,7 +585,11 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
     case "profile_disabled":
       return { statusCode: 409, code: error.code, message: error.message };
     case "secret_unavailable":
+    case "commit_busy":
+    case "generation_queue_timeout":
       return { statusCode: 503, code: error.code, message: error.message };
+    case "generation_timeout":
+      return { statusCode: 504, code: error.code, message: error.message };
     case "orchestration_failed":
     case "turn_commit_failed":
       return { statusCode: 500, code: error.code, message: error.message };

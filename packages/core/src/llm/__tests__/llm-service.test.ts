@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { LLMService, LLMServiceError } from '../llm-service.js';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { LLMService, LLMServiceError, LLMAbortError, LLMTimeoutError } from '../llm-service.js';
 import { ProviderRegistry } from '../provider-registry.js';
 import type { LLMRequest, StreamCallbacks, ModelConfig, ProviderFactory } from '../types.js';
 import { MockLanguageModelV1 } from 'ai/test';
@@ -18,6 +18,11 @@ const defaultModel: ModelConfig = {
   providerId: 'test-provider',
   modelId: 'test-model',
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 // ── Tests ─────────────────────────────────────────────
 
@@ -106,6 +111,78 @@ describe('LLMService', () => {
           params: {},
         }),
       ).rejects.toThrow(LLMServiceError);
+    });
+
+    it('maps AbortError with timeout cause to LLMTimeoutError', async () => {
+      vi.useFakeTimers();
+
+      let capturedAbortSignal: AbortSignal | undefined;
+      const model = new MockLanguageModelV1({
+        doGenerate: async (options: any) => {
+          capturedAbortSignal = options.abortSignal as AbortSignal | undefined;
+
+          return await new Promise((_, reject) => {
+            capturedAbortSignal?.addEventListener('abort', () => {
+              reject(Object.assign(new Error('Aborted'), {
+                name: 'AbortError',
+                cause: capturedAbortSignal?.reason,
+              }));
+            }, { once: true });
+          });
+        },
+      });
+
+      const registry = createMockRegistry(model);
+      const service = new LLMService(registry, defaultModel);
+      const generatePromise = service.generate({
+        messages: [{ role: 'user', content: 'timeout' }],
+        params: { timeoutMs: 25 },
+      });
+      const expectation = expect(generatePromise).rejects.toBeInstanceOf(LLMTimeoutError);
+
+      await vi.advanceTimersByTimeAsync(25);
+      await expectation;
+      expect(capturedAbortSignal).toBeInstanceOf(AbortSignal);
+
+    });
+
+    it('maps AbortError without timeout cause to LLMAbortError', async () => {
+      const abortController = new AbortController();
+      let capturedAbortSignal: AbortSignal | undefined;
+      const model = new MockLanguageModelV1({
+        doGenerate: async (options: any) => {
+          capturedAbortSignal = options.abortSignal as AbortSignal | undefined;
+
+          return await new Promise((_, reject) => {
+            const rejectAbort = () => {
+              reject(Object.assign(new Error('Aborted'), {
+                name: 'AbortError',
+              }));
+            };
+
+            if (capturedAbortSignal?.aborted) {
+              rejectAbort();
+              return;
+            }
+
+            capturedAbortSignal?.addEventListener('abort', rejectAbort, { once: true });
+          });
+        },
+      });
+      const registry = createMockRegistry(model);
+      const service = new LLMService(registry, defaultModel);
+
+      const generatePromise = service.generate({
+        messages: [{ role: 'user', content: 'abort' }],
+        params: {},
+        abortSignal: abortController.signal,
+      });
+      const expectation = expect(generatePromise).rejects.toBeInstanceOf(LLMAbortError);
+
+      abortController.abort(new Error('cancelled'));
+
+      await expectation;
+      expect(capturedAbortSignal).toBe(abortController.signal);
     });
   });
 

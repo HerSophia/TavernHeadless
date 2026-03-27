@@ -162,6 +162,27 @@ describe("chat routes", () => {
       errorCode: "secret_unavailable",
     },
     {
+      name: "generation_queue_timeout",
+      code: "generation_queue_timeout",
+      message: "Generation queue timed out",
+      statusCode: 503,
+      errorCode: "generation_queue_timeout",
+    },
+    {
+      name: "commit_busy",
+      code: "commit_busy",
+      message: "Turn commit failed: database is locked",
+      statusCode: 503,
+      errorCode: "commit_busy",
+    },
+    {
+      name: "generation_timeout",
+      code: "generation_timeout",
+      message: "Turn orchestration failed: LLM request timed out after 60000ms",
+      statusCode: 504,
+      errorCode: "generation_timeout",
+    },
+    {
       name: "orchestration_failed",
       code: "orchestration_failed",
       message: "Turn orchestration failed",
@@ -236,6 +257,41 @@ describe("chat routes", () => {
       code: "turn_commit_failed",
       message: "Turn commit failed: sqlite busy",
     });
+  });
+
+  it.each([
+    {
+      code: "generation_queue_timeout",
+      message: "Generation queue timed out",
+    },
+    {
+      code: "commit_busy",
+      message: "Turn commit failed: database is locked",
+    },
+    {
+      code: "generation_timeout",
+      message: "Turn orchestration failed: LLM request timed out after 60000ms",
+    },
+  ])("emits %s in SSE error payload on /sessions/:id/respond/stream", async ({ code, message }) => {
+    const chatService = createChatService({
+      respond: vi.fn(async () => {
+        throw new ChatServiceError(code, message);
+      }),
+    });
+
+    await mountChatRoutes(chatService, { enableSseChat: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/respond/stream",
+      payload: { message: "hello" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/event-stream");
+    expect(response.body).toContain("event: error");
+    expect(response.body).toContain(`"code":"${code}"`);
+    expect(response.body).toContain(`"message":"${message}"`);
   });
 
   it("returns 500 when /sessions/:id/respond raises an unexpected error", async () => {

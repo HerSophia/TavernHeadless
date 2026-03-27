@@ -10,7 +10,12 @@ import { registerCrudRoutes } from "./routes";
 import { registerChatRoutes } from "./routes/chat";
 import { registerWsPlugin, type WsBridge } from "./ws";
 import { DrizzleFloorRepository, DrizzleMemoryRepository } from "./adapters";
-import { ChatService, ChatServiceError, type ResolvedTurnModels } from "./services/chat-service";
+import {
+  ChatService,
+  ChatServiceError,
+  type ResolvedTurnModels,
+} from "./services/chat-service";
+import { InMemoryGenerationCoordinator } from "./services/generation-guard-service";
 import {
   MemoryMaintenanceService,
   type MemoryMaintenancePolicy,
@@ -104,6 +109,12 @@ export type BuildAppOptions = {
   enablePromptDryRun?: boolean;
   /** 是否默认启用 MemoryConsolidator（可被请求级 turn config 覆盖） */
   enableMemoryConsolidation?: boolean;
+  /** 服务端默认生成超时（毫秒） */
+  llmDefaultTimeoutMs?: number;
+  /** commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数 */
+  turnCommitMaxRetries?: number;
+  /** commit 重试基础退避时间（毫秒） */
+  turnCommitRetryBaseDelayMs?: number;
   /** 认证配置（默认 off） */
   auth?: AuthConfig;
   /** 账号模式（默认 single） */
@@ -364,6 +375,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       memoryStore: options.enableMemory ? activeOrchestrationContext.memoryStore : undefined,
     }));
     toolRegistry.register(new ResourceToolProvider(database.db));
+    const generationCoordinator = new InMemoryGenerationCoordinator();
+
     // MCP 工具提供者在 mcpManager 初始化后通过 mcpManager 注册（见下方）
 
     const chatService = new ChatService(
@@ -416,6 +429,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
             return;
           }
           await llmProfileService.touchLastUsed(resolvedModel.profileId, accountId);
+        },
+        generationCoordinator,
+        executionPolicy: {
+          queueMode: "reject",
+          executionTimeoutMs: options.llmDefaultTimeoutMs,
+          commitRetry: {
+            maxRetries: options.turnCommitMaxRetries,
+            baseDelayMs: options.turnCommitRetryBaseDelayMs,
+          },
         },
         toolRegistry,
         eventBus: activeOrchestrationContext.eventBus,

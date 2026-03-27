@@ -268,6 +268,36 @@ describe("sdk core resources", () => {
     expect(init?.signal).toBe(controller.signal);
   });
 
+  it("throws TavernApiError with SSE error payload code on respondStream failure", async () => {
+    const stream = [
+      "event: error\n",
+      'data: {"code":"generation_timeout","message":"Turn orchestration failed: LLM request timed out after 60000ms"}\n\n',
+    ].join("");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(stream, {
+        headers: { "content-type": "text/event-stream" },
+        status: 200,
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    try {
+      await client.sessions.respondStream({
+        message: "hello",
+        sessionId: "session-1",
+      });
+
+      throw new Error("respondStream should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(TavernApiError);
+      expect(error).toMatchObject({
+        code: "generation_timeout",
+        message: "Turn orchestration failed: LLM request timed out after 60000ms",
+        status: 200,
+      });
+    }
+  });
+
   it("maps timeline payloads with default query and filtered nested records", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({

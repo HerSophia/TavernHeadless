@@ -191,8 +191,13 @@ try {
 `mapApiErrorToUiState()` 默认按 HTTP 状态码分桶，但会对部分已知业务错误码优先做 code-aware 映射：
 
 - `generation_conflict` → `conflict`
+- `generation_queue_timeout` → `server`
+- `generation_timeout` → `server`
+- `commit_busy` → `server`
 - `commit_conflict` → `conflict`
 - `turn_commit_failed` → `server`
+
+这条规则同样覆盖流式 `respond/stream` 的 SSE `error` 事件。流已经建立后，SDK 抛出的 `TavernApiError.status` 可能仍然是 `200`，但 `code` 会保留下来，因此接入方应优先看 `code`。
 
 ## SDK 资源覆盖范围
 

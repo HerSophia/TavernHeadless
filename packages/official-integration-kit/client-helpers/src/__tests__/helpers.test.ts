@@ -342,6 +342,9 @@ describe("mapApiErrorToUiState", () => {
 
   it.each([
     ["generation_conflict", 500, "conflict", true],
+    ["generation_queue_timeout", 200, "server", true],
+    ["generation_timeout", 200, "server", true],
+    ["commit_busy", 200, "server", true],
     ["commit_conflict", 500, "conflict", true],
     ["turn_commit_failed", 409, "server", true],
   ] as const)("prefers known api code mapping for %s", (code, status, kind, retryable) => {

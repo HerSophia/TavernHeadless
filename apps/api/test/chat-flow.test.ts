@@ -103,7 +103,13 @@ describe("POST /sessions/:id/respond", () => {
 // ── ChatService 单元测试 ──────────────────────────────
 
 import { ChatService, ChatServiceError } from "../src/services/chat-service";
-import { SimpleTokenCounter, type TurnOrchestrator, type TurnOutput } from "@tavern/core";
+import {
+  createEventBus,
+  LLMTimeoutError,
+  SimpleTokenCounter,
+  type TurnOrchestrator,
+  type TurnOutput,
+} from "@tavern/core";
 
 describe("ChatService", () => {
   let database: DatabaseConnection;
@@ -613,6 +619,19 @@ describe("ChatService", () => {
     }
   });
 
+  it("should map LLM timeout to generation_timeout and mark the floor failed", async () => {
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new LLMTimeoutError(1_234)
+    );
+
+    await expect(chatService.respond(sessionId, { message: "Hello" })).rejects.toMatchObject({
+      code: "generation_timeout",
+    });
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
+    expect(floor?.state).toBe("failed");
+  });
+
   it("should throw commit_conflict when the floor is no longer generating before commit", async () => {
     const conflictingOrchestrator = {
       executeTurn: vi.fn(async (input) => {
@@ -657,6 +676,104 @@ describe("ChatService", () => {
     expect(floor?.state).toBe("failed");
 
     const pages = await database.db.select().from(messagePages).where(eq(messagePages.floorId, floor!.id));
+    expect(pages).toHaveLength(1);
+    expect(pages[0]?.pageKind).toBe("input");
+  });
+
+  it("should retry commit on SQLITE_BUSY and eventually succeed", async () => {
+    const eventBus = createEventBus();
+    const retryHandler = vi.fn();
+    const succeededAfterRetryHandler = vi.fn();
+    eventBus.on("commit.retry", retryHandler);
+    eventBus.on("commit.succeeded_after_retry", succeededAfterRetryHandler);
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      eventBus,
+      executionPolicy: {
+        commitRetry: { maxRetries: 1, baseDelayMs: 1 },
+      },
+    });
+
+    const turnCommitService = (service as any).turnCommitService;
+    const originalCommit = turnCommitService.commit.bind(turnCommitService);
+    const busyError = Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" });
+    const commitSpy = vi.spyOn(turnCommitService, "commit")
+      .mockImplementationOnce(async () => {
+        throw busyError;
+      })
+      .mockImplementation(async (input) => originalCommit(input));
+
+    const result = await service.respond(sessionId, { message: "Retry commit" });
+
+    expect(result.finalState).toBe("committed");
+    expect(commitSpy).toHaveBeenCalledTimes(2);
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.id, result.floorId));
+
+    expect(floor?.state).toBe("committed");
+    expect(retryHandler).toHaveBeenCalledOnce();
+    expect(retryHandler.mock.calls[0]?.[0]).toMatchObject({
+      sessionId,
+      branchId: result.branchId,
+      floorId: result.floorId,
+      attempt: 1,
+      backoffMs: 1,
+      message: "database is locked",
+    });
+    expect(succeededAfterRetryHandler).toHaveBeenCalledOnce();
+    expect(succeededAfterRetryHandler.mock.calls[0]?.[0]).toMatchObject({
+      sessionId,
+      branchId: result.branchId,
+      floorId: result.floorId,
+      attempts: 2,
+    });
+  });
+
+  it("should return commit_busy after SQLITE_BUSY retries are exhausted", async () => {
+    const eventBus = createEventBus();
+    const retryHandler = vi.fn();
+    const commitBusyHandler = vi.fn();
+    eventBus.on("commit.retry", retryHandler);
+    eventBus.on("commit.busy", commitBusyHandler);
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      eventBus,
+      executionPolicy: {
+        commitRetry: { maxRetries: 1, baseDelayMs: 1 },
+      },
+    });
+
+    const busyError = Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" });
+    const commitSpy = vi.spyOn((service as any).turnCommitService, "commit").mockRejectedValue(busyError);
+
+    await expect(service.respond(sessionId, { message: "Busy commit" })).rejects.toMatchObject({
+      code: "commit_busy",
+    });
+
+    expect(commitSpy).toHaveBeenCalledTimes(2);
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
+    expect(floor?.state).toBe("failed");
+
+    const pages = await database.db.select().from(messagePages).where(eq(messagePages.floorId, floor!.id));
+
+    expect(retryHandler).toHaveBeenCalledOnce();
+    expect(retryHandler.mock.calls[0]?.[0]).toMatchObject({
+      sessionId,
+      branchId: floor?.branchId,
+      floorId: floor?.id,
+      attempt: 1,
+      backoffMs: 1,
+      message: "database is locked",
+    });
+    expect(commitBusyHandler).toHaveBeenCalledOnce();
+    expect(commitBusyHandler.mock.calls[0]?.[0]).toMatchObject({
+      sessionId,
+      branchId: floor?.branchId,
+      floorId: floor?.id,
+      attempts: 2,
+      message: "database is locked",
+    });
     expect(pages).toHaveLength(1);
     expect(pages[0]?.pageKind).toBe("input");
   });
@@ -709,6 +826,67 @@ describe("ChatService", () => {
     expect(turnInput.generationParams.temperature).toBe(0.7);
     expect(turnInput.generationParams.maxOutputTokens).toBe(1000 - expectedPromptTokens);
     expect(turnInput.generationParams.stream).toBe(false);
+  });
+
+  it("should apply server default timeoutMs when not specified", async () => {
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      executionPolicy: {
+        executionTimeoutMs: 45_000,
+      },
+    });
+
+    await service.respond(sessionId, { message: "Timeout default" });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.generationParams.timeoutMs).toBe(45_000);
+  });
+
+  it("should preserve narrator timeoutMs and maxRetries over server defaults", async () => {
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      executionPolicy: {
+        executionTimeoutMs: 45_000,
+      },
+      resolveTurnModels: vi.fn().mockResolvedValue({
+        narrator: {
+          model: { providerId: "llm-profile-p1", modelId: "gpt-4o-mini" },
+          source: "session_profile",
+          profileId: "p1",
+          generationParams: { timeoutMs: 30_000, maxRetries: 4, temperature: 0.4 },
+        },
+      }),
+    });
+
+    await service.respond(sessionId, { message: "Profile timeout" });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.generationParams.timeoutMs).toBe(30_000);
+    expect(turnInput.generationParams.maxRetries).toBe(4);
+    expect(turnInput.generationParams.temperature).toBe(0.4);
+  });
+
+  it("should prefer request timeoutMs and maxRetries over narrator params", async () => {
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      executionPolicy: {
+        executionTimeoutMs: 45_000,
+      },
+      resolveTurnModels: vi.fn().mockResolvedValue({
+        narrator: {
+          model: { providerId: "llm-profile-p1", modelId: "gpt-4o-mini" },
+          source: "session_profile",
+          profileId: "p1",
+          generationParams: { timeoutMs: 30_000, maxRetries: 4 },
+        },
+      }),
+    });
+
+    await service.respond(sessionId, {
+      message: "Request timeout",
+      generationParams: { timeoutMs: 12_000, maxRetries: 1 },
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.generationParams.timeoutMs).toBe(12_000);
+    expect(turnInput.generationParams.maxRetries).toBe(1);
   });
 
   // ── regenerate 测试 ─────────────────────────────────
@@ -1047,6 +1225,36 @@ describe("ChatService", () => {
         .where(and(eq(messages.pageId, newInputPage!.id), eq(messages.role, "user")));
 
       expect(editedUserMessage?.content).toBe("Edited user line");
+    });
+
+    it("should not leave an orphan draft floor when editAndRegenerate front-half write fails", async () => {
+      const baseTurn = await chatService.respond(sessionId, { message: "Editable seed" });
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, baseTurn.floorId), eq(messagePages.pageKind, "input")));
+
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      vi.spyOn((chatService as any).messagePersistence, "saveUserMessageWithExecutor").mockImplementationOnce(() => {
+        throw new Error("input page write failed");
+      });
+
+      await expect(chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited broken line",
+        branchId: "edit-broken",
+      })).rejects.toThrow("input page write failed");
+
+      const branchedFloors = await database.db
+        .select()
+        .from(floors)
+        .where(and(eq(floors.sessionId, sessionId), eq(floors.branchId, "edit-broken")));
+
+      expect(branchedFloors).toHaveLength(0);
     });
 
     it("should use the same generating commit boundary during editAndRegenerate", async () => {

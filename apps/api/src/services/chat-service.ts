@@ -41,17 +41,27 @@ import {
   FloorNotFoundError,
   FloorStateConflictError,
   FloorStateMachine,
+  LLMTimeoutError,
   ToolRegistry,
 } from "@tavern/core";
 
-import type { AppDb } from "../db/client.js";
+import type { AppDb, DbExecutor } from "../db/client.js";
 import { sessions, floors, messagePages, messages } from "../db/schema.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js";
-import { normalizePositiveInt } from "../lib/utils.js";
+import { normalizeNonNegativeInt, normalizePositiveInt } from "../lib/utils.js";
+import { executeWithRetry, isSqliteBusyError } from "../lib/retry.js";
 import { DrizzleFloorRepository } from "../adapters/drizzle-floor-repository.js";
 import { ChatHistoryLoader } from "./chat-history-loader.js";
-import { ChatMessagePersistence } from "./chat-message-persistence.js";
-import { GenerationGuardConflictError, GenerationGuardService } from "./generation-guard-service.js";
+import { ChatMessagePersistence, type PersistedMessageRef } from "./chat-message-persistence.js";
+import {
+  GenerationCoordinatorConflictError,
+  GenerationCoordinatorQueueTimeoutError,
+  InMemoryGenerationCoordinator,
+  type CoordinatorRuntime,
+  type GenerationCoordinator,
+  type GenerationExecutionMode,
+  GenerationGuardService,
+} from "./generation-guard-service.js";
 import { TurnCommitService } from "./turn-commit-service.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
@@ -210,6 +220,43 @@ type ResolveTurnModelFn = (sessionId: string, accountId: string) => Promise<Reso
 type ResolveTurnModelsFn = (sessionId: string, accountId: string) => Promise<ResolvedTurnModels>;
 type OnTurnModelUsedFn = (model: ResolvedTurnModel, accountId: string) => Promise<void> | void;
 
+export interface TurnExecutionPolicy {
+  /**
+   * 生成协调模式。
+   * Phase 1 默认保持 reject。
+   */
+  queueMode: GenerationExecutionMode;
+  /**
+   * queue 模式下的等待超时。
+   */
+  queueTimeoutMs?: number;
+  /**
+   * 生成执行默认超时。
+   */
+  executionTimeoutMs: number;
+  /**
+   * commit 瞬时锁争用的有限重试策略。
+   */
+  commitRetry: {
+    maxRetries: number;
+    baseDelayMs: number;
+  };
+}
+
+export interface TurnExecutionPolicyOverrides {
+  queueMode?: GenerationExecutionMode;
+  queueTimeoutMs?: number;
+  executionTimeoutMs?: number;
+  commitRetry?: Partial<TurnExecutionPolicy["commitRetry"]>;
+}
+
+const DEFAULT_TURN_EXECUTION_POLICY: TurnExecutionPolicy = {
+  queueMode: "reject",
+  queueTimeoutMs: 5_000,
+  executionTimeoutMs: 60_000,
+  commitRetry: { maxRetries: 2, baseDelayMs: 100 },
+};
+
 export interface ChatServiceOptions {
   /**
    * 可选：限制进入 prompt 的历史楼层数（按最近 N 层）。
@@ -259,9 +306,18 @@ export interface ChatServiceOptions {
    */
   generationGuard?: GenerationGuardService;
   /**
+   * 可选：生成协调器。
+   * 优先级高于 generationGuard。
+   */
+  generationCoordinator?: GenerationCoordinator;
+  /**
    * 可选：与编排器共享的事件总线。
    */
   eventBus?: CoreEventBus;
+  /**
+   * 可选：执行策略。
+   */
+  executionPolicy?: TurnExecutionPolicyOverrides;
 }
 
 // ── ChatService ───────────────────────────────────────
@@ -281,7 +337,8 @@ export class ChatService {
   private readonly eventBus: CoreEventBus;
   private readonly floorStateMachine: FloorStateMachine;
   private readonly turnCommitService: TurnCommitService;
-  private readonly generationGuard: GenerationGuardService;
+  private readonly generationCoordinator: GenerationCoordinator;
+  private readonly executionPolicy: TurnExecutionPolicy;
 
   constructor(
     private readonly db: AppDb,
@@ -289,6 +346,7 @@ export class ChatService {
     private readonly tokenCounter: TokenCounter,
     options: ChatServiceOptions = {}
   ) {
+    this.executionPolicy = resolveTurnExecutionPolicy(options.executionPolicy);
     this.historyMaxFloors = normalizePositiveInt(options.historyMaxFloors);
     this.historyLoader = new ChatHistoryLoader(db, this.historyMaxFloors);
     this.messagePersistence = new ChatMessagePersistence(db, tokenCounter);
@@ -304,7 +362,9 @@ export class ChatService {
     this.eventBus = options.eventBus ?? createEventBus();
     this.floorStateMachine = new FloorStateMachine(new DrizzleFloorRepository(db), this.eventBus);
     this.turnCommitService = new TurnCommitService(db, this.messagePersistence, this.eventBus);
-    this.generationGuard = options.generationGuard ?? new GenerationGuardService();
+    this.generationCoordinator = options.generationCoordinator
+      ?? options.generationGuard
+      ?? new InMemoryGenerationCoordinator();
   }
 
   /**
@@ -341,7 +401,7 @@ export class ChatService {
 
     const branchId = normalizeBranchId(request.branchId);
 
-    return this.runWithGenerationGuard(sessionId, branchId, async () => {
+    return this.runWithGenerationCoordinator(sessionId, branchId, async (generationRuntime) => {
       // ── 2. 确定分支上下文 + 加载历史 ──
       const branchContext = await this.resolveRespondBranchContext(
         sessionId,
@@ -355,26 +415,16 @@ export class ChatService {
 
       // ── 3. 创建新楼层 ──
       const nextFloorNo = branchContext.nextFloorNo;
-      const floorId = nanoid();
       const now = Date.now();
-      const floorMetadataJson = buildFloorMetadataJson(session.userId, session.userSnapshotJson, now);
-
-      const userMessageRef = this.db.transaction((tx) => {
-        tx.insert(floors).values({
-          id: floorId,
-          sessionId,
-          floorNo: nextFloorNo,
-          branchId,
-          parentFloorId: branchContext.parentFloorId,
-          state: "draft",
-          metadataJson: floorMetadataJson,
-          tokenIn: 0,
-          tokenOut: 0,
-          createdAt: now,
-          updatedAt: now
-        }).run();
-
-        return this.messagePersistence.saveUserMessageWithExecutor(tx, floorId, request.message, now);
+      const { floorId, userMessageRef } = this.createDraftFloorWithUserMessage({
+        sessionId,
+        floorNo: nextFloorNo,
+        branchId,
+        parentFloorId: branchContext.parentFloorId,
+        userMessage: request.message,
+        userId: session.userId,
+        userSnapshotJson: session.userSnapshotJson,
+        now,
       });
 
       runtimeOptions.onStart?.({ floorId, floorNo: nextFloorNo, branchId });
@@ -392,8 +442,7 @@ export class ChatService {
 
       const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
       const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
-      const maxContextTokensOverride = normalizePositiveInt(request.generationParams?.maxContextTokens)
-        ?? normalizePositiveInt(narratorParams?.maxContextTokens);
+      const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
       const assembled = await assemblePrompt(
         this.db,
@@ -412,13 +461,12 @@ export class ChatService {
         snapshot: assembled.promptSnapshot,
       });
 
-      const generationParams: GenerationParams = {
-        temperature: 0.7,
-        maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
+      const generationParams = this.buildGenerationParams({
+        requestParams: request.generationParams,
+        narratorParams,
+        availableForReply: assembled.tokenUsage.availableForReply,
         stream: !!runtimeOptions.onChunk,
-        ...this.stripMaxContextTokens(narratorParams),
-        ...request.generationParams,
-      };
+      });
 
       const turnConfig = this.resolveTurnConfig(request.config);
       const consolidationContext = await this.buildConsolidationContext(
@@ -441,7 +489,7 @@ export class ChatService {
         modelOverrides: this.buildModelOverrides(resolvedTurnModels),
         generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
         onChunk: runtimeOptions.onChunk,
-        abortSignal: runtimeOptions.abortSignal,
+        abortSignal: runtimeOptions.abortSignal ?? generationRuntime.abortSignal,
         toolRegistry: this.toolRegistry,
         toolPermissions: await this.resolveToolPermissionsForSession(sessionId, accountId),
       };
@@ -449,6 +497,7 @@ export class ChatService {
       const { execution, commit } = await this.executeTurnAndCommit({
         floorId,
         sessionId,
+        branchId,
         accountId,
         turnInput,
         promptSnapshot,
@@ -575,7 +624,7 @@ export class ChatService {
       throw new ChatServiceError("session_archived", "Cannot regenerate in an archived session");
     }
 
-    return this.runWithGenerationGuard(sessionId, "main", async () => {
+    return this.runWithGenerationCoordinator(sessionId, "main", async (generationRuntime) => {
       // ── 2. 找到最后一个 committed 楼层 ──
       const targetFloor = await this.historyLoader.getLastCommittedFloor(sessionId);
       if (!targetFloor) {
@@ -603,33 +652,23 @@ export class ChatService {
 
       const newFloorId = nanoid();
       const now = Date.now();
-      const floorMetadataJson = buildFloorMetadataJson(session.userId, session.userSnapshotJson, now);
-
-      const userMessageRef = this.db.transaction((tx) => {
-        tx
-          .update(floors)
-          .set({
-            branchId: `superseded-${targetFloor.id}`,
-            updatedAt: now
-          })
-          .where(eq(floors.id, targetFloor.id))
-          .run();
-
-        tx.insert(floors).values({
-          id: newFloorId,
-          sessionId,
-          floorNo: targetFloor.floorNo,
-          branchId: "main",
-          parentFloorId: targetFloor.id,
-          state: "draft",
-          metadataJson: floorMetadataJson,
-          tokenIn: 0,
-          tokenOut: 0,
-          createdAt: now,
-          updatedAt: now
-        }).run();
-
-        return this.messagePersistence.saveUserMessageWithExecutor(tx, newFloorId, userMessage, now);
+      const { userMessageRef } = this.createDraftFloorWithUserMessage({
+        floorId: newFloorId,
+        sessionId,
+        floorNo: targetFloor.floorNo,
+        branchId: "main",
+        parentFloorId: targetFloor.id,
+        userMessage,
+        userId: session.userId,
+        userSnapshotJson: session.userSnapshotJson,
+        now,
+        prepare: (tx) => {
+          tx
+            .update(floors)
+            .set({ branchId: `superseded-${targetFloor.id}`, updatedAt: now })
+            .where(eq(floors.id, targetFloor.id))
+            .run();
+        },
       });
 
       // ── 8. 构建 TurnInput + 执行编排 ──
@@ -645,8 +684,7 @@ export class ChatService {
 
       const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
       const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
-      const maxContextTokensOverride = normalizePositiveInt(request.generationParams?.maxContextTokens)
-        ?? normalizePositiveInt(narratorParams?.maxContextTokens);
+      const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
       const assembled = await assemblePrompt(
         this.db,
@@ -665,12 +703,11 @@ export class ChatService {
         snapshot: assembled.promptSnapshot,
       });
 
-      const generationParams: GenerationParams = {
-        temperature: 0.7,
-        maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
-        ...this.stripMaxContextTokens(narratorParams),
-        ...request.generationParams,
-      };
+      const generationParams = this.buildGenerationParams({
+        requestParams: request.generationParams,
+        narratorParams,
+        availableForReply: assembled.tokenUsage.availableForReply,
+      });
 
       const turnConfig = this.resolveTurnConfig(request.config);
       const consolidationContext = await this.buildConsolidationContext(
@@ -691,6 +728,7 @@ export class ChatService {
         preProcess: assembled.preProcess,
         postProcess: assembled.postProcess,
         modelOverrides: this.buildModelOverrides(resolvedTurnModels),
+        abortSignal: generationRuntime.abortSignal,
         generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
         toolRegistry: this.toolRegistry,
         toolPermissions: await this.resolveToolPermissionsForSession(sessionId, accountId),
@@ -699,6 +737,7 @@ export class ChatService {
       const { execution, commit } = await this.executeTurnAndCommit({
         floorId: newFloorId,
         sessionId,
+        branchId: targetFloor.branchId,
         accountId,
         turnInput,
         promptSnapshot,
@@ -760,7 +799,7 @@ export class ChatService {
       throw new ChatServiceError("session_archived", "Cannot retry in an archived session");
     }
 
-    return this.runWithGenerationGuard(targetFloor.sessionId, targetFloor.branchId, async () => {
+    return this.runWithGenerationCoordinator(targetFloor.sessionId, targetFloor.branchId, async (generationRuntime) => {
       const userMessageRef = await this.getUserMessageFromFloor(targetFloor.id);
       if (!userMessageRef) {
         throw new ChatServiceError("no_user_message", `No user message found in floor '${floorId}'`);
@@ -796,8 +835,7 @@ export class ChatService {
 
       const resolvedTurnModels = await this.resolveTurnModelsForSession(targetFloor.sessionId, accountId);
       const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
-      const maxContextTokensOverride = normalizePositiveInt(request.generationParams?.maxContextTokens)
-        ?? normalizePositiveInt(narratorParams?.maxContextTokens);
+      const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
       const assembled = await assemblePrompt(
         this.db,
@@ -816,12 +854,11 @@ export class ChatService {
         snapshot: assembled.promptSnapshot,
       });
 
-      const generationParams: GenerationParams = {
-        temperature: 0.7,
-        maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
-        ...this.stripMaxContextTokens(narratorParams),
-        ...request.generationParams,
-      };
+      const generationParams = this.buildGenerationParams({
+        requestParams: request.generationParams,
+        narratorParams,
+        availableForReply: assembled.tokenUsage.availableForReply,
+      });
 
       const turnConfig = this.resolveTurnConfig(request.config);
       const consolidationContext = await this.buildConsolidationContext(
@@ -843,6 +880,7 @@ export class ChatService {
         postProcess: assembled.postProcess,
         modelOverrides: this.buildModelOverrides(resolvedTurnModels),
         generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
+        abortSignal: generationRuntime.abortSignal,
         toolRegistry: this.toolRegistry,
         toolPermissions: await this.resolveToolPermissionsForSession(targetFloor.sessionId, accountId),
       };
@@ -850,6 +888,7 @@ export class ChatService {
       const { execution, commit } = await this.executeTurnAndCommit({
         floorId: targetFloor.id,
         sessionId: targetFloor.sessionId,
+        branchId: targetFloor.branchId,
         accountId,
         turnInput,
         promptSnapshot,
@@ -891,7 +930,7 @@ export class ChatService {
 
     const newBranchId = request.branchId ? normalizeBranchId(request.branchId) : `branch-${nanoid(8)}`;
 
-    return this.runWithGenerationGuard(source.sessionId, newBranchId, async () => {
+    return this.runWithGenerationCoordinator(source.sessionId, newBranchId, async (generationRuntime) => {
       const [branchExists] = await this.db
         .select({ id: floors.id })
         .from(floors)
@@ -905,34 +944,37 @@ export class ChatService {
         );
       }
 
+      const history = await this.historyLoader.loadHistoryBeforeFloor(
+        source.sessionId,
+        source.floorNo,
+        source.branchId
+      );
+
       const now = Date.now();
       const newFloorId = nanoid();
-      const floorMetadataJson = buildFloorMetadataJson(session.userId, session.userSnapshotJson, now);
-
-      await this.db.insert(floors).values({
-        id: newFloorId,
+      const { userMessageRef } = this.createDraftFloorWithUserMessage({
+        floorId: newFloorId,
         sessionId: source.sessionId,
         floorNo: source.floorNo + 1,
         branchId: newBranchId,
         parentFloorId: source.floorId,
-        metadataJson: floorMetadataJson,
-        state: "draft",
-        tokenIn: 0,
-        tokenOut: 0,
-        createdAt: now,
-        updatedAt: now,
+        userMessage: request.content,
+        userId: session.userId,
+        userSnapshotJson: session.userSnapshotJson,
+        now,
       });
 
-      const history = await this.historyLoader.loadHistoryBeforeFloor(source.sessionId, source.floorNo, source.branchId);
       const response = await this.generateForFloor({
         floorId: newFloorId,
         session,
+        branchId: newBranchId,
         sessionId: source.sessionId,
         userMessage: request.content,
+        userMessageRef,
         history,
         request,
-        now,
         accountId,
+        abortSignal: generationRuntime.abortSignal,
       });
 
       return {
@@ -946,16 +988,26 @@ export class ChatService {
 
   // ── 私有方法 ────────────────────────────────────────
 
-  private async runWithGenerationGuard<T>(
+  private async runWithGenerationCoordinator<T>(
     sessionId: string,
     branchId: string,
-    task: () => Promise<T>
+    task: (runtime: CoordinatorRuntime) => Promise<T>
   ): Promise<T> {
     try {
-      return await this.generationGuard.runExclusive(sessionId, branchId, task);
+      return await this.generationCoordinator.execute({
+        sessionId,
+        branchId,
+        mode: this.executionPolicy.queueMode,
+        timeoutMs: this.executionPolicy.queueTimeoutMs,
+        task,
+      });
     } catch (error) {
-      if (error instanceof GenerationGuardConflictError) {
+      if (error instanceof GenerationCoordinatorConflictError) {
         throw new ChatServiceError("generation_conflict", error.message, error);
+      }
+
+      if (error instanceof GenerationCoordinatorQueueTimeoutError) {
+        throw new ChatServiceError("generation_queue_timeout", error.message, error);
       }
 
       throw error;
@@ -965,6 +1017,7 @@ export class ChatService {
   private async executeTurnAndCommit(args: {
     floorId: string;
     sessionId: string;
+    branchId?: string;
     accountId: string;
     turnInput: TurnInput;
     promptSnapshot?: ReturnType<typeof buildPromptSnapshotRecord>;
@@ -982,6 +1035,16 @@ export class ChatService {
     try {
       execution = await this.orchestrator.executeTurn(args.turnInput);
     } catch (error) {
+      const timeoutError = findErrorByConstructor(error, LLMTimeoutError);
+      if (timeoutError) {
+        await this.tryMarkFloorFailed(args.floorId, timeoutError);
+        throw new ChatServiceError(
+          "generation_timeout",
+          `${args.orchestrationFailureMessage}: ${timeoutError.message}`,
+          error
+        );
+      }
+
       throw new ChatServiceError(
         args.orchestrationFailureCode,
         `${args.orchestrationFailureMessage}: ${error instanceof Error ? error.message : String(error)}`,
@@ -989,27 +1052,61 @@ export class ChatService {
       );
     }
 
+    const commitInput = {
+      floorId: args.floorId,
+      sessionId: args.sessionId,
+      execution,
+      variableCommit: {
+        pageId: args.turnInput.pageId,
+      },
+      promptSnapshot: args.promptSnapshot,
+      toolExecutionRecords: execution.toolExecutionRecords,
+      memoryCommit: args.persistMemory
+        ? {
+            summaries: execution.summaries,
+            consolidationOutput: execution.consolidationResult?.output,
+          }
+        : undefined,
+    };
+
     let commit: Awaited<ReturnType<TurnCommitService["commit"]>>;
+    let commitAttemptCount = 0;
     try {
-      commit = await this.turnCommitService.commit({
-        floorId: args.floorId,
-        sessionId: args.sessionId,
-        execution,
-        variableCommit: {
-          pageId: args.turnInput.pageId,
+      commit = await executeWithRetry(
+        async (attempt) => {
+          commitAttemptCount = attempt;
+          return this.turnCommitService.commit(commitInput);
         },
-        promptSnapshot: args.promptSnapshot,
-        toolExecutionRecords: execution.toolExecutionRecords,
-        memoryCommit: args.persistMemory
-          ? {
-              summaries: execution.summaries,
-              consolidationOutput: execution.consolidationResult?.output,
-            }
-          : undefined,
-      });
+        this.executionPolicy.commitRetry,
+        {
+          shouldRetry: isSqliteBusyError,
+          onRetry: async ({ attempt, error, delayMs }) => {
+            await this.emitBestEffortEvent("commit.retry", {
+              sessionId: args.sessionId,
+              branchId: args.branchId,
+              floorId: args.floorId,
+              attempt,
+              backoffMs: delayMs,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          },
+        }
+      );
     } catch (error) {
-      if (!(error instanceof FloorStateConflictError) && !(error instanceof FloorNotFoundError)) {
+      if (isSqliteBusyError(error)) {
+        await this.emitBestEffortEvent("commit.busy", {
+          sessionId: args.sessionId,
+          branchId: args.branchId,
+          floorId: args.floorId,
+          attempts: Math.max(commitAttemptCount, 1),
+          message: error instanceof Error ? error.message : String(error),
+        });
         await this.tryMarkFloorFailed(args.floorId, error);
+        throw new ChatServiceError(
+          "commit_busy",
+          `${args.commitFailureMessage}: ${error instanceof Error ? error.message : String(error)}`,
+          error
+        );
       }
 
       if (error instanceof FloorNotFoundError) {
@@ -1020,11 +1117,24 @@ export class ChatService {
         throw new ChatServiceError("commit_conflict", `${args.commitFailureMessage}: ${error.message}`, error);
       }
 
+      if (!(error instanceof FloorStateConflictError) && !(error instanceof FloorNotFoundError)) {
+        await this.tryMarkFloorFailed(args.floorId, error);
+      }
+
       throw new ChatServiceError(
         "turn_commit_failed",
         `${args.commitFailureMessage}: ${error instanceof Error ? error.message : String(error)}`,
         error
       );
+    }
+
+    if (commitAttemptCount > 1) {
+      await this.emitBestEffortEvent("commit.succeeded_after_retry", {
+        sessionId: args.sessionId,
+        branchId: args.branchId,
+        floorId: args.floorId,
+        attempts: commitAttemptCount,
+      });
     }
 
     await this.markTurnModelUsed(args.resolvedTurnModels, args.accountId);
@@ -1124,20 +1234,16 @@ export class ChatService {
   private async generateForFloor(args: {
     floorId: string;
     sessionId: string;
+    branchId?: string;
     session: typeof sessions.$inferSelect;
     userMessage: string;
+    userMessageRef: PersistedMessageRef;
     history: ChatMessage[];
     request: RetryFloorRequest;
-    now: number;
     accountId: string;
+    abortSignal?: AbortSignal;
   }): Promise<RetryFloorResult> {
     const memorySummary = await this.retrieveMemorySummary(args.sessionId);
-
-    const userMessageRef = await this.messagePersistence.saveUserMessage(
-      args.floorId,
-      args.userMessage,
-      args.now
-    );
 
     const sessionInfo: SessionPromptInfo = {
       presetId: args.session.presetId,
@@ -1151,8 +1257,7 @@ export class ChatService {
 
     const resolvedTurnModels = await this.resolveTurnModelsForSession(args.sessionId, args.accountId);
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
-    const maxContextTokensOverride = normalizePositiveInt(args.request.generationParams?.maxContextTokens)
-      ?? normalizePositiveInt(narratorParams?.maxContextTokens);
+    const maxContextTokensOverride = this.resolveMaxContextTokensOverride(args.request.generationParams, narratorParams);
 
     const assembled = await assemblePrompt(
       this.db,
@@ -1171,12 +1276,11 @@ export class ChatService {
       snapshot: assembled.promptSnapshot,
     });
 
-    const generationParams: GenerationParams = {
-      temperature: 0.7,
-      maxOutputTokens: assembled.tokenUsage.availableForReply || 1000,
-      ...this.stripMaxContextTokens(narratorParams),
-      ...args.request.generationParams,
-    };
+    const generationParams = this.buildGenerationParams({
+      requestParams: args.request.generationParams,
+      narratorParams,
+      availableForReply: assembled.tokenUsage.availableForReply,
+    });
 
     const turnConfig = this.resolveTurnConfig(args.request.config);
     const consolidationContext = await this.buildConsolidationContext(
@@ -1188,12 +1292,13 @@ export class ChatService {
     const turnInput: TurnInput = {
       sessionId: args.sessionId,
       floorId: args.floorId,
-      pageId: userMessageRef.pageId,
+      pageId: args.userMessageRef.pageId,
       accountId: args.accountId,
       messages: assembled.messages,
       generationParams,
       config: turnConfig,
       consolidationContext,
+      abortSignal: args.abortSignal,
       preProcess: assembled.preProcess,
       postProcess: assembled.postProcess,
       modelOverrides: this.buildModelOverrides(resolvedTurnModels),
@@ -1205,6 +1310,7 @@ export class ChatService {
     const { execution, commit } = await this.executeTurnAndCommit({
       floorId: args.floorId,
       sessionId: args.sessionId,
+      branchId: args.branchId,
       accountId: args.accountId,
       turnInput,
       promptSnapshot,
@@ -1234,6 +1340,77 @@ export class ChatService {
       totalUsage: commit.usage,
       finalState: commit.finalState,
     };
+  }
+
+  private createDraftFloorWithUserMessage(args: {
+    floorId?: string;
+    sessionId: string;
+    floorNo: number;
+    branchId: string;
+    parentFloorId: string | null;
+    userMessage: string;
+    userId: string | null;
+    userSnapshotJson: string | null;
+    now: number;
+    prepare?: (tx: DbExecutor) => void;
+  }): { floorId: string; userMessageRef: PersistedMessageRef } {
+    const floorId = args.floorId ?? nanoid();
+    const floorMetadataJson = buildFloorMetadataJson(args.userId, args.userSnapshotJson, args.now);
+
+    const userMessageRef = this.db.transaction((tx) => {
+      args.prepare?.(tx);
+
+      tx.insert(floors).values({
+        id: floorId,
+        sessionId: args.sessionId,
+        floorNo: args.floorNo,
+        branchId: args.branchId,
+        parentFloorId: args.parentFloorId,
+        state: "draft",
+        metadataJson: floorMetadataJson,
+        tokenIn: 0,
+        tokenOut: 0,
+        createdAt: args.now,
+        updatedAt: args.now,
+      }).run();
+
+      return this.messagePersistence.saveUserMessageWithExecutor(tx, floorId, args.userMessage, args.now);
+    });
+
+    return { floorId, userMessageRef };
+  }
+
+  private buildGenerationParams(args: {
+    requestParams?: Partial<GenerationParams>;
+    narratorParams?: Partial<GenerationParams>;
+    availableForReply: number;
+    stream?: boolean;
+  }): GenerationParams {
+    const narratorParams = this.stripMaxContextTokens(args.narratorParams);
+    const requestParams = this.stripMaxContextTokens(args.requestParams);
+    const timeoutMs = normalizePositiveInt(requestParams?.timeoutMs)
+      ?? normalizePositiveInt(narratorParams?.timeoutMs)
+      ?? this.executionPolicy.executionTimeoutMs;
+    const maxRetries = normalizeNonNegativeInt(requestParams?.maxRetries)
+      ?? normalizeNonNegativeInt(narratorParams?.maxRetries);
+
+    return {
+      temperature: 0.7,
+      maxOutputTokens: args.availableForReply || 1000,
+      ...(args.stream !== undefined ? { stream: args.stream } : {}),
+      ...narratorParams,
+      ...requestParams,
+      timeoutMs,
+      ...(maxRetries !== undefined ? { maxRetries } : {}),
+    };
+  }
+
+  private resolveMaxContextTokensOverride(
+    requestParams?: Partial<GenerationParams>,
+    narratorParams?: Partial<GenerationParams>,
+  ): number | undefined {
+    return normalizePositiveInt(requestParams?.maxContextTokens)
+      ?? normalizePositiveInt(narratorParams?.maxContextTokens);
   }
 
   /**
@@ -1640,6 +1817,42 @@ function normalizeBranchId(value: string | undefined): string {
   }
 
   return normalized;
+}
+
+function resolveTurnExecutionPolicy(policy?: TurnExecutionPolicyOverrides): TurnExecutionPolicy {
+  return {
+    queueMode: policy?.queueMode ?? DEFAULT_TURN_EXECUTION_POLICY.queueMode,
+    queueTimeoutMs: normalizePositiveInt(policy?.queueTimeoutMs)
+      ?? DEFAULT_TURN_EXECUTION_POLICY.queueTimeoutMs,
+    executionTimeoutMs: normalizePositiveInt(policy?.executionTimeoutMs)
+      ?? DEFAULT_TURN_EXECUTION_POLICY.executionTimeoutMs,
+    commitRetry: {
+      maxRetries: normalizeNonNegativeInt(policy?.commitRetry?.maxRetries)
+        ?? DEFAULT_TURN_EXECUTION_POLICY.commitRetry.maxRetries,
+      baseDelayMs: normalizePositiveInt(policy?.commitRetry?.baseDelayMs)
+        ?? DEFAULT_TURN_EXECUTION_POLICY.commitRetry.baseDelayMs,
+    },
+  };
+}
+
+function findErrorByConstructor<TError extends Error>(
+  error: unknown,
+  constructor: abstract new (...args: any[]) => TError,
+): TError | undefined {
+  const visited = new Set<unknown>();
+  let current: unknown = error;
+
+  while (current && typeof current === "object" && !visited.has(current)) {
+    visited.add(current);
+
+    if (current instanceof constructor) {
+      return current;
+    }
+
+    current = (current as { cause?: unknown }).cause;
+  }
+
+  return undefined;
 }
 
 // ── 错误类 ────────────────────────────────────────────

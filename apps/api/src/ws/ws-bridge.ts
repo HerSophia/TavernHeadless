@@ -74,6 +74,9 @@ export class WsBridge {
       'generation.chunk',
       'generation.completed',
       'generation.failed',
+      'commit.retry',
+      'commit.busy',
+      'commit.succeeded_after_retry',
       'memory.created',
       'memory.updated',
       'memory.deprecated',
@@ -156,7 +159,7 @@ function extractSessionId(eventName: string, data: unknown): string | undefined 
     return (d.floor as Record<string, unknown>).sessionId as string | undefined;
   }
 
-  // 直接带 sessionId 的事件
+  // 直接带 sessionId 的事件（如 commit.* / memory.*）
   if (typeof d.sessionId === 'string') {
     return d.sessionId;
   }

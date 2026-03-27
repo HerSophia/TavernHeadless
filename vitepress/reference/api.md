@@ -91,6 +91,9 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | `500` | 服务端错误 |
 | `502` | 上游 LLM 服务错误 |
 | `503` | 服务不可用（如 LLM Vault 未配置） |
+| `504` | 上游生成超时 |
+
+对于已经建立的 SSE 聊天流，运行期失败会通过 `event: error` 事件返回，而不是再切换 HTTP 状态码。此时应读取 `error.code`，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`。
 
 ## 分页
 

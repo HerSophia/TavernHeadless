@@ -183,10 +183,15 @@ try {
 | API 错误码 | `kind` | `retryable` |
 | ---- | ---- | ---- |
 | `generation_conflict` | `conflict` | 是 |
+| `generation_queue_timeout` | `server` | 是 |
+| `generation_timeout` | `server` | 是 |
+| `commit_busy` | `server` | 是 |
 | `commit_conflict` | `conflict` | 是 |
 | `turn_commit_failed` | `server` | 是 |
 
 这样做的目的是让界面默认语义更稳定。同时，原始 `code` 仍会保留在返回结果里，接入方如果需要更细的 UI 分支，仍可继续自行判断。
+
+这条规则同样覆盖流式 `respond/stream` 的 SSE `error` 事件。流已经建立后，SDK 抛出的 `TavernApiError.status` 可能仍然是 `200`，但 `code` 会保留为 `generation_timeout`、`commit_busy`、`generation_queue_timeout` 等值，因此 helper 会优先按 `code` 处理。
 
 ## 设计边界
 

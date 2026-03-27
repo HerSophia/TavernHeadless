@@ -300,10 +300,13 @@ try {
 - 发起 `text/event-stream` 请求
 - 逐行解析 `start` → `chunk` → `summary` → `done` 事件
 - 遇到 `error` 事件时抛出 `TavernApiError`
+- 保留 `error` 事件里的后端错误码，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`
 - 在 `done` 中保留 `branchId`、`generatedText`、`summaries`、`totalUsage`、`finalState`
 - 流结束但没收到 `done` 时也会抛出错误
 
 一般场景直接用 `client.sessions.respondStream()` 就够了。如果需要更底层的控制，可以自己调 `readSseStream()`。
+
+需要注意的是，SSE 连接一旦已经建立，运行期错误通常不再切换 HTTP 状态码，因此这类 `TavernApiError` 的 `status` 常常仍是 `200`。接入方应同时看 `error.code`。
 
 ## 资源覆盖范围
 

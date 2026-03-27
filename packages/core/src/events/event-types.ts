@@ -75,6 +75,35 @@ export interface GenerationFailedEvent {
   error: Error;
 }
 
+// ── Commit 事件 ──────────────────────────────────────
+
+/** 提交阶段重试事件 */
+export interface CommitRetryEvent {
+  sessionId: string;
+  branchId?: string;
+  floorId: string;
+  attempt: number;
+  backoffMs: number;
+  message: string;
+}
+
+/** 提交阶段忙碌事件 */
+export interface CommitBusyEvent {
+  sessionId: string;
+  branchId?: string;
+  floorId: string;
+  attempts: number;
+  message: string;
+}
+
+/** 提交阶段重试后成功事件 */
+export interface CommitSucceededAfterRetryEvent {
+  sessionId: string;
+  branchId?: string;
+  floorId: string;
+  attempts: number;
+}
+
 // ── Memory 事件 ──────────────────────────────────────
 
 /** 记忆创建事件 */
@@ -211,6 +240,9 @@ export interface CoreEventMap {
   'generation.chunk': GenerationChunkEvent;
   'generation.completed': GenerationCompletedEvent;
   'generation.failed': GenerationFailedEvent;
+  'commit.retry': CommitRetryEvent;
+  'commit.busy': CommitBusyEvent;
+  'commit.succeeded_after_retry': CommitSucceededAfterRetryEvent;
   'memory.created': MemoryCreatedEvent;
   'memory.updated': MemoryUpdatedEvent;
   'memory.deprecated': MemoryDeprecatedEvent;
