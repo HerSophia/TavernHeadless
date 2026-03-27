@@ -14074,7 +14074,8 @@
                       "id": "preset_story",
                       "name": "Story Preset",
                       "source": "sillytavern",
-                      "updated_at": 1735689660000
+                      "updated_at": 1735689660000,
+                      "version": 3
                     }
                   ]
                 },
@@ -14089,7 +14090,8 @@
                           "id": "preset_story",
                           "name": "Story Preset",
                           "source": "sillytavern",
-                          "updated_at": 1735689660000
+                          "updated_at": 1735689660000,
+                          "version": 3
                         },
                         "properties": {
                           "created_at": {
@@ -14108,6 +14110,10 @@
                           "updated_at": {
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "version": {
+                            "minimum": 1,
+                            "type": "integer"
                           }
                         },
                         "required": [
@@ -14115,7 +14121,8 @@
                           "name",
                           "source",
                           "created_at",
-                          "updated_at"
+                          "updated_at",
+                          "version"
                         ],
                         "type": "object"
                       },
@@ -14222,7 +14229,8 @@
                     "id": "preset_story",
                     "name": "Story Preset",
                     "source": "sillytavern",
-                    "updated_at": 1735689660000
+                    "updated_at": 1735689660000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -14235,7 +14243,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -14255,6 +14264,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -14263,6 +14276,7 @@
                         "source",
                         "created_at",
                         "updated_at",
+                        "version",
                         "data"
                       ],
                       "type": "object"
@@ -14364,7 +14378,7 @@
                     "temperature": 0.7
                   }
                 },
-                "expected_updated_at": 1735689660000,
+                "expected_version": 3,
                 "name": "Story Preset"
               },
               "schema": {
@@ -14407,6 +14421,10 @@
                     "minimum": 0,
                     "type": "integer"
                   },
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "name": {
                     "minLength": 1,
                     "type": "string"
@@ -14432,7 +14450,8 @@
                     "id": "preset_story",
                     "name": "Story Preset",
                     "source": "sillytavern",
-                    "updated_at": 1735689660000
+                    "updated_at": 1735689660000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -14445,7 +14464,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -14464,6 +14484,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -14471,7 +14495,8 @@
                         "name",
                         "source",
                         "created_at",
-                        "updated_at"
+                        "updated_at",
+                        "version"
                       ],
                       "type": "object"
                     }
@@ -14646,7 +14671,8 @@
                     "id": "preset_story",
                     "name": "Story Preset",
                     "source": "sillytavern",
-                    "updated_at": 1735689660000
+                    "updated_at": 1735689660000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -14659,7 +14685,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -14682,6 +14709,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -14690,6 +14721,7 @@
                         "source",
                         "created_at",
                         "updated_at",
+                        "version",
                         "editor"
                       ],
                       "type": "object"
@@ -15245,6 +15277,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Delete preset prompt entry",
@@ -15590,6 +15655,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Update preset prompt entry",
@@ -15668,6 +15766,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -15815,6 +15946,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -16038,6 +16202,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Reorder preset prompt entries",
@@ -16060,7 +16257,8 @@
                       "id": "preset_story",
                       "name": "Story Preset",
                       "source": "sillytavern",
-                      "updated_at": 1735689660000
+                      "updated_at": 1735689660000,
+                      "version": 3
                     }
                   ]
                 },
@@ -16075,7 +16273,8 @@
                           "id": "preset_story",
                           "name": "Story Preset",
                           "source": "sillytavern",
-                          "updated_at": 1735689660000
+                          "updated_at": 1735689660000,
+                          "version": 3
                         },
                         "properties": {
                           "created_at": {
@@ -16094,6 +16293,10 @@
                           "updated_at": {
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "version": {
+                            "minimum": 1,
+                            "type": "integer"
                           }
                         },
                         "required": [
@@ -16101,7 +16304,8 @@
                           "name",
                           "source",
                           "created_at",
-                          "updated_at"
+                          "updated_at",
+                          "version"
                         ],
                         "type": "object"
                       },
@@ -16208,7 +16412,8 @@
                     "id": "preset_story",
                     "name": "Story Preset",
                     "source": "sillytavern",
-                    "updated_at": 1735689660000
+                    "updated_at": 1735689660000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -16221,7 +16426,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -16241,6 +16447,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -16249,6 +16459,7 @@
                         "source",
                         "created_at",
                         "updated_at",
+                        "version",
                         "data"
                       ],
                       "type": "object"
@@ -16327,6 +16538,7 @@
                   }
                 ],
                 "expected_updated_at": 1735689660000,
+                "expected_version": 2,
                 "name": "Safety Filters"
               },
               "schema": {
@@ -16341,6 +16553,10 @@
                   },
                   "expected_updated_at": {
                     "minimum": 0,
+                    "type": "integer"
+                  },
+                  "expected_version": {
+                    "minimum": 1,
                     "type": "integer"
                   },
                   "name": {
@@ -16368,7 +16584,8 @@
                     "id": "regex_safe",
                     "name": "Safety Filters",
                     "source": "sillytavern",
-                    "updated_at": 1735689720000
+                    "updated_at": 1735689720000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -16381,7 +16598,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -16400,6 +16618,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -16407,7 +16629,8 @@
                         "name",
                         "source",
                         "created_at",
-                        "updated_at"
+                        "updated_at",
+                        "version"
                       ],
                       "type": "object"
                     }
@@ -24125,7 +24348,8 @@
                       "id": "preset_story",
                       "name": "Story Preset",
                       "source": "sillytavern",
-                      "updated_at": 1735689660000
+                      "updated_at": 1735689660000,
+                      "version": 3
                     }
                   ]
                 },
@@ -24140,7 +24364,8 @@
                           "id": "preset_story",
                           "name": "Story Preset",
                           "source": "sillytavern",
-                          "updated_at": 1735689660000
+                          "updated_at": 1735689660000,
+                          "version": 3
                         },
                         "properties": {
                           "created_at": {
@@ -24159,6 +24384,10 @@
                           "updated_at": {
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "version": {
+                            "minimum": 1,
+                            "type": "integer"
                           }
                         },
                         "required": [
@@ -24166,7 +24395,8 @@
                           "name",
                           "source",
                           "created_at",
-                          "updated_at"
+                          "updated_at",
+                          "version"
                         ],
                         "type": "object"
                       },
@@ -24273,7 +24503,8 @@
                     "id": "preset_story",
                     "name": "Story Preset",
                     "source": "sillytavern",
-                    "updated_at": 1735689660000
+                    "updated_at": 1735689660000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -24286,7 +24517,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -24306,6 +24538,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -24314,6 +24550,7 @@
                         "source",
                         "created_at",
                         "updated_at",
+                        "version",
                         "data"
                       ],
                       "type": "object"
@@ -24395,6 +24632,7 @@
                   ]
                 },
                 "expected_updated_at": 1735689660000,
+                "expected_version": 3,
                 "name": "Kingdom Lore"
               },
               "schema": {
@@ -24406,6 +24644,10 @@
                   },
                   "expected_updated_at": {
                     "minimum": 0,
+                    "type": "integer"
+                  },
+                  "expected_version": {
+                    "minimum": 1,
                     "type": "integer"
                   },
                   "name": {
@@ -24433,7 +24675,8 @@
                     "id": "wb_kingdom",
                     "name": "Kingdom Lore",
                     "source": "sillytavern",
-                    "updated_at": 1735689720000
+                    "updated_at": 1735689720000,
+                    "version": 4
                   }
                 },
                 "schema": {
@@ -24446,7 +24689,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -24465,6 +24709,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -24472,7 +24720,8 @@
                         "name",
                         "source",
                         "created_at",
-                        "updated_at"
+                        "updated_at",
+                        "version"
                       ],
                       "type": "object"
                     }
@@ -25381,6 +25630,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Create worldbook entry",
@@ -25452,6 +25734,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -26130,6 +26445,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Update worldbook entry",
@@ -26316,6 +26664,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -26732,6 +27113,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -27220,6 +27634,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {

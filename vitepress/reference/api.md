@@ -95,6 +95,8 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 
 对于已经建立的 SSE 聊天流，运行期失败会通过 `event: error` 事件返回，而不是再切换 HTTP 状态码。此时应读取 `error.code`，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`。
 
+当前默认服务配置使用单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发生成通常直接返回 `generation_conflict`。只有部署方显式启用 `queue` 模式时，才可能看到 `generation_queue_timeout`；即便如此，排队也只在当前进程内生效。
+
 ## 分页
 
 所有列表接口支持以下查询参数：
@@ -111,6 +113,22 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 ## 时间戳
 
 所有时间戳字段均为 **Unix 毫秒时间戳**（integer），字段名通常为 `created_at`、`updated_at`。
+
+## 资源版本与乐观锁
+
+`preset`、`worldbook`、`regex profile` 这几类可编辑资源现在都会返回 `version` 字段。
+
+- 列表接口会返回当前 `version`
+- 详情接口会返回当前 `version`
+- 更新成功响应也会返回新的 `version`
+
+更新这些资源时，新的并发控制字段是 `expected_version`。
+
+- 推荐新接入统一使用 `expected_version`
+- 旧调用方仍可继续传 `expected_updated_at` 作为兼容令牌
+- 当版本不匹配时，会返回 `409`，例如 `preset_conflict`、`worldbook_conflict`、`regex_profile_conflict`
+
+聊天 dry-run 的 `prompt_snapshot` 与落库的 `prompt_snapshot` 记录也会保存 `preset_version`、`worldbook_version`、`regex_profile_version`，用于说明当轮生成实际冻结使用的资源版本。
 
 ## 资源目录
 

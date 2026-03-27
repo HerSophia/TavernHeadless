@@ -1,4 +1,4 @@
-·---
+---
 outline: [2, 3]
 ---
 
@@ -60,6 +60,8 @@ POST /sessions/:id/respond
 | `503` | `secret_unavailable` / `commit_busy` / `generation_queue_timeout` | 密钥不可用，或生成 / 提交等待阶段已超时 |
 | `504` | `generation_timeout` | LLM 执行超时 |
 | `500` | `orchestration_failed` / `turn_commit_failed` | 生成过程出现未分类内部错误 |
+
+当前默认服务配置使用单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发生成通常直接返回 `generation_conflict`。只有部署方显式启用 `queue` 模式时，才可能看到 `generation_queue_timeout`；即便如此，排队也只在当前进程内生效，不提供跨实例共享锁。
 
 ## SSE 流式生成
 

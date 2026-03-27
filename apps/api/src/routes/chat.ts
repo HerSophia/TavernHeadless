@@ -170,10 +170,13 @@ export async function registerChatRoutes(
           prompt_snapshot: {
             preset_id: result.promptSnapshot.presetId,
             preset_updated_at: result.promptSnapshot.presetUpdatedAt,
+            preset_version: result.promptSnapshot.presetVersion,
             worldbook_id: result.promptSnapshot.worldbookId,
             worldbook_updated_at: result.promptSnapshot.worldbookUpdatedAt,
+            worldbook_version: result.promptSnapshot.worldbookVersion,
             regex_profile_id: result.promptSnapshot.regexProfileId,
             regex_profile_updated_at: result.promptSnapshot.regexProfileUpdatedAt,
+            regex_profile_version: result.promptSnapshot.regexProfileVersion,
             worldbook_activated_entry_uids: result.promptSnapshot.worldbookActivatedEntryUids,
             regex_pre_rule_names: result.promptSnapshot.regexPreRuleNames,
             regex_post_rule_names: result.promptSnapshot.regexPostRuleNames,

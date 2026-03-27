@@ -2329,6 +2329,363 @@
         }
       }
     },
+    "/export/character/{id}": {
+      "get": {
+        "operationId": "exportCharacter",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "version_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Export character as ST Character Card V2 JSON file",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/export/chat/{id}": {
+      "get": {
+        "description": "Export a session as .thchat (native, lossless) or .jsonl (ST-compatible, lossy).",
+        "operationId": "exportChat",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "thchat",
+              "enum": [
+                "thchat",
+                "st_jsonl"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_variables",
+            "required": false,
+            "schema": {
+              "default": "true",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_memories",
+            "required": false,
+            "schema": {
+              "default": "true",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Export chat session",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/export/preset/{id}": {
+      "get": {
+        "operationId": "exportPreset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Export preset as ST-compatible JSON file",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/export/regex/{id}": {
+      "get": {
+        "operationId": "exportRegex",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Export regex profile as ST-compatible JSON file",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/export/worldbook/{id}": {
+      "get": {
+        "operationId": "exportWorldbook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Export worldbook as ST-compatible JSON file",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
     "/floors": {
       "get": {
         "parameters": [
@@ -3587,6 +3944,156 @@
           }
         },
         "summary": "Import SillyTavern character card",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/import/chat": {
+      "post": {
+        "operationId": "importChat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "character_id": "char_abc123",
+                "data": "{\"chat_metadata\":{},\"user_name\":\"unused\",\"character_name\":\"unused\"}\n{\"name\":\"User\",\"is_user\":true,\"mes\":\"Hello\"}\n{\"name\":\"Alice\",\"is_user\":false,\"mes\":\"Hi there!\",\"swipes\":[\"Hi there!\",\"Hey!\"]}",
+                "title": "Imported Chat"
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "character_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "data": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "data"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "floor_count": 1,
+                    "import_source": "sillytavern_jsonl",
+                    "message_count": 2,
+                    "session_id": "sess_abc123",
+                    "skipped_lines": 0,
+                    "swipe_count": 2,
+                    "title": "Imported Chat"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "floor_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "format": {
+                          "enum": [
+                            "thchat",
+                            "sillytavern_jsonl"
+                          ],
+                          "type": "string"
+                        },
+                        "import_source": {
+                          "type": "string"
+                        },
+                        "message_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "skipped_lines": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "swipe_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "session_id",
+                        "title",
+                        "floor_count",
+                        "message_count",
+                        "format"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Import chat file (.thchat or .jsonl)",
         "tags": [
           "imports"
         ]
@@ -7399,6 +7906,743 @@
         ]
       }
     },
+    "/mcp/servers": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "properties": {
+                          "call_timeout_ms": {
+                            "type": "integer"
+                          },
+                          "connect_timeout_ms": {
+                            "type": "integer"
+                          },
+                          "created_at": {
+                            "type": "integer"
+                          },
+                          "default_side_effect_level": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "http": {
+                            "nullable": true,
+                            "type": "object"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "stdio": {
+                            "nullable": true,
+                            "type": "object"
+                          },
+                          "tool_prefix": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "tool_refresh_interval_ms": {
+                            "type": "integer"
+                          },
+                          "transport": {
+                            "enum": [
+                              "stdio",
+                              "http"
+                            ],
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List MCP server configs",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "post": {
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "call_timeout_ms": {
+                          "type": "integer"
+                        },
+                        "connect_timeout_ms": {
+                          "type": "integer"
+                        },
+                        "created_at": {
+                          "type": "integer"
+                        },
+                        "default_side_effect_level": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "http": {
+                          "nullable": true,
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "stdio": {
+                          "nullable": true,
+                          "type": "object"
+                        },
+                        "tool_prefix": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "tool_refresh_interval_ms": {
+                          "type": "integer"
+                        },
+                        "transport": {
+                          "enum": [
+                            "stdio",
+                            "http"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Create MCP server config",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "deleted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete MCP server config",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "call_timeout_ms": {
+                          "type": "integer"
+                        },
+                        "connect_timeout_ms": {
+                          "type": "integer"
+                        },
+                        "created_at": {
+                          "type": "integer"
+                        },
+                        "default_side_effect_level": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "http": {
+                          "nullable": true,
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "stdio": {
+                          "nullable": true,
+                          "type": "object"
+                        },
+                        "tool_prefix": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "tool_refresh_interval_ms": {
+                          "type": "integer"
+                        },
+                        "transport": {
+                          "enum": [
+                            "stdio",
+                            "http"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get MCP server config",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "call_timeout_ms": {
+                          "type": "integer"
+                        },
+                        "connect_timeout_ms": {
+                          "type": "integer"
+                        },
+                        "created_at": {
+                          "type": "integer"
+                        },
+                        "default_side_effect_level": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "http": {
+                          "nullable": true,
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "stdio": {
+                          "nullable": true,
+                          "type": "object"
+                        },
+                        "tool_prefix": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "tool_refresh_interval_ms": {
+                          "type": "integer"
+                        },
+                        "transport": {
+                          "enum": [
+                            "stdio",
+                            "http"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Update MCP server config",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{id}/toggle": {
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "call_timeout_ms": {
+                          "type": "integer"
+                        },
+                        "connect_timeout_ms": {
+                          "type": "integer"
+                        },
+                        "created_at": {
+                          "type": "integer"
+                        },
+                        "default_side_effect_level": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "http": {
+                          "nullable": true,
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "stdio": {
+                          "nullable": true,
+                          "type": "object"
+                        },
+                        "tool_prefix": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "tool_refresh_interval_ms": {
+                          "type": "integer"
+                        },
+                        "transport": {
+                          "enum": [
+                            "stdio",
+                            "http"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Enable/disable MCP server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
     "/memories": {
       "get": {
         "parameters": [
@@ -7491,6 +8735,15 @@
                 "active",
                 "deprecated"
               ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fact_key",
+            "required": false,
+            "schema": {
+              "minLength": 1,
               "type": "string"
             }
           },
@@ -7610,6 +8863,7 @@
                         "text": "Alice carries a silver sword."
                       },
                       "created_at": 1735689600000,
+                      "fact_key": "equipment",
                       "id": "mem_fact_1",
                       "importance": 0.8,
                       "scope": "chat",
@@ -7642,6 +8896,7 @@
                             "text": "Alice carries a silver sword."
                           },
                           "created_at": 1735689600000,
+                          "fact_key": "equipment",
                           "id": "mem_fact_1",
                           "importance": 0.8,
                           "scope": "chat",
@@ -7662,6 +8917,16 @@
                           "created_at": {
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "fact_key": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "id": {
                             "type": "string"
@@ -7840,6 +9105,17 @@
                     "type": "number"
                   },
                   "content": {},
+                  "fact_key": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "importance": {
                     "maximum": 1,
                     "minimum": 0,
@@ -7904,6 +9180,7 @@
                       "text": "Alice carries a silver sword."
                     },
                     "created_at": 1735689600000,
+                    "fact_key": "equipment",
                     "id": "mem_fact_1",
                     "importance": 0.8,
                     "scope": "chat",
@@ -7926,6 +9203,7 @@
                           "text": "Alice carries a silver sword."
                         },
                         "created_at": 1735689600000,
+                        "fact_key": "equipment",
                         "id": "mem_fact_1",
                         "importance": 0.8,
                         "scope": "chat",
@@ -7946,6 +9224,16 @@
                         "created_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "fact_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "id": {
                           "type": "string"
@@ -8217,6 +9505,7 @@
                       "text": "Alice carries a silver sword."
                     },
                     "created_at": 1735689600000,
+                    "fact_key": "equipment",
                     "id": "mem_fact_1",
                     "importance": 0.8,
                     "scope": "chat",
@@ -8239,6 +9528,7 @@
                           "text": "Alice carries a silver sword."
                         },
                         "created_at": 1735689600000,
+                        "fact_key": "equipment",
                         "id": "mem_fact_1",
                         "importance": 0.8,
                         "scope": "chat",
@@ -8259,6 +9549,16 @@
                         "created_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "fact_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "id": {
                           "type": "string"
@@ -8407,6 +9707,17 @@
                     "type": "number"
                   },
                   "content": {},
+                  "fact_key": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "importance": {
                     "maximum": 1,
                     "minimum": 0,
@@ -8465,6 +9776,7 @@
                       "text": "Alice carries a silver sword."
                     },
                     "created_at": 1735689600000,
+                    "fact_key": "equipment",
                     "id": "mem_fact_1",
                     "importance": 0.8,
                     "scope": "chat",
@@ -8487,6 +9799,7 @@
                           "text": "Alice carries a silver sword."
                         },
                         "created_at": 1735689600000,
+                        "fact_key": "equipment",
                         "id": "mem_fact_1",
                         "importance": 0.8,
                         "scope": "chat",
@@ -8507,6 +9820,16 @@
                         "created_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "fact_key": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "id": {
                           "type": "string"
@@ -8901,6 +10224,7 @@
                             "text": "Alice carries a silver sword."
                           },
                           "created_at": 1735689600000,
+                          "fact_key": "equipment",
                           "id": "mem_fact_1",
                           "importance": 0.8,
                           "scope": "chat",
@@ -8978,6 +10302,7 @@
                                     "text": "Alice carries a silver sword."
                                   },
                                   "created_at": 1735689600000,
+                                  "fact_key": "equipment",
                                   "id": "mem_fact_1",
                                   "importance": 0.8,
                                   "scope": "chat",
@@ -8998,6 +10323,16 @@
                                   "created_at": {
                                     "minimum": 0,
                                     "type": "integer"
+                                  },
+                                  "fact_key": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "id": {
                                     "type": "string"
@@ -9193,6 +10528,15 @@
                 "active",
                 "deprecated"
               ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fact_key",
+            "required": false,
+            "schema": {
+              "minLength": 1,
               "type": "string"
             }
           },
@@ -9977,6 +11321,165 @@
           }
         },
         "summary": "Get memory edge",
+        "tags": [
+          "memories"
+        ]
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "relation": {
+                    "enum": [
+                      "supports",
+                      "contradicts",
+                      "updates"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "relation"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "from_id": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "relation": {
+                          "enum": [
+                            "supports",
+                            "contradicts",
+                            "updates"
+                          ],
+                          "type": "string"
+                        },
+                        "to_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "from_id",
+                        "to_id",
+                        "relation",
+                        "created_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Update memory edge relation",
         "tags": [
           "memories"
         ]
@@ -12571,7 +14074,8 @@
                       "id": "preset_story",
                       "name": "Story Preset",
                       "source": "sillytavern",
-                      "updated_at": 1735689660000
+                      "updated_at": 1735689660000,
+                      "version": 3
                     }
                   ]
                 },
@@ -12586,7 +14090,8 @@
                           "id": "preset_story",
                           "name": "Story Preset",
                           "source": "sillytavern",
-                          "updated_at": 1735689660000
+                          "updated_at": 1735689660000,
+                          "version": 3
                         },
                         "properties": {
                           "created_at": {
@@ -12605,6 +14110,10 @@
                           "updated_at": {
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "version": {
+                            "minimum": 1,
+                            "type": "integer"
                           }
                         },
                         "required": [
@@ -12612,7 +14121,8 @@
                           "name",
                           "source",
                           "created_at",
-                          "updated_at"
+                          "updated_at",
+                          "version"
                         ],
                         "type": "object"
                       },
@@ -12719,7 +14229,8 @@
                     "id": "preset_story",
                     "name": "Story Preset",
                     "source": "sillytavern",
-                    "updated_at": 1735689660000
+                    "updated_at": 1735689660000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -12732,7 +14243,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -12752,6 +14264,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -12760,6 +14276,7 @@
                         "source",
                         "created_at",
                         "updated_at",
+                        "version",
                         "data"
                       ],
                       "type": "object"
@@ -12861,7 +14378,7 @@
                     "temperature": 0.7
                   }
                 },
-                "expected_updated_at": 1735689660000,
+                "expected_version": 3,
                 "name": "Story Preset"
               },
               "schema": {
@@ -12904,6 +14421,10 @@
                     "minimum": 0,
                     "type": "integer"
                   },
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "name": {
                     "minLength": 1,
                     "type": "string"
@@ -12929,7 +14450,8 @@
                     "id": "preset_story",
                     "name": "Story Preset",
                     "source": "sillytavern",
-                    "updated_at": 1735689660000
+                    "updated_at": 1735689660000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -12942,7 +14464,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -12961,6 +14484,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -12968,7 +14495,8 @@
                         "name",
                         "source",
                         "created_at",
-                        "updated_at"
+                        "updated_at",
+                        "version"
                       ],
                       "type": "object"
                     }
@@ -13143,7 +14671,8 @@
                     "id": "preset_story",
                     "name": "Story Preset",
                     "source": "sillytavern",
-                    "updated_at": 1735689660000
+                    "updated_at": 1735689660000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -13156,7 +14685,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -13179,6 +14709,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -13187,6 +14721,7 @@
                         "source",
                         "created_at",
                         "updated_at",
+                        "version",
                         "editor"
                       ],
                       "type": "object"
@@ -13742,6 +15277,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Delete preset prompt entry",
@@ -14087,6 +15655,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Update preset prompt entry",
@@ -14165,6 +15766,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -14312,6 +15946,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -14535,6 +16202,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Reorder preset prompt entries",
@@ -14557,7 +16257,8 @@
                       "id": "preset_story",
                       "name": "Story Preset",
                       "source": "sillytavern",
-                      "updated_at": 1735689660000
+                      "updated_at": 1735689660000,
+                      "version": 3
                     }
                   ]
                 },
@@ -14572,7 +16273,8 @@
                           "id": "preset_story",
                           "name": "Story Preset",
                           "source": "sillytavern",
-                          "updated_at": 1735689660000
+                          "updated_at": 1735689660000,
+                          "version": 3
                         },
                         "properties": {
                           "created_at": {
@@ -14591,6 +16293,10 @@
                           "updated_at": {
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "version": {
+                            "minimum": 1,
+                            "type": "integer"
                           }
                         },
                         "required": [
@@ -14598,7 +16304,8 @@
                           "name",
                           "source",
                           "created_at",
-                          "updated_at"
+                          "updated_at",
+                          "version"
                         ],
                         "type": "object"
                       },
@@ -14705,7 +16412,8 @@
                     "id": "preset_story",
                     "name": "Story Preset",
                     "source": "sillytavern",
-                    "updated_at": 1735689660000
+                    "updated_at": 1735689660000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -14718,7 +16426,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -14738,6 +16447,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -14746,6 +16459,7 @@
                         "source",
                         "created_at",
                         "updated_at",
+                        "version",
                         "data"
                       ],
                       "type": "object"
@@ -14824,6 +16538,7 @@
                   }
                 ],
                 "expected_updated_at": 1735689660000,
+                "expected_version": 2,
                 "name": "Safety Filters"
               },
               "schema": {
@@ -14838,6 +16553,10 @@
                   },
                   "expected_updated_at": {
                     "minimum": 0,
+                    "type": "integer"
+                  },
+                  "expected_version": {
+                    "minimum": 1,
                     "type": "integer"
                   },
                   "name": {
@@ -14865,7 +16584,8 @@
                     "id": "regex_safe",
                     "name": "Safety Filters",
                     "source": "sillytavern",
-                    "updated_at": 1735689720000
+                    "updated_at": 1735689720000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -14878,7 +16598,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -14897,6 +16618,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -14904,7 +16629,8 @@
                         "name",
                         "source",
                         "created_at",
-                        "updated_at"
+                        "updated_at",
+                        "version"
                       ],
                       "type": "object"
                     }
@@ -15079,6 +16805,16 @@
                 "active",
                 "archived"
               ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
               "type": "string"
             }
           }
@@ -18239,6 +19975,489 @@
         ]
       }
     },
+    "/sessions/{id}/tool-permissions": {
+      "get": {
+        "operationId": "getSessionToolPermissions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allow_irreversible": {
+                          "type": "boolean"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "max_calls_per_turn": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "max_steps_per_generation": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "slot_allow_list": {
+                          "additionalProperties": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "type": "object"
+                        },
+                        "slot_deny_list": {
+                          "additionalProperties": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get session tool permissions",
+        "tags": [
+          "tools"
+        ]
+      },
+      "patch": {
+        "operationId": "patchSessionToolPermissions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "allow_irreversible": {
+                    "type": "boolean"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "max_calls_per_turn": {
+                    "maximum": 1000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "max_steps_per_generation": {
+                    "maximum": 50,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "slot_allow_list": {
+                    "additionalProperties": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "type": "object"
+                  },
+                  "slot_deny_list": {
+                    "additionalProperties": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allow_irreversible": {
+                          "type": "boolean"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "max_calls_per_turn": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "max_steps_per_generation": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "slot_allow_list": {
+                          "additionalProperties": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "type": "object"
+                        },
+                        "slot_deny_list": {
+                          "additionalProperties": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Partial update session tool permissions",
+        "tags": [
+          "tools"
+        ]
+      },
+      "put": {
+        "operationId": "replaceSessionToolPermissions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "allow_irreversible": {
+                    "type": "boolean"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "max_calls_per_turn": {
+                    "maximum": 1000,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "max_steps_per_generation": {
+                    "maximum": 50,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "slot_allow_list": {
+                    "additionalProperties": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "type": "object"
+                  },
+                  "slot_deny_list": {
+                    "additionalProperties": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allow_irreversible": {
+                          "type": "boolean"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "max_calls_per_turn": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "max_steps_per_generation": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "slot_allow_list": {
+                          "additionalProperties": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "type": "object"
+                        },
+                        "slot_deny_list": {
+                          "additionalProperties": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Replace session tool permissions",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
     "/sessions/batch/delete": {
       "post": {
         "operationId": "batchDeleteSessions",
@@ -18474,6 +20693,1486 @@
         "summary": "Batch update session status",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/tools/builtin": {
+      "get": {
+        "operationId": "listBuiltinTools",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowed_slots": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "parameters": {
+                            "type": "object"
+                          },
+                          "side_effect_level": {
+                            "enum": [
+                              "none",
+                              "sandbox",
+                              "irreversible"
+                            ],
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "description",
+                          "parameters",
+                          "side_effect_level",
+                          "allowed_slots",
+                          "source"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List built-in tools",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/call-records": {
+      "get": {
+        "operationId": "queryToolCallRecords",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "floor_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "caller_slot",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "success",
+                "error",
+                "denied"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "enum": [
+                "seq",
+                "created_at"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "args": {},
+                          "caller_slot": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "duration_ms": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "page_id": {
+                            "type": "string"
+                          },
+                          "result": {},
+                          "seq": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "status": {
+                            "enum": [
+                              "success",
+                              "error",
+                              "denied"
+                            ],
+                            "type": "string"
+                          },
+                          "tool_name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "page_id",
+                          "seq",
+                          "caller_slot",
+                          "tool_name",
+                          "args",
+                          "result",
+                          "status",
+                          "duration_ms",
+                          "created_at"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "has_more": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sort_by": {
+                          "type": "string"
+                        },
+                        "sort_order": {
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ],
+                          "type": "string"
+                        },
+                        "total": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "limit",
+                        "offset",
+                        "has_more",
+                        "sort_by",
+                        "sort_order"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Query tool call records",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/definitions": {
+      "get": {
+        "operationId": "listToolDefinitions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "enum": [
+                "preset",
+                "character",
+                "custom"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "enum": [
+                "updated_at",
+                "name"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowed_slots": {},
+                          "created_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "handler": {},
+                          "handler_type": {
+                            "enum": [
+                              "script",
+                              "prompt",
+                              "delegate"
+                            ],
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "parameters": {
+                            "type": "object"
+                          },
+                          "side_effect_level": {
+                            "enum": [
+                              "none",
+                              "sandbox",
+                              "irreversible"
+                            ],
+                            "type": "string"
+                          },
+                          "source": {
+                            "enum": [
+                              "preset",
+                              "character",
+                              "custom"
+                            ],
+                            "type": "string"
+                          },
+                          "source_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "updated_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "description",
+                          "parameters",
+                          "side_effect_level",
+                          "allowed_slots",
+                          "source",
+                          "source_id",
+                          "enabled",
+                          "handler_type",
+                          "handler",
+                          "created_at",
+                          "updated_at"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "has_more": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sort_by": {
+                          "type": "string"
+                        },
+                        "sort_order": {
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ],
+                          "type": "string"
+                        },
+                        "total": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "limit",
+                        "offset",
+                        "has_more",
+                        "sort_by",
+                        "sort_order"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List tool definitions",
+        "tags": [
+          "tools"
+        ]
+      },
+      "post": {
+        "operationId": "createToolDefinition",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "allowed_slots": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "description": {
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "handler": {
+                    "type": "object"
+                  },
+                  "handler_type": {
+                    "enum": [
+                      "script",
+                      "prompt",
+                      "delegate"
+                    ],
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "parameters": {
+                    "type": "object"
+                  },
+                  "side_effect_level": {
+                    "enum": [
+                      "none",
+                      "sandbox",
+                      "irreversible"
+                    ],
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": [
+                      "preset",
+                      "character",
+                      "custom"
+                    ],
+                    "type": "string"
+                  },
+                  "source_id": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowed_slots": {},
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "handler": {},
+                        "handler_type": {
+                          "enum": [
+                            "script",
+                            "prompt",
+                            "delegate"
+                          ],
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "parameters": {
+                          "type": "object"
+                        },
+                        "side_effect_level": {
+                          "enum": [
+                            "none",
+                            "sandbox",
+                            "irreversible"
+                          ],
+                          "type": "string"
+                        },
+                        "source": {
+                          "enum": [
+                            "preset",
+                            "character",
+                            "custom"
+                          ],
+                          "type": "string"
+                        },
+                        "source_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "description",
+                        "parameters",
+                        "side_effect_level",
+                        "allowed_slots",
+                        "source",
+                        "source_id",
+                        "enabled",
+                        "handler_type",
+                        "handler",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Create tool definition",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/definitions/{id}": {
+      "delete": {
+        "operationId": "deleteToolDefinition",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "deleted": {
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "deleted"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Delete tool definition",
+        "tags": [
+          "tools"
+        ]
+      },
+      "get": {
+        "operationId": "getToolDefinition",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowed_slots": {},
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "handler": {},
+                        "handler_type": {
+                          "enum": [
+                            "script",
+                            "prompt",
+                            "delegate"
+                          ],
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "parameters": {
+                          "type": "object"
+                        },
+                        "side_effect_level": {
+                          "enum": [
+                            "none",
+                            "sandbox",
+                            "irreversible"
+                          ],
+                          "type": "string"
+                        },
+                        "source": {
+                          "enum": [
+                            "preset",
+                            "character",
+                            "custom"
+                          ],
+                          "type": "string"
+                        },
+                        "source_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "description",
+                        "parameters",
+                        "side_effect_level",
+                        "allowed_slots",
+                        "source",
+                        "source_id",
+                        "enabled",
+                        "handler_type",
+                        "handler",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get tool definition",
+        "tags": [
+          "tools"
+        ]
+      },
+      "patch": {
+        "operationId": "updateToolDefinition",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "allowed_slots": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "description": {
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "handler": {
+                    "type": "object"
+                  },
+                  "handler_type": {
+                    "enum": [
+                      "script",
+                      "prompt",
+                      "delegate"
+                    ],
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "parameters": {
+                    "type": "object"
+                  },
+                  "side_effect_level": {
+                    "enum": [
+                      "none",
+                      "sandbox",
+                      "irreversible"
+                    ],
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": [
+                      "preset",
+                      "character",
+                      "custom"
+                    ],
+                    "type": "string"
+                  },
+                  "source_id": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowed_slots": {},
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "handler": {},
+                        "handler_type": {
+                          "enum": [
+                            "script",
+                            "prompt",
+                            "delegate"
+                          ],
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "parameters": {
+                          "type": "object"
+                        },
+                        "side_effect_level": {
+                          "enum": [
+                            "none",
+                            "sandbox",
+                            "irreversible"
+                          ],
+                          "type": "string"
+                        },
+                        "source": {
+                          "enum": [
+                            "preset",
+                            "character",
+                            "custom"
+                          ],
+                          "type": "string"
+                        },
+                        "source_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "description",
+                        "parameters",
+                        "side_effect_level",
+                        "allowed_slots",
+                        "source",
+                        "source_id",
+                        "enabled",
+                        "handler_type",
+                        "handler",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Update tool definition",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/definitions/{id}/toggle": {
+      "patch": {
+        "operationId": "toggleToolDefinition",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowed_slots": {},
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "handler": {},
+                        "handler_type": {
+                          "enum": [
+                            "script",
+                            "prompt",
+                            "delegate"
+                          ],
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "parameters": {
+                          "type": "object"
+                        },
+                        "side_effect_level": {
+                          "enum": [
+                            "none",
+                            "sandbox",
+                            "irreversible"
+                          ],
+                          "type": "string"
+                        },
+                        "source": {
+                          "enum": [
+                            "preset",
+                            "character",
+                            "custom"
+                          ],
+                          "type": "string"
+                        },
+                        "source_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "description",
+                        "parameters",
+                        "side_effect_level",
+                        "allowed_slots",
+                        "source",
+                        "source_id",
+                        "enabled",
+                        "handler_type",
+                        "handler",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Toggle tool definition enabled/disabled",
+        "tags": [
+          "tools"
         ]
       }
     },
@@ -20597,6 +24296,44 @@
         ]
       }
     },
+    "/version": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "node_version": {
+                      "type": "string"
+                    },
+                    "service": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "service",
+                    "node_version"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "security": [],
+        "summary": "Get service version",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/worldbooks": {
       "get": {
         "operationId": "listImportedWorldbooks",
@@ -20611,7 +24348,8 @@
                       "id": "preset_story",
                       "name": "Story Preset",
                       "source": "sillytavern",
-                      "updated_at": 1735689660000
+                      "updated_at": 1735689660000,
+                      "version": 3
                     }
                   ]
                 },
@@ -20626,7 +24364,8 @@
                           "id": "preset_story",
                           "name": "Story Preset",
                           "source": "sillytavern",
-                          "updated_at": 1735689660000
+                          "updated_at": 1735689660000,
+                          "version": 3
                         },
                         "properties": {
                           "created_at": {
@@ -20645,6 +24384,10 @@
                           "updated_at": {
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "version": {
+                            "minimum": 1,
+                            "type": "integer"
                           }
                         },
                         "required": [
@@ -20652,7 +24395,8 @@
                           "name",
                           "source",
                           "created_at",
-                          "updated_at"
+                          "updated_at",
+                          "version"
                         ],
                         "type": "object"
                       },
@@ -20759,7 +24503,8 @@
                     "id": "preset_story",
                     "name": "Story Preset",
                     "source": "sillytavern",
-                    "updated_at": 1735689660000
+                    "updated_at": 1735689660000,
+                    "version": 3
                   }
                 },
                 "schema": {
@@ -20772,7 +24517,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -20792,6 +24538,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -20800,6 +24550,7 @@
                         "source",
                         "created_at",
                         "updated_at",
+                        "version",
                         "data"
                       ],
                       "type": "object"
@@ -20881,6 +24632,7 @@
                   ]
                 },
                 "expected_updated_at": 1735689660000,
+                "expected_version": 3,
                 "name": "Kingdom Lore"
               },
               "schema": {
@@ -20892,6 +24644,10 @@
                   },
                   "expected_updated_at": {
                     "minimum": 0,
+                    "type": "integer"
+                  },
+                  "expected_version": {
+                    "minimum": 1,
                     "type": "integer"
                   },
                   "name": {
@@ -20919,7 +24675,8 @@
                     "id": "wb_kingdom",
                     "name": "Kingdom Lore",
                     "source": "sillytavern",
-                    "updated_at": 1735689720000
+                    "updated_at": 1735689720000,
+                    "version": 4
                   }
                 },
                 "schema": {
@@ -20932,7 +24689,8 @@
                         "id": "preset_story",
                         "name": "Story Preset",
                         "source": "sillytavern",
-                        "updated_at": 1735689660000
+                        "updated_at": 1735689660000,
+                        "version": 3
                       },
                       "properties": {
                         "created_at": {
@@ -20951,6 +24709,10 @@
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "version": {
+                          "minimum": 1,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -20958,7 +24720,8 @@
                         "name",
                         "source",
                         "created_at",
-                        "updated_at"
+                        "updated_at",
+                        "version"
                       ],
                       "type": "object"
                     }
@@ -21867,6 +25630,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Create worldbook entry",
@@ -21938,6 +25734,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -22616,6 +26445,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Update worldbook entry",
@@ -22802,6 +26664,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -23218,6 +27113,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -23706,6 +27634,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {

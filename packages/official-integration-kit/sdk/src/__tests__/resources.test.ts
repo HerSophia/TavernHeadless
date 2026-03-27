@@ -82,6 +82,7 @@ describe("sdk resources", () => {
           id: "preset-1",
           name: "Preset A",
           source: "sillytavern",
+          version: 3,
           updated_at: 101,
         },
       }),
@@ -127,6 +128,7 @@ describe("sdk resources", () => {
       id: "preset-1",
       name: "Preset A",
       source: "sillytavern",
+      version: 3,
       updatedAt: 101,
     });
   });
@@ -139,6 +141,7 @@ describe("sdk resources", () => {
           id: "wb-1",
           name: "Worldbook A",
           source: "sillytavern",
+          version: 4,
           updated_at: 22,
         },
       }),
@@ -148,6 +151,7 @@ describe("sdk resources", () => {
     const result = await client.worldbooks.update({
       accountId: "acc-1",
       data: { entries: [] },
+      expectedVersion: 3,
       expectedUpdatedAt: 20,
       name: "Worldbook A",
       worldbookId: "wb-1",
@@ -158,6 +162,7 @@ describe("sdk resources", () => {
       id: "wb-1",
       name: "Worldbook A",
       source: "sillytavern",
+      version: 4,
       updatedAt: 22,
     });
 
@@ -166,6 +171,7 @@ describe("sdk resources", () => {
     expect(init?.method).toBe("PUT");
     expect(init?.body).toBe(JSON.stringify({
       data: { entries: [] },
+      expected_version: 3,
       expected_updated_at: 20,
       name: "Worldbook A",
     }));

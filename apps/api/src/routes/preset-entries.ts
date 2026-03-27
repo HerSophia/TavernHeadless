@@ -20,7 +20,7 @@ import { z } from "zod";
 
 import { parsePreset } from "@tavern/adapters-sillytavern";
 
-import type { DatabaseConnection } from "../db/client.js";
+import type { AppDb, DatabaseConnection, DbExecutor } from "../db/client.js";
 import { presets } from "../db/schema.js";
 import { errorResponseJsonSchema } from "./schemas/common.js";
 import { parseWithSchema, sendError, parseJsonField } from "../lib/http.js";
@@ -270,10 +270,18 @@ const batchResultJsonSchema = {
 
 // ── Helpers ───────────────────────────────────────────
 
-import type { AppDb } from "../db/client.js";
+type PresetMutationResult<T> =
+  | { kind: "ok"; data: T; changed?: boolean }
+  | { kind: "error"; statusCode: number; code: string; message: string };
+
+class PresetVersionConflictError extends Error {
+  constructor() {
+    super("preset_version_conflict");
+  }
+}
 
 function loadPresetRaw(
-  db: AppDb,
+  db: AppDb | DbExecutor,
   presetId: string,
   accountId: string
 ): { row: typeof presets.$inferSelect; raw: JsonRecord } | null {
@@ -290,16 +298,19 @@ function loadPresetRaw(
 }
 
 function savePresetRaw(
-  db: AppDb,
+  db: AppDb | DbExecutor,
   presetId: string,
   accountId: string,
   raw: JsonRecord,
-  now: number
-): void {
-  db.update(presets)
-    .set({ dataJson: JSON.stringify(raw), updatedAt: now })
-    .where(and(eq(presets.id, presetId), eq(presets.accountId, accountId)))
+  now: number,
+  expectedVersion: number
+): boolean {
+  const updateResult = db.update(presets)
+    .set({ dataJson: JSON.stringify(raw), updatedAt: now, version: expectedVersion + 1 })
+    .where(and(eq(presets.id, presetId), eq(presets.accountId, accountId), eq(presets.version, expectedVersion)))
     .run();
+
+  return updateResult.changes > 0;
 }
 
 function validateRawPreset(raw: JsonRecord): string | null {
@@ -313,6 +324,43 @@ function validateRawPreset(raw: JsonRecord): string | null {
 
 function buildEntryResponseFromRaw(raw: JsonRecord, identifier: string): PresetEditorEntry | null {
   return getEditorEntryFromRaw(raw, identifier);
+}
+
+function withPresetWriteCas<T>(
+  db: AppDb,
+  presetId: string,
+  accountId: string,
+  mutate: (state: { row: typeof presets.$inferSelect; raw: JsonRecord }) => PresetMutationResult<T>
+): PresetMutationResult<T> {
+  try {
+    return db.transaction((tx) => {
+      const loaded = loadPresetRaw(tx, presetId, accountId);
+      if (!loaded) {
+        return { kind: "error", statusCode: 404, code: "not_found", message: "Preset not found" };
+      }
+
+      const result = mutate(loaded);
+      if (result.kind !== "ok") {
+        return result;
+      }
+
+      if (result.changed === false) {
+        return result;
+      }
+
+      const persisted = savePresetRaw(tx, loaded.row.id, accountId, loaded.raw, Date.now(), loaded.row.version);
+      if (!persisted) {
+        throw new PresetVersionConflictError();
+      }
+
+      return result;
+    });
+  } catch (error) {
+    if (error instanceof PresetVersionConflictError) {
+      return { kind: "error", statusCode: 409, code: "preset_conflict", message: "Preset has been modified by another operation" };
+    }
+    throw error;
+  }
 }
 
 // ── Route Registration ────────────────────────────────
@@ -394,56 +442,63 @@ export async function registerPresetEntryRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const loaded = loadPresetRaw(db, parsedParams.data.preset_id, auth.accountId);
-    if (!loaded) {
-      return sendError(reply, 404, "not_found", "Preset not found");
+    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, (loaded) => {
+      const { raw } = loaded;
+      const identifier = parsedBody.data.identifier;
+
+      if (findPromptInRaw(raw, identifier)) {
+        return {
+          kind: "error",
+          statusCode: 409,
+          code: "identifier_conflict",
+          message: `Prompt with identifier '${identifier}' already exists`,
+        };
+      }
+
+      const promptData: JsonRecord = {
+        ...parsedBody.data.extra,
+        identifier,
+        name: parsedBody.data.name,
+        role: parsedBody.data.role,
+        content: parsedBody.data.content,
+        system_prompt: parsedBody.data.system_prompt,
+        marker: parsedBody.data.marker,
+        injection_position: parsedBody.data.injection_position,
+        enabled: parsedBody.data.enabled,
+      };
+      if (parsedBody.data.injection_depth !== undefined) {
+        promptData.injection_depth = parsedBody.data.injection_depth;
+      }
+      if (parsedBody.data.injection_order !== undefined) {
+        promptData.injection_order = parsedBody.data.injection_order;
+      }
+      if (parsedBody.data.forbid_overrides !== undefined) {
+        promptData.forbid_overrides = parsedBody.data.forbid_overrides;
+      }
+      if (parsedBody.data.injection_trigger !== undefined) {
+        promptData.injection_trigger = parsedBody.data.injection_trigger;
+      }
+
+      addPromptToRaw(raw, promptData, parsedBody.data.enabled);
+
+      const validationError = validateRawPreset(raw);
+      if (validationError) {
+        return { kind: "error", statusCode: 400, code: "preset_validation_error", message: validationError };
+      }
+
+      const entry = buildEntryResponseFromRaw(raw, identifier);
+      if (!entry) {
+        return { kind: "error", statusCode: 500, code: "internal_error", message: "Failed to build preset entry response" };
+      }
+
+      return { kind: "ok", data: entry };
+    });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
     }
 
-    const { raw } = loaded;
-    const identifier = parsedBody.data.identifier;
-
-    // Check for duplicate
-    if (findPromptInRaw(raw, identifier)) {
-      return sendError(reply, 409, "identifier_conflict", `Prompt with identifier '${identifier}' already exists`);
-    }
-
-    // Build prompt data
-    const promptData: JsonRecord = {
-      ...parsedBody.data.extra,
-      identifier,
-      name: parsedBody.data.name,
-      role: parsedBody.data.role,
-      content: parsedBody.data.content,
-      system_prompt: parsedBody.data.system_prompt,
-      marker: parsedBody.data.marker,
-      injection_position: parsedBody.data.injection_position,
-      enabled: parsedBody.data.enabled,
-    };
-    if (parsedBody.data.injection_depth !== undefined) {
-      promptData.injection_depth = parsedBody.data.injection_depth;
-    }
-    if (parsedBody.data.injection_order !== undefined) {
-      promptData.injection_order = parsedBody.data.injection_order;
-    }
-    if (parsedBody.data.forbid_overrides !== undefined) {
-      promptData.forbid_overrides = parsedBody.data.forbid_overrides;
-    }
-    if (parsedBody.data.injection_trigger !== undefined) {
-      promptData.injection_trigger = parsedBody.data.injection_trigger;
-    }
-
-    addPromptToRaw(raw, promptData, parsedBody.data.enabled);
-
-    const validationError = validateRawPreset(raw);
-    if (validationError) {
-      return sendError(reply, 400, "preset_validation_error", validationError);
-    }
-
-    const now = Date.now();
-    savePresetRaw(db, loaded.row.id, auth.accountId, raw, now);
-
-    const entry = buildEntryResponseFromRaw(raw, identifier);
-    return reply.code(201).send({ data: entry });
+    return reply.code(201).send({ data: mutation.data });
   });
 
   // ── Get entry ────────────────────────────────────
@@ -489,6 +544,7 @@ export async function registerPresetEntryRoutes(
       response: {
         200: singleEntryResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -500,48 +556,49 @@ export async function registerPresetEntryRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const loaded = loadPresetRaw(db, parsedParams.data.preset_id, auth.accountId);
-    if (!loaded) {
-      return sendError(reply, 404, "not_found", "Preset not found");
-    }
-
-    const { raw } = loaded;
     const identifier = parsedParams.data.identifier;
-
-    // Build fields to update on the raw prompt object
-    const fields: JsonRecord = {};
     const body = parsedBody.data;
-    if (body.name !== undefined) fields.name = body.name;
-    if (body.role !== undefined) fields.role = body.role;
-    if (body.content !== undefined) fields.content = body.content;
-    if (body.system_prompt !== undefined) fields.system_prompt = body.system_prompt;
-    if (body.marker !== undefined) fields.marker = body.marker;
-    if (body.injection_position !== undefined) fields.injection_position = body.injection_position;
-    if (body.injection_depth !== undefined) fields.injection_depth = body.injection_depth;
-    if (body.injection_order !== undefined) fields.injection_order = body.injection_order;
-    if (body.forbid_overrides !== undefined) fields.forbid_overrides = body.forbid_overrides;
-    if (body.injection_trigger !== undefined) fields.injection_trigger = body.injection_trigger;
-    if (body.enabled !== undefined) fields.enabled = body.enabled;
-    if (body.extra !== undefined) {
-      // Merge extra fields into the prompt object
-      Object.assign(fields, body.extra);
+
+    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, ({ raw }) => {
+      const fields: JsonRecord = {};
+      if (body.name !== undefined) fields.name = body.name;
+      if (body.role !== undefined) fields.role = body.role;
+      if (body.content !== undefined) fields.content = body.content;
+      if (body.system_prompt !== undefined) fields.system_prompt = body.system_prompt;
+      if (body.marker !== undefined) fields.marker = body.marker;
+      if (body.injection_position !== undefined) fields.injection_position = body.injection_position;
+      if (body.injection_depth !== undefined) fields.injection_depth = body.injection_depth;
+      if (body.injection_order !== undefined) fields.injection_order = body.injection_order;
+      if (body.forbid_overrides !== undefined) fields.forbid_overrides = body.forbid_overrides;
+      if (body.injection_trigger !== undefined) fields.injection_trigger = body.injection_trigger;
+      if (body.enabled !== undefined) fields.enabled = body.enabled;
+      if (body.extra !== undefined) {
+        Object.assign(fields, body.extra);
+      }
+
+      const updated = updatePromptFieldsInRaw(raw, identifier, fields);
+      if (!updated) {
+        return { kind: "error", statusCode: 404, code: "entry_not_found", message: `Entry '${identifier}' not found` };
+      }
+
+      const validationError = validateRawPreset(raw);
+      if (validationError) {
+        return { kind: "error", statusCode: 400, code: "preset_validation_error", message: validationError };
+      }
+
+      const entry = buildEntryResponseFromRaw(raw, identifier);
+      if (!entry) {
+        return { kind: "error", statusCode: 500, code: "internal_error", message: "Failed to build preset entry response" };
+      }
+
+      return { kind: "ok", data: entry };
+    });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
     }
 
-    const updated = updatePromptFieldsInRaw(raw, identifier, fields);
-    if (!updated) {
-      return sendError(reply, 404, "entry_not_found", `Entry '${identifier}' not found`);
-    }
-
-    const validationError = validateRawPreset(raw);
-    if (validationError) {
-      return sendError(reply, 400, "preset_validation_error", validationError);
-    }
-
-    const now = Date.now();
-    savePresetRaw(db, loaded.row.id, auth.accountId, raw, now);
-
-    const entry = buildEntryResponseFromRaw(raw, identifier);
-    return reply.send({ data: entry });
+    return reply.send({ data: mutation.data });
   });
 
   // ── Delete entry ─────────────────────────────────
@@ -555,6 +612,7 @@ export async function registerPresetEntryRoutes(
       response: {
         200: deleteEntryResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -562,23 +620,22 @@ export async function registerPresetEntryRoutes(
     if (!parsedParams.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const loaded = loadPresetRaw(db, parsedParams.data.preset_id, auth.accountId);
-    if (!loaded) {
-      return sendError(reply, 404, "not_found", "Preset not found");
-    }
-
-    const { raw } = loaded;
     const identifier = parsedParams.data.identifier;
 
-    const removed = removePromptFromRaw(raw, identifier);
-    if (!removed) {
-      return sendError(reply, 404, "entry_not_found", `Entry '${identifier}' not found`);
+    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, ({ raw }) => {
+      const removed = removePromptFromRaw(raw, identifier);
+      if (!removed) {
+        return { kind: "error", statusCode: 404, code: "entry_not_found", message: `Entry '${identifier}' not found` };
+      }
+
+      return { kind: "ok", data: { identifier, deleted: true } };
+    });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
     }
 
-    const now = Date.now();
-    savePresetRaw(db, loaded.row.id, auth.accountId, raw, now);
-
-    return reply.send({ data: { identifier, deleted: true } });
+    return reply.send({ data: mutation.data });
   });
 
   // ── Reorder entries ──────────────────────────────
@@ -593,6 +650,7 @@ export async function registerPresetEntryRoutes(
       response: {
         200: entryListResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -604,30 +662,31 @@ export async function registerPresetEntryRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const loaded = loadPresetRaw(db, parsedParams.data.preset_id, auth.accountId);
-    if (!loaded) {
-      return sendError(reply, 404, "not_found", "Preset not found");
-    }
 
-    const { raw } = loaded;
-    reorderPromptsInRaw(raw, parsedBody.data.identifiers);
+    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, ({ row, raw }) => {
+      reorderPromptsInRaw(raw, parsedBody.data.identifiers);
 
-    const validationError = validateRawPreset(raw);
-    if (validationError) {
-      return sendError(reply, 400, "preset_validation_error", validationError);
-    }
+      const validationError = validateRawPreset(raw);
+      if (validationError) {
+        return { kind: "error", statusCode: 400, code: "preset_validation_error", message: validationError };
+      }
 
-    const now = Date.now();
-    savePresetRaw(db, loaded.row.id, auth.accountId, raw, now);
-
-    const { entries, defaultCharacterId } = getAllEditorEntriesFromRaw(raw);
-    return reply.send({
-      data: {
-        preset_id: loaded.row.id,
-        default_character_id: defaultCharacterId,
-        entries,
-      },
+      const { entries, defaultCharacterId } = getAllEditorEntriesFromRaw(raw);
+      return {
+        kind: "ok",
+        data: {
+          preset_id: row.id,
+          default_character_id: defaultCharacterId,
+          entries,
+        },
+      };
     });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
+    }
+
+    return reply.send({ data: mutation.data });
   });
 
   // ── Batch update ─────────────────────────────────
@@ -642,6 +701,7 @@ export async function registerPresetEntryRoutes(
       response: {
         200: batchResultJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -653,56 +713,57 @@ export async function registerPresetEntryRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const loaded = loadPresetRaw(db, parsedParams.data.preset_id, auth.accountId);
-    if (!loaded) {
-      return sendError(reply, 404, "not_found", "Preset not found");
-    }
-
-    const { raw } = loaded;
     const bodyFields = parsedBody.data.fields;
-    const fields: JsonRecord = {};
-    if (bodyFields.name !== undefined) fields.name = bodyFields.name;
-    if (bodyFields.role !== undefined) fields.role = bodyFields.role;
-    if (bodyFields.content !== undefined) fields.content = bodyFields.content;
-    if (bodyFields.system_prompt !== undefined) fields.system_prompt = bodyFields.system_prompt;
-    if (bodyFields.marker !== undefined) fields.marker = bodyFields.marker;
-    if (bodyFields.injection_position !== undefined) fields.injection_position = bodyFields.injection_position;
-    if (bodyFields.injection_depth !== undefined) fields.injection_depth = bodyFields.injection_depth;
-    if (bodyFields.injection_order !== undefined) fields.injection_order = bodyFields.injection_order;
-    if (bodyFields.forbid_overrides !== undefined) fields.forbid_overrides = bodyFields.forbid_overrides;
-    if (bodyFields.injection_trigger !== undefined) fields.injection_trigger = bodyFields.injection_trigger;
-    if (bodyFields.enabled !== undefined) fields.enabled = bodyFields.enabled;
-    if (bodyFields.extra !== undefined) Object.assign(fields, bodyFields.extra);
+    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, ({ raw }) => {
+      const fields: JsonRecord = {};
+      if (bodyFields.name !== undefined) fields.name = bodyFields.name;
+      if (bodyFields.role !== undefined) fields.role = bodyFields.role;
+      if (bodyFields.content !== undefined) fields.content = bodyFields.content;
+      if (bodyFields.system_prompt !== undefined) fields.system_prompt = bodyFields.system_prompt;
+      if (bodyFields.marker !== undefined) fields.marker = bodyFields.marker;
+      if (bodyFields.injection_position !== undefined) fields.injection_position = bodyFields.injection_position;
+      if (bodyFields.injection_depth !== undefined) fields.injection_depth = bodyFields.injection_depth;
+      if (bodyFields.injection_order !== undefined) fields.injection_order = bodyFields.injection_order;
+      if (bodyFields.forbid_overrides !== undefined) fields.forbid_overrides = bodyFields.forbid_overrides;
+      if (bodyFields.injection_trigger !== undefined) fields.injection_trigger = bodyFields.injection_trigger;
+      if (bodyFields.enabled !== undefined) fields.enabled = bodyFields.enabled;
+      if (bodyFields.extra !== undefined) Object.assign(fields, bodyFields.extra);
 
-    let updated = 0;
-    const results = parsedBody.data.identifiers.map((identifier, index) => {
-      const result = updatePromptFieldsInRaw(raw, identifier, { ...fields });
-      if (result) {
-        updated++;
-        const entry = buildEntryResponseFromRaw(raw, identifier);
-        return { index, identifier, action: "updated" as const, data: entry };
+      let updated = 0;
+      const results = parsedBody.data.identifiers.map((identifier, index) => {
+        const result = updatePromptFieldsInRaw(raw, identifier, { ...fields });
+        if (result) {
+          updated++;
+          const entry = buildEntryResponseFromRaw(raw, identifier);
+          return { index, identifier, action: "updated" as const, data: entry };
+        }
+        return { index, identifier, action: "not_found" as const };
+      });
+
+      const validationError = validateRawPreset(raw);
+      if (validationError) {
+        return { kind: "error", statusCode: 400, code: "preset_validation_error", message: validationError };
       }
-      return { index, identifier, action: "not_found" as const };
+
+      return {
+        kind: "ok",
+        changed: updated > 0,
+        data: {
+          results,
+          meta: {
+            total: results.length,
+            updated,
+            not_found: results.length - updated,
+          },
+        },
+      };
     });
 
-    const validationError = validateRawPreset(raw);
-    if (validationError) {
-      return sendError(reply, 400, "preset_validation_error", validationError);
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
     }
 
-    const now = Date.now();
-    savePresetRaw(db, loaded.row.id, auth.accountId, raw, now);
-
-    return reply.send({
-      data: {
-        results,
-        meta: {
-          total: results.length,
-          updated,
-          not_found: results.length - updated,
-        },
-      },
-    });
+    return reply.send({ data: mutation.data });
   });
 
   // ── Batch delete ─────────────────────────────────
@@ -717,6 +778,7 @@ export async function registerPresetEntryRoutes(
       response: {
         200: batchResultJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -727,33 +789,35 @@ export async function registerPresetEntryRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const loaded = loadPresetRaw(db, parsedParams.data.preset_id, auth.accountId);
-    if (!loaded) {
-      return sendError(reply, 404, "not_found", "Preset not found");
+
+    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, ({ raw }) => {
+      const removedSet = new Set(removePromptsFromRaw(raw, parsedBody.data.identifiers));
+
+      const results = parsedBody.data.identifiers.map((identifier, index) => {
+        if (removedSet.has(identifier)) {
+          return { index, identifier, action: "deleted" as const };
+        }
+        return { index, identifier, action: "not_found" as const };
+      });
+
+      return {
+        kind: "ok",
+        changed: removedSet.size > 0,
+        data: {
+          results,
+          meta: {
+            total: results.length,
+            deleted: removedSet.size,
+            not_found: results.length - removedSet.size,
+          },
+        },
+      };
+    });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
     }
 
-    const { raw } = loaded;
-    const removedSet = new Set(removePromptsFromRaw(raw, parsedBody.data.identifiers));
-
-    const now = Date.now();
-    savePresetRaw(db, loaded.row.id, auth.accountId, raw, now);
-
-    const results = parsedBody.data.identifiers.map((identifier, index) => {
-      if (removedSet.has(identifier)) {
-        return { index, identifier, action: "deleted" as const };
-      }
-      return { index, identifier, action: "not_found" as const };
-    });
-
-    return reply.send({
-      data: {
-        results,
-        meta: {
-          total: results.length,
-          deleted: removedSet.size,
-          not_found: results.length - removedSet.size,
-        },
-      },
-    });
+    return reply.send({ data: mutation.data });
   });
 }

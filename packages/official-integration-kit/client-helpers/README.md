@@ -187,11 +187,18 @@ try {
 | `generation_timeout` | `server` | 是 |
 | `commit_busy` | `server` | 是 |
 | `commit_conflict` | `conflict` | 是 |
+| `preset_conflict` | `conflict` | 是 |
+| `worldbook_conflict` | `conflict` | 是 |
+| `regex_profile_conflict` | `conflict` | 是 |
 | `turn_commit_failed` | `server` | 是 |
 
 这样做的目的是让界面默认语义更稳定。同时，原始 `code` 仍会保留在返回结果里，接入方如果需要更细的 UI 分支，仍可继续自行判断。
 
+这也覆盖了资源编辑时的新版本冲突场景。比如 preset、worldbook、regex profile 的乐观锁写入失败，会落到 `conflict` 且保持可重试。
+
 这条规则同样覆盖流式 `respond/stream` 的 SSE `error` 事件。流已经建立后，SDK 抛出的 `TavernApiError.status` 可能仍然是 `200`，但 `code` 会保留为 `generation_timeout`、`commit_busy`、`generation_queue_timeout` 等值，因此 helper 会优先按 `code` 处理。
+
+默认服务配置仍是 `queueMode: "reject"`，所以同一 `session + branch` 的并发请求通常更容易看到 `generation_conflict`。`generation_queue_timeout` 一般只会在服务端显式启用 `queue` 模式时出现，而且排队范围仍只限单实例进程内。
 
 ## 设计边界
 

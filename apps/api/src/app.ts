@@ -15,7 +15,11 @@ import {
   ChatServiceError,
   type ResolvedTurnModels,
 } from "./services/chat-service";
-import { InMemoryGenerationCoordinator } from "./services/generation-guard-service";
+import {
+  InMemoryGenerationCoordinator,
+  type GenerationCoordinator,
+  type GenerationExecutionMode,
+} from "./services/generation-guard-service";
 import {
   MemoryMaintenanceService,
   type MemoryMaintenancePolicy,
@@ -111,6 +115,22 @@ export type BuildAppOptions = {
   enableMemoryConsolidation?: boolean;
   /** 服务端默认生成超时（毫秒） */
   llmDefaultTimeoutMs?: number;
+  /**
+   * 生成协调器实现。
+   * 默认使用单实例内存协调器。
+   * 若后续需要共享锁或共享队列，可从这里注入自定义实现。
+   */
+  generationCoordinator?: GenerationCoordinator;
+  /**
+   * 同一 session + branch 的生成并发策略。
+   * 默认保持 reject。
+   */
+  generationQueueMode?: GenerationExecutionMode;
+  /**
+   * queue 模式下的排队等待超时（毫秒）。
+   * 默认沿用 ChatService 的 5000。
+   */
+  generationQueueTimeoutMs?: number;
   /** commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数 */
   turnCommitMaxRetries?: number;
   /** commit 重试基础退避时间（毫秒） */
@@ -375,9 +395,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       memoryStore: options.enableMemory ? activeOrchestrationContext.memoryStore : undefined,
     }));
     toolRegistry.register(new ResourceToolProvider(database.db));
-    const generationCoordinator = new InMemoryGenerationCoordinator();
+    // 默认协调器仍为单实例内存实现。
+    // queueMode 只影响当前进程内的互斥 / 排队行为，
+    // 不提供跨实例共享锁或共享队列。
+    const generationCoordinator = options.generationCoordinator ?? new InMemoryGenerationCoordinator();
 
-    // MCP 工具提供者在 mcpManager 初始化后通过 mcpManager 注册（见下方）
+    // MCP 工具提供者在 mcpManager 初始化后通过 mcpManager 注册（见下方）。
 
     const chatService = new ChatService(
       database.db,
@@ -432,7 +455,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         },
         generationCoordinator,
         executionPolicy: {
-          queueMode: "reject",
+          queueMode: options.generationQueueMode,
+          queueTimeoutMs: options.generationQueueTimeoutMs,
           executionTimeoutMs: options.llmDefaultTimeoutMs,
           commitRetry: {
             maxRetries: options.turnCommitMaxRetries,

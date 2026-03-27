@@ -346,6 +346,9 @@ describe("mapApiErrorToUiState", () => {
     ["generation_timeout", 200, "server", true],
     ["commit_busy", 200, "server", true],
     ["commit_conflict", 500, "conflict", true],
+    ["preset_conflict", 409, "conflict", true],
+    ["worldbook_conflict", 409, "conflict", true],
+    ["regex_profile_conflict", 409, "conflict", true],
     ["turn_commit_failed", 409, "server", true],
   ] as const)("prefers known api code mapping for %s", (code, status, kind, retryable) => {
     const mapped = mapApiErrorToUiState(

@@ -9577,7 +9577,8 @@ export interface operations {
                      *           "id": "preset_story",
                      *           "name": "Story Preset",
                      *           "source": "sillytavern",
-                     *           "updated_at": 1735689660000
+                     *           "updated_at": 1735689660000,
+                     *           "version": 3
                      *         }
                      *       ]
                      *     }
@@ -9589,6 +9590,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         }[];
                     };
                 };
@@ -9623,7 +9625,8 @@ export interface operations {
                      *         "id": "preset_story",
                      *         "name": "Story Preset",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689660000
+                     *         "updated_at": 1735689660000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -9634,7 +9637,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -9644,6 +9648,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -9711,7 +9716,7 @@ export interface operations {
                  *           "temperature": 0.7
                  *         }
                  *       },
-                 *       "expected_updated_at": 1735689660000,
+                 *       "expected_version": 3,
                  *       "name": "Story Preset"
                  *     }
                  */
@@ -9729,6 +9734,7 @@ export interface operations {
                         };
                     };
                     expected_updated_at?: number;
+                    expected_version?: number;
                     name: string;
                 };
             };
@@ -9747,7 +9753,8 @@ export interface operations {
                      *         "id": "preset_story",
                      *         "name": "Story Preset",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689660000
+                     *         "updated_at": 1735689660000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -9758,7 +9765,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -9767,6 +9775,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -9916,7 +9925,8 @@ export interface operations {
                      *         "id": "preset_story",
                      *         "name": "Story Preset",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689660000
+                     *         "updated_at": 1735689660000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -9927,7 +9937,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -9939,6 +9950,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -10256,6 +10268,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     updatePresetEntry: {
@@ -10352,6 +10381,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchDeletePresetEntries: {
@@ -10391,6 +10437,23 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10465,6 +10528,23 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10565,6 +10645,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     listImportedRegexProfiles: {
@@ -10590,7 +10687,8 @@ export interface operations {
                      *           "id": "preset_story",
                      *           "name": "Story Preset",
                      *           "source": "sillytavern",
-                     *           "updated_at": 1735689660000
+                     *           "updated_at": 1735689660000,
+                     *           "version": 3
                      *         }
                      *       ]
                      *     }
@@ -10602,6 +10700,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         }[];
                     };
                 };
@@ -10636,7 +10735,8 @@ export interface operations {
                      *         "id": "preset_story",
                      *         "name": "Story Preset",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689660000
+                     *         "updated_at": 1735689660000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -10647,7 +10747,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -10657,6 +10758,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -10701,6 +10803,7 @@ export interface operations {
                  *         }
                  *       ],
                  *       "expected_updated_at": 1735689660000,
+                 *       "expected_version": 2,
                  *       "name": "Safety Filters"
                  *     }
                  */
@@ -10709,6 +10812,7 @@ export interface operations {
                         [key: string]: unknown;
                     }[];
                     expected_updated_at?: number;
+                    expected_version?: number;
                     name: string;
                 };
             };
@@ -10727,7 +10831,8 @@ export interface operations {
                      *         "id": "regex_safe",
                      *         "name": "Safety Filters",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689720000
+                     *         "updated_at": 1735689720000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -10738,7 +10843,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -10747,6 +10853,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -12321,7 +12428,8 @@ export interface operations {
                      *           "id": "preset_story",
                      *           "name": "Story Preset",
                      *           "source": "sillytavern",
-                     *           "updated_at": 1735689660000
+                     *           "updated_at": 1735689660000,
+                     *           "version": 3
                      *         }
                      *       ]
                      *     }
@@ -12333,6 +12441,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         }[];
                     };
                 };
@@ -12367,7 +12476,8 @@ export interface operations {
                      *         "id": "preset_story",
                      *         "name": "Story Preset",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689660000
+                     *         "updated_at": 1735689660000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -12378,7 +12488,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -12388,6 +12499,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -12435,6 +12547,7 @@ export interface operations {
                  *         ]
                  *       },
                  *       "expected_updated_at": 1735689660000,
+                 *       "expected_version": 3,
                  *       "name": "Kingdom Lore"
                  *     }
                  */
@@ -12443,6 +12556,7 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     expected_updated_at?: number;
+                    expected_version?: number;
                     name: string;
                 };
             };
@@ -12461,7 +12575,8 @@ export interface operations {
                      *         "id": "wb_kingdom",
                      *         "name": "Kingdom Lore",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689720000
+                     *         "updated_at": 1735689720000,
+                     *         "version": 4
                      *       }
                      *     }
                      */
@@ -12472,7 +12587,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -12481,6 +12597,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -12870,6 +12987,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     getWorldbookEntry: {
@@ -13046,6 +13180,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     updateWorldbookEntry: {
@@ -13206,6 +13357,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchDeleteWorldbookEntries: {
@@ -13298,6 +13466,23 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13507,6 +13692,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchUpdateWorldbookEntries: {
@@ -13697,6 +13899,23 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

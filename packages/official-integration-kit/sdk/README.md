@@ -168,9 +168,44 @@ console.log(preview.messages);
 console.log(preview.promptSnapshot.promptMode);
 console.log(preview.promptSnapshot.promptDigest);
 console.log(preview.promptSnapshot.tokenEstimate);
+console.log(preview.promptSnapshot.presetVersion);
 ```
 
 `respondDryRun()` 返回的 `promptSnapshot` 预览字段与真实提交后的 `prompt_snapshot` 对齐，适合在生成前检查 preset、worldbook、regex 和摘要注入结果。
+
+现在这份快照还会额外返回：
+
+- `presetVersion`
+- `worldbookVersion`
+- `regexProfileVersion`
+
+它们对应本轮真正冻结使用的资源版本号。
+
+### 资源更新的乐观锁
+
+`presets`、`worldbooks`、`regexProfiles` 这几类资源的列表、详情和更新响应都会返回 `version`。
+
+更新时，优先传入 `expectedVersion`：
+
+```ts
+const preset = await client.presets.getEditor({ presetId: "preset-1" });
+
+await client.presets.update({
+  presetId: preset.id,
+  name: preset.name,
+  editor: {
+    default_character_id: 100000,
+    entries: [
+      { identifier: "main", role: "system", content: "Stay in character.", enabled: true },
+    ],
+    order_contexts: [{ character_id: 100000, order: [{ identifier: "main", enabled: true }] }],
+    top_level: { temperature: 0.7 },
+  },
+  expectedVersion: preset.version,
+});
+```
+
+兼容旧调用方时，也仍然可以继续传 `expectedUpdatedAt`，但新的接入应优先使用 `expectedVersion`。
 
 ### 变量和记忆
 
@@ -307,6 +342,8 @@ try {
 一般场景直接用 `client.sessions.respondStream()` 就够了。如果需要更底层的控制，可以自己调 `readSseStream()`。
 
 需要注意的是，SSE 连接一旦已经建立，运行期错误通常不再切换 HTTP 状态码，因此这类 `TavernApiError` 的 `status` 常常仍是 `200`。接入方应同时看 `error.code`。
+
+默认服务配置仍是单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发请求通常直接返回 `generation_conflict`。只有服务端显式启用 `queue` 模式时，客户端才可能收到 `generation_queue_timeout`；即便如此，排队范围也只在当前进程内。
 
 ## 资源覆盖范围
 

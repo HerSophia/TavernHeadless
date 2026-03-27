@@ -139,8 +139,6 @@ pnpm sdk:check                    # 检查 SDK 是否最新
 
 如果改动影响了引擎对外语义、后端路由、SSE、OpenAPI 或官方接入行为，请同时检查 `@tavern/sdk`、`@tavern/client-helpers` 和对应文档是否需要同步更新。
 
-聊天生成相关的公开错误语义会区分 `generation_conflict`、`generation_timeout`、`commit_busy` 等场景；流式 SSE 在 `error` 事件的 `code` 字段返回这些错误码。
-
 **进度追踪**：
 
 - [总体进度](PROGRESS.md)

@@ -221,14 +221,16 @@ describe("E2E Chat with PromptAssembler", () => {
     return id;
   }
 
-  async function importWorldbook(): Promise<string> {
+  async function importWorldbook(
+    globalSettings: Record<string, unknown> = {}
+  ): Promise<string> {
     const id = nanoid();
     const now = Date.now();
     await database.db.insert(worldbooks).values({
       id,
       name: "Test Worldbook",
       source: "sillytavern",
-      dataJson: JSON.stringify({}),
+      dataJson: JSON.stringify(globalSettings),
       createdAt: now,
       updatedAt: now,
     });
@@ -481,10 +483,13 @@ describe("E2E Chat with PromptAssembler", () => {
     expect(snapshotRow).toBeDefined();
     expect(snapshotRow!.presetId).toBe(dryRun.promptSnapshot.presetId);
     expect(snapshotRow!.presetUpdatedAt).toBe(dryRun.promptSnapshot.presetUpdatedAt);
+    expect(snapshotRow!.presetVersion).toBe(dryRun.promptSnapshot.presetVersion);
     expect(snapshotRow!.worldbookId).toBe(dryRun.promptSnapshot.worldbookId);
     expect(snapshotRow!.worldbookUpdatedAt).toBe(dryRun.promptSnapshot.worldbookUpdatedAt);
+    expect(snapshotRow!.worldbookVersion).toBe(dryRun.promptSnapshot.worldbookVersion);
     expect(snapshotRow!.regexProfileId).toBe(dryRun.promptSnapshot.regexProfileId);
     expect(snapshotRow!.regexProfileUpdatedAt).toBe(dryRun.promptSnapshot.regexProfileUpdatedAt);
+    expect(snapshotRow!.regexProfileVersion).toBe(dryRun.promptSnapshot.regexProfileVersion);
     expect(JSON.parse(snapshotRow!.worldbookActivatedEntryUidsJson)).toEqual(
       dryRun.promptSnapshot.worldbookActivatedEntryUids
     );
@@ -525,6 +530,22 @@ describe("E2E Chat with PromptAssembler", () => {
     const input = capturedInputs[0]!;
     const allContent = input.messages.map((m) => m.content).join("\n");
     expect(allContent).toContain("Castle Camelot");
+  });
+
+  it("should honor worldbook global matching flags when entries do not override them", async () => {
+    const presetId = await importPreset();
+    const worldbookId = await importWorldbook({
+      caseSensitive: true,
+      matchWholeWords: true,
+      scanDepth: 5,
+    });
+    const sessionId = await createSession({ presetId, worldbookId });
+
+    const blocked = await chatService.dryRun(sessionId, { message: "I found a Swordsmanship manual." });
+    expect(blocked.messages.map((message) => message.content).join("\n")).not.toContain("Excalibur");
+
+    const matched = await chatService.dryRun(sessionId, { message: "The sword is here." });
+    expect(matched.messages.map((message) => message.content).join("\n")).toContain("Excalibur");
   });
 
   // ── 测试：正则处理 ──

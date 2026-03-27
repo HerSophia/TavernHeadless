@@ -131,6 +131,29 @@ console.log(preview.promptSnapshot.promptMode);
 console.log(preview.promptSnapshot.promptDigest);
 ```
 
+`respondDryRun()` 的 `promptSnapshot` 现在也会带上 `presetVersion`、`worldbookVersion`、`regexProfileVersion`，用来表示本轮真正冻结使用的资源版本。
+
+### 资源更新的版本并发控制
+
+`@tavern/sdk` 读取 preset、worldbook、regex profile 时，会把后端返回的 `version` 一并保留下来。
+
+更新时，优先传 `expectedVersion`：
+
+```ts
+const worldbook = await client.worldbooks.getDetail({
+  worldbookId: "worldbook-1",
+});
+
+await client.worldbooks.update({
+  worldbookId: worldbook.id,
+  name: worldbook.name,
+  data: worldbook.data,
+  expectedVersion: worldbook.version,
+});
+```
+
+兼容旧调用方时，也仍然可以继续传 `expectedUpdatedAt`。新的接入建议统一切到 `expectedVersion`。
+
 ```ts
 // 读取带结构化 factKey 的事实记忆
 const memories = await client.memories.list({
@@ -195,9 +218,20 @@ try {
 - `generation_timeout` → `server`
 - `commit_busy` → `server`
 - `commit_conflict` → `conflict`
+- `preset_conflict` → `conflict`
+- `worldbook_conflict` → `conflict`
+- `regex_profile_conflict` → `conflict`
 - `turn_commit_failed` → `server`
 
 这条规则同样覆盖流式 `respond/stream` 的 SSE `error` 事件。流已经建立后，SDK 抛出的 `TavernApiError.status` 可能仍然是 `200`，但 `code` 会保留下来，因此接入方应优先看 `code`。
+
+默认服务配置仍是单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发请求通常直接返回 `generation_conflict`。只有服务端显式启用 `queue` 模式时，接入方才可能看到 `generation_queue_timeout`；即便如此，排队范围也只在当前进程内。
+
+### 资源乐观锁与版本快照
+
+`presets`、`worldbooks`、`regexProfiles` 的列表、详情和更新响应都会返回 `version`。更新时应优先回填 `expectedVersion`，避免静默覆盖。
+
+`respondDryRun()` 返回的 `promptSnapshot` 也会带 `presetVersion`、`worldbookVersion`、`regexProfileVersion`，用于说明本轮真正冻结使用的资源版本。
 
 ## SDK 资源覆盖范围
 

@@ -18,7 +18,7 @@ import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
-import type { DatabaseConnection } from "../db/client";
+import type { AppDb, DatabaseConnection, DbExecutor } from "../db/client";
 import { errorResponseJsonSchema } from "./schemas/common.js";
 import { worldbookEntries, worldbooks } from "../db/schema";
 import { parseJsonField, parseWithSchema, sendError } from "../lib/http";
@@ -544,6 +544,20 @@ const batchReorderEntriesResponseJsonSchema = {
 
 // ── Helpers ───────────────────────────────────────────
 
+type WorldbookMutationResult<T> =
+  | { kind: "ok"; data: T; changed?: boolean }
+  | { kind: "error"; statusCode: number; code: string; message: string };
+
+class WorldbookVersionConflictError extends Error {
+  constructor() {
+    super("worldbook_version_conflict");
+  }
+}
+
+function loadOwnedWorldbook(db: AppDb | DbExecutor, worldbookId: string, accountId: string) {
+  return db.select().from(worldbooks).where(and(eq(worldbooks.id, worldbookId), eq(worldbooks.accountId, accountId))).get();
+}
+
 function toEntryResponse(row: typeof worldbookEntries.$inferSelect) {
   return {
     id: row.id,
@@ -596,6 +610,56 @@ function buildEntryUpdates(
   if (fields.match_whole_words !== undefined) updates.matchWholeWords = fields.match_whole_words;
 
   return updates;
+}
+
+function bumpWorldbookVersion(
+  db: AppDb | DbExecutor,
+  worldbookId: string,
+  accountId: string,
+  expectedVersion: number,
+  now: number
+): boolean {
+  const updateResult = db
+    .update(worldbooks)
+    .set({ updatedAt: now, version: expectedVersion + 1 })
+    .where(and(eq(worldbooks.id, worldbookId), eq(worldbooks.accountId, accountId), eq(worldbooks.version, expectedVersion)))
+    .run();
+
+  return updateResult.changes > 0;
+}
+
+function withWorldbookWriteCas<T>(
+  db: AppDb,
+  worldbookId: string,
+  accountId: string,
+  mutate: (tx: DbExecutor, worldbook: typeof worldbooks.$inferSelect, now: number) => WorldbookMutationResult<T>
+): WorldbookMutationResult<T> {
+  try {
+    return db.transaction((tx) => {
+      const worldbook = loadOwnedWorldbook(tx, worldbookId, accountId);
+      if (!worldbook) {
+        return { kind: "error", statusCode: 404, code: "not_found", message: "Worldbook not found" };
+      }
+
+      const now = Date.now();
+      const result = mutate(tx, worldbook, now);
+      if (result.kind !== "ok") {
+        return result;
+      }
+      if (result.changed === false) {
+        return result;
+      }
+      if (!bumpWorldbookVersion(tx, worldbook.id, accountId, worldbook.version, now)) {
+        throw new WorldbookVersionConflictError();
+      }
+      return result;
+    });
+  } catch (error) {
+    if (error instanceof WorldbookVersionConflictError) {
+      return { kind: "error", statusCode: 409, code: "worldbook_conflict", message: "Worldbook has been modified by another operation" };
+    }
+    throw error;
+  }
 }
 
 // ── Route Registration ────────────────────────────────
@@ -713,6 +777,7 @@ export async function registerWorldbookEntryRoutes(
       response: {
         201: entryResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -721,58 +786,61 @@ export async function registerWorldbookEntryRoutes(
     if (!parsedParams.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [wb] = await db
-      .select({ id: worldbooks.id })
-      .from(worldbooks)
-      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
-
-    if (!wb) {
-      return sendError(reply, 404, "not_found", "Worldbook not found");
-    }
-
     const parsedBody = parseWithSchema(createEntrySchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const [maxUidRow] = await db
-      .select({ maxUid: max(worldbookEntries.uid) })
-      .from(worldbookEntries)
-      .where(eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id));
+    const mutation = withWorldbookWriteCas(
+      db,
+      parsedParams.data.worldbook_id,
+      auth.accountId,
+      (tx, worldbook, now) => {
+        const maxUidRow = tx
+          .select({ maxUid: max(worldbookEntries.uid) })
+          .from(worldbookEntries)
+          .where(eq(worldbookEntries.worldbookId, worldbook.id))
+          .get();
 
-    const nextUid = (maxUidRow?.maxUid ?? -1) + 1;
-    const now = Date.now();
+        const nextUid = (maxUidRow?.maxUid ?? -1) + 1;
+        const [created] = tx
+          .insert(worldbookEntries)
+          .values({
+            id: nanoid(),
+            worldbookId: worldbook.id,
+            uid: nextUid,
+            comment: parsedBody.data.comment ?? "",
+            content: parsedBody.data.content,
+            keysJson: JSON.stringify(parsedBody.data.keys),
+            keysSecondaryJson: JSON.stringify(parsedBody.data.keys_secondary ?? []),
+            selective: parsedBody.data.selective ?? true,
+            selectiveLogic: parsedBody.data.selective_logic ?? 0,
+            constant: parsedBody.data.constant ?? false,
+            position: parsedBody.data.position ?? 0,
+            order: parsedBody.data.order ?? 100,
+            depth: parsedBody.data.depth ?? 4,
+            role: parsedBody.data.role ?? 0,
+            disable: parsedBody.data.disable ?? false,
+            scanDepth: parsedBody.data.scan_depth ?? null,
+            caseSensitive: parsedBody.data.case_sensitive ?? null,
+            matchWholeWords: parsedBody.data.match_whole_words ?? null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning()
+          .all();
 
-    const createdRows = await db
-      .insert(worldbookEntries)
-      .values({
-        id: nanoid(),
-        worldbookId: parsedParams.data.worldbook_id,
-        uid: nextUid,
-        comment: parsedBody.data.comment ?? "",
-        content: parsedBody.data.content,
-        keysJson: JSON.stringify(parsedBody.data.keys),
-        keysSecondaryJson: JSON.stringify(parsedBody.data.keys_secondary ?? []),
-        selective: parsedBody.data.selective ?? true,
-        selectiveLogic: parsedBody.data.selective_logic ?? 0,
-        constant: parsedBody.data.constant ?? false,
-        position: parsedBody.data.position ?? 0,
-        order: parsedBody.data.order ?? 100,
-        depth: parsedBody.data.depth ?? 4,
-        role: parsedBody.data.role ?? 0,
-        disable: parsedBody.data.disable ?? false,
-        scanDepth: parsedBody.data.scan_depth ?? null,
-        caseSensitive: parsedBody.data.case_sensitive ?? null,
-        matchWholeWords: parsedBody.data.match_whole_words ?? null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
+        if (!created) {
+          return { kind: "error", statusCode: 500, code: "internal_error", message: "Failed to create entry" };
+        }
 
-    const created = createdRows[0];
-    if (!created) {
-      return sendError(reply, 500, "internal_error", "Failed to create entry");
+        return { kind: "ok", data: toEntryResponse(created) };
+      }
+    );
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
     }
 
-    return reply.code(201).send({ data: toEntryResponse(created) });
+    return reply.code(201).send({ data: mutation.data });
   });
 
   // ── Batch update ─────────────────────────────────
@@ -787,6 +855,7 @@ export async function registerWorldbookEntryRoutes(
       response: {
         200: batchUpdateEntriesResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -795,56 +864,46 @@ export async function registerWorldbookEntryRoutes(
     if (!parsedParams.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [wb] = await db
-      .select({ id: worldbooks.id })
-      .from(worldbooks)
-      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
-
-    if (!wb) {
-      return sendError(reply, 404, "not_found", "Worldbook not found");
-    }
-
     const parsedBody = parseWithSchema(batchUpdateEntriesSchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const now = Date.now();
-    const updates = buildEntryUpdates(parsedBody.data.fields, now);
+    const mutation = withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, (tx, worldbook, now) => {
+      const updates = buildEntryUpdates(parsedBody.data.fields, now);
+      const updatedRows = tx
+        .update(worldbookEntries)
+        .set(updates)
+        .where(and(inArray(worldbookEntries.id, parsedBody.data.ids), eq(worldbookEntries.worldbookId, worldbook.id)))
+        .returning()
+        .all();
 
-    const updatedRows = await db
-      .update(worldbookEntries)
-      .set(updates)
-      .where(
-        and(
-          inArray(worldbookEntries.id, parsedBody.data.ids),
-          eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
-        )
-      )
-      .returning();
+      const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
+      const results = parsedBody.data.ids.map((id, index) => {
+        const row = updatedById.get(id);
+        if (!row) {
+          return { index, id, action: "not_found" as const };
+        }
+        return { index, id, action: "updated" as const, data: toEntryResponse(row) };
+      });
 
-    const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
-    const results = parsedBody.data.ids.map((id, index) => {
-      const row = updatedById.get(id);
-      if (!row) {
-        return { index, id, action: "not_found" as const };
-      }
       return {
-        index,
-        id,
-        action: "updated" as const,
-        data: toEntryResponse(row),
+        kind: "ok",
+        changed: updatedRows.length > 0,
+        data: {
+          results,
+          meta: {
+            total: results.length,
+            updated: updatedRows.length,
+            not_found: results.length - updatedRows.length,
+          },
+        },
       };
     });
 
-    return reply.send({
-      data: {
-        results,
-        meta: {
-          total: results.length,
-          updated: updatedRows.length,
-          not_found: results.length - updatedRows.length,
-        },
-      },
-    });
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
+    }
+
+    return reply.send({ data: mutation.data });
   });
 
   // ── Batch delete ─────────────────────────────────
@@ -859,6 +918,7 @@ export async function registerWorldbookEntryRoutes(
       response: {
         200: batchDeleteEntriesResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -867,45 +927,42 @@ export async function registerWorldbookEntryRoutes(
     if (!parsedParams.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [wb] = await db
-      .select({ id: worldbooks.id })
-      .from(worldbooks)
-      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
-
-    if (!wb) {
-      return sendError(reply, 404, "not_found", "Worldbook not found");
-    }
-
     const parsedBody = parseWithSchema(batchDeleteEntriesSchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const deletedRows = await db
-      .delete(worldbookEntries)
-      .where(
-        and(
-          inArray(worldbookEntries.id, parsedBody.data.ids),
-          eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
-        )
-      )
-      .returning();
+    const mutation = withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, (tx, worldbook) => {
+      const deletedRows = tx
+        .delete(worldbookEntries)
+        .where(and(inArray(worldbookEntries.id, parsedBody.data.ids), eq(worldbookEntries.worldbookId, worldbook.id)))
+        .returning()
+        .all();
 
-    const deletedIds = new Set(deletedRows.map((row) => row.id));
-    const results = parsedBody.data.ids.map((id, index) => ({
-      index,
-      id,
-      action: deletedIds.has(id) ? ("deleted" as const) : ("not_found" as const),
-    }));
+      const deletedIds = new Set(deletedRows.map((row) => row.id));
+      const results = parsedBody.data.ids.map((id, index) => ({
+        index,
+        id,
+        action: deletedIds.has(id) ? ("deleted" as const) : ("not_found" as const),
+      }));
 
-    return reply.send({
-      data: {
-        results,
-        meta: {
-          total: results.length,
-          deleted: deletedRows.length,
-          not_found: results.length - deletedRows.length,
+      return {
+        kind: "ok",
+        changed: deletedRows.length > 0,
+        data: {
+          results,
+          meta: {
+            total: results.length,
+            deleted: deletedRows.length,
+            not_found: results.length - deletedRows.length,
+          },
         },
-      },
+      };
     });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
+    }
+
+    return reply.send({ data: mutation.data });
   });
 
   // ── Batch reorder ────────────────────────────────
@@ -920,6 +977,7 @@ export async function registerWorldbookEntryRoutes(
       response: {
         200: batchReorderEntriesResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -928,33 +986,16 @@ export async function registerWorldbookEntryRoutes(
     if (!parsedParams.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [wb] = await db
-      .select({ id: worldbooks.id })
-      .from(worldbooks)
-      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
-
-    if (!wb) {
-      return sendError(reply, 404, "not_found", "Worldbook not found");
-    }
-
     const parsedBody = parseWithSchema(batchReorderEntriesSchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const now = Date.now();
-
-    const batchResult = db.transaction((tx) => {
+    const mutation = withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, (tx, worldbook, now) => {
       let updated = 0;
-
       const results = parsedBody.data.items.map((item, index) => {
         const existing = tx
           .select()
           .from(worldbookEntries)
-          .where(
-            and(
-              eq(worldbookEntries.id, item.id),
-              eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
-            )
-          )
+          .where(and(eq(worldbookEntries.id, item.id), eq(worldbookEntries.worldbookId, worldbook.id)))
           .get();
 
         if (!existing) {
@@ -976,16 +1017,24 @@ export async function registerWorldbookEntryRoutes(
       });
 
       return {
-        results,
-        meta: {
-          total: results.length,
-          updated,
-          not_found: results.length - updated,
+        kind: "ok",
+        changed: updated > 0,
+        data: {
+          results,
+          meta: {
+            total: results.length,
+            updated,
+            not_found: results.length - updated,
+          },
         },
       };
     });
 
-    return reply.send({ data: batchResult });
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
+    }
+
+    return reply.send({ data: mutation.data });
   });
 
   // ── Get entry ────────────────────────────────────
@@ -1044,6 +1093,7 @@ export async function registerWorldbookEntryRoutes(
       response: {
         200: entryResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -1052,37 +1102,30 @@ export async function registerWorldbookEntryRoutes(
     if (!parsedParams.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [wb] = await db
-      .select({ id: worldbooks.id })
-      .from(worldbooks)
-      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
-
-    if (!wb) {
-      return sendError(reply, 404, "not_found", "Worldbook not found");
-    }
-
     const parsedBody = parseWithSchema(updateEntrySchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const now = Date.now();
-    const updates = buildEntryUpdates(parsedBody.data, now);
+    const mutation = withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, (tx, worldbook, now) => {
+      const updates = buildEntryUpdates(parsedBody.data, now);
+      const [updated] = tx
+        .update(worldbookEntries)
+        .set(updates)
+        .where(and(eq(worldbookEntries.id, parsedParams.data.id), eq(worldbookEntries.worldbookId, worldbook.id)))
+        .returning()
+        .all();
 
-    const [updated] = await db
-      .update(worldbookEntries)
-      .set(updates)
-      .where(
-        and(
-          eq(worldbookEntries.id, parsedParams.data.id),
-          eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
-        )
-      )
-      .returning();
+      if (!updated) {
+        return { kind: "error", statusCode: 404, code: "not_found", message: "Worldbook entry not found" };
+      }
 
-    if (!updated) {
-      return sendError(reply, 404, "not_found", "Worldbook entry not found");
+      return { kind: "ok", data: toEntryResponse(updated) };
+    });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
     }
 
-    return reply.send({ data: toEntryResponse(updated) });
+    return reply.send({ data: mutation.data });
   });
 
   // ── Delete entry ─────────────────────────────────
@@ -1096,6 +1139,7 @@ export async function registerWorldbookEntryRoutes(
       response: {
         200: deleteResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -1103,29 +1147,24 @@ export async function registerWorldbookEntryRoutes(
     if (!parsedParams.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [wb] = await db
-      .select({ id: worldbooks.id })
-      .from(worldbooks)
-      .where(and(eq(worldbooks.id, parsedParams.data.worldbook_id), eq(worldbooks.accountId, auth.accountId)));
+    const mutation = withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, (tx, worldbook) => {
+      const deleted = tx
+        .delete(worldbookEntries)
+        .where(and(eq(worldbookEntries.id, parsedParams.data.id), eq(worldbookEntries.worldbookId, worldbook.id)))
+        .returning()
+        .all();
 
-    if (!wb) {
-      return sendError(reply, 404, "not_found", "Worldbook not found");
+      if (deleted.length === 0) {
+        return { kind: "error", statusCode: 404, code: "not_found", message: "Worldbook entry not found" };
+      }
+
+      return { kind: "ok", data: { id: parsedParams.data.id, deleted: true } };
+    });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
     }
 
-    const deleted = await db
-      .delete(worldbookEntries)
-      .where(
-        and(
-          eq(worldbookEntries.id, parsedParams.data.id),
-          eq(worldbookEntries.worldbookId, parsedParams.data.worldbook_id)
-        )
-      )
-      .returning();
-
-    if (deleted.length === 0) {
-      return sendError(reply, 404, "not_found", "Worldbook entry not found");
-    }
-
-    return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
+    return reply.send({ data: mutation.data });
   });
 }

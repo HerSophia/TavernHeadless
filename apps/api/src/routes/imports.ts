@@ -151,18 +151,21 @@ const presetEditorDocumentSchema = z.object({
 const updatePresetSchema = z.object({
   name: z.string().trim().min(1),
   editor: presetEditorDocumentSchema,
+  expected_version: z.number().int().positive().optional(),
   expected_updated_at: z.number().int().nonnegative().optional()
 });
 
 const updateWorldbookSchema = z.object({
   name: z.string().trim().min(1),
   data: z.record(z.unknown()),
+  expected_version: z.number().int().positive().optional(),
   expected_updated_at: z.number().int().nonnegative().optional()
 });
 
 const updateRegexProfileSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   data: z.array(z.record(z.unknown())),
+  expected_version: z.number().int().positive().optional(),
   expected_updated_at: z.number().int().nonnegative().optional(),
 });
 
@@ -174,6 +177,7 @@ const resourceListItemExample = {
   name: "Story Preset",
   source: "sillytavern",
   created_at: 1735689600000,
+  version: 3,
   updated_at: 1735689660000,
 } as const;
 
@@ -290,7 +294,7 @@ const resourceDetailResponseExample = {
 
 const presetEditorBodyExample = {
   name: "Story Preset",
-  expected_updated_at: 1735689660000,
+  expected_version: 3,
   editor: {
     default_character_id: 100000,
     entries: [
@@ -340,6 +344,7 @@ const worldbookUpdateBodyExample = {
       },
     ],
   },
+  expected_version: 3,
   expected_updated_at: 1735689660000,
 } as const;
 
@@ -350,6 +355,7 @@ const worldbookUpdateResponseExample = {
     source: "sillytavern",
     created_at: 1735689600000,
     updated_at: 1735689720000,
+    version: 4,
   },
 } as const;
 
@@ -362,6 +368,7 @@ const regexProfileUpdateBodyExample = {
       replace: "",
     },
   ],
+  expected_version: 2,
   expected_updated_at: 1735689660000,
 } as const;
 
@@ -372,6 +379,7 @@ const regexProfileUpdateResponseExample = {
     source: "sillytavern",
     created_at: 1735689600000,
     updated_at: 1735689720000,
+    version: 3,
   },
 } as const;
 
@@ -423,13 +431,14 @@ const importCharacterBodyJsonSchema = {
 
 const resourceListItemJsonSchema = {
   type: "object",
-  required: ["id", "name", "source", "created_at", "updated_at"],
+  required: ["id", "name", "source", "created_at", "updated_at", "version"],
   properties: {
     id: { type: "string" },
     name: { type: "string" },
     source: { type: "string" },
     created_at: { type: "integer", minimum: 0 },
-    updated_at: { type: "integer", minimum: 0 }
+    updated_at: { type: "integer", minimum: 0 },
+    version: { type: "integer", minimum: 1 }
   },
   examples: [resourceListItemExample],
   additionalProperties: false
@@ -582,6 +591,7 @@ const presetEditorBodyJsonSchema = {
   required: ["name", "editor"],
   properties: {
     name: { type: "string", minLength: 1 },
+    expected_version: { type: "integer", minimum: 1 },
     expected_updated_at: { type: "integer", minimum: 0 },
     editor: {
       type: "object",
@@ -638,6 +648,7 @@ const worldbookUpdateBodyJsonSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     data: { type: "object", additionalProperties: true },
+    expected_version: { type: "integer", minimum: 1 },
     expected_updated_at: { type: "integer", minimum: 0 }
   },
   examples: [worldbookUpdateBodyExample],
@@ -658,6 +669,7 @@ const regexProfileUpdateBodyJsonSchema = {
   properties: {
     name: { type: "string", minLength: 1 },
     data: { type: "array", items: { type: "object", additionalProperties: true } },
+    expected_version: { type: "integer", minimum: 1 },
     expected_updated_at: { type: "integer", minimum: 0 },
   },
   examples: [regexProfileUpdateBodyExample],
@@ -671,6 +683,51 @@ const regexProfileUpdateResponseJsonSchema = {
   examples: [regexProfileUpdateResponseExample],
   additionalProperties: false,
 } as const;
+
+type ResourceConcurrencyBody = {
+  expected_version?: number;
+  expected_updated_at?: number;
+};
+
+type VersionedResourceRow = {
+  id: string;
+  name: string;
+  source: string;
+  createdAt: number;
+  updatedAt: number;
+  version: number;
+};
+
+function toResourceListItem(row: VersionedResourceRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    source: row.source,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+    version: row.version,
+  };
+}
+
+function resolveExpectedResourceVersion(
+  body: ResourceConcurrencyBody,
+  row: Pick<VersionedResourceRow, "updatedAt" | "version">,
+  conflictCode: string,
+  resourceName: string
+): { ok: true; expectedVersion: number } | { ok: false; statusCode: number; code: string; message: string } {
+  if (body.expected_version !== undefined) {
+    return { ok: true, expectedVersion: body.expected_version };
+  }
+
+  if (body.expected_updated_at !== undefined) {
+    if (body.expected_updated_at !== row.updatedAt) {
+      return { ok: false, statusCode: 409, code: conflictCode, message: `${resourceName} has been modified by another operation` };
+    }
+    return { ok: true, expectedVersion: row.version };
+  }
+
+  return { ok: false, statusCode: 400, code: "validation_error", message: "expected_version or expected_updated_at is required" };
+}
 
 // ── Route Registration ────────────────────────────────
 
@@ -1113,18 +1170,13 @@ export async function registerImportRoutes(
         source: presets.source,
         createdAt: presets.createdAt,
         updatedAt: presets.updatedAt,
+        version: presets.version,
       })
       .from(presets)
       .where(eq(presets.accountId, auth.accountId));
 
     return reply.send({
-      data: rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        source: r.source,
-        created_at: r.createdAt,
-        updated_at: r.updatedAt,
-      })),
+      data: rows.map(toResourceListItem),
     });
   });
 
@@ -1161,6 +1213,7 @@ export async function registerImportRoutes(
         source: row.source,
         data: parseJsonField(row.dataJson),
         created_at: row.createdAt,
+        version: row.version,
         updated_at: row.updatedAt,
       },
     });
@@ -1202,6 +1255,7 @@ export async function registerImportRoutes(
           source: row.source,
           editor,
           created_at: row.createdAt,
+          version: row.version,
           updated_at: row.updatedAt,
         }
       });
@@ -1246,11 +1300,8 @@ export async function registerImportRoutes(
       return sendError(reply, 404, "preset_not_found", "Preset not found");
     }
 
-    if (bodyParsed.data.expected_updated_at !== undefined && bodyParsed.data.expected_updated_at !== row.updatedAt) {
-      return sendError(reply, 409, "preset_conflict", "Preset has been modified by another operation");
-    }
-
     const now = Date.now();
+    const nextVersion = row.version + 1;
     let nextPreset: JsonRecord;
     try {
       nextPreset = toRawPresetFromEditor(bodyParsed.data.editor);
@@ -1263,20 +1314,28 @@ export async function registerImportRoutes(
       );
     }
 
-    await db.update(presets).set({
+    const expectedVersionResult = resolveExpectedResourceVersion(bodyParsed.data, row, "preset_conflict", "Preset");
+    if (!expectedVersionResult.ok) {
+      return sendError(reply, expectedVersionResult.statusCode, expectedVersionResult.code, expectedVersionResult.message);
+    }
+
+    const updateResult = db.update(presets).set({
       name: bodyParsed.data.name,
       dataJson: JSON.stringify(nextPreset),
-      updatedAt: now
-    }).where(and(eq(presets.id, row.id), eq(presets.accountId, auth.accountId)));
+      updatedAt: now,
+      version: nextVersion,
+    }).where(and(
+      eq(presets.id, row.id),
+      eq(presets.accountId, auth.accountId),
+      eq(presets.version, expectedVersionResult.expectedVersion)
+    )).run();
+
+    if (updateResult.changes === 0) {
+      return sendError(reply, 409, "preset_conflict", "Preset has been modified by another operation");
+    }
 
     return reply.send({
-      data: {
-        id: row.id,
-        name: bodyParsed.data.name,
-        source: row.source,
-        created_at: row.createdAt,
-        updated_at: now
-      }
+      data: toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion })
     });
   });
 
@@ -1327,18 +1386,13 @@ export async function registerImportRoutes(
         source: worldbooks.source,
         createdAt: worldbooks.createdAt,
         updatedAt: worldbooks.updatedAt,
+        version: worldbooks.version,
       })
       .from(worldbooks)
       .where(eq(worldbooks.accountId, auth.accountId));
 
     return reply.send({
-      data: rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        source: r.source,
-        created_at: r.createdAt,
-        updated_at: r.updatedAt,
-      })),
+      data: rows.map(toResourceListItem),
     });
   });
 
@@ -1405,6 +1459,7 @@ export async function registerImportRoutes(
         source: row.source,
         data: assembledData,
         created_at: row.createdAt,
+        version: row.version,
         updated_at: row.updatedAt,
       },
     });
@@ -1441,10 +1496,7 @@ export async function registerImportRoutes(
       return sendError(reply, 404, "worldbook_not_found", "Worldbook not found");
     }
 
-    if (bodyParsed.data.expected_updated_at !== undefined && bodyParsed.data.expected_updated_at !== row.updatedAt) {
-      return sendError(reply, 409, "worldbook_conflict", "Worldbook has been modified by another operation");
-    }
-
+    const nextVersion = row.version + 1;
     let nextWorldbook;
     try {
       nextWorldbook = parseWorldBook(bodyParsed.data.data);
@@ -1457,19 +1509,31 @@ export async function registerImportRoutes(
       );
     }
 
+    const expectedVersionResult = resolveExpectedResourceVersion(bodyParsed.data, row, "worldbook_conflict", "Worldbook");
+    if (!expectedVersionResult.ok) {
+      return sendError(reply, expectedVersionResult.statusCode, expectedVersionResult.code, expectedVersionResult.message);
+    }
+
     const now = Date.now();
     const { entries, name: _wbName, ...globalSettings } = nextWorldbook;
+    let updateApplied = false;
 
     db.transaction((tx) => {
-      tx
+      const updateResult = tx
         .update(worldbooks)
         .set({
           name: bodyParsed.data.name,
           dataJson: JSON.stringify(globalSettings),
-          updatedAt: now
+          updatedAt: now,
+          version: nextVersion,
         })
-        .where(and(eq(worldbooks.id, row.id), eq(worldbooks.accountId, auth.accountId)))
+        .where(and(eq(worldbooks.id, row.id), eq(worldbooks.accountId, auth.accountId), eq(worldbooks.version, expectedVersionResult.expectedVersion)))
         .run();
+
+      if (updateResult.changes === 0) {
+        return;
+      }
+      updateApplied = true;
 
       tx
         .delete(worldbookEntries)
@@ -1504,14 +1568,12 @@ export async function registerImportRoutes(
       }
     });
 
+    if (!updateApplied) {
+      return sendError(reply, 409, "worldbook_conflict", "Worldbook has been modified by another operation");
+    }
+
     return reply.send({
-      data: {
-        id: row.id,
-        name: bodyParsed.data.name,
-        source: row.source,
-        created_at: row.createdAt,
-        updated_at: now
-      }
+      data: toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion })
     });
   });
 
@@ -1562,18 +1624,13 @@ export async function registerImportRoutes(
         source: regexProfiles.source,
         createdAt: regexProfiles.createdAt,
         updatedAt: regexProfiles.updatedAt,
+        version: regexProfiles.version,
       })
       .from(regexProfiles)
       .where(eq(regexProfiles.accountId, auth.accountId));
 
     return reply.send({
-      data: rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        source: r.source,
-        created_at: r.createdAt,
-        updated_at: r.updatedAt,
-      })),
+      data: rows.map(toResourceListItem),
     });
   });
 
@@ -1610,6 +1667,7 @@ export async function registerImportRoutes(
         source: row.source,
         data: parseJsonField(row.dataJson),
         created_at: row.createdAt,
+        version: row.version,
         updated_at: row.updatedAt,
       },
     });
@@ -1646,10 +1704,7 @@ export async function registerImportRoutes(
       return sendError(reply, 404, "regex_profile_not_found", "Regex profile not found");
     }
 
-    if (bodyParsed.data.expected_updated_at !== undefined && bodyParsed.data.expected_updated_at !== row.updatedAt) {
-      return sendError(reply, 409, "regex_profile_conflict", "Regex profile has been modified by another operation");
-    }
-
+    const nextVersion = row.version + 1;
     let stScripts;
     try {
       stScripts = parseRegexScripts(bodyParsed.data.data);
@@ -1662,21 +1717,29 @@ export async function registerImportRoutes(
       );
     }
 
+    const expectedVersionResult = resolveExpectedResourceVersion(bodyParsed.data, row, "regex_profile_conflict", "Regex profile");
+    if (!expectedVersionResult.ok) {
+      return sendError(reply, expectedVersionResult.statusCode, expectedVersionResult.code, expectedVersionResult.message);
+    }
+
     const now = Date.now();
-    await db.update(regexProfiles).set({
+    const updateResult = db.update(regexProfiles).set({
       name: bodyParsed.data.name,
       dataJson: JSON.stringify(stScripts),
-      updatedAt: now
-    }).where(and(eq(regexProfiles.id, row.id), eq(regexProfiles.accountId, auth.accountId)));
+      updatedAt: now,
+      version: nextVersion,
+    }).where(and(
+      eq(regexProfiles.id, row.id),
+      eq(regexProfiles.accountId, auth.accountId),
+      eq(regexProfiles.version, expectedVersionResult.expectedVersion)
+    )).run();
+
+    if (updateResult.changes === 0) {
+      return sendError(reply, 409, "regex_profile_conflict", "Regex profile has been modified by another operation");
+    }
 
     return reply.send({
-      data: {
-        id: row.id,
-        name: bodyParsed.data.name,
-        source: row.source,
-        created_at: row.createdAt,
-        updated_at: now
-      }
+      data: toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion })
     });
   });
 

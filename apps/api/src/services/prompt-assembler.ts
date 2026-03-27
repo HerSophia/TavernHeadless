@@ -92,10 +92,13 @@ export interface SessionMetadata {
 export interface PromptSnapshotPreview {
   presetId: string | null;
   presetUpdatedAt: number | null;
+  presetVersion: number | null;
   worldbookId: string | null;
   worldbookUpdatedAt: number | null;
+  worldbookVersion: number | null;
   regexProfileId: string | null;
   regexProfileUpdatedAt: number | null;
+  regexProfileVersion: number | null;
   worldbookActivatedEntryUids: number[];
   regexPreRuleNames: string[];
   regexPostRuleNames: string[];
@@ -200,11 +203,11 @@ export async function assemblePrompt(
   const resourceLoader = new PromptResourceLoader(db);
 
   // ── 1. 加载资源并冻结本轮快照 ──
-  const [preset, worldbook, regexProfile] = await Promise.all([
-    resourceLoader.loadPreset(accountId, session.presetId),
-    resourceLoader.loadWorldbookData(accountId, session.worldbookProfileId),
-    resourceLoader.loadRegexScripts(accountId, session.regexProfileId),
-  ]);
+  const { preset, worldbook, regexProfile } = await resourceLoader.loadPromptResourceBundle(accountId, {
+    presetId: session.presetId,
+    worldbookProfileId: session.worldbookProfileId,
+    regexProfileId: session.regexProfileId,
+  });
 
   const metadata = parseSessionMetadata(session.metadataJson);
   const character = parseCharacterSnapshot(session.characterSnapshotJson);
@@ -228,10 +231,13 @@ export async function assemblePrompt(
     variables,
     presetId: preset?.id ?? null,
     presetUpdatedAt: preset?.updatedAt ?? null,
+    presetVersion: preset?.version ?? null,
     worldbookId: worldbook?.id ?? null,
     worldbookUpdatedAt: worldbook?.updatedAt ?? null,
+    worldbookVersion: worldbook?.version ?? null,
     regexProfileId: regexProfile?.id ?? null,
     regexProfileUpdatedAt: regexProfile?.updatedAt ?? null,
+    regexProfileVersion: regexProfile?.version ?? null,
     worldbookActivatedEntryUids: [],
     regexPreRuleNames: [],
     regexPostRuleNames: [],
@@ -270,8 +276,8 @@ export async function assemblePrompt(
       worldBookResults = triggerWorldBook(worldbookData.entries, {
         messages: triggerMessages,
         scanDepth: worldbookData.scanDepth,
-        caseSensitive: false,
-        matchWholeWords: false,
+        caseSensitive: worldbookData.caseSensitive,
+        matchWholeWords: worldbookData.matchWholeWords,
       });
     }
 
@@ -397,10 +403,13 @@ export function buildPromptSnapshotPreview(
   return {
     presetId: snapshot.presetId,
     presetUpdatedAt: snapshot.presetUpdatedAt,
+    presetVersion: snapshot.presetVersion,
     worldbookId: snapshot.worldbookId,
     worldbookUpdatedAt: snapshot.worldbookUpdatedAt,
+    worldbookVersion: snapshot.worldbookVersion,
     regexProfileId: snapshot.regexProfileId,
     regexProfileUpdatedAt: snapshot.regexProfileUpdatedAt,
+    regexProfileVersion: snapshot.regexProfileVersion,
     worldbookActivatedEntryUids: [...snapshot.worldbookActivatedEntryUids],
     regexPreRuleNames: [...snapshot.regexPreRuleNames],
     regexPostRuleNames: [...snapshot.regexPostRuleNames],
@@ -422,10 +431,13 @@ export function buildPromptSnapshotRecord(args: {
     sessionId: args.sessionId,
     presetId: preview.presetId,
     presetUpdatedAt: preview.presetUpdatedAt,
+    presetVersion: preview.presetVersion,
     worldbookId: preview.worldbookId,
     worldbookUpdatedAt: preview.worldbookUpdatedAt,
+    worldbookVersion: preview.worldbookVersion,
     regexProfileId: preview.regexProfileId,
     regexProfileUpdatedAt: preview.regexProfileUpdatedAt,
+    regexProfileVersion: preview.regexProfileVersion,
     worldbookActivatedEntryUids: preview.worldbookActivatedEntryUids,
     regexPreRuleNames: preview.regexPreRuleNames,
     regexPostRuleNames: preview.regexPostRuleNames,

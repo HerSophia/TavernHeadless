@@ -103,6 +103,10 @@ describe("POST /sessions/:id/respond", () => {
 // ── ChatService 单元测试 ──────────────────────────────
 
 import { ChatService, ChatServiceError } from "../src/services/chat-service";
+import type {
+  GenerationCoordinator,
+  GenerationCoordinatorExecutionInput,
+} from "../src/services/generation-guard-service";
 import {
   createEventBus,
   LLMTimeoutError,
@@ -130,6 +134,27 @@ describe("ChatService", () => {
     },
     finalState: "generating",
   };
+
+  function createRecordingGenerationCoordinator(
+    calls: Array<{ sessionId: string; branchId: string; mode: "reject" | "queue"; timeoutMs?: number }>,
+  ): GenerationCoordinator {
+    return {
+      async execute<T>(input: GenerationCoordinatorExecutionInput<T>): Promise<T> {
+        calls.push({
+          sessionId: input.sessionId,
+          branchId: input.branchId,
+          mode: input.mode,
+          timeoutMs: input.timeoutMs,
+        });
+
+        return input.task({
+          requestId: "test-request",
+          acquiredAt: Date.now(),
+          abortSignal: new AbortController().signal,
+        });
+      },
+    };
+  }
 
   beforeEach(async () => {
     database = createDatabase(":memory:");
@@ -413,6 +438,33 @@ describe("ChatService", () => {
     releaseGeneration?.();
     await expect(firstPromise).resolves.toMatchObject({ generatedText: MOCK_GENERATED_TEXT });
     expect(blockingOrchestrator.executeTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("should use reject coordinator mode by default", async () => {
+    const calls: Array<{ sessionId: string; branchId: string; mode: "reject" | "queue"; timeoutMs?: number }> = [];
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      generationCoordinator: createRecordingGenerationCoordinator(calls),
+    });
+
+    await service.respond(sessionId, { message: "Default coordinator mode" });
+
+    expect(calls).toEqual([
+      expect.objectContaining({ sessionId, branchId: "main", mode: "reject", timeoutMs: 5_000 }),
+    ]);
+  });
+
+  it("should pass configured queue mode and queue timeout to the generation coordinator", async () => {
+    const calls: Array<{ sessionId: string; branchId: string; mode: "reject" | "queue"; timeoutMs?: number }> = [];
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      generationCoordinator: createRecordingGenerationCoordinator(calls),
+      executionPolicy: { queueMode: "queue", queueTimeoutMs: 1_234 },
+    });
+
+    await service.respond(sessionId, { message: "Queued coordinator mode", branchId: "alt-branch" });
+
+    expect(calls).toEqual([
+      expect.objectContaining({ sessionId, branchId: "alt-branch", mode: "queue", timeoutMs: 1_234 }),
+    ]);
   });
 
   it("should resolve per-turn model override and mark profile as used", async () => {

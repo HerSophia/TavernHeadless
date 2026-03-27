@@ -186,10 +186,13 @@ export type RespondDryRunMessage = {
 export type RespondDryRunPromptSnapshot = {
   presetId: string | null;
   presetUpdatedAt: number | null;
+  presetVersion: number | null;
   worldbookId: string | null;
   worldbookUpdatedAt: number | null;
+  worldbookVersion: number | null;
   regexProfileId: string | null;
   regexProfileUpdatedAt: number | null;
+  regexProfileVersion: number | null;
   worldbookActivatedEntryUids: number[];
   regexPreRuleNames: string[];
   regexPostRuleNames: string[];
@@ -746,10 +749,13 @@ function mapDryRunPromptSnapshot(value: Record<string, unknown> | null): Respond
   return {
     presetId: readNullableString(value?.preset_id),
     presetUpdatedAt: readNullableNumber(value?.preset_updated_at),
+    presetVersion: readNullableNumber(value?.preset_version),
     worldbookId: readNullableString(value?.worldbook_id),
     worldbookUpdatedAt: readNullableNumber(value?.worldbook_updated_at),
+    worldbookVersion: readNullableNumber(value?.worldbook_version),
     regexProfileId: readNullableString(value?.regex_profile_id),
     regexProfileUpdatedAt: readNullableNumber(value?.regex_profile_updated_at),
+    regexProfileVersion: readNullableNumber(value?.regex_profile_version),
     worldbookActivatedEntryUids: mapNumberArray(value?.worldbook_activated_entry_uids),
     regexPreRuleNames: mapStringArray(value?.regex_pre_rule_names),
     regexPostRuleNames: mapStringArray(value?.regex_post_rule_names),

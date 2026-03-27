@@ -123,6 +123,7 @@ interface ListResponse {
     name: string;
     source: string;
     created_at: number;
+    version: number;
     updated_at: number;
   }>;
 }
@@ -134,6 +135,7 @@ interface DetailResponse {
     source: string;
     data: unknown;
     created_at: number;
+    version: number;
     updated_at: number;
   };
 }
@@ -144,6 +146,7 @@ interface PresetEditorResponse {
     name: string;
     source: string;
     created_at: number;
+    version: number;
     updated_at: number;
     editor: {
       format: "legacy-compact" | "st-raw";
@@ -168,6 +171,7 @@ interface PresetUpdateResponse {
   data: {
     id: string;
     name: string;
+    version: number;
   };
 }
 
@@ -369,17 +373,18 @@ describe("Import Routes", () => {
         url: `/presets/${presetId}`,
         payload: {
           name: "Updated Preset",
+          expected_version: editorBody.data.version,
           editor: {
             ...editorDocument,
             entries: updatedEntries
-          },
-          expected_updated_at: editorBody.data.updated_at
+          }
         }
       });
       expect(putRes.statusCode).toBe(200);
       const putBody = putRes.json() as PresetUpdateResponse;
       expect(putBody.data.id).toBe(presetId);
       expect(putBody.data.name).toBe("Updated Preset");
+      expect(putBody.data.version).toBe(editorBody.data.version + 1);
 
       const detailRes = await app.inject({ method: "GET", url: `/presets/${presetId}` });
       expect(detailRes.statusCode).toBe(200);
@@ -554,14 +559,15 @@ describe("Import Routes", () => {
         url: `/worldbooks/${wbId}`,
         payload: {
           name: "Updated WB",
+          expected_version: detailBody.data.version,
           data: {
             ...worldbookData,
             entries: [updatedEntry, ...entries.slice(1)]
-          },
-          expected_updated_at: detailBody.data.updated_at
+          }
         }
       });
       expect(putRes.statusCode).toBe(200);
+      expect((putRes.json() as { data: { version: number } }).data.version).toBe(detailBody.data.version + 1);
 
       const updatedRes = await app.inject({ method: "GET", url: `/worldbooks/${wbId}` });
       expect(updatedRes.statusCode).toBe(200);
