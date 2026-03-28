@@ -70,6 +70,10 @@ type ErrorResponse = {
 
 type ItemResponse<T> = { data: T };
 
+function authHeader(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
 describe("Export routes", () => {
   let app: FastifyInstance;
 
@@ -296,5 +300,68 @@ describe("Export routes", () => {
 
     expect(missingVersionRes.statusCode).toBe(404);
     expect(missingVersionRes.json<ErrorResponse>().error.code).toBe("character_version_not_found");
+  });
+});
+
+describe("Export routes multi-account isolation", () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    ({ app } = await buildApp({
+      databasePath: ":memory:",
+      logger: false,
+      accountMode: "multi",
+      auth: { mode: "jwt", jwtSecret: "test-secret" },
+    }));
+  });
+
+  afterEach(async () => {
+    if (app) {
+      await app.close();
+    }
+  });
+
+  async function createAccount(token: string, id: string, name: string) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      headers: authHeader(token),
+      payload: { id, name },
+    });
+
+    expect(response.statusCode, response.body).toBe(201);
+  }
+
+  async function createSession(headers: Record<string, string>): Promise<string> {
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      headers,
+      payload: { title: "Private Export Session" },
+    });
+
+    expect(response.statusCode, response.body).toBe(201);
+    return response.json<ItemResponse<{ id: string }>>().data.id;
+  }
+
+  it("returns 404 when exporting a foreign session", async () => {
+    const tokenA = app.jwt.sign({ sub: "u-a", account_id: "acc-a", role: "admin" });
+    const tokenB = app.jwt.sign({ sub: "u-b", account_id: "acc-b", role: "admin" });
+
+    await createAccount(tokenA, "acc-a", "Account A");
+    await createAccount(tokenB, "acc-b", "Account B");
+
+    const sessionId = await createSession(authHeader(tokenA));
+
+    const foreignThChat = await app.inject({ method: "GET", url: `/export/chat/${sessionId}`, headers: authHeader(tokenB) });
+    expect(foreignThChat.statusCode).toBe(404);
+    expect(foreignThChat.json<ErrorResponse>().error.code).toBe("session_not_found");
+
+    const foreignJsonl = await app.inject({ method: "GET", url: `/export/chat/${sessionId}?format=st_jsonl`, headers: authHeader(tokenB) });
+    expect(foreignJsonl.statusCode).toBe(404);
+    expect(foreignJsonl.json<ErrorResponse>().error.code).toBe("session_not_found");
+
+    const ownExport = await app.inject({ method: "GET", url: `/export/chat/${sessionId}`, headers: authHeader(tokenA) });
+    expect(ownExport.statusCode).toBe(200);
   });
 });

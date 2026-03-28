@@ -9,8 +9,22 @@ import { sendError, zodIssues } from "./lib/http";
 import { registerCrudRoutes } from "./routes";
 import { registerChatRoutes } from "./routes/chat";
 import { registerWsPlugin, type WsBridge } from "./ws";
-import { DrizzleFloorRepository, DrizzleMemoryRepository } from "./adapters";
-import { ChatService, ChatServiceError, type ResolvedTurnModels } from "./services/chat-service";
+import {
+  DrizzleFloorRepository,
+  DrizzleMemoryRepository,
+  DrizzleToolExecutionRepository,
+  DrizzleVariableRepository,
+} from "./adapters";
+import {
+  ChatService,
+  ChatServiceError,
+  type ResolvedTurnModels,
+} from "./services/chat-service";
+import {
+  InMemoryGenerationCoordinator,
+  type GenerationCoordinator,
+  type GenerationExecutionMode,
+} from "./services/generation-guard-service";
 import {
   MemoryMaintenanceService,
   type MemoryMaintenancePolicy,
@@ -29,8 +43,9 @@ import { ensureDefaultAdminAccount } from "./accounts/service";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "./accounts/constants";
 import { registerCors, type CorsConfig } from "./plugins/cors";
 import { McpService } from "./services/mcp-service";
-import { McpConnectionManager, McpToolProvider } from "./mcp";
+import { McpConnectionManager } from "./mcp";
 import { registerMcpRuntimeRoutes } from "./routes/mcp";
+import { SessionToolRegistryService } from "./services/session-tool-registry-service";
 import { ToolRegistry, BuiltinToolProvider } from "@tavern/core";
 import { ResourceToolProvider } from "./tools/index.js";
 
@@ -104,6 +119,28 @@ export type BuildAppOptions = {
   enablePromptDryRun?: boolean;
   /** 是否默认启用 MemoryConsolidator（可被请求级 turn config 覆盖） */
   enableMemoryConsolidation?: boolean;
+  /** 服务端默认生成超时（毫秒） */
+  llmDefaultTimeoutMs?: number;
+  /**
+   * 生成协调器实现。
+   * 默认使用单实例内存协调器。
+   * 若后续需要共享锁或共享队列，可从这里注入自定义实现。
+   */
+  generationCoordinator?: GenerationCoordinator;
+  /**
+   * 同一 session + branch 的生成并发策略。
+   * 默认保持 reject。
+   */
+  generationQueueMode?: GenerationExecutionMode;
+  /**
+   * queue 模式下的排队等待超时（毫秒）。
+   * 默认沿用 ChatService 的 5000。
+   */
+  generationQueueTimeoutMs?: number;
+  /** commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数 */
+  turnCommitMaxRetries?: number;
+  /** commit 重试基础退避时间（毫秒） */
+  turnCommitRetryBaseDelayMs?: number;
   /** 认证配置（默认 off） */
   auth?: AuthConfig;
   /** 账号模式（默认 single） */
@@ -278,7 +315,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     }
   );
 
-  await registerCrudRoutes(app, database);
+  let orchestrationContext: OrchestrationContext | undefined;
+  let wsBridge: WsBridge | undefined;
+  let baseToolRegistry: ToolRegistry | undefined;
+  let sessionToolRegistryService: SessionToolRegistryService | undefined;
+
+  if (options.orchestration) {
+    const floorRepo = new DrizzleFloorRepository(database.db);
+    const memoryRepo = new DrizzleMemoryRepository(database.db);
+    const variableRepo = new DrizzleVariableRepository(database.db);
+    const toolExecutionRepo = new DrizzleToolExecutionRepository(database.db);
+
+    orchestrationContext = createOrchestrationContext(
+      options.orchestration,
+      floorRepo,
+      memoryRepo,
+      variableRepo,
+      toolExecutionRepo,
+    );
+  }
 
   // ── 可选：MCP 工具集成 ──
   let mcpManager: McpConnectionManager | undefined;
@@ -298,11 +353,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       await mcpManager!.shutdown();
     });
 
-    app.log.info(
-      { serverCount: mcpConfigs.length },
-      'MCP integration enabled',
-    );
+    app.log.info({ serverCount: mcpConfigs.length }, 'MCP integration enabled');
   }
+
+  if (options.orchestration && orchestrationContext) {
+    baseToolRegistry = new ToolRegistry();
+    baseToolRegistry.register(new BuiltinToolProvider({
+      variableStore: orchestrationContext.variableStore,
+      memoryStore: options.enableMemory ? orchestrationContext.memoryStore : undefined,
+    }));
+    baseToolRegistry.register(new ResourceToolProvider(database.db));
+
+    sessionToolRegistryService = new SessionToolRegistryService(database.db, {
+      baseRegistry: baseToolRegistry,
+      mcpManager,
+    });
+  }
+
+  await registerCrudRoutes(app, database, {
+    variableEventBus: orchestrationContext?.eventBus,
+    sessionToolRegistryService,
+  });
 
   // ── 可选：记忆维护任务（deprecate / purge） ──
   // 注意：当前实现为进程内定时器，不带分布式锁。
@@ -342,29 +413,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   }
 
   // ── 可选：聊天业务路由 ──
-  let orchestrationContext: OrchestrationContext | undefined;
-  let wsBridge: WsBridge | undefined;
-
-  if (options.orchestration) {
-    const floorRepo = new DrizzleFloorRepository(database.db);
-    const memoryRepo = new DrizzleMemoryRepository(database.db);
-
-    const activeOrchestrationContext = createOrchestrationContext(
-      options.orchestration,
-      floorRepo,
-      memoryRepo
-    );
-    orchestrationContext = activeOrchestrationContext;
+  if (options.orchestration && orchestrationContext) {
+    const activeOrchestrationContext = orchestrationContext;
 
     const llmProfileService = new LlmProfileService(database.db);
 
-    // ── 构建 ToolRegistry ──
-    const toolRegistry = new ToolRegistry();
-    toolRegistry.register(new BuiltinToolProvider({
-      memoryStore: options.enableMemory ? activeOrchestrationContext.memoryStore : undefined,
-    }));
-    toolRegistry.register(new ResourceToolProvider(database.db));
-    // MCP 工具提供者在 mcpManager 初始化后通过 mcpManager 注册（见下方）
+    const toolRegistry = baseToolRegistry ?? new ToolRegistry();
+
+    // 默认协调器仍为单实例内存实现。
+    // queueMode 只影响当前进程内的互斥 / 排队行为，
+    // 不提供跨实例共享锁或共享队列。
+    const generationCoordinator = options.generationCoordinator ?? new InMemoryGenerationCoordinator();
 
     const chatService = new ChatService(
       database.db,
@@ -417,7 +476,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
           }
           await llmProfileService.touchLastUsed(resolvedModel.profileId, accountId);
         },
+        generationCoordinator,
+        executionPolicy: {
+          queueMode: options.generationQueueMode,
+          queueTimeoutMs: options.generationQueueTimeoutMs,
+          executionTimeoutMs: options.llmDefaultTimeoutMs,
+          commitRetry: {
+            maxRetries: options.turnCommitMaxRetries,
+            baseDelayMs: options.turnCommitRetryBaseDelayMs,
+          },
+        },
         toolRegistry,
+        sessionToolRegistryService,
         eventBus: activeOrchestrationContext.eventBus,
       }
     );

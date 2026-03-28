@@ -9,6 +9,11 @@ import type {
   TavernRespondStartPayload,
   TavernRespondStreamEvent,
   TavernRespondSummaryPayload,
+  TavernRespondToolPayload,
+  TavernRespondToolPhase,
+  TavernRespondToolProviderType,
+  TavernRespondToolReplaySafety,
+  TavernRespondToolSideEffectLevel,
 } from "./event-types.js";
 
 export async function readSseStream(
@@ -66,6 +71,11 @@ export async function readSseStream(
     if (event.type === "summary") {
       collectedSummaries = [...collectedSummaries, ...event.payload.summaries];
       callbacks.onSummary?.(event.payload);
+      return;
+    }
+
+    if (event.type === "tool") {
+      callbacks.onTool?.(event.payload);
       return;
     }
 
@@ -166,6 +176,35 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
     return { payload: summaryPayload, type: "summary" };
   }
 
+  if (eventName === "tool") {
+    const payload = parsed as Record<string, unknown> | null;
+    const executionId = readOptionalString(payload?.execution_id);
+    const toolName = readOptionalString(payload?.tool_name);
+    const providerId = readOptionalString(payload?.provider_id);
+    const phase = readToolPhase(payload?.phase);
+    const replaySafety = readToolReplaySafety(payload?.replay_safety);
+
+    if (!executionId || !toolName || !providerId || !phase || !replaySafety) {
+      return null;
+    }
+
+    const toolPayload: TavernRespondToolPayload = {
+      executionId,
+      toolName,
+      providerId,
+      phase,
+      replaySafety,
+      ...(readToolProviderType(payload?.provider_type) ? { providerType: readToolProviderType(payload?.provider_type) } : {}),
+      ...(readToolSideEffectLevel(payload?.side_effect_level) ? { sideEffectLevel: readToolSideEffectLevel(payload?.side_effect_level) } : {}),
+      ...(readOptionalString(payload?.message) ? { message: readOptionalString(payload?.message) } : {}),
+      ...(typeof readOptionalNumber(payload?.duration_ms) === "number"
+        ? { durationMs: readOptionalNumber(payload?.duration_ms) }
+        : {}),
+    };
+
+    return { payload: toolPayload, type: "tool" };
+  }
+
   if (eventName === "error") {
     const payload = parsed as Record<string, unknown> | null;
     const errorPayload: TavernRespondErrorPayload = {
@@ -232,4 +271,38 @@ function readOptionalString(value: unknown): string | undefined {
 
 function readString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function readToolPhase(value: unknown): TavernRespondToolPhase | undefined {
+  return value === "start"
+    || value === "success"
+    || value === "error"
+    || value === "denied"
+    || value === "timeout"
+    || value === "uncertain"
+    || value === "blocked"
+    ? value
+    : undefined;
+}
+
+function readToolReplaySafety(value: unknown): TavernRespondToolReplaySafety | undefined {
+  return value === "safe"
+    || value === "confirm_on_replay"
+    || value === "never_auto_replay"
+    || value === "uncertain"
+    ? value
+    : undefined;
+}
+
+function readToolProviderType(value: unknown): TavernRespondToolProviderType | undefined {
+  return value === "builtin"
+    || value === "preset"
+    || value === "mcp"
+    || value === "unknown"
+    ? value
+    : undefined;
+}
+
+function readToolSideEffectLevel(value: unknown): TavernRespondToolSideEffectLevel | undefined {
+  return value === "none" || value === "sandbox" || value === "irreversible" ? value : undefined;
 }

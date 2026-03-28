@@ -123,6 +123,55 @@ describe("sdk core resources", () => {
     expect(requestUrl.searchParams.get("sort_order")).toBe("desc");
   });
 
+  it("maps the session runtime tool catalog", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          session_id: "session-1",
+          generated_at: 1710000000000,
+          tools: [
+            {
+              name: "set_variable",
+              provider_id: "builtin",
+              provider_type: "builtin",
+              source: "builtin",
+              side_effect_level: "sandbox",
+              allowed_slots: ["narrator"],
+              availability: "available",
+              availability_reason: null,
+              replay_safety: "safe",
+            },
+          ],
+          conflicts: [
+            {
+              tool_name: "lookup_notes",
+              provider_ids: ["custom:acc-1", "mcp:mcp-1"],
+              reason: "name_conflict",
+            },
+          ],
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.sessions.getRuntimeToolCatalog({ accountId: "acc-1", sessionId: "session-1" })).resolves.toEqual({
+      conflicts: [{ providerIds: ["custom:acc-1", "mcp:mcp-1"], reason: "name_conflict", toolName: "lookup_notes" }],
+      generatedAt: 1710000000000,
+      sessionId: "session-1",
+      tools: [{
+        allowedSlots: ["narrator"],
+        availability: "available",
+        availabilityReason: null,
+        name: "set_variable",
+        providerId: "builtin",
+        providerType: "builtin",
+        replaySafety: "safe",
+        sideEffectLevel: "sandbox",
+        source: "builtin",
+      }],
+    });
+  });
+
   it("maps respond payloads and generation params while defaulting missing usage to zero", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
@@ -209,8 +258,12 @@ describe("sdk core resources", () => {
       'data: {"branch_id":"branch-1","floor_id":"floor-1","floor_no":2}\n\n',
       "event: chunk\n",
       'data: {"chunk":"Hello"}\n\n',
+      "event: tool\n",
+      'data: {"execution_id":"exec-1","tool_name":"set_variable","provider_id":"builtin","provider_type":"builtin","side_effect_level":"sandbox","phase":"start","replay_safety":"uncertain"}\n\n',
       "event: summary\n",
       'data: {"summaries":["sum-1"]}\n\n',
+      "event: tool\n",
+      'data: {"execution_id":"exec-1","tool_name":"set_variable","provider_id":"builtin","provider_type":"builtin","side_effect_level":"sandbox","phase":"success","duration_ms":7,"replay_safety":"safe"}\n\n',
       "event: done\n",
       'data: {"branch_id":"branch-1","final_state":"committed","floor_id":"floor-1","floor_no":2,"generated_text":"Hello","summaries":["sum-1","sum-2"],"total_usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}\n\n',
     ].join("");
@@ -226,6 +279,7 @@ describe("sdk core resources", () => {
     const chunks: string[] = [];
     const summaries: string[][] = [];
     const starts: Array<{ branchId?: string; floorId?: string; floorNo?: number }> = [];
+    const tools: Array<Record<string, unknown>> = [];
 
     const result = await client.sessions.respondStream({
       message: "hello",
@@ -233,6 +287,7 @@ describe("sdk core resources", () => {
       onEvent: (event) => events.push(event.type),
       onStart: (payload) => starts.push(payload),
       onSummary: (payload) => summaries.push(payload.summaries),
+      onTool: (payload) => tools.push(payload as Record<string, unknown>),
       sessionId: "session-1",
       signal: controller.signal,
     });
@@ -246,7 +301,8 @@ describe("sdk core resources", () => {
     ]);
     expect(chunks).toEqual(["Hello"]);
     expect(summaries).toEqual([["sum-1"]]);
-    expect(events).toEqual(["start", "chunk", "summary", "done"]);
+    expect(tools).toEqual([{ executionId: "exec-1", phase: "start", providerId: "builtin", providerType: "builtin", replaySafety: "uncertain", sideEffectLevel: "sandbox", toolName: "set_variable" }, { durationMs: 7, executionId: "exec-1", phase: "success", providerId: "builtin", providerType: "builtin", replaySafety: "safe", sideEffectLevel: "sandbox", toolName: "set_variable" }]);
+    expect(events).toEqual(["start", "chunk", "tool", "summary", "tool", "done"]);
     expect(result).toEqual({
       branchId: "branch-1",
       finalState: "committed",
@@ -266,6 +322,36 @@ describe("sdk core resources", () => {
 
     const [, init] = fetchImpl.mock.calls[0]!;
     expect(init?.signal).toBe(controller.signal);
+  });
+
+  it("throws TavernApiError with SSE error payload code on respondStream failure", async () => {
+    const stream = [
+      "event: error\n",
+      'data: {"code":"generation_timeout","message":"Turn orchestration failed: LLM request timed out after 60000ms"}\n\n',
+    ].join("");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(stream, {
+        headers: { "content-type": "text/event-stream" },
+        status: 200,
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    try {
+      await client.sessions.respondStream({
+        message: "hello",
+        sessionId: "session-1",
+      });
+
+      throw new Error("respondStream should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(TavernApiError);
+      expect(error).toMatchObject({
+        code: "generation_timeout",
+        message: "Turn orchestration failed: LLM request timed out after 60000ms",
+        status: 200,
+      });
+    }
   });
 
   it("maps timeline payloads with default query and filtered nested records", async () => {

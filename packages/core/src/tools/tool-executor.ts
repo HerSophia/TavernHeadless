@@ -3,17 +3,23 @@
 import { randomUUID } from 'node:crypto';
 
 import type { CoreEventBus } from '../events/event-bus.js';
+import type { ToolExecutionRepository } from '../ports/tool-execution-repository.js';
 import type { InstanceSlot } from '../llm/types.js';
 import type {
   ExecutedToolCallRecord,
+  BufferedToolVariableMutation,
   ToolCallResult,
-  ToolCallStatus,
   ToolDefinition,
   ToolDenyReason,
   ToolExecutionContext,
+  ToolExecutionOpenRecord,
+  ToolExecutionProviderType,
+  ToolExecutionStatus,
   ToolPermissions,
+  ToolSideEffectLevel,
 } from './types.js';
 import type { ToolRegistry } from './tool-registry.js';
+import { ToolMutationBuffer } from './tool-mutation-buffer.js';
 
 /** Vercel AI SDK 兼容的工具定义格式 */
 export interface LLMToolEntry {
@@ -22,17 +28,16 @@ export interface LLMToolEntry {
   execute: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
-interface ToolExecutionRecordInput {
-  context: ToolExecutionContext;
-  providerId: string;
-  toolName: string;
-  args: Record<string, unknown>;
-  result: unknown;
-  status: ToolCallStatus;
-  errorMessage?: string;
-  durationMs: number;
-  createdAt: number;
-}
+type FinalToolExecutionStatus = Exclude<ToolExecutionStatus, 'running'>;
+
+const FINAL_TOOL_EXECUTION_STATUSES = new Set<FinalToolExecutionStatus>([
+  'success',
+  'error',
+  'denied',
+  'timeout',
+  'uncertain',
+  'blocked',
+]);
 
 function normalizeDurationMs(value: number): number {
   if (!Number.isFinite(value) || value < 0) {
@@ -76,28 +81,75 @@ function safeJsonStringify(value: unknown): string {
   }
 }
 
+function isFinalToolExecutionStatus(value: unknown): value is FinalToolExecutionStatus {
+  return typeof value === 'string' && FINAL_TOOL_EXECUTION_STATUSES.has(value as FinalToolExecutionStatus);
+}
+
+function inferErrorStatus(
+  value: { error?: string; executionStatus?: ToolExecutionStatus } | Error,
+  fallback: FinalToolExecutionStatus = 'error',
+): FinalToolExecutionStatus {
+  const statusCandidate = 'executionStatus' in value ? value.executionStatus : undefined;
+  if (isFinalToolExecutionStatus(statusCandidate)) {
+    return statusCandidate;
+  }
+
+  const message = value instanceof Error ? value.message : value.error;
+  if (typeof message === 'string') {
+    const normalizedMessage = message.toLowerCase();
+
+    if (normalizedMessage.includes('execution outcome is uncertain')) {
+      return 'uncertain';
+    }
+
+    if (normalizedMessage.includes('timeout')) {
+      return 'timeout';
+    }
+  }
+
+  return fallback;
+}
+
 /**
  * 工具执行器
  *
  * 负责权限检查、执行、事件发射。
  * 不关心调用模式（inline / standalone），只负责「执行一次工具调用」。
  *
- * 同时，它会为当前回合累计真实执行记录，供上层在 commit 阶段统一持久化。
+ * 同时，它会为当前回合累计真实执行记录，供上层读取快照；
+ * 若提供了 ToolExecutionRepository，则会在执行期间直接写入 open / finish 生命周期日志。
  */
 export class ToolExecutor {
-  /** 当前回合已执行的工具调用计数 */
+  /** 当前回合已完成并计入上限的工具调用计数 */
   private turnCallCount = 0;
+
+  /** 当前回合已预留但尚未完成的调用槽位数 */
+  private inFlightTurnCallCount = 0;
 
   /** 当前回合的真实执行记录 */
   private executionRecords: ExecutedToolCallRecord[] = [];
 
   /** 当前回合的运行 ID */
-  private runId = randomUUID();
+  private runId: string;
+
+  /** 当前回合的工具执行序号 */
+  private executionAttemptCount = 0;
+
+  /** 当前生成尝试编号（用于隔离 verifier retry 之间的变量缓冲） */
+  private generationAttemptNo = 0;
+
+  /** 当前回合的工具变量缓冲区 */
+  private mutationBuffer: ToolMutationBuffer;
 
   constructor(
     private registry: ToolRegistry,
     private eventBus: CoreEventBus,
-  ) {}
+    private readonly executionRepository?: ToolExecutionRepository,
+    initialRunId?: string,
+  ) {
+    this.runId = initialRunId ?? randomUUID();
+    this.mutationBuffer = new ToolMutationBuffer(this.runId);
+  }
 
   /**
    * 执行一次工具调用。
@@ -105,10 +157,10 @@ export class ToolExecutor {
    * 流程：
    * 1. 查找工具定义和 provider
    * 2. 权限检查
-   * 3. 发射 tool.call_started 事件
-   * 4. 调用 provider.executeTool
-   * 5. 成功 → tool.call_completed，失败 → tool.call_failed
-   * 6. 权限拒绝 → tool.call_denied
+   * 3. 在 provider 执行前打开 execution journal
+   * 4. 发射 tool.call_started 事件
+   * 5. 调用 provider.executeTool
+   * 6. 成功 / 失败 / 拒绝后补全 execution journal
    */
   async execute(
     toolName: string,
@@ -117,60 +169,144 @@ export class ToolExecutor {
     permissions: ToolPermissions,
   ): Promise<ToolCallResult & { denied?: ToolDenyReason }> {
     let providerId = 'unknown';
+    let providerType: ToolExecutionProviderType = 'unknown';
+    let sideEffectLevel: ToolSideEffectLevel | undefined;
 
     // 总开关检查
     if (!permissions.enabled) {
-      return this.deny(toolName, args, context, 'disabled', providerId);
+      return this.deny(toolName, args, context, 'disabled', providerId, providerType, sideEffectLevel);
     }
 
     // 查找工具定义
     const toolDef = await this.registry.getTool(toolName);
     if (!toolDef) {
-      return this.deny(toolName, args, context, 'tool_not_found', providerId);
+      return this.deny(toolName, args, context, 'tool_not_found', providerId, providerType, sideEffectLevel);
     }
+    sideEffectLevel = toolDef.sideEffectLevel;
 
     // 查找 provider
     const provider = await this.registry.findProviderForTool(toolName);
     if (!provider) {
-      return this.deny(toolName, args, context, 'tool_not_found', providerId);
+      providerType = toolDef.source;
+      return this.deny(toolName, args, context, 'tool_not_found', providerId, providerType, sideEffectLevel);
     }
     providerId = provider.id;
+    providerType = provider.type;
 
     // 权限检查
     const denyReason = this.checkPermissions(toolDef, context.callerSlot, permissions);
     if (denyReason) {
-      return this.deny(toolName, args, context, denyReason, providerId);
+      return this.deny(toolName, args, context, denyReason, providerId, providerType, sideEffectLevel);
     }
 
-    // 发射 started 事件
-    await this.eventBus.emit('tool.call_started', {
-      floorId: context.floorId,
-      pageId: context.pageId,
-      callerSlot: context.callerSlot,
-      toolName,
-      args,
-    });
+    if (!this.reserveTurnCallSlot(permissions.maxCallsPerTurn)) {
+      return this.deny(toolName, args, context, 'max_calls_exceeded', providerId, providerType, sideEffectLevel);
+    }
 
-    // 执行
-    const startTime = Date.now();
+    let providerExecutionStarted = false;
+    let openedExecution: ToolExecutionOpenRecord | undefined;
+
     try {
-      const result = await provider.executeTool(toolName, args, context);
-      const completedAt = Date.now();
-      const durationMs = completedAt - startTime;
-      this.turnCallCount++;
+      openedExecution = await this.openExecutionAttempt({
+        context,
+        providerId,
+        providerType,
+        toolName,
+        args,
+        sideEffectLevel,
+      });
 
-      if (result.error) {
-        const error = new Error(result.error);
-        this.recordExecution({
-          context,
-          providerId,
-          toolName,
-          args,
-          result: { error: result.error },
-          status: 'error',
-          errorMessage: result.error,
+      // 发射 started 事件
+      await this.eventBus.emit('tool.call_started', {
+        floorId: context.floorId,
+        pageId: context.pageId,
+        callerSlot: context.callerSlot,
+        executionId: openedExecution.id,
+        providerId,
+        providerType,
+        sideEffectLevel,
+        toolName,
+        args,
+      });
+
+      // 执行
+      providerExecutionStarted = true;
+
+      try {
+        const providerContext = this.buildProviderExecutionContext(context);
+        const result = await provider.executeTool(toolName, args, providerContext);
+        const finishedAt = Date.now();
+        const durationMs = finishedAt - openedExecution.startedAt;
+        this.finalizeTurnCallSlot(true);
+
+        if (result.error) {
+          const status = inferErrorStatus(result, 'error');
+          const failureStatus = status === 'success' || status === 'denied' ? 'error' : status;
+          const error = new Error(result.error);
+
+          await this.completeExecutionAttempt(openedExecution, {
+            result: { error: result.error },
+            status: failureStatus,
+            errorMessage: result.error,
+            durationMs,
+            finishedAt,
+          });
+
+          // 发射 failed 事件
+          await this.eventBus.emit('tool.call_failed', {
+            floorId: context.floorId,
+            pageId: context.pageId,
+            callerSlot: context.callerSlot,
+            executionId: openedExecution.id,
+            providerId,
+            providerType,
+            sideEffectLevel,
+            toolName,
+            status: failureStatus,
+            error,
+            durationMs,
+          });
+
+          return { error: result.error };
+        }
+
+        await this.completeExecutionAttempt(openedExecution, {
+          result: result.data ?? null,
+          status: 'success',
           durationMs,
-          createdAt: completedAt,
+          finishedAt,
+        });
+
+        // 发射 completed 事件
+        await this.eventBus.emit('tool.call_completed', {
+          floorId: context.floorId,
+          pageId: context.pageId,
+          callerSlot: context.callerSlot,
+          executionId: openedExecution.id,
+          providerId,
+          providerType,
+          sideEffectLevel,
+          toolName,
+          result: result.data,
+          status: 'success',
+          durationMs,
+        });
+
+        return result;
+      } catch (err) {
+        const finishedAt = Date.now();
+        const durationMs = finishedAt - openedExecution.startedAt;
+        const error = err instanceof Error ? err : new Error(String(err));
+        const status = inferErrorStatus(error, 'error');
+        const failureStatus = status === 'success' || status === 'denied' ? 'error' : status;
+        this.finalizeTurnCallSlot(true);
+
+        await this.completeExecutionAttempt(openedExecution, {
+          result: { error: error.message },
+          status: failureStatus,
+          errorMessage: error.message,
+          durationMs,
+          finishedAt,
         });
 
         // 发射 failed 事件
@@ -178,63 +314,54 @@ export class ToolExecutor {
           floorId: context.floorId,
           pageId: context.pageId,
           callerSlot: context.callerSlot,
+          executionId: openedExecution.id,
+          providerId,
+          providerType,
+          sideEffectLevel,
           toolName,
+          status: failureStatus,
           error,
+          durationMs,
         });
 
-        return { error: result.error };
+        return { error: error.message };
+      }
+    } catch (err) {
+      if (!providerExecutionStarted) {
+        this.finalizeTurnCallSlot(false);
+
+        if (openedExecution) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          const finishedAt = Date.now();
+          const blockedMessage = `Tool execution blocked before provider start: ${error.message}`;
+          const blockedError = new Error(blockedMessage);
+          const durationMs = finishedAt - openedExecution.startedAt;
+
+          await this.completeExecutionAttempt(openedExecution, {
+            result: { error: error.message },
+            status: 'blocked',
+            errorMessage: blockedMessage,
+            durationMs,
+            finishedAt,
+          });
+
+          await this.eventBus.emit('tool.call_failed', {
+            floorId: context.floorId,
+            pageId: context.pageId,
+            callerSlot: context.callerSlot,
+            executionId: openedExecution.id,
+            providerId,
+            providerType,
+            sideEffectLevel,
+            toolName,
+            status: 'blocked',
+            error: blockedError,
+            durationMs,
+          });
+        }
       }
 
-      this.recordExecution({
-        context,
-        providerId,
-        toolName,
-        args,
-        result: result.data ?? null,
-        status: 'success',
-        durationMs,
-        createdAt: completedAt,
-      });
-
-      // 发射 completed 事件
-      await this.eventBus.emit('tool.call_completed', {
-        floorId: context.floorId,
-        pageId: context.pageId,
-        callerSlot: context.callerSlot,
-        toolName,
-        result: result.data,
-        durationMs,
-      });
-
-      return result;
-    } catch (err) {
-      const completedAt = Date.now();
-      const durationMs = completedAt - startTime;
-      const error = err instanceof Error ? err : new Error(String(err));
-      this.turnCallCount++;
-
-      this.recordExecution({
-        context,
-        providerId,
-        toolName,
-        args,
-        result: { error: error.message },
-        status: 'error',
-        errorMessage: error.message,
-        durationMs,
-        createdAt: completedAt,
-      });
-
-      // 发射 failed 事件
-      await this.eventBus.emit('tool.call_failed', {
-        floorId: context.floorId,
-        pageId: context.pageId,
-        callerSlot: context.callerSlot,
-        toolName,
-        error,
-      });
-
-      return { error: error.message };
+      throw err;
     }
   }
 
@@ -270,13 +397,17 @@ export class ToolExecutor {
   }
 
   /** 重置每回合调用计数器和真实执行记录。在新回合开始时调用。 */
-  resetTurnCounter(): void {
+  resetTurnCounter(runId?: string): void {
     this.turnCallCount = 0;
+    this.inFlightTurnCallCount = 0;
     this.executionRecords = [];
-    this.runId = randomUUID();
+    this.executionAttemptCount = 0;
+    this.generationAttemptNo = 0;
+    this.runId = runId ?? randomUUID();
+    this.mutationBuffer = new ToolMutationBuffer(this.runId);
   }
 
-  /** 获取当前回合已执行的调用次数 */
+  /** 获取当前回合已完成并计入上限的调用次数 */
   getTurnCallCount(): number {
     return this.turnCallCount;
   }
@@ -286,7 +417,66 @@ export class ToolExecutor {
     return this.executionRecords.map((record) => ({ ...record }));
   }
 
+  /** 获取当前回合已收集的真实执行记录数量。 */
+  getExecutionRecordCount(): number {
+    return this.executionRecords.length;
+  }
+
+  /** 获取自某个索引以来新增的真实执行记录。 */
+  getExecutionRecordsSince(startIndex: number): ExecutedToolCallRecord[] {
+    return this.executionRecords
+      .slice(Math.max(0, startIndex))
+      .map((record) => ({ ...record }));
+  }
+
+  /** 开始一个新的生成尝试。 */
+  beginGenerationAttempt(): number {
+    this.generationAttemptNo += 1;
+    return this.generationAttemptNo;
+  }
+
+  /** 丢弃某次生成尝试中的工具变量缓冲写入。 */
+  discardGenerationAttempt(generationAttemptNo: number): void {
+    if (generationAttemptNo < 1) {
+      return;
+    }
+
+    this.mutationBuffer.discardGenerationAttempt(generationAttemptNo);
+  }
+
+  /** 读取当前生成尝试保留的工具变量缓冲快照。 */
+  getBufferedVariableMutations(
+    generationAttemptNo: number = this.generationAttemptNo,
+  ): BufferedToolVariableMutation[] {
+    if (generationAttemptNo < 1) {
+      return [];
+    }
+
+    return this.mutationBuffer.snapshot(generationAttemptNo);
+  }
+
   // ── 内部方法 ────────────────────────────────────────
+
+  private getActiveGenerationAttemptNo(): number {
+    if (this.generationAttemptNo < 1) {
+      this.generationAttemptNo = 1;
+    }
+
+    return this.generationAttemptNo;
+  }
+
+  private buildProviderExecutionContext(context: ToolExecutionContext): ToolExecutionContext {
+    const generationAttemptNo = this.getActiveGenerationAttemptNo();
+
+    return {
+      ...context,
+      variableContext: {
+        ...context.variableContext,
+        toolMutationBuffer: this.mutationBuffer,
+        toolMutationAttemptNo: generationAttemptNo,
+      },
+    };
+  }
 
   /**
    * 权限检查。返回 null 表示通过，否则返回拒绝原因。
@@ -313,20 +503,34 @@ export class ToolExecutor {
       return 'deny_listed';
     }
 
-    // 调用次数上限
-    if (
-      permissions.maxCallsPerTurn !== undefined &&
-      this.turnCallCount >= permissions.maxCallsPerTurn
-    ) {
-      return 'max_calls_exceeded';
-    }
-
     // irreversible 检查
     if (tool.sideEffectLevel === 'irreversible' && !permissions.allowIrreversible) {
       return 'irreversible_blocked';
     }
 
     return null;
+  }
+
+  private reserveTurnCallSlot(maxCallsPerTurn?: number): boolean {
+    if (
+      maxCallsPerTurn !== undefined &&
+      this.turnCallCount + this.inFlightTurnCallCount >= maxCallsPerTurn
+    ) {
+      return false;
+    }
+
+    this.inFlightTurnCallCount += 1;
+    return true;
+  }
+
+  private finalizeTurnCallSlot(consume: boolean): void {
+    if (this.inFlightTurnCallCount > 0) {
+      this.inFlightTurnCallCount -= 1;
+    }
+
+    if (consume) {
+      this.turnCallCount += 1;
+    }
   }
 
   /**
@@ -338,48 +542,128 @@ export class ToolExecutor {
     context: ToolExecutionContext,
     reason: ToolDenyReason,
     providerId: string,
+    providerType: ToolExecutionProviderType,
+    sideEffectLevel?: ToolSideEffectLevel,
   ): Promise<ToolCallResult & { denied: ToolDenyReason }> {
     const errorMessage = `Tool call denied: ${reason}`;
-    const createdAt = Date.now();
-
-    this.recordExecution({
+    const openedExecution = await this.openExecutionAttempt({
       context,
       providerId,
+      providerType,
       toolName,
       args,
+      sideEffectLevel,
+    });
+
+    await this.completeExecutionAttempt(openedExecution, {
       result: { denied: reason },
       status: 'denied',
       errorMessage,
       durationMs: 0,
-      createdAt,
+      finishedAt: openedExecution.startedAt,
     });
 
     await this.eventBus.emit('tool.call_denied', {
       floorId: context.floorId,
       pageId: context.pageId,
       callerSlot: context.callerSlot,
+      executionId: openedExecution.id,
+      providerId,
+      providerType,
+      sideEffectLevel,
       toolName,
+      status: 'denied',
       reason,
     });
 
     return { error: errorMessage, denied: reason };
   }
 
-  private recordExecution(input: ToolExecutionRecordInput): void {
-    this.executionRecords.push({
+  private async openExecutionAttempt(input: {
+    context: ToolExecutionContext;
+    providerId: string;
+    providerType: ToolExecutionProviderType;
+    toolName: string;
+    args: Record<string, unknown>;
+    sideEffectLevel?: ToolSideEffectLevel;
+  }): Promise<ToolExecutionOpenRecord> {
+    const startedAt = Date.now();
+    const record: ToolExecutionOpenRecord = {
       id: randomUUID(),
       runId: this.runId,
       floorId: input.context.floorId,
       ...(input.context.pageId ? { pageId: input.context.pageId } : {}),
       callerSlot: input.context.callerSlot,
       providerId: input.providerId,
+      providerType: input.providerType,
       toolName: input.toolName,
       argsJson: safeJsonStringify(input.args),
+      ...(input.sideEffectLevel ? { sideEffectLevel: input.sideEffectLevel } : {}),
+      startedAt,
+      createdAt: startedAt,
+      attemptNo: this.nextAttemptNo(),
+    };
+
+    if (this.executionRepository) {
+      await this.executionRepository.open(record);
+    }
+
+    return record;
+  }
+
+  private async completeExecutionAttempt(
+    openRecord: ToolExecutionOpenRecord,
+    input: {
+      result: unknown;
+      status: FinalToolExecutionStatus;
+      errorMessage?: string;
+      durationMs: number;
+      finishedAt: number;
+    },
+  ): Promise<ExecutedToolCallRecord> {
+    const completedRecord: ExecutedToolCallRecord = {
+      id: openRecord.id,
+      runId: openRecord.runId,
+      floorId: openRecord.floorId,
+      ...(openRecord.pageId ? { pageId: openRecord.pageId } : {}),
+      callerSlot: openRecord.callerSlot,
+      providerId: openRecord.providerId,
+      providerType: openRecord.providerType,
+      toolName: openRecord.toolName,
+      argsJson: openRecord.argsJson,
       resultJson: safeJsonStringify(input.result),
       status: input.status,
+      lifecycleState: 'finished',
+      commitOutcome: 'pending',
+      ...(openRecord.sideEffectLevel ? { sideEffectLevel: openRecord.sideEffectLevel } : {}),
       ...(input.errorMessage ? { errorMessage: input.errorMessage } : {}),
       durationMs: normalizeDurationMs(input.durationMs),
-      createdAt: input.createdAt,
-    });
+      startedAt: openRecord.startedAt,
+      finishedAt: input.finishedAt,
+      attemptNo: openRecord.attemptNo,
+      ...(openRecord.replayParentExecutionId
+        ? { replayParentExecutionId: openRecord.replayParentExecutionId }
+        : {}),
+      createdAt: openRecord.createdAt,
+    };
+
+    if (this.executionRepository) {
+      await this.executionRepository.finish(openRecord.id, {
+        resultJson: completedRecord.resultJson,
+        status: input.status,
+        lifecycleState: 'finished',
+        errorMessage: completedRecord.errorMessage,
+        durationMs: completedRecord.durationMs,
+        finishedAt: input.finishedAt,
+      });
+    }
+
+    this.executionRecords.push(completedRecord);
+    return completedRecord;
+  }
+
+  private nextAttemptNo(): number {
+    this.executionAttemptCount += 1;
+    return this.executionAttemptCount;
   }
 }

@@ -12,7 +12,7 @@ import {
 } from "./utils.js";
 
 export type McpTransport = "stdio" | "http";
-export type McpConnectionState = "disconnected" | "connecting" | "connected" | "error";
+export type McpConnectionState = "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
 export type McpDefaultSideEffectLevel = "none" | "sandbox" | "irreversible";
 
 export type McpStdioConfig = {
@@ -51,6 +51,8 @@ export type McpServerStatus = {
   state: McpConnectionState;
   toolCount: number;
   toolsRefreshedAt: number | null;
+  reconnectRequired: boolean;
+  lastTimeoutAt: number | null;
   transport: McpTransport;
 };
 
@@ -346,6 +348,8 @@ function mapMcpStatus(value: unknown): McpServerStatus | null {
   return {
     connectedAt: readNullableNumber(record.connected_at),
     error: readNullableString(record.error),
+    lastTimeoutAt: readNullableNumber(record.last_timeout_at),
+    reconnectRequired: readBoolean(record.reconnect_required, readString(record.state) === "reconnect_required"),
     serverId: readString(record.server_id),
     serverName: readString(record.server_name),
     state: readString(record.state, "disconnected") as McpConnectionState,

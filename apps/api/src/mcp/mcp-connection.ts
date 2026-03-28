@@ -40,17 +40,24 @@ export interface McpLogger {
   error(obj: Record<string, unknown>, msg: string): void;
 }
 
+class McpConnectTimeoutError extends Error {}
+
+class McpCallTimeoutError extends Error {}
+
 // ── McpConnection ────────────────────────────────
 
 export class McpConnection {
   private client: Client | null = null;
   private transport: Transport | null = null;
+  private connectPromise: Promise<void> | null = null;
   private cachedTools: ToolDefinition[] = [];
   private lastRefresh = 0;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private _state: McpConnectionState = 'disconnected';
+  private _reconnectRequired = false;
   private _error: string | undefined;
   private _connectedAt: number | undefined;
+  private _lastTimeoutAt: number | undefined;
   private _toolsRefreshedAt: number | undefined;
   private _stdioRetried = false;
 
@@ -69,6 +76,14 @@ export class McpConnection {
     return this._error;
   }
 
+  get reconnectRequired(): boolean {
+    return this._reconnectRequired;
+  }
+
+  get lastTimeoutAt(): number | undefined {
+    return this._lastTimeoutAt;
+  }
+
   get connectedAt(): number | undefined {
     return this._connectedAt;
   }
@@ -84,12 +99,28 @@ export class McpConnection {
   // ── connect ─────────────────────────────────────
 
   async connect(): Promise<void> {
-    if (this._state === 'connected' || this._state === 'connecting') {
+    if (this._state === 'connected') {
       return;
     }
 
+    if (this.connectPromise) {
+      await this.connectPromise;
+      return;
+    }
+
+    this.connectPromise = this.connectInternal();
+
+    try {
+      await this.connectPromise;
+    } finally {
+      this.connectPromise = null;
+    }
+  }
+
+  private async connectInternal(): Promise<void> {
     this._state = 'connecting';
     this._error = undefined;
+    this._reconnectRequired = false;
 
     try {
       this.transport = this.createTransport();
@@ -97,19 +128,25 @@ export class McpConnection {
         { name: 'tavern-headless', version: '1.0.0' },
       );
 
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
       // 连接超时控制
       const connectPromise = this.client.connect(this.transport);
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(
-          () => reject(new Error(`Connection timeout after ${this.config.connectTimeoutMs}ms`)),
+        timeoutHandle = setTimeout(
+          () => reject(new McpConnectTimeoutError(`Connection timeout after ${this.config.connectTimeoutMs}ms`)),
           this.config.connectTimeoutMs,
         );
       });
 
       await Promise.race([connectPromise, timeoutPromise]);
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
 
       this._state = 'connected';
       this._connectedAt = Date.now();
+      this._reconnectRequired = false;
 
       // 拉取工具列表
       await this.refreshTools();
@@ -141,10 +178,16 @@ export class McpConnection {
       this._state = 'error';
       this._error = err instanceof Error ? err.message : String(err);
       this.logger?.error(
+
         { serverId: this.config.id, serverName: this.config.name, error: this._error },
         'MCP connection failed',
       );
+      this._connectedAt = undefined;
+      this._toolsRefreshedAt = undefined;
+      this.cachedTools = [];
+      this.lastRefresh = 0;
       // 清理半成功的连接
+      this.clearRefreshTimer();
       await this.cleanupTransport();
     }
   }
@@ -158,6 +201,8 @@ export class McpConnection {
 
     this._state = 'disconnected';
     this._connectedAt = undefined;
+    this._toolsRefreshedAt = undefined;
+    this._reconnectRequired = false;
     this.cachedTools = [];
     this.lastRefresh = 0;
 
@@ -184,15 +229,19 @@ export class McpConnection {
     }
 
     try {
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
       const callPromise = this.client.callTool({ name, arguments: args });
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(
-          () => reject(new Error(`Tool call timeout after ${this.config.callTimeoutMs}ms`)),
+        timeoutHandle = setTimeout(
+          () => reject(new McpCallTimeoutError(`Tool call timeout after ${this.config.callTimeoutMs}ms`)),
           this.config.callTimeoutMs,
         );
       });
 
       const result = await Promise.race([callPromise, timeoutPromise]);
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
 
       // 检查是否为错误响应
       if (result && typeof result === 'object' && 'isError' in result && result.isError) {
@@ -204,6 +253,13 @@ export class McpConnection {
       const data = this.extractContent(result);
       return { data };
     } catch (err) {
+      if (err instanceof McpCallTimeoutError) {
+        await this.recycleAfterUncertainTimeout(err.message);
+        return {
+          error: `${err.message}; execution outcome is uncertain; reconnect required before the next call`,
+        };
+      }
+
       return { error: err instanceof Error ? err.message : String(err) };
     }
   }
@@ -371,6 +427,30 @@ export class McpConnection {
 
     this.client = null;
     this.transport = null;
+  }
+
+  private async recycleAfterUncertainTimeout(message: string): Promise<void> {
+    this._lastTimeoutAt = Date.now();
+    this._error = `${message}; execution outcome is uncertain; reconnect required`;
+    this._state = 'reconnect_required';
+    this._reconnectRequired = true;
+    this._connectedAt = undefined;
+    this._toolsRefreshedAt = undefined;
+    this.cachedTools = [];
+    this.lastRefresh = 0;
+    this.clearRefreshTimer();
+
+    await this.cleanupTransport();
+
+    this.logger?.warn(
+      {
+        serverId: this.config.id,
+        serverName: this.config.name,
+        error: this._error,
+        lastTimeoutAt: this._lastTimeoutAt,
+      },
+      'MCP tool call timed out locally; outcome is uncertain and connection will be recycled',
+    );
   }
 
   private clearRefreshTimer(): void {

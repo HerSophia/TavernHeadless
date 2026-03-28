@@ -20,7 +20,8 @@ export async function fetchWorldbookAssetDetail(
     id: detail.id,
     name: detail.name,
     source: detail.source,
-    updatedAt: detail.updatedAt
+    updatedAt: detail.updatedAt,
+    version: detail.version
   };
 }
 
@@ -45,7 +46,8 @@ export async function updateWorldbookAsset(
     kind: "worldbook",
     name: payload.name,
     source: payload.source,
-    updatedAt: payload.updatedAt
+    updatedAt: payload.updatedAt,
+    version: payload.version
   };
 }
 

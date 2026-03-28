@@ -11,6 +11,9 @@
  * - LLM_DIRECTOR_MODEL: Director 模型（可选）
  * - LLM_VERIFIER_MODEL: Verifier 模型（可选）
  * - LLM_MEMORY_MODEL: Memory 模型（可选）
+ * - LLM_DEFAULT_TIMEOUT_MS: 服务端默认生成超时（毫秒，默认 60000）
+ * - TURN_COMMIT_MAX_RETRIES: commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数（默认 2）
+ * - TURN_COMMIT_RETRY_BASE_DELAY_MS: commit 重试基础退避时间（毫秒，默认 100）
  * - ENABLE_SSE_CHAT: 是否启用 SSE 流式聊天端点（默认 false）
  * - ENABLE_PROMPT_DRY_RUN: 是否启用 Prompt Dry-run 调试端点（默认 false）
  * - CHAT_HISTORY_MAX_FLOORS: 可选历史楼层上限（最近 N 层）
@@ -75,6 +78,12 @@ export interface AppConfig {
   enablePromptDryRun: boolean;
   /** 是否默认启用 MemoryConsolidator */
   enableMemoryConsolidation: boolean;
+  /** 服务端默认生成超时（毫秒） */
+  llmDefaultTimeoutMs: number;
+  /** commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数 */
+  turnCommitMaxRetries: number;
+  /** commit 重试基础退避时间（毫秒） */
+  turnCommitRetryBaseDelayMs: number;
   /** 认证配置 */
   auth: AuthConfig;
   /** 账号模式 */
@@ -103,6 +112,9 @@ export function loadConfig(): AppConfig {
   const enablePromptDryRun = process.env.ENABLE_PROMPT_DRY_RUN === "true";
   const accountMode = parseAccountMode(process.env.ACCOUNT_MODE);
   const enableMemoryConsolidation = process.env.ENABLE_MEMORY_CONSOLIDATION === "true";
+  const llmDefaultTimeoutMs = parsePositiveInt(process.env.LLM_DEFAULT_TIMEOUT_MS) ?? 60_000;
+  const turnCommitMaxRetries = parseNonNegativeInt(process.env.TURN_COMMIT_MAX_RETRIES) ?? 2;
+  const turnCommitRetryBaseDelayMs = parsePositiveInt(process.env.TURN_COMMIT_RETRY_BASE_DELAY_MS) ?? 100;
   const cors = parseCorsConfig(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN, process.env.CORS_CREDENTIALS);
   const enableMcp = process.env.ENABLE_MCP === "true";
   const memoryInjectionDecay = parseMemoryInjectionDecay(
@@ -152,6 +164,9 @@ export function loadConfig(): AppConfig {
       enableSseChat,
       enablePromptDryRun,
       enableMemoryConsolidation,
+      llmDefaultTimeoutMs,
+      turnCommitMaxRetries,
+      turnCommitRetryBaseDelayMs,
       auth,
       accountMode,
       cors,
@@ -209,6 +224,9 @@ export function loadConfig(): AppConfig {
     enableSseChat,
     enablePromptDryRun,
     enableMemoryConsolidation,
+    llmDefaultTimeoutMs,
+    turnCommitMaxRetries,
+    turnCommitRetryBaseDelayMs,
     auth,
     accountMode,
     cors,

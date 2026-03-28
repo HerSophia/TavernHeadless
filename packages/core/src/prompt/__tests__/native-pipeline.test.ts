@@ -40,6 +40,33 @@ describe('assembleNativePrompt', () => {
     expect(ir.metadata.reservedForReply).toBe(256);
   });
 
+  it('renders non-string variable values through the template engine', () => {
+    const ir = assembleNativePrompt({
+      systemPrompt: 'State {{state}} / Alive {{alive}} / Turn {{turn}}',
+      chatHistory: [
+        { role: 'user', content: 'Inventory {{inventory}}' },
+      ],
+      variables: {
+        state: { hp: 100, mp: 20 },
+        alive: true,
+        turn: 3,
+        inventory: ['rope', 'torch'],
+      },
+      maxTokens: 2048,
+      reservedForReply: 256,
+    });
+
+    const systemSection = ir.sections.find((section) => section.name === 'nativeSystem');
+    const chatSection = ir.sections.find((section) => section.name === 'chatHistory');
+
+    expect(systemSection?.messages[0]?.content).toBe(
+      'State {"hp":100,"mp":20} / Alive true / Turn 3'
+    );
+    expect(chatSection?.messages[0]?.content).toBe(
+      'Inventory ["rope","torch"]'
+    );
+  });
+
   it('places worldbook entries before and after chat history', () => {
     const ir = assembleNativePrompt({
       systemPrompt: 'System prompt',

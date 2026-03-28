@@ -5,8 +5,10 @@ import {
   Ellipsis,
   MessageSquare,
   Plus,
+  PlugZap,
   SlidersHorizontal,
-  SquarePen
+  SquarePen,
+  Wrench
 } from "lucide-vue-next";
 
 import type { SessionState, WorkspaceAsset } from "../../stores/workspace";
@@ -35,6 +37,8 @@ const emit = defineEmits<{
   exportCurrentPreset: [];
   openAssetBrowser: [];
   openLlmManager: [];
+  openMcpManager: [];
+  openToolManager: [];
 }>();
 </script>
 
@@ -178,6 +182,21 @@ const emit = defineEmits<{
         </div>
         <div class="font-mono text-[10px] text-zinc-500">
           {{ props.t("dialogs.llmManagerEntryHint") }}
+        </div>
+
+        <div class="grid grid-cols-3 gap-1.5 pt-1">
+          <button class="btn-ghost justify-center px-2 py-1 text-[11px]" type="button" @click="emit('openLlmManager')">
+            <SlidersHorizontal class="h-3.5 w-3.5" />
+            <span>{{ props.t("nav.llmManager") }}</span>
+          </button>
+          <button class="btn-ghost justify-center px-2 py-1 text-[11px]" type="button" @click="emit('openToolManager')">
+            <Wrench class="h-3.5 w-3.5" />
+            <span>{{ props.t("nav.toolManager") }}</span>
+          </button>
+          <button class="btn-ghost justify-center px-2 py-1 text-[11px]" type="button" @click="emit('openMcpManager')">
+            <PlugZap class="h-3.5 w-3.5" />
+            <span>{{ props.t("nav.mcpManager") }}</span>
+          </button>
         </div>
       </div>
     </div>

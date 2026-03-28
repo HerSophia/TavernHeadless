@@ -46,6 +46,7 @@ import {
   type LoadedPromptRegexProfile,
   type LoadedPromptWorldbook,
 } from "./prompt-resource-loader.js";
+import { VariableService } from "./variable-service.js";
 
 // ── 类型 ──────────────────────────────────────────────
 
@@ -89,13 +90,18 @@ export interface SessionMetadata {
   [key: string]: unknown;
 }
 
+const RESERVED_PROMPT_ALIAS_KEYS = ["char", "user"] as const;
+type ReservedPromptAlias = (typeof RESERVED_PROMPT_ALIAS_KEYS)[number];
 export interface PromptSnapshotPreview {
   presetId: string | null;
   presetUpdatedAt: number | null;
+  presetVersion: number | null;
   worldbookId: string | null;
   worldbookUpdatedAt: number | null;
+  worldbookVersion: number | null;
   regexProfileId: string | null;
   regexProfileUpdatedAt: number | null;
+  regexProfileVersion: number | null;
   worldbookActivatedEntryUids: number[];
   regexPreRuleNames: string[];
   regexPostRuleNames: string[];
@@ -119,7 +125,13 @@ export interface PromptAssemblySnapshot extends PromptSnapshotPreview {
   character?: CharacterSnapshot;
   userSnapshot?: UserSnapshot;
   persona?: PersonaInfo;
-  variables: Record<string, string>;
+  variables: Record<string, unknown>;
+}
+
+export interface PromptVariableContextInput {
+  sessionId: string;
+  floorId?: string;
+  pageId?: string;
 }
 
 /** 编排结果 */
@@ -154,6 +166,8 @@ export interface AssembleDebugInfo {
   regexPostRules: string[];
   /** 是否注入了记忆摘要 */
   memorySummaryInjected: boolean;
+  /** 被系统别名覆盖的持久化变量 key */
+  reservedVariableCollisions: ReservedPromptAlias[];
 }
 
 export interface AssemblePromptOptions {
@@ -164,6 +178,8 @@ export interface AssemblePromptOptions {
   includeDebug?: boolean;
   /** narrator 上下文预算覆盖（来自 slot binding / request override） */
   maxContextTokensOverride?: number;
+  /** 当前回合可见变量的解析上下文 */
+  variableContext?: PromptVariableContextInput;
 }
 
 // ── 默认 System Prompt ────────────────────────────────
@@ -200,21 +216,27 @@ export async function assemblePrompt(
   const resourceLoader = new PromptResourceLoader(db);
 
   // ── 1. 加载资源并冻结本轮快照 ──
-  const [preset, worldbook, regexProfile] = await Promise.all([
-    resourceLoader.loadPreset(accountId, session.presetId),
-    resourceLoader.loadWorldbookData(accountId, session.worldbookProfileId),
-    resourceLoader.loadRegexScripts(accountId, session.regexProfileId),
-  ]);
+  const { preset, worldbook, regexProfile } = await resourceLoader.loadPromptResourceBundle(accountId, {
+    presetId: session.presetId,
+    worldbookProfileId: session.worldbookProfileId,
+    regexProfileId: session.regexProfileId,
+  });
 
   const metadata = parseSessionMetadata(session.metadataJson);
   const character = parseCharacterSnapshot(session.characterSnapshotJson);
   const userSnapshot = parseUserSnapshot(session.userSnapshotJson ?? null);
   const persona = userSnapshot ?? metadata.persona;
   const promptMode = resolvePromptMode(session, metadata);
-  const variables: Record<string, string> = {
-    char: character?.name ?? "Assistant",
-    user: persona?.name ?? "User",
-  };
+  const {
+    variables,
+    reservedVariableCollisions,
+  } = await resolvePromptVariables({
+    db,
+    accountId,
+    character,
+    persona,
+    context: options.variableContext,
+  });
 
   const promptSnapshot: PromptAssemblySnapshot = {
     createdAt: Date.now(),
@@ -228,10 +250,13 @@ export async function assemblePrompt(
     variables,
     presetId: preset?.id ?? null,
     presetUpdatedAt: preset?.updatedAt ?? null,
+    presetVersion: preset?.version ?? null,
     worldbookId: worldbook?.id ?? null,
     worldbookUpdatedAt: worldbook?.updatedAt ?? null,
+    worldbookVersion: worldbook?.version ?? null,
     regexProfileId: regexProfile?.id ?? null,
     regexProfileUpdatedAt: regexProfile?.updatedAt ?? null,
+    regexProfileVersion: regexProfile?.version ?? null,
     worldbookActivatedEntryUids: [],
     regexPreRuleNames: [],
     regexPostRuleNames: [],
@@ -270,8 +295,8 @@ export async function assemblePrompt(
       worldBookResults = triggerWorldBook(worldbookData.entries, {
         messages: triggerMessages,
         scanDepth: worldbookData.scanDepth,
-        caseSensitive: false,
-        matchWholeWords: false,
+        caseSensitive: worldbookData.caseSensitive,
+        matchWholeWords: worldbookData.matchWholeWords,
       });
     }
 
@@ -378,6 +403,7 @@ export async function assemblePrompt(
         regexPreRules: promptSnapshot.regexPreRuleNames,
         regexPostRules: promptSnapshot.regexPostRuleNames,
         memorySummaryInjected,
+        reservedVariableCollisions,
       }
     : undefined;
 
@@ -397,10 +423,13 @@ export function buildPromptSnapshotPreview(
   return {
     presetId: snapshot.presetId,
     presetUpdatedAt: snapshot.presetUpdatedAt,
+    presetVersion: snapshot.presetVersion,
     worldbookId: snapshot.worldbookId,
     worldbookUpdatedAt: snapshot.worldbookUpdatedAt,
+    worldbookVersion: snapshot.worldbookVersion,
     regexProfileId: snapshot.regexProfileId,
     regexProfileUpdatedAt: snapshot.regexProfileUpdatedAt,
+    regexProfileVersion: snapshot.regexProfileVersion,
     worldbookActivatedEntryUids: [...snapshot.worldbookActivatedEntryUids],
     regexPreRuleNames: [...snapshot.regexPreRuleNames],
     regexPostRuleNames: [...snapshot.regexPostRuleNames],
@@ -422,10 +451,13 @@ export function buildPromptSnapshotRecord(args: {
     sessionId: args.sessionId,
     presetId: preview.presetId,
     presetUpdatedAt: preview.presetUpdatedAt,
+    presetVersion: preview.presetVersion,
     worldbookId: preview.worldbookId,
     worldbookUpdatedAt: preview.worldbookUpdatedAt,
+    worldbookVersion: preview.worldbookVersion,
     regexProfileId: preview.regexProfileId,
     regexProfileUpdatedAt: preview.regexProfileUpdatedAt,
+    regexProfileVersion: preview.regexProfileVersion,
     worldbookActivatedEntryUids: preview.worldbookActivatedEntryUids,
     regexPreRuleNames: preview.regexPreRuleNames,
     regexPostRuleNames: preview.regexPostRuleNames,
@@ -485,6 +517,45 @@ function parseSessionMetadata(metadataJson: string | null): SessionMetadata {
   } catch {
     return {};
   }
+}
+
+async function resolvePromptVariables(args: {
+  db: AppDb;
+  accountId: string;
+  character?: CharacterSnapshot;
+  persona?: PersonaInfo;
+  context?: PromptVariableContextInput;
+}): Promise<{
+  variables: Record<string, unknown>;
+  reservedVariableCollisions: ReservedPromptAlias[];
+}> {
+  const variables = Object.create(null) as Record<string, unknown>;
+
+  if (args.context) {
+    const variableService = new VariableService(args.db);
+    const snapshot = await variableService.resolveSnapshot({
+      accountId: args.accountId,
+      sessionId: args.context.sessionId,
+      floorId: args.context.floorId,
+      pageId: args.context.pageId,
+    });
+
+    for (const entry of snapshot.resolved) {
+      variables[entry.key] = entry.value;
+    }
+  }
+
+  const reservedVariableCollisions = RESERVED_PROMPT_ALIAS_KEYS.filter((key) =>
+    Object.prototype.hasOwnProperty.call(variables, key)
+  );
+
+  variables.char = args.character?.name ?? "Assistant";
+  variables.user = args.persona?.name ?? "User";
+
+  return {
+    variables,
+    reservedVariableCollisions,
+  };
 }
 
 function resolvePromptMode(

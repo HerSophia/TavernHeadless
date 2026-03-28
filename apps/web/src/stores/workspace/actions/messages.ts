@@ -3,10 +3,14 @@ import type { ComputedRef } from "vue";
 import {
   deleteMessageById,
   editAndRegenerateMessage as editAndRegenerateMessageApi,
+  extractToolReplayBlockingExecutions,
+  isToolReplayBlockedError,
+  isToolReplayConfirmationRequiredError,
   respondInSession,
   retryFloor as retryFloorApi,
   streamSessionResponse,
   type StreamStartPayload,
+  type WorkspaceRespondStreamEvent,
   type WorkspaceRespondResult,
   updateMessageContent
 } from "../../../lib/workspace-api";
@@ -30,6 +34,8 @@ type MessageActionsContext = {
   hydrateActiveTimeline: () => Promise<TimelineHydrationResult>;
   hydrateSessionTimeline: (sessionId: string, accountId?: string) => Promise<TimelineHydrationResult>;
   isStreaming: ComputedRef<boolean>;
+  recordRespondStreamEvent?: (event: WorkspaceRespondStreamEvent) => void;
+  resetRespondStreamState?: () => void;
 };
 
 function applyDraftFloorMetadata(
@@ -260,7 +266,10 @@ export function createMessageActions(context: MessageActionsContext) {
     }
   }
 
-  async function retryMessageFloor(messageId: string): Promise<RegenerateFromMessageResult> {
+  async function retryMessageFloor(
+    messageId: string,
+    options?: { confirmedExecutionIds?: string[] }
+  ): Promise<RegenerateFromMessageResult> {
     const location = context.findActiveMessage(messageId);
     if (!location) {
       return {
@@ -296,7 +305,11 @@ export function createMessageActions(context: MessageActionsContext) {
     }
 
     try {
-      const regenerateResult = await retryFloorApi(message.floorId, context.currentAccount.value);
+      const regenerateResult = await retryFloorApi(
+        message.floorId,
+        context.currentAccount.value,
+        options?.confirmedExecutionIds
+      );
       const timelineResult = await context.hydrateActiveTimeline();
       return {
         apiSyncFailed: timelineResult.apiSyncFailed,
@@ -304,7 +317,26 @@ export function createMessageActions(context: MessageActionsContext) {
         reason: undefined,
         result: regenerateResult
       };
-    } catch {
+    } catch (error) {
+      const blockingExecutions = extractToolReplayBlockingExecutions(error);
+      if (isToolReplayConfirmationRequiredError(error)) {
+        return {
+          apiSyncFailed: false,
+          blockingExecutions,
+          ok: false,
+          reason: "confirmation_required"
+        };
+      }
+
+      if (isToolReplayBlockedError(error)) {
+        return {
+          apiSyncFailed: false,
+          blockingExecutions,
+          ok: false,
+          reason: "blocked"
+        };
+      }
+
       return {
         apiSyncFailed: true,
         ok: false,
@@ -386,6 +418,8 @@ export function createMessageActions(context: MessageActionsContext) {
     const draftMessages = [userMessage, assistantMessage];
 
     const startAt = Date.now();
+    context.resetRespondStreamState?.();
+    let streamDeliveredDoneEvent = false;
 
     try {
       const result = await streamSessionResponse(session.id, text, {
@@ -393,10 +427,31 @@ export function createMessageActions(context: MessageActionsContext) {
         onChunk: (chunk) => {
           assistantMessage.content += chunk;
         },
+        onEvent: (event) => {
+          if (event.type === "done") {
+            streamDeliveredDoneEvent = true;
+          }
+          context.recordRespondStreamEvent?.(event);
+        },
         onStart: (payload) => {
           applyStreamStartMetadata(draftMessages, payload);
         }
       });
+
+      if (!streamDeliveredDoneEvent) {
+        context.recordRespondStreamEvent?.({
+          payload: {
+            branchId: result.branchId,
+            finalState: result.finalState,
+            floorId: result.floorId,
+            floorNo: result.floorNo,
+            generatedText: result.generatedText,
+            summaries: result.summaries,
+            totalUsage: result.totalUsage
+          },
+          type: "done"
+        });
+      }
 
       applyRespondResultMetadata(draftMessages, result);
       assistantMessage.content = result.generatedText || assistantMessage.content;
@@ -416,11 +471,25 @@ export function createMessageActions(context: MessageActionsContext) {
         tokens: assistantMessage.tokens
       };
     } catch {
+      context.resetRespondStreamState?.();
       // continue with respond fallback
     }
 
     try {
       const result = await respondInSession(session.id, text, context.currentAccount.value);
+      context.recordRespondStreamEvent?.({
+        payload: {
+          branchId: result.branchId,
+          finalState: result.finalState,
+          floorId: result.floorId,
+          floorNo: result.floorNo,
+          generatedText: result.generatedText,
+          summaries: result.summaries,
+          totalUsage: result.totalUsage
+        },
+        type: "done"
+      });
+
       applyRespondResultMetadata(draftMessages, result);
       assistantMessage.content = result.generatedText;
       assistantMessage.streaming = false;
@@ -439,6 +508,7 @@ export function createMessageActions(context: MessageActionsContext) {
         tokens: assistantMessage.tokens
       };
     } catch {
+      context.resetRespondStreamState?.();
       // continue with local fallback
     }
 

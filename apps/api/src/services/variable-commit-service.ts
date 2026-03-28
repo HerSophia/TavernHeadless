@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { VariableEntry } from "@tavern/shared";
+import type { BufferedToolVariableMutation } from "@tavern/core";
 
 import type { DbExecutor } from "../db/client.js";
 import { messagePages, variables } from "../db/schema.js";
@@ -67,6 +68,7 @@ function buildPromotedRow(args: {
 }): VariableRow {
   return {
     id: args.existingId ?? nanoid(),
+    accountId: args.sourceRow.accountId,
     scope: "floor",
     scopeId: args.floorId,
     key: args.sourceRow.key,
@@ -75,7 +77,39 @@ function buildPromotedRow(args: {
   };
 }
 
+function buildBufferedRow(args: {
+  mutation: BufferedToolVariableMutation;
+  committedAt: number;
+}): typeof variables.$inferInsert {
+  return {
+    id: nanoid(),
+    ...(args.mutation.accountId ? { accountId: args.mutation.accountId } : {}),
+    scope: args.mutation.scope,
+    scopeId: args.mutation.scopeId,
+    key: args.mutation.key,
+    valueJson: JSON.stringify(args.mutation.value),
+    updatedAt: args.committedAt,
+  };
+}
+
 export class VariableCommitService {
+  flushBufferedMutations(
+    mutations: BufferedToolVariableMutation[] | undefined,
+    tx: DbExecutor,
+    committedAt: number,
+  ): void {
+    for (const mutation of mutations ?? []) {
+      const row = buildBufferedRow({ mutation, committedAt });
+      tx.insert(variables)
+        .values(row)
+        .onConflictDoUpdate({
+          target: [variables.accountId, variables.scope, variables.scopeId, variables.key],
+          set: { valueJson: row.valueJson, updatedAt: row.updatedAt },
+        })
+        .run();
+    }
+  }
+
   promoteAll(input: VariableCommitInput, tx: DbExecutor): VariableCommitResult {
     const policy = input.policy ?? "replace";
     if (!input.pageId) {
@@ -140,7 +174,7 @@ export class VariableCommitService {
       tx.insert(variables)
         .values(promotedRow)
         .onConflictDoUpdate({
-          target: [variables.scope, variables.scopeId, variables.key],
+          target: [variables.accountId, variables.scope, variables.scopeId, variables.key],
           set: {
             valueJson: promotedRow.valueJson,
             updatedAt: promotedRow.updatedAt,

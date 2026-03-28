@@ -339,7 +339,7 @@ describe("McpConnection", () => {
     expect(errorResult).toEqual({ error: "tool failed" });
   });
 
-  it("returns timeout and thrown errors from callTool()", async () => {
+  it("marks local tool-call timeouts as uncertain, recycles the connection, and allows clean reconnect", async () => {
     const connection = new McpConnection(makeConfig({ callTimeoutMs: 50 }));
     await connection.connect();
 
@@ -350,7 +350,21 @@ describe("McpConnection", () => {
     await vi.advanceTimersByTimeAsync(51);
     const timeoutResult = await timeoutPromise;
 
-    expect(timeoutResult).toEqual({ error: "Tool call timeout after 50ms" });
+    expect(timeoutResult).toEqual({
+      error: "Tool call timeout after 50ms; execution outcome is uncertain; reconnect required before the next call",
+    });
+    expect(connection.state).toBe("reconnect_required");
+    expect(connection.reconnectRequired).toBe(true);
+    expect(connection.lastTimeoutAt).toEqual(expect.any(Number));
+    expect(connection.connectedAt).toBeUndefined();
+    expect(connection.toolCount).toBe(0);
+    expect(sdkMocks.closeClient).toHaveBeenCalled();
+    expect(sdkMocks.stdioTransports[0]?.close).toHaveBeenCalled();
+
+    sdkMocks.listTools.mockResolvedValueOnce({ tools: [] });
+    await connection.connect();
+    expect(connection.state).toBe("connected");
+    expect(connection.reconnectRequired).toBe(false);
 
     sdkMocks.callTool.mockRejectedValueOnce(new Error("boom"));
 

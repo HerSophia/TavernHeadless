@@ -808,6 +808,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/floors/{id}/tool-executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Query tool execution journal for a floor */
+        get: operations["queryFloorToolExecutionRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -4320,6 +4337,23 @@ export interface paths {
         patch: operations["patchSessionToolPermissions"];
         trace?: never;
     };
+    "/sessions/{id}/tools/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get session runtime tool catalog */
+        get: operations["getSessionRuntimeToolCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/batch/delete": {
         parameters: {
             query?: never;
@@ -4352,6 +4386,23 @@ export interface paths {
         head?: never;
         /** Batch update session status */
         patch: operations["batchUpdateSessionStatus"];
+        trace?: never;
+    };
+    "/tool-executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Query tool execution journal */
+        get: operations["queryToolExecutionRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/tools/builtin": {
@@ -5021,6 +5072,23 @@ export interface paths {
         get?: never;
         /** Batch upsert variables */
         put: operations["batchUpsertVariables"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/variables/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve visible variable snapshot */
+        get: operations["resolveVariablesContext"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -6338,6 +6406,97 @@ export interface operations {
         responses: {
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    queryFloorToolExecutionRecords: {
+        parameters: {
+            query?: {
+                session_id?: string;
+                floor_id?: string;
+                run_id?: string;
+                caller_slot?: "narrator" | "director" | "verifier" | "memory";
+                tool_name?: string;
+                status?: "running" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+                lifecycle_state?: "opened" | "finished";
+                commit_outcome?: "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
+                provider_type?: "builtin" | "preset" | "mcp" | "unknown";
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+                sort_by?: "created_at" | "started_at" | "finished_at";
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            args: unknown;
+                            attempt_no: number;
+                            /** @enum {string} */
+                            caller_slot: "narrator" | "director" | "verifier" | "memory";
+                            /** @enum {string} */
+                            commit_outcome: "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
+                            created_at: number;
+                            duration_ms: number;
+                            error_message: string | null;
+                            finished_at: number | null;
+                            floor_id: string;
+                            id: string;
+                            /** @enum {string} */
+                            lifecycle_state: "opened" | "finished";
+                            page_id: string | null;
+                            provider_id: string;
+                            /** @enum {string} */
+                            provider_type: "builtin" | "preset" | "mcp" | "unknown";
+                            replay_parent_execution_id: string | null;
+                            result: unknown;
+                            run_id: string;
+                            side_effect_level: ("none" | "sandbox" | "irreversible") | null;
+                            started_at: number;
+                            /** @enum {string} */
+                            status: "running" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+                            tool_name: string;
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9577,7 +9736,8 @@ export interface operations {
                      *           "id": "preset_story",
                      *           "name": "Story Preset",
                      *           "source": "sillytavern",
-                     *           "updated_at": 1735689660000
+                     *           "updated_at": 1735689660000,
+                     *           "version": 3
                      *         }
                      *       ]
                      *     }
@@ -9589,6 +9749,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         }[];
                     };
                 };
@@ -9623,7 +9784,8 @@ export interface operations {
                      *         "id": "preset_story",
                      *         "name": "Story Preset",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689660000
+                     *         "updated_at": 1735689660000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -9634,7 +9796,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -9644,6 +9807,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -9711,7 +9875,7 @@ export interface operations {
                  *           "temperature": 0.7
                  *         }
                  *       },
-                 *       "expected_updated_at": 1735689660000,
+                 *       "expected_version": 3,
                  *       "name": "Story Preset"
                  *     }
                  */
@@ -9729,6 +9893,7 @@ export interface operations {
                         };
                     };
                     expected_updated_at?: number;
+                    expected_version?: number;
                     name: string;
                 };
             };
@@ -9747,7 +9912,8 @@ export interface operations {
                      *         "id": "preset_story",
                      *         "name": "Story Preset",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689660000
+                     *         "updated_at": 1735689660000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -9758,7 +9924,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -9767,6 +9934,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -9916,7 +10084,8 @@ export interface operations {
                      *         "id": "preset_story",
                      *         "name": "Story Preset",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689660000
+                     *         "updated_at": 1735689660000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -9927,7 +10096,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -9939,6 +10109,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -10256,6 +10427,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     updatePresetEntry: {
@@ -10352,6 +10540,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchDeletePresetEntries: {
@@ -10391,6 +10596,23 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10465,6 +10687,23 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10565,6 +10804,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     listImportedRegexProfiles: {
@@ -10590,7 +10846,8 @@ export interface operations {
                      *           "id": "preset_story",
                      *           "name": "Story Preset",
                      *           "source": "sillytavern",
-                     *           "updated_at": 1735689660000
+                     *           "updated_at": 1735689660000,
+                     *           "version": 3
                      *         }
                      *       ]
                      *     }
@@ -10602,6 +10859,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         }[];
                     };
                 };
@@ -10636,7 +10894,8 @@ export interface operations {
                      *         "id": "preset_story",
                      *         "name": "Story Preset",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689660000
+                     *         "updated_at": 1735689660000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -10647,7 +10906,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -10657,6 +10917,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -10701,6 +10962,7 @@ export interface operations {
                  *         }
                  *       ],
                  *       "expected_updated_at": 1735689660000,
+                 *       "expected_version": 2,
                  *       "name": "Safety Filters"
                  *     }
                  */
@@ -10709,6 +10971,7 @@ export interface operations {
                         [key: string]: unknown;
                     }[];
                     expected_updated_at?: number;
+                    expected_version?: number;
                     name: string;
                 };
             };
@@ -10727,7 +10990,8 @@ export interface operations {
                      *         "id": "regex_safe",
                      *         "name": "Safety Filters",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689720000
+                     *         "updated_at": 1735689720000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -10738,7 +11002,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -10747,6 +11012,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -11061,6 +11327,106 @@ export interface operations {
             };
         };
     };
+    getSessionRuntimeToolCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            conflicts: {
+                                provider_ids: string[];
+                                /** @enum {string} */
+                                reason: "name_conflict";
+                                tool_name: string;
+                            }[];
+                            generated_at: number;
+                            session_id: string;
+                            tools: {
+                                allowed_slots: string[];
+                                /** @enum {string} */
+                                availability: "available" | "unavailable" | "conflict";
+                                availability_reason?: string | null;
+                                name: string;
+                                provider_id: string;
+                                /** @enum {string} */
+                                provider_type: "builtin" | "preset" | "mcp";
+                                /** @enum {string} */
+                                replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                side_effect_level: "none" | "sandbox" | "irreversible";
+                                /** @enum {string} */
+                                source: "builtin" | "resource" | "custom" | "preset" | "character" | "mcp";
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     batchDeleteSessions: {
         parameters: {
             query?: never;
@@ -11148,6 +11514,95 @@ export interface operations {
                                 id?: string;
                                 index?: number;
                             }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    queryToolExecutionRecords: {
+        parameters: {
+            query?: {
+                session_id?: string;
+                floor_id?: string;
+                run_id?: string;
+                caller_slot?: "narrator" | "director" | "verifier" | "memory";
+                tool_name?: string;
+                status?: "running" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+                lifecycle_state?: "opened" | "finished";
+                commit_outcome?: "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
+                provider_type?: "builtin" | "preset" | "mcp" | "unknown";
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+                sort_by?: "created_at" | "started_at" | "finished_at";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            args: unknown;
+                            attempt_no: number;
+                            /** @enum {string} */
+                            caller_slot: "narrator" | "director" | "verifier" | "memory";
+                            /** @enum {string} */
+                            commit_outcome: "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
+                            created_at: number;
+                            duration_ms: number;
+                            error_message: string | null;
+                            finished_at: number | null;
+                            floor_id: string;
+                            id: string;
+                            /** @enum {string} */
+                            lifecycle_state: "opened" | "finished";
+                            page_id: string | null;
+                            provider_id: string;
+                            /** @enum {string} */
+                            provider_type: "builtin" | "preset" | "mcp" | "unknown";
+                            replay_parent_execution_id: string | null;
+                            result: unknown;
+                            run_id: string;
+                            side_effect_level: ("none" | "sandbox" | "irreversible") | null;
+                            started_at: number;
+                            /** @enum {string} */
+                            status: "running" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+                            tool_name: string;
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
                         };
                     };
                 };
@@ -12027,6 +12482,40 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     getVariable: {
@@ -12139,6 +12628,23 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12296,6 +12802,229 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    resolveVariablesContext: {
+        parameters: {
+            query: {
+                session_id: string;
+                floor_id?: string;
+                page_id?: string;
+                include_layers?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "context": {
+                     *           "account_id": "default-admin",
+                     *           "floor_id": "floor-a",
+                     *           "global_scope_id": "global",
+                     *           "page_id": "page-a",
+                     *           "session_id": "session-a"
+                     *         },
+                     *         "layers": {
+                     *           "chat": {
+                     *             "items": [
+                     *               {
+                     *                 "id": "var_mood",
+                     *                 "key": "mood",
+                     *                 "scope": "chat",
+                     *                 "scope_id": "session-a",
+                     *                 "updated_at": 1735689720000,
+                     *                 "value": {
+                     *                   "score": 20
+                     *                 }
+                     *               }
+                     *             ],
+                     *             "scope": "chat",
+                     *             "scope_id": "session-a"
+                     *           },
+                     *           "global": {
+                     *             "items": [
+                     *               {
+                     *                 "id": "var_global_theme",
+                     *                 "key": "theme",
+                     *                 "scope": "global",
+                     *                 "scope_id": "global",
+                     *                 "updated_at": 1735689700000,
+                     *                 "value": "midnight"
+                     *               }
+                     *             ],
+                     *             "scope": "global",
+                     *             "scope_id": "global"
+                     *           }
+                     *         },
+                     *         "resolved": [
+                     *           {
+                     *             "key": "mood",
+                     *             "source_scope": "floor",
+                     *             "source_scope_id": "floor-a",
+                     *             "updated_at": 1735689720000,
+                     *             "value": "tense"
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            context: {
+                                account_id: string;
+                                floor_id?: string;
+                                global_scope_id: string;
+                                page_id?: string;
+                                session_id: string;
+                            };
+                            layers?: {
+                                chat?: {
+                                    items: {
+                                        id: string;
+                                        key: string;
+                                        /** @enum {string} */
+                                        scope: "global" | "chat" | "floor" | "page";
+                                        scope_id: string;
+                                        updated_at: number;
+                                        value: unknown;
+                                    }[];
+                                    /** @enum {string} */
+                                    scope: "global" | "chat" | "floor" | "page";
+                                    scope_id: string;
+                                };
+                                floor?: {
+                                    items: {
+                                        id: string;
+                                        key: string;
+                                        /** @enum {string} */
+                                        scope: "global" | "chat" | "floor" | "page";
+                                        scope_id: string;
+                                        updated_at: number;
+                                        value: unknown;
+                                    }[];
+                                    /** @enum {string} */
+                                    scope: "global" | "chat" | "floor" | "page";
+                                    scope_id: string;
+                                };
+                                global?: {
+                                    items: {
+                                        id: string;
+                                        key: string;
+                                        /** @enum {string} */
+                                        scope: "global" | "chat" | "floor" | "page";
+                                        scope_id: string;
+                                        updated_at: number;
+                                        value: unknown;
+                                    }[];
+                                    /** @enum {string} */
+                                    scope: "global" | "chat" | "floor" | "page";
+                                    scope_id: string;
+                                };
+                                page?: {
+                                    items: {
+                                        id: string;
+                                        key: string;
+                                        /** @enum {string} */
+                                        scope: "global" | "chat" | "floor" | "page";
+                                        scope_id: string;
+                                        updated_at: number;
+                                        value: unknown;
+                                    }[];
+                                    /** @enum {string} */
+                                    scope: "global" | "chat" | "floor" | "page";
+                                    scope_id: string;
+                                };
+                            };
+                            resolved: {
+                                key: string;
+                                /** @enum {string} */
+                                source_scope: "global" | "chat" | "floor" | "page";
+                                source_scope_id: string;
+                                updated_at: number;
+                                value: unknown;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     listImportedWorldbooks: {
@@ -12321,7 +13050,8 @@ export interface operations {
                      *           "id": "preset_story",
                      *           "name": "Story Preset",
                      *           "source": "sillytavern",
-                     *           "updated_at": 1735689660000
+                     *           "updated_at": 1735689660000,
+                     *           "version": 3
                      *         }
                      *       ]
                      *     }
@@ -12333,6 +13063,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         }[];
                     };
                 };
@@ -12367,7 +13098,8 @@ export interface operations {
                      *         "id": "preset_story",
                      *         "name": "Story Preset",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689660000
+                     *         "updated_at": 1735689660000,
+                     *         "version": 3
                      *       }
                      *     }
                      */
@@ -12378,7 +13110,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -12388,6 +13121,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -12435,6 +13169,7 @@ export interface operations {
                  *         ]
                  *       },
                  *       "expected_updated_at": 1735689660000,
+                 *       "expected_version": 3,
                  *       "name": "Kingdom Lore"
                  *     }
                  */
@@ -12443,6 +13178,7 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     expected_updated_at?: number;
+                    expected_version?: number;
                     name: string;
                 };
             };
@@ -12461,7 +13197,8 @@ export interface operations {
                      *         "id": "wb_kingdom",
                      *         "name": "Kingdom Lore",
                      *         "source": "sillytavern",
-                     *         "updated_at": 1735689720000
+                     *         "updated_at": 1735689720000,
+                     *         "version": 4
                      *       }
                      *     }
                      */
@@ -12472,7 +13209,8 @@ export interface operations {
                          *       "id": "preset_story",
                          *       "name": "Story Preset",
                          *       "source": "sillytavern",
-                         *       "updated_at": 1735689660000
+                         *       "updated_at": 1735689660000,
+                         *       "version": 3
                          *     }
                          */
                         data: {
@@ -12481,6 +13219,7 @@ export interface operations {
                             name: string;
                             source: string;
                             updated_at: number;
+                            version: number;
                         };
                     };
                 };
@@ -12870,6 +13609,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     getWorldbookEntry: {
@@ -13046,6 +13802,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     updateWorldbookEntry: {
@@ -13206,6 +13979,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchDeleteWorldbookEntries: {
@@ -13298,6 +14088,23 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13507,6 +14314,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchUpdateWorldbookEntries: {
@@ -13697,6 +14521,23 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

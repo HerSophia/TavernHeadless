@@ -18,6 +18,9 @@ describe("loadConfig", () => {
     expect(config.enableWebSocket).toBe(true);
     expect(config.auth.mode).toBe("off");
     expect(config.accountMode).toBe("single");
+    expect(config.llmDefaultTimeoutMs).toBe(60_000);
+    expect(config.turnCommitMaxRetries).toBe(2);
+    expect(config.turnCommitRetryBaseDelayMs).toBe(100);
   });
 
   it("returns config with orchestration when LLM_API_KEY is set", () => {
@@ -76,6 +79,33 @@ describe("loadConfig", () => {
     vi.stubEnv("ENABLE_MEMORY_CONSOLIDATION", "true");
     const config = loadConfig();
     expect(config.enableMemoryConsolidation).toBe(true);
+  });
+
+  it("reads LLM_DEFAULT_TIMEOUT_MS as positive int", () => {
+    vi.stubEnv("LLM_DEFAULT_TIMEOUT_MS", "90000");
+
+    const config = loadConfig();
+    expect(config.llmDefaultTimeoutMs).toBe(90_000);
+  });
+
+  it("reads TURN_COMMIT_MAX_RETRIES and TURN_COMMIT_RETRY_BASE_DELAY_MS", () => {
+    vi.stubEnv("TURN_COMMIT_MAX_RETRIES", "4");
+    vi.stubEnv("TURN_COMMIT_RETRY_BASE_DELAY_MS", "250");
+
+    const config = loadConfig();
+    expect(config.turnCommitMaxRetries).toBe(4);
+    expect(config.turnCommitRetryBaseDelayMs).toBe(250);
+  });
+
+  it("falls back to defaults for invalid retry and timeout env values", () => {
+    vi.stubEnv("LLM_DEFAULT_TIMEOUT_MS", "0");
+    vi.stubEnv("TURN_COMMIT_MAX_RETRIES", "-1");
+    vi.stubEnv("TURN_COMMIT_RETRY_BASE_DELAY_MS", "0");
+
+    const config = loadConfig();
+    expect(config.llmDefaultTimeoutMs).toBe(60_000);
+    expect(config.turnCommitMaxRetries).toBe(2);
+    expect(config.turnCommitRetryBaseDelayMs).toBe(100);
   });
 
   it("reads ENABLE_MCP=true", () => {

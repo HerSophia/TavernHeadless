@@ -20,12 +20,16 @@ import {
   ProviderRegistry,
   SimpleTokenCounter,
   TurnOrchestrator,
+  VariableResolver,
+  VariableStore,
   type CoreEventBus,
   type ModelConfig,
   type ProviderConfig,
   type FloorRepository,
   type MemoryRepository,
+  type VariableRepository,
   type TokenCounter,
+  type ToolExecutionRepository,
 } from "@tavern/core";
 
 // ── 配置类型 ──────────────────────────────────────────
@@ -56,6 +60,10 @@ export interface OrchestrationContext {
   tokenCounter: TokenCounter;
   /** 记忆存储服务 */
   memoryStore: MemoryStore;
+  /** 变量解析器 */
+  variableResolver: VariableResolver;
+  /** 变量读写服务 */
+  variableStore: VariableStore;
 }
 
 // ── 工厂函数 ──────────────────────────────────────────
@@ -67,19 +75,22 @@ export interface OrchestrationContext {
  * 1. EventBus + TokenCounter
  * 2. ProviderRegistry（注册所有 Provider）
  * 3. LLMService 实例（narrator / director / verifier / memory）
- * 4. FloorStateMachine + MemoryStore + MemoryConsolidator
+ * 4. FloorStateMachine + MemoryStore + VariableResolver + VariableStore + MemoryConsolidator
  * 5. GenerationPipeline + Director + Verifier
  * 6. TurnOrchestrator
  *
  * @param config - Provider 与模型配置
  * @param floorRepo - FloorRepository 实现（由 Drizzle Adapter 提供）
  * @param memoryRepo - MemoryRepository 实现（由 Drizzle Adapter 提供）
+ * @param variableRepo - VariableRepository 实现（由 Drizzle Adapter 提供）
  * @returns 完整的编排上下文
  */
 export function createOrchestrationContext(
   config: OrchestrationConfig,
   floorRepo: FloorRepository,
-  memoryRepo: MemoryRepository
+  memoryRepo: MemoryRepository,
+  variableRepo: VariableRepository,
+  toolExecutionRepo?: ToolExecutionRepository,
 ): OrchestrationContext {
   // ── 1. 基础设施 ──
   const eventBus = createEventBus();
@@ -106,6 +117,8 @@ export function createOrchestrationContext(
   // ── 4. Core 组件 ──
   const floorStateMachine = new FloorStateMachine(floorRepo, eventBus);
   const memoryStore = new MemoryStore(memoryRepo, eventBus, tokenCounter);
+  const variableResolver = new VariableResolver(variableRepo);
+  const variableStore = new VariableStore(variableRepo, variableResolver, eventBus);
   const memoryConsolidator = new MemoryConsolidator(memoryLLM, memoryStore);
   const generationPipeline = new GenerationPipeline(narratorLLM);
   const director = new Director(directorLLM);
@@ -120,7 +133,16 @@ export function createOrchestrationContext(
     director,
     verifier,
     eventBus,
+    toolExecutionRepository: toolExecutionRepo,
   });
 
-  return { orchestrator, eventBus, providerRegistry, tokenCounter, memoryStore };
+  return {
+    orchestrator,
+    eventBus,
+    providerRegistry,
+    tokenCounter,
+    memoryStore,
+    variableResolver,
+    variableStore,
+  };
 }

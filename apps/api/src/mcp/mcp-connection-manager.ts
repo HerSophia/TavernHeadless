@@ -11,6 +11,7 @@ import type { McpServerConfig, McpConnectionStatus } from './types.js';
 
 export class McpConnectionManager {
   private connections = new Map<string, McpConnection>();
+  private connectPromises = new Map<string, Promise<void>>();
 
   constructor(
     private logger?: McpLogger,
@@ -24,27 +25,28 @@ export class McpConnectionManager {
    * HTTP 服务器只创建 McpConnection 实例，不连接。
    */
   async initialize(configs: McpServerConfig[]): Promise<void> {
-    const connectPromises: Promise<void>[] = [];
+    const startupConnectJobs: Array<{ config: McpServerConfig; promise: Promise<void> }> = [];
 
     for (const config of configs) {
       const connection = new McpConnection(config, this.logger);
       this.connections.set(config.id, connection);
 
       if (config.transport === 'stdio') {
-        connectPromises.push(
-          connection.connect().catch((err)=> {
-            this.logger?.error(
-              { serverId: config.id, serverName: config.name, error: String(err) },
-              'Failed to connect stdio MCP server during initialization',
-            );
-          }),
-        );
+        startupConnectJobs.push({
+          config,
+          promise: this.connectAndTrack(config.id, connection),
+        });
       }
       // HTTP 服务器不在初始化时连接
     }
 
     // 并发连接所有 stdio 服务器
-    await Promise.all(connectPromises);
+    await Promise.all(startupConnectJobs.map(({ config, promise }) => promise.catch((err) => {
+      this.logger?.error(
+        { serverId: config.id, serverName: config.name, error: String(err) },
+        'Failed to connect stdio MCP server during initialization',
+      );
+    })));
   }
 
   // ── 获取连接 ───────────────────────────────────
@@ -57,12 +59,8 @@ export class McpConnectionManager {
     const connection = this.connections.get(serverId);
     if (!connection) return null;
 
-    // HTTP 按需连接
-    if (
-      connection.config.transport === 'http' &&
-      connection.state === 'disconnected'
-    ) {
-      await connection.connect();
+    if (this.shouldAutoConnect(connection)) {
+      await this.connectAndTrack(serverId, connection);
     }
 
     return connection;
@@ -90,8 +88,10 @@ export class McpConnectionManager {
     const connection = new McpConnection(config, this.logger);
     this.connections.set(config.id, connection);
 
+    this.connectPromises.delete(config.id);
+
     if (config.transport === 'stdio') {
-      await connection.connect();
+      await this.connectAndTrack(config.id, connection);
     }
   }
 
@@ -104,6 +104,7 @@ export class McpConnectionManager {
 
     await connection.disconnect();
     this.connections.delete(serverId);
+    this.connectPromises.delete(serverId);
   }
 
   /**
@@ -116,7 +117,7 @@ export class McpConnectionManager {
     }
 
     await connection.disconnect();
-    await connection.connect();
+    await this.connectAndTrack(serverId, connection);
   }
 
   // ── 状态查询 ───────────────────────────────────
@@ -156,6 +157,7 @@ export class McpConnectionManager {
 
     await Promise.all(disconnectPromises);
     this.connections.clear();
+    this.connectPromises.clear();
 
     this.logger?.info('MCP connection manager shut down');
   }
@@ -171,7 +173,34 @@ export class McpConnectionManager {
       toolCount: connection.toolCount,
       connectedAt: connection.connectedAt,
       toolsRefreshedAt: connection.toolsRefreshedAt,
+      reconnectRequired: connection.reconnectRequired,
+      lastTimeoutAt: connection.lastTimeoutAt,
       error: connection.error,
     };
+  }
+
+  private shouldAutoConnect(connection: McpConnection): boolean {
+    if (connection.state === 'connecting' || connection.state === 'reconnect_required') {
+      return true;
+    }
+
+    return connection.config.transport === 'http' && connection.state === 'disconnected';
+  }
+
+  private async connectAndTrack(serverId: string, connection: McpConnection): Promise<void> {
+    const existing = this.connectPromises.get(serverId);
+    if (existing) {
+      await existing;
+      return;
+    }
+
+    const promise = connection.connect().finally(() => {
+      if (this.connectPromises.get(serverId) === promise) {
+        this.connectPromises.delete(serverId);
+      }
+    });
+
+    this.connectPromises.set(serverId, promise);
+    await promise;
   }
 }

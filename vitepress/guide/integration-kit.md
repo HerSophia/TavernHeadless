@@ -131,6 +131,31 @@ console.log(preview.promptSnapshot.promptMode);
 console.log(preview.promptSnapshot.promptDigest);
 ```
 
+`respondDryRun()` 的 `promptSnapshot` 现在也会带上 `presetVersion`、`worldbookVersion`、`regexProfileVersion`，用来表示本轮真正冻结使用的资源版本。
+
+如果有持久化变量试图占用保留别名，`preview.assembly.reservedVariableCollisions` 会返回被系统别名覆盖的键。目前保留别名是 `char` 和 `user`。
+
+### 资源更新的版本并发控制
+
+`@tavern/sdk` 读取 preset、worldbook、regex profile 时，会把后端返回的 `version` 一并保留下来。
+
+更新时，优先传 `expectedVersion`：
+
+```ts
+const worldbook = await client.worldbooks.getDetail({
+  worldbookId: "worldbook-1",
+});
+
+await client.worldbooks.update({
+  worldbookId: worldbook.id,
+  name: worldbook.name,
+  data: worldbook.data,
+  expectedVersion: worldbook.version,
+});
+```
+
+兼容旧调用方时，也仍然可以继续传 `expectedUpdatedAt`。新的接入建议统一切到 `expectedVersion`。
+
 ```ts
 // 读取带结构化 factKey 的事实记忆
 const memories = await client.memories.list({
@@ -143,10 +168,30 @@ const memories = await client.memories.list({
 
 `factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。
 
+```ts
+// 解析当前上下文可见变量快照
+const snapshot = await client.variables.resolveContext({
+  sessionId: "session-1",
+  floorId: "floor-1",
+  pageId: "page-1",
+  includeLayers: true,
+});
+
+console.log(snapshot.resolved[0]?.key);
+console.log(snapshot.resolved[0]?.sourceScope);
+```
+
+这个方法对应后端的 `GET /variables/resolve`。它返回当前 `global/chat/floor/page` 四层里最终可见的胜出值，并可选附带各层原始快照。
+
 ### 整理数据
 
 ```ts
-import { resolveUsage, buildTimelineMessages } from "@tavern/client-helpers";
+import {
+  buildTimelineMessages,
+  flattenVariableSnapshot,
+  resolveUsage,
+  sortVariableInspectorRows,
+} from "@tavern/client-helpers";
 
 // 归一化 usage
 const usage = resolveUsage(result.totalUsage);
@@ -154,6 +199,10 @@ console.log(usage.inputTokens, usage.outputTokens, usage.totalTokens);
 
 // 构建时间线
 const messages = buildTimelineMessages(timeline.floors);
+
+// 整理变量 inspector 行
+const variableRows = sortVariableInspectorRows(flattenVariableSnapshot(snapshot));
+console.log(variableRows[0]?.preview);
 ```
 
 ### 累积流式状态
@@ -191,8 +240,24 @@ try {
 `mapApiErrorToUiState()` 默认按 HTTP 状态码分桶，但会对部分已知业务错误码优先做 code-aware 映射：
 
 - `generation_conflict` → `conflict`
+- `generation_queue_timeout` → `server`
+- `generation_timeout` → `server`
+- `commit_busy` → `server`
 - `commit_conflict` → `conflict`
+- `preset_conflict` → `conflict`
+- `worldbook_conflict` → `conflict`
+- `regex_profile_conflict` → `conflict`
 - `turn_commit_failed` → `server`
+
+这条规则同样覆盖流式 `respond/stream` 的 SSE `error` 事件。流已经建立后，SDK 抛出的 `TavernApiError.status` 可能仍然是 `200`，但 `code` 会保留下来，因此接入方应优先看 `code`。
+
+默认服务配置仍是单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发请求通常直接返回 `generation_conflict`。只有服务端显式启用 `queue` 模式时，接入方才可能看到 `generation_queue_timeout`；即便如此，排队范围也只在当前进程内。
+
+### 资源乐观锁与版本快照
+
+`presets`、`worldbooks`、`regexProfiles` 的列表、详情和更新响应都会返回 `version`。更新时应优先回填 `expectedVersion`，避免静默覆盖。
+
+`respondDryRun()` 返回的 `promptSnapshot` 也会带 `presetVersion`、`worldbookVersion`、`regexProfileVersion`，用于说明本轮真正冻结使用的资源版本。
 
 ## SDK 资源覆盖范围
 
@@ -222,8 +287,13 @@ try {
 | `buildTimelineMessages` | 楼层数据 → 时间线消息列表 |
 | `createInitialRespondStreamState` | 流式状态初始值 |
 | `reduceRespondStream` | SSE 事件 → 流式状态累积 |
+| `groupToolEventsByExecution` | 工具流式事件 → 执行历史分组 |
 | `getActivePage` | 从楼层取当前活动页 |
+| `flattenVariableSnapshot` | resolved variable snapshot → inspector 行 |
+| `sortVariableInspectorRows` | 变量 inspector 行稳定排序 |
+| `formatVariablePreview` | 变量值 → 展示预览字符串 |
 | `mapApiErrorToUiState` | API 错误 → 界面错误状态 |
+| `summarizeRuntimeToolCatalog` | 会话级运行时工具目录 → 摘要 |
 
 ## 导出、Tools、MCP 的处理原则
 
@@ -240,9 +310,16 @@ try {
 - 启用和停用
 - 兼容调用记录查询
 
-会话级工具权限仍保留在 `sessions` 资源下。
+会话级工具权限和运行时工具目录仍保留在 `sessions` 资源下：
 
-当前 `tools.listCallRecords()` 仍对应公开兼容查询面 `/tools/call-records`。在 API 对外公开新的 execution records 路由前，官方包继续保持兼容行为，不提前发明新的查询方法。
+- `sessions.getToolPermissions()`
+- `sessions.getRuntimeToolCatalog()`
+
+其中运行时工具目录是**会话级**快照，反映某个 session 在当前权限、启用状态和 MCP 连接状态下真正可调用的工具集合。
+
+`tools.listExecutions()` 对应新的主审计模型 `tool_execution_record`。`tools.listCallRecords()` 仍对应公开兼容查询面 `/tools/call-records`，只用于兼容旧读取路径。
+
+如果调用方显式传 `toolMode`，当前运行时只支持 `inline`。`standalone` 和 `both` 还不受支持，服务端会返回结构化配置错误。
 
 ### MCP 资源
 
@@ -253,6 +330,10 @@ try {
 - connect / disconnect / test
 - 服务器工具列表
 
+MCP 状态读取还会保留 `reconnectRequired`、`lastTimeoutAt` 这类运行时字段。
+
+`mcp_call_uncertain_timeout` 表示结果不确定并且需要重连，不应当成普通失败来解释。
+
 ## 和 `apps/web` 的关系
 
 这两个包首先用于收拢仓库内已经重复出现的接入逻辑。
@@ -261,6 +342,8 @@ try {
 
 - 请求层逻辑逐步迁入 `@tavern/sdk`
 - 时间线和流式状态整理逻辑逐步迁入 `@tavern/client-helpers`
+- live tool inspector、retry replay confirmation、Tool Manager、MCP Manager 也直接建立在这两层之上
+- 变量 inspector 现在直接使用 `sdk.variables.resolveContext()` 和 client-helper 的快照整理函数
 
 应用层仍然保留：
 

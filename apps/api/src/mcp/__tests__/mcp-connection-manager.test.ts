@@ -15,6 +15,8 @@ vi.mock("../mcp-connection.js", () => ({
     toolCount: 0,
     connectedAt: undefined,
     toolsRefreshedAt: undefined,
+    reconnectRequired: false,
+    lastTimeoutAt: undefined,
     error: undefined,
     connect: mockConnectFn,
     disconnect: mockDisconnectFn,
@@ -92,6 +94,22 @@ describe("McpConnectionManager", () => {
     it("returns null for non-existent server", async () => {
       const conn = await manager.getConnection("does-not-exist");
       expect(conn).toBeNull();
+    });
+
+    it("shares the same in-flight connect attempt for concurrent first HTTP access", async () => {
+      let resolveConnect: (() => void) | undefined;
+      mockConnectFn.mockImplementationOnce(() => new Promise<void>((resolve) => {
+        resolveConnect = resolve;
+      }));
+
+      await manager.initialize([makeConfig({ id: "h1", transport: "http", http: { url: "http://localhost:8080" } })]);
+
+      const first = manager.getConnection("h1");
+      const second = manager.getConnection("h1");
+      expect(mockConnectFn).toHaveBeenCalledTimes(1);
+
+      resolveConnect?.();
+      await expect(Promise.all([first, second])).resolves.toEqual([expect.any(Object), expect.any(Object)]);
     });
   });
 
@@ -224,6 +242,38 @@ describe("McpConnectionManager", () => {
       expect(status).toBeDefined();
       expect(status!.serverName).toBe("Test");
       expect(status!.transport).toBe("stdio");
+    });
+
+    it("reconnects a timed-out connection on the next access", async () => {
+      await manager.initialize([makeConfig({ id: "s1", name: "Reconnect Required Server" })]);
+      const connection = manager.getConnectionSync("s1") as any;
+      connection.state = "reconnect_required";
+      connection.reconnectRequired = true;
+      connection.lastTimeoutAt = 123_456;
+      connection.error = "Tool call timeout after 30000ms; execution outcome is uncertain; reconnect required";
+
+      vi.clearAllMocks();
+
+      await manager.getConnection("s1");
+
+      expect(mockConnectFn).toHaveBeenCalledOnce();
+    });
+
+    it("surfaces reconnect-required timeout metadata in status", async () => {
+      await manager.initialize([makeConfig({ id: "s1", name: "Reconnect Required Server" })]);
+      const connection = manager.getConnectionSync("s1") as any;
+      const timeoutAt = 456_789;
+      connection.state = "reconnect_required";
+      connection.reconnectRequired = true;
+      connection.lastTimeoutAt = timeoutAt;
+      connection.error = "uncertain timeout";
+
+      expect(manager.getStatus("s1")).toMatchObject({
+        state: "reconnect_required",
+        reconnectRequired: true,
+        lastTimeoutAt: timeoutAt,
+        error: "uncertain timeout",
+      });
     });
   });
 });

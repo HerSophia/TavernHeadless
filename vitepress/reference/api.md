@@ -91,6 +91,11 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | `500` | 服务端错误 |
 | `502` | 上游 LLM 服务错误 |
 | `503` | 服务不可用（如 LLM Vault 未配置） |
+| `504` | 上游生成超时 |
+
+对于已经建立的 SSE 聊天流，运行期失败会通过 `event: error` 事件返回，而不是再切换 HTTP 状态码。此时应读取 `error.code`，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`。
+
+当前默认服务配置使用单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发生成通常直接返回 `generation_conflict`。只有部署方显式启用 `queue` 模式时，才可能看到 `generation_queue_timeout`；即便如此，排队也只在当前进程内生效。
 
 ## 分页
 
@@ -108,6 +113,22 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 ## 时间戳
 
 所有时间戳字段均为 **Unix 毫秒时间戳**（integer），字段名通常为 `created_at`、`updated_at`。
+
+## 资源版本与乐观锁
+
+`preset`、`worldbook`、`regex profile` 这几类可编辑资源现在都会返回 `version` 字段。
+
+- 列表接口会返回当前 `version`
+- 详情接口会返回当前 `version`
+- 更新成功响应也会返回新的 `version`
+
+更新这些资源时，新的并发控制字段是 `expected_version`。
+
+- 推荐新接入统一使用 `expected_version`
+- 旧调用方仍可继续传 `expected_updated_at` 作为兼容令牌
+- 当版本不匹配时，会返回 `409`，例如 `preset_conflict`、`worldbook_conflict`、`regex_profile_conflict`
+
+聊天 dry-run 的 `prompt_snapshot` 与落库的 `prompt_snapshot` 记录也会保存 `preset_version`、`worldbook_version`、`regex_profile_version`，用于说明当轮生成实际冻结使用的资源版本。
 
 ## 资源目录
 
@@ -140,7 +161,7 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 当前官方集成层包含两个包：
 
 - `@tavern/sdk`：负责 API 调用、默认请求头、统一错误和 SSE。
-- `@tavern/client-helpers`：负责 usage、timeline、流式状态和错误展示映射。
+- `@tavern/client-helpers`：负责 usage、timeline、流式状态、变量快照整理和错误展示映射。
 
 其中，`@tavern/sdk` 当前已经覆盖：
 
@@ -149,6 +170,11 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 - 导入、导出与模型配置：`imports`、`exports`、`llmProfiles`、`llmInstances`
 - 账号、变量与记忆：`accounts`、`variables`、`memories`、`memoryEdges`
 - 工具与运行集成：`tools`、`mcp`
+
+变量系统相关的接入现在建议直接使用：
+
+- `client.variables.resolveContext(...)` 读取当前上下文可见变量快照
+- `flattenVariableSnapshot(...)` 和 `sortVariableInspectorRows(...)` 整理 inspector 行数据
 
 如果 API 路由、OpenAPI、SSE 事件或其他接入方可见语义发生变化，应同步检查官方包与文档，而不是只在某一个前端里做局部适配。
 

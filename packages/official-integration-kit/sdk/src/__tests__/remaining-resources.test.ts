@@ -119,6 +119,7 @@ describe("sdk remaining resources", () => {
           id: "preset-1",
           name: "Preset A",
           source: "sillytavern",
+          version: 3,
           updated_at: 2,
         },
       }),
@@ -131,6 +132,7 @@ describe("sdk remaining resources", () => {
       id: "preset-1",
       name: "Preset A",
       source: "sillytavern",
+      version: 3,
       updatedAt: 2,
     });
   });
@@ -175,6 +177,7 @@ describe("sdk remaining resources", () => {
           id: "preset-1",
           name: "Preset A",
           source: "sillytavern",
+          version: 3,
           updated_at: 2,
         },
       }),
@@ -215,6 +218,7 @@ describe("sdk remaining resources", () => {
       id: "preset-1",
       name: "Preset A",
       source: "sillytavern",
+      version: 3,
       updatedAt: 2,
     });
   });
@@ -231,6 +235,7 @@ describe("sdk remaining resources", () => {
               id: "preset-1",
               name: "Preset A",
               source: "sillytavern",
+              version: 3,
               updated_at: 2,
             },
           ],
@@ -245,6 +250,7 @@ describe("sdk remaining resources", () => {
         id: "preset-1",
         name: "Preset A",
         source: "sillytavern",
+        version: 3,
         updatedAt: 2,
       },
     ]);
@@ -266,6 +272,7 @@ describe("sdk remaining resources", () => {
             id: "preset-1",
             name: "Preset Updated",
             source: "sillytavern",
+            version: 4,
             updated_at: 11,
           },
         }),
@@ -281,6 +288,7 @@ describe("sdk remaining resources", () => {
           order_contexts: [],
           top_level: {},
         },
+        expectedVersion: 4,
         name: "Preset Updated",
         presetId: "preset-1",
       }),
@@ -289,6 +297,7 @@ describe("sdk remaining resources", () => {
       id: "preset-1",
       name: "Preset Updated",
       source: "sillytavern",
+      version: 4,
       updatedAt: 11,
     });
 
@@ -300,6 +309,7 @@ describe("sdk remaining resources", () => {
         order_contexts: [],
         top_level: {},
       },
+      expected_version: 4,
       name: "Preset Updated",
     }));
 
@@ -311,6 +321,7 @@ describe("sdk remaining resources", () => {
           order_contexts: [],
           top_level: {},
         },
+        expectedVersion: 4,
         name: "Preset Updated",
         presetId: "preset-1",
       }),
@@ -325,6 +336,7 @@ describe("sdk remaining resources", () => {
           id: "wb-1",
           name: "Worldbook A",
           source: "sillytavern",
+          version: 2,
           updated_at: 2,
         },
       }),
@@ -337,6 +349,7 @@ describe("sdk remaining resources", () => {
       id: "wb-1",
       name: "Worldbook A",
       source: "sillytavern",
+      version: 2,
       updatedAt: 2,
     });
   });
@@ -353,6 +366,7 @@ describe("sdk remaining resources", () => {
               id: "wb-1",
               name: "Worldbook A",
               source: "sillytavern",
+              version: 2,
               updated_at: 2,
             },
           ],
@@ -368,6 +382,7 @@ describe("sdk remaining resources", () => {
         id: "wb-1",
         name: "Worldbook A",
         source: "sillytavern",
+        version: 2,
         updatedAt: 2,
       },
     ]);

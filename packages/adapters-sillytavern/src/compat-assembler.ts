@@ -25,16 +25,27 @@ export interface CompatAssemblerInput {
   /** 用户人设描述 */
   personaDescription?: string;
   /** 模板变量（{{char}}, {{user}} 等） */
-  variables?: Record<string, string>;
+  variables?: Record<string, unknown>;
 }
 
 // ── 内部工具 ──────────────────────────────────────────
 
+function valueToString(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+}
+
 /** 简易模板渲染：替换 {{key}} */
-function renderTemplate(text: string, variables: Record<string, string>): string {
+function renderTemplate(text: string, variables: Record<string, unknown>): string {
   if (!text) return text;
   return text.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
-    return variables[key] ?? `{{${key}}}`;
+    if (Object.prototype.hasOwnProperty.call(variables, key)) {
+      return valueToString(variables[key]);
+    }
+
+    return `{{${key}}}`;
   });
 }
 
@@ -51,7 +62,7 @@ function wiRoleToChatRole(role: number): ChatRole {
 function worldBookEntriesToMessages(
   entries: STWorldBookEntry[],
   wiFormat: string,
-  variables: Record<string, string>,
+  variables: Record<string, unknown>,
 ): IRMessage[] {
   if (entries.length === 0) return [];
 
@@ -79,7 +90,7 @@ function makeSystemSection(
   name: string,
   order: number,
   content: string | undefined,
-  variables: Record<string, string>,
+  variables: Record<string, unknown>,
   source?: string,
 ): IRSection | null {
   if (!content?.trim()) return null;

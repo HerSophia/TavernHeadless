@@ -7,6 +7,7 @@ export type PresetListItem = {
   name: string;
   source: string;
   updatedAt: number;
+  version: number;
 };
 
 export type PresetDetail = PresetListItem & {
@@ -60,6 +61,7 @@ export type PresetsResource = {
       order_contexts: Array<Record<string, unknown>>;
       top_level: Record<string, unknown>;
     };
+    expectedVersion?: number;
     expectedUpdatedAt?: number;
     name: string;
     presetId: string;
@@ -86,6 +88,7 @@ export function createPresetsResource(client: TransportClient): PresetsResource 
         name: readString(detail.name),
         source: readString(detail.source),
         updatedAt: readNumber(detail.updated_at),
+        version: readNumber(detail.version),
       };
     },
     async getEditor(options): Promise<PresetEditorDetail> {
@@ -113,6 +116,7 @@ export function createPresetsResource(client: TransportClient): PresetsResource 
         name: readString(detail.name),
         source: readString(detail.source),
         updatedAt: readNumber(detail.updated_at),
+        version: readNumber(detail.version),
       };
     },
     async list(options = {}): Promise<PresetListItem[]> {
@@ -137,6 +141,7 @@ export function createPresetsResource(client: TransportClient): PresetsResource 
       const response = await client.fetchJson<Record<string, unknown>>(`/presets/${encodeURIComponent(options.presetId)}`, {
         body: compactObject({
           editor: options.editor,
+          expected_version: options.expectedVersion,
           expected_updated_at: options.expectedUpdatedAt,
           name: options.name,
         }),
@@ -187,6 +192,7 @@ function mapPresetListItem(value: unknown): PresetListItem | null {
     name: readString(record.name),
     source: readString(record.source),
     updatedAt: readNumber(record.updated_at),
+    version: readNumber(record.version),
   };
 }
 

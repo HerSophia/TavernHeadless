@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type {
   CoreEventBus,
@@ -13,7 +13,7 @@ import type {
   TurnExecutionResult,
 } from "@tavern/core";
 import { FloorNotFoundError, FloorStateConflictError } from "@tavern/core";
-import type { MemoryScope, VariableEntry } from "@tavern/shared";
+import type { MemoryScope } from "@tavern/shared";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import {
@@ -220,10 +220,13 @@ function toPromptSnapshotInsert(record: PromptSnapshotRecord): PromptSnapshotIns
     sessionId: record.sessionId,
     presetId: record.presetId,
     presetUpdatedAt: record.presetUpdatedAt,
+    presetVersion: record.presetVersion,
     worldbookId: record.worldbookId,
     worldbookUpdatedAt: record.worldbookUpdatedAt,
+    worldbookVersion: record.worldbookVersion,
     regexProfileId: record.regexProfileId,
     regexProfileUpdatedAt: record.regexProfileUpdatedAt,
+    regexProfileVersion: record.regexProfileVersion,
     worldbookActivatedEntryUidsJson: JSON.stringify(record.worldbookActivatedEntryUids),
     regexPreRuleNamesJson: JSON.stringify(record.regexPreRuleNames),
     regexPostRuleNamesJson: JSON.stringify(record.regexPostRuleNames),
@@ -242,12 +245,20 @@ function toToolExecutionInsert(record: ExecutedToolCallRecord): ToolExecutionIns
     pageId: record.pageId ?? null,
     callerSlot: record.callerSlot,
     providerId: record.providerId,
+    providerType: record.providerType ?? "unknown",
     toolName: record.toolName,
     argsJson: record.argsJson,
     resultJson: record.resultJson,
     status: record.status,
+    lifecycleState: record.lifecycleState ?? "finished",
+    commitOutcome: record.commitOutcome ?? "pending",
+    sideEffectLevel: record.sideEffectLevel ?? null,
     errorMessage: record.errorMessage ?? null,
     durationMs: record.durationMs,
+    startedAt: record.startedAt ?? record.createdAt,
+    finishedAt: record.finishedAt ?? record.createdAt,
+    attemptNo: record.attemptNo ?? 1,
+    replayParentExecutionId: record.replayParentExecutionId ?? null,
     createdAt: record.createdAt,
   };
 }
@@ -256,6 +267,15 @@ function toLegacyToolCallRecord(
   record: ExecutedToolCallRecord,
   seq: number
 ): ToolCallRecord {
+  let status: ToolCallRecord["status"];
+  if (record.status === "success") {
+    status = "success";
+  } else if (record.status === "denied" || record.status === "blocked") {
+    status = "denied";
+  } else {
+    status = "error";
+  }
+
   return {
     id: record.id,
     pageId: record.pageId ?? "",
@@ -264,7 +284,7 @@ function toLegacyToolCallRecord(
     toolName: record.toolName,
     argsJson: record.argsJson,
     resultJson: record.resultJson,
-    status: record.status,
+    status,
     durationMs: record.durationMs,
     createdAt: record.createdAt,
   };
@@ -697,6 +717,10 @@ export class TurnCommitService {
     const usage = normalizeTokenUsage(input.execution.totalUsage);
     const actualToolExecutionRecords =
       input.toolExecutionRecords ?? input.execution.toolExecutionRecords ?? [];
+    const actualToolExecutionRunIds = Array.from(
+      new Set(actualToolExecutionRecords.map((record) => record.runId)));
+    const actualBufferedVariableMutations =
+      input.execution.bufferedVariableMutations ?? [];
     const legacyToolCalls =
       input.toolCalls
       ?? input.execution.toolCalls
@@ -748,10 +772,13 @@ export class TurnCommitService {
                 sessionId: snapshot.sessionId,
                 presetId: snapshot.presetId,
                 presetUpdatedAt: snapshot.presetUpdatedAt,
+                presetVersion: snapshot.presetVersion,
                 worldbookId: snapshot.worldbookId,
                 worldbookUpdatedAt: snapshot.worldbookUpdatedAt,
+                worldbookVersion: snapshot.worldbookVersion,
                 regexProfileId: snapshot.regexProfileId,
                 regexProfileUpdatedAt: snapshot.regexProfileUpdatedAt,
+                regexProfileVersion: snapshot.regexProfileVersion,
                 worldbookActivatedEntryUidsJson: snapshot.worldbookActivatedEntryUidsJson,
                 regexPreRuleNamesJson: snapshot.regexPreRuleNamesJson,
                 regexPostRuleNamesJson: snapshot.regexPostRuleNamesJson,
@@ -768,7 +795,16 @@ export class TurnCommitService {
           tx
             .insert(toolExecutionRecords)
             .values(actualToolExecutionRecords.map(toToolExecutionInsert))
+            .onConflictDoNothing()
             .run();
+        }
+
+        if (actualBufferedVariableMutations.length > 0) {
+          this.variableCommitService.flushBufferedMutations(
+            actualBufferedVariableMutations,
+            tx,
+            committedAt,
+          );
         }
 
         const variableCommit = this.variableCommitService.promoteAll(
@@ -826,6 +862,16 @@ export class TurnCommitService {
           throw new FloorStateConflictError(input.floorId, "generating", currentRow.state);
         }
 
+        if (actualToolExecutionRunIds.length > 0) {
+          tx
+            .update(toolExecutionRecords)
+            .set({ commitOutcome: "committed" })
+            .where(actualToolExecutionRunIds.length === 1
+              ? eq(toolExecutionRecords.runId, actualToolExecutionRunIds[0]!)
+              : inArray(toolExecutionRecords.runId, actualToolExecutionRunIds))
+            .run();
+        }
+
         const floorRow = tx
           .select()
           .from(floors)
@@ -861,7 +907,7 @@ export class TurnCommitService {
 
     await this.emitPostCommitEvents(
       transactionResult.floor,
-      transactionResult.variableCommit.promotedVariables,
+      transactionResult.variableCommit,
       pendingEvents
     );
 
@@ -876,7 +922,7 @@ export class TurnCommitService {
 
   private async emitPostCommitEvents(
     floor: FloorEntity,
-    promotedVariables: VariableEntry[],
+    variableCommit: ReturnType<VariableCommitService["promoteAll"]>,
     pendingEvents: PendingCoreEvent[]
   ): Promise<void> {
     for (const event of pendingEvents) {
@@ -900,10 +946,24 @@ export class TurnCommitService {
     try {
       await this.eventBus.emit("floor.committed", {
         floor,
-        promotedVariables,
+        promotedVariables: variableCommit.promotedVariables,
       });
     } catch {
       // best-effort
+    }
+
+    for (const variable of variableCommit.promotedVariables) {
+      try {
+        await this.eventBus.emit("variable.promoted", {
+          sessionId: floor.sessionId,
+          key: variable.key,
+          fromScope: variableCommit.fromScope,
+          toScope: variableCommit.toScope,
+          value: variable.value,
+        });
+      } catch {
+        // best-effort
+      }
     }
   }
 }

@@ -114,11 +114,13 @@ const mcpStatusResponseSchema = {
     server_id: { type: 'string' },
     server_name: { type: 'string' },
     transport: { type: 'string' },
-    state: { type: 'string' },
+    state: { type: 'string', enum: ['disconnected', 'connecting', 'connected', 'reconnect_required', 'error'] },
     tool_count: { type: 'integer' },
     connected_at: { type: 'integer', nullable: true },
     tools_refreshed_at: { type: 'integer', nullable: true },
     error: { type: 'string', nullable: true },
+    reconnect_required: { type: 'boolean' },
+    last_timeout_at: { type: 'integer', nullable: true },
   },
 };
 
@@ -494,5 +496,7 @@ function formatStatus(status: McpConnectionStatus) {
     connected_at: status.connectedAt ?? null,
     tools_refreshed_at: status.toolsRefreshedAt ?? null,
     error: status.error ?? null,
+    reconnect_required: status.reconnectRequired ?? status.state === 'reconnect_required',
+    last_timeout_at: status.lastTimeoutAt ?? null,
   };
 }

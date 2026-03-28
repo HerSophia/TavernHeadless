@@ -17,7 +17,18 @@ import { nanoid } from "nanoid";
 import { eq, asc } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { sessions, floors, messagePages, messages, presets, promptSnapshots, worldbooks, worldbookEntries, regexProfiles } from "../src/db/schema";
+import {
+  sessions,
+  floors,
+  messagePages,
+  messages,
+  presets,
+  promptSnapshots,
+  variables,
+  worldbooks,
+  worldbookEntries,
+  regexProfiles,
+} from "../src/db/schema";
 import { ChatService, ChatServiceError } from "../src/services/chat-service";
 import { SimpleTokenCounter, type TurnOrchestrator, type TurnOutput, type TurnInput } from "@tavern/core";
 
@@ -221,14 +232,16 @@ describe("E2E Chat with PromptAssembler", () => {
     return id;
   }
 
-  async function importWorldbook(): Promise<string> {
+  async function importWorldbook(
+    globalSettings: Record<string, unknown> = {}
+  ): Promise<string> {
     const id = nanoid();
     const now = Date.now();
     await database.db.insert(worldbooks).values({
       id,
       name: "Test Worldbook",
       source: "sillytavern",
-      dataJson: JSON.stringify({}),
+      dataJson: JSON.stringify(globalSettings),
       createdAt: now,
       updatedAt: now,
     });
@@ -481,10 +494,13 @@ describe("E2E Chat with PromptAssembler", () => {
     expect(snapshotRow).toBeDefined();
     expect(snapshotRow!.presetId).toBe(dryRun.promptSnapshot.presetId);
     expect(snapshotRow!.presetUpdatedAt).toBe(dryRun.promptSnapshot.presetUpdatedAt);
+    expect(snapshotRow!.presetVersion).toBe(dryRun.promptSnapshot.presetVersion);
     expect(snapshotRow!.worldbookId).toBe(dryRun.promptSnapshot.worldbookId);
     expect(snapshotRow!.worldbookUpdatedAt).toBe(dryRun.promptSnapshot.worldbookUpdatedAt);
+    expect(snapshotRow!.worldbookVersion).toBe(dryRun.promptSnapshot.worldbookVersion);
     expect(snapshotRow!.regexProfileId).toBe(dryRun.promptSnapshot.regexProfileId);
     expect(snapshotRow!.regexProfileUpdatedAt).toBe(dryRun.promptSnapshot.regexProfileUpdatedAt);
+    expect(snapshotRow!.regexProfileVersion).toBe(dryRun.promptSnapshot.regexProfileVersion);
     expect(JSON.parse(snapshotRow!.worldbookActivatedEntryUidsJson)).toEqual(
       dryRun.promptSnapshot.worldbookActivatedEntryUids
     );
@@ -497,6 +513,93 @@ describe("E2E Chat with PromptAssembler", () => {
     expect(snapshotRow!.promptMode).toBe(dryRun.promptSnapshot.promptMode);
     expect(snapshotRow!.promptDigest).toBe(dryRun.promptSnapshot.promptDigest);
     expect(snapshotRow!.tokenEstimate).toBe(dryRun.promptSnapshot.tokenEstimate);
+  });
+
+  it("should inject visible floor and page variables when retrying a failed floor", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const failedFloorId = nanoid();
+    const inputPageId = nanoid();
+
+    const variablePresetData = {
+      ...SAMPLE_PRESET_DATA,
+      prompts: [
+        {
+          identifier: "main",
+          name: "Main Prompt",
+          role: "system",
+          content: "Mood {{mood}} item {{item}} for {{char}}.",
+        },
+        { identifier: "chatHistory", name: "Chat History", marker: true },
+      ],
+    };
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Retry Variable Preset",
+      source: "sillytavern",
+      dataJson: JSON.stringify(variablePresetData),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionId = await createSession({
+      presetId,
+      character: { name: "Knight" },
+    });
+
+    await database.db.insert(floors).values({
+      id: failedFloorId,
+      sessionId,
+      floorNo: 0,
+      branchId: "main",
+      parentFloorId: null,
+      state: "failed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(messagePages).values({
+      id: inputPageId,
+      floorId: failedFloorId,
+      pageNo: 0,
+      pageKind: "input",
+      isActive: true,
+      version: 1,
+      checksum: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(messages).values({
+      id: nanoid(),
+      pageId: inputPageId,
+      seq: 0,
+      role: "user",
+      content: "Retry the scene.",
+      contentFormat: "text",
+      tokenCount: 3,
+      isHidden: false,
+      source: "api",
+      createdAt: now,
+    });
+
+    await database.db.insert(variables).values([
+      { id: nanoid(), scope: "chat", scopeId: sessionId, key: "mood", valueJson: JSON.stringify("calm"), updatedAt: now },
+      { id: nanoid(), scope: "floor", scopeId: failedFloorId, key: "mood", valueJson: JSON.stringify("grim"), updatedAt: now + 1 },
+      { id: nanoid(), scope: "page", scopeId: inputPageId, key: "item", valueJson: JSON.stringify("torch"), updatedAt: now + 2 },
+      { id: nanoid(), scope: "page", scopeId: inputPageId, key: "char", valueJson: JSON.stringify("Shadow"), updatedAt: now + 3 },
+    ]);
+
+    await chatService.retryFloor(failedFloorId);
+
+    const input = capturedInputs[0]!;
+    const allContent = input.messages.map((message) => message.content).join("\n");
+
+    expect(allContent).toContain("Mood grim item torch for Knight.");
+    expect(allContent).not.toContain("Shadow");
   });
 
   // ── 测试：世界书触发 ──
@@ -525,6 +628,22 @@ describe("E2E Chat with PromptAssembler", () => {
     const input = capturedInputs[0]!;
     const allContent = input.messages.map((m) => m.content).join("\n");
     expect(allContent).toContain("Castle Camelot");
+  });
+
+  it("should honor worldbook global matching flags when entries do not override them", async () => {
+    const presetId = await importPreset();
+    const worldbookId = await importWorldbook({
+      caseSensitive: true,
+      matchWholeWords: true,
+      scanDepth: 5,
+    });
+    const sessionId = await createSession({ presetId, worldbookId });
+
+    const blocked = await chatService.dryRun(sessionId, { message: "I found a Swordsmanship manual." });
+    expect(blocked.messages.map((message) => message.content).join("\n")).not.toContain("Excalibur");
+
+    const matched = await chatService.dryRun(sessionId, { message: "The sword is here." });
+    expect(matched.messages.map((message) => message.content).join("\n")).toContain("Excalibur");
   });
 
   // ── 测试：正则处理 ──

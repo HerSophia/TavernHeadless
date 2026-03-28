@@ -7,6 +7,13 @@ import { createToolsResource } from "../resources/tools.js";
 
 const baseUrl = "http://localhost:3000";
 
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    headers: { "content-type": "application/json" },
+    status,
+  });
+}
+
 describe("sdk integration and operations resources", () => {
   it("returns the raw chat export response and preserves query parameters", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
@@ -440,6 +447,75 @@ describe("sdk integration and operations resources", () => {
     expect(toggleInit?.body).toBe(JSON.stringify({ enabled: false }));
   });
 
+  it("lists tool executions from the primary execution audit routes", async () => {
+    const executionPayload = {
+      id: "exec-1",
+      run_id: "run-1",
+      floor_id: "floor-1",
+      page_id: null,
+      caller_slot: "narrator",
+      provider_id: "builtin",
+      provider_type: "builtin",
+      tool_name: "set_variable",
+      args: { key: "mood" },
+      result: { ok: true },
+      status: "success",
+      lifecycle_state: "finished",
+      commit_outcome: "committed",
+      side_effect_level: "sandbox",
+      error_message: null,
+      duration_ms: 7,
+      started_at: 400,
+      finished_at: 407,
+      attempt_no: 1,
+      replay_parent_execution_id: null,
+      created_at: 400,
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        data: [executionPayload],
+        meta: { has_more: false, limit: 10, offset: 0, sort_by: "started_at", sort_order: "desc", total: 1 },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ ...executionPayload, id: "exec-2", provider_id: "mcp:demo", provider_type: "mcp", status: "uncertain", commit_outcome: "discarded" }],
+        meta: { has_more: false, limit: 5, offset: 1, sort_by: "started_at", sort_order: "desc", total: 1 },
+      }));
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const tools = createToolsResource(transport);
+
+    await expect(tools.listExecutions({ accountId: "acc-1", floorId: "floor-1", sortBy: "started_at", sortOrder: "desc" })).resolves.toEqual({
+      meta: { hasMore: false, limit: 10, offset: 0, sortBy: "started_at", sortOrder: "desc", total: 1 },
+      records: [{
+        args: { key: "mood" },
+        attemptNo: 1,
+        callerSlot: "narrator",
+        commitOutcome: "committed",
+        createdAt: 400,
+        durationMs: 7,
+        errorMessage: null,
+        finishedAt: 407,
+        floorId: "floor-1",
+        id: "exec-1",
+        lifecycleState: "finished",
+        pageId: null,
+        providerId: "builtin",
+        providerType: "builtin",
+        replayParentExecutionId: null,
+        result: { ok: true },
+        runId: "run-1",
+        sideEffectLevel: "sandbox",
+        startedAt: 400,
+        status: "success",
+        toolName: "set_variable",
+      }],
+    });
+
+    await expect(tools.listExecutions({ accountId: "acc-1", sessionId: "session-1", status: "uncertain", sortBy: "started_at", sortOrder: "desc", limit: 5, offset: 1 })).resolves.toMatchObject({ records: [expect.objectContaining({ id: "exec-2", providerType: "mcp", status: "uncertain" })] });
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe("http://localhost:3000/floors/floor-1/tool-executions?sort_by=started_at&sort_order=desc");
+    expect(String(fetchImpl.mock.calls[1]![0])).toBe("http://localhost:3000/tool-executions?limit=5&offset=1&session_id=session-1&sort_by=started_at&sort_order=desc&status=uncertain");
+  });
+
   it("lists and manages mcp servers, statuses, tools, and tests", async () => {
     const serverPayload = {
       call_timeout_ms: 60000,
@@ -464,6 +540,8 @@ describe("sdk integration and operations resources", () => {
     const statusPayload = {
       connected_at: 200,
       error: null,
+      last_timeout_at: null,
+      reconnect_required: false,
       server_id: "mcp-1",
       server_name: "Filesystem",
       state: "connected",
@@ -474,6 +552,8 @@ describe("sdk integration and operations resources", () => {
     const disconnectedStatusPayload = {
       connected_at: null,
       error: null,
+      last_timeout_at: null,
+      reconnect_required: false,
       server_id: "mcp-1",
       server_name: "Filesystem",
       state: "disconnected",
@@ -741,6 +821,8 @@ describe("sdk integration and operations resources", () => {
     await expect(mcp.getServerStatus({ accountId: "acc-1", serverId: "mcp-1" })).resolves.toEqual({
       connectedAt: 200,
       error: null,
+      lastTimeoutAt: null,
+      reconnectRequired: false,
       serverId: "mcp-1",
       serverName: "Filesystem",
       state: "connected",
@@ -753,6 +835,8 @@ describe("sdk integration and operations resources", () => {
       {
         connectedAt: 200,
         error: null,
+        lastTimeoutAt: null,
+        reconnectRequired: false,
         serverId: "mcp-1",
         serverName: "Filesystem",
         state: "connected",
@@ -765,6 +849,8 @@ describe("sdk integration and operations resources", () => {
     await expect(mcp.connectServer({ accountId: "acc-1", serverId: "mcp-1" })).resolves.toEqual({
       connectedAt: 200,
       error: null,
+      lastTimeoutAt: null,
+      reconnectRequired: false,
       serverId: "mcp-1",
       serverName: "Filesystem",
       state: "connected",
@@ -776,6 +862,8 @@ describe("sdk integration and operations resources", () => {
     await expect(mcp.disconnectServer({ accountId: "acc-1", serverId: "mcp-1" })).resolves.toEqual({
       connectedAt: null,
       error: null,
+      lastTimeoutAt: null,
+      reconnectRequired: false,
       serverId: "mcp-1",
       serverName: "Filesystem",
       state: "disconnected",
@@ -833,5 +921,30 @@ describe("sdk integration and operations resources", () => {
     );
     expect(updateInit?.body).toBe(JSON.stringify({ name: "Filesystem V2" }));
     expect(toggleInit?.body).toBe(JSON.stringify({ enabled: false }));
+  });
+
+  it("maps reconnect-required MCP status metadata", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          connected_at: null,
+          error: "Tool call timeout after 30000ms; execution outcome is uncertain; reconnect required",
+          last_timeout_at: 987654,
+          reconnect_required: true,
+          server_id: "mcp-9",
+          server_name: "Timeout Server",
+          state: "reconnect_required",
+          tool_count: 0,
+          tools_refreshed_at: null,
+          transport: "http",
+        },
+      }),
+    );
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const mcp = createMcpResource(transport);
+
+    await expect(mcp.getServerStatus({ serverId: "mcp-9" })).resolves.toEqual({
+      connectedAt: null, error: "Tool call timeout after 30000ms; execution outcome is uncertain; reconnect required", lastTimeoutAt: 987654, reconnectRequired: true, serverId: "mcp-9", serverName: "Timeout Server", state: "reconnect_required", toolCount: 0, toolsRefreshedAt: null, transport: "http",
+    });
   });
 });

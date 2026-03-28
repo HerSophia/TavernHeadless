@@ -10,6 +10,8 @@ const runtimeMockState = vi.hoisted(() => {
     error: string | undefined;
     connectedAt: number | undefined;
     toolsRefreshedAt: number | undefined;
+    reconnectRequired = false;
+    lastTimeoutAt: number | undefined;
     connectCalls = 0;
     disconnectCalls = 0;
     private tools: Array<Record<string, unknown>> = [];
@@ -29,6 +31,8 @@ const runtimeMockState = vi.hoisted(() => {
       this.error = undefined;
       this.connectedAt = Date.now();
       this.toolsRefreshedAt = Date.now();
+      this.reconnectRequired = false;
+      this.lastTimeoutAt = undefined;
       this.tools = [
         {
           name: `${this.config.toolPrefix ?? ""}echo`,
@@ -45,6 +49,8 @@ const runtimeMockState = vi.hoisted(() => {
       this.disconnectCalls += 1;
       this.state = "disconnected";
       this.connectedAt = undefined;
+      this.reconnectRequired = false;
+      this.lastTimeoutAt = undefined;
       this.tools = [];
     }
 
@@ -87,6 +93,8 @@ type McpStatusResponse = {
   connected_at: number | null;
   tools_refreshed_at: number | null;
   error: string | null;
+  reconnect_required: boolean;
+  last_timeout_at: number | null;
 };
 
 describe("MCP runtime routes", () => {
@@ -162,6 +170,33 @@ describe("MCP runtime routes", () => {
     const statuses = statusesRes.json<ItemResponse<McpStatusResponse[]>>().data;
     expect(statuses).toHaveLength(1);
     expect(statuses[0]?.server_id).toBe(server.id);
+  });
+
+  it("surfaces reconnect-required timeout metadata in runtime status responses", async () => {
+    const server = await createServer("Runtime Timeout Server", "timeout_");
+
+    const connectRes = await app.inject({
+      method: "POST",
+      url: `/mcp/servers/${server.id}/connect`,
+    });
+    expect(connectRes.statusCode).toBe(200);
+
+    const instance = runtimeMockState.instances.get(server.id);
+    expect(instance).toBeDefined();
+
+    instance.state = "reconnect_required";
+    instance.reconnectRequired = true;
+    instance.lastTimeoutAt = 123_456;
+    instance.error = "Tool call timeout after 30000ms; execution outcome is uncertain; reconnect required";
+
+    const statusRes = await app.inject({ method: "GET", url: `/mcp/servers/${server.id}/status` });
+    expect(statusRes.statusCode).toBe(200);
+    expect(statusRes.json<ItemResponse<McpStatusResponse>>().data).toMatchObject({
+      server_id: server.id,
+      state: "reconnect_required",
+      reconnect_required: true,
+      last_timeout_at: 123_456,
+    });
   });
 
   it("reconnects an existing server and supports explicit disconnect", async () => {

@@ -1,5 +1,6 @@
 // ── Tool Calling 核心类型定义 ─────────────────────────
 
+import type { VariableScope } from '@tavern/shared';
 import type { InstanceSlot } from '../llm/types.js';
 import type { VariableContext } from '../types.js';
 
@@ -53,6 +54,14 @@ export interface ToolDefinition {
   source: 'builtin' | 'preset' | 'mcp';
 }
 
+// ── Tool Provider ─────────────────────────────────────
+
+/** 工具提供者类型 */
+export type ToolProviderType = 'builtin' | 'preset' | 'mcp';
+
+/** 工具执行记录中的 provider 类型（允许 unknown 兜底） */
+export type ToolExecutionProviderType = ToolProviderType | 'unknown';
+
 // ── Tool Call Result ──────────────────────────────────
 
 /** 工具执行结果 */
@@ -61,12 +70,51 @@ export interface ToolCallResult {
   data?: unknown;
   /** 执行失败时的错误信息 */
   error?: string;
+  /** 可选：供执行日志使用的更细粒度状态 */
+  executionStatus?: ToolExecutionStatus;
 }
 
 // ── Tool Call Record ──────────────────────────────────
 
-/** 工具调用状态 */
+/** 工具调用状态（兼容旧 call-records 读模型） */
 export type ToolCallStatus = 'success' | 'error' | 'denied';
+
+/** 真实执行日志状态 */
+export type ToolExecutionStatus =
+  | ToolCallStatus
+  | 'running'
+  | 'timeout'
+  | 'uncertain'
+  | 'blocked';
+
+/** 真实执行日志生命周期状态 */
+export type ToolExecutionLifecycleState = 'opened' | 'finished';
+
+/** 真实执行日志的最终 commit 归宿 */
+export type ToolExecutionCommitOutcome =
+  | 'pending'
+  | 'committed'
+  | 'discarded'
+  | 'replay_blocked'
+  | 'uncertain';
+
+/** 工具回放安全等级 */
+export type ToolReplaySafety =
+  | 'safe'
+  | 'confirm_on_replay'
+  | 'never_auto_replay'
+  | 'uncertain';
+
+/** provider 是否具备可补偿能力 */
+export type ToolProviderCompensationMode = 'compensable' | 'non_compensable';
+
+/** 单条工具执行的回放安全评估结果 */
+export interface ToolReplaySafetyEvaluation {
+  replaySafety: ToolReplaySafety;
+  providerCompensationMode: ToolProviderCompensationMode;
+  /** 供日志、错误映射与调试使用的稳定原因码 */
+  reason: string;
+}
 
 /** 单次工具调用记录（绑定到 MessagePage） */
 export interface ToolCallRecord {
@@ -104,13 +152,65 @@ export interface ExecutedToolCallRecord {
   pageId?: string;
   callerSlot: InstanceSlot;
   providerId: string;
+  providerType?: ToolExecutionProviderType;
   toolName: string;
   argsJson: string;
   resultJson: string;
-  status: ToolCallStatus;
+  status: ToolExecutionStatus;
+  lifecycleState?: ToolExecutionLifecycleState;
+  commitOutcome?: ToolExecutionCommitOutcome;
+  sideEffectLevel?: ToolSideEffectLevel;
   errorMessage?: string;
   durationMs: number;
+  startedAt?: number;
+  finishedAt?: number;
+  attemptNo?: number;
+  replayParentExecutionId?: string;
   createdAt: number;
+}
+
+/** 打开一条真实执行日志所需的最小字段 */
+export interface ToolExecutionOpenRecord {
+  id: string;
+  runId: string;
+  floorId: string;
+  pageId?: string;
+  callerSlot: InstanceSlot;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  toolName: string;
+  argsJson: string;
+  sideEffectLevel?: ToolSideEffectLevel;
+  startedAt: number;
+  createdAt: number;
+  attemptNo: number;
+  replayParentExecutionId?: string;
+}
+
+/** 结束一条真实执行日志时可更新的字段 */
+export interface ToolExecutionFinishPatch {
+  resultJson: string;
+  status: Exclude<ToolExecutionStatus, 'running'>;
+  lifecycleState?: ToolExecutionLifecycleState;
+  errorMessage?: string;
+  durationMs: number;
+  finishedAt: number;
+}
+
+/**
+ * 当前回合中，工具产生但尚未持久化的变量写入。
+ *
+ * 这些写入在生成期间只存在于 turn-local buffer 中，直到 commit 时才会统一落库。
+ */
+export interface BufferedToolVariableMutation {
+  runId: string;
+  generationAttemptNo: number;
+  scope: VariableScope;
+  scopeId: string;
+  key: string;
+  value: unknown;
+  accountId?: string;
+  bufferedAt: number;
 }
 
 // ── Execution Context ─────────────────────────────────
@@ -157,9 +257,6 @@ export interface ToolPermissions {
 }
 
 // ── Tool Provider ─────────────────────────────────────
-
-/** 工具提供者类型 */
-export type ToolProviderType = 'builtin' | 'preset' | 'mcp';
 
 /**
  * 工具提供者接口

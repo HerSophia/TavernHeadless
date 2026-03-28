@@ -1,80 +1,115 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { VariableScope, VariableEntry } from '@tavern/shared';
-import type { VariableRepository } from '../../ports/index.js';
+import type { VariableRepository, VariableRepositoryOptions } from '../../ports/index.js';
 import type { VariableContext } from '../../types.js';
 import { createEventBus, type CoreEventBus } from '../../events/index.js';
 import { VariableResolver } from '../variable-resolver.js';
 import { VariableStore } from '../variable-store.js';
+import { ToolMutationBuffer } from '../../tools/tool-mutation-buffer.js';
 import { InvalidScopePromotionError, MissingScopeIdError, VariableNotFoundError } from '../../errors.js';
 
-// ─── In-memory VariableRepository ─────────────────────
+interface StoredVariableRow extends VariableEntry {
+  accountId?: string;
+}
 
 class InMemoryVariableRepository implements VariableRepository {
-  private store: VariableEntry[] = [];
+  private store: StoredVariableRow[] = [];
   private nextId = 1;
 
-  seed(scope: VariableScope, scopeId: string, key: string, value: unknown): VariableEntry {
-    const entry: VariableEntry = {
+  private toEntry(row: StoredVariableRow): VariableEntry {
+    return {
+      id: row.id,
+      scope: row.scope,
+      scopeId: row.scopeId,
+      key: row.key,
+      value: row.value,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private matchesAccount(row: StoredVariableRow, options?: VariableRepositoryOptions): boolean {
+    return row.accountId === options?.accountId;
+  }
+
+  seed(
+    scope: VariableScope,
+    scopeId: string,
+    key: string,
+    value: unknown,
+    accountId?: string
+  ): VariableEntry {
+    const row: StoredVariableRow = {
       id: `var-${this.nextId++}`,
       scope,
       scopeId,
       key,
       value,
       updatedAt: Date.now(),
+      accountId,
     };
-    this.store.push(entry);
-    return entry;
+    this.store.push(row);
+    return this.toEntry(row);
   }
 
   async findByKey(
     scope: VariableScope,
     scopeId: string,
-    key: string
+    key: string,
+    options?: VariableRepositoryOptions
   ): Promise<VariableEntry | null> {
-    return (
-      this.store.find(
-        (e) => e.scope === scope && e.scopeId === scopeId && e.key === key
-      ) ?? null
+    const row = this.store.find(
+      (entry) =>
+        entry.scope === scope &&
+        entry.scopeId === scopeId &&
+        entry.key === key &&
+        this.matchesAccount(entry, options)
     );
+
+    return row ? this.toEntry(row) : null;
   }
 
   async findAllByScope(
     scope: VariableScope,
-    scopeId: string
+    scopeId: string,
+    options?: VariableRepositoryOptions
   ): Promise<VariableEntry[]> {
-    return this.store.filter(
-      (e) => e.scope === scope && e.scopeId === scopeId
-    );
+    return this.store
+      .filter(
+        (entry) =>
+          entry.scope === scope &&
+          entry.scopeId === scopeId &&
+          this.matchesAccount(entry, options)
+      )
+      .map((entry) => this.toEntry(entry));
   }
 
   async upsert(
     scope: VariableScope,
     scopeId: string,
     key: string,
-    value: unknown
+    value: unknown,
+    options?: VariableRepositoryOptions
   ): Promise<VariableEntry> {
     const existing = this.store.find(
-      (e) => e.scope === scope && e.scopeId === scopeId && e.key === key
+      (entry) =>
+        entry.scope === scope &&
+        entry.scopeId === scopeId &&
+        entry.key === key &&
+        this.matchesAccount(entry, options)
     );
     if (existing) {
       existing.value = value;
       existing.updatedAt = Date.now();
-      return { ...existing };
+      return this.toEntry(existing);
     }
-    const entry: VariableEntry = {
-      id: `var-${this.nextId++}`,
-      scope,
-      scopeId,
-      key,
-      value,
-      updatedAt: Date.now(),
-    };
-    this.store.push(entry);
-    return { ...entry };
+
+    return this.seed(scope, scopeId, key, value, options?.accountId);
   }
 
-  async deleteById(id: string): Promise<boolean> {
-    const idx = this.store.findIndex((e) => e.id === id);
+  async deleteById(id: string, options?: VariableRepositoryOptions): Promise<boolean> {
+    const idx = this.store.findIndex(
+      (entry) => entry.id === id && this.matchesAccount(entry, options)
+    );
     if (idx === -1) return false;
     this.store.splice(idx, 1);
     return true;
@@ -83,18 +118,21 @@ class InMemoryVariableRepository implements VariableRepository {
   async deleteByKey(
     scope: VariableScope,
     scopeId: string,
-    key: string
+    key: string,
+    options?: VariableRepositoryOptions
   ): Promise<boolean> {
     const idx = this.store.findIndex(
-      (e) => e.scope === scope && e.scopeId === scopeId && e.key === key
+      (entry) =>
+        entry.scope === scope &&
+        entry.scopeId === scopeId &&
+        entry.key === key &&
+        this.matchesAccount(entry, options)
     );
     if (idx === -1) return false;
     this.store.splice(idx, 1);
     return true;
   }
 }
-
-// ─── Tests ────────────────────────────────────────────
 
 describe('VariableStore', () => {
   let repo: InMemoryVariableRepository;
@@ -115,8 +153,6 @@ describe('VariableStore', () => {
     bus = createEventBus();
     store = new VariableStore(repo, resolver, bus);
   });
-
-  // ── set ──
 
   describe('set', () => {
     it('defaults to page scope when context has pageId', async () => {
@@ -155,6 +191,23 @@ describe('VariableStore', () => {
       expect(entry.scopeId).toBe('session-1');
     });
 
+    it('isolates writes by accountId', async () => {
+      const accountAContext: VariableContext = {
+        ...fullContext,
+        accountId: 'account-a',
+      };
+      const accountBContext: VariableContext = {
+        ...fullContext,
+        accountId: 'account-b',
+      };
+
+      await store.set('mood', 'happy', accountAContext);
+      await store.set('mood', 'sad', accountBContext);
+
+      await expect(store.get('mood', accountAContext)).resolves.toBe('happy');
+      await expect(store.get('mood', accountBContext)).resolves.toBe('sad');
+    });
+
     it('emits variable.set with isNew=true for new variable', async () => {
       const handler = vi.fn();
       bus.on('variable.set', handler);
@@ -187,9 +240,38 @@ describe('VariableStore', () => {
         MissingScopeIdError
       );
     });
-  });
 
-  // ── promote ──
+    it('buffers tool-originated writes and keeps persisted storage unchanged until commit flush', async () => {
+      const bufferedContext: VariableContext = {
+        ...fullContext,
+        toolMutationBuffer: new ToolMutationBuffer('run-1'),
+        toolMutationAttemptNo: 1,
+      };
+
+      const entry = await store.set('mood', 'happy', bufferedContext);
+
+      expect(entry.scope).toBe('page');
+      expect(await store.get('mood', bufferedContext)).toBe('happy');
+      expect(await store.get('mood', fullContext)).toBeUndefined();
+      await expect(repo.findByKey('page', 'page-1', 'mood')).resolves.toBeNull();
+    });
+
+    it('prefers buffered tool writes over persisted variables during the active attempt', async () => {
+      repo.seed('page', 'page-1', 'mood', 'sad');
+
+      const bufferedContext: VariableContext = {
+        ...fullContext,
+        toolMutationBuffer: new ToolMutationBuffer('run-1'),
+        toolMutationAttemptNo: 1,
+      };
+
+      await store.set('mood', 'happy', bufferedContext);
+
+      expect(await store.get('mood', bufferedContext)).toBe('happy');
+      expect(await store.get('mood', fullContext)).toBe('sad');
+      await expect(repo.findByKey('page', 'page-1', 'mood')).resolves.toMatchObject({ value: 'sad' });
+    });
+  });
 
   describe('promote', () => {
     it('promotes page → floor', async () => {
@@ -259,8 +341,6 @@ describe('VariableStore', () => {
     });
   });
 
-  // ── promoteAll ──
-
   describe('promoteAll', () => {
     it('promotes all variables from one scope to another', async () => {
       repo.seed('page', 'page-1', 'mood', 'happy');
@@ -270,7 +350,29 @@ describe('VariableStore', () => {
       const promoted = await store.promoteAll('page', 'page-1', 'floor', 'floor-1');
 
       expect(promoted).toHaveLength(3);
-      expect(promoted.every((e) => e.scope === 'floor')).toBe(true);
+      expect(promoted.every((entry) => entry.scope === 'floor')).toBe(true);
+    });
+
+    it('filters source variables by accountId', async () => {
+      repo.seed('page', 'page-1', 'mood', 'happy', 'account-a');
+      repo.seed('page', 'page-1', 'mood', 'sad', 'account-b');
+
+      const promoted = await store.promoteAll(
+        'page',
+        'page-1',
+        'floor',
+        'floor-1',
+        'account-a'
+      );
+
+      expect(promoted).toHaveLength(1);
+      expect(promoted[0]!.value).toBe('happy');
+      await expect(
+        resolver.resolve('mood', { floorId: 'floor-1', accountId: 'account-a' })
+      ).resolves.toMatchObject({ value: 'happy', scope: 'floor' });
+      await expect(
+        resolver.resolve('mood', { floorId: 'floor-1', accountId: 'account-b' })
+      ).resolves.toBeNull();
     });
 
     it('returns empty array when source scope has no variables', async () => {
@@ -296,8 +398,6 @@ describe('VariableStore', () => {
       expect(handler).toHaveBeenCalledTimes(2);
     });
   });
-
-  // ── delete ──
 
   describe('delete', () => {
     it('deletes variable and emits event', async () => {
@@ -325,8 +425,6 @@ describe('VariableStore', () => {
       expect(handler).not.toHaveBeenCalled();
     });
   });
-
-  // ── get (proxy) ──
 
   describe('get', () => {
     it('returns value via resolver', async () => {

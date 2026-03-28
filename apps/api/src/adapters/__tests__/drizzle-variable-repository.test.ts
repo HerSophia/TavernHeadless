@@ -1,7 +1,22 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createDatabase, type AppDb } from "../../db/client";
+import { accounts } from "../../db/schema.js";
 import { DrizzleVariableRepository } from "../drizzle-variable-repository";
+
+async function seedAccount(db: AppDb, id: string) {
+  const now = Date.now();
+
+  await db.insert(accounts).values({
+    id,
+    name: id,
+    role: "admin",
+    status: "active",
+    isDefault: false,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
 
 describe("DrizzleVariableRepository", () => {
   let db: AppDb;
@@ -15,7 +30,9 @@ describe("DrizzleVariableRepository", () => {
     repo = new DrizzleVariableRepository(db);
   });
 
-  // ── findByKey ───────────────────────────────────────
+  afterEach(() => {
+    closeDb();
+  });
 
   it("returns null for non-existent key", async () => {
     const result = await repo.findByKey("global", "global", "missing");
@@ -44,8 +61,6 @@ describe("DrizzleVariableRepository", () => {
     expect(result!.value).toEqual(complexValue);
   });
 
-  // ── findAllByScope ──────────────────────────────────
-
   it("returns empty array when no variables exist", async () => {
     const result = await repo.findAllByScope("floor", "floor-1");
     expect(result).toEqual([]);
@@ -54,16 +69,14 @@ describe("DrizzleVariableRepository", () => {
   it("returns all variables in scope", async () => {
     await repo.upsert("chat", "s1", "mood", "happy");
     await repo.upsert("chat", "s1", "location", "tavern");
-    await repo.upsert("chat", "s2", "mood", "sad"); // different scopeId
+    await repo.upsert("chat", "s2", "mood", "sad");
 
     const result = await repo.findAllByScope("chat", "s1");
 
     expect(result).toHaveLength(2);
-    const keys = result.map((e) => e.key).sort();
+    const keys = result.map((entry) => entry.key).sort();
     expect(keys).toEqual(["location", "mood"]);
   });
-
-  // ── upsert ──────────────────────────────────────────
 
   it("creates new variable on first upsert", async () => {
     const result = await repo.upsert("floor", "floor-1", "hp", 100);
@@ -79,14 +92,26 @@ describe("DrizzleVariableRepository", () => {
     const first = await repo.upsert("chat", "s1", "mood", "happy");
     const second = await repo.upsert("chat", "s1", "mood", "sad");
 
-    // same key should update, not create
     expect(second.key).toBe("mood");
     expect(second.value).toBe("sad");
     expect(second.updatedAt).toBeGreaterThanOrEqual(first.updatedAt);
 
-    // verify only one entry exists
     const all = await repo.findAllByScope("chat", "s1");
     expect(all).toHaveLength(1);
+  });
+
+  it("isolates same scope key across accounts", async () => {
+    await seedAccount(db, "acc-a");
+    await seedAccount(db, "acc-b");
+
+    const accountA = await repo.upsert("global", "global", "theme", "red", { accountId: "acc-a" });
+    const accountB = await repo.upsert("global", "global", "theme", "blue", { accountId: "acc-b" });
+
+    expect(accountA.id).not.toBe(accountB.id);
+    expect((await repo.findByKey("global", "global", "theme", { accountId: "acc-a" }))?.value).toBe("red");
+    expect((await repo.findByKey("global", "global", "theme", { accountId: "acc-b" }))?.value).toBe("blue");
+    expect(await repo.findAllByScope("global", "global", { accountId: "acc-a" })).toHaveLength(1);
+    expect(await repo.findAllByScope("global", "global", { accountId: "acc-b" })).toHaveLength(1);
   });
 
   it("supports null and boolean values", async () => {
@@ -99,8 +124,6 @@ describe("DrizzleVariableRepository", () => {
     const boolResult = await repo.findByKey("global", "g", "boolVal");
     expect(boolResult!.value).toBe(true);
   });
-
-  // ── deleteById ──────────────────────────────────────
 
   it("returns false when deleting non-existent id", async () => {
     const result = await repo.deleteById("non-existent");
@@ -117,7 +140,16 @@ describe("DrizzleVariableRepository", () => {
     expect(found).toBeNull();
   });
 
-  // ── deleteByKey ─────────────────────────────────────
+  it("does not delete foreign-account variable by id", async () => {
+    await seedAccount(db, "acc-a");
+    await seedAccount(db, "acc-b");
+
+    const created = await repo.upsert("chat", "s1", "mood", "happy", { accountId: "acc-a" });
+
+    const deleted = await repo.deleteById(created.id, { accountId: "acc-b" });
+    expect(deleted).toBe(false);
+    expect(await repo.findByKey("chat", "s1", "mood", { accountId: "acc-a" })).not.toBeNull();
+  });
 
   it("returns false when deleting non-existent key", async () => {
     const result = await repo.deleteByKey("chat", "s1", "missing");
@@ -131,7 +163,6 @@ describe("DrizzleVariableRepository", () => {
     const deleted = await repo.deleteByKey("chat", "s1", "mood");
     expect(deleted).toBe(true);
 
-    // mood deleted, location still exists
     const mood = await repo.findByKey("chat", "s1", "mood");
     expect(mood).toBeNull();
 

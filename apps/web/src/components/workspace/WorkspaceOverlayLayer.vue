@@ -8,7 +8,9 @@ import type {
   PresetManagerView,
   WorldbookManagerDialogProps
 } from "../../composables/workspace/assets/managers";
+import type { WorkspaceMcpManagerDialogState } from "../../composables/workspace/mcp";
 import type { AssetMenuAction, SessionAction } from "../../composables/workspace/menus";
+import type { WorkspaceToolManagerDialogState } from "../../composables/workspace/tools";
 import type { AssetImportReadyEntry } from "../../lib/asset-import";
 import type {
   LibraryImportDuplicatePolicy,
@@ -25,12 +27,16 @@ import type {
   WorkspaceLlmProfile,
   WorkspaceLlmRuntimeSlot
 } from "../../lib/workspace-api";
+import type { WorkspaceReplayBlockingExecution } from "../../lib/workspace-api";
 import AssetImportDialog from "./AssetImportDialog.vue";
 import CharacterAssetManagerDialog from "./CharacterAssetManagerDialog.vue";
 import MessageActionDialogs from "./MessageActionDialogs.vue";
+import ToolReplayConfirmDialog from "./ToolReplayConfirmDialog.vue";
 import PresetAssetManagerDialog from "./PresetAssetManagerDialog.vue";
+import WorkspaceMcpManagerDialog from "./WorkspaceMcpManagerDialog.vue";
 import WorkspaceAssetBrowserDialog from "./WorkspaceAssetBrowserDialog.vue";
 import SessionContextMenu from "./SessionContextMenu.vue";
+import WorkspaceToolManagerDialog from "./WorkspaceToolManagerDialog.vue";
 import WorldbookAssetManagerDialog from "./WorldbookAssetManagerDialog.vue";
 import WorkspaceToastStack from "./WorkspaceToastStack.vue";
 import WorkspaceLlmInstanceManagerDialog from "./WorkspaceLlmInstanceManagerDialog.vue";
@@ -77,6 +83,8 @@ type AssetContextMenuState = {
 type PresetManagerDialogState = Omit<PresetManagerDialogProps, "t">;
 type CharacterManagerDialogState = Omit<CharacterManagerDialogProps, "t">;
 type WorldbookManagerDialogState = Omit<WorldbookManagerDialogProps, "t">;
+type ToolManagerDialogState = WorkspaceToolManagerDialogState;
+type McpManagerDialogState = WorkspaceMcpManagerDialogState;
 type LlmManagerDialogState = {
   page: "instances" | "profiles";
   applyingSlot: WorkspaceLlmInstanceSlot | null;
@@ -112,9 +120,16 @@ type LlmManagerDialogState = {
   slotParamsDraft: WorkspaceLlmGenerationParams;
 };
 
+type ToolReplayConfirmDialogState = {
+  blockingExecutions: WorkspaceReplayBlockingExecution[];
+  busy: boolean;
+  open: boolean;
+};
+
 type MaybePromise = Promise<void> | void;
 
 const props = defineProps<{
+  activeSessionId: string | null;
   assetContextMenu: AssetContextMenuState;
   assetImportDialog: AssetImportDialogState;
   characterManagerDialog: CharacterManagerDialogState;
@@ -125,6 +140,7 @@ const props = defineProps<{
   };
   contextMenu: SessionContextMenuState;
   formatTime: (timestamp: number) => string;
+  mcpManagerDialog: McpManagerDialogState;
   messageDialog: MessageDialogState;
   messageDialogRoleLabel: string;
   hasActiveSession: boolean;
@@ -144,6 +160,8 @@ const props = defineProps<{
   onCloseLlmSlotDrawer: () => void;
   onConfirmEditAndRegenerate: () => MaybePromise;
   onConfirmEditMessage: () => MaybePromise;
+  onConfirmSaveMcpServer: () => MaybePromise;
+  onConfirmSaveToolDefinition: () => MaybePromise;
   onConfirmPresetManagerAction: () => MaybePromise;
   onOpenLlmSlotDrawer: (slot: WorkspaceLlmInstanceSlot) => void;
   onApplyLlmSlotPresetParams: () => MaybePromise;
@@ -157,13 +175,28 @@ const props = defineProps<{
   onHandleAssetImport: (entries: AssetImportReadyEntry[]) => MaybePromise;
   onHandleAssetMenuAction: (action: AssetMenuAction) => MaybePromise;
   onHandleSessionAction: (action: SessionAction) => void;
+  onConfirmToolReplay: () => MaybePromise;
+  onConnectMcpServer: () => MaybePromise;
+  onCreateMcpServerDraft: () => void;
+  onCreateToolDefinitionDraft: () => void;
   onApplyAssetFromBrowser: (assetId: string) => void;
+  onDeleteMcpServer: (serverId: string) => MaybePromise;
+  onDeleteToolDefinition: (definitionId: string) => MaybePromise;
+  onDisconnectMcpServer: () => MaybePromise;
   onOpenAssetFromBrowser: (assetId: string) => void;
   onOpenAssetContextMenuFromBrowser: (event: MouseEvent, assetId: string) => void;
   onOpenAssetImportDialogFromBrowser: (kind: WorkspaceAsset["kind"]) => void;
   onSetAssetBrowserDialogOpen: (open: boolean) => void;
   onToggleAssetFavoriteFromBrowser: (assetId: string) => void;
   onMovePresetManagerEntry: (payload: { delta: -1 | 1; identifier: string }) => void;
+  onRefreshMcpManagerDialog: () => MaybePromise;
+  onRefreshToolManagerDialog: () => MaybePromise;
+  onSaveSessionToolPermissions: () => MaybePromise;
+  onSelectMcpServer: (serverId: string) => MaybePromise;
+  onSelectToolDefinition: (definitionId: string) => MaybePromise;
+  onTestMcpServer: () => MaybePromise;
+  onToggleMcpServer: (payload: { serverId: string; enabled: boolean }) => MaybePromise;
+  onToggleToolDefinition: (payload: { definitionId: string; enabled: boolean }) => MaybePromise;
   onDeleteLlmProfile: (profileId: string) => MaybePromise;
   onDiscoverLlmProfileModels: () => MaybePromise;
   onOpenPresetManagerEntry: (identifier: string) => void;
@@ -185,6 +218,8 @@ const props = defineProps<{
   showInspectorDrawer: boolean;
   showNavDrawer: boolean;
   t: Translator;
+  toolManagerDialog: ToolManagerDialogState;
+  toolReplayConfirmDialog: ToolReplayConfirmDialogState;
   toasts: WorkspaceToast[];
   worldbookManagerDialog: WorldbookManagerDialogState;
 }>();
@@ -228,6 +263,43 @@ const props = defineProps<{
     @confirm-edit="void props.onConfirmEditMessage()"
     @confirm-edit-regenerate="void props.onConfirmEditAndRegenerate()"
     @confirm-retry="void props.onConfirmRetryFloor()"
+  />
+
+  <ToolReplayConfirmDialog
+    v-model:open="props.toolReplayConfirmDialog.open"
+    :blocking-executions="props.toolReplayConfirmDialog.blockingExecutions"
+    :busy="props.toolReplayConfirmDialog.busy"
+    :t="props.t"
+    @confirm="void props.onConfirmToolReplay()"
+  />
+
+  <WorkspaceToolManagerDialog
+    v-model:open="props.toolManagerDialog.open"
+    :active-session-id="props.activeSessionId"
+    :t="props.t"
+    :tool-manager-dialog="props.toolManagerDialog"
+    @create-definition-draft="props.onCreateToolDefinitionDraft"
+    @delete-definition="void props.onDeleteToolDefinition($event)"
+    @refresh="void props.onRefreshToolManagerDialog()"
+    @save-definition="void props.onConfirmSaveToolDefinition()"
+    @save-permissions="void props.onSaveSessionToolPermissions()"
+    @select-definition="void props.onSelectToolDefinition($event)"
+    @toggle-definition="void props.onToggleToolDefinition($event)"
+  />
+
+  <WorkspaceMcpManagerDialog
+    v-model:open="props.mcpManagerDialog.open"
+    :mcp-manager-dialog="props.mcpManagerDialog"
+    :t="props.t"
+    @connect-server="void props.onConnectMcpServer()"
+    @create-server-draft="props.onCreateMcpServerDraft"
+    @delete-server="void props.onDeleteMcpServer($event)"
+    @disconnect-server="void props.onDisconnectMcpServer()"
+    @refresh="void props.onRefreshMcpManagerDialog()"
+    @save-server="void props.onConfirmSaveMcpServer()"
+    @select-server="void props.onSelectMcpServer($event)"
+    @test-server="void props.onTestMcpServer()"
+    @toggle-server="void props.onToggleMcpServer($event)"
   />
 
   <WorkspaceAssetBrowserDialog

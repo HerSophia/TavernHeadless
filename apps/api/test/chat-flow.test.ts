@@ -37,6 +37,7 @@ import type { ProviderConfig, ProviderFactory } from "@tavern/core";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import { sessions, floors, messagePages, messages, promptSnapshots, toolExecutionRecords, variables } from "../src/db/schema";
 import { eq, and, asc } from "drizzle-orm";
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants";
 import { nanoid } from "nanoid";
 
 // ── 辅助函数 ──────────────────────────────────────────
@@ -102,8 +103,23 @@ describe("POST /sessions/:id/respond", () => {
 
 // ── ChatService 单元测试 ──────────────────────────────
 
-import { ChatService, ChatServiceError } from "../src/services/chat-service";
-import { SimpleTokenCounter, type TurnOrchestrator, type TurnOutput } from "@tavern/core";
+import { ChatService, ChatServiceError, type RespondRuntimeToolEvent } from "../src/services/chat-service";
+import {
+  GenerationCoordinatorCancelledError,
+  type GenerationCoordinator,
+  type GenerationCoordinatorExecutionInput,
+} from "../src/services/generation-guard-service";
+import {
+  createEventBus,
+  LLMTimeoutError,
+  SimpleTokenCounter,
+  ToolReplayBlockedError,
+  ToolRegistry,
+  TurnError,
+  type TurnOrchestrator,
+  type ToolDefinition,
+  type TurnOutput,
+} from "@tavern/core";
 
 describe("ChatService", () => {
   let database: DatabaseConnection;
@@ -125,6 +141,27 @@ describe("ChatService", () => {
     finalState: "generating",
   };
 
+  function createRecordingGenerationCoordinator(
+    calls: Array<{ sessionId: string; branchId: string; mode: "reject" | "queue"; timeoutMs?: number }>,
+  ): GenerationCoordinator {
+    return {
+      async execute<T>(input: GenerationCoordinatorExecutionInput<T>): Promise<T> {
+        calls.push({
+          sessionId: input.sessionId,
+          branchId: input.branchId,
+          mode: input.mode,
+          timeoutMs: input.timeoutMs,
+        });
+
+        return input.task({
+          requestId: "test-request",
+          acquiredAt: Date.now(),
+          abortSignal: new AbortController().signal,
+        });
+      },
+    };
+  }
+
   beforeEach(async () => {
     database = createDatabase(":memory:");
 
@@ -135,33 +172,44 @@ describe("ChatService", () => {
         // 实际的 TurnOrchestrator 会通过 FloorStateMachine 做，
         // 但这里我们 mock 整个 orchestrator，只需返回结果
         const { db } = database;
-        const { floors } = await import("../src/db/schema");
-        const { eq } = await import("drizzle-orm");
+        const now = Date.now();
+        const executionRecord = {
+          id: `tec-${input.floorId}`,
+          runId: input.toolExecutionRunId ?? `run-${input.floorId}`,
+          floorId: input.floorId,
+          pageId: input.pageId,
+          callerSlot: "narrator",
+          providerId: "builtin",
+          providerType: "builtin",
+          toolName: "roll_dice",
+          argsJson: JSON.stringify({ sides: 20 }),
+          resultJson: JSON.stringify({ total: 12 }),
+          status: "success",
+          lifecycleState: "finished",
+          commitOutcome: "pending",
+          sideEffectLevel: "none",
+          durationMs: 5,
+          startedAt: now,
+          finishedAt: now + 5,
+          attemptNo: 1,
+          createdAt: now,
+        } as const;
 
         await db
           .update(floors)
           .set({ state: "generating", updatedAt: Date.now() })
           .where(eq(floors.id, input.floorId));
 
+        await db
+          .insert(toolExecutionRecords)
+          .values(executionRecord)
+          .onConflictDoNothing()
+          .run();
+
         return {
           ...MOCK_TURN_OUTPUT,
           floorId: input.floorId,
-          toolExecutionRecords: [
-            {
-              id: `tec-${input.floorId}`,
-              runId: `run-${input.floorId}`,
-              floorId: input.floorId,
-              pageId: input.pageId,
-              callerSlot: "narrator",
-              providerId: "builtin",
-              toolName: "roll_dice",
-              argsJson: JSON.stringify({ sides: 20 }),
-              resultJson: JSON.stringify({ total: 12 }),
-              status: "success",
-              durationMs: 5,
-              createdAt: Date.now(),
-            },
-          ],
+          toolExecutionRecords: [executionRecord],
         };
       }),
     } as unknown as TurnOrchestrator;
@@ -259,6 +307,58 @@ describe("ChatService", () => {
     expect(assistantMsg!.source).toBe("narrator");
   });
 
+  it("should forward runtime tool events during respond", async () => {
+    const eventBus = createEventBus();
+    const tokenCounter = new SimpleTokenCounter();
+    chatService = new ChatService(database.db, mockOrchestrator, tokenCounter, { eventBus });
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockImplementationOnce(async (input) => {
+      await database.db
+        .update(floors)
+        .set({ state: "generating", updatedAt: Date.now() })
+        .where(eq(floors.id, input.floorId));
+
+      await eventBus.emit("tool.call_started", {
+        floorId: input.floorId,
+        pageId: input.pageId,
+        callerSlot: "narrator",
+        executionId: "exec-1",
+        providerId: "builtin",
+        providerType: "builtin",
+        sideEffectLevel: "sandbox",
+        toolName: "set_variable",
+        args: { key: "mood", value: "steady" },
+      });
+
+      await eventBus.emit("tool.call_completed", {
+        floorId: input.floorId,
+        pageId: input.pageId,
+        callerSlot: "narrator",
+        executionId: "exec-1",
+        providerId: "builtin",
+        providerType: "builtin",
+        sideEffectLevel: "sandbox",
+        toolName: "set_variable",
+        result: { ok: true },
+        status: "success",
+        durationMs: 7,
+      });
+
+      return {
+        ...MOCK_TURN_OUTPUT,
+        floorId: input.floorId,
+      };
+    });
+
+    const toolEvents: RespondRuntimeToolEvent[] = [];
+    await chatService.respond(sessionId, { message: "Observe tool events" }, { onTool: (event) => toolEvents.push(event) });
+
+    expect(toolEvents).toEqual([
+      expect.objectContaining({ executionId: "exec-1", phase: "start", replaySafety: "uncertain" }),
+      expect.objectContaining({ executionId: "exec-1", phase: "success", durationMs: 7, replaySafety: "safe" }),
+    ]);
+  });
+
   it("should pass a generating execution result into the commit service", async () => {
     const commitSpy = vi.spyOn((chatService as any).turnCommitService, "commit");
 
@@ -296,7 +396,7 @@ describe("ChatService", () => {
     );
   });
 
-  it("should persist tool_execution_record inside the commit boundary after respond", async () => {
+  it("should finalize tool_execution_record commit outcome after respond", async () => {
     const result = await chatService.respond(sessionId, { message: "Record boundary" });
 
     const [toolExecutionRow] = await database.db
@@ -310,6 +410,8 @@ describe("ChatService", () => {
     expect(toolExecutionRow!.providerId).toBe("builtin");
     expect(toolExecutionRow!.toolName).toBe("roll_dice");
     expect(toolExecutionRow!.status).toBe("success");
+    expect(toolExecutionRow!.lifecycleState).toBe("finished");
+    expect(toolExecutionRow!.commitOutcome).toBe("committed");
   });
 
   it("should persist prompt_snapshot inside the commit boundary after respond", async () => {
@@ -407,6 +509,112 @@ describe("ChatService", () => {
     releaseGeneration?.();
     await expect(firstPromise).resolves.toMatchObject({ generatedText: MOCK_GENERATED_TEXT });
     expect(blockingOrchestrator.executeTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it("should prefer the session-scoped runtime tool registry over the static fallback registry", async () => {
+    const makeTool = (name: string): ToolDefinition => ({
+      name,
+      description: `${name} description`,
+      parameters: { type: "object", properties: {} },
+      sideEffectLevel: "none",
+      allowedSlots: ["narrator"],
+      source: "preset",
+    });
+
+    const baseRegistry = new ToolRegistry();
+    baseRegistry.register({
+      id: "base-provider",
+      type: "builtin",
+      listTools: vi.fn(async () => [makeTool("base_only_tool")]),
+      executeTool: vi.fn(async () => ({ data: "base" })),
+    });
+
+    const runtimeRegistry = new ToolRegistry();
+    runtimeRegistry.register({
+      id: "runtime-provider",
+      type: "preset",
+      listTools: vi.fn(async () => [makeTool("runtime_only_tool")]),
+      executeTool: vi.fn(async () => ({ data: "runtime" })),
+    });
+
+    const sessionToolRegistryService = {
+      buildRuntime: vi.fn(async () => ({
+        registry: runtimeRegistry,
+        catalog: {
+          sessionId,
+          generatedAt: Date.now(),
+          tools: [],
+          conflicts: [],
+        },
+      })),
+    } as any;
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      toolRegistry: baseRegistry,
+      sessionToolRegistryService,
+      resolveToolPermissions: async () => ({ enabled: true }),
+    });
+
+    await service.respond(sessionId, {
+      message: "Use runtime tools",
+      config: { enableTools: true, toolMode: "inline" },
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as any).mock.calls.at(-1)[0];
+    const toolNames = (await turnInput.toolRegistry.listAll()).map((tool: ToolDefinition) => tool.name);
+    expect(toolNames).toContain("runtime_only_tool");
+    expect(toolNames).not.toContain("base_only_tool");
+    expect(sessionToolRegistryService.buildRuntime).toHaveBeenCalledWith(sessionId, DEFAULT_ADMIN_ACCOUNT_ID);
+  });
+
+  it("should use reject coordinator mode by default", async () => {
+    const calls: Array<{ sessionId: string; branchId: string; mode: "reject" | "queue"; timeoutMs?: number }> = [];
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      generationCoordinator: createRecordingGenerationCoordinator(calls),
+    });
+
+    await service.respond(sessionId, { message: "Default coordinator mode" });
+
+    expect(calls).toEqual([
+      expect.objectContaining({ sessionId, branchId: "main", mode: "reject", timeoutMs: 5_000 }),
+    ]);
+  });
+
+  it("should pass configured queue mode and queue timeout to the generation coordinator", async () => {
+    const calls: Array<{ sessionId: string; branchId: string; mode: "reject" | "queue"; timeoutMs?: number }> = [];
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      generationCoordinator: createRecordingGenerationCoordinator(calls),
+      executionPolicy: { queueMode: "queue", queueTimeoutMs: 1_234 },
+    });
+
+    await service.respond(sessionId, { message: "Queued coordinator mode", branchId: "alt-branch" });
+
+    expect(calls).toEqual([
+      expect.objectContaining({ sessionId, branchId: "alt-branch", mode: "queue", timeoutMs: 1_234 }),
+    ]);
+  });
+
+  it("should pass caller abort signal to the generation coordinator and map queued cancellation", async () => {
+    const abortController = new AbortController();
+    const calls: AbortSignal[] = [];
+    const generationCoordinator: GenerationCoordinator = {
+      async execute<T>(input: GenerationCoordinatorExecutionInput<T>): Promise<T> {
+        calls.push(input.abortSignal!);
+        throw new GenerationCoordinatorCancelledError(input.sessionId, input.branchId);
+      },
+    };
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      generationCoordinator,
+    });
+
+    await expect(
+      service.respond(sessionId, { message: "Cancelled while queued" }, { abortSignal: abortController.signal }),
+    ).rejects.toMatchObject({
+      code: "generation_cancelled",
+    });
+
+    expect(calls).toEqual([abortController.signal]);
   });
 
   it("should resolve per-turn model override and mark profile as used", async () => {
@@ -613,17 +821,129 @@ describe("ChatService", () => {
     }
   });
 
+  it("should map LLM timeout to generation_timeout and mark the floor failed", async () => {
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new LLMTimeoutError(1_234)
+    );
+
+    await expect(chatService.respond(sessionId, { message: "Hello" })).rejects.toMatchObject({
+      code: "generation_timeout",
+    });
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
+    expect(floor?.state).toBe("failed");
+  });
+
+  it("maps replay-blocked verifier retries and marks the run outcome accordingly", async () => {
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockImplementationOnce(async (input) => {
+      const now = Date.now();
+      const executionId = `replay-blocked-${input.floorId}`;
+
+      await database.db
+        .insert(toolExecutionRecords)
+        .values({
+          id: executionId,
+          runId: input.toolExecutionRunId ?? `replay-blocked-run-${input.floorId}`,
+          floorId: input.floorId,
+          pageId: input.pageId ?? null,
+          callerSlot: "narrator",
+          providerId: "resource",
+          providerType: "builtin",
+          toolName: "create_character",
+          argsJson: JSON.stringify({ name: "Alice" }),
+          resultJson: JSON.stringify({ created: true }),
+          status: "success",
+          lifecycleState: "finished",
+          commitOutcome: "pending",
+          sideEffectLevel: "irreversible",
+          durationMs: 5,
+          startedAt: now,
+          finishedAt: now + 5,
+          attemptNo: 1,
+          createdAt: now,
+        })
+        .run();
+
+      throw new TurnError(
+        "Verifier retry blocked because replaying tool executions would be unsafe: create_character (never_auto_replay)",
+        "verifier",
+        new ToolReplayBlockedError([
+          {
+            executionId,
+            toolName: "create_character",
+            providerId: "resource",
+            providerType: "builtin",
+            sideEffectLevel: "irreversible",
+            status: "success",
+            lifecycleState: "finished",
+            replaySafety: "never_auto_replay",
+            reason: "irreversible_side_effect",
+          },
+        ]),
+      );
+    });
+
+    await expect(chatService.respond(sessionId, { message: "Replay block me" })).rejects.toMatchObject({
+      code: "tool_replay_blocked",
+      details: {
+        blocking_executions: [
+          expect.objectContaining({
+            tool_name: "create_character",
+            provider_id: "resource",
+            replay_safety: "never_auto_replay",
+          }),
+        ],
+      },
+    });
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
+    const [toolExecutionRow] = await database.db
+      .select()
+      .from(toolExecutionRecords)
+      .where(eq(toolExecutionRecords.floorId, floor!.id));
+    expect(floor?.state).toBe("failed");
+    expect(toolExecutionRow?.commitOutcome).toBe("replay_blocked");
+  });
+
   it("should throw commit_conflict when the floor is no longer generating before commit", async () => {
     const conflictingOrchestrator = {
       executeTurn: vi.fn(async (input) => {
+        const now = Date.now();
+
         await database.db
           .update(floors)
           .set({ state: "committed", updatedAt: Date.now() })
           .where(eq(floors.id, input.floorId));
 
+        await database.db
+          .insert(toolExecutionRecords)
+          .values({
+            id: `conflict-tec-${input.floorId}`,
+            runId: input.toolExecutionRunId ?? `conflict-run-${input.floorId}`,
+            floorId: input.floorId,
+            pageId: input.pageId ?? null,
+            callerSlot: "narrator",
+            providerId: "builtin",
+            providerType: "builtin",
+            toolName: "roll_dice",
+            argsJson: JSON.stringify({ sides: 20 }),
+            resultJson: JSON.stringify({ total: 12 }),
+            status: "success",
+            lifecycleState: "finished",
+            commitOutcome: "pending",
+            sideEffectLevel: "none",
+            durationMs: 5,
+            startedAt: now,
+            finishedAt: now + 5,
+            attemptNo: 1,
+            createdAt: now,
+          })
+          .run();
+
         return {
           ...MOCK_TURN_OUTPUT,
           floorId: input.floorId,
+          toolExecutionRecords: [],
         };
       }),
     } as unknown as TurnOrchestrator;
@@ -640,6 +960,14 @@ describe("ChatService", () => {
     const pages = await database.db.select().from(messagePages).where(eq(messagePages.floorId, floor!.id));
     expect(pages).toHaveLength(1);
     expect(pages[0]?.pageKind).toBe("input");
+
+    const [toolExecutionRow] = await database.db
+      .select()
+      .from(toolExecutionRecords)
+      .where(eq(toolExecutionRecords.floorId, floor!.id));
+    expect(toolExecutionRow).toBeDefined();
+    expect(toolExecutionRow!.status).toBe("success");
+    expect(toolExecutionRow!.commitOutcome).toBe("discarded");
   });
 
   it("should mark the floor failed when commit persistence fails unexpectedly", async () => {
@@ -657,6 +985,111 @@ describe("ChatService", () => {
     expect(floor?.state).toBe("failed");
 
     const pages = await database.db.select().from(messagePages).where(eq(messagePages.floorId, floor!.id));
+    expect(pages).toHaveLength(1);
+    expect(pages[0]?.pageKind).toBe("input");
+
+    const [toolExecutionRow] = await database.db
+      .select()
+      .from(toolExecutionRecords)
+      .where(eq(toolExecutionRecords.floorId, floor!.id));
+    expect(toolExecutionRow).toBeDefined();
+    expect(toolExecutionRow!.commitOutcome).toBe("discarded");
+  });
+
+  it("should retry commit on SQLITE_BUSY and eventually succeed", async () => {
+    const eventBus = createEventBus();
+    const retryHandler = vi.fn();
+    const succeededAfterRetryHandler = vi.fn();
+    eventBus.on("commit.retry", retryHandler);
+    eventBus.on("commit.succeeded_after_retry", succeededAfterRetryHandler);
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      eventBus,
+      executionPolicy: {
+        commitRetry: { maxRetries: 1, baseDelayMs: 1 },
+      },
+    });
+
+    const turnCommitService = (service as any).turnCommitService;
+    const originalCommit = turnCommitService.commit.bind(turnCommitService);
+    const busyError = Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" });
+    const commitSpy = vi.spyOn(turnCommitService, "commit")
+      .mockImplementationOnce(async () => {
+        throw busyError;
+      })
+      .mockImplementation(async (input) => originalCommit(input));
+
+    const result = await service.respond(sessionId, { message: "Retry commit" });
+
+    expect(result.finalState).toBe("committed");
+    expect(commitSpy).toHaveBeenCalledTimes(2);
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.id, result.floorId));
+
+    expect(floor?.state).toBe("committed");
+    expect(retryHandler).toHaveBeenCalledOnce();
+    expect(retryHandler.mock.calls[0]?.[0]).toMatchObject({
+      sessionId,
+      branchId: result.branchId,
+      floorId: result.floorId,
+      attempt: 1,
+      backoffMs: 1,
+      message: "database is locked",
+    });
+    expect(succeededAfterRetryHandler).toHaveBeenCalledOnce();
+    expect(succeededAfterRetryHandler.mock.calls[0]?.[0]).toMatchObject({
+      sessionId,
+      branchId: result.branchId,
+      floorId: result.floorId,
+      attempts: 2,
+    });
+  });
+
+  it("should return commit_busy after SQLITE_BUSY retries are exhausted", async () => {
+    const eventBus = createEventBus();
+    const retryHandler = vi.fn();
+    const commitBusyHandler = vi.fn();
+    eventBus.on("commit.retry", retryHandler);
+    eventBus.on("commit.busy", commitBusyHandler);
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      eventBus,
+      executionPolicy: {
+        commitRetry: { maxRetries: 1, baseDelayMs: 1 },
+      },
+    });
+
+    const busyError = Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" });
+    const commitSpy = vi.spyOn((service as any).turnCommitService, "commit").mockRejectedValue(busyError);
+
+    await expect(service.respond(sessionId, { message: "Busy commit" })).rejects.toMatchObject({
+      code: "commit_busy",
+    });
+
+    expect(commitSpy).toHaveBeenCalledTimes(2);
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
+    expect(floor?.state).toBe("failed");
+
+    const pages = await database.db.select().from(messagePages).where(eq(messagePages.floorId, floor!.id));
+
+    expect(retryHandler).toHaveBeenCalledOnce();
+    expect(retryHandler.mock.calls[0]?.[0]).toMatchObject({
+      sessionId,
+      branchId: floor?.branchId,
+      floorId: floor?.id,
+      attempt: 1,
+      backoffMs: 1,
+      message: "database is locked",
+    });
+    expect(commitBusyHandler).toHaveBeenCalledOnce();
+    expect(commitBusyHandler.mock.calls[0]?.[0]).toMatchObject({
+      sessionId,
+      branchId: floor?.branchId,
+      floorId: floor?.id,
+      attempts: 2,
+      message: "database is locked",
+    });
     expect(pages).toHaveLength(1);
     expect(pages[0]?.pageKind).toBe("input");
   });
@@ -709,6 +1142,67 @@ describe("ChatService", () => {
     expect(turnInput.generationParams.temperature).toBe(0.7);
     expect(turnInput.generationParams.maxOutputTokens).toBe(1000 - expectedPromptTokens);
     expect(turnInput.generationParams.stream).toBe(false);
+  });
+
+  it("should apply server default timeoutMs when not specified", async () => {
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      executionPolicy: {
+        executionTimeoutMs: 45_000,
+      },
+    });
+
+    await service.respond(sessionId, { message: "Timeout default" });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.generationParams.timeoutMs).toBe(45_000);
+  });
+
+  it("should preserve narrator timeoutMs and maxRetries over server defaults", async () => {
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      executionPolicy: {
+        executionTimeoutMs: 45_000,
+      },
+      resolveTurnModels: vi.fn().mockResolvedValue({
+        narrator: {
+          model: { providerId: "llm-profile-p1", modelId: "gpt-4o-mini" },
+          source: "session_profile",
+          profileId: "p1",
+          generationParams: { timeoutMs: 30_000, maxRetries: 4, temperature: 0.4 },
+        },
+      }),
+    });
+
+    await service.respond(sessionId, { message: "Profile timeout" });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.generationParams.timeoutMs).toBe(30_000);
+    expect(turnInput.generationParams.maxRetries).toBe(4);
+    expect(turnInput.generationParams.temperature).toBe(0.4);
+  });
+
+  it("should prefer request timeoutMs and maxRetries over narrator params", async () => {
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      executionPolicy: {
+        executionTimeoutMs: 45_000,
+      },
+      resolveTurnModels: vi.fn().mockResolvedValue({
+        narrator: {
+          model: { providerId: "llm-profile-p1", modelId: "gpt-4o-mini" },
+          source: "session_profile",
+          profileId: "p1",
+          generationParams: { timeoutMs: 30_000, maxRetries: 4 },
+        },
+      }),
+    });
+
+    await service.respond(sessionId, {
+      message: "Request timeout",
+      generationParams: { timeoutMs: 12_000, maxRetries: 1 },
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.generationParams.timeoutMs).toBe(12_000);
+    expect(turnInput.generationParams.maxRetries).toBe(1);
   });
 
   // ── regenerate 测试 ─────────────────────────────────
@@ -944,6 +1438,96 @@ describe("ChatService", () => {
       expect(pages.some((page) => page.pageKind === "output")).toBe(true);
     });
 
+    it("requires explicit confirmation before retrying a floor with unsafe prior tool executions", async () => {
+      const baseTurn = await chatService.respond(sessionId, { message: "Retry guard" });
+      const now = Date.now();
+      const blockingExecutionId = nanoid();
+
+      await database.db
+        .update(floors)
+        .set({ state: "failed", updatedAt: now })
+        .where(eq(floors.id, baseTurn.floorId));
+
+      await database.db
+        .insert(toolExecutionRecords)
+        .values({
+          id: blockingExecutionId,
+          runId: `retry-unsafe-run-${baseTurn.floorId}`,
+          floorId: baseTurn.floorId,
+          callerSlot: "narrator",
+          providerId: "resource",
+          providerType: "builtin",
+          toolName: "create_character",
+          argsJson: JSON.stringify({ name: "Alice" }),
+          resultJson: JSON.stringify({ created: true }),
+          status: "success",
+          lifecycleState: "finished",
+          commitOutcome: "discarded",
+          sideEffectLevel: "irreversible",
+          durationMs: 8,
+          startedAt: now,
+          finishedAt: now + 8,
+          attemptNo: 1,
+          createdAt: now,
+        })
+        .run();
+
+      await expect(chatService.retryFloor(baseTurn.floorId)).rejects.toMatchObject({
+        code: "tool_replay_confirmation_required",
+        details: {
+          blocking_executions: [
+            expect.objectContaining({
+              execution_id: blockingExecutionId,
+              tool_name: "create_character",
+              replay_safety: "never_auto_replay",
+            }),
+          ],
+        },
+      });
+    });
+
+    it("allows retry once the caller confirms all blocking execution ids", async () => {
+      const baseTurn = await chatService.respond(sessionId, { message: "Retry confirm" });
+      const now = Date.now();
+      const blockingExecutionId = nanoid();
+
+      await database.db
+        .update(floors)
+        .set({ state: "failed", updatedAt: now })
+        .where(eq(floors.id, baseTurn.floorId));
+
+      await database.db
+        .insert(toolExecutionRecords)
+        .values({
+          id: blockingExecutionId,
+          runId: `retry-confirm-run-${baseTurn.floorId}`,
+          floorId: baseTurn.floorId,
+          callerSlot: "narrator",
+          providerId: "resource",
+          providerType: "builtin",
+          toolName: "create_character",
+          argsJson: JSON.stringify({ name: "Alice" }),
+          resultJson: JSON.stringify({ created: true }),
+          status: "success",
+          lifecycleState: "finished",
+          commitOutcome: "discarded",
+          sideEffectLevel: "irreversible",
+          durationMs: 8,
+          startedAt: now,
+          finishedAt: now + 8,
+          attemptNo: 1,
+          createdAt: now,
+        })
+        .run();
+
+      const retryResult = await chatService.retryFloor(baseTurn.floorId, {
+        confirmedExecutionIds: [blockingExecutionId],
+      });
+
+      expect(retryResult.floorId).toBe(baseTurn.floorId);
+      expect(retryResult.finalState).toBe("committed");
+    });
+
     it("should use the same generating commit boundary during retryFloor", async () => {
       const baseTurn = await chatService.respond(sessionId, { message: "Retry seed" });
 
@@ -1047,6 +1631,36 @@ describe("ChatService", () => {
         .where(and(eq(messages.pageId, newInputPage!.id), eq(messages.role, "user")));
 
       expect(editedUserMessage?.content).toBe("Edited user line");
+    });
+
+    it("should not leave an orphan draft floor when editAndRegenerate front-half write fails", async () => {
+      const baseTurn = await chatService.respond(sessionId, { message: "Editable seed" });
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, baseTurn.floorId), eq(messagePages.pageKind, "input")));
+
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      vi.spyOn((chatService as any).messagePersistence, "saveUserMessageWithExecutor").mockImplementationOnce(() => {
+        throw new Error("input page write failed");
+      });
+
+      await expect(chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited broken line",
+        branchId: "edit-broken",
+      })).rejects.toThrow("input page write failed");
+
+      const branchedFloors = await database.db
+        .select()
+        .from(floors)
+        .where(and(eq(floors.sessionId, sessionId), eq(floors.branchId, "edit-broken")));
+
+      expect(branchedFloors).toHaveLength(0);
     });
 
     it("should use the same generating commit boundary during editAndRegenerate", async () => {

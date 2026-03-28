@@ -119,7 +119,8 @@ export async function fetchPresetAssets(accountId?: string): Promise<WorkspaceLi
     kind: "preset",
     name: item.name,
     source: item.source,
-    updatedAt: item.updatedAt
+    updatedAt: item.updatedAt,
+    version: item.version
   }));
 }
 
@@ -131,7 +132,8 @@ async function fetchWorldbookAssets(accountId?: string): Promise<WorkspaceLibrar
     kind: "worldbook",
     name: item.name,
     source: item.source,
-    updatedAt: item.updatedAt
+    updatedAt: item.updatedAt,
+    version: item.version
   }));
 }
 

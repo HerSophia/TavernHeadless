@@ -290,4 +290,155 @@ describe("sdk state resources", () => {
     expect(requestUrl.searchParams.get("limit")).toBe("10");
     expect(requestUrl.searchParams.get("offset")).toBe("1");
   });
+
+  it("resolves variable snapshots and keeps default list sorting aligned", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            context: {
+              account_id: "acc-1",
+              session_id: "session-1",
+              floor_id: "floor-1",
+              page_id: "page-1",
+              global_scope_id: "global",
+            },
+            resolved: [
+              {
+                key: "hp",
+                value: 95,
+                source_scope: "page",
+                source_scope_id: "page-1",
+                updated_at: 300,
+              },
+              {
+                key: "mood",
+                value: "steady",
+                source_scope: "floor",
+                source_scope_id: "floor-1",
+                updated_at: 200,
+              },
+            ],
+            layers: {
+              global: {
+                scope: "global",
+                scope_id: "global",
+                items: [
+                  {
+                    id: "var-global-theme",
+                    key: "theme",
+                    scope: "global",
+                    scope_id: "global",
+                    updated_at: 100,
+                    value: "midnight",
+                  },
+                ],
+              },
+              floor: {
+                scope: "floor",
+                scope_id: "floor-1",
+                items: [
+                  {
+                    id: "var-floor-mood",
+                    key: "mood",
+                    scope: "floor",
+                    scope_id: "floor-1",
+                    updated_at: 200,
+                    value: "steady",
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ data: [] }));
+
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const variables = createVariablesResource(transport);
+
+    await expect(
+      variables.resolveContext({
+        accountId: "acc-1",
+        floorId: "floor-1",
+        includeLayers: true,
+        pageId: "page-1",
+        sessionId: "session-1",
+      }),
+    ).resolves.toEqual({
+      context: {
+        accountId: "acc-1",
+        floorId: "floor-1",
+        globalScopeId: "global",
+        pageId: "page-1",
+        sessionId: "session-1",
+      },
+      layers: {
+        floor: {
+          items: [
+            {
+              id: "var-floor-mood",
+              key: "mood",
+              scope: "floor",
+              scopeId: "floor-1",
+              updatedAt: 200,
+              value: "steady",
+            },
+          ],
+          scope: "floor",
+          scopeId: "floor-1",
+        },
+        global: {
+          items: [
+            {
+              id: "var-global-theme",
+              key: "theme",
+              scope: "global",
+              scopeId: "global",
+              updatedAt: 100,
+              value: "midnight",
+            },
+          ],
+          scope: "global",
+          scopeId: "global",
+        },
+      },
+      resolved: [
+        {
+          key: "hp",
+          sourceScope: "page",
+          sourceScopeId: "page-1",
+          updatedAt: 300,
+          value: 95,
+        },
+        {
+          key: "mood",
+          sourceScope: "floor",
+          sourceScopeId: "floor-1",
+          updatedAt: 200,
+          value: "steady",
+        },
+      ],
+    });
+
+    await expect(variables.list({ accountId: "acc-1" })).resolves.toEqual([]);
+
+    const [resolveUrl, resolveInit] = fetchImpl.mock.calls[0]!;
+    const resolveRequestUrl = new URL(resolveUrl as string);
+    expect(resolveRequestUrl.pathname).toBe("/variables/resolve");
+    expect(resolveRequestUrl.searchParams.get("session_id")).toBe("session-1");
+    expect(resolveRequestUrl.searchParams.get("floor_id")).toBe("floor-1");
+    expect(resolveRequestUrl.searchParams.get("page_id")).toBe("page-1");
+    expect(resolveRequestUrl.searchParams.get("include_layers")).toBe("true");
+    expect((resolveInit?.headers as Headers).get("x-account-id")).toBe("acc-1");
+
+    const [listUrl] = fetchImpl.mock.calls[1]!;
+    const listRequestUrl = new URL(listUrl as string);
+    expect(listRequestUrl.pathname).toBe("/variables");
+    expect(listRequestUrl.searchParams.get("sort_by")).toBe("updated_at");
+    expect(listRequestUrl.searchParams.get("sort_order")).toBe("desc");
+    expect(listRequestUrl.searchParams.get("limit")).toBe("100");
+    expect(listRequestUrl.searchParams.get("offset")).toBe("0");
+  });
 });

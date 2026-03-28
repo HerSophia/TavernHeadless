@@ -1,6 +1,14 @@
-import type { RespondResult } from "@tavern/sdk";
+import type { RespondResult, TavernRespondToolPayload } from "@tavern/sdk";
+
+export type RespondStreamWarning = {
+  code: string;
+  executionId?: string;
+  message: string;
+  toolName?: string;
+};
 
 export type RespondStreamState = {
+  activeTools: Record<string, TavernRespondToolPayload>;
   branchId?: string;
   content: string;
   error?: {
@@ -12,4 +20,6 @@ export type RespondStreamState = {
   result: RespondResult | null;
   status: "idle" | "streaming" | "done" | "error";
   summaries: string[];
+  toolEvents: TavernRespondToolPayload[];
+  warnings: RespondStreamWarning[];
 };

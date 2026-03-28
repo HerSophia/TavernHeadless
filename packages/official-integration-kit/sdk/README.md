@@ -168,9 +168,45 @@ console.log(preview.messages);
 console.log(preview.promptSnapshot.promptMode);
 console.log(preview.promptSnapshot.promptDigest);
 console.log(preview.promptSnapshot.tokenEstimate);
+console.log(preview.promptSnapshot.presetVersion);
 ```
 
 `respondDryRun()` 返回的 `promptSnapshot` 预览字段与真实提交后的 `prompt_snapshot` 对齐，适合在生成前检查 preset、worldbook、regex 和摘要注入结果。
+
+现在这份 dry-run 结果还会额外返回：
+
+- `presetVersion`
+- `worldbookVersion`
+- `regexProfileVersion`
+- `assembly.reservedVariableCollisions`
+
+它们对应本轮真正冻结使用的资源版本号。
+
+### 资源更新的乐观锁
+
+`presets`、`worldbooks`、`regexProfiles` 这几类资源的列表、详情和更新响应都会返回 `version`。
+
+更新时，优先传入 `expectedVersion`：
+
+```ts
+const preset = await client.presets.getEditor({ presetId: "preset-1" });
+
+await client.presets.update({
+  presetId: preset.id,
+  name: preset.name,
+  editor: {
+    default_character_id: 100000,
+    entries: [
+      { identifier: "main", role: "system", content: "Stay in character.", enabled: true },
+    ],
+    order_contexts: [{ character_id: 100000, order: [{ identifier: "main", enabled: true }] }],
+    top_level: { temperature: 0.7 },
+  },
+  expectedVersion: preset.version,
+});
+```
+
+兼容旧调用方时，也仍然可以继续传 `expectedUpdatedAt`，但新的接入应优先使用 `expectedVersion`。
 
 ### 变量和记忆
 
@@ -183,6 +219,20 @@ await client.variables.upsert({
   scopeId: "session-1",
   value: { score: 20 },
 });
+
+// 解析当前上下文可见变量快照
+const snapshot = await client.variables.resolveContext({
+  accountId: "account-1",
+  sessionId: "session-1",
+  floorId: "floor-1",
+  pageId: "page-1",
+  includeLayers: true,
+});
+
+console.log(snapshot.context.globalScopeId); // "global"
+console.log(snapshot.resolved[0]?.key);
+console.log(snapshot.resolved[0]?.sourceScope);
+console.log(snapshot.layers?.page?.items.length ?? 0);
 
 // 读取记忆
 const memories = await client.memories.list({
@@ -198,6 +248,8 @@ console.log(memories[0]?.factKey);
 ```
 
 `factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。
+
+`variables.resolveContext()` 对应后端的 `GET /variables/resolve`，会返回当前 `global/chat/floor/page` 可见变量的最终胜出结果，并可选附带各层原始快照。
 
 ### 页面、分支和条目
 
@@ -235,6 +287,11 @@ console.log(response.headers.get("content-disposition"));
 ### Tool Calling
 
 ```ts
+const runtimeCatalog = await client.sessions.getRuntimeToolCatalog({
+  accountId: "account-1",
+  sessionId: "session-1",
+});
+
 const builtinTools = await client.tools.listBuiltin({
   accountId: "account-1",
 });
@@ -254,7 +311,22 @@ const records = await client.tools.listCallRecords({
 });
 ```
 
-`listCallRecords()` 当前仍对应公开兼容查询面 `/tools/call-records`。在后端公开新的 `tool_execution_record` 查询路由前，SDK 不会提前发明新的 execution records 资源方法。
+```ts
+const executions = await client.tools.listExecutions({
+  accountId: "account-1",
+  floorId: "floor-1",
+  sortBy: "started_at",
+  sortOrder: "desc",
+});
+```
+
+`listExecutions()` 读取新的主执行审计路由。`listCallRecords()` 仍保留为兼容查询面。
+
+运行时工具目录通过 `client.sessions.getRuntimeToolCatalog()` 读取。它是**会话级**快照，对应某个 session 在当前权限、启用状态和 MCP 连接状态下真正可调用的工具集合，不是全局静态目录。
+
+公开审计模型已经是 `tool_execution_record`，因此新的查询应优先使用 `listExecutions()`；`tool_call_record` 和 `listCallRecords()` 只用于兼容旧查询面。
+
+如果你在生成请求里显式传 `toolMode`，当前运行时只支持 `inline`。`standalone` 和 `both` 还不受支持，服务端会返回结构化配置错误，而不是悄悄降级。
 
 ### MCP
 
@@ -272,6 +344,10 @@ const tools = await client.mcp.listServerTools({
   serverId: "mcp-1",
 });
 ```
+
+`getServerStatus()` 和 `listStatuses()` 会保留 `reconnectRequired`、`lastTimeoutAt` 这些运行时字段。
+
+当服务端返回 `mcp_call_uncertain_timeout` 时，含义是这次调用结果**不确定**，并且连接需要重建；它不是普通的确定性失败。
 
 ## 错误处理
 
@@ -298,12 +374,21 @@ try {
 对于流式接口（比如 `respond/stream`），SDK 内部已经完成了这些事：
 
 - 发起 `text/event-stream` 请求
-- 逐行解析 `start` → `chunk` → `summary` → `done` 事件
+- 逐行解析 `start` → `chunk` → `tool` → `summary` → `done` 事件
 - 遇到 `error` 事件时抛出 `TavernApiError`
+- 保留 `error` 事件里的后端错误码，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`、`tool_replay_confirmation_required`、`mcp_call_uncertain_timeout`
 - 在 `done` 中保留 `branchId`、`generatedText`、`summaries`、`totalUsage`、`finalState`
+- 通过 `onTool` 暴露运行时工具事件，包括 `executionId`、`providerId`、`providerType`、`phase`、`replaySafety`、`durationMs`
+- 通过 `onEvent` 原样转发每一个已解析事件，其中也包括真实的 `done`
 - 流结束但没收到 `done` 时也会抛出错误
 
 一般场景直接用 `client.sessions.respondStream()` 就够了。如果需要更底层的控制，可以自己调 `readSseStream()`。
+
+如果你在应用层自己累积流式状态，应直接消费这条真实 `done` 事件，不要再额外合成第二个 `done`。
+
+需要注意的是，SSE 连接一旦已经建立，运行期错误通常不再切换 HTTP 状态码，因此这类 `TavernApiError` 的 `status` 常常仍是 `200`。接入方应同时看 `error.code`。
+
+默认服务配置仍是单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发请求通常直接返回 `generation_conflict`。只有服务端显式启用 `queue` 模式时，客户端才可能收到 `generation_queue_timeout`；即便如此，排队范围也只在当前进程内。
 
 ## 资源覆盖范围
 
@@ -379,6 +464,6 @@ pnpm sdk:check
 
 ## 当前状态
 
-已覆盖 Batch 1 到 Batch 4 的主要资源。`apps/web` 中可复用的请求逻辑已在逐步迁入。
+已覆盖会话、内容结构、变量、记忆、导入导出，以及 Tool Calling / MCP 的主要第一方接入面。`apps/web` 已经直接使用这里的运行时工具目录、执行审计、MCP 状态和 SSE 事件能力。
 
 后续如果后端继续扩展资源，按同样的方式在这里扩充就好，不需要在各个前端里重复写请求层。

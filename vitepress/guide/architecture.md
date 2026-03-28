@@ -501,8 +501,9 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 ### 设计目标
 
 - 所有 LLM 实例（Narrator / Director / Verifier / Memory）都可以调用工具，每个实例的权限独立配置。
-- 工具调用记录绑定到 MessagePage，遵循三层消息结构的隔离原则。
-- 支持两种执行模式，按场景灵活切换。
+- 主审计模型是 `tool_execution_record`，以 floor 为主归属，并允许附带可空的 `page_id`。
+- 运行时工具目录是**会话级**快照，通过 `/sessions/:id/tools/runtime` 暴露当前 session 真正可调用的工具集合。
+- 当前运行时只支持 `inline`。`standalone` 和 `both` 会返回结构化配置错误。
 
 ### 工具来源
 
@@ -513,15 +514,17 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 | **预设/角色卡工具** | 从数据库加载的自定义工具定义，支持脚本执行 |
 | **MCP 工具** | 通过 MCP（Model Context Protocol）连接外部工具服务器。支持 stdio 和 Streamable HTTP 两种传输方式。通过 `ENABLE_MCP=true` 启用。 |
 
-### 两种执行模式
+### 当前支持的执行模式
 
 通过 `TurnConfig.toolMode` 控制：
 
 | 模式 | 说明 |
 | ---- | ---- |
 | `inline` | 工具定义传入 Vercel AI SDK 的 `tools` 参数，LLM 在生成过程中自主调用。默认模式。 |
-| `standalone` | 工具在 LLM 生成前后独立执行。 |
-| `both` | 同时启用两种模式。 |
+| `standalone` | 当前未实现。服务端会返回结构化配置错误。 |
+| `both` | 当前未实现。服务端会返回结构化配置错误。 |
+
+因此文档和界面都不能再把 `standalone`、`both` 描述成现成可用的运行模式。
 
 ### 权限控制
 
@@ -541,11 +544,13 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 | `sandbox` | 副作用写入 page scope，提交时提升 | `set_variable` |
 | `irreversible` | 不可撤销的外部操作 | MCP 外部 API |
 
-### 消息页隔离
+### 执行审计与隔离
 
-- 工具调用记录通过 `page_id` 外键绑定到 `MessagePage`。
+- 每次真实工具调用都会生成一条 `tool_execution_record`，通过 `floor_id` 归属到当前楼层。
+- `page_id` 是可选绑定：只有上层已有真实页上下文时才会写入。
 - 重新生成创建新楼层，工具重新执行，不复用旧记录。
-- 每个消息页有自己独立的工具调用快照。
+- 工具副作用先停留在 page scope，只有楼层提交时才提升。
+- `tool_call_record` 仍保留给旧查询路径使用，但它只是兼容只读模型。
 
 ### API 端点
 
@@ -553,10 +558,14 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 | ---- | ---- | ---- |
 | GET | `/tools/builtin` | 列出内置工具 |
 | GET | `/tools/definitions` | 列出自定义工具定义 |
+| GET | `/tools/definitions/:id` | 获取单个工具定义 |
 | POST | `/tools/definitions` | 创建自定义工具 |
 | PATCH | `/tools/definitions/:id` | 更新工具定义 |
+| PATCH | `/tools/definitions/:id/toggle` | 启用/禁用工具 |
 | DELETE | `/tools/definitions/:id` | 删除工具定义 |
-| GET | `/tools/call-records` | 查询工具调用记录 |
+| GET | `/tools/executions` | 查询主执行审计记录 |
+| GET | `/tools/call-records` | 查询兼容调用记录 |
+| GET | `/sessions/:id/tools/runtime` | 获取会话级运行时工具目录 |
 | GET | `/sessions/:id/tool-permissions` | 获取会话工具权限 |
 | PUT | `/sessions/:id/tool-permissions` | 替换会话工具权限 |
 | PATCH | `/sessions/:id/tool-permissions` | 合并更新会话工具权限 |
@@ -572,3 +581,7 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 | POST | `/mcp/servers/:id/disconnect` | 断开连接 |
 | GET | `/mcp/servers/:id/tools` | 查看服务器工具列表 |
 | POST | `/mcp/servers/:id/test` | 测试连接 |
+
+`/mcp/statuses` 和 `/mcp/servers/:id/status` 还会暴露 `reconnect_required`、`last_timeout_at`。`mcp_call_uncertain_timeout` 表示结果不确定并且需要重连，不是普通失败。
+
+同一 `session + branch` 上的排队语义仍只在当前进程内生效。

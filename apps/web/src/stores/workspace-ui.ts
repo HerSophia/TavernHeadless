@@ -1,3 +1,5 @@
+import { createInitialRespondStreamState, reduceRespondStream, type RespondStreamState } from "@tavern/client-helpers";
+import type { TavernRespondStreamEvent } from "@tavern/sdk";
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
@@ -24,6 +26,7 @@ const TOAST_LIFETIME_MS = 2600;
 
 export const useWorkspaceUiStore = defineStore("workspace-ui", () => {
   const events = ref<WorkspaceEvent[]>([]);
+  const respondStreamState = ref<RespondStreamState>(createInitialRespondStreamState());
   const toasts = ref<WorkspaceToast[]>([]);
   const toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
@@ -51,6 +54,7 @@ export const useWorkspaceUiStore = defineStore("workspace-ui", () => {
 
   function resetFeedback(): void {
     clearEvents();
+    resetRespondStreamState();
     clearToasts();
   }
 
@@ -85,12 +89,23 @@ export const useWorkspaceUiStore = defineStore("workspace-ui", () => {
     pushToast(key, tone, vars);
   }
 
+  function recordRespondStreamEvent(event: TavernRespondStreamEvent): void {
+    respondStreamState.value = reduceRespondStream(respondStreamState.value, event);
+  }
+
+  function resetRespondStreamState(): void {
+    respondStreamState.value = createInitialRespondStreamState();
+  }
+
   return {
     addEvent,
     clearEvents,
     clearToasts,
     events,
+    recordRespondStreamEvent,
     resetFeedback,
+    resetRespondStreamState,
+    respondStreamState,
     toasts
   };
 });

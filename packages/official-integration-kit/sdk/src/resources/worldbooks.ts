@@ -7,6 +7,7 @@ export type WorldbookListItem = {
   name: string;
   source: string;
   updatedAt: number;
+  version: number;
 };
 
 export type WorldbookDetail = WorldbookListItem & {
@@ -20,6 +21,7 @@ export type WorldbooksResource = {
   update(options: {
     accountId?: string;
     data: Record<string, unknown>;
+    expectedVersion?: number;
     expectedUpdatedAt?: number;
     name: string;
     worldbookId: string;
@@ -46,6 +48,7 @@ export function createWorldbooksResource(client: TransportClient): WorldbooksRes
         name: readString(detail.name),
         source: readString(detail.source),
         updatedAt: readNumber(detail.updated_at),
+        version: readNumber(detail.version),
       };
     },
     async list(options = {}): Promise<WorldbookListItem[]> {
@@ -68,6 +71,7 @@ export function createWorldbooksResource(client: TransportClient): WorldbooksRes
       const response = await client.fetchJson<Record<string, unknown>>(`/worldbooks/${encodeURIComponent(options.worldbookId)}`, {
         body: compactObject({
           data: options.data,
+          expected_version: options.expectedVersion,
           expected_updated_at: options.expectedUpdatedAt,
           name: options.name,
         }),
@@ -97,5 +101,6 @@ function mapWorldbookListItem(value: unknown): WorldbookListItem | null {
     name: readString(record.name),
     source: readString(record.source),
     updatedAt: readNumber(record.updated_at),
+    version: readNumber(record.version),
   };
 }

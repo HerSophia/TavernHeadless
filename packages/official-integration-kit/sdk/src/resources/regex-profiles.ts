@@ -7,6 +7,7 @@ export type RegexProfileListItem = {
   name: string;
   source: string;
   updatedAt: number;
+  version: number;
 };
 
 export type RegexProfileDetail = RegexProfileListItem & {
@@ -20,6 +21,7 @@ export type RegexProfilesResource = {
   update(options: {
     accountId?: string;
     data: string;
+    expectedVersion?: number;
     expectedUpdatedAt?: number;
     name: string;
     profileId: string;
@@ -46,6 +48,7 @@ export function createRegexProfilesResource(client: TransportClient): RegexProfi
         name: readString(detail.name),
         source: readString(detail.source),
         updatedAt: readNumber(detail.updated_at),
+        version: readNumber(detail.version),
       };
     },
     async list(options = {}): Promise<RegexProfileListItem[]> {
@@ -70,6 +73,7 @@ export function createRegexProfilesResource(client: TransportClient): RegexProfi
       const response = await client.fetchJson<Record<string, unknown>>(`/regex-profiles/${encodeURIComponent(options.profileId)}`, {
         body: compactObject({
           data: options.data,
+          expected_version: options.expectedVersion,
           expected_updated_at: options.expectedUpdatedAt,
           name: options.name,
         }),
@@ -99,5 +103,6 @@ function mapRegexProfileListItem(value: unknown): RegexProfileListItem | null {
     name: readString(record.name),
     source: readString(record.source),
     updatedAt: readNumber(record.updated_at),
+    version: readNumber(record.version),
   };
 }

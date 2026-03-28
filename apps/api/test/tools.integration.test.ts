@@ -106,12 +106,14 @@ describe("Tool Routes", () => {
 
     expect(res.statusCode).toBe(200);
     const body = res.json<ItemResponse<BuiltinToolData[]>>();
-    expect(body.data.length).toBeGreaterThanOrEqual(7);
+    expect(body.data.length).toBe(4);
 
     const names = body.data.map((t) => t.name);
     expect(names).toContain("roll_dice");
-    expect(names).toContain("get_variable");
     expect(names).toContain("get_time");
+    expect(names).not.toContain("get_variable");
+    expect(names).not.toContain("set_variable");
+    expect(names).not.toContain("query_memory");
 
     const dice = body.data.find((t) => t.name === "roll_dice");
     expect(dice?.source).toBe("builtin");

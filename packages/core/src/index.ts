@@ -13,6 +13,9 @@ export type {
   GenerationChunkEvent,
   GenerationCompletedEvent,
   GenerationFailedEvent,
+  CommitRetryEvent,
+  CommitBusyEvent,
+  CommitSucceededAfterRetryEvent,
   MemoryCreatedEvent,
   MemoryUpdatedEvent,
   MemoryDeprecatedEvent,
@@ -141,7 +144,12 @@ export type {
   VerifierIssue,
   VerifierResult,
 } from './orchestration/index.js';
-export { TurnOrchestrator, TurnError } from './orchestration/index.js';
+export {
+  TurnOrchestrator,
+  TurnError,
+  ToolReplayBlockedError,
+  UnsupportedToolModeError,
+} from './orchestration/index.js';
 export type {
   TurnOrchestratorDeps,
   TurnPhase,
@@ -155,7 +163,7 @@ export type {
 
 // ── Ports ─────────────────────────────────────────────
 export type { FloorRepository } from './ports/index.js';
-export type { VariableRepository } from './ports/index.js';
+export type { VariableRepository, VariableRepositoryOptions } from './ports/index.js';
 export type { MemoryRepository } from './ports/index.js';
 export type { PromptSnapshotRepository } from './ports/index.js';
 export type { ToolExecutionRepository } from './ports/index.js';
@@ -182,9 +190,19 @@ export type {
   ToolDefinition,
   ToolCallResult,
   ToolCallStatus,
+  ToolExecutionStatus,
+  ToolExecutionLifecycleState,
+  ToolExecutionCommitOutcome,
+  ToolExecutionProviderType,
   ToolCallRecord,
   ExecutedToolCallRecord,
+  ToolExecutionOpenRecord,
+  ToolExecutionFinishPatch,
   ToolExecutionContext,
+  ToolReplaySafety,
+  ToolProviderCompensationMode,
+  ToolReplaySafetyEvaluation,
+  BufferedToolVariableMutation,
   ToolPermissions,
   ToolProviderType,
   ToolProvider,
@@ -196,5 +214,11 @@ export { ToolExecutor } from './tools/index.js';
 export type { LLMToolEntry } from './tools/index.js';
 export { BuiltinToolProvider } from './tools/index.js';
 export { PresetToolProvider } from './tools/index.js';
+export { ToolMutationBuffer } from './tools/index.js';
+export {
+  evaluateExecutedToolCallReplaySafety,
+  evaluateToolReplaySafety,
+  isAutoReplaySafe,
+  resolveToolProviderCompensationMode,
+} from './tools/index.js';
 export type { PresetToolInput } from './tools/index.js';
-

@@ -87,6 +87,7 @@ export type FloorsBranchOptions = {
 
 export type FloorsRetryOptions = {
   accountId?: string;
+  confirmedExecutionIds?: string[];
   config?: RespondTurnConfig;
   floorId: string;
   generationParams?: RespondGenerationParams;
@@ -185,6 +186,7 @@ export function createFloorsResource(client: TransportClient): FloorsResource {
     async retry(options): Promise<RegenerateResult> {
       const response = await client.fetchJson<Record<string, unknown>>(`/floors/${encodeURIComponent(options.floorId)}/retry`, {
         body: compactObject({
+          confirmed_execution_ids: options.confirmedExecutionIds,
           config: options.config,
           generation_params: mapGenerationParams(options.generationParams),
         }),

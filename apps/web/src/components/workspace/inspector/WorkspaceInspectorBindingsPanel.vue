@@ -5,6 +5,7 @@ import WorkspaceInspectorSection from "./WorkspaceInspectorSection.vue";
 import WorkspaceInspectorUserBindingPanel from "./WorkspaceInspectorUserBindingPanel.vue";
 import WorkspaceInspectorVariablesPanel from "./WorkspaceInspectorVariablesPanel.vue";
 import WorkspaceInspectorWorldbookBindingPanel from "./WorkspaceInspectorWorldbookBindingPanel.vue";
+import type { TimelineMessage } from "../../../stores/workspace";
 
 type Translator = (key: string, vars?: Record<string, number | string>) => string;
 
@@ -12,6 +13,8 @@ const props = defineProps<{
   bindingFlash: boolean;
   currentAccount: string;
   runtimeCharacterName: string;
+  activeSessionId: string | null;
+  activeTimeline: TimelineMessage[];
   runtimeUserName: string;
   t: Translator;
 }>();
@@ -25,7 +28,12 @@ const emit = defineEmits<{
 
 <template>
   <div class="space-y-6">
-    <WorkspaceInspectorVariablesPanel :t="props.t" />
+    <WorkspaceInspectorVariablesPanel
+      :active-session-id="props.activeSessionId"
+      :active-timeline="props.activeTimeline"
+      :current-account="props.currentAccount"
+      :t="props.t"
+    />
 
     <WorkspaceInspectorSection :title="props.t('inspector.bindingState')">
       <div class="space-y-2 rounded border border-white/5 bg-[#121215] p-3" :class="props.bindingFlash ? 'flash' : ''">

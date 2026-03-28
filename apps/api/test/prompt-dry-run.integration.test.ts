@@ -16,6 +16,7 @@ import {
   regexProfiles,
   sessions,
   worldbookEntries,
+  variables,
   worldbooks,
 } from "../src/db/schema";
 import { SimpleTokenCounter, type TurnOrchestrator } from "@tavern/core";
@@ -145,10 +146,13 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       promptSnapshot: {
         presetId: "preset-1",
         presetUpdatedAt: 1710000000000,
+        presetVersion: 3,
         worldbookId: "worldbook-1",
         worldbookUpdatedAt: 1710000001000,
+        worldbookVersion: 5,
         regexProfileId: "regex-1",
         regexProfileUpdatedAt: 1710000002000,
+        regexProfileVersion: 2,
         worldbookActivatedEntryUids: [7],
         regexPreRuleNames: ["Input Rule"],
         regexPostRuleNames: [],
@@ -163,6 +167,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         regexPreRules: ["Input Rule"],
         regexPostRules: [],
         memorySummaryInjected: true,
+        reservedVariableCollisions: [],
         preprocessedUserMessage: "hello",
       },
     };
@@ -191,10 +196,13 @@ describe("POST /sessions/:id/respond/dry-run", () => {
     expect(body.data.prompt_snapshot).toEqual({
       preset_id: "preset-1",
       preset_updated_at: 1710000000000,
+      preset_version: 3,
       worldbook_id: "worldbook-1",
       worldbook_updated_at: 1710000001000,
+      worldbook_version: 5,
       regex_profile_id: "regex-1",
       regex_profile_updated_at: 1710000002000,
+      regex_profile_version: 2,
       worldbook_activated_entry_uids: [7],
       regex_pre_rule_names: ["Input Rule"],
       regex_post_rule_names: [],
@@ -209,6 +217,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       regex_pre_rules: ["Input Rule"],
       regex_post_rules: [],
       memory_summary_injected: true,
+      reserved_variable_collisions: [],
       preprocessed_user_message: "hello",
     });
   });
@@ -221,10 +230,13 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       promptSnapshot: {
         presetId: null,
         presetUpdatedAt: null,
+        presetVersion: null,
         worldbookId: null,
         worldbookUpdatedAt: null,
+        worldbookVersion: null,
         regexProfileId: null,
         regexProfileUpdatedAt: null,
+        regexProfileVersion: null,
         worldbookActivatedEntryUids: [],
         regexPreRuleNames: [],
         regexPostRuleNames: ["Output Rule"],
@@ -239,6 +251,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         regexPreRules: [],
         regexPostRules: ["Output Rule"],
         memorySummaryInjected: false,
+        reservedVariableCollisions: [],
       },
     };
 
@@ -264,10 +277,13 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         prompt_snapshot: {
           preset_id: null,
           preset_updated_at: null,
+          preset_version: null,
           worldbook_id: null,
           worldbook_updated_at: null,
+          worldbook_version: null,
           regex_profile_id: null,
           regex_profile_updated_at: null,
+          regex_profile_version: null,
           worldbook_activated_entry_uids: [],
           regex_pre_rule_names: [],
           regex_post_rule_names: ["Output Rule"],
@@ -282,6 +298,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
           regex_pre_rules: [],
           regex_post_rules: ["Output Rule"],
           memory_summary_injected: false,
+          reserved_variable_collisions: [],
           preprocessed_user_message: null,
         },
       },
@@ -478,10 +495,13 @@ describe("ChatService.dryRun", () => {
     expect(result.promptSnapshot).toMatchObject({
       presetId,
       presetUpdatedAt: now,
+      presetVersion: 1,
       worldbookId,
       worldbookUpdatedAt: now,
+      worldbookVersion: 1,
       regexProfileId,
       regexProfileUpdatedAt: now,
+      regexProfileVersion: 1,
       worldbookActivatedEntryUids: [7],
       regexPreRuleNames: ["Input Rule"],
       regexPostRuleNames: [],
@@ -490,6 +510,56 @@ describe("ChatService.dryRun", () => {
     });
     expect(result.promptSnapshot.promptDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(await database.db.select().from(promptSnapshots)).toEqual([]);
+  });
+
+  it("injects persisted visible variables into dry-run prompt assembly and reports reserved alias collisions", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    const variablePresetData = {
+      ...SAMPLE_PRESET_DATA,
+      prompts: [
+        {
+          identifier: "main",
+          name: "Main Prompt",
+          role: "system",
+          content: "Mood {{mood}} for {{char}} and {{user}}.",
+        },
+        { identifier: "chatHistory", name: "Chat History", marker: true },
+      ],
+    };
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Variable Preset",
+      source: "sillytavern",
+      dataJson: JSON.stringify(variablePresetData),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    await database.db.insert(variables).values([
+      { id: nanoid(), scope: "global", scopeId: "global", key: "mood", valueJson: JSON.stringify("calm"), updatedAt: now },
+      { id: nanoid(), scope: "chat", scopeId: sessionId, key: "mood", valueJson: JSON.stringify("focused"), updatedAt: now + 1 },
+      { id: nanoid(), scope: "global", scopeId: "global", key: "char", valueJson: JSON.stringify("Shadow"), updatedAt: now + 2 },
+      { id: nanoid(), scope: "global", scopeId: "global", key: "user", valueJson: JSON.stringify("Stranger"), updatedAt: now + 3 },
+    ]);
+
+    const result = await chatService.dryRun(sessionId, { message: "hello variables" });
+    const allContent = result.messages.map((message) => message.content).join("\n");
+
+    expect(allContent).toContain("Mood focused for Knight and Traveler.");
+    expect(result.assembly.reservedVariableCollisions).toEqual(["char", "user"]);
   });
 
   it("does not load prompt resources owned by another account", async () => {

@@ -1,4 +1,4 @@
-·---
+---
 outline: [2, 3]
 ---
 
@@ -52,12 +52,16 @@ POST /sessions/:id/respond
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 参数校验失败 |
-| `404` | 会话不存在 |
-| `409` | 会话状态冲突 |
-| `500` | 生成过程内部错误 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `invalid_message_scope` | 参数校验失败，或消息作用域错误 |
+| `404` | `not_found` | 会话不存在 |
+| `409` | `session_archived` / `generation_conflict` / `commit_conflict` | 会话状态冲突，或提交边界冲突 |
+| `503` | `secret_unavailable` / `commit_busy` / `generation_queue_timeout` | 密钥不可用，或生成 / 提交等待阶段已超时 |
+| `504` | `generation_timeout` | LLM 执行超时 |
+| `500` | `orchestration_failed` / `turn_commit_failed` | 生成过程出现未分类内部错误 |
+
+当前默认服务配置使用单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发生成通常直接返回 `generation_conflict`。只有部署方显式启用 `queue` 模式时，才可能看到 `generation_queue_timeout`；即便如此，排队也只在当前进程内生效，不提供跨实例共享锁。
 
 ## SSE 流式生成
 
@@ -89,8 +93,10 @@ data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"
 
 ```text
 event: error
-data: {"code":"LLM_ERROR","message":"..."}
+data: {"code":"generation_timeout","message":"Turn orchestration failed: LLM request timed out after 60000ms"}
 ```
+
+一旦 SSE 连接已经建立，运行期错误会通过 `error` 事件返回，不再切换 HTTP 状态码。`code` 可能为 `generation_conflict`、`generation_queue_timeout`、`generation_timeout`、`commit_busy`、`commit_conflict` 等值。
 
 客户端断开连接时，服务端会自动中止生成。
 
@@ -164,6 +170,8 @@ POST /sessions/:id/regenerate
 }
 ```
 
+除“没有可重新生成的楼层”这类资源状态错误外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
+
 ## 楼层重试
 
 ```http
@@ -191,6 +199,8 @@ POST /floors/:id/retry
   }
 }
 ```
+
+除楼层自身不存在或状态不允许外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
 
 ## 编辑并重新生成
 
@@ -226,6 +236,8 @@ POST /messages/:id/edit-and-regenerate
   }
 }
 ```
+
+除源消息不存在等资源错误外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
 
 ## 公共类型
 

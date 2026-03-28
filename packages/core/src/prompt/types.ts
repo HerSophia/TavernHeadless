@@ -113,10 +113,13 @@ export interface PromptSnapshotRecord {
   sessionId: string;
   presetId: string | null;
   presetUpdatedAt: number | null;
+  presetVersion: number | null;
   worldbookId: string | null;
   worldbookUpdatedAt: number | null;
+  worldbookVersion: number | null;
   regexProfileId: string | null;
   regexProfileUpdatedAt: number | null;
+  regexProfileVersion: number | null;
   worldbookActivatedEntryUids: number[];
   regexPreRuleNames: string[];
   regexPostRuleNames: string[];

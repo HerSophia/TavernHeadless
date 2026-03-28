@@ -24,6 +24,7 @@ describe("sdk regex profile resources", () => {
               id: "regex-1",
               name: "Regex A",
               source: "sillytavern",
+              version: 2,
               updated_at: 11,
             },
           ],
@@ -37,6 +38,7 @@ describe("sdk regex profile resources", () => {
             id: "regex-1",
             name: "Regex A",
             source: "sillytavern",
+            version: 2,
             updated_at: 11,
           },
         }),
@@ -48,6 +50,7 @@ describe("sdk regex profile resources", () => {
             id: "regex-1",
             name: "Regex B",
             source: "sillytavern",
+            version: 3,
             updated_at: 12,
           },
         }),
@@ -63,6 +66,7 @@ describe("sdk regex profile resources", () => {
         id: "regex-1",
         name: "Regex A",
         source: "sillytavern",
+        version: 2,
         updatedAt: 11,
       },
     ]);
@@ -73,12 +77,14 @@ describe("sdk regex profile resources", () => {
       id: "regex-1",
       name: "Regex A",
       source: "sillytavern",
+      version: 2,
       updatedAt: 11,
     });
 
     await expect(
       regexProfiles.update({
         data: '[{"scriptName":"rule-2"}]',
+        expectedVersion: 2,
         expectedUpdatedAt: 11,
         name: "Regex B",
         profileId: "regex-1",
@@ -88,6 +94,7 @@ describe("sdk regex profile resources", () => {
       id: "regex-1",
       name: "Regex B",
       source: "sillytavern",
+      version: 3,
       updatedAt: 12,
     });
 
@@ -96,6 +103,7 @@ describe("sdk regex profile resources", () => {
     const [, updateInit] = fetchImpl.mock.calls[2]!;
     expect(updateInit?.body).toBe(JSON.stringify({
       data: '[{"scriptName":"rule-2"}]',
+      expected_version: 2,
       expected_updated_at: 11,
       name: "Regex B",
     }));

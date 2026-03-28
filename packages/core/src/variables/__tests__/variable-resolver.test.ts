@@ -1,68 +1,112 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { VariableScope, VariableEntry } from '@tavern/shared';
-import type { VariableRepository } from '../../ports/index.js';
+import type { VariableRepository, VariableRepositoryOptions } from '../../ports/index.js';
 import type { VariableContext } from '../../types.js';
 import { VariableResolver } from '../variable-resolver.js';
 
-// ─── In-memory VariableRepository ─────────────────────
+interface StoredVariableRow extends VariableEntry {
+  accountId?: string;
+}
 
 class InMemoryVariableRepository implements VariableRepository {
-  private store: VariableEntry[] = [];
+  private store: StoredVariableRow[] = [];
   private nextId = 1;
 
-  add(scope: VariableScope, scopeId: string, key: string, value: unknown): VariableEntry {
-    const entry: VariableEntry = {
+  private toEntry(row: StoredVariableRow): VariableEntry {
+    return {
+      id: row.id,
+      scope: row.scope,
+      scopeId: row.scopeId,
+      key: row.key,
+      value: row.value,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private matchesAccount(row: StoredVariableRow, options?: VariableRepositoryOptions): boolean {
+    return row.accountId === options?.accountId;
+  }
+
+  add(
+    scope: VariableScope,
+    scopeId: string,
+    key: string,
+    value: unknown,
+    accountId?: string
+  ): VariableEntry {
+    const row: StoredVariableRow = {
       id: `var-${this.nextId++}`,
       scope,
       scopeId,
       key,
       value,
       updatedAt: Date.now(),
+      accountId,
     };
-    this.store.push(entry);
-    return entry;
+    this.store.push(row);
+    return this.toEntry(row);
   }
 
   async findByKey(
     scope: VariableScope,
     scopeId: string,
-    key: string
+    key: string,
+    options?: VariableRepositoryOptions
   ): Promise<VariableEntry | null> {
-    return (
-      this.store.find(
-        (e) => e.scope === scope && e.scopeId === scopeId && e.key === key
-      ) ?? null
+    const row = this.store.find(
+      (entry) =>
+        entry.scope === scope &&
+        entry.scopeId === scopeId &&
+        entry.key === key &&
+        this.matchesAccount(entry, options)
     );
+
+    return row ? this.toEntry(row) : null;
   }
 
   async findAllByScope(
     scope: VariableScope,
-    scopeId: string
+    scopeId: string,
+    options?: VariableRepositoryOptions
   ): Promise<VariableEntry[]> {
-    return this.store.filter(
-      (e) => e.scope === scope && e.scopeId === scopeId
-    );
+    return this.store
+      .filter(
+        (entry) =>
+          entry.scope === scope &&
+          entry.scopeId === scopeId &&
+          this.matchesAccount(entry, options)
+      )
+      .map((entry) => this.toEntry(entry));
   }
 
   async upsert(
     scope: VariableScope,
     scopeId: string,
     key: string,
-    value: unknown
+    value: unknown,
+    options?: VariableRepositoryOptions
   ): Promise<VariableEntry> {
     const existing = this.store.find(
-      (e) => e.scope === scope && e.scopeId === scopeId && e.key === key
+      (entry) =>
+        entry.scope === scope &&
+        entry.scopeId === scopeId &&
+        entry.key === key &&
+        this.matchesAccount(entry, options)
     );
+
     if (existing) {
       existing.value = value;
       existing.updatedAt = Date.now();
-      return existing;
+      return this.toEntry(existing);
     }
-    return this.add(scope, scopeId, key, value);
+
+    return this.add(scope, scopeId, key, value, options?.accountId);
   }
 
-  async deleteById(id: string): Promise<boolean> {
-    const idx = this.store.findIndex((e) => e.id === id);
+  async deleteById(id: string, options?: VariableRepositoryOptions): Promise<boolean> {
+    const idx = this.store.findIndex(
+      (entry) => entry.id === id && this.matchesAccount(entry, options)
+    );
     if (idx === -1) return false;
     this.store.splice(idx, 1);
     return true;
@@ -71,18 +115,21 @@ class InMemoryVariableRepository implements VariableRepository {
   async deleteByKey(
     scope: VariableScope,
     scopeId: string,
-    key: string
+    key: string,
+    options?: VariableRepositoryOptions
   ): Promise<boolean> {
     const idx = this.store.findIndex(
-      (e) => e.scope === scope && e.scopeId === scopeId && e.key === key
+      (entry) =>
+        entry.scope === scope &&
+        entry.scopeId === scopeId &&
+        entry.key === key &&
+        this.matchesAccount(entry, options)
     );
     if (idx === -1) return false;
     this.store.splice(idx, 1);
     return true;
   }
 }
-
-// ─── Tests ────────────────────────────────────────────
 
 describe('VariableResolver', () => {
   let repo: InMemoryVariableRepository;
@@ -133,7 +180,6 @@ describe('VariableResolver', () => {
       repo.add('page', 'page-1', 'mood', 'sad');
       repo.add('global', 'global', 'mood', 'happy');
 
-      // No pageId in context → page scope skipped
       const contextNoPage: VariableContext = {
         floorId: 'floor-1',
         sessionId: 'session-1',
@@ -154,11 +200,24 @@ describe('VariableResolver', () => {
 
       const contextNoGlobal: VariableContext = {
         sessionId: 'session-1',
-        // globalScopeId not set → defaults to 'global'
       };
 
       const entry = await resolver.resolve('lang', contextNoGlobal);
       expect(entry!.value).toBe('zh');
+    });
+
+    it('respects accountId when the same scope key exists in multiple accounts', async () => {
+      repo.add('chat', 'session-1', 'mood', 'happy', 'account-a');
+      repo.add('chat', 'session-1', 'mood', 'sad', 'account-b');
+
+      const entry = await resolver.resolve('mood', {
+        sessionId: 'session-1',
+        accountId: 'account-b',
+      });
+
+      expect(entry).not.toBeNull();
+      expect(entry!.value).toBe('sad');
+      expect(entry!.scope).toBe('chat');
     });
   });
 
@@ -199,16 +258,10 @@ describe('VariableResolver', () => {
 
       const all = await resolver.resolveAll(fullContext);
 
-      // mood: page overrides chat overrides global
       expect(all.get('mood')!.value).toBe('sad');
       expect(all.get('mood')!.scope).toBe('page');
-
-      // lang: only in global
       expect(all.get('lang')!.value).toBe('en');
-
-      // hp: only in floor
       expect(all.get('hp')!.value).toBe(50);
-
       expect(all.size).toBe(3);
     });
 

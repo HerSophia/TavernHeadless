@@ -1,14 +1,17 @@
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { VariableScope, VariableEntry } from "@tavern/shared";
-import type { VariableRepository } from "@tavern/core";
+import type { VariableRepository, VariableRepositoryOptions } from "@tavern/core";
 
-import type { AppDb } from "../db/client.js";
+import type { AppDb, DbExecutor } from "../db/client.js";
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js";
 import { variables } from "../db/schema.js";
 
-// ── 内部映射 ──────────────────────────────────────────
-
 type VariableRow = typeof variables.$inferSelect;
+
+function resolveAccountId(options?: VariableRepositoryOptions): string {
+  return options?.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
+}
 
 function toEntry(row: VariableRow): VariableEntry {
   return {
@@ -21,21 +24,23 @@ function toEntry(row: VariableRow): VariableEntry {
   };
 }
 
-// ── Adapter ───────────────────────────────────────────
-
 export class DrizzleVariableRepository implements VariableRepository {
-  constructor(private readonly db: AppDb) {}
+  constructor(private readonly db: AppDb | DbExecutor) {}
 
   async findByKey(
     scope: VariableScope,
     scopeId: string,
     key: string,
+    options?: VariableRepositoryOptions,
   ): Promise<VariableEntry | null> {
+    const accountId = resolveAccountId(options);
+
     const [row] = await this.db
       .select()
       .from(variables)
       .where(
         and(
+          eq(variables.accountId, accountId),
           eq(variables.scope, scope),
           eq(variables.scopeId, scopeId),
           eq(variables.key, key),
@@ -48,12 +53,16 @@ export class DrizzleVariableRepository implements VariableRepository {
   async findAllByScope(
     scope: VariableScope,
     scopeId: string,
+    options?: VariableRepositoryOptions,
   ): Promise<VariableEntry[]> {
+    const accountId = resolveAccountId(options);
+
     const rows = await this.db
       .select()
       .from(variables)
       .where(
         and(
+          eq(variables.accountId, accountId),
           eq(variables.scope, scope),
           eq(variables.scopeId, scopeId),
         ),
@@ -67,7 +76,9 @@ export class DrizzleVariableRepository implements VariableRepository {
     scopeId: string,
     key: string,
     value: unknown,
+    options?: VariableRepositoryOptions,
   ): Promise<VariableEntry> {
+    const accountId = resolveAccountId(options);
     const now = Date.now();
     const valueJson = JSON.stringify(value);
 
@@ -75,6 +86,7 @@ export class DrizzleVariableRepository implements VariableRepository {
       .insert(variables)
       .values({
         id: nanoid(),
+        accountId,
         scope,
         scopeId,
         key,
@@ -82,18 +94,24 @@ export class DrizzleVariableRepository implements VariableRepository {
         updatedAt: now,
       })
       .onConflictDoUpdate({
-        target: [variables.scope, variables.scopeId, variables.key],
+        target: [variables.accountId, variables.scope, variables.scopeId, variables.key],
         set: { valueJson, updatedAt: now },
       })
       .returning();
 
-    return toEntry(row!);
+    if (!row) {
+      throw new Error("Failed to upsert variable");
+    }
+
+    return toEntry(row);
   }
 
-  async deleteById(id: string): Promise<boolean> {
+  async deleteById(id: string, options?: VariableRepositoryOptions): Promise<boolean> {
+    const accountId = resolveAccountId(options);
+
     const deleted = await this.db
       .delete(variables)
-      .where(eq(variables.id, id))
+      .where(and(eq(variables.id, id), eq(variables.accountId, accountId)))
       .returning();
 
     return deleted.length > 0;
@@ -103,11 +121,15 @@ export class DrizzleVariableRepository implements VariableRepository {
     scope: VariableScope,
     scopeId: string,
     key: string,
+    options?: VariableRepositoryOptions,
   ): Promise<boolean> {
+    const accountId = resolveAccountId(options);
+
     const deleted = await this.db
       .delete(variables)
       .where(
         and(
+          eq(variables.accountId, accountId),
           eq(variables.scope, scope),
           eq(variables.scopeId, scopeId),
           eq(variables.key, key),

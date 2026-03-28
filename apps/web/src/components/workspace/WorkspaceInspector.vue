@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { RespondStreamState } from "@tavern/client-helpers";
 import {
   Bell,
   Building2,
@@ -13,8 +14,10 @@ import WorkspaceInspectorBindingsPanel from "./inspector/WorkspaceInspectorBindi
 import WorkspaceInspectorEventsPanel from "./inspector/WorkspaceInspectorEventsPanel.vue";
 import WorkspaceInspectorImpactPanel from "./inspector/WorkspaceInspectorImpactPanel.vue";
 import WorkspaceInspectorMemoryPanel from "./inspector/WorkspaceInspectorMemoryPanel.vue";
+import WorkspaceInspectorToolsPanel from "./inspector/WorkspaceInspectorToolsPanel.vue";
 import WorkspaceInspectorTabStrip from "./inspector/WorkspaceInspectorTabStrip.vue";
 import type { WorkspaceEvent } from "../../stores/workspace-ui";
+import type { TimelineMessage } from "../../stores/workspace";
 
 type Translator = (key: string, vars?: Record<string, number | string>) => string;
 
@@ -22,11 +25,14 @@ const props = defineProps<{
   accountMode: "single" | "multi";
   activeTab: WorkspaceInspectorTab;
   bindingFlash: boolean;
+  activeSessionId: string | null;
+  activeTimeline: TimelineMessage[];
   currentAccount: string;
   lang: "zh-CN" | "en";
   events: WorkspaceEvent[];
   runtimeCharacterName: string;
   runtimeUserName: string;
+  respondStreamState: RespondStreamState;
   showInspectorDrawer: boolean;
   desktopWidth: number;
   t: Translator;
@@ -102,6 +108,8 @@ const emit = defineEmits<{
       <WorkspaceInspectorBindingsPanel
         v-if="props.activeTab === 'bindings'"
         :binding-flash="props.bindingFlash"
+        :active-session-id="props.activeSessionId"
+        :active-timeline="props.activeTimeline"
         :current-account="props.currentAccount"
         :runtime-character-name="props.runtimeCharacterName"
         :runtime-user-name="props.runtimeUserName"
@@ -110,6 +118,7 @@ const emit = defineEmits<{
         @attach-worldbook="emit('attachWorldbook')"
         @replace-user="emit('replaceUser')"
       />
+      <WorkspaceInspectorToolsPanel v-else-if="props.activeTab === 'tools'" :state="props.respondStreamState" :t="props.t" />
       <WorkspaceInspectorMemoryPanel v-else-if="props.activeTab === 'memory'" :t="props.t" />
       <WorkspaceInspectorImpactPanel v-else :t="props.t" />
     </div>

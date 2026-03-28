@@ -7,9 +7,11 @@
 // ── Example constants ─────────────────────────────────
 
 export const turnConfigExample = {
+  enableTools: true,
   enableDirector: true,
   enableVerifier: true,
   enableMemoryConsolidation: true,
+  toolMode: "inline",
   verifierFailStrategy: "warn",
   maxRetries: 1,
 } as const;
@@ -97,10 +99,13 @@ export const dryRunSuccessResponseExample = {
     prompt_snapshot: {
       preset_id: "preset-1",
       preset_updated_at: 1710000000000,
+      preset_version: 3,
       worldbook_id: "worldbook-1",
       worldbook_updated_at: 1710000001000,
+      worldbook_version: 5,
       regex_profile_id: "regex-1",
       regex_profile_updated_at: 1710000002000,
+      regex_profile_version: 2,
       worldbook_activated_entry_uids: [7, 9],
       regex_pre_rule_names: ["trim_whitespace"],
       regex_post_rule_names: [],
@@ -115,6 +120,7 @@ export const dryRunSuccessResponseExample = {
       regex_pre_rules: ["trim_whitespace"],
       regex_post_rules: [],
       memory_summary_injected: true,
+      reserved_variable_collisions: [],
       preprocessed_user_message: "Please continue the campfire scene.",
     },
   },
@@ -145,9 +151,11 @@ export const sessionIdParamsJsonSchema = {
 export const turnConfigJsonSchema = {
   type: "object",
   properties: {
+    enableTools: { type: "boolean" },
     enableDirector: { type: "boolean" },
     enableVerifier: { type: "boolean" },
     enableMemoryConsolidation: { type: "boolean" },
+    toolMode: { type: "string", enum: ["inline", "standalone", "both"] },
     verifierFailStrategy: { type: "string", enum: ["warn", "block", "retry"] },
     maxRetries: { type: "integer", minimum: 0, maximum: 5 },
   },
@@ -207,6 +215,20 @@ export const regenerateBodyJsonSchema = {
   properties: {
     config: turnConfigJsonSchema,
     generation_params: generationParamsJsonSchema,
+  },
+  examples: [regenerateBodyExample],
+  additionalProperties: false,
+} as const;
+
+export const retryFloorBodyJsonSchema = {
+  type: "object",
+  properties: {
+    config: turnConfigJsonSchema,
+    generation_params: generationParamsJsonSchema,
+    confirmed_execution_ids: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,
@@ -306,10 +328,13 @@ export const dryRunDataJsonSchema = {
       required: [
         "preset_id",
         "preset_updated_at",
+        "preset_version",
         "worldbook_id",
         "worldbook_updated_at",
+        "worldbook_version",
         "regex_profile_id",
         "regex_profile_updated_at",
+        "regex_profile_version",
         "worldbook_activated_entry_uids",
         "regex_pre_rule_names",
         "regex_post_rule_names",
@@ -320,10 +345,13 @@ export const dryRunDataJsonSchema = {
       properties: {
         preset_id: { anyOf: [{ type: "string" }, { type: "null" }] },
         preset_updated_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
+        preset_version: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
         worldbook_id: { anyOf: [{ type: "string" }, { type: "null" }] },
         worldbook_updated_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
+        worldbook_version: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
         regex_profile_id: { anyOf: [{ type: "string" }, { type: "null" }] },
         regex_profile_updated_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
+        regex_profile_version: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
         worldbook_activated_entry_uids: { type: "array", items: { type: "integer" } },
         regex_pre_rule_names: { type: "array", items: { type: "string" } },
         regex_post_rule_names: { type: "array", items: { type: "string" } },
@@ -342,6 +370,7 @@ export const dryRunDataJsonSchema = {
         "regex_pre_rules",
         "regex_post_rules",
         "memory_summary_injected",
+        "reserved_variable_collisions",
         "preprocessed_user_message",
       ],
       properties: {
@@ -351,6 +380,7 @@ export const dryRunDataJsonSchema = {
         regex_pre_rules: { type: "array", items: { type: "string" } },
         regex_post_rules: { type: "array", items: { type: "string" } },
         memory_summary_injected: { type: "boolean" },
+        reserved_variable_collisions: { type: "array", items: { type: "string", enum: ["char", "user"] } },
         preprocessed_user_message: { anyOf: [{ type: "string" }, { type: "null" }] },
       },
       additionalProperties: false,

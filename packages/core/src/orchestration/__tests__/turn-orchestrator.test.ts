@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { TurnOrchestrator, TurnError } from '../turn-orchestrator.js';
+import {
+  TurnOrchestrator,
+  TurnError,
+  ToolReplayBlockedError,
+  UnsupportedToolModeError,
+} from '../turn-orchestrator.js';
 import type { TurnOrchestratorDeps } from '../turn-orchestrator.js';
 import type { TurnInput } from '../types.js';
 import type { GenerationOutput } from '../../generation/types.js';
@@ -758,20 +763,32 @@ describe('TurnOrchestrator — Tool Integration', () => {
     expect(runCall.tools).toBeUndefined();
   });
 
-  it('does not pass tools in standalone mode', async () => {
+  it('rejects standalone mode because only inline is supported', async () => {
     const registry = new ToolRegistry();
     registry.register(makeTestToolProvider());
 
-    const input = makeInput({
+    await expect(orchestrator.executeTurn(makeInput({
       config: { enableTools: true, toolMode: 'standalone' },
       toolRegistry: registry,
       toolPermissions: makeToolPermissions(),
-    });
+    }))).rejects.toBeInstanceOf(UnsupportedToolModeError);
 
-    await orchestrator.executeTurn(input);
+    expect(deps.generationPipeline.run).not.toHaveBeenCalled();
+    expect(deps.floorStateMachine.transition).not.toHaveBeenCalled();
+  });
 
-    const runCall = (deps.generationPipeline.run as any).mock.calls[0][0];
-    expect(runCall.tools).toBeUndefined();
+  it('rejects both mode because only inline is supported', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    await expect(orchestrator.executeTurn(makeInput({
+      config: { enableTools: true, toolMode: 'both' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+    }))).rejects.toBeInstanceOf(UnsupportedToolModeError);
+
+    expect(deps.generationPipeline.run).not.toHaveBeenCalled();
+    expect(deps.floorStateMachine.transition).not.toHaveBeenCalled();
   });
 
   it('collects real toolExecutionRecords from ToolExecutor', async () => {
@@ -814,6 +831,175 @@ describe('TurnOrchestrator — Tool Integration', () => {
     });
     expect(JSON.parse(result.toolExecutionRecords![0]!.argsJson)).toEqual({ sides: 20 });
     expect(JSON.parse(result.toolExecutionRecords![0]!.resultJson)).toEqual({ result: 42 });
+  });
+
+  it('blocks verifier retry when the attempt executed a non-replay-safe tool', async () => {
+    const unsafeTool: ToolDefinition = {
+      name: 'create_character',
+      description: 'Create a character',
+      parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+      sideEffectLevel: 'irreversible',
+      allowedSlots: [],
+      source: 'builtin',
+    };
+
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (runInput) => {
+          await runInput.tools?.create_character?.execute({ name: 'Alice' });
+          return makeGenOutput();
+        }),
+      } as any,
+      verifier: {
+        verify: vi.fn().mockResolvedValue(makeVerifierResult(false)),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register({
+      id: 'resource',
+      type: 'builtin',
+      listTools: vi.fn().mockResolvedValue([unsafeTool]),
+      executeTool: vi.fn().mockResolvedValue({ data: { created: true } }),
+    });
+
+    try {
+      await orchestrator.executeTurn(makeInput({
+        config: {
+          enableTools: true,
+          enableVerifier: true,
+          verifierFailStrategy: 'retry',
+          maxRetries: 1,
+          toolMode: 'inline',
+        },
+        verifierInput: { characterRules: 'Rules', activeFacts: [] },
+        toolRegistry: registry,
+        toolPermissions: makeToolPermissions({ allowIrreversible: true }),
+        pageId: 'input-page-1',
+      }));
+      expect.unreachable('Should have blocked verifier replay');
+    } catch (error) {
+      expect(error).toBeInstanceOf(TurnError);
+      expect((error as TurnError).phase).toBe('verifier');
+      expect((error as TurnError).message).toContain('Verifier retry blocked');
+      expect((error as TurnError).cause).toBeInstanceOf(ToolReplayBlockedError);
+      expect(((error as TurnError).cause as ToolReplayBlockedError).blockingExecutions).toMatchObject([
+        {
+          toolName: 'create_character',
+          providerId: 'resource',
+          replaySafety: 'never_auto_replay',
+          reason: 'irreversible_side_effect',
+        },
+      ]);
+    }
+
+    expect(deps.generationPipeline.run).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards buffered tool mutations before a safe verifier retry and keeps only the passing attempt', async () => {
+    const attemptValues: string[] = [];
+    const safeTool: ToolDefinition = {
+      name: 'set_variable',
+      description: 'Set a variable',
+      parameters: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' } }, required: ['key', 'value'] },
+      sideEffectLevel: 'sandbox',
+      allowedSlots: [],
+      source: 'builtin',
+    };
+    const verifyMock = vi.fn()
+      .mockResolvedValueOnce(makeVerifierResult(false))
+      .mockResolvedValueOnce(makeVerifierResult(true));
+
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (runInput) => {
+          await runInput.tools?.set_variable?.execute({ key: 'mood', value: 'happy' });
+          return makeGenOutput();
+        }),
+      } as any,
+      verifier: { verify: verifyMock } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register({
+      id: 'builtin',
+      type: 'builtin',
+      listTools: vi.fn().mockResolvedValue([safeTool]),
+      executeTool: vi.fn(async (_name, _args, context) => {
+        const attemptNo = context.variableContext.toolMutationAttemptNo!;
+        attemptValues.push(`attempt-${attemptNo}`);
+        context.variableContext.toolMutationBuffer!.upsert({
+          generationAttemptNo: attemptNo,
+          scope: 'page',
+          scopeId: context.pageId!,
+          key: 'mood',
+          value: `attempt-${attemptNo}`,
+        });
+        return { data: { key: 'mood', value: `attempt-${attemptNo}` } };
+      }),
+    });
+
+    const result = await orchestrator.executeTurn(makeInput({
+      config: {
+        enableTools: true,
+        enableVerifier: true,
+        verifierFailStrategy: 'retry',
+        maxRetries: 1,
+        toolMode: 'inline',
+      },
+      verifierInput: { characterRules: 'Rules', activeFacts: [] },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      pageId: 'input-page-1',
+    }));
+
+    expect(verifyMock).toHaveBeenCalledTimes(2);
+    expect(deps.generationPipeline.run).toHaveBeenCalledTimes(2);
+    expect(attemptValues).toEqual(['attempt-1', 'attempt-2']);
+    expect(result.bufferedVariableMutations).toEqual([
+      expect.objectContaining({
+        key: 'mood',
+        value: 'attempt-2',
+        scope: 'page',
+        scopeId: 'input-page-1',
+        generationAttemptNo: 2,
+      }),
+    ]);
+  });
+
+  it('passes accountId into tool execution variableContext', async () => {
+    const provider = makeTestToolProvider();
+
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (runInput) => {
+          await runInput.tools?.get_variable?.execute({ key: 'hp' });
+          return makeGenOutput();
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(provider);
+
+    await orchestrator.executeTurn(makeInput({
+      accountId: 'account-1',
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+    }));
+
+    const executeCalls = (provider.executeTool as any).mock.calls;
+    expect(executeCalls).toHaveLength(1);
+
+    const context = executeCalls[0][2];
+    expect(context.accountId).toBe('account-1');
+    expect(context.variableContext.accountId).toBe('account-1');
+    expect(context.variableContext.sessionId).toBe('session-1');
+    expect(context.variableContext.floorId).toBe('floor-1');
   });
 
   it('does not use floorId as a fake pageId when no real pageId is provided', async () => {

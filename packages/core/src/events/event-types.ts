@@ -3,6 +3,11 @@ import type { FloorEntity } from '../types.js';
 import type { ModelConfig, TokenUsage } from '../llm/types.js';
 import type { MemoryItem } from '../memory/types.js';
 import type { InstanceSlot } from '../llm/types.js';
+import type {
+  ToolExecutionProviderType,
+  ToolExecutionStatus,
+  ToolSideEffectLevel,
+} from '../tools/types.js';
 
 /** 楼层状态变更事件 */
 export interface FloorStateChangedEvent {
@@ -25,12 +30,14 @@ export interface FloorFailedEvent {
 
 /** 变量写入事件 */
 export interface VariableSetEvent {
+  sessionId?: string;
   entry: VariableEntry;
   isNew: boolean;
 }
 
 /** 变量提升事件 */
 export interface VariablePromotedEvent {
+  sessionId?: string;
   key: string;
   fromScope: VariableScope;
   toScope: VariableScope;
@@ -39,6 +46,7 @@ export interface VariablePromotedEvent {
 
 /** 变量删除事件 */
 export interface VariableDeletedEvent {
+  sessionId?: string;
   id: string;
   scope: VariableScope;
   key: string;
@@ -73,6 +81,35 @@ export interface GenerationCompletedEvent {
 export interface GenerationFailedEvent {
   floorId?: string;
   error: Error;
+}
+
+// ── Commit 事件 ──────────────────────────────────────
+
+/** 提交阶段重试事件 */
+export interface CommitRetryEvent {
+  sessionId: string;
+  branchId?: string;
+  floorId: string;
+  attempt: number;
+  backoffMs: number;
+  message: string;
+}
+
+/** 提交阶段忙碌事件 */
+export interface CommitBusyEvent {
+  sessionId: string;
+  branchId?: string;
+  floorId: string;
+  attempts: number;
+  message: string;
+}
+
+/** 提交阶段重试后成功事件 */
+export interface CommitSucceededAfterRetryEvent {
+  sessionId: string;
+  branchId?: string;
+  floorId: string;
+  attempts: number;
 }
 
 // ── Memory 事件 ──────────────────────────────────────
@@ -142,6 +179,10 @@ export interface ToolCallStartedEvent {
   floorId: string;
   pageId?: string;
   callerSlot: InstanceSlot;
+  executionId: string;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  sideEffectLevel?: ToolSideEffectLevel;
   toolName: string;
   args: Record<string, unknown>;
 }
@@ -151,8 +192,13 @@ export interface ToolCallCompletedEvent {
   floorId: string;
   pageId?: string;
   callerSlot: InstanceSlot;
+  executionId: string;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  sideEffectLevel?: ToolSideEffectLevel;
   toolName: string;
   result: unknown;
+  status: Extract<ToolExecutionStatus, 'success'>;
   durationMs: number;
 }
 
@@ -161,8 +207,14 @@ export interface ToolCallFailedEvent {
   floorId: string;
   pageId?: string;
   callerSlot: InstanceSlot;
+  executionId: string;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  sideEffectLevel?: ToolSideEffectLevel;
   toolName: string;
+  status: Extract<ToolExecutionStatus, 'error' | 'timeout' | 'uncertain' | 'blocked'>;
   error: Error;
+  durationMs: number;
 }
 
 /** 工具调用被拒绝事件 */
@@ -170,7 +222,12 @@ export interface ToolCallDeniedEvent {
   floorId: string;
   pageId?: string;
   callerSlot: InstanceSlot;
+  executionId: string;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  sideEffectLevel?: ToolSideEffectLevel;
   toolName: string;
+  status: Extract<ToolExecutionStatus, 'denied'>;
   reason: string;
 }
 
@@ -211,6 +268,9 @@ export interface CoreEventMap {
   'generation.chunk': GenerationChunkEvent;
   'generation.completed': GenerationCompletedEvent;
   'generation.failed': GenerationFailedEvent;
+  'commit.retry': CommitRetryEvent;
+  'commit.busy': CommitBusyEvent;
+  'commit.succeeded_after_retry': CommitSucceededAfterRetryEvent;
   'memory.created': MemoryCreatedEvent;
   'memory.updated': MemoryUpdatedEvent;
   'memory.deprecated': MemoryDeprecatedEvent;

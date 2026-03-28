@@ -305,12 +305,14 @@ describe("apps/api integration", () => {
   });
 
   it("covers variables upsert/list/get/delete", async () => {
+    const session = await createSession(app, { title: "Session for variables" });
+
     const createResponse = await app.inject({
       method: "PUT",
       url: "/variables",
       payload: {
         scope: "chat",
-        scope_id: "session-a",
+        scope_id: session.id,
         key: "mood",
         value: { score: 10 }
       }
@@ -324,7 +326,7 @@ describe("apps/api integration", () => {
       url: "/variables",
       payload: {
         scope: "chat",
-        scope_id: "session-a",
+        scope_id: session.id,
         key: "mood",
         value: { score: 20 }
       }
@@ -334,7 +336,7 @@ describe("apps/api integration", () => {
 
     const listResponse = await app.inject({
       method: "GET",
-      url: "/variables?scope=chat&scope_id=session-a&limit=10&offset=0&sort_by=updated_at&sort_order=desc"
+      url: `/variables?scope=chat&scope_id=${session.id}&limit=10&offset=0&sort_by=updated_at&sort_order=desc`
     });
 
     expect(listResponse.statusCode).toBe(200);
@@ -349,12 +351,14 @@ describe("apps/api integration", () => {
   });
 
   it("supports batch variable upsert with created and updated results", async () => {
+    const session = await createSession(app, { title: "Session for variable batch" });
+
     const seedResponse = await app.inject({
       method: "PUT",
       url: "/variables",
       payload: {
         scope: "chat",
-        scope_id: "session-a",
+        scope_id: session.id,
         key: "mood",
         value: { score: 10 }
       }
@@ -367,8 +371,8 @@ describe("apps/api integration", () => {
       url: "/variables/batch",
       payload: {
         items: [
-          { scope: "chat", scope_id: "session-a", key: "mood", value: { score: 20 } },
-          { scope: "chat", scope_id: "session-a", key: "topic", value: "campfire" }
+          { scope: "chat", scope_id: session.id, key: "mood", value: { score: 20 } },
+          { scope: "chat", scope_id: session.id, key: "topic", value: "campfire" }
         ]
       }
     });
@@ -383,7 +387,7 @@ describe("apps/api integration", () => {
 
     const listResponse = await app.inject({
       method: "GET",
-      url: "/variables?scope=chat&scope_id=session-a&limit=10&offset=0&sort_by=key&sort_order=asc"
+      url: `/variables?scope=chat&scope_id=${session.id}&limit=10&offset=0&sort_by=key&sort_order=asc`
     });
 
     expect(listResponse.statusCode).toBe(200);
@@ -395,13 +399,15 @@ describe("apps/api integration", () => {
   });
 
   it("rejects duplicate targets in variable batch upsert", async () => {
+    const session = await createSession(app, { title: "Session for duplicate variable batch" });
+
     const response = await app.inject({
       method: "PUT",
       url: "/variables/batch",
       payload: {
         items: [
-          { scope: "chat", scope_id: "session-a", key: "mood", value: 1 },
-          { scope: "chat", scope_id: "session-a", key: "mood", value: 2 }
+          { scope: "chat", scope_id: session.id, key: "mood", value: 1 },
+          { scope: "chat", scope_id: session.id, key: "mood", value: 2 }
         ]
       }
     });

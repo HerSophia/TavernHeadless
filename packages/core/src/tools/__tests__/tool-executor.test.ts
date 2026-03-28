@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createEventBus } from '../../events/event-bus.js';
 import type { CoreEventBus } from '../../events/event-bus.js';
+import type { ToolExecutionRepository } from '../../ports/tool-execution-repository.js';
 import { ToolExecutor } from '../tool-executor.js';
 import { ToolRegistry } from '../tool-registry.js';
 import type {
@@ -95,6 +96,55 @@ describe('ToolExecutor', () => {
       expect(JSON.parse(records[0]!.resultJson)).toBe('result_data');
       expect(records[0]!.durationMs).toBeGreaterThanOrEqual(0);
       expect(records[0]!.runId).toBeTruthy();
+    });
+
+    it('opens and finishes execution journal entries through ToolExecutionRepository', async () => {
+      const tool = makeTool({ name: 'my_tool', sideEffectLevel: 'sandbox' });
+      registry.register(makeProvider({ tools: [tool] }));
+
+      const repository: ToolExecutionRepository = {
+        insertMany: vi.fn(async () => undefined),
+        open: vi.fn(async () => undefined),
+        finish: vi.fn(async () => undefined),
+        markRunCommitOutcome: vi.fn(async () => 0),
+        findByFloorId: vi.fn(async () => []),
+        findByRunId: vi.fn(async () => []),
+      };
+      const journalingExecutor = new ToolExecutor(registry, eventBus, repository, 'run-fixed');
+
+      const result = await journalingExecutor.execute(
+        'my_tool',
+        { key: 'val' },
+        makeContext(),
+        makePermissions(),
+      );
+
+      expect(result.data).toBe('result_data');
+      expect(repository.open).toHaveBeenCalledOnce();
+
+      const opened = (repository.open as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(opened).toMatchObject({
+        runId: 'run-fixed',
+        toolName: 'my_tool',
+        providerType: 'builtin',
+        sideEffectLevel: 'sandbox',
+        attemptNo: 1,
+      });
+      expect(repository.finish).toHaveBeenCalledWith(
+        opened.id,
+        expect.objectContaining({
+          status: 'success',
+          finishedAt: expect.any(Number),
+        }),
+      );
+      expect(journalingExecutor.getExecutionRecords()[0]).toMatchObject({
+        runId: 'run-fixed',
+        providerType: 'builtin',
+        lifecycleState: 'finished',
+        commitOutcome: 'pending',
+        sideEffectLevel: 'sandbox',
+        attemptNo: 1,
+      });
     });
 
     it('keeps pageId undefined when the context has no real page binding', async () => {
@@ -222,6 +272,43 @@ describe('ToolExecutor', () => {
       expect(executor.getExecutionRecords()[2]!.status).toBe('denied');
     });
 
+    it('reserves maxCallsPerTurn atomically across overlapping async executions', async () => {
+      const tool = makeTool({ name: 'my_tool' });
+      let releaseExecution: (() => void) | undefined;
+      let providerStarted = false;
+
+      const executeFn = vi.fn(async () => {
+        providerStarted = true;
+        await new Promise<void>((resolve) => {
+          releaseExecution = resolve;
+        });
+        return { data: 'result_data' };
+      });
+
+      registry.register(makeProvider({ tools: [tool], executeFn }));
+
+      const permissions = makePermissions({ maxCallsPerTurn: 1 });
+      const context = makeContext();
+
+      const firstPromise = executor.execute('my_tool', { request: 1 }, context, permissions);
+      for (let i = 0; i < 10 && !providerStarted; i += 1) {
+        await Promise.resolve();
+      }
+
+      const secondResult = await executor.execute('my_tool', { request: 2 }, context, permissions);
+      expect(secondResult.denied).toBe('max_calls_exceeded');
+      expect(executeFn).toHaveBeenCalledTimes(1);
+
+      releaseExecution?.();
+      await expect(firstPromise).resolves.toEqual({ data: 'result_data' });
+
+      expect(executor.getTurnCallCount()).toBe(1);
+      expect(executor.getExecutionRecords().map((record) => record.status).sort()).toEqual(['denied', 'success']);
+      expect(executor.getExecutionRecords().find((record) => record.status === 'denied')).toMatchObject({
+        errorMessage: 'Tool call denied: max_calls_exceeded',
+      });
+    });
+
     it('returns denied for irreversible tools when allowIrreversible=false', async () => {
       const tool = makeTool({ name: 'danger', sideEffectLevel: 'irreversible' });
       registry.register(makeProvider({ tools: [tool] }));
@@ -276,6 +363,27 @@ describe('ToolExecutor', () => {
         errorMessage: 'execution failed',
       });
       expect(JSON.parse(executor.getExecutionRecords()[0]!.resultJson)).toEqual({ error: 'execution failed' });
+    });
+
+    it('classifies uncertain timeout payloads into the execution journal', async () => {
+      const tool = makeTool({ name: 'failing' });
+      registry.register(
+        makeProvider({
+          tools: [tool],
+          executeFn: async () => ({
+            error: 'Tool call timeout after 50ms; execution outcome is uncertain; reconnect required before the next call',
+          }),
+        }),
+      );
+
+      const result = await executor.execute('failing', {}, makeContext(), makePermissions());
+
+      expect(result.error).toContain('execution outcome is uncertain');
+      expect(executor.getExecutionRecords()[0]).toMatchObject({
+        toolName: 'failing',
+        status: 'uncertain',
+        lifecycleState: 'finished',
+      });
     });
 
     it('records thrown provider errors as error records', async () => {

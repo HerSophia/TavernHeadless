@@ -168,6 +168,7 @@ export const variables = sqliteTable(
   "variable",
   {
     id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
     scope: text("scope", { enum: ["global", "chat", "floor", "page"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     key: text("key").notNull(),
@@ -175,10 +176,22 @@ export const variables = sqliteTable(
     updatedAt: integer("updated_at").notNull()
   },
   (table) => ({
-    scopeScopeIdKeyUnique: uniqueIndex("variable_scope_scope_id_key_uq").on(
+    accountScopeScopeIdKeyUnique: uniqueIndex("variable_account_scope_scope_id_key_uq").on(
+      table.accountId,
       table.scope,
       table.scopeId,
       table.key
+    ),
+    accountScopeScopeIdUpdatedIdx: index("variable_account_scope_scope_id_updated_idx").on(
+      table.accountId,
+      table.scope,
+      table.scopeId,
+      table.updatedAt
+    ),
+    accountScopeUpdatedIdx: index("variable_account_scope_updated_idx").on(
+      table.accountId,
+      table.scope,
+      table.updatedAt
     )
   })
 );
@@ -232,6 +245,7 @@ export const presets = sqliteTable(
     source: text("source").notNull().default("sillytavern"),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
     dataJson: text("data_json").notNull(),
+    version: integer("version").notNull().default(1),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -248,6 +262,7 @@ export const worldbooks = sqliteTable(
     source: text("source").notNull().default("sillytavern"),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
     dataJson: text("data_json").notNull(),
+    version: integer("version").notNull().default(1),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -296,6 +311,7 @@ export const regexProfiles = sqliteTable(
     source: text("source").notNull().default("sillytavern"),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
     dataJson: text("data_json").notNull(),
+    version: integer("version").notNull().default(1),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -311,10 +327,13 @@ export const promptSnapshots = sqliteTable(
     sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
     presetId: text("preset_id").references(() => presets.id, { onDelete: "set null" }),
     presetUpdatedAt: integer("preset_updated_at"),
+    presetVersion: integer("preset_version"),
     worldbookId: text("worldbook_id").references(() => worldbooks.id, { onDelete: "set null" }),
     worldbookUpdatedAt: integer("worldbook_updated_at"),
+    worldbookVersion: integer("worldbook_version"),
     regexProfileId: text("regex_profile_id").references(() => regexProfiles.id, { onDelete: "set null" }),
     regexProfileUpdatedAt: integer("regex_profile_updated_at"),
+    regexProfileVersion: integer("regex_profile_version"),
     worldbookActivatedEntryUidsJson: text("worldbook_activated_entry_uids_json").notNull().default("[]"),
     regexPreRuleNamesJson: text("regex_pre_rule_names_json").notNull().default("[]"),
     regexPostRuleNamesJson: text("regex_post_rule_names_json").notNull().default("[]"),
@@ -426,17 +445,25 @@ export const toolExecutionRecords = sqliteTable(
     callerSlot: text("caller_slot").notNull(),
     providerId: text("provider_id").notNull(),
     toolName: text("tool_name").notNull(),
+    providerType: text("provider_type", { enum: ["builtin", "preset", "mcp", "unknown"] }).notNull().default("unknown"),
     argsJson: text("args_json").notNull().default("{}"),
     resultJson: text("result_json").notNull().default("{}"),
-    status: text("status", { enum: ["success", "error", "denied"] }).notNull().default("success"),
+    status: text("status", { enum: ["running", "success", "error", "denied", "timeout", "uncertain", "blocked"] }).notNull().default("running"),
+    lifecycleState: text("lifecycle_state", { enum: ["opened", "finished"] }).notNull().default("finished"),
+    commitOutcome: text("commit_outcome", { enum: ["pending", "committed", "discarded", "replay_blocked", "uncertain"] }).notNull().default("pending"),
+    sideEffectLevel: text("side_effect_level", { enum: ["none", "sandbox", "irreversible"] }),
     errorMessage: text("error_message"),
     durationMs: integer("duration_ms").notNull().default(0),
+    startedAt: integer("started_at").notNull().default(0),
+    finishedAt: integer("finished_at"),
+    attemptNo: integer("attempt_no").notNull().default(1),
+    replayParentExecutionId: text("replay_parent_execution_id"),
     createdAt: integer("created_at").notNull(),
   },
   (table) => ({
-    floorCreatedIdx: index("tool_execution_record_floor_created_idx").on(table.floorId, table.createdAt),
-    runIdx: index("tool_execution_record_run_idx").on(table.runId),
-    pageCreatedIdx: index("tool_execution_record_page_created_idx").on(table.pageId, table.createdAt),
+    floorCreatedIdx: index("tool_execution_record_floor_created_idx").on(table.floorId, table.startedAt),
+    runIdx: index("tool_execution_record_run_idx").on(table.runId, table.startedAt),
+    pageCreatedIdx: index("tool_execution_record_page_created_idx").on(table.pageId, table.startedAt),
     toolNameIdx: index("tool_execution_record_tool_name_idx").on(table.toolName),
   })
 );

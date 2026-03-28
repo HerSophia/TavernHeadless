@@ -8,7 +8,16 @@
 import { nanoid } from "nanoid";
 import { BuiltinToolProvider } from "@tavern/core";
 
-import type { ToolCallStatus, InstanceSlot } from "@tavern/core";
+import type {
+  ToolExecutionCommitOutcome,
+  ToolExecutionLifecycleState,
+  ToolExecutionProviderType,
+  ToolExecutionStatus,
+} from "@tavern/core";
+import {
+  DrizzleToolExecutionRepository,
+  type ToolExecutionRecordQuery,
+} from "../adapters/drizzle-tool-execution-repository.js";
 import { DrizzleToolRepository } from "../adapters/drizzle-tool-repository.js";
 import type {
   ToolDefinitionRow,
@@ -74,6 +83,30 @@ export interface ToolCallRecordResponse {
   created_at: number;
 }
 
+export interface ToolExecutionRecordResponse {
+  id: string;
+  run_id: string;
+  floor_id: string;
+  page_id: string | null;
+  caller_slot: string;
+  provider_id: string;
+  provider_type: ToolExecutionProviderType;
+  tool_name: string;
+  args: unknown;
+  result: unknown;
+  status: ToolExecutionStatus;
+  lifecycle_state: ToolExecutionLifecycleState;
+  commit_outcome: ToolExecutionCommitOutcome;
+  side_effect_level: string | null;
+  error_message: string | null;
+  duration_ms: number;
+  started_at: number;
+  finished_at: number | null;
+  attempt_no: number;
+  replay_parent_execution_id: string | null;
+  created_at: number;
+}
+
 // ── Helpers ─────────────────────────────────────────
 
 function toDefinitionResponse(row: ToolDefinitionRow): ToolDefinitionResponse {
@@ -98,10 +131,12 @@ function toDefinitionResponse(row: ToolDefinitionRow): ToolDefinitionResponse {
 
 export class ToolService {
   private repo: DrizzleToolRepository;
+  private executionRepo: DrizzleToolExecutionRepository;
   private builtinProvider: BuiltinToolProvider;
 
   constructor(db: AppDb) {
     this.repo = new DrizzleToolRepository(db);
+    this.executionRepo = new DrizzleToolExecutionRepository(db);
     this.builtinProvider = new BuiltinToolProvider();
   }
 
@@ -223,6 +258,39 @@ export class ToolService {
         status: r.status,
         duration_ms: r.durationMs,
         created_at: r.createdAt,
+      })),
+      total: result.total,
+    };
+  }
+
+  async queryExecutionRecords(query: ToolExecutionRecordQuery): Promise<{
+    records: ToolExecutionRecordResponse[];
+    total: number;
+  }> {
+    const result = await this.executionRepo.query(query);
+    return {
+      records: result.records.map((record) => ({
+        id: record.id,
+        run_id: record.runId,
+        floor_id: record.floorId,
+        page_id: record.pageId ?? null,
+        caller_slot: record.callerSlot,
+        provider_id: record.providerId,
+        provider_type: record.providerType ?? "unknown",
+        tool_name: record.toolName,
+        args: parseJsonField(record.argsJson),
+        result: parseJsonField(record.resultJson),
+        status: record.status,
+        lifecycle_state: record.lifecycleState ?? "finished",
+        commit_outcome: record.commitOutcome ?? "pending",
+        side_effect_level: record.sideEffectLevel ?? null,
+        error_message: record.errorMessage ?? null,
+        duration_ms: record.durationMs,
+        started_at: record.startedAt ?? record.createdAt,
+        finished_at: record.finishedAt ?? null,
+        attempt_no: record.attemptNo ?? 1,
+        replay_parent_execution_id: record.replayParentExecutionId ?? null,
+        created_at: record.createdAt,
       })),
       total: result.total,
     };

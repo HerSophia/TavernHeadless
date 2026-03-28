@@ -111,6 +111,37 @@ describe('WsBridge', () => {
     expect((messages[0]!.data as any).chunk).toBe('Hello ');
   });
 
+  it('forwards commit.retry event and respects session filters', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-1');
+    bridge.addClient(socket2, 'session-2');
+
+    await eventBus.emit('commit.retry', {
+      sessionId: 'session-1',
+      branchId: 'main',
+      floorId: 'floor-1',
+      attempt: 1,
+      backoffMs: 100,
+      message: 'database is locked',
+    });
+
+    const messages1 = parseSent(socket1);
+    const messages2 = parseSent(socket2);
+
+    expect(messages1).toHaveLength(1);
+    expect(messages1[0]!.event).toBe('commit.retry');
+    expect(messages1[0]!.data).toEqual({
+      sessionId: 'session-1',
+      branchId: 'main',
+      floorId: 'floor-1',
+      attempt: 1,
+      backoffMs: 100,
+      message: 'database is locked',
+    });
+    expect(messages2).toHaveLength(0);
+  });
+
   it('forwards floor.committed event', async () => {
     const socket = createMockSocket();
     bridge.addClient(socket);
@@ -134,6 +165,53 @@ describe('WsBridge', () => {
     const messages = parseSent(socket);
     expect(messages).toHaveLength(1);
     expect(messages[0]!.event).toBe('floor.committed');
+  });
+
+  it('forwards variable.promoted event', async () => {
+    const socket = createMockSocket();
+    bridge.addClient(socket);
+
+    await eventBus.emit('variable.promoted', {
+      sessionId: 'session-1',
+      key: 'mood',
+      fromScope: 'page',
+      toScope: 'floor',
+      value: 'steady',
+    });
+
+    const messages = parseSent(socket);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.event).toBe('variable.promoted');
+    expect(messages[0]!.data).toEqual({
+      sessionId: 'session-1',
+      key: 'mood',
+      fromScope: 'page',
+      toScope: 'floor',
+      value: 'steady',
+    });
+  });
+
+  it('filters variable.set event by sessionId', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-1');
+    bridge.addClient(socket2, 'session-2');
+
+    await eventBus.emit('variable.set', {
+      sessionId: 'session-1',
+      entry: {
+        id: 'var-1',
+        scope: 'chat',
+        scopeId: 'session-1',
+        key: 'mood',
+        value: 'steady',
+        updatedAt: 123,
+      },
+      isNew: true,
+    });
+
+    expect(parseSent(socket1)).toHaveLength(1);
+    expect(parseSent(socket2)).toHaveLength(0);
   });
 
   // ── 多客户端广播 ────────────────────────────────────

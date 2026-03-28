@@ -132,6 +132,23 @@ describe('assembleCompat', () => {
       const userMsg = histSection?.messages.find(m => m.role === 'user');
       expect(userMsg?.content).toBe('Hi Alice!');
     });
+
+    it('stringifies non-string variable values', () => {
+      const ir = assembleCompat({
+        preset: makePreset({
+          prompts: [
+            { identifier: 'main', name: 'Main', role: 'system', content: 'HP {{hp}}, alive {{alive}}, stats {{stats}}.', enabled: true },
+            { identifier: 'chatHistory', name: 'Chat History', marker: true, enabled: true },
+          ],
+          promptOrder: ['main', 'chatHistory'],
+        }),
+        chatHistory: [],
+        variables: { hp: 7, alive: true, stats: { atk: 3 } },
+      });
+
+      const mainSection = ir.sections.find(s => s.name === 'main');
+      expect(mainSection?.messages[0]?.content).toBe('HP 7, alive true, stats {"atk":3}.');
+    });
   });
 
   describe('chat history', () => {

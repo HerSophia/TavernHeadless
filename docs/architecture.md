@@ -130,6 +130,18 @@ page → floor → chat → global
 
 **提升**：如果确实需要把变量保存到更高层级，需要显式提升。比如一次回合结束后，把 `page.mood` 提升到 `chat.mood`。这个过程由编排器控制，不会默默发生。
 
+变量系统现在还补齐了两条重要约束：
+
+- 所有持久化变量都按 `account_id` 隔离
+- `floor` / `page` 宿主进入 `committed` 后，不再允许继续写入或删除该层变量
+
+API 侧提供 `GET /variables/resolve`，用于解析当前 `session / floor / page` 上下文里真正可见的胜出变量快照。
+
+官方接入层中：
+
+- `@tavern/sdk` 提供 `client.variables.resolveContext(...)`
+- `@tavern/client-helpers` 提供变量快照到 inspector 行的整理函数
+
 ### 为什么要有「页」这一层？
 
 主要解决重新生成时的隔离问题。假设 AI 生成了一个回复并且写了 `mood = happy`，你觉得不好点了重试，新的生成写了 `mood = sad`。如果没有页级变量，两次生成会互相覆盖。有了页级变量，每次生成都在自己的沙箱里，只有你选定的那个版本才会被提升到楼层或会话。
@@ -189,6 +201,10 @@ page → floor → chat → global
 - 命中的 worldbook entry uid 列表
 - 正则前处理和后处理命中的规则名
 - `prompt_mode`、`prompt_digest`、`token_estimate`
+
+提示词组装时，现在会把当前可见的持久化 `global / chat / floor / page` 变量一起注入模板变量表。
+
+其中 `char` 和 `user` 仍然保留为系统别名。如果持久化变量与这两个键冲突，系统别名优先，dry-run 会把冲突写到 `assembly.reserved_variable_collisions`。
 
 `/sessions/:id/respond/dry-run` 走的是同一条 Prompt 组装路径，但只返回快照预览，不写入数据库。真实生成则会在 commit 阶段把同字段模型写入 `prompt_snapshot` 表。因此 dry-run 返回的 `prompt_snapshot` 可以直接拿来和已提交楼层的快照对比。
 
@@ -620,23 +636,33 @@ CREATE TABLE prompt_snapshot (
 
 ```sql
 CREATE TABLE tool_execution_record (
-  id            TEXT PRIMARY KEY,
-  run_id        TEXT NOT NULL,
-  floor_id      TEXT NOT NULL REFERENCES floor(id) ON DELETE CASCADE,
-  page_id       TEXT REFERENCES message_page(id) ON DELETE SET NULL,
-  caller_slot   TEXT NOT NULL,
-  provider_id   TEXT NOT NULL,
-  tool_name     TEXT NOT NULL,
-  args_json     TEXT NOT NULL DEFAULT '{}',
-  result_json   TEXT NOT NULL DEFAULT '{}',
-  status        TEXT NOT NULL DEFAULT 'success',
-  error_message TEXT,
-  duration_ms   INTEGER NOT NULL DEFAULT 0,
-  created_at    INTEGER NOT NULL
+  id                         TEXT PRIMARY KEY,
+  run_id                     TEXT NOT NULL,
+  floor_id                   TEXT NOT NULL REFERENCES floor(id) ON DELETE CASCADE,
+  page_id                    TEXT REFERENCES message_page(id) ON DELETE SET NULL,
+  caller_slot                TEXT NOT NULL,
+  provider_id                TEXT NOT NULL,
+  tool_name                  TEXT NOT NULL,
+  provider_type              TEXT NOT NULL DEFAULT 'unknown',
+  args_json                  TEXT NOT NULL DEFAULT '{}',
+  result_json                TEXT NOT NULL DEFAULT '{}',
+  status                     TEXT NOT NULL DEFAULT 'running',
+  lifecycle_state            TEXT NOT NULL DEFAULT 'finished',
+  commit_outcome             TEXT NOT NULL DEFAULT 'pending',
+  side_effect_level          TEXT,
+  error_message              TEXT,
+  duration_ms                INTEGER NOT NULL DEFAULT 0,
+  started_at                 INTEGER NOT NULL DEFAULT 0,
+  finished_at                INTEGER,
+  attempt_no                 INTEGER NOT NULL DEFAULT 1,
+  replay_parent_execution_id TEXT,
+  created_at                 INTEGER NOT NULL
 );
 ```
 
 主审计模型已经是 `tool_execution_record`。它以 `floor_id` 为主归属，`page_id` 只在上层已有真实页上下文时写入，因此允许为空。
+
+`tool_call_record` 在兼容期仍会保留，但它只用于旧查询面，不再是新的审计真相来源。
 
 ---
 
@@ -758,7 +784,8 @@ CREATE TABLE tool_execution_record (
 
 - 所有 LLM 实例（Narrator / Director / Verifier / Memory）都可以调用工具，但每个实例的工具权限独立配置。
 - 主审计模型是 `tool_execution_record`，以 floor 为主归属，并允许附带可空的 `page_id`。
-- 支持两种执行模式，可按场景切换。
+- 运行时工具目录是**会话级**快照，通过 `/sessions/:id/tools/runtime` 暴露当前 session 真正可调用的 builtin / custom / MCP 工具集合。
+- 当前运行时只支持 `inline`。`standalone` 和 `both` 会返回结构化配置错误，不再被文档视为已实现能力。
 - 兼容期内仍保留 `tool_call_record` 供旧查询接口使用，但它不是长期主模型。
 
 ### 工具来源
@@ -770,15 +797,17 @@ CREATE TABLE tool_execution_record (
 | **预设/角色卡工具（preset）** | 从数据库加载的自定义工具定义，支持脚本执行 |
 | **MCP 工具** | 通过 MCP（Model Context Protocol）连接外部工具服务器。支持 stdio 和 Streamable HTTP 两种传输方式。通过 `ENABLE_MCP=true` 启用，需通过 API 配置 MCP 服务器后才会注册工具。 |
 
-### 两种执行模式
+### 当前支持的执行模式
 
 通过 `TurnConfig.toolMode` 控制：
 
 | 模式 | 说明 |
 | ---- | ---- |
 | `inline` | 工具定义传入 Vercel AI SDK 的 `tools` 参数，LLM 在生成过程中自主决定是否调用（通过 `maxSteps` 多步执行）。这是默认模式。 |
-| `standalone` | 工具在 LLM 生成之前或之后独立执行，不嵌入生成流程。 |
-| `both` | 同时启用两种模式。 |
+| `standalone` | 当前未实现。服务端会返回结构化配置错误。 |
+| `both` | 当前未实现。服务端会返回结构化配置错误。 |
+
+这意味着对外契约上不能再把 `standalone` 或 `both` 当成可工作的运行模式来描述。
 
 ### 权限控制
 
@@ -804,13 +833,13 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
 | `sandbox` | 副作用写入 page scope，楼层提交时才提升 | `set_variable` |
 | `irreversible` | 不可撤销的外部操作，需要显式授权 | 资源管理工具的写入操作、MCP 外部 API 调用 |
 
-### 调用记录与消息页隔离
+### 执行审计与隔离
 
 - 每次真实工具调用都会生成一条 `tool_execution_record`，通过 `floor_id` 归属到当前楼层。
 - `page_id` 是可选绑定：当工具发生在 output page 创建之前，它可以为空；如果上层已经持有真实 input page，会一并透传写入。
 - 重新生成（regen）会创建新楼层，工具重新执行，不复用之前的调用记录。
 - 工具的副作用（如写变量）先写入 page scope，只有在楼层提交时才提升到更高层级。
-- 兼容期仍会补写 `tool_call_record`，旧查询接口继续按 page 维度读取；新路径应优先使用 `tool_execution_record`。
+- 兼容期仍会补写 `tool_call_record`，旧查询接口继续按 page 维度读取；新路径应优先使用 `tool_execution_record`，并把 `tool_call_record` 视为兼容只读模型。
 
 ### 回合流程中的位置
 
@@ -854,7 +883,9 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
 | PATCH | `/tools/definitions/:id` | 更新工具定义 |
 | DELETE | `/tools/definitions/:id` | 删除工具定义 |
 | PATCH | `/tools/definitions/:id/toggle` | 启用/禁用工具 |
-| GET | `/tools/call-records` | 查询工具调用记录 |
+| GET | `/tools/executions` | 查询主执行审计记录（`tool_execution_record`） |
+| GET | `/tools/call-records` | 查询兼容调用记录（`tool_call_record`） |
+| GET | `/sessions/:id/tools/runtime` | 获取会话级运行时工具目录快照 |
 | GET | `/sessions/:id/tool-permissions` | 获取会话工具权限 |
 | PUT | `/sessions/:id/tool-permissions` | 替换会话工具权限 |
 | PATCH | `/sessions/:id/tool-permissions` | 合并更新会话工具权限 |
@@ -870,3 +901,7 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
 | POST | `/mcp/servers/:id/disconnect` | 断开连接 |
 | GET | `/mcp/servers/:id/tools` | 查看服务器工具列表 |
 | POST | `/mcp/servers/:id/test` | 测试连接 |
+
+`/mcp/statuses` 和 `/mcp/servers/:id/status` 现在还会暴露 `reconnect_required`、`last_timeout_at`。当一次 MCP 调用触发 `mcp_call_uncertain_timeout` 时，语义是“结果不确定并且需要重连”，不是普通的确定性失败。
+
+同一 `session + branch` 上的排队语义仍只在当前进程内生效。这里没有分布式锁，也没有跨实例队列。

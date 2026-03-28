@@ -145,19 +145,33 @@ describe("PromptResourceLoader", () => {
     const regexProfile = await loader.loadRegexScripts(DEFAULT_ADMIN_ACCOUNT_ID, regexProfileId);
 
     expect(preset).not.toBeNull();
-    expect(preset).toMatchObject({ id: presetId, updatedAt: now });
+    expect(preset).toMatchObject({ id: presetId, updatedAt: now, version: 1 });
     expect(preset!.preset.promptOrder).toEqual(["main", "chatHistory"]);
 
     expect(worldbook).not.toBeNull();
-    expect(worldbook).toMatchObject({ id: worldbookId, updatedAt: now });
+    expect(worldbook).toMatchObject({ id: worldbookId, updatedAt: now, version: 1 });
     expect(worldbook!.worldbook.scanDepth).toBe(3);
     expect(worldbook!.worldbook.entries).toHaveLength(1);
     expect(worldbook!.worldbook.entries[0]).toMatchObject({ uid: 7, content: "A blessed sword rests in the shrine." });
 
     expect(regexProfile).not.toBeNull();
-    expect(regexProfile).toMatchObject({ id: regexProfileId, updatedAt: now });
+    expect(regexProfile).toMatchObject({ id: regexProfileId, updatedAt: now, version: 1 });
     expect(regexProfile!.scripts).toHaveLength(1);
     expect(regexProfile!.scripts[0]).toMatchObject({ scriptName: "Input Rule", placement: [1] });
+
+    const bundle = await loader.loadPromptResourceBundle(DEFAULT_ADMIN_ACCOUNT_ID, {
+      presetId,
+      worldbookProfileId: worldbookId,
+      regexProfileId,
+    });
+
+    expect(bundle.preset).toMatchObject({ id: presetId, version: 1 });
+    expect(bundle.worldbook).toMatchObject({
+      id: worldbookId,
+      version: 1,
+      worldbook: { scanDepth: 3 },
+    });
+    expect(bundle.regexProfile).toMatchObject({ id: regexProfileId, version: 1 });
   });
 
   it("returns null when prompt resources belong to another account", async () => {

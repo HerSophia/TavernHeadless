@@ -30,6 +30,7 @@ interface DetailResponse {
     source: string;
     data: unknown;
     created_at: number;
+    version: number;
     updated_at: number;
   };
 }
@@ -40,6 +41,7 @@ interface UpdateResponse {
     name: string;
     source: string;
     created_at: number;
+    version: number;
     updated_at: number;
   };
 }
@@ -73,6 +75,7 @@ describe("Regex profile update routes", () => {
       url: `/regex-profiles/${profileId}`,
       payload: {
         name: "Updated Regex",
+        expected_version: detailBody.data.version,
         data: [
           {
             id: "regex-1",
@@ -90,8 +93,7 @@ describe("Regex profile update routes", () => {
             placement: [2],
             disabled: true,
           },
-        ],
-        expected_updated_at: detailBody.data.updated_at,
+        ]
       },
     });
 
@@ -99,6 +101,7 @@ describe("Regex profile update routes", () => {
     const putBody = putRes.json<UpdateResponse>();
     expect(putBody.data.id).toBe(profileId);
     expect(putBody.data.name).toBe("Updated Regex");
+    expect(putBody.data.version).toBe(detailBody.data.version + 1);
     expect(putBody.data.updated_at).toBeGreaterThanOrEqual(detailBody.data.updated_at);
 
     const updatedDetailRes = await app.inject({ method: "GET", url: `/regex-profiles/${profileId}` });

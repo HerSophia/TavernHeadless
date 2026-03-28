@@ -9,8 +9,10 @@ type UseWorkspaceEventRoutingOptions = {
   closeMessageDialogs: () => void;
   closeSessionContextMenu: () => void;
   createSession: () => Promise<void>;
+  resetMcpManagerDialog: () => void;
   resetCharacterManagerDialog: () => void;
   resetPresetManagerDialog: () => void;
+  resetToolManagerDialog: () => void;
   resetWorldbookManagerDialog: () => void;
   sendMessage: () => Promise<void>;
   setActiveTab: (tab: WorkspaceInspectorTab) => void;
@@ -50,6 +52,8 @@ export function useWorkspaceEventRouting(options: UseWorkspaceEventRoutingOption
       options.resetCharacterManagerDialog();
       options.closeLlmManagerDialog();
       options.closeAssetBrowserDialog();
+      options.resetToolManagerDialog();
+      options.resetMcpManagerDialog();
       options.resetWorldbookManagerDialog();
       return;
     }
@@ -81,8 +85,11 @@ export function useWorkspaceEventRouting(options: UseWorkspaceEventRoutingOption
       options.setActiveTab("bindings");
     } else if (event.key === "2") {
       event.preventDefault();
-      options.setActiveTab("memory");
+      options.setActiveTab("tools");
     } else if (event.key === "3") {
+      event.preventDefault();
+      options.setActiveTab("memory");
+    } else if (event.key === "4") {
       event.preventDefault();
       options.setActiveTab("impact");
     }

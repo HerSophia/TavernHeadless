@@ -27,6 +27,8 @@ export default tseslint.config(
       "**/dist/**",
       "**/coverage/**",
       "**/.turbo/**",
+      "**/.vitepress/cache/**",
+      "**/.vitepress/dist/**",
       "**/*.d.ts",
       "apps/api/data/**",
       "packages/shared/src/generated/openapi-types.ts",
