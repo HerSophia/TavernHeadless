@@ -1,3 +1,4 @@
+import type { CoreEventBus } from "@tavern/core";
 import type { FastifyInstance } from "fastify";
 
 import type { DatabaseConnection } from "../db/client";
@@ -19,9 +20,14 @@ import { registerToolRoutes } from "./tools";
 import { registerMcpConfigRoutes } from "./mcp";
 import { registerExportRoutes } from "./exports";
 
+export interface CrudRoutesOptions {
+  variableEventBus?: CoreEventBus;
+}
+
 export async function registerCrudRoutes(
   app: FastifyInstance,
-  connection: DatabaseConnection
+  connection: DatabaseConnection,
+  options: CrudRoutesOptions = {}
 ): Promise<void> {
   await registerAccountRoutes(app, connection);
   await registerSessionRoutes(app, connection);
@@ -30,7 +36,7 @@ export async function registerCrudRoutes(
   await registerUserRoutes(app, connection);
   await registerMessagePageRoutes(app, connection);
   await registerMessageRoutes(app, connection);
-  await registerVariableRoutes(app, connection);
+  await registerVariableRoutes(app, connection, { eventBus: options.variableEventBus });
   await registerMemoryRoutes(app, connection);
   await registerImportRoutes(app, connection);
   await registerLlmProfileRoutes(app, connection);

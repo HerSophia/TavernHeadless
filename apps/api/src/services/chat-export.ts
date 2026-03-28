@@ -20,21 +20,23 @@ import {
 } from "@tavern/shared";
 
 import type { AppDb } from "../db/client.js";
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js";
 import {
   sessions,
   floors,
   messagePages,
   messages,
-  variables,
   memoryItems,
   memoryEdges,
   presets,
 } from "../db/schema.js";
 import { parseJsonField } from "../lib/http.js";
+import { VariableService } from "./variable-service.js";
 
 // ── Types ──────────────────────────────────────────────
 
 export interface ChatExportOptions {
+  accountId?: string;
   includeVariables?: boolean;
   includeMemories?: boolean;
   appVersion?: string;
@@ -49,12 +51,14 @@ export function serializeSessionToThChat(
 ): ThChatFile {
   const includeVariables = options?.includeVariables ?? true;
   const includeMemories = options?.includeMemories ?? true;
+  const accountId = options?.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
+  const variableService = new VariableService(db);
 
   // 1. 查询 session
   const session = db
     .select()
     .from(sessions)
-    .where(eq(sessions.id, sessionId))
+    .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
     .get();
 
   if (!session) {
@@ -67,7 +71,7 @@ export function serializeSessionToThChat(
     const presetRow = db
       .select({ name: presets.name })
       .from(presets)
-      .where(eq(presets.id, session.presetId))
+      .where(and(eq(presets.id, session.presetId), eq(presets.accountId, accountId)))
       .get();
     presetName = presetRow?.name ?? null;
   }
@@ -170,33 +174,28 @@ export function serializeSessionToThChat(
     };
   });
 
-  // 7. 收集所有需要的 scopeId（用于变量和记忆查询）
-  const allScopeIds = [sessionId, ...floorIds, ...pageIds];
-
-  // 8. 查询变量
+  // 7. 查询变量
   let exportVariables: ThChatVariable[] | undefined;
-  if (includeVariables && allScopeIds.length > 0) {
-    const varRows = db
-      .select()
-      .from(variables)
-      .where(
-        and(
-          inArray(variables.scope, ["chat", "floor", "page"]),
-          inArray(variables.scopeId, allScopeIds),
-        ),
-      )
-      .all();
+  if (includeVariables) {
+    const varRows = variableService.listByTargets({
+      accountId,
+      targets: [
+        { scope: "chat", scopeId: sessionId },
+        ...floorIds.map((floorId) => ({ scope: "floor" as const, scopeId: floorId })),
+        ...pageIds.map((pageId) => ({ scope: "page" as const, scopeId: pageId })),
+      ],
+    });
 
     exportVariables = varRows.map((v) => ({
       scope: v.scope as "chat" | "floor" | "page",
       scope_id_ref: v.scopeId === sessionId ? null : v.scopeId,
       key: v.key,
-      value: JSON.parse(v.valueJson),
+      value: v.value,
       updated_at: v.updatedAt,
     }));
   }
 
-  // 9. 查询记忆
+  // 8. 查询记忆
   let exportMemories: { items: ThChatMemoryItem[]; edges: ThChatMemoryEdge[] } | undefined;
   if (includeMemories) {
     const chatAndFloorIds = [sessionId, ...floorIds];
@@ -207,6 +206,7 @@ export function serializeSessionToThChat(
           .from(memoryItems)
           .where(
             and(
+              eq(memoryItems.accountId, accountId),
               inArray(memoryItems.scope, ["chat", "floor"]),
               inArray(memoryItems.scopeId, chatAndFloorIds),
             ),
@@ -220,7 +220,7 @@ export function serializeSessionToThChat(
       ? db
           .select()
           .from(memoryEdges)
-          .where(inArray(memoryEdges.fromId, memItemIds))
+          .where(and(eq(memoryEdges.accountId, accountId), inArray(memoryEdges.fromId, memItemIds)))
           .all()
       : [];
 
@@ -283,12 +283,15 @@ export function serializeSessionToThChat(
 export function serializeSessionToStJsonl(
   db: AppDb,
   sessionId: string,
+  options?: Pick<ChatExportOptions, "accountId">,
 ): string {
+  const accountId = options?.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
+
   // 1. 查询 session
   const session = db
     .select()
     .from(sessions)
-    .where(eq(sessions.id, sessionId))
+    .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
     .get();
 
   if (!session) {

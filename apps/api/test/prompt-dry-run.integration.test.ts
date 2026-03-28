@@ -16,6 +16,7 @@ import {
   regexProfiles,
   sessions,
   worldbookEntries,
+  variables,
   worldbooks,
 } from "../src/db/schema";
 import { SimpleTokenCounter, type TurnOrchestrator } from "@tavern/core";
@@ -166,6 +167,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         regexPreRules: ["Input Rule"],
         regexPostRules: [],
         memorySummaryInjected: true,
+        reservedVariableCollisions: [],
         preprocessedUserMessage: "hello",
       },
     };
@@ -215,6 +217,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       regex_pre_rules: ["Input Rule"],
       regex_post_rules: [],
       memory_summary_injected: true,
+      reserved_variable_collisions: [],
       preprocessed_user_message: "hello",
     });
   });
@@ -248,6 +251,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         regexPreRules: [],
         regexPostRules: ["Output Rule"],
         memorySummaryInjected: false,
+        reservedVariableCollisions: [],
       },
     };
 
@@ -294,6 +298,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
           regex_pre_rules: [],
           regex_post_rules: ["Output Rule"],
           memory_summary_injected: false,
+          reserved_variable_collisions: [],
           preprocessed_user_message: null,
         },
       },
@@ -505,6 +510,56 @@ describe("ChatService.dryRun", () => {
     });
     expect(result.promptSnapshot.promptDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(await database.db.select().from(promptSnapshots)).toEqual([]);
+  });
+
+  it("injects persisted visible variables into dry-run prompt assembly and reports reserved alias collisions", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    const variablePresetData = {
+      ...SAMPLE_PRESET_DATA,
+      prompts: [
+        {
+          identifier: "main",
+          name: "Main Prompt",
+          role: "system",
+          content: "Mood {{mood}} for {{char}} and {{user}}.",
+        },
+        { identifier: "chatHistory", name: "Chat History", marker: true },
+      ],
+    };
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Variable Preset",
+      source: "sillytavern",
+      dataJson: JSON.stringify(variablePresetData),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    await database.db.insert(variables).values([
+      { id: nanoid(), scope: "global", scopeId: "global", key: "mood", valueJson: JSON.stringify("calm"), updatedAt: now },
+      { id: nanoid(), scope: "chat", scopeId: sessionId, key: "mood", valueJson: JSON.stringify("focused"), updatedAt: now + 1 },
+      { id: nanoid(), scope: "global", scopeId: "global", key: "char", valueJson: JSON.stringify("Shadow"), updatedAt: now + 2 },
+      { id: nanoid(), scope: "global", scopeId: "global", key: "user", valueJson: JSON.stringify("Stranger"), updatedAt: now + 3 },
+    ]);
+
+    const result = await chatService.dryRun(sessionId, { message: "hello variables" });
+    const allContent = result.messages.map((message) => message.content).join("\n");
+
+    expect(allContent).toContain("Mood focused for Knight and Traveler.");
+    expect(result.assembly.reservedVariableCollisions).toEqual(["char", "user"]);
   });
 
   it("does not load prompt resources owned by another account", async () => {

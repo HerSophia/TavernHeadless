@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { nanoid } from 'nanoid';
-import { eq } from 'drizzle-orm';
 
 import { createDatabase, type AppDb } from '../../db/client.js';
-import { sessions, floors, messagePages, messages, variables, memoryItems, memoryEdges } from '../../db/schema.js';
+import { accounts, sessions, floors, messagePages, messages, variables } from '../../db/schema.js';
 import { DEFAULT_ADMIN_ACCOUNT_ID } from '../../accounts/constants.js';
 import { stringifyJsonField } from '../../lib/http.js';
 import { TH_CHAT_SPEC, TH_CHAT_SPEC_VERSION } from '@tavern/shared';
@@ -217,6 +216,41 @@ describe('serializeSessionToThChat', () => {
     const withoutVars = serializeSessionToThChat(db, sessionId, { includeVariables: false });
     expect(withoutVars.data.variables).toBeUndefined();
   });
+
+  it('filters exported variables by account', () => {
+    const { sessionId } = seedMinimalSession(db);
+
+    db.insert(accounts).values({
+      id: 'account-b',
+      name: 'Account B',
+      createdAt: NOW,
+      updatedAt: NOW,
+    }).run();
+
+    db.insert(variables).values([
+      {
+        id: nanoid(),
+        accountId: ACCOUNT_ID,
+        scope: 'chat',
+        scopeId: sessionId,
+        key: 'local_var',
+        valueJson: JSON.stringify(42),
+        updatedAt: NOW,
+      },
+      {
+        id: nanoid(),
+        accountId: 'account-b',
+        scope: 'chat',
+        scopeId: sessionId,
+        key: 'foreign_var',
+        valueJson: JSON.stringify(99),
+        updatedAt: NOW,
+      },
+    ]).run();
+
+    const result = serializeSessionToThChat(db, sessionId, { accountId: ACCOUNT_ID, includeVariables: true });
+    expect(result.data.variables).toEqual([{ scope: 'chat', scope_id_ref: null, key: 'local_var', value: 42, updated_at: NOW }]);
+  });
 });
 
 describe('serializeSessionToStJsonl', () => {
@@ -322,5 +356,11 @@ describe('serializeSessionToStJsonl', () => {
 
   it('throws on non-existent session', () => {
     expect(() => serializeSessionToStJsonl(db, 'nonexistent')).toThrow('Session not found');
+  });
+
+  it('throws when the session belongs to another account', () => {
+    const { sessionId } = seedMinimalSession(db);
+
+    expect(() => serializeSessionToStJsonl(db, sessionId, { accountId: 'account-b' })).toThrow('Session not found');
   });
 });

@@ -44,6 +44,9 @@ TavernHeadless 官方接入的语义层。
 | `createInitialRespondStreamState` | 创建流式生成的初始状态 |
 | `reduceRespondStream` | 根据 SSE 事件累积流式状态 |
 | `getActivePage` | 从楼层中选出当前活动页 |
+| `flattenVariableSnapshot` | 把 resolved variable snapshot 整理成 inspector 可用行 |
+| `sortVariableInspectorRows` | 对变量 inspector 行做稳定排序 |
+| `formatVariablePreview` | 把变量值格式化成适合界面展示的预览字符串 |
 | `mapApiErrorToUiState` | 把 API 错误转换成界面可用的错误状态 |
 
 ## 用法
@@ -144,6 +147,39 @@ const page = getActivePage({
 ```
 
 如果 `activePage` 存在就直接返回，否则回退到 `pages` 数组的第一个。都没有则返回 `null`。
+
+### 整理变量快照
+
+`client.variables.resolveContext()` 返回的是按上下文解析后的变量快照。`flattenVariableSnapshot` 和 `sortVariableInspectorRows` 可以把它整理成更适合 inspector 面板或表格渲染的行数据：
+
+```ts
+import { flattenVariableSnapshot, sortVariableInspectorRows } from "@tavern/client-helpers";
+
+const snapshot = await client.variables.resolveContext({
+  sessionId: "session-1",
+  floorId: "floor-1",
+  pageId: "page-1",
+  includeLayers: true,
+});
+
+const rows = sortVariableInspectorRows(flattenVariableSnapshot(snapshot));
+
+console.log(rows[0]?.key);
+console.log(rows[0]?.preview);
+console.log(rows[0]?.sourceScope);
+console.log(rows[0]?.layers);
+```
+
+返回的 `VariableInspectorRow` 每条至少包含：
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `key` | 变量键 |
+| `preview` | 适合界面展示的预览字符串 |
+| `sourceScope` | 当前胜出值来自哪个 scope |
+| `sourceScopeId` | 当前胜出值来自哪个 scope_id |
+| `updatedAt` | 当前胜出值的更新时间 |
+| `layers` | 可选的各层值快照，已按 `page → floor → chat → global` 排序 |
 
 ### 错误映射
 

@@ -13,7 +13,7 @@ import type {
   TurnExecutionResult,
 } from "@tavern/core";
 import { FloorNotFoundError, FloorStateConflictError } from "@tavern/core";
-import type { MemoryScope, VariableEntry } from "@tavern/shared";
+import type { MemoryScope } from "@tavern/shared";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import {
@@ -867,7 +867,7 @@ export class TurnCommitService {
 
     await this.emitPostCommitEvents(
       transactionResult.floor,
-      transactionResult.variableCommit.promotedVariables,
+      transactionResult.variableCommit,
       pendingEvents
     );
 
@@ -882,7 +882,7 @@ export class TurnCommitService {
 
   private async emitPostCommitEvents(
     floor: FloorEntity,
-    promotedVariables: VariableEntry[],
+    variableCommit: ReturnType<VariableCommitService["promoteAll"]>,
     pendingEvents: PendingCoreEvent[]
   ): Promise<void> {
     for (const event of pendingEvents) {
@@ -906,10 +906,24 @@ export class TurnCommitService {
     try {
       await this.eventBus.emit("floor.committed", {
         floor,
-        promotedVariables,
+        promotedVariables: variableCommit.promotedVariables,
       });
     } catch {
       // best-effort
+    }
+
+    for (const variable of variableCommit.promotedVariables) {
+      try {
+        await this.eventBus.emit("variable.promoted", {
+          sessionId: floor.sessionId,
+          key: variable.key,
+          fromScope: variableCommit.fromScope,
+          toScope: variableCommit.toScope,
+          value: variable.value,
+        });
+      } catch {
+        // best-effort
+      }
     }
   }
 }

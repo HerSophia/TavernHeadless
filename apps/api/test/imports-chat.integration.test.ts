@@ -371,6 +371,27 @@ describe("Import chat routes", () => {
     expect(memoryEdgesBody.data).toHaveLength(1);
   });
 
+  it("POST /import/chat returns 400 when .thchat variables contain duplicate targets", async () => {
+    const file = makeMinimalThChatFile();
+    file.data.variables = [
+      { scope: "chat", scope_id_ref: null, key: "dup-key", value: 1, updated_at: 1700000000100 },
+      { scope: "chat", scope_id_ref: null, key: "dup-key", value: 2, updated_at: 1700000000200 },
+    ];
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/import/chat",
+      payload: {
+        data: JSON.stringify(file),
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json<{ error: { code: string; message: string } }>();
+    expect(body.error.code).toBe("import_parse_error");
+    expect(body.error.message).toContain("Duplicate variable target");
+  });
+
   it("POST /import/chat returns 400 for invalid .thchat schema", async () => {
     const invalidFile = makeMinimalThChatFile();
     delete invalidFile.data.floors[0]._original_id;

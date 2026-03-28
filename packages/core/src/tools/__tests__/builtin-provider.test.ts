@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { BuiltinToolProvider } from '../builtin-provider.js';
 import type { ToolExecutionContext } from '../types.js';
 import type { VariableStore } from '../../variables/variable-store.js';
@@ -9,11 +9,13 @@ import type { MemoryStore } from '../../memory/memory-store.js';
 function makeContext(overrides?: Partial<ToolExecutionContext>): ToolExecutionContext {
   return {
     sessionId: 'session-1',
+    accountId: 'account-1',
     floorId: 'floor-1',
     pageId: 'page-1',
     callerSlot: 'narrator',
     variableContext: {
       sessionId: 'session-1',
+      accountId: 'account-1',
       floorId: 'floor-1',
       pageId: 'page-1',
       globalScopeId: 'global',
@@ -60,12 +62,31 @@ function makeMockMemoryStore(): MemoryStore {
 
 describe('BuiltinToolProvider', () => {
   describe('listTools', () => {
-    it('返回 7 个内置工具', async () => {
+    it('未注入依赖时只返回始终可用的工具', async () => {
       const provider = new BuiltinToolProvider();
       const tools = await provider.listTools();
 
-      expect(tools).toHaveLength(7);
+      expect(tools).toHaveLength(4);
       const names = tools.map((t) => t.name);
+      expect(names).toContain('roll_dice');
+      expect(names).toContain('random_choice');
+      expect(names).toContain('get_time');
+      expect(names).toContain('get_character_info');
+      expect(names).not.toContain('get_variable');
+      expect(names).not.toContain('set_variable');
+      expect(names).not.toContain('query_memory');
+    });
+
+    it('注入全部依赖时返回全部 7 个内置工具', async () => {
+      const provider = new BuiltinToolProvider({
+        variableStore: makeMockVariableStore(),
+        memoryStore: makeMockMemoryStore(),
+      });
+
+      const tools = await provider.listTools();
+
+      expect(tools).toHaveLength(7);
+      const names = tools.map((tool) => tool.name);
       expect(names).toContain('get_variable');
       expect(names).toContain('set_variable');
       expect(names).toContain('roll_dice');
@@ -76,16 +97,24 @@ describe('BuiltinToolProvider', () => {
     });
 
     it('所有工具的 source 都是 builtin', async () => {
-      const provider = new BuiltinToolProvider();
+      const provider = new BuiltinToolProvider({
+        variableStore: makeMockVariableStore(),
+        memoryStore: makeMockMemoryStore(),
+      });
       const tools = await provider.listTools();
+
       for (const tool of tools) {
         expect(tool.source).toBe('builtin');
       }
     });
 
     it('所有工具的 allowedSlots 为空数组（所有槽位可用）', async () => {
-      const provider = new BuiltinToolProvider();
+      const provider = new BuiltinToolProvider({
+        variableStore: makeMockVariableStore(),
+        memoryStore: makeMockMemoryStore(),
+      });
       const tools = await provider.listTools();
+
       for (const tool of tools) {
         expect(tool.allowedSlots).toEqual([]);
       }

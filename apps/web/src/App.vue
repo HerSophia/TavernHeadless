@@ -510,6 +510,8 @@ function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
         :desktop-width="rightPaneDesktopWidth"
         :active-tab="activeTab"
         :binding-flash="bindingFlash"
+        :active-session-id="activeSession?.id ?? null"
+        :active-timeline="activeTimeline"
         :current-account="currentAccount"
         :events="events"
         :lang="lang"

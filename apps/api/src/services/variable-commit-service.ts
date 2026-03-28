@@ -67,6 +67,7 @@ function buildPromotedRow(args: {
 }): VariableRow {
   return {
     id: args.existingId ?? nanoid(),
+    accountId: args.sourceRow.accountId,
     scope: "floor",
     scopeId: args.floorId,
     key: args.sourceRow.key,
@@ -140,7 +141,7 @@ export class VariableCommitService {
       tx.insert(variables)
         .values(promotedRow)
         .onConflictDoUpdate({
-          target: [variables.scope, variables.scopeId, variables.key],
+          target: [variables.accountId, variables.scope, variables.scopeId, variables.key],
           set: {
             valueJson: promotedRow.valueJson,
             updatedAt: promotedRow.updatedAt,

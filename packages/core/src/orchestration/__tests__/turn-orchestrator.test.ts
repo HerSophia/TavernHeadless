@@ -816,6 +816,39 @@ describe('TurnOrchestrator — Tool Integration', () => {
     expect(JSON.parse(result.toolExecutionRecords![0]!.resultJson)).toEqual({ result: 42 });
   });
 
+  it('passes accountId into tool execution variableContext', async () => {
+    const provider = makeTestToolProvider();
+
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (runInput) => {
+          await runInput.tools?.get_variable?.execute({ key: 'hp' });
+          return makeGenOutput();
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(provider);
+
+    await orchestrator.executeTurn(makeInput({
+      accountId: 'account-1',
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+    }));
+
+    const executeCalls = (provider.executeTool as any).mock.calls;
+    expect(executeCalls).toHaveLength(1);
+
+    const context = executeCalls[0][2];
+    expect(context.accountId).toBe('account-1');
+    expect(context.variableContext.accountId).toBe('account-1');
+    expect(context.variableContext.sessionId).toBe('session-1');
+    expect(context.variableContext.floorId).toBe('floor-1');
+  });
+
   it('does not use floorId as a fake pageId when no real pageId is provided', async () => {
     deps = makeDeps({
       generationPipeline: {

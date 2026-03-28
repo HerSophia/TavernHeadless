@@ -173,11 +173,12 @@ console.log(preview.promptSnapshot.presetVersion);
 
 `respondDryRun()` 返回的 `promptSnapshot` 预览字段与真实提交后的 `prompt_snapshot` 对齐，适合在生成前检查 preset、worldbook、regex 和摘要注入结果。
 
-现在这份快照还会额外返回：
+现在这份 dry-run 结果还会额外返回：
 
 - `presetVersion`
 - `worldbookVersion`
 - `regexProfileVersion`
+- `assembly.reservedVariableCollisions`
 
 它们对应本轮真正冻结使用的资源版本号。
 
@@ -219,6 +220,20 @@ await client.variables.upsert({
   value: { score: 20 },
 });
 
+// 解析当前上下文可见变量快照
+const snapshot = await client.variables.resolveContext({
+  accountId: "account-1",
+  sessionId: "session-1",
+  floorId: "floor-1",
+  pageId: "page-1",
+  includeLayers: true,
+});
+
+console.log(snapshot.context.globalScopeId); // "global"
+console.log(snapshot.resolved[0]?.key);
+console.log(snapshot.resolved[0]?.sourceScope);
+console.log(snapshot.layers?.page?.items.length ?? 0);
+
 // 读取记忆
 const memories = await client.memories.list({
   accountId: "account-1",
@@ -233,6 +248,8 @@ console.log(memories[0]?.factKey);
 ```
 
 `factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。
+
+`variables.resolveContext()` 对应后端的 `GET /variables/resolve`，会返回当前 `global/chat/floor/page` 可见变量的最终胜出结果，并可选附带各层原始快照。
 
 ### 页面、分支和条目
 

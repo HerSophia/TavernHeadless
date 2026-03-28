@@ -168,6 +168,7 @@ export const variables = sqliteTable(
   "variable",
   {
     id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
     scope: text("scope", { enum: ["global", "chat", "floor", "page"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     key: text("key").notNull(),
@@ -175,10 +176,22 @@ export const variables = sqliteTable(
     updatedAt: integer("updated_at").notNull()
   },
   (table) => ({
-    scopeScopeIdKeyUnique: uniqueIndex("variable_scope_scope_id_key_uq").on(
+    accountScopeScopeIdKeyUnique: uniqueIndex("variable_account_scope_scope_id_key_uq").on(
+      table.accountId,
       table.scope,
       table.scopeId,
       table.key
+    ),
+    accountScopeScopeIdUpdatedIdx: index("variable_account_scope_scope_id_updated_idx").on(
+      table.accountId,
+      table.scope,
+      table.scopeId,
+      table.updatedAt
+    ),
+    accountScopeUpdatedIdx: index("variable_account_scope_updated_idx").on(
+      table.accountId,
+      table.scope,
+      table.updatedAt
     )
   })
 );

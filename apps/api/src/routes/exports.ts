@@ -136,10 +136,12 @@ export async function registerExportRoutes(
 
     const { id: sessionId } = parsedParams.data;
     const { format, include_variables, include_memories } = parsedQuery.data;
+    const auth = getRequestAuthContext(request);
 
     try {
       if (format === "thchat") {
         const result = serializeSessionToThChat(db, sessionId, {
+          accountId: auth.accountId,
           includeVariables: include_variables,
           includeMemories: include_memories,
         });
@@ -152,7 +154,7 @@ export async function registerExportRoutes(
       }
 
       // format === "st_jsonl"
-      const jsonl = serializeSessionToStJsonl(db, sessionId);
+      const jsonl = serializeSessionToStJsonl(db, sessionId, { accountId: auth.accountId });
 
       // 从 jsonl header 提取 character_name 作为文件名
       let filename = "export";

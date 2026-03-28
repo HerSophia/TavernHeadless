@@ -130,6 +130,18 @@ page → floor → chat → global
 
 **提升**：如果确实需要把变量保存到更高层级，需要显式提升。比如一次回合结束后，把 `page.mood` 提升到 `chat.mood`。这个过程由编排器控制，不会默默发生。
 
+变量系统现在还补齐了两条重要约束：
+
+- 所有持久化变量都按 `account_id` 隔离
+- `floor` / `page` 宿主进入 `committed` 后，不再允许继续写入或删除该层变量
+
+API 侧提供 `GET /variables/resolve`，用于解析当前 `session / floor / page` 上下文里真正可见的胜出变量快照。
+
+官方接入层中：
+
+- `@tavern/sdk` 提供 `client.variables.resolveContext(...)`
+- `@tavern/client-helpers` 提供变量快照到 inspector 行的整理函数
+
 ### 为什么要有「页」这一层？
 
 主要解决重新生成时的隔离问题。假设 AI 生成了一个回复并且写了 `mood = happy`，你觉得不好点了重试，新的生成写了 `mood = sad`。如果没有页级变量，两次生成会互相覆盖。有了页级变量，每次生成都在自己的沙箱里，只有你选定的那个版本才会被提升到楼层或会话。
@@ -189,6 +201,10 @@ page → floor → chat → global
 - 命中的 worldbook entry uid 列表
 - 正则前处理和后处理命中的规则名
 - `prompt_mode`、`prompt_digest`、`token_estimate`
+
+提示词组装时，现在会把当前可见的持久化 `global / chat / floor / page` 变量一起注入模板变量表。
+
+其中 `char` 和 `user` 仍然保留为系统别名。如果持久化变量与这两个键冲突，系统别名优先，dry-run 会把冲突写到 `assembly.reserved_variable_collisions`。
 
 `/sessions/:id/respond/dry-run` 走的是同一条 Prompt 组装路径，但只返回快照预览，不写入数据库。真实生成则会在 commit 阶段把同字段模型写入 `prompt_snapshot` 表。因此 dry-run 返回的 `prompt_snapshot` 可以直接拿来和已提交楼层的快照对比。
 

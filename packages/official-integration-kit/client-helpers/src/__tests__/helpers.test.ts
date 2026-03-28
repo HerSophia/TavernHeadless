@@ -7,6 +7,7 @@ import { mapApiErrorToUiState } from "../errors/map-api-error-to-ui-state.js";
 import { getActivePage } from "../selectors/get-active-page.js";
 import { createInitialRespondStreamState, reduceRespondStream } from "../stream/reduce-respond-stream.js";
 import { buildTimelineMessages } from "../timeline/build-timeline-messages.js";
+import { flattenVariableSnapshot, formatVariablePreview, sortVariableInspectorRows } from "../variables/index.js";
 import { resolveUsage } from "../usage/resolve-usage.js";
 
 describe("client-helpers public exports", () => {
@@ -16,9 +17,18 @@ describe("client-helpers public exports", () => {
       createInitialRespondStreamState: expect.any(Function),
       getActivePage: expect.any(Function),
       mapApiErrorToUiState: expect.any(Function),
+      flattenVariableSnapshot: expect.any(Function),
+      formatVariablePreview: expect.any(Function),
       reduceRespondStream: expect.any(Function),
       resolveUsage: expect.any(Function),
+      sortVariableInspectorRows: expect.any(Function),
     });
+  });
+
+  it("re-exports variable snapshot helpers from the package entry", () => {
+    expect(clientHelpers.flattenVariableSnapshot).toBe(flattenVariableSnapshot);
+    expect(clientHelpers.formatVariablePreview).toBe(formatVariablePreview);
+    expect(clientHelpers.sortVariableInspectorRows).toBe(sortVariableInspectorRows);
   });
 });
 

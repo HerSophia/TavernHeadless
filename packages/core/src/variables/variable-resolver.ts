@@ -1,6 +1,6 @@
 import { SCOPE_PRIORITY, type VariableScope, type VariableEntry } from '@tavern/shared';
 import type { VariableContext } from '../types.js';
-import type { VariableRepository } from '../ports/index.js';
+import type { VariableRepository, VariableRepositoryOptions } from '../ports/index.js';
 
 /** scope → VariableContext 中对应字段的映射 */
 const SCOPE_TO_CONTEXT_KEY: Record<VariableScope, keyof VariableContext> = {
@@ -25,6 +25,14 @@ function getScopeId(scope: VariableScope, context: VariableContext): string | un
   return undefined;
 }
 
+function getRepositoryOptions(context: VariableContext): VariableRepositoryOptions | undefined {
+  if (context.accountId === undefined) {
+    return undefined;
+  }
+
+  return { accountId: context.accountId };
+}
+
 /**
  * 变量级联读取器
  *
@@ -39,11 +47,13 @@ export class VariableResolver {
    * @returns 命中的 VariableEntry，找不到返回 null
    */
   async resolve(key: string, context: VariableContext): Promise<VariableEntry | null> {
+    const repoOptions = getRepositoryOptions(context);
+
     for (const scope of SCOPE_PRIORITY) {
       const scopeId = getScopeId(scope, context);
       if (scopeId === undefined) continue;
 
-      const entry = await this.variableRepo.findByKey(scope, scopeId, key);
+      const entry = await this.variableRepo.findByKey(scope, scopeId, key, repoOptions);
       if (entry) return entry;
     }
     return null;
@@ -84,6 +94,7 @@ export class VariableResolver {
    */
   async resolveAll(context: VariableContext): Promise<Map<string, VariableEntry>> {
     const merged = new Map<string, VariableEntry>();
+    const repoOptions = getRepositoryOptions(context);
 
     // 反向遍历：global → chat → floor → page，后写入的覆盖先写入的
     const reversedScopes = [...SCOPE_PRIORITY].reverse();
@@ -92,7 +103,7 @@ export class VariableResolver {
       const scopeId = getScopeId(scope, context);
       if (scopeId === undefined) continue;
 
-      const entries = await this.variableRepo.findAllByScope(scope, scopeId);
+      const entries = await this.variableRepo.findAllByScope(scope, scopeId, repoOptions);
       for (const entry of entries) {
         merged.set(entry.key, entry);
       }

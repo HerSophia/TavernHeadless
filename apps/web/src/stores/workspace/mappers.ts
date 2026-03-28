@@ -25,6 +25,7 @@ export function toTimelineMessage(message: WorkspaceTimelineMessage): TimelineMe
     floorNo: message.floorNo,
     floorState: message.floorState,
     id: message.id,
+    pageId: message.pageId,
     persisted: true,
     role: message.role,
     seq: message.seq,

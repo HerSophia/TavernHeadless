@@ -9,7 +9,7 @@ import { sendError, zodIssues } from "./lib/http";
 import { registerCrudRoutes } from "./routes";
 import { registerChatRoutes } from "./routes/chat";
 import { registerWsPlugin, type WsBridge } from "./ws";
-import { DrizzleFloorRepository, DrizzleMemoryRepository } from "./adapters";
+import { DrizzleFloorRepository, DrizzleMemoryRepository, DrizzleVariableRepository } from "./adapters";
 import {
   ChatService,
   ChatServiceError,
@@ -309,7 +309,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     }
   );
 
-  await registerCrudRoutes(app, database);
+  let orchestrationContext: OrchestrationContext | undefined;
+  let wsBridge: WsBridge | undefined;
+
+  if (options.orchestration) {
+    const floorRepo = new DrizzleFloorRepository(database.db);
+    const memoryRepo = new DrizzleMemoryRepository(database.db);
+    const variableRepo = new DrizzleVariableRepository(database.db);
+
+    orchestrationContext = createOrchestrationContext(
+      options.orchestration,
+      floorRepo,
+      memoryRepo,
+      variableRepo
+    );
+  }
+
+  await registerCrudRoutes(app, database, {
+    variableEventBus: orchestrationContext?.eventBus,
+  });
 
   // ── 可选：MCP 工具集成 ──
   let mcpManager: McpConnectionManager | undefined;
@@ -373,25 +391,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   }
 
   // ── 可选：聊天业务路由 ──
-  let orchestrationContext: OrchestrationContext | undefined;
-  let wsBridge: WsBridge | undefined;
-
-  if (options.orchestration) {
-    const floorRepo = new DrizzleFloorRepository(database.db);
-    const memoryRepo = new DrizzleMemoryRepository(database.db);
-
-    const activeOrchestrationContext = createOrchestrationContext(
-      options.orchestration,
-      floorRepo,
-      memoryRepo
-    );
-    orchestrationContext = activeOrchestrationContext;
+  if (options.orchestration && orchestrationContext) {
+    const activeOrchestrationContext = orchestrationContext;
 
     const llmProfileService = new LlmProfileService(database.db);
 
     // ── 构建 ToolRegistry ──
     const toolRegistry = new ToolRegistry();
     toolRegistry.register(new BuiltinToolProvider({
+      variableStore: activeOrchestrationContext.variableStore,
       memoryStore: options.enableMemory ? activeOrchestrationContext.memoryStore : undefined,
     }));
     toolRegistry.register(new ResourceToolProvider(database.db));

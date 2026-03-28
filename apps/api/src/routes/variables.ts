@@ -1,42 +1,43 @@
-import { and, count, eq } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
-import { nanoid } from "nanoid";
+import type { CoreEventBus } from "@tavern/core";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
+import { buildListMeta, listQuerySchemaBase } from "../lib/pagination";
+import { parseWithSchema, sendError } from "../lib/http";
+import { getRequestAuthContext } from "../plugins/auth.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
-import { variables } from "../db/schema";
-import { parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
-import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
+import {
+  VariableService,
+  type VariableRecord,
+  type VariableLayerSnapshot,
+  type ResolvedVariableRecord,
+  type ResolvedVariablesSnapshot,
+} from "../services/variable-service.js";
+import { VariableServiceError } from "../services/variable-service-errors.js";
 
 const variableScopeSchema = z.enum(["global", "chat", "floor", "page"]);
 
 const variableParamsSchema = z.object({
-  id: z.string().min(1)
+  id: z.string().min(1),
 });
 
 const listVariablesQuerySchema = listQuerySchemaBase.extend({
   scope: variableScopeSchema.optional(),
   scope_id: z.string().min(1).optional(),
   key: z.string().min(1).optional(),
-  sort_by: z.enum(["updated_at", "key"]).default("updated_at")
+  sort_by: z.enum(["updated_at", "key"]).default("updated_at"),
 });
 
 const upsertVariableSchema = z.object({
   scope: variableScopeSchema,
   scope_id: z.string().min(1),
   key: z.string().min(1),
-  value: z.unknown()
+  value: z.unknown(),
 });
 
-type VariableWriteInput = z.infer<typeof upsertVariableSchema>;
-
-type PreparedVariableWriteInput = VariableWriteInput & {
-  valueJson: string;
-};
-
 const batchUpsertVariablesSchema = z.object({
-  items: z.array(upsertVariableSchema).min(1).max(100)
+  items: z.array(upsertVariableSchema).min(1).max(100),
 }).superRefine((value, ctx) => {
   const seen = new Map<string, number>();
 
@@ -48,7 +49,7 @@ const batchUpsertVariablesSchema = z.object({
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["items", index],
-        message: `Duplicate variable target also appears at items.${firstIndex}`
+        message: `Duplicate variable target also appears at items.${firstIndex}`,
       });
       return;
     }
@@ -57,11 +58,18 @@ const batchUpsertVariablesSchema = z.object({
   });
 });
 
+const resolveVariablesQuerySchema = z.object({
+  session_id: z.string().min(1),
+  floor_id: z.string().min(1).optional(),
+  page_id: z.string().min(1).optional(),
+  include_layers: z.coerce.boolean().optional().default(false),
+});
+
 const upsertVariableBodyExample = {
   scope: "chat",
   scope_id: "session-a",
   key: "mood",
-  value: { score: 20 }
+  value: { score: 20 },
 } as const;
 
 const variableExample = {
@@ -70,11 +78,11 @@ const variableExample = {
   scope_id: "session-a",
   key: "mood",
   value: { score: 20 },
-  updated_at: 1735689720000
+  updated_at: 1735689720000,
 } as const;
 
 const variableResponseExample = {
-  data: variableExample
+  data: variableExample,
 } as const;
 
 const variableListResponseExample = {
@@ -85,12 +93,12 @@ const variableListResponseExample = {
     offset: 0,
     has_more: false,
     sort_by: "updated_at",
-    sort_order: "desc"
-  }
+    sort_order: "desc",
+  },
 } as const;
 
 const deleteVariableResponseExample = {
-  data: { id: "var_mood", deleted: true }
+  data: { id: "var_mood", deleted: true },
 } as const;
 
 const batchUpsertVariablesBodyExample = {
@@ -100,9 +108,9 @@ const batchUpsertVariablesBodyExample = {
       scope: "chat",
       scope_id: "session-a",
       key: "topic",
-      value: "campfire"
-    }
-  ]
+      value: "campfire",
+    },
+  ],
 } as const;
 
 const batchUpsertVariablesResponseExample = {
@@ -111,7 +119,7 @@ const batchUpsertVariablesResponseExample = {
       {
         index: 0,
         action: "updated",
-        data: variableExample
+        data: variableExample,
       },
       {
         index: 1,
@@ -122,18 +130,59 @@ const batchUpsertVariablesResponseExample = {
           scope_id: "session-a",
           key: "topic",
           value: "campfire",
-          updated_at: 1735689720000
-        }
-      }
+          updated_at: 1735689720000,
+        },
+      },
     ],
     meta: {
       total: 2,
       created: 1,
-      updated: 1
-    }
-  }
+      updated: 1,
+    },
+  },
 } as const;
 
+const resolveVariablesResponseExample = {
+  data: {
+    context: {
+      account_id: "default-admin",
+      session_id: "session-a",
+      floor_id: "floor-a",
+      page_id: "page-a",
+      global_scope_id: "global",
+    },
+    resolved: [
+      {
+        key: "mood",
+        value: "tense",
+        source_scope: "floor",
+        source_scope_id: "floor-a",
+        updated_at: 1735689720000,
+      },
+    ],
+    layers: {
+      global: {
+        scope: "global",
+        scope_id: "global",
+        items: [
+          {
+            id: "var_global_theme",
+            scope: "global",
+            scope_id: "global",
+            key: "theme",
+            value: "midnight",
+            updated_at: 1735689700000,
+          },
+        ],
+      },
+      chat: {
+        scope: "chat",
+        scope_id: "session-a",
+        items: [variableExample],
+      },
+    },
+  },
+} as const;
 
 const listVariablesQueryJsonSchema = {
   type: "object",
@@ -145,6 +194,18 @@ const listVariablesQueryJsonSchema = {
     scope: { type: "string", enum: ["global", "chat", "floor", "page"] },
     scope_id: { type: "string", minLength: 1 },
     key: { type: "string", minLength: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
+const resolveVariablesQueryJsonSchema = {
+  type: "object",
+  required: ["session_id"],
+  properties: {
+    session_id: { type: "string", minLength: 1 },
+    floor_id: { type: "string", minLength: 1 },
+    page_id: { type: "string", minLength: 1 },
+    include_layers: { type: "boolean", default: false },
   },
   additionalProperties: false,
 } as const;
@@ -192,6 +253,29 @@ const variableJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const resolvedVariableJsonSchema = {
+  type: "object",
+  required: ["key", "value", "source_scope", "source_scope_id", "updated_at"],
+  properties: {
+    key: { type: "string" },
+    value: {},
+    source_scope: { type: "string", enum: ["global", "chat", "floor", "page"] },
+    source_scope_id: { type: "string" },
+    updated_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const variableLayerJsonSchema = {
+  type: "object",
+  required: ["scope", "scope_id", "items"],
+  properties: {
+    scope: { type: "string", enum: ["global", "chat", "floor", "page"] },
+    scope_id: { type: "string" },
+    items: { type: "array", items: variableJsonSchema },
+  },
+  additionalProperties: false,
+} as const;
 
 const listMetaJsonSchema = {
   type: "object",
@@ -203,6 +287,19 @@ const listMetaJsonSchema = {
     has_more: { type: "boolean" },
     sort_by: { type: "string" },
     sort_order: { type: "string", enum: ["asc", "desc"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const resolvedContextJsonSchema = {
+  type: "object",
+  required: ["account_id", "session_id", "global_scope_id"],
+  properties: {
+    account_id: { type: "string" },
+    session_id: { type: "string" },
+    floor_id: { type: "string" },
+    page_id: { type: "string" },
+    global_scope_id: { type: "string" },
   },
   additionalProperties: false,
 } as const;
@@ -271,6 +368,37 @@ const batchUpsertVariablesResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const resolvedVariablesResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["context", "resolved"],
+      properties: {
+        context: resolvedContextJsonSchema,
+        resolved: {
+          type: "array",
+          items: resolvedVariableJsonSchema,
+        },
+        layers: {
+          type: "object",
+          properties: {
+            global: variableLayerJsonSchema,
+            chat: variableLayerJsonSchema,
+            floor: variableLayerJsonSchema,
+            page: variableLayerJsonSchema,
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [resolveVariablesResponseExample],
+  additionalProperties: false,
+} as const;
+
 const deleteResponseJsonSchema = {
   type: "object",
   required: ["data"],
@@ -286,37 +414,67 @@ const deleteResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
-function toVariableResponse(row: typeof variables.$inferSelect) {
-  return {
-    id: row.id,
-    scope: row.scope,
-    scope_id: row.scopeId,
-    key: row.key,
-    value: parseJsonField(row.valueJson),
-    updated_at: row.updatedAt
-  };
-}
-
-function buildVariableIdentity(input: Pick<VariableWriteInput, "scope" | "scope_id" | "key">) {
+function buildVariableIdentity(input: Pick<z.infer<typeof upsertVariableSchema>, "scope" | "scope_id" | "key">) {
   return `${input.scope}\u0000${input.scope_id}\u0000${input.key}`;
 }
 
-function toVariableResponseFromInput(input: VariableWriteInput, id: string, updatedAt: number) {
+function toVariableResponse(record: VariableRecord) {
   return {
-    id,
-    scope: input.scope,
-    scope_id: input.scope_id,
-    key: input.key,
-    value: input.value,
-    updated_at: updatedAt
+    id: record.id,
+    scope: record.scope,
+    scope_id: record.scopeId,
+    key: record.key,
+    value: record.value,
+    updated_at: record.updatedAt,
+  };
+}
+
+function toResolvedVariableResponse(record: ResolvedVariableRecord) {
+  return {
+    key: record.key,
+    value: record.value,
+    source_scope: record.sourceScope,
+    source_scope_id: record.sourceScopeId,
+    updated_at: record.updatedAt,
+  };
+}
+
+function toVariableLayerResponse(layer: VariableLayerSnapshot) {
+  return {
+    scope: layer.scope,
+    scope_id: layer.scopeId,
+    items: layer.items.map(toVariableResponse),
+  };
+}
+
+function toResolvedSnapshotResponse(snapshot: ResolvedVariablesSnapshot) {
+  const layers = snapshot.layers
+    ? Object.fromEntries(
+        Object.entries(snapshot.layers).map(([scope, layer]) => [scope, layer ? toVariableLayerResponse(layer) : undefined])
+      )
+    : undefined;
+
+  return {
+    context: {
+      account_id: snapshot.context.accountId,
+      session_id: snapshot.context.sessionId,
+      floor_id: snapshot.context.floorId,
+      page_id: snapshot.context.pageId,
+      global_scope_id: snapshot.context.globalScopeId,
+    },
+    resolved: snapshot.resolved.map(toResolvedVariableResponse),
+    ...(layers ? { layers } : {}),
   };
 }
 
 export async function registerVariableRoutes(
   app: FastifyInstance,
-  connection: DatabaseConnection
+  connection: DatabaseConnection,
+  options: { eventBus?: CoreEventBus } = {}
 ): Promise<void> {
-  const { db } = connection;
+  const service = new VariableService(connection.db, {
+    eventBus: options.eventBus,
+  });
 
   app.put("/variables", {
     schema: {
@@ -328,6 +486,8 @@ export async function registerVariableRoutes(
         200: variableResponseJsonSchema,
         201: variableResponseJsonSchema,
         400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -337,55 +497,20 @@ export async function registerVariableRoutes(
       return;
     }
 
-    const now = Date.now();
-
-    const [existing] = await db
-      .select()
-      .from(variables)
-      .where(
-        and(
-          eq(variables.scope, parsedBody.data.scope),
-          eq(variables.scopeId, parsedBody.data.scope_id),
-          eq(variables.key, parsedBody.data.key)
-        )
-      );
-
-    const valueJson = stringifyJsonField(parsedBody.data.value);
-
-    if (valueJson === null) {
-      return sendError(reply, 400, "validation_error", "Variable value cannot be undefined");
-    }
-
-    if (existing) {
-      const updatedRows = await db
-        .update(variables)
-        .set({
-          valueJson,
-          updatedAt: now
-        })
-        .where(eq(variables.id, existing.id))
-        .returning();
-
-      const updated = requireRow(updatedRows[0], "Failed to update variable");
-
-      return reply.send({ data: toVariableResponse(updated) });
-    }
-
-    const createdRows = await db
-      .insert(variables)
-      .values({
-        id: nanoid(),
+    try {
+      const auth = getRequestAuthContext(request);
+      const result = await service.upsert({
+        accountId: auth.accountId,
         scope: parsedBody.data.scope,
         scopeId: parsedBody.data.scope_id,
         key: parsedBody.data.key,
-        valueJson,
-        updatedAt: now
-      })
-      .returning();
+        value: parsedBody.data.value,
+      });
 
-    const created = requireRow(createdRows[0], "Failed to create variable");
-
-    return reply.code(201).send({ data: toVariableResponse(created) });
+      return reply.code(result.action === "created" ? 201 : 200).send({ data: toVariableResponse(result.variable) });
+    } catch (error) {
+      return sendServiceError(reply, error);
+    }
   });
 
   app.put("/variables/batch", {
@@ -397,6 +522,8 @@ export async function registerVariableRoutes(
       response: {
         200: batchUpsertVariablesResponseJsonSchema,
         400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -406,53 +533,32 @@ export async function registerVariableRoutes(
       return;
     }
 
-    const preparedItems: PreparedVariableWriteInput[] = [];
-
-    for (const item of parsedBody.data.items) {
-      const valueJson = stringifyJsonField(item.value);
-
-      if (valueJson === null) {
-        return sendError(reply, 400, "validation_error", "Variable value cannot be undefined");
-      }
-
-      preparedItems.push({
-        ...item,
-        valueJson,
+    try {
+      const auth = getRequestAuthContext(request);
+      const result = await service.upsertMany({
+        accountId: auth.accountId,
+        items: parsedBody.data.items.map((item) => ({
+          accountId: auth.accountId,
+          scope: item.scope,
+          scopeId: item.scope_id,
+          key: item.key,
+          value: item.value,
+        })),
       });
+
+      return reply.send({
+        data: {
+          results: result.results.map((item) => ({
+            index: item.index,
+            action: item.action,
+            data: toVariableResponse(item.variable),
+          })),
+          meta: result.meta,
+        },
+      });
+    } catch (error) {
+      return sendServiceError(reply, error);
     }
-
-    const now = Date.now();
-    const batchResult = db.transaction((tx) => {
-      let created = 0;
-      let updated = 0;
-
-      const results = preparedItems.map((item, index) => {
-        const existing = tx
-          .select({ id: variables.id })
-          .from(variables)
-          .where(and(eq(variables.scope, item.scope), eq(variables.scopeId, item.scope_id), eq(variables.key, item.key)))
-          .limit(1)
-          .get();
-
-        if (existing) {
-          tx.update(variables).set({ valueJson: item.valueJson, updatedAt: now }).where(eq(variables.id, existing.id)).run();
-          updated += 1;
-          return { index, action: "updated" as const, data: toVariableResponseFromInput(item, existing.id, now) };
-        }
-
-        const id = nanoid();
-        tx.insert(variables).values({ id, scope: item.scope, scopeId: item.scope_id, key: item.key, valueJson: item.valueJson, updatedAt: now }).run();
-        created += 1;
-        return { index, action: "created" as const, data: toVariableResponseFromInput(item, id, now) };
-      });
-
-      return {
-        results,
-        meta: { total: results.length, created, updated }
-      };
-    });
-
-    return reply.send({ data: batchResult });
   });
 
   app.get("/variables", {
@@ -473,56 +579,63 @@ export async function registerVariableRoutes(
       return;
     }
 
-    const filters = [];
-
-    if (parsedQuery.data.scope !== undefined) {
-      filters.push(eq(variables.scope, parsedQuery.data.scope));
-    }
-
-    if (parsedQuery.data.scope_id !== undefined) {
-      filters.push(eq(variables.scopeId, parsedQuery.data.scope_id));
-    }
-
-    if (parsedQuery.data.key !== undefined) {
-      filters.push(eq(variables.key, parsedQuery.data.key));
-    }
-
-    const whereClause = filters.length > 0 ? and(...filters) : undefined;
-    const sortByColumn = parsedQuery.data.sort_by === "key" ? variables.key : variables.updatedAt;
-
-    const rows =
-      whereClause === undefined
-        ? await db
-            .select()
-            .from(variables)
-            .orderBy(toOrderBy(sortByColumn, parsedQuery.data.sort_order))
-            .limit(parsedQuery.data.limit)
-            .offset(parsedQuery.data.offset)
-        : await db
-            .select()
-            .from(variables)
-            .where(whereClause)
-            .orderBy(toOrderBy(sortByColumn, parsedQuery.data.sort_order))
-            .limit(parsedQuery.data.limit)
-            .offset(parsedQuery.data.offset);
-
-    const totalRows =
-      whereClause === undefined
-        ? await db.select({ total: count() }).from(variables)
-        : await db.select({ total: count() }).from(variables).where(whereClause);
-
-    const total = Number(totalRows[0]?.total ?? 0);
+    const auth = getRequestAuthContext(request);
+    const result = await service.list({
+      accountId: auth.accountId,
+      limit: parsedQuery.data.limit,
+      offset: parsedQuery.data.offset,
+      sortBy: parsedQuery.data.sort_by,
+      sortOrder: parsedQuery.data.sort_order,
+      scope: parsedQuery.data.scope,
+      scopeId: parsedQuery.data.scope_id,
+      key: parsedQuery.data.key,
+    });
 
     return reply.send({
-      data: rows.map(toVariableResponse),
+      data: result.items.map(toVariableResponse),
       meta: buildListMeta({
-        total,
+        total: result.total,
         limit: parsedQuery.data.limit,
         offset: parsedQuery.data.offset,
         sortBy: parsedQuery.data.sort_by,
-        sortOrder: parsedQuery.data.sort_order
-      })
+        sortOrder: parsedQuery.data.sort_order,
+      }),
     });
+  });
+
+  app.get("/variables/resolve", {
+    schema: {
+      tags: ["variables"],
+      summary: "Resolve visible variable snapshot",
+      operationId: "resolveVariablesContext",
+      querystring: resolveVariablesQueryJsonSchema,
+      response: {
+        200: resolvedVariablesResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedQuery = parseWithSchema(resolveVariablesQuerySchema, request.query, reply);
+
+    if (!parsedQuery.ok) {
+      return;
+    }
+
+    try {
+      const auth = getRequestAuthContext(request);
+      const snapshot = await service.resolveSnapshot({
+        accountId: auth.accountId,
+        sessionId: parsedQuery.data.session_id,
+        floorId: parsedQuery.data.floor_id,
+        pageId: parsedQuery.data.page_id,
+        includeLayers: parsedQuery.data.include_layers,
+      });
+
+      return reply.send({ data: toResolvedSnapshotResponse(snapshot) });
+    } catch (error) {
+      return sendServiceError(reply, error);
+    }
   });
 
   app.get("/variables/:id", {
@@ -543,13 +656,13 @@ export async function registerVariableRoutes(
       return;
     }
 
-    const [row] = await db.select().from(variables).where(eq(variables.id, parsedParams.data.id));
-
-    if (!row) {
-      return sendError(reply, 404, "not_found", "Variable not found");
+    try {
+      const auth = getRequestAuthContext(request);
+      const variable = await service.getDetail(parsedParams.data.id, auth.accountId);
+      return reply.send({ data: toVariableResponse(variable) });
+    } catch (error) {
+      return sendServiceError(reply, error);
     }
-
-    return reply.send({ data: toVariableResponse(row) });
   });
 
   app.delete("/variables/:id", {
@@ -561,6 +674,7 @@ export async function registerVariableRoutes(
       response: {
         200: deleteResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -570,12 +684,32 @@ export async function registerVariableRoutes(
       return;
     }
 
-    const deleted = await db.delete(variables).where(eq(variables.id, parsedParams.data.id)).returning();
-
-    if (deleted.length === 0) {
-      return sendError(reply, 404, "not_found", "Variable not found");
+    try {
+      const auth = getRequestAuthContext(request);
+      await service.remove(parsedParams.data.id, auth.accountId);
+      return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
+    } catch (error) {
+      return sendServiceError(reply, error);
     }
-
-    return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
   });
+}
+
+function sendServiceError(reply: FastifyReply, error: unknown) {
+  if (error instanceof VariableServiceError) {
+    switch (error.code) {
+      case "duplicate_variable_target":
+      case "invalid_variable_context":
+      case "invalid_variable_value":
+        return sendError(reply, 400, error.code, error.message);
+      case "variable_host_not_found":
+      case "variable_not_found":
+        return sendError(reply, 404, error.code, error.message);
+      case "variable_target_locked":
+        return sendError(reply, 409, error.code, error.message);
+      default:
+        break;
+    }
+  }
+
+  throw error;
 }

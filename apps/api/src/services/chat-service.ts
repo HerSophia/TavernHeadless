@@ -452,7 +452,10 @@ export class ChatService {
         request.message,
         this.tokenCounter,
         memorySummary,
-        { maxContextTokensOverride }
+        {
+          maxContextTokensOverride,
+          variableContext: { sessionId, floorId, pageId: userMessageRef.pageId },
+        }
       );
 
       const promptSnapshot = buildPromptSnapshotRecord({
@@ -564,7 +567,9 @@ export class ChatService {
       request.message,
       this.tokenCounter,
       memorySummary,
-      { includeDebug: true, maxContextTokensOverride }
+      {
+        includeDebug: true, maxContextTokensOverride, variableContext: { sessionId },
+      }
     );
 
     const preprocessedUserMessage = assembled.preProcess
@@ -578,6 +583,7 @@ export class ChatService {
       regexPreRules: [],
       regexPostRules: [],
       memorySummaryInjected: false,
+      reservedVariableCollisions: [],
     };
 
     return {
@@ -694,7 +700,10 @@ export class ChatService {
         userMessage,
         this.tokenCounter,
         memorySummary,
-        { maxContextTokensOverride }
+        {
+          maxContextTokensOverride,
+          variableContext: { sessionId, floorId: newFloorId, pageId: userMessageRef.pageId },
+        }
       );
 
       const promptSnapshot = buildPromptSnapshotRecord({
@@ -845,7 +854,14 @@ export class ChatService {
         userMessage,
         this.tokenCounter,
         memorySummary,
-        { maxContextTokensOverride }
+        {
+          maxContextTokensOverride,
+          variableContext: {
+            sessionId: targetFloor.sessionId,
+            floorId: targetFloor.id,
+            pageId: userMessageRef.pageId,
+          },
+        }
       );
 
       const promptSnapshot = buildPromptSnapshotRecord({
@@ -1267,7 +1283,14 @@ export class ChatService {
       args.userMessage,
       this.tokenCounter,
       memorySummary,
-      { maxContextTokensOverride }
+      {
+        maxContextTokensOverride,
+        variableContext: {
+          sessionId: args.sessionId,
+          floorId: args.floorId,
+          pageId: args.userMessageRef.pageId,
+        },
+      }
     );
 
     const promptSnapshot = buildPromptSnapshotRecord({

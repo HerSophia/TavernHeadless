@@ -158,7 +158,7 @@ export type {
 
 // ── Ports ─────────────────────────────────────────────
 export type { FloorRepository } from './ports/index.js';
-export type { VariableRepository } from './ports/index.js';
+export type { VariableRepository, VariableRepositoryOptions } from './ports/index.js';
 export type { MemoryRepository } from './ports/index.js';
 export type { PromptSnapshotRepository } from './ports/index.js';
 export type { ToolExecutionRepository } from './ports/index.js';

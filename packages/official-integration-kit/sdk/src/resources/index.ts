@@ -154,7 +154,10 @@ export {
 export { createUsersResource, type UserDetail, type UserRecord, type UsersResource } from "./users.js";
 export {
   createVariablesResource,
+  type ResolvedVariableRecord,
+  type ResolvedVariablesSnapshot,
   type VariableRecord,
+  type VariableLayerSnapshot,
   type VariablesResource,
   type VariablesUpsertManyResult,
   type VariableScope,

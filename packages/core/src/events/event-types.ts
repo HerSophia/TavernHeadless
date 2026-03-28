@@ -25,12 +25,14 @@ export interface FloorFailedEvent {
 
 /** 变量写入事件 */
 export interface VariableSetEvent {
+  sessionId?: string;
   entry: VariableEntry;
   isNew: boolean;
 }
 
 /** 变量提升事件 */
 export interface VariablePromotedEvent {
+  sessionId?: string;
   key: string;
   fromScope: VariableScope;
   toScope: VariableScope;
@@ -39,6 +41,7 @@ export interface VariablePromotedEvent {
 
 /** 变量删除事件 */
 export interface VariableDeletedEvent {
+  sessionId?: string;
   id: string;
   scope: VariableScope;
   key: string;

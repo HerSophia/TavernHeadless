@@ -5,4 +5,10 @@ export type { RespondStreamState } from "./stream/types.js";
 export { buildTimelineMessages } from "./timeline/build-timeline-messages.js";
 export type { TimelineContentFormat, TimelineMessageView } from "./timeline/types.js";
 export { resolveUsage } from "./usage/resolve-usage.js";
+export {
+  flattenVariableSnapshot,
+  formatVariablePreview,
+  sortVariableInspectorRows,
+} from "./variables/index.js";
 export type { NormalizedUsage } from "./usage/resolve-usage.js";
+export type { VariableInspectorLayerValue, VariableInspectorRow, VariableSnapshotLike } from "./variables/index.js";

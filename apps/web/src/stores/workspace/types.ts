@@ -33,6 +33,7 @@ export type TimelineMessage = {
   floorState?: string;
   id: string;
   latencyMs?: number;
+  pageId?: string;
   persisted: boolean;
   role: WorkspaceMessageRole;
   seq: number;

@@ -2,14 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { FloorState, VariableScope, VariableEntry } from '@tavern/shared';
 import type { FloorEntity, VariableContext } from '../../types.js';
 import type { FloorRepository } from '../../ports/floor-repository.js';
-import type { VariableRepository } from '../../ports/variable-repository.js';
+import type { VariableRepository, VariableRepositoryOptions } from '../../ports/variable-repository.js';
 import { createEventBus, type CoreEventBus } from '../../events/index.js';
 import { VariableResolver } from '../../variables/variable-resolver.js';
 import { VariableStore } from '../../variables/variable-store.js';
 import { FloorLifecycle } from '../floor-lifecycle.js';
 import { FloorNotFoundError, InvalidStateTransitionError } from '../../errors.js';
-
-// ─── Helpers ──────────────────────────────────────────
 
 function makeFloor(overrides: Partial<FloorEntity> = {}): FloorEntity {
   return {
@@ -35,8 +33,8 @@ class InMemoryFloorRepository implements FloorRepository {
   }
 
   async findById(id: string): Promise<FloorEntity | null> {
-    const f = this.store.get(id);
-    return f ? { ...f } : null;
+    const floor = this.store.get(id);
+    return floor ? { ...floor } : null;
   }
 
   async updateState(
@@ -44,11 +42,11 @@ class InMemoryFloorRepository implements FloorRepository {
     state: FloorState,
     updatedAt: number
   ): Promise<FloorEntity | null> {
-    const f = this.store.get(id);
-    if (!f) return null;
-    f.state = state;
-    f.updatedAt = updatedAt;
-    return { ...f };
+    const floor = this.store.get(id);
+    if (!floor) return null;
+    floor.state = state;
+    floor.updatedAt = updatedAt;
+    return { ...floor };
   }
 
   async updateStateCas(
@@ -57,82 +55,118 @@ class InMemoryFloorRepository implements FloorRepository {
     targetState: FloorState,
     updatedAt: number
   ): Promise<FloorEntity | null> {
-    const f = this.store.get(id);
-    if (!f) return null;
-    if (f.state !== expectedState) return null;
+    const floor = this.store.get(id);
+    if (!floor) return null;
+    if (floor.state !== expectedState) return null;
 
-    f.state = targetState;
-    f.updatedAt = updatedAt;
-    return { ...f };
+    floor.state = targetState;
+    floor.updatedAt = updatedAt;
+    return { ...floor };
   }
 }
 
+interface StoredVariableRow extends VariableEntry {
+  accountId?: string;
+}
+
 class InMemoryVariableRepository implements VariableRepository {
-  private store: VariableEntry[] = [];
+  private store: StoredVariableRow[] = [];
   private nextId = 1;
 
-  seed(scope: VariableScope, scopeId: string, key: string, value: unknown): VariableEntry {
-    const entry: VariableEntry = {
+  private toEntry(row: StoredVariableRow): VariableEntry {
+    return {
+      id: row.id,
+      scope: row.scope,
+      scopeId: row.scopeId,
+      key: row.key,
+      value: row.value,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private matchesAccount(row: StoredVariableRow, options?: VariableRepositoryOptions): boolean {
+    return row.accountId === options?.accountId;
+  }
+
+  seed(
+    scope: VariableScope,
+    scopeId: string,
+    key: string,
+    value: unknown,
+    accountId?: string
+  ): VariableEntry {
+    const row: StoredVariableRow = {
       id: `var-${this.nextId++}`,
       scope,
       scopeId,
       key,
       value,
       updatedAt: Date.now(),
+      accountId,
     };
-    this.store.push(entry);
-    return entry;
+    this.store.push(row);
+    return this.toEntry(row);
   }
 
   async findByKey(
     scope: VariableScope,
     scopeId: string,
-    key: string
+    key: string,
+    options?: VariableRepositoryOptions
   ): Promise<VariableEntry | null> {
-    return (
-      this.store.find(
-        (e) => e.scope === scope && e.scopeId === scopeId && e.key === key
-      ) ?? null
+    const row = this.store.find(
+      (entry) =>
+        entry.scope === scope &&
+        entry.scopeId === scopeId &&
+        entry.key === key &&
+        this.matchesAccount(entry, options)
     );
+
+    return row ? this.toEntry(row) : null;
   }
 
   async findAllByScope(
     scope: VariableScope,
-    scopeId: string
+    scopeId: string,
+    options?: VariableRepositoryOptions
   ): Promise<VariableEntry[]> {
-    return this.store.filter(
-      (e) => e.scope === scope && e.scopeId === scopeId
-    );
+    return this.store
+      .filter(
+        (entry) =>
+          entry.scope === scope &&
+          entry.scopeId === scopeId &&
+          this.matchesAccount(entry, options)
+      )
+      .map((entry) => this.toEntry(entry));
   }
 
   async upsert(
     scope: VariableScope,
     scopeId: string,
     key: string,
-    value: unknown
+    value: unknown,
+    options?: VariableRepositoryOptions
   ): Promise<VariableEntry> {
     const existing = this.store.find(
-      (e) => e.scope === scope && e.scopeId === scopeId && e.key === key
+      (entry) =>
+        entry.scope === scope &&
+        entry.scopeId === scopeId &&
+        entry.key === key &&
+        this.matchesAccount(entry, options)
     );
     if (existing) {
       existing.value = value;
       existing.updatedAt = Date.now();
-      return { ...existing };
+      return this.toEntry(existing);
     }
-    const entry: VariableEntry = {
-      id: `var-${this.nextId++}`,
-      scope,
-      scopeId,
-      key,
-      value,
-      updatedAt: Date.now(),
-    };
-    this.store.push(entry);
-    return { ...entry };
+
+    return this.seed(scope, scopeId, key, value, options?.accountId);
   }
 
-  async deleteById(id: string): Promise<boolean> {
-    const idx = this.store.findIndex((e) => e.id === id);
+  async deleteById(id: string, options?: VariableRepositoryOptions): Promise<boolean> {
+    const idx = this.store.findIndex(
+      (entry) => entry.id === id && this.matchesAccount(entry, options)
+    );
     if (idx === -1) return false;
     this.store.splice(idx, 1);
     return true;
@@ -141,18 +175,21 @@ class InMemoryVariableRepository implements VariableRepository {
   async deleteByKey(
     scope: VariableScope,
     scopeId: string,
-    key: string
+    key: string,
+    options?: VariableRepositoryOptions
   ): Promise<boolean> {
     const idx = this.store.findIndex(
-      (e) => e.scope === scope && e.scopeId === scopeId && e.key === key
+      (entry) =>
+        entry.scope === scope &&
+        entry.scopeId === scopeId &&
+        entry.key === key &&
+        this.matchesAccount(entry, options)
     );
     if (idx === -1) return false;
     this.store.splice(idx, 1);
     return true;
   }
 }
-
-// ─── Tests ────────────────────────────────────────────
 
 describe('FloorLifecycle', () => {
   let floorRepo: InMemoryFloorRepository;
@@ -194,7 +231,27 @@ describe('FloorLifecycle', () => {
       const result = await lifecycle.commitFloor('floor-1', context);
 
       expect(result.promotedVariables).toHaveLength(2);
-      expect(result.promotedVariables.every((v) => v.scope === 'floor')).toBe(true);
+      expect(result.promotedVariables.every((entry) => entry.scope === 'floor')).toBe(true);
+    });
+
+    it('promotes only variables visible to the current account', async () => {
+      floorRepo.add(makeFloor({ id: 'floor-1', state: 'generating' }));
+      varRepo.seed('page', 'page-1', 'mood', 'happy', 'account-a');
+      varRepo.seed('page', 'page-1', 'mood', 'sad', 'account-b');
+
+      const result = await lifecycle.commitFloor('floor-1', {
+        ...context,
+        accountId: 'account-a',
+      });
+
+      expect(result.promotedVariables).toHaveLength(1);
+      expect(result.promotedVariables[0]!.value).toBe('happy');
+      await expect(
+        varRepo.findByKey('floor', 'floor-1', 'mood', { accountId: 'account-a' })
+      ).resolves.toMatchObject({ value: 'happy' });
+      await expect(
+        varRepo.findByKey('floor', 'floor-1', 'mood', { accountId: 'account-b' })
+      ).resolves.toBeNull();
     });
 
     it('returns empty promotedVariables when no page vars exist', async () => {

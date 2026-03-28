@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { VariableScope, VariableEntry } from '@tavern/shared';
-import type { VariableRepository } from '../../ports/index.js';
+import type { VariableRepository, VariableRepositoryOptions } from '../../ports/index.js';
 import type { VariableContext } from '../../types.js';
 import { VariableResolver } from '../../variables/variable-resolver.js';
 import { TemplateEngine, TemplateVariableError } from '../template-engine.js';
@@ -22,15 +22,30 @@ class InMemoryVariableRepository implements VariableRepository {
     });
   }
 
-  async findByKey(scope: VariableScope, scopeId: string, key: string): Promise<VariableEntry | null> {
+  async findByKey(
+    scope: VariableScope,
+    scopeId: string,
+    key: string,
+    _options?: VariableRepositoryOptions
+  ): Promise<VariableEntry | null> {
     return this.store.find(e => e.scope === scope && e.scopeId === scopeId && e.key === key) ?? null;
   }
 
-  async findAllByScope(scope: VariableScope, scopeId: string): Promise<VariableEntry[]> {
+  async findAllByScope(
+    scope: VariableScope,
+    scopeId: string,
+    _options?: VariableRepositoryOptions
+  ): Promise<VariableEntry[]> {
     return this.store.filter(e => e.scope === scope && e.scopeId === scopeId);
   }
 
-  async upsert(scope: VariableScope, scopeId: string, key: string, value: unknown): Promise<VariableEntry> {
+  async upsert(
+    scope: VariableScope,
+    scopeId: string,
+    key: string,
+    value: unknown,
+    _options?: VariableRepositoryOptions
+  ): Promise<VariableEntry> {
     const entry: VariableEntry = {
       id: `var-${this.nextId++}`, scope, scopeId, key, value, updatedAt: Date.now(),
     };
@@ -38,8 +53,13 @@ class InMemoryVariableRepository implements VariableRepository {
     return entry;
   }
 
-  async deleteById(): Promise<boolean> { return false; }
-  async deleteByKey(): Promise<boolean> { return false; }
+  async deleteById(_id: string, _options?: VariableRepositoryOptions): Promise<boolean> { return false; }
+  async deleteByKey(
+    _scope: VariableScope,
+    _scopeId: string,
+    _key: string,
+    _options?: VariableRepositoryOptions
+  ): Promise<boolean> { return false; }
 }
 
 // ─── Tests ────────────────────────────────────────────

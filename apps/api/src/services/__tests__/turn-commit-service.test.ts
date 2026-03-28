@@ -561,7 +561,9 @@ describe("TurnCommitService", () => {
     };
 
     const committedHandler = vi.fn();
+    const promotedHandler = vi.fn();
     eventBus.on("floor.committed", committedHandler);
+    eventBus.on("variable.promoted", promotedHandler);
 
     await service.commit({
       floorId,
@@ -605,6 +607,28 @@ describe("TurnCommitService", () => {
             updatedAt: committedAt,
           }),
         ],
+      })
+    );
+
+    expect(promotedHandler).toHaveBeenCalledTimes(2);
+    expect(promotedHandler).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        sessionId,
+        key: "hp",
+        fromScope: "page",
+        toScope: "floor",
+        value: 95,
+      })
+    );
+    expect(promotedHandler).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        sessionId,
+        key: "mood",
+        fromScope: "page",
+        toScope: "floor",
+        value: "steady",
       })
     );
   });

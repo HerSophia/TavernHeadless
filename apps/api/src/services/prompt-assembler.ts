@@ -46,6 +46,7 @@ import {
   type LoadedPromptRegexProfile,
   type LoadedPromptWorldbook,
 } from "./prompt-resource-loader.js";
+import { VariableService } from "./variable-service.js";
 
 // ── 类型 ──────────────────────────────────────────────
 
@@ -89,6 +90,8 @@ export interface SessionMetadata {
   [key: string]: unknown;
 }
 
+const RESERVED_PROMPT_ALIAS_KEYS = ["char", "user"] as const;
+type ReservedPromptAlias = (typeof RESERVED_PROMPT_ALIAS_KEYS)[number];
 export interface PromptSnapshotPreview {
   presetId: string | null;
   presetUpdatedAt: number | null;
@@ -122,7 +125,13 @@ export interface PromptAssemblySnapshot extends PromptSnapshotPreview {
   character?: CharacterSnapshot;
   userSnapshot?: UserSnapshot;
   persona?: PersonaInfo;
-  variables: Record<string, string>;
+  variables: Record<string, unknown>;
+}
+
+export interface PromptVariableContextInput {
+  sessionId: string;
+  floorId?: string;
+  pageId?: string;
 }
 
 /** 编排结果 */
@@ -157,6 +166,8 @@ export interface AssembleDebugInfo {
   regexPostRules: string[];
   /** 是否注入了记忆摘要 */
   memorySummaryInjected: boolean;
+  /** 被系统别名覆盖的持久化变量 key */
+  reservedVariableCollisions: ReservedPromptAlias[];
 }
 
 export interface AssemblePromptOptions {
@@ -167,6 +178,8 @@ export interface AssemblePromptOptions {
   includeDebug?: boolean;
   /** narrator 上下文预算覆盖（来自 slot binding / request override） */
   maxContextTokensOverride?: number;
+  /** 当前回合可见变量的解析上下文 */
+  variableContext?: PromptVariableContextInput;
 }
 
 // ── 默认 System Prompt ────────────────────────────────
@@ -214,10 +227,16 @@ export async function assemblePrompt(
   const userSnapshot = parseUserSnapshot(session.userSnapshotJson ?? null);
   const persona = userSnapshot ?? metadata.persona;
   const promptMode = resolvePromptMode(session, metadata);
-  const variables: Record<string, string> = {
-    char: character?.name ?? "Assistant",
-    user: persona?.name ?? "User",
-  };
+  const {
+    variables,
+    reservedVariableCollisions,
+  } = await resolvePromptVariables({
+    db,
+    accountId,
+    character,
+    persona,
+    context: options.variableContext,
+  });
 
   const promptSnapshot: PromptAssemblySnapshot = {
     createdAt: Date.now(),
@@ -384,6 +403,7 @@ export async function assemblePrompt(
         regexPreRules: promptSnapshot.regexPreRuleNames,
         regexPostRules: promptSnapshot.regexPostRuleNames,
         memorySummaryInjected,
+        reservedVariableCollisions,
       }
     : undefined;
 
@@ -497,6 +517,45 @@ function parseSessionMetadata(metadataJson: string | null): SessionMetadata {
   } catch {
     return {};
   }
+}
+
+async function resolvePromptVariables(args: {
+  db: AppDb;
+  accountId: string;
+  character?: CharacterSnapshot;
+  persona?: PersonaInfo;
+  context?: PromptVariableContextInput;
+}): Promise<{
+  variables: Record<string, unknown>;
+  reservedVariableCollisions: ReservedPromptAlias[];
+}> {
+  const variables = Object.create(null) as Record<string, unknown>;
+
+  if (args.context) {
+    const variableService = new VariableService(args.db);
+    const snapshot = await variableService.resolveSnapshot({
+      accountId: args.accountId,
+      sessionId: args.context.sessionId,
+      floorId: args.context.floorId,
+      pageId: args.context.pageId,
+    });
+
+    for (const entry of snapshot.resolved) {
+      variables[entry.key] = entry.value;
+    }
+  }
+
+  const reservedVariableCollisions = RESERVED_PROMPT_ALIAS_KEYS.filter((key) =>
+    Object.prototype.hasOwnProperty.call(variables, key)
+  );
+
+  variables.char = args.character?.name ?? "Assistant";
+  variables.user = args.persona?.name ?? "User";
+
+  return {
+    variables,
+    reservedVariableCollisions,
+  };
 }
 
 function resolvePromptMode(

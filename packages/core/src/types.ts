@@ -11,6 +11,8 @@ export interface VariableContext {
   floorId?: string;
   /** 当前会话 ID（chat scope） */
   sessionId?: string;
+  /** 当前账户 ID（用于多账户变量隔离） */
+  accountId?: string;
   /** 全局 scope ID，默认 'global' */
   globalScopeId?: string;
 }

@@ -191,6 +191,7 @@ export async function registerChatRoutes(
             regex_pre_rules: result.assembly.regexPreRules,
             regex_post_rules: result.assembly.regexPostRules,
             memory_summary_injected: result.assembly.memorySummaryInjected,
+            reserved_variable_collisions: result.assembly.reservedVariableCollisions,
             preprocessed_user_message: result.assembly.preprocessedUserMessage ?? null,
           },
         },

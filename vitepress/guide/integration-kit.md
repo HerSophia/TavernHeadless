@@ -133,6 +133,8 @@ console.log(preview.promptSnapshot.promptDigest);
 
 `respondDryRun()` 的 `promptSnapshot` 现在也会带上 `presetVersion`、`worldbookVersion`、`regexProfileVersion`，用来表示本轮真正冻结使用的资源版本。
 
+如果有持久化变量试图占用保留别名，`preview.assembly.reservedVariableCollisions` 会返回被系统别名覆盖的键。目前保留别名是 `char` 和 `user`。
+
 ### 资源更新的版本并发控制
 
 `@tavern/sdk` 读取 preset、worldbook、regex profile 时，会把后端返回的 `version` 一并保留下来。
@@ -166,10 +168,30 @@ const memories = await client.memories.list({
 
 `factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。
 
+```ts
+// 解析当前上下文可见变量快照
+const snapshot = await client.variables.resolveContext({
+  sessionId: "session-1",
+  floorId: "floor-1",
+  pageId: "page-1",
+  includeLayers: true,
+});
+
+console.log(snapshot.resolved[0]?.key);
+console.log(snapshot.resolved[0]?.sourceScope);
+```
+
+这个方法对应后端的 `GET /variables/resolve`。它返回当前 `global/chat/floor/page` 四层里最终可见的胜出值，并可选附带各层原始快照。
+
 ### 整理数据
 
 ```ts
-import { resolveUsage, buildTimelineMessages } from "@tavern/client-helpers";
+import {
+  buildTimelineMessages,
+  flattenVariableSnapshot,
+  resolveUsage,
+  sortVariableInspectorRows,
+} from "@tavern/client-helpers";
 
 // 归一化 usage
 const usage = resolveUsage(result.totalUsage);
@@ -177,6 +199,10 @@ console.log(usage.inputTokens, usage.outputTokens, usage.totalTokens);
 
 // 构建时间线
 const messages = buildTimelineMessages(timeline.floors);
+
+// 整理变量 inspector 行
+const variableRows = sortVariableInspectorRows(flattenVariableSnapshot(snapshot));
+console.log(variableRows[0]?.preview);
 ```
 
 ### 累积流式状态
@@ -262,6 +288,9 @@ try {
 | `createInitialRespondStreamState` | 流式状态初始值 |
 | `reduceRespondStream` | SSE 事件 → 流式状态累积 |
 | `getActivePage` | 从楼层取当前活动页 |
+| `flattenVariableSnapshot` | resolved variable snapshot → inspector 行 |
+| `sortVariableInspectorRows` | 变量 inspector 行稳定排序 |
+| `formatVariablePreview` | 变量值 → 展示预览字符串 |
 | `mapApiErrorToUiState` | API 错误 → 界面错误状态 |
 
 ## 导出、Tools、MCP 的处理原则
@@ -300,6 +329,7 @@ try {
 
 - 请求层逻辑逐步迁入 `@tavern/sdk`
 - 时间线和流式状态整理逻辑逐步迁入 `@tavern/client-helpers`
+- 变量 inspector 现在直接使用 `sdk.variables.resolveContext()` 和 client-helper 的快照整理函数
 
 应用层仍然保留：
 

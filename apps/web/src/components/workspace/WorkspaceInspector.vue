@@ -15,6 +15,7 @@ import WorkspaceInspectorImpactPanel from "./inspector/WorkspaceInspectorImpactP
 import WorkspaceInspectorMemoryPanel from "./inspector/WorkspaceInspectorMemoryPanel.vue";
 import WorkspaceInspectorTabStrip from "./inspector/WorkspaceInspectorTabStrip.vue";
 import type { WorkspaceEvent } from "../../stores/workspace-ui";
+import type { TimelineMessage } from "../../stores/workspace";
 
 type Translator = (key: string, vars?: Record<string, number | string>) => string;
 
@@ -22,6 +23,8 @@ const props = defineProps<{
   accountMode: "single" | "multi";
   activeTab: WorkspaceInspectorTab;
   bindingFlash: boolean;
+  activeSessionId: string | null;
+  activeTimeline: TimelineMessage[];
   currentAccount: string;
   lang: "zh-CN" | "en";
   events: WorkspaceEvent[];
@@ -102,6 +105,8 @@ const emit = defineEmits<{
       <WorkspaceInspectorBindingsPanel
         v-if="props.activeTab === 'bindings'"
         :binding-flash="props.bindingFlash"
+        :active-session-id="props.activeSessionId"
+        :active-timeline="props.activeTimeline"
         :current-account="props.currentAccount"
         :runtime-character-name="props.runtimeCharacterName"
         :runtime-user-name="props.runtimeUserName"

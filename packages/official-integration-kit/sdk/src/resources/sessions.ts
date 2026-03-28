@@ -208,6 +208,7 @@ export type RespondDryRunAssembly = {
   presetUsed: boolean;
   regexPostRules: string[];
   regexPreRules: string[];
+  reservedVariableCollisions: Array<"char" | "user">;
   worldbookHits: number;
 };
 
@@ -713,6 +714,14 @@ function mapStringArray(value: unknown): string[] {
     .filter((item): item is string => item !== undefined);
 }
 
+function mapReservedPromptAliasCollisions(value: unknown): Array<"char" | "user"> {
+  return mapStringArray(value).filter(
+    (item): item is "char" | "user" => {
+      return item === "char" || item === "user";
+    },
+  );
+}
+
 function mapNumberArray(value: unknown): number[] {
   return readArray(value)
     .map((item) => (typeof item === "number" ? item : undefined))
@@ -778,6 +787,7 @@ function mapDryRunPayload(payload: Record<string, unknown> | null): RespondDryRu
       presetUsed: readBoolean(assembly?.preset_used),
       regexPostRules: mapStringArray(assembly?.regex_post_rules),
       regexPreRules: mapStringArray(assembly?.regex_pre_rules),
+      reservedVariableCollisions: mapReservedPromptAliasCollisions(assembly?.reserved_variable_collisions),
       worldbookHits: readNumber(assembly?.worldbook_hits),
     },
     availableForReply: readNumber(data?.available_for_reply),

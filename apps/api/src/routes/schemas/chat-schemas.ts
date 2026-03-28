@@ -118,6 +118,7 @@ export const dryRunSuccessResponseExample = {
       regex_pre_rules: ["trim_whitespace"],
       regex_post_rules: [],
       memory_summary_injected: true,
+      reserved_variable_collisions: [],
       preprocessed_user_message: "Please continue the campfire scene.",
     },
   },
@@ -351,6 +352,7 @@ export const dryRunDataJsonSchema = {
         "regex_pre_rules",
         "regex_post_rules",
         "memory_summary_injected",
+        "reserved_variable_collisions",
         "preprocessed_user_message",
       ],
       properties: {
@@ -360,6 +362,7 @@ export const dryRunDataJsonSchema = {
         regex_pre_rules: { type: "array", items: { type: "string" } },
         regex_post_rules: { type: "array", items: { type: "string" } },
         memory_summary_injected: { type: "boolean" },
+        reserved_variable_collisions: { type: "array", items: { type: "string", enum: ["char", "user"] } },
         preprocessed_user_message: { anyOf: [{ type: "string" }, { type: "null" }] },
       },
       additionalProperties: false,

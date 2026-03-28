@@ -120,6 +120,18 @@ interface BuiltinDeps {
   memoryStore?: MemoryStore;
 }
 
+function isToolAvailable(name: string, deps: BuiltinDeps): boolean {
+  if (name === 'get_variable' || name === 'set_variable') {
+    return deps.variableStore !== undefined;
+  }
+
+  if (name === 'query_memory') {
+    return deps.memoryStore !== undefined;
+  }
+
+  return true;
+}
+
 const handlers: Record<string, ToolHandler> = {
   async get_variable(args, context, deps) {
     if (!deps.variableStore) {
@@ -246,7 +258,9 @@ export class BuiltinToolProvider implements ToolProvider {
   }
 
   async listTools(): Promise<ToolDefinition[]> {
-    return [...BUILTIN_TOOLS];
+    return BUILTIN_TOOLS.filter((tool) => isToolAvailable(tool.name, this.deps)).map((tool) => ({
+      ...tool,
+    }));
   }
 
   async executeTool(

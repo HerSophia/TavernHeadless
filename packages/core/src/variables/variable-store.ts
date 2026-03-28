@@ -4,7 +4,7 @@ import {
   type VariableEntry,
 } from '@tavern/shared';
 import type { VariableContext } from '../types.js';
-import type { VariableRepository } from '../ports/index.js';
+import type { VariableRepository, VariableRepositoryOptions } from '../ports/index.js';
 import type { CoreEventBus } from '../events/index.js';
 import { InvalidScopePromotionError, MissingScopeIdError, VariableNotFoundError } from '../errors.js';
 import { VariableResolver } from './variable-resolver.js';
@@ -39,6 +39,14 @@ function requireScopeId(scope: VariableScope, context: VariableContext): string 
     throw new MissingScopeIdError(scope);
   }
   return id;
+}
+
+function getRepositoryOptions(accountId?: string): VariableRepositoryOptions | undefined {
+  if (accountId === undefined) {
+    return undefined;
+  }
+
+  return { accountId };
 }
 
 /**
@@ -81,10 +89,11 @@ export class VariableStore {
   ): Promise<VariableEntry> {
     const targetScope = scope ?? findLowestAvailableScope(context);
     const scopeId = requireScopeId(targetScope, context);
+    const repoOptions = getRepositoryOptions(context.accountId);
 
     // 检查是否已存在（用于事件的 isNew 标志）
-    const existing = await this.variableRepo.findByKey(targetScope, scopeId, key);
-    const entry = await this.variableRepo.upsert(targetScope, scopeId, key, value);
+    const existing = await this.variableRepo.findByKey(targetScope, scopeId, key, repoOptions);
+    const entry = await this.variableRepo.upsert(targetScope, scopeId, key, value, repoOptions);
 
     await this.eventBus.emit('variable.set', {
       entry,
@@ -116,15 +125,16 @@ export class VariableStore {
 
     const fromScopeId = requireScopeId(fromScope, context);
     const toScopeId = requireScopeId(toScope, context);
+    const repoOptions = getRepositoryOptions(context.accountId);
 
     // 从源 scope 读取
-    const source = await this.variableRepo.findByKey(fromScope, fromScopeId, key);
+    const source = await this.variableRepo.findByKey(fromScope, fromScopeId, key, repoOptions);
     if (!source) {
       throw new VariableNotFoundError(key, `${fromScope}:${fromScopeId}`);
     }
 
     // 写入目标 scope
-    const promoted = await this.variableRepo.upsert(toScope, toScopeId, key, source.value);
+    const promoted = await this.variableRepo.upsert(toScope, toScopeId, key, source.value, repoOptions);
 
     await this.eventBus.emit('variable.promoted', {
       key,
@@ -144,7 +154,8 @@ export class VariableStore {
     fromScope: VariableScope,
     fromScopeId: string,
     toScope: VariableScope,
-    toScopeId: string
+    toScopeId: string,
+    accountId?: string
   ): Promise<VariableEntry[]> {
     // 验证方向
     const fromIndex = SCOPE_PRIORITY.indexOf(fromScope);
@@ -154,11 +165,12 @@ export class VariableStore {
       throw new InvalidScopePromotionError(fromScope, toScope);
     }
 
-    const entries = await this.variableRepo.findAllByScope(fromScope, fromScopeId);
+    const repoOptions = getRepositoryOptions(accountId);
+    const entries = await this.variableRepo.findAllByScope(fromScope, fromScopeId, repoOptions);
     const promoted: VariableEntry[] = [];
 
     for (const entry of entries) {
-      const result = await this.variableRepo.upsert(toScope, toScopeId, entry.key, entry.value);
+      const result = await this.variableRepo.upsert(toScope, toScopeId, entry.key, entry.value, repoOptions);
       promoted.push(result);
 
       await this.eventBus.emit('variable.promoted', {
@@ -175,8 +187,8 @@ export class VariableStore {
   /**
    * 删除变量
    */
-  async delete(id: string, scope: VariableScope, key: string): Promise<void> {
-    const deleted = await this.variableRepo.deleteById(id);
+  async delete(id: string, scope: VariableScope, key: string, accountId?: string): Promise<void> {
+    const deleted = await this.variableRepo.deleteById(id, getRepositoryOptions(accountId));
     if (deleted) {
       await this.eventBus.emit('variable.deleted', { id, scope, key });
     }

@@ -14,7 +14,7 @@ export interface NativePipelineInput {
   systemPrompt: string;
   chatHistory: ChatMessage[];
   worldbookEntries?: NativeWorldbookEntry[];
-  variables?: Record<string, string>;
+  variables?: Record<string, unknown>;
   memorySummary?: string;
   maxTokens: number;
   reservedForReply: number;
@@ -180,7 +180,7 @@ function runNodeSequence(
 function renderWithVariables(
   templateEngine: TemplateEngine,
   text: string,
-  variables: Record<string, string>
+  variables: Record<string, unknown>
 ): string {
   return templateEngine.render(text, new Map(Object.entries(variables)));
 }

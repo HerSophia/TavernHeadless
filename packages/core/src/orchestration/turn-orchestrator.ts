@@ -531,6 +531,7 @@ export class TurnOrchestrator {
       callerSlot: slot,
       variableContext: {
         sessionId: input.sessionId,
+        accountId: input.accountId,
         floorId: input.floorId,
         pageId: input.pageId,
       },

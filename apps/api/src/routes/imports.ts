@@ -67,10 +67,12 @@ import {
   characters,
   characterVersions,
 } from "../db/schema.js";
-import { variables, memoryItems, memoryEdges } from "../db/schema.js";
+import { memoryItems, memoryEdges } from "../db/schema.js";
 import { parseWithSchema, sendError, parseJsonField, stringifyJsonField } from "../lib/http.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { type JsonRecord, toPresetEditorDocument, toRawPresetFromEditor } from "../lib/preset-utils.js";
+import { VariableService } from "../services/variable-service.js";
+import { VariableServiceError } from "../services/variable-service-errors.js";
 
 // ── Zod Schemas ───────────────────────────────────────
 
@@ -2228,15 +2230,24 @@ async function handleThChatImport(
     }
   }
 
-  const result = createSessionFromThChatImport(db, {
-    file,
-    idMap,
-    accountId,
-    characterId,
-    characterVersionId,
-    titleOverride: params.title ?? null,
-    now,
-  });
+  let result: ReturnType<typeof createSessionFromThChatImport>;
+  try {
+    result = createSessionFromThChatImport(db, {
+      file,
+      idMap,
+      accountId,
+      characterId,
+      characterVersionId,
+      titleOverride: params.title ?? null,
+      now,
+    });
+  } catch (error) {
+    if (error instanceof VariableServiceError) {
+      return sendError(reply, 400, "import_parse_error", `Invalid .thchat variable data: ${error.message}`);
+    }
+
+    throw error;
+  }
 
   return reply.code(201).send({
     data: {
@@ -2386,21 +2397,20 @@ function createSessionFromThChatImport(
     // 5. 导入变量
     let variableCount = 0;
     if (data.variables && data.variables.length > 0) {
-      for (const v of data.variables) {
-        const scopeId = v.scope === "chat"
-          ? sessionId
-          : (v.scope_id_ref ? (input.idMap.get(v.scope_id_ref) ?? v.scope_id_ref) : sessionId);
-
-        tx.insert(variables).values({
-          id: nanoid(),
+      const variableService = new VariableService(tx);
+      variableService.restoreMany({
+        accountId: input.accountId,
+        items: data.variables.map((v) => ({
           scope: v.scope,
-          scopeId,
+          scopeId: v.scope === "chat"
+            ? sessionId
+            : (v.scope_id_ref ? (input.idMap.get(v.scope_id_ref) ?? v.scope_id_ref) : sessionId),
           key: v.key,
-          valueJson: JSON.stringify(v.value),
+          value: v.value,
           updatedAt: v.updated_at,
-        }).run();
-        variableCount++;
-      }
+        })),
+      });
+      variableCount = data.variables.length;
     }
 
     // 6. 导入记忆
