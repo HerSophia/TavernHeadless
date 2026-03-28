@@ -62,7 +62,7 @@ export interface McpServerConfig {
 // ── 连接状态 ───────────────────────────────────────────
 
 /** MCP 连接状态 */
-export type McpConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type McpConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnect_required' | 'error';
 
 /** MCP 连接运行时状态（用于 API 返回） */
 export interface McpConnectionStatus {
@@ -82,6 +82,10 @@ export interface McpConnectionStatus {
   toolsRefreshedAt?: number;
   /** 最近一次错误信息 */
   error?: string;
+  /** 是否需要在下次调用前重连 */
+  reconnectRequired?: boolean;
+  /** 最近一次本地超时的时间（epoch ms） */
+  lastTimeoutAt?: number;
 }
 
 // ── Service 层输入类型 ─────────────────────────────────

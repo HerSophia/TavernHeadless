@@ -1,4 +1,5 @@
 import type { FloorState } from '@tavern/shared';
+import type { ToolMutationBuffer } from './tools/tool-mutation-buffer.js';
 
 /**
  * 变量解析上下文
@@ -15,6 +16,10 @@ export interface VariableContext {
   accountId?: string;
   /** 全局 scope ID，默认 'global' */
   globalScopeId?: string;
+  /** 当前工具回合的本地变量缓冲区（仅工具执行路径使用） */
+  toolMutationBuffer?: ToolMutationBuffer;
+  /** 当前生成尝试编号（用于隔离 verifier retry 之间的缓冲写入） */
+  toolMutationAttemptNo?: number;
 }
 
 /**

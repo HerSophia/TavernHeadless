@@ -8,18 +8,32 @@ import type { MemoryStore } from '../memory/memory-store.js';
 import type { MemoryConsolidator } from '../memory/memory-consolidator.js';
 import type { ConsolidationResult } from '../memory/memory-consolidator.js';
 import type { MemoryInjectionResult } from '../memory/types.js';
-import type { ToolExecutionContext } from '../tools/types.js';
+import type {
+  ExecutedToolCallRecord,
+  ToolExecutionContext,
+  ToolExecutionLifecycleState,
+  ToolExecutionProviderType,
+  ToolExecutionStatus,
+  ToolReplaySafety,
+  ToolSideEffectLevel,
+} from '../tools/types.js';
+import {
+  evaluateExecutedToolCallReplaySafety,
+  isAutoReplaySafe,
+} from '../tools/replay-safety.js';
 import type { ToolRegistry } from '../tools/tool-registry.js';
 import type { LLMToolEntry } from '../tools/tool-executor.js';
 import { ToolExecutor } from '../tools/tool-executor.js';
 import type { Director } from './director.js';
 import type { DirectorResult } from './director.js';
 import type { Verifier } from './verifier.js';
+import type { ToolExecutionRepository } from '../ports/tool-execution-repository.js';
 import type { VerifierResult } from './verifier.js';
 import type {
   TurnConfig,
   TurnExecutionResult,
   TurnInput,
+  ToolMode,
 } from './types.js';
 
 // ── 错误类 ────────────────────────────────────────────
@@ -32,6 +46,40 @@ export class TurnError extends Error {
   ) {
     super(message);
     this.name = 'TurnError';
+  }
+}
+
+export class UnsupportedToolModeError extends Error {
+  constructor(public readonly toolMode: Exclude<ToolMode, 'inline'>) {
+    super(`Tool mode '${toolMode}' is not supported. Only 'inline' is currently supported.`);
+    this.name = 'UnsupportedToolModeError';
+  }
+}
+
+export interface ToolReplayBlockedExecution {
+  executionId: string;
+  toolName: string;
+  providerId: string;
+  providerType?: ToolExecutionProviderType;
+  sideEffectLevel?: ToolSideEffectLevel;
+  status: ToolExecutionStatus;
+  lifecycleState?: ToolExecutionLifecycleState;
+  replaySafety: ToolReplaySafety;
+  reason: string;
+}
+
+export class ToolReplayBlockedError extends Error {
+  constructor(
+    public readonly blockingExecutions: ToolReplayBlockedExecution[],
+    message?: string,
+  ) {
+    super(
+      message
+      ?? `Tool replay blocked: ${blockingExecutions
+        .map((execution) => `${execution.toolName} (${execution.replaySafety})`)
+        .join(', ')}`,
+    );
+    this.name = 'ToolReplayBlockedError';
   }
 }
 
@@ -55,6 +103,7 @@ export interface TurnOrchestratorDeps {
   director: Director;
   verifier: Verifier;
   eventBus: CoreEventBus;
+  toolExecutionRepository?: ToolExecutionRepository;
 }
 
 // ── 工具函数 ──────────────────────────────────────────
@@ -80,6 +129,25 @@ function zeroUsage(): TokenUsage {
   return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 }
 
+function toReplayBlockedExecution(record: ExecutedToolCallRecord): ToolReplayBlockedExecution | null {
+  const evaluation = evaluateExecutedToolCallReplaySafety(record);
+  if (isAutoReplaySafe(evaluation.replaySafety)) {
+    return null;
+  }
+
+  return {
+    executionId: record.id,
+    toolName: record.toolName,
+    providerId: record.providerId,
+    providerType: record.providerType,
+    sideEffectLevel: record.sideEffectLevel,
+    status: record.status,
+    lifecycleState: record.lifecycleState,
+    replaySafety: evaluation.replaySafety,
+    reason: evaluation.reason,
+  };
+}
+
 function resolveConfig(config?: TurnConfig): Required<TurnConfig> {
   return {
     enableDirector: config?.enableDirector ?? false,
@@ -90,6 +158,12 @@ function resolveConfig(config?: TurnConfig): Required<TurnConfig> {
     enableTools: config?.enableTools ?? false,
     toolMode: config?.toolMode ?? 'inline',
   };
+}
+
+function assertSupportedToolMode(config: Required<TurnConfig>): void {
+  if (config.enableTools && config.toolMode !== 'inline') {
+    throw new UnsupportedToolModeError(config.toolMode as Exclude<ToolMode, 'inline'>);
+  }
 }
 
 /**
@@ -157,6 +231,7 @@ export class TurnOrchestrator {
    */
   async executeTurn(input: TurnInput): Promise<TurnExecutionResult> {
     const cfg = resolveConfig(input.config);
+    assertSupportedToolMode(cfg);
     let totalUsage = zeroUsage();
     let toolExecutor: ToolExecutor | undefined;
     let narratorLLMTools: Record<string, LLMToolEntry> | undefined;
@@ -179,23 +254,25 @@ export class TurnOrchestrator {
       // ── 2b. 构建工具（可选） ──
       if (cfg.enableTools && input.toolRegistry && input.toolPermissions) {
         try {
-          toolExecutor = new ToolExecutor(input.toolRegistry, this.deps.eventBus);
-          toolExecutor.resetTurnCounter();
+          toolExecutor = new ToolExecutor(
+            input.toolRegistry,
+            this.deps.eventBus,
+            this.deps.toolExecutionRepository,
+            input.toolExecutionRunId,
+          );
+          toolExecutor.resetTurnCounter(input.toolExecutionRunId);
 
-          const toolMode = cfg.toolMode;
-          if (toolMode === 'inline' || toolMode === 'both') {
-            const narratorTools = await input.toolRegistry.listForSlot(
-              'narrator',
+          const narratorTools = await input.toolRegistry.listForSlot(
+            'narrator',
+            input.toolPermissions,
+          );
+          if (narratorTools.length > 0) {
+            const toolContext = this.buildToolContext(input, 'narrator');
+            narratorLLMTools = toolExecutor.buildLLMTools(
+              narratorTools,
+              toolContext,
               input.toolPermissions,
             );
-            if (narratorTools.length > 0) {
-              const toolContext = this.buildToolContext(input, 'narrator');
-              narratorLLMTools = toolExecutor.buildLLMTools(
-                narratorTools,
-                toolContext,
-                input.toolPermissions,
-              );
-            }
           }
         } catch (error) {
           throw new TurnError(
@@ -212,7 +289,7 @@ export class TurnOrchestrator {
       }
 
       // ── 4 & 5. 生成 + Verifier（含重试逻辑 + 工具注入） ──
-      const genResult = await this.runGenerationWithVerifier(input, cfg, narratorLLMTools);
+      const genResult = await this.runGenerationWithVerifier(input, cfg, narratorLLMTools, toolExecutor);
       generation = genResult.generation;
       verifierResult = genResult.verifierResult;
       totalUsage = addUsage(totalUsage, generation.usage);
@@ -229,6 +306,7 @@ export class TurnOrchestrator {
       }
 
       const toolExecutionRecords = toolExecutor?.getExecutionRecords();
+      const bufferedVariableMutations = toolExecutor?.getBufferedVariableMutations();
 
       return {
         floorId: input.floorId,
@@ -243,6 +321,9 @@ export class TurnOrchestrator {
         totalUsage,
         ...(toolExecutionRecords && toolExecutionRecords.length > 0
           ? { toolExecutionRecords }
+          : {}),
+        ...(bufferedVariableMutations && bufferedVariableMutations.length > 0
+          ? { bufferedVariableMutations }
           : {}),
       };
     } catch (error) {
@@ -406,6 +487,7 @@ export class TurnOrchestrator {
     input: TurnInput,
     cfg: Required<TurnConfig>,
     narratorLLMTools?: Record<string, LLMToolEntry>,
+    toolExecutor?: ToolExecutor,
   ): Promise<{ generation: GenerationOutput; verifierResult?: VerifierResult }> {
     const maxAttempts = cfg.enableVerifier && cfg.verifierFailStrategy === 'retry'
       ? 1 + cfg.maxRetries
@@ -413,8 +495,11 @@ export class TurnOrchestrator {
 
     let lastGeneration: GenerationOutput | undefined;
     let lastVerifierResult: VerifierResult | undefined;
+    let lastGenerationAttemptNo: number | undefined;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      lastGenerationAttemptNo = toolExecutor?.beginGenerationAttempt();
+      const attemptExecutionStart = toolExecutor?.getExecutionRecordCount() ?? 0;
       lastGeneration = await this.runGeneration(input, narratorLLMTools);
 
       if (!cfg.enableVerifier || !input.verifierInput) {
@@ -434,10 +519,40 @@ export class TurnOrchestrator {
       }
 
       if (cfg.verifierFailStrategy === 'block') {
+        if (lastGenerationAttemptNo !== undefined) {
+          toolExecutor?.discardGenerationAttempt(lastGenerationAttemptNo);
+        }
         throw new TurnError(
           `Verifier blocked: ${lastVerifierResult.output.suggestion ?? 'Verification failed'}`,
           'verifier',
         );
+      }
+
+      const blockingExecutions = toolExecutor
+        ? toolExecutor
+          .getExecutionRecordsSince(attemptExecutionStart)
+          .map((record) => toReplayBlockedExecution(record))
+          .filter((record): record is ToolReplayBlockedExecution => record !== null)
+        : [];
+
+      if (blockingExecutions.length > 0) {
+        if (lastGenerationAttemptNo !== undefined) {
+          toolExecutor?.discardGenerationAttempt(lastGenerationAttemptNo);
+        }
+
+        const replayBlockedMessage = `Verifier retry blocked because replaying tool executions would be unsafe: ${blockingExecutions
+          .map((execution) => `${execution.toolName} (${execution.replaySafety})`)
+          .join(', ')}`;
+
+        throw new TurnError(
+          replayBlockedMessage,
+          'verifier',
+          new ToolReplayBlockedError(blockingExecutions, replayBlockedMessage),
+        );
+      }
+
+      if (lastGenerationAttemptNo !== undefined) {
+        toolExecutor?.discardGenerationAttempt(lastGenerationAttemptNo);
       }
 
       // retry: 继续循环
@@ -445,6 +560,10 @@ export class TurnOrchestrator {
 
     // 重试耗尽
     if (cfg.verifierFailStrategy === 'retry') {
+      if (lastGenerationAttemptNo !== undefined) {
+        toolExecutor?.discardGenerationAttempt(lastGenerationAttemptNo);
+      }
+
       throw new TurnError(
         `Verifier failed after ${maxAttempts} attempts: ${
           lastVerifierResult?.output.suggestion ?? 'Verification failed'

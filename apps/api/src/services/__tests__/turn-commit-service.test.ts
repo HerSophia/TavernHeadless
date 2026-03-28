@@ -364,7 +364,10 @@ describe("TurnCommitService", () => {
       providerId: "builtin",
       toolName: "lookup_fact",
       status: "success",
+      lifecycleState: "finished",
+      commitOutcome: "committed",
       durationMs: 17,
+      startedAt: committedAt,
       createdAt: committedAt,
     });
 
@@ -457,6 +460,72 @@ describe("TurnCommitService", () => {
     });
   });
 
+  it("flushes buffered tool variable mutations before page-to-floor promotion", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const now = 1_735_689_780_000;
+    const committedAt = now + 1_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+    await seedInputPage({ database, floorId, pageId, now });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Buffered variable commit.",
+      rawText: "Buffered variable commit.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 5,
+        completionTokens: 8,
+        totalTokens: 13,
+      },
+      bufferedVariableMutations: [
+        {
+          runId: "run-buffered",
+          generationAttemptNo: 1,
+          scope: "page",
+          scopeId: pageId,
+          key: "mood",
+          value: "hopeful",
+          bufferedAt: now + 10,
+        },
+      ],
+    };
+
+    await service.commit({
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      variableCommit: { pageId },
+    });
+
+    const [pageVariable] = await database.db.select().from(variables).where(
+      and(eq(variables.scope, "page"), eq(variables.scopeId, pageId), eq(variables.key, "mood")),
+    );
+    expect(pageVariable).toMatchObject({
+      scope: "page",
+      scopeId: pageId,
+      key: "mood",
+      updatedAt: committedAt,
+    });
+    expect(pageVariable && JSON.parse(pageVariable.valueJson)).toBe("hopeful");
+
+    const [floorVariable] = await database.db.select().from(variables).where(
+      and(eq(variables.scope, "floor"), eq(variables.scopeId, floorId), eq(variables.key, "mood")),
+    );
+    expect(floorVariable).toMatchObject({
+      scope: "floor",
+      scopeId: floorId,
+      key: "mood",
+      updatedAt: committedAt,
+    });
+    expect(floorVariable && JSON.parse(floorVariable.valueJson)).toBe("hopeful");
+  });
+
   it("derives legacy tool_call_record rows from real toolExecutionRecords when needed", async () => {
     const sessionId = nanoid();
     const floorId = nanoid();
@@ -529,7 +598,10 @@ describe("TurnCommitService", () => {
       providerId: "builtin",
       toolName: "roll_dice",
       status: "success",
+      lifecycleState: "finished",
+      commitOutcome: "committed",
       durationMs: 11,
+      startedAt: committedAt,
       createdAt: committedAt,
     });
   });

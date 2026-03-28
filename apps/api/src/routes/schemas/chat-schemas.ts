@@ -7,9 +7,11 @@
 // ── Example constants ─────────────────────────────────
 
 export const turnConfigExample = {
+  enableTools: true,
   enableDirector: true,
   enableVerifier: true,
   enableMemoryConsolidation: true,
+  toolMode: "inline",
   verifierFailStrategy: "warn",
   maxRetries: 1,
 } as const;
@@ -149,9 +151,11 @@ export const sessionIdParamsJsonSchema = {
 export const turnConfigJsonSchema = {
   type: "object",
   properties: {
+    enableTools: { type: "boolean" },
     enableDirector: { type: "boolean" },
     enableVerifier: { type: "boolean" },
     enableMemoryConsolidation: { type: "boolean" },
+    toolMode: { type: "string", enum: ["inline", "standalone", "both"] },
     verifierFailStrategy: { type: "string", enum: ["warn", "block", "retry"] },
     maxRetries: { type: "integer", minimum: 0, maximum: 5 },
   },
@@ -211,6 +215,20 @@ export const regenerateBodyJsonSchema = {
   properties: {
     config: turnConfigJsonSchema,
     generation_params: generationParamsJsonSchema,
+  },
+  examples: [regenerateBodyExample],
+  additionalProperties: false,
+} as const;
+
+export const retryFloorBodyJsonSchema = {
+  type: "object",
+  properties: {
+    config: turnConfigJsonSchema,
+    generation_params: generationParamsJsonSchema,
+    confirmed_execution_ids: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,

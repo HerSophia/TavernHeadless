@@ -24,6 +24,7 @@ import type {
   TurnOrchestrator,
   TurnInput,
   TurnExecutionResult,
+  ExecutedToolCallRecord,
   TurnConfig,
   ChatMessage,
   GenerationParams,
@@ -35,27 +36,40 @@ import type {
   ToolPermissions,
   CoreEventMap,
   CoreEventBus,
+  ToolExecutionCommitOutcome,
+  ToolReplaySafety,
 } from "@tavern/core";
 import {
   createEventBus,
+  evaluateToolReplaySafety,
+  evaluateExecutedToolCallReplaySafety,
   FloorNotFoundError,
   FloorStateConflictError,
   FloorStateMachine,
+  isAutoReplaySafe,
   LLMTimeoutError,
+  ToolReplayBlockedError,
   ToolRegistry,
+  UnsupportedToolModeError,
 } from "@tavern/core";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { sessions, floors, messagePages, messages } from "../db/schema.js";
+import {
+  SessionToolRegistryService,
+  SessionToolRegistryServiceError,
+} from "./session-tool-registry-service.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js";
 import { normalizeNonNegativeInt, normalizePositiveInt } from "../lib/utils.js";
 import { executeWithRetry, isSqliteBusyError } from "../lib/retry.js";
 import { DrizzleFloorRepository } from "../adapters/drizzle-floor-repository.js";
 import { ChatHistoryLoader } from "./chat-history-loader.js";
 import { ChatMessagePersistence, type PersistedMessageRef } from "./chat-message-persistence.js";
+import { DrizzleToolExecutionRepository } from "../adapters/drizzle-tool-execution-repository.js";
 import {
   GenerationCoordinatorConflictError,
   GenerationCoordinatorQueueTimeoutError,
+  GenerationCoordinatorCancelledError,
   InMemoryGenerationCoordinator,
   type CoordinatorRuntime,
   type GenerationCoordinator,
@@ -155,6 +169,8 @@ export interface RetryFloorRequest {
   config?: TurnConfig;
   /** 生成参数覆盖（可选） */
   generationParams?: Partial<GenerationParams>;
+  /** 显式确认允许重放的历史执行记录 ID 列表 */
+  confirmedExecutionIds?: string[];
 }
 
 /** /floors/:id/retry 响应体 */
@@ -175,6 +191,19 @@ export interface RetryFloorResult {
   finalState: "committed";
 }
 
+interface ReplayBlockingExecutionDetail {
+  execution_id: string;
+  tool_name: string;
+  provider_id: string;
+  provider_type: string | null;
+  side_effect_level: string | null;
+  status: string;
+  lifecycle_state: string | null;
+  replay_safety: ToolReplaySafety;
+  reason: string;
+  error_message?: string;
+}
+
 export interface EditAndRegenerateRequest extends RetryFloorRequest {
   /** 编辑后的用户消息 */
   content: string;
@@ -187,6 +216,18 @@ export interface EditAndRegenerateResult extends RetryFloorResult {
   sourceMessageId: string;
 }
 
+export interface RespondRuntimeToolEvent {
+  executionId: string;
+  toolName: string;
+  providerId: string;
+  providerType?: string;
+  sideEffectLevel?: string;
+  phase: "start" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+  message?: string;
+  durationMs?: number;
+  replaySafety: ToolReplaySafety;
+}
+
 export interface RespondRuntimeOptions {
   /**
    * 楼层创建成功后的回调。
@@ -197,6 +238,10 @@ export interface RespondRuntimeOptions {
    * 流式文本片段回调。
    */
   onChunk?: (chunk: string) => void;
+  /**
+   * 流式工具执行事件回调。
+   */
+  onTool?: (event: RespondRuntimeToolEvent) => void;
   /**
    * 可选：中止信号（如客户端断连）。
    */
@@ -298,6 +343,10 @@ export interface ChatServiceOptions {
    */
   toolRegistry?: ToolRegistry;
   /**
+   * 可选：按会话构建运行时工具注册表快照。
+   */
+  sessionToolRegistryService?: SessionToolRegistryService;
+  /**
    * 可选：解析会话的工具权限。默认从 session metadata_json 读取。
    */
   resolveToolPermissions?: (sessionId: string, accountId: string) => Promise<ToolPermissions | null>;
@@ -333,10 +382,12 @@ export class ChatService {
   private readonly resolveTurnModels?: ResolveTurnModelsFn;
   private readonly onTurnModelUsed?: OnTurnModelUsedFn;
   private readonly toolRegistry?: ToolRegistry;
+  private readonly sessionToolRegistryService?: SessionToolRegistryService;
   private readonly resolveToolPermissions?: (sessionId: string, accountId: string) => Promise<ToolPermissions | null>;
   private readonly eventBus: CoreEventBus;
   private readonly floorStateMachine: FloorStateMachine;
   private readonly turnCommitService: TurnCommitService;
+  private readonly toolExecutionRepository: DrizzleToolExecutionRepository;
   private readonly generationCoordinator: GenerationCoordinator;
   private readonly executionPolicy: TurnExecutionPolicy;
 
@@ -358,9 +409,11 @@ export class ChatService {
     this.resolveTurnModels = options.resolveTurnModels;
     this.onTurnModelUsed = options.onTurnModelUsed;
     this.toolRegistry = options.toolRegistry;
+    this.sessionToolRegistryService = options.sessionToolRegistryService;
     this.resolveToolPermissions = options.resolveToolPermissions;
     this.eventBus = options.eventBus ?? createEventBus();
     this.floorStateMachine = new FloorStateMachine(new DrizzleFloorRepository(db), this.eventBus);
+    this.toolExecutionRepository = new DrizzleToolExecutionRepository(db);
     this.turnCommitService = new TurnCommitService(db, this.messagePersistence, this.eventBus);
     this.generationCoordinator = options.generationCoordinator
       ?? options.generationGuard
@@ -401,126 +454,142 @@ export class ChatService {
 
     const branchId = normalizeBranchId(request.branchId);
 
-    return this.runWithGenerationCoordinator(sessionId, branchId, async (generationRuntime) => {
-      // ── 2. 确定分支上下文 + 加载历史 ──
-      const branchContext = await this.resolveRespondBranchContext(
-        sessionId,
-        branchId,
-        request.sourceFloorId
-      );
-      const history = await this.historyLoader.loadHistory(sessionId, branchId, branchContext.nextFloorNo);
+    return this.runWithGenerationCoordinator(
+      sessionId,
+      branchId,
+      runtimeOptions.abortSignal,
+      async (generationRuntime) => {
+        // ── 2. 确定分支上下文 + 加载历史 ──
+        const branchContext = await this.resolveRespondBranchContext(
+          sessionId,
+          branchId,
+          request.sourceFloorId
+        );
+        const history = await this.historyLoader.loadHistory(sessionId, branchId, branchContext.nextFloorNo);
 
-      // ── 2b. 记忆检索 ──
-      const memorySummary = await this.retrieveMemorySummary(sessionId);
+        // ── 2b. 记忆检索 ──
+        const memorySummary = await this.retrieveMemorySummary(sessionId);
 
-      // ── 3. 创建新楼层 ──
-      const nextFloorNo = branchContext.nextFloorNo;
-      const now = Date.now();
-      const { floorId, userMessageRef } = this.createDraftFloorWithUserMessage({
-        sessionId,
-        floorNo: nextFloorNo,
-        branchId,
-        parentFloorId: branchContext.parentFloorId,
-        userMessage: request.message,
-        userId: session.userId,
-        userSnapshotJson: session.userSnapshotJson,
-        now,
-      });
+        // ── 3. 创建新楼层 ──
+        const nextFloorNo = branchContext.nextFloorNo;
+        const now = Date.now();
+        const { floorId, userMessageRef } = this.createDraftFloorWithUserMessage({
+          sessionId,
+          floorNo: nextFloorNo,
+          branchId,
+          parentFloorId: branchContext.parentFloorId,
+          userMessage: request.message,
+          userId: session.userId,
+          userSnapshotJson: session.userSnapshotJson,
+          now,
+        });
 
-      runtimeOptions.onStart?.({ floorId, floorNo: nextFloorNo, branchId });
+        runtimeOptions.onStart?.({ floorId, floorNo: nextFloorNo, branchId });
+        const unsubscribeRuntimeToolEvents = this.subscribeRuntimeToolEvents(floorId, runtimeOptions);
 
-      // ── 5. 构建 TurnInput + 执行编排 ──
-      const sessionInfo: SessionPromptInfo = {
-        presetId: session.presetId,
-        worldbookProfileId: session.worldbookProfileId,
-        regexProfileId: session.regexProfileId,
-        metadataJson: session.metadataJson,
-        characterSnapshotJson: session.characterSnapshotJson,
-        promptMode: session.promptMode,
-        userSnapshotJson: session.userSnapshotJson,
-      };
+        try {
+          // ── 5. 构建 TurnInput + 执行编排 ──
+          const sessionInfo: SessionPromptInfo = {
+            presetId: session.presetId,
+            worldbookProfileId: session.worldbookProfileId,
+            regexProfileId: session.regexProfileId,
+            metadataJson: session.metadataJson,
+            characterSnapshotJson: session.characterSnapshotJson,
+            promptMode: session.promptMode,
+            userSnapshotJson: session.userSnapshotJson,
+          };
 
-      const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
-      const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
-      const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
+          const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+          const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+          const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
-      const assembled = await assemblePrompt(
-        this.db,
-        accountId,
-        sessionInfo,
-        history,
-        request.message,
-        this.tokenCounter,
-        memorySummary,
-        {
-          maxContextTokensOverride,
-          variableContext: { sessionId, floorId, pageId: userMessageRef.pageId },
+          const assembled = await assemblePrompt(
+            this.db,
+            accountId,
+            sessionInfo,
+            history,
+            request.message,
+            this.tokenCounter,
+            memorySummary,
+            {
+              maxContextTokensOverride,
+              variableContext: { sessionId, floorId, pageId: userMessageRef.pageId },
+            }
+          );
+
+          const promptSnapshot = buildPromptSnapshotRecord({
+            floorId,
+            sessionId,
+            snapshot: assembled.promptSnapshot,
+          });
+
+          const generationParams = this.buildGenerationParams({
+            requestParams: request.generationParams,
+            narratorParams,
+            availableForReply: assembled.tokenUsage.availableForReply,
+            stream: !!runtimeOptions.onChunk,
+          });
+
+          const turnConfig = this.resolveTurnConfig(request.config);
+          const toolRuntime = await this.resolveTurnToolingForFloor({
+            floorId,
+            sessionId,
+            accountId,
+            config: turnConfig,
+          });
+          const consolidationContext = await this.buildConsolidationContext(
+            sessionId,
+            request.message,
+            turnConfig
+          );
+
+          const turnInput: TurnInput = {
+            sessionId,
+            floorId,
+            pageId: userMessageRef.pageId,
+            accountId,
+            messages: assembled.messages,
+            generationParams,
+            config: turnConfig,
+            consolidationContext,
+            preProcess: assembled.preProcess,
+            postProcess: assembled.postProcess,
+            modelOverrides: this.buildModelOverrides(resolvedTurnModels),
+            generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
+            onChunk: runtimeOptions.onChunk,
+            abortSignal: runtimeOptions.abortSignal ?? generationRuntime.abortSignal,
+            toolRegistry: toolRuntime.toolRegistry,
+            toolPermissions: toolRuntime.toolPermissions,
+          };
+
+          const { execution, commit } = await this.executeTurnAndCommit({
+            floorId,
+            sessionId,
+            branchId,
+            accountId,
+            turnInput,
+            promptSnapshot,
+            resolvedTurnModels,
+            orchestrationFailureCode: "orchestration_failed",
+            orchestrationFailureMessage: "Turn orchestration failed",
+            commitFailureMessage: "Turn commit failed",
+            persistMemory: this.memoryStore !== undefined,
+          });
+
+          return {
+            floorId,
+            floorNo: nextFloorNo,
+            generatedText: execution.generatedText,
+            summaries: execution.summaries,
+            totalUsage: commit.usage,
+            finalState: commit.finalState,
+            branchId,
+          };
+        } finally {
+          unsubscribeRuntimeToolEvents();
         }
-      );
-
-      const promptSnapshot = buildPromptSnapshotRecord({
-        floorId,
-        sessionId,
-        snapshot: assembled.promptSnapshot,
-      });
-
-      const generationParams = this.buildGenerationParams({
-        requestParams: request.generationParams,
-        narratorParams,
-        availableForReply: assembled.tokenUsage.availableForReply,
-        stream: !!runtimeOptions.onChunk,
-      });
-
-      const turnConfig = this.resolveTurnConfig(request.config);
-      const consolidationContext = await this.buildConsolidationContext(
-        sessionId,
-        request.message,
-        turnConfig
-      );
-
-      const turnInput: TurnInput = {
-        sessionId,
-        floorId,
-        pageId: userMessageRef.pageId,
-        accountId,
-        messages: assembled.messages,
-        generationParams,
-        config: turnConfig,
-        consolidationContext,
-        preProcess: assembled.preProcess,
-        postProcess: assembled.postProcess,
-        modelOverrides: this.buildModelOverrides(resolvedTurnModels),
-        generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
-        onChunk: runtimeOptions.onChunk,
-        abortSignal: runtimeOptions.abortSignal ?? generationRuntime.abortSignal,
-        toolRegistry: this.toolRegistry,
-        toolPermissions: await this.resolveToolPermissionsForSession(sessionId, accountId),
-      };
-
-      const { execution, commit } = await this.executeTurnAndCommit({
-        floorId,
-        sessionId,
-        branchId,
-        accountId,
-        turnInput,
-        promptSnapshot,
-        resolvedTurnModels,
-        orchestrationFailureCode: "orchestration_failed",
-        orchestrationFailureMessage: "Turn orchestration failed",
-        commitFailureMessage: "Turn commit failed",
-        persistMemory: this.memoryStore !== undefined,
-      });
-
-      return {
-        floorId,
-        floorNo: nextFloorNo,
-        generatedText: execution.generatedText,
-        summaries: execution.summaries,
-        totalUsage: commit.usage,
-        finalState: commit.finalState,
-        branchId,
-      };
-    });
+      }
+    );
   }
 
   /**
@@ -630,7 +699,7 @@ export class ChatService {
       throw new ChatServiceError("session_archived", "Cannot regenerate in an archived session");
     }
 
-    return this.runWithGenerationCoordinator(sessionId, "main", async (generationRuntime) => {
+    return this.runWithGenerationCoordinator(sessionId, "main", undefined, async (generationRuntime) => {
       // ── 2. 找到最后一个 committed 楼层 ──
       const targetFloor = await this.historyLoader.getLastCommittedFloor(sessionId);
       if (!targetFloor) {
@@ -719,6 +788,12 @@ export class ChatService {
       });
 
       const turnConfig = this.resolveTurnConfig(request.config);
+      const toolRuntime = await this.resolveTurnToolingForFloor({
+        floorId: newFloorId,
+        sessionId,
+        accountId,
+        config: turnConfig,
+      });
       const consolidationContext = await this.buildConsolidationContext(
         sessionId,
         userMessage,
@@ -739,8 +814,8 @@ export class ChatService {
         modelOverrides: this.buildModelOverrides(resolvedTurnModels),
         abortSignal: generationRuntime.abortSignal,
         generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
-        toolRegistry: this.toolRegistry,
-        toolPermissions: await this.resolveToolPermissionsForSession(sessionId, accountId),
+        toolRegistry: toolRuntime.toolRegistry,
+        toolPermissions: toolRuntime.toolPermissions,
       };
 
       const { execution, commit } = await this.executeTurnAndCommit({
@@ -808,123 +883,136 @@ export class ChatService {
       throw new ChatServiceError("session_archived", "Cannot retry in an archived session");
     }
 
-    return this.runWithGenerationCoordinator(targetFloor.sessionId, targetFloor.branchId, async (generationRuntime) => {
-      const userMessageRef = await this.getUserMessageFromFloor(targetFloor.id);
-      if (!userMessageRef) {
-        throw new ChatServiceError("no_user_message", `No user message found in floor '${floorId}'`);
-      }
-      const userMessage = userMessageRef.content;
+    return this.runWithGenerationCoordinator(
+      targetFloor.sessionId,
+      targetFloor.branchId,
+      undefined,
+      async (generationRuntime) => {
+        await this.assertRetryReplayConfirmed(targetFloor.id, request);
 
-      const history = await this.historyLoader.loadHistoryBeforeFloor(
-        targetFloor.sessionId,
-        targetFloor.floorNo,
-        targetFloor.branchId
-      );
-      const memorySummary = await this.retrieveMemorySummary(targetFloor.sessionId);
-      const now = Date.now();
-
-      this.db.transaction((tx) => {
-        this.messagePersistence.clearOutputForRetry(tx, targetFloor.id);
-        tx
-          .update(floors)
-          .set({ state: "draft", tokenIn: 0, tokenOut: 0, updatedAt: now })
-          .where(eq(floors.id, targetFloor.id))
-          .run();
-      });
-
-      const sessionInfo: SessionPromptInfo = {
-        presetId: session.presetId,
-        worldbookProfileId: session.worldbookProfileId,
-        regexProfileId: session.regexProfileId,
-        metadataJson: session.metadataJson,
-        characterSnapshotJson: session.characterSnapshotJson,
-        promptMode: session.promptMode,
-        userSnapshotJson: session.userSnapshotJson,
-      };
-
-      const resolvedTurnModels = await this.resolveTurnModelsForSession(targetFloor.sessionId, accountId);
-      const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
-      const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
-
-      const assembled = await assemblePrompt(
-        this.db,
-        accountId,
-        sessionInfo,
-        history,
-        userMessage,
-        this.tokenCounter,
-        memorySummary,
-        {
-          maxContextTokensOverride,
-          variableContext: {
-            sessionId: targetFloor.sessionId,
-            floorId: targetFloor.id,
-            pageId: userMessageRef.pageId,
-          },
+        const userMessageRef = await this.getUserMessageFromFloor(targetFloor.id);
+        if (!userMessageRef) {
+          throw new ChatServiceError("no_user_message", `No user message found in floor '${floorId}'`);
         }
-      );
+        const userMessage = userMessageRef.content;
 
-      const promptSnapshot = buildPromptSnapshotRecord({
-        floorId: targetFloor.id,
-        sessionId: targetFloor.sessionId,
-        snapshot: assembled.promptSnapshot,
-      });
+        const history = await this.historyLoader.loadHistoryBeforeFloor(
+          targetFloor.sessionId,
+          targetFloor.floorNo,
+          targetFloor.branchId
+        );
+        const memorySummary = await this.retrieveMemorySummary(targetFloor.sessionId);
+        const now = Date.now();
 
-      const generationParams = this.buildGenerationParams({
-        requestParams: request.generationParams,
-        narratorParams,
-        availableForReply: assembled.tokenUsage.availableForReply,
-      });
+        this.db.transaction((tx) => {
+          this.messagePersistence.clearOutputForRetry(tx, targetFloor.id);
+          tx
+            .update(floors)
+            .set({ state: "draft", tokenIn: 0, tokenOut: 0, updatedAt: now })
+            .where(eq(floors.id, targetFloor.id))
+            .run();
+        });
 
-      const turnConfig = this.resolveTurnConfig(request.config);
-      const consolidationContext = await this.buildConsolidationContext(
-        targetFloor.sessionId,
-        userMessage,
-        turnConfig
-      );
+        const sessionInfo: SessionPromptInfo = {
+          presetId: session.presetId,
+          worldbookProfileId: session.worldbookProfileId,
+          regexProfileId: session.regexProfileId,
+          metadataJson: session.metadataJson,
+          characterSnapshotJson: session.characterSnapshotJson,
+          promptMode: session.promptMode,
+          userSnapshotJson: session.userSnapshotJson,
+        };
 
-      const turnInput: TurnInput = {
-        sessionId: targetFloor.sessionId,
-        floorId: targetFloor.id,
-        pageId: userMessageRef.pageId,
-        accountId,
-        messages: assembled.messages,
-        generationParams,
-        config: turnConfig,
-        consolidationContext,
-        preProcess: assembled.preProcess,
-        postProcess: assembled.postProcess,
-        modelOverrides: this.buildModelOverrides(resolvedTurnModels),
-        generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
-        abortSignal: generationRuntime.abortSignal,
-        toolRegistry: this.toolRegistry,
-        toolPermissions: await this.resolveToolPermissionsForSession(targetFloor.sessionId, accountId),
-      };
+        const resolvedTurnModels = await this.resolveTurnModelsForSession(targetFloor.sessionId, accountId);
+        const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+        const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
-      const { execution, commit } = await this.executeTurnAndCommit({
-        floorId: targetFloor.id,
-        sessionId: targetFloor.sessionId,
-        branchId: targetFloor.branchId,
-        accountId,
-        turnInput,
-        promptSnapshot,
-        resolvedTurnModels,
-        orchestrationFailureCode: "orchestration_failed",
-        orchestrationFailureMessage: "Retry orchestration failed",
-        persistMemory: this.memoryStore !== undefined,
-        commitFailureMessage: "Retry commit failed",
-      });
+        const assembled = await assemblePrompt(
+          this.db,
+          accountId,
+          sessionInfo,
+          history,
+          userMessage,
+          this.tokenCounter,
+          memorySummary,
+          {
+            maxContextTokensOverride,
+            variableContext: {
+              sessionId: targetFloor.sessionId,
+              floorId: targetFloor.id,
+              pageId: userMessageRef.pageId,
+            },
+          }
+        );
 
-      return {
-        floorId: targetFloor.id,
-        floorNo: targetFloor.floorNo,
-        branchId: targetFloor.branchId,
-        generatedText: execution.generatedText,
-        summaries: execution.summaries,
-        totalUsage: commit.usage,
-        finalState: commit.finalState,
-      };
-    });
+        const promptSnapshot = buildPromptSnapshotRecord({
+          floorId: targetFloor.id,
+          sessionId: targetFloor.sessionId,
+          snapshot: assembled.promptSnapshot,
+        });
+
+        const generationParams = this.buildGenerationParams({
+          requestParams: request.generationParams,
+          narratorParams,
+          availableForReply: assembled.tokenUsage.availableForReply,
+        });
+
+        const turnConfig = this.resolveTurnConfig(request.config);
+        const toolRuntime = await this.resolveTurnToolingForFloor({
+          floorId: targetFloor.id,
+          sessionId: targetFloor.sessionId,
+          accountId,
+          config: turnConfig,
+        });
+        const consolidationContext = await this.buildConsolidationContext(
+          targetFloor.sessionId,
+          userMessage,
+          turnConfig
+        );
+
+        const turnInput: TurnInput = {
+          sessionId: targetFloor.sessionId,
+          floorId: targetFloor.id,
+          pageId: userMessageRef.pageId,
+          accountId,
+          messages: assembled.messages,
+          generationParams,
+          config: turnConfig,
+          consolidationContext,
+          preProcess: assembled.preProcess,
+          postProcess: assembled.postProcess,
+          modelOverrides: this.buildModelOverrides(resolvedTurnModels),
+          generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
+          abortSignal: generationRuntime.abortSignal,
+          toolRegistry: toolRuntime.toolRegistry,
+          toolPermissions: toolRuntime.toolPermissions,
+        };
+
+        const { execution, commit } = await this.executeTurnAndCommit({
+          floorId: targetFloor.id,
+          sessionId: targetFloor.sessionId,
+          branchId: targetFloor.branchId,
+          accountId,
+          turnInput,
+          promptSnapshot,
+          resolvedTurnModels,
+          orchestrationFailureCode: "orchestration_failed",
+          orchestrationFailureMessage: "Retry orchestration failed",
+          persistMemory: this.memoryStore !== undefined,
+          commitFailureMessage: "Retry commit failed",
+        });
+
+        return {
+          floorId: targetFloor.id,
+          floorNo: targetFloor.floorNo,
+          branchId: targetFloor.branchId,
+          generatedText: execution.generatedText,
+          summaries: execution.summaries,
+          totalUsage: commit.usage,
+          finalState: commit.finalState,
+        };
+      }
+    );
 
   }
 
@@ -946,7 +1034,7 @@ export class ChatService {
 
     const newBranchId = request.branchId ? normalizeBranchId(request.branchId) : `branch-${nanoid(8)}`;
 
-    return this.runWithGenerationCoordinator(source.sessionId, newBranchId, async (generationRuntime) => {
+    return this.runWithGenerationCoordinator(source.sessionId, newBranchId, undefined, async (generationRuntime) => {
       const [branchExists] = await this.db
         .select({ id: floors.id })
         .from(floors)
@@ -1007,12 +1095,14 @@ export class ChatService {
   private async runWithGenerationCoordinator<T>(
     sessionId: string,
     branchId: string,
+    abortSignal: AbortSignal | undefined,
     task: (runtime: CoordinatorRuntime) => Promise<T>
   ): Promise<T> {
     try {
       return await this.generationCoordinator.execute({
         sessionId,
         branchId,
+        abortSignal,
         mode: this.executionPolicy.queueMode,
         timeoutMs: this.executionPolicy.queueTimeoutMs,
         task,
@@ -1024,6 +1114,10 @@ export class ChatService {
 
       if (error instanceof GenerationCoordinatorQueueTimeoutError) {
         throw new ChatServiceError("generation_queue_timeout", error.message, error);
+      }
+
+      if (error instanceof GenerationCoordinatorCancelledError) {
+        throw new ChatServiceError("generation_cancelled", error.message, error);
       }
 
       throw error;
@@ -1046,13 +1140,47 @@ export class ChatService {
     execution: TurnExecutionResult;
     commit: Awaited<ReturnType<TurnCommitService["commit"]>>;
   }> {
+    const turnInput: TurnInput = args.turnInput.toolExecutionRunId
+      ? args.turnInput
+      : {
+          ...args.turnInput,
+          toolExecutionRunId: nanoid(),
+        };
+    const toolExecutionRunId = turnInput.toolExecutionRunId!;
     let execution: TurnExecutionResult;
 
     try {
-      execution = await this.orchestrator.executeTurn(args.turnInput);
+      execution = await this.orchestrator.executeTurn(turnInput);
     } catch (error) {
+      const replayBlockedError = findErrorByConstructor(error, ToolReplayBlockedError);
+      if (replayBlockedError) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "replay_blocked");
+        await this.tryMarkFloorFailed(args.floorId, replayBlockedError);
+        throw new ChatServiceError(
+          "tool_replay_blocked",
+          replayBlockedError.message,
+          error,
+          {
+            blocking_executions: replayBlockedError.blockingExecutions.map((execution) =>
+              this.toReplayBlockingExecutionDetailFromBlockedError(execution)),
+          },
+        );
+      }
+
+      const unsupportedToolModeError = findErrorByConstructor(error, UnsupportedToolModeError);
+      if (unsupportedToolModeError) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+        await this.tryMarkFloorFailed(args.floorId, unsupportedToolModeError);
+        throw new ChatServiceError(
+          "invalid_tool_mode",
+          unsupportedToolModeError.message,
+          error,
+        );
+      }
+
       const timeoutError = findErrorByConstructor(error, LLMTimeoutError);
       if (timeoutError) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
         await this.tryMarkFloorFailed(args.floorId, timeoutError);
         throw new ChatServiceError(
           "generation_timeout",
@@ -1061,6 +1189,7 @@ export class ChatService {
         );
       }
 
+      await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
       throw new ChatServiceError(
         args.orchestrationFailureCode,
         `${args.orchestrationFailureMessage}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1073,7 +1202,7 @@ export class ChatService {
       sessionId: args.sessionId,
       execution,
       variableCommit: {
-        pageId: args.turnInput.pageId,
+        pageId: turnInput.pageId,
       },
       promptSnapshot: args.promptSnapshot,
       toolExecutionRecords: execution.toolExecutionRecords,
@@ -1109,6 +1238,7 @@ export class ChatService {
         }
       );
     } catch (error) {
+      await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
       if (isSqliteBusyError(error)) {
         await this.emitBestEffortEvent("commit.busy", {
           sessionId: args.sessionId,
@@ -1158,6 +1288,93 @@ export class ChatService {
     return { execution, commit };
   }
 
+  private async markToolExecutionRunOutcome(
+    runId: string,
+    outcome: ToolExecutionCommitOutcome,
+  ): Promise<void> {
+    try {
+      await this.toolExecutionRepository.markRunCommitOutcome(runId, outcome);
+    } catch {
+      // 执行日志本体已经先行落库；失败边界上的归宿更新保持 best-effort，
+      // 避免覆盖原始业务错误。
+    }
+  }
+
+  private async assertRetryReplayConfirmed(
+    floorId: string,
+    request: RetryFloorRequest,
+  ): Promise<void> {
+    const blockingExecutions = await this.listReplayBlockingExecutionsForFloor(floorId);
+    if (blockingExecutions.length === 0) {
+      return;
+    }
+
+    const confirmedExecutionIds = new Set(request.confirmedExecutionIds ?? []);
+    const missingConfirmations = blockingExecutions.filter(
+      (execution) => !confirmedExecutionIds.has(execution.execution_id),
+    );
+
+    if (missingConfirmations.length === 0) {
+      return;
+    }
+
+    throw new ChatServiceError(
+      "tool_replay_confirmation_required",
+      `Retry requires explicit confirmation for ${missingConfirmations.length} prior tool execution(s).`,
+      undefined,
+      {
+        blocking_executions: blockingExecutions,
+      },
+    );
+  }
+
+  private async listReplayBlockingExecutionsForFloor(
+    floorId: string,
+  ): Promise<ReplayBlockingExecutionDetail[]> {
+    const executionRecords = await this.toolExecutionRepository.findByFloorId(floorId);
+    return executionRecords
+      .map((record) => this.toReplayBlockingExecutionDetail(record))
+      .filter((record): record is ReplayBlockingExecutionDetail => record !== null);
+  }
+
+  private toReplayBlockingExecutionDetail(
+    record: ExecutedToolCallRecord,
+  ): ReplayBlockingExecutionDetail | null {
+    const evaluation = evaluateExecutedToolCallReplaySafety(record);
+    if (isAutoReplaySafe(evaluation.replaySafety)) {
+      return null;
+    }
+
+    return {
+      execution_id: record.id,
+      tool_name: record.toolName,
+      provider_id: record.providerId,
+      provider_type: record.providerType ?? null,
+      side_effect_level: record.sideEffectLevel ?? null,
+      status: record.status,
+      lifecycle_state: record.lifecycleState ?? null,
+      replay_safety: evaluation.replaySafety,
+      reason: evaluation.reason,
+      ...(record.errorMessage ? { error_message: record.errorMessage } : {}),
+    };
+  }
+
+  private toReplayBlockingExecutionDetailFromBlockedError(
+    execution: ToolReplayBlockedError["blockingExecutions"][number],
+  ): ReplayBlockingExecutionDetail {
+    return {
+      execution_id: execution.executionId,
+      tool_name: execution.toolName,
+      provider_id: execution.providerId,
+      provider_type: execution.providerType ?? null,
+      side_effect_level: execution.sideEffectLevel ?? null,
+      status: execution.status,
+      lifecycle_state: execution.lifecycleState ?? null,
+      replay_safety: execution.replaySafety,
+      reason: execution.reason,
+    };
+  }
+
   private async tryMarkFloorFailed(floorId: string, error: unknown): Promise<void> {
     const normalizedError = error instanceof Error ? error : new Error(String(error));
 
@@ -1177,6 +1394,125 @@ export class ChatService {
     } catch {
       // 观测类事件不应反向影响主流程。
     }
+  }
+
+  private subscribeRuntimeToolEvents(floorId: string, runtimeOptions: RespondRuntimeOptions): () => void {
+    if (!runtimeOptions.onTool) {
+      return () => {};
+    }
+
+    const handleStarted = (event: CoreEventMap["tool.call_started"]) => {
+      if (event.floorId !== floorId) {
+        return;
+      }
+
+      runtimeOptions.onTool?.(this.toRespondRuntimeToolEvent({
+        executionId: event.executionId,
+        toolName: event.toolName,
+        providerId: event.providerId,
+        providerType: event.providerType,
+        sideEffectLevel: event.sideEffectLevel,
+        status: "running",
+        lifecycleState: "opened",
+      }));
+    };
+
+    const handleCompleted = (event: CoreEventMap["tool.call_completed"]) => {
+      if (event.floorId !== floorId) {
+        return;
+      }
+
+      runtimeOptions.onTool?.(this.toRespondRuntimeToolEvent({
+        executionId: event.executionId,
+        toolName: event.toolName,
+        providerId: event.providerId,
+        providerType: event.providerType,
+        sideEffectLevel: event.sideEffectLevel,
+        status: event.status,
+        lifecycleState: "finished",
+        durationMs: event.durationMs,
+      }));
+    };
+
+    const handleFailed = (event: CoreEventMap["tool.call_failed"]) => {
+      if (event.floorId !== floorId) {
+        return;
+      }
+
+      runtimeOptions.onTool?.(this.toRespondRuntimeToolEvent({
+        executionId: event.executionId,
+        toolName: event.toolName,
+        providerId: event.providerId,
+        providerType: event.providerType,
+        sideEffectLevel: event.sideEffectLevel,
+        status: event.status,
+        lifecycleState: "finished",
+        message: event.error.message,
+        durationMs: event.durationMs,
+      }));
+    };
+
+    const handleDenied = (event: CoreEventMap["tool.call_denied"]) => {
+      if (event.floorId !== floorId) {
+        return;
+      }
+
+      runtimeOptions.onTool?.(this.toRespondRuntimeToolEvent({
+        executionId: event.executionId,
+        toolName: event.toolName,
+        providerId: event.providerId,
+        providerType: event.providerType,
+        sideEffectLevel: event.sideEffectLevel,
+        status: event.status,
+        lifecycleState: "finished",
+        message: `Tool call denied: ${event.reason}`,
+      }));
+    };
+
+    this.eventBus.on("tool.call_started", handleStarted);
+    this.eventBus.on("tool.call_completed", handleCompleted);
+    this.eventBus.on("tool.call_failed", handleFailed);
+    this.eventBus.on("tool.call_denied", handleDenied);
+
+    return () => {
+      this.eventBus.off("tool.call_started", handleStarted);
+      this.eventBus.off("tool.call_completed", handleCompleted);
+      this.eventBus.off("tool.call_failed", handleFailed);
+      this.eventBus.off("tool.call_denied", handleDenied);
+    };
+  }
+
+  private toRespondRuntimeToolEvent(input: {
+    executionId: string;
+    toolName: string;
+    providerId: string;
+    providerType?: string;
+    sideEffectLevel?: string;
+    status: "running" | CoreEventMap["tool.call_completed"]["status"] | CoreEventMap["tool.call_failed"]["status"] | CoreEventMap["tool.call_denied"]["status"];
+    lifecycleState: "opened" | "finished";
+    message?: string;
+    durationMs?: number;
+  }): RespondRuntimeToolEvent {
+    const evaluation = evaluateToolReplaySafety({
+      providerId: input.providerId,
+      providerType: input.providerType as ExecutedToolCallRecord["providerType"],
+      toolName: input.toolName,
+      sideEffectLevel: input.sideEffectLevel as ExecutedToolCallRecord["sideEffectLevel"],
+      status: input.status,
+      lifecycleState: input.lifecycleState,
+    });
+
+    return {
+      executionId: input.executionId,
+      toolName: input.toolName,
+      providerId: input.providerId,
+      providerType: input.providerType,
+      sideEffectLevel: input.sideEffectLevel,
+      phase: input.status === "running" ? "start" : input.status,
+      ...(input.message ? { message: input.message } : {}),
+      ...(typeof input.durationMs === "number" ? { durationMs: input.durationMs } : {}),
+      replaySafety: evaluation.replaySafety,
+    };
   }
 
   private async getSession(sessionId: string, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID) {
@@ -1306,6 +1642,12 @@ export class ChatService {
     });
 
     const turnConfig = this.resolveTurnConfig(args.request.config);
+    const toolRuntime = await this.resolveTurnToolingForFloor({
+      floorId: args.floorId,
+      sessionId: args.sessionId,
+      accountId: args.accountId,
+      config: turnConfig,
+    });
     const consolidationContext = await this.buildConsolidationContext(
       args.sessionId,
       args.userMessage,
@@ -1326,8 +1668,8 @@ export class ChatService {
       postProcess: assembled.postProcess,
       modelOverrides: this.buildModelOverrides(resolvedTurnModels),
       generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
-      toolRegistry: this.toolRegistry,
-      toolPermissions: await this.resolveToolPermissionsForSession(args.sessionId, args.accountId),
+      toolRegistry: toolRuntime.toolRegistry,
+      toolPermissions: toolRuntime.toolPermissions,
     };
 
     const { execution, commit } = await this.executeTurnAndCommit({
@@ -1480,7 +1822,7 @@ export class ChatService {
     sessionId: string,
     accountId: string,
   ): Promise<ToolPermissions | undefined> {
-    if (!this.toolRegistry) return undefined;
+    if (!this.toolRegistry && !this.sessionToolRegistryService) return undefined;
 
     // 外部解析器
     if (this.resolveToolPermissions) {
@@ -1507,6 +1849,52 @@ export class ChatService {
     }
 
     return undefined;
+  }
+
+  private async resolveTurnToolingForFloor(args: {
+    floorId: string;
+    sessionId: string;
+    accountId: string;
+    config?: TurnConfig;
+  }): Promise<{ toolRegistry?: ToolRegistry; toolPermissions?: ToolPermissions }> {
+    if (args.config?.enableTools !== true) {
+      return {};
+    }
+
+    try {
+      return {
+        toolRegistry: await this.resolveToolRegistryForSession(args.sessionId, args.accountId, args.config),
+        toolPermissions: await this.resolveToolPermissionsForSession(args.sessionId, args.accountId),
+      };
+    } catch (error) {
+      await this.tryMarkFloorFailed(args.floorId, error);
+      throw error;
+    }
+  }
+
+  private async resolveToolRegistryForSession(
+    sessionId: string,
+    accountId: string,
+    config?: TurnConfig,
+  ): Promise<ToolRegistry | undefined> {
+    if (config?.enableTools !== true) {
+      return undefined;
+    }
+
+    if (!this.sessionToolRegistryService) {
+      return this.toolRegistry;
+    }
+
+    try {
+      const runtime = await this.sessionToolRegistryService.buildRuntime(sessionId, accountId);
+      return runtime.registry;
+    } catch (error) {
+      if (error instanceof SessionToolRegistryServiceError) {
+        throw new ChatServiceError(error.code, error.message, error);
+      }
+
+      throw error;
+    }
   }
 
   private async resolveTurnModelForSession(sessionId: string, accountId: string): Promise<ResolvedTurnModel | undefined> {
@@ -1884,7 +2272,8 @@ export class ChatServiceError extends Error {
   constructor(
     public readonly code: string,
     message: string,
-    public override readonly cause?: unknown
+    public override readonly cause?: unknown,
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = "ChatServiceError";

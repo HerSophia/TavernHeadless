@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type {
   CoreEventBus,
@@ -245,12 +245,20 @@ function toToolExecutionInsert(record: ExecutedToolCallRecord): ToolExecutionIns
     pageId: record.pageId ?? null,
     callerSlot: record.callerSlot,
     providerId: record.providerId,
+    providerType: record.providerType ?? "unknown",
     toolName: record.toolName,
     argsJson: record.argsJson,
     resultJson: record.resultJson,
     status: record.status,
+    lifecycleState: record.lifecycleState ?? "finished",
+    commitOutcome: record.commitOutcome ?? "pending",
+    sideEffectLevel: record.sideEffectLevel ?? null,
     errorMessage: record.errorMessage ?? null,
     durationMs: record.durationMs,
+    startedAt: record.startedAt ?? record.createdAt,
+    finishedAt: record.finishedAt ?? record.createdAt,
+    attemptNo: record.attemptNo ?? 1,
+    replayParentExecutionId: record.replayParentExecutionId ?? null,
     createdAt: record.createdAt,
   };
 }
@@ -259,6 +267,15 @@ function toLegacyToolCallRecord(
   record: ExecutedToolCallRecord,
   seq: number
 ): ToolCallRecord {
+  let status: ToolCallRecord["status"];
+  if (record.status === "success") {
+    status = "success";
+  } else if (record.status === "denied" || record.status === "blocked") {
+    status = "denied";
+  } else {
+    status = "error";
+  }
+
   return {
     id: record.id,
     pageId: record.pageId ?? "",
@@ -267,7 +284,7 @@ function toLegacyToolCallRecord(
     toolName: record.toolName,
     argsJson: record.argsJson,
     resultJson: record.resultJson,
-    status: record.status,
+    status,
     durationMs: record.durationMs,
     createdAt: record.createdAt,
   };
@@ -700,6 +717,10 @@ export class TurnCommitService {
     const usage = normalizeTokenUsage(input.execution.totalUsage);
     const actualToolExecutionRecords =
       input.toolExecutionRecords ?? input.execution.toolExecutionRecords ?? [];
+    const actualToolExecutionRunIds = Array.from(
+      new Set(actualToolExecutionRecords.map((record) => record.runId)));
+    const actualBufferedVariableMutations =
+      input.execution.bufferedVariableMutations ?? [];
     const legacyToolCalls =
       input.toolCalls
       ?? input.execution.toolCalls
@@ -774,7 +795,16 @@ export class TurnCommitService {
           tx
             .insert(toolExecutionRecords)
             .values(actualToolExecutionRecords.map(toToolExecutionInsert))
+            .onConflictDoNothing()
             .run();
+        }
+
+        if (actualBufferedVariableMutations.length > 0) {
+          this.variableCommitService.flushBufferedMutations(
+            actualBufferedVariableMutations,
+            tx,
+            committedAt,
+          );
         }
 
         const variableCommit = this.variableCommitService.promoteAll(
@@ -830,6 +860,16 @@ export class TurnCommitService {
           }
 
           throw new FloorStateConflictError(input.floorId, "generating", currentRow.state);
+        }
+
+        if (actualToolExecutionRunIds.length > 0) {
+          tx
+            .update(toolExecutionRecords)
+            .set({ commitOutcome: "committed" })
+            .where(actualToolExecutionRunIds.length === 1
+              ? eq(toolExecutionRecords.runId, actualToolExecutionRunIds[0]!)
+              : inArray(toolExecutionRecords.runId, actualToolExecutionRunIds))
+            .run();
         }
 
         const floorRow = tx

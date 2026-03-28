@@ -7,6 +7,7 @@ import type {
   TimelineMessage,
   UpdateOrDeleteResult
 } from "../../../stores/workspace";
+import type { WorkspaceReplayBlockingExecution } from "../../../lib/workspace-api";
 import type { EventTone } from "../../../stores/workspace-ui";
 
 type AddEvent = (key: string, tone?: EventTone, vars?: Record<string, number | string>) => void;
@@ -14,7 +15,10 @@ type AddEvent = (key: string, tone?: EventTone, vars?: Record<string, number | s
 type WorkspaceMessageStore = {
   deleteTimelineMessage: (messageId: string) => Promise<UpdateOrDeleteResult>;
   editAndRegenerateFromMessage: (messageId: string, content: string) => Promise<RegenerateFromMessageResult>;
-  retryMessageFloor: (messageId: string) => Promise<RegenerateFromMessageResult>;
+  retryMessageFloor: (
+    messageId: string,
+    options?: { confirmedExecutionIds?: string[] }
+  ) => Promise<RegenerateFromMessageResult>;
   updateTimelineMessage: (messageId: string, content: string) => Promise<UpdateOrDeleteResult>;
 };
 
@@ -34,6 +38,12 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
     retryOpen: false,
     targetId: "",
     targetRole: null as TimelineMessage["role"] | null
+  });
+
+  const toolReplayConfirmDialog = reactive({
+    blockingExecutions: [] as WorkspaceReplayBlockingExecution[],
+    busy: false,
+    open: false
   });
 
   function getMessageRoleLabel(role: TimelineMessage["role"]): string {
@@ -68,10 +78,17 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
     messageDialog.draft = "";
   }
 
+  function resetToolReplayConfirmDialog(): void {
+    toolReplayConfirmDialog.blockingExecutions = [];
+    toolReplayConfirmDialog.busy = false;
+    toolReplayConfirmDialog.open = false;
+  }
+
   function closeMessageDialogs(): void {
     messageDialog.deleteOpen = false;
     messageDialog.editOpen = false;
     messageDialog.retryOpen = false;
+    resetToolReplayConfirmDialog();
   }
 
   const messageDialogRoleLabel = computed(() => {
@@ -144,6 +161,7 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
       return;
     }
 
+    resetToolReplayConfirmDialog();
     setMessageDialogTarget(target);
     messageDialog.retryOpen = true;
   }
@@ -302,6 +320,25 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
         return;
       }
 
+      if (result.reason === "confirmation_required") {
+        toolReplayConfirmDialog.blockingExecutions = result.blockingExecutions ?? [];
+        toolReplayConfirmDialog.open = true;
+        messageDialog.retryOpen = false;
+        options.addEvent("events.messageRetryConfirmationRequired", "warn", {
+          count: toolReplayConfirmDialog.blockingExecutions.length
+        });
+        return;
+      }
+
+      if (result.reason === "blocked") {
+        closeMessageDialogs();
+        clearMessageDialogTarget();
+        options.addEvent("events.messageRetryReplayBlocked", "warn", {
+          count: result.blockingExecutions?.length ?? 0
+        });
+        return;
+      }
+
       if (result.reason === "missing") {
         options.addEvent("events.messageMissing", "warn");
         closeMessageDialogs();
@@ -332,17 +369,97 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
     );
   }
 
+  async function confirmToolReplay(): Promise<void> {
+    if (!messageDialog.targetId) {
+      options.addEvent("events.messageMissing", "warn");
+      return;
+    }
+
+    const target = getTimelineMessage(messageDialog.targetId);
+    if (!target) {
+      options.addEvent("events.messageMissing", "warn");
+      closeMessageDialogs();
+      clearMessageDialogTarget();
+      return;
+    }
+
+    toolReplayConfirmDialog.busy = true;
+
+    try {
+      const result = await options.workspace.retryMessageFloor(messageDialog.targetId, {
+        confirmedExecutionIds: toolReplayConfirmDialog.blockingExecutions.map((execution: WorkspaceReplayBlockingExecution) => execution.executionId)
+      });
+
+      if (!result.ok) {
+        if (result.reason === "confirmation_required") {
+          toolReplayConfirmDialog.blockingExecutions = result.blockingExecutions ?? [];
+          toolReplayConfirmDialog.open = true;
+          options.addEvent("events.messageRetryConfirmationRequired", "warn", {
+            count: toolReplayConfirmDialog.blockingExecutions.length
+          });
+          return;
+        }
+
+        if (result.reason === "blocked") {
+          closeMessageDialogs();
+          clearMessageDialogTarget();
+          options.addEvent("events.messageRetryReplayBlocked", "warn", {
+            count: result.blockingExecutions?.length ?? 0
+          });
+          return;
+        }
+
+        if (result.reason === "guarded") {
+          options.addEvent("events.streamingGuard", "warn");
+          return;
+        }
+
+        if (result.reason === "missing") {
+          options.addEvent("events.messageMissing", "warn");
+          closeMessageDialogs();
+          clearMessageDialogTarget();
+          return;
+        }
+
+        if (result.reason === "unsupported") {
+          options.addEvent("events.messageRetryUnsupported", "warn");
+          return;
+        }
+
+        options.addEvent("events.messageRetryFailed", "warn");
+        return;
+      }
+
+      closeMessageDialogs();
+      clearMessageDialogTarget();
+
+      if (result.apiSyncFailed) {
+        options.addEvent("events.timelineSyncFailed", "warn");
+      }
+
+      options.addEvent(
+        resolveTurnCompletionEventKey("events.messageRetried", result.result),
+        "success",
+        buildTurnCompletionEventVars(getMessageRoleLabel(target.role), result.result)
+      );
+    } finally {
+      toolReplayConfirmDialog.busy = false;
+    }
+  }
+
   return {
     clearMessageDialogTarget,
     closeMessageDialogs,
     confirmDeleteMessage,
     confirmEditAndRegenerate,
     confirmEditMessage,
+    confirmToolReplay,
     confirmRetryFloor,
     messageDialog,
     messageDialogRoleLabel,
     openDeleteMessageDialog,
     openEditMessageDialog,
-    openRetryFloorDialog
+    openRetryFloorDialog,
+    toolReplayConfirmDialog
   };
 }

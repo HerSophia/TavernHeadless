@@ -1,7 +1,8 @@
-import type { RespondResult, TavernRespondStreamEvent } from "@tavern/sdk";
+import type { RespondResult, TavernRespondStreamEvent, TavernRespondToolPayload } from "@tavern/sdk";
 
 import { resolveUsage } from "../usage/resolve-usage.js";
-import type { RespondStreamState } from "./types.js";
+import { isTerminalToolPhase } from "./group-tool-events-by-execution.js";
+import type { RespondStreamState, RespondStreamWarning } from "./types.js";
 
 export function reduceRespondStream(
   state: RespondStreamState = createInitialRespondStreamState(),
@@ -29,6 +30,23 @@ export function reduceRespondStream(
     return {
       ...state,
       summaries: [...state.summaries, ...event.payload.summaries],
+    };
+  }
+
+  if (event.type === "tool") {
+    const activeTools = { ...state.activeTools };
+    if (isTerminalToolPhase(event.payload.phase)) {
+      delete activeTools[event.payload.executionId];
+    } else {
+      activeTools[event.payload.executionId] = event.payload;
+    }
+
+    return {
+      ...state,
+      activeTools,
+      status: state.status === "idle" ? "streaming" : state.status,
+      toolEvents: [...state.toolEvents, event.payload],
+      warnings: appendToolWarning(state.warnings, event.payload),
     };
   }
 
@@ -73,9 +91,56 @@ export function reduceRespondStream(
 
 export function createInitialRespondStreamState(): RespondStreamState {
   return {
+    activeTools: {},
     content: "",
     result: null,
     status: "idle",
     summaries: [],
+    toolEvents: [],
+    warnings: [],
   };
+}
+
+function appendToolWarning(
+  warnings: RespondStreamWarning[],
+  toolEvent: TavernRespondToolPayload,
+): RespondStreamWarning[] {
+  if (!isTerminalToolPhase(toolEvent.phase) || toolEvent.replaySafety === "safe") {
+    return warnings;
+  }
+
+  const warning = {
+    code: resolveToolWarningCode(toolEvent),
+    executionId: toolEvent.executionId,
+    message: buildToolWarningMessage(toolEvent),
+    toolName: toolEvent.toolName,
+  } satisfies RespondStreamWarning;
+
+  if (warnings.some((item) => item.code === warning.code && item.executionId === warning.executionId)) {
+    return warnings;
+  }
+
+  return [...warnings, warning];
+}
+
+function resolveToolWarningCode(toolEvent: TavernRespondToolPayload): string {
+  switch (toolEvent.replaySafety) {
+    case "confirm_on_replay":
+      return "tool_replay_confirmation_required";
+    case "never_auto_replay":
+      return "tool_replay_blocked";
+    default:
+      return "tool_execution_uncertain";
+  }
+}
+
+function buildToolWarningMessage(toolEvent: TavernRespondToolPayload): string {
+  switch (toolEvent.replaySafety) {
+    case "confirm_on_replay":
+      return `Tool '${toolEvent.toolName}' requires confirmation before replay.`;
+    case "never_auto_replay":
+      return `Tool '${toolEvent.toolName}' cannot be replayed automatically.`;
+    default:
+      return toolEvent.message ?? `Tool '${toolEvent.toolName}' finished with an uncertain replay outcome.`;
+  }
 }

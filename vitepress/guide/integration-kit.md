@@ -287,11 +287,13 @@ try {
 | `buildTimelineMessages` | 楼层数据 → 时间线消息列表 |
 | `createInitialRespondStreamState` | 流式状态初始值 |
 | `reduceRespondStream` | SSE 事件 → 流式状态累积 |
+| `groupToolEventsByExecution` | 工具流式事件 → 执行历史分组 |
 | `getActivePage` | 从楼层取当前活动页 |
 | `flattenVariableSnapshot` | resolved variable snapshot → inspector 行 |
 | `sortVariableInspectorRows` | 变量 inspector 行稳定排序 |
 | `formatVariablePreview` | 变量值 → 展示预览字符串 |
 | `mapApiErrorToUiState` | API 错误 → 界面错误状态 |
+| `summarizeRuntimeToolCatalog` | 会话级运行时工具目录 → 摘要 |
 
 ## 导出、Tools、MCP 的处理原则
 
@@ -308,9 +310,16 @@ try {
 - 启用和停用
 - 兼容调用记录查询
 
-会话级工具权限仍保留在 `sessions` 资源下。
+会话级工具权限和运行时工具目录仍保留在 `sessions` 资源下：
 
-当前 `tools.listCallRecords()` 仍对应公开兼容查询面 `/tools/call-records`。在 API 对外公开新的 execution records 路由前，官方包继续保持兼容行为，不提前发明新的查询方法。
+- `sessions.getToolPermissions()`
+- `sessions.getRuntimeToolCatalog()`
+
+其中运行时工具目录是**会话级**快照，反映某个 session 在当前权限、启用状态和 MCP 连接状态下真正可调用的工具集合。
+
+`tools.listExecutions()` 对应新的主审计模型 `tool_execution_record`。`tools.listCallRecords()` 仍对应公开兼容查询面 `/tools/call-records`，只用于兼容旧读取路径。
+
+如果调用方显式传 `toolMode`，当前运行时只支持 `inline`。`standalone` 和 `both` 还不受支持，服务端会返回结构化配置错误。
 
 ### MCP 资源
 
@@ -321,6 +330,10 @@ try {
 - connect / disconnect / test
 - 服务器工具列表
 
+MCP 状态读取还会保留 `reconnectRequired`、`lastTimeoutAt` 这类运行时字段。
+
+`mcp_call_uncertain_timeout` 表示结果不确定并且需要重连，不应当成普通失败来解释。
+
 ## 和 `apps/web` 的关系
 
 这两个包首先用于收拢仓库内已经重复出现的接入逻辑。
@@ -329,6 +342,7 @@ try {
 
 - 请求层逻辑逐步迁入 `@tavern/sdk`
 - 时间线和流式状态整理逻辑逐步迁入 `@tavern/client-helpers`
+- live tool inspector、retry replay confirmation、Tool Manager、MCP Manager 也直接建立在这两层之上
 - 变量 inspector 现在直接使用 `sdk.variables.resolveContext()` 和 client-helper 的快照整理函数
 
 应用层仍然保留：

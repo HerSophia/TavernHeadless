@@ -3,6 +3,7 @@ import type {
   WorkspaceMessageRole,
   WorkspacePresetEditorDocument,
   WorkspaceRespondResult,
+  WorkspaceReplayBlockingExecution,
   WorkspaceRegenerateResult
 } from "../../lib/workspace-api";
 
@@ -214,8 +215,9 @@ export type MessageMutationResult = {
 
 export type RegenerateFromMessageResult = {
   apiSyncFailed: boolean;
+  blockingExecutions?: WorkspaceReplayBlockingExecution[];
   ok: boolean;
-  reason?: "empty" | "failed" | "guarded" | "missing" | "unsupported";
+  reason?: "blocked" | "confirmation_required" | "empty" | "failed" | "guarded" | "missing" | "unsupported";
   result?: WorkspaceRegenerateResult;
 };
 

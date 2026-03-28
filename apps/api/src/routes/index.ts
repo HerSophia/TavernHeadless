@@ -2,6 +2,7 @@ import type { CoreEventBus } from "@tavern/core";
 import type { FastifyInstance } from "fastify";
 
 import type { DatabaseConnection } from "../db/client";
+import type { SessionToolRegistryService } from "../services/session-tool-registry-service.js";
 import { registerCharacterRoutes } from "./characters";
 import { registerFloorRoutes } from "./floors";
 import { registerImportRoutes } from "./imports";
@@ -13,6 +14,7 @@ import { registerMessagePageRoutes } from "./pages";
 import { registerLlmProfileRoutes } from "./llm-profiles";
 import { registerLlmInstanceRoutes } from "./llm-instances";
 import { registerSessionRoutes } from "./sessions";
+import { registerSessionRuntimeToolRoutes } from "./session-runtime-tools";
 import { registerVariableRoutes } from "./variables";
 import { registerAccountRoutes } from "./accounts";
 import { registerUserRoutes } from "./users";
@@ -22,6 +24,7 @@ import { registerExportRoutes } from "./exports";
 
 export interface CrudRoutesOptions {
   variableEventBus?: CoreEventBus;
+  sessionToolRegistryService?: SessionToolRegistryService;
 }
 
 export async function registerCrudRoutes(
@@ -31,6 +34,9 @@ export async function registerCrudRoutes(
 ): Promise<void> {
   await registerAccountRoutes(app, connection);
   await registerSessionRoutes(app, connection);
+  await registerSessionRuntimeToolRoutes(app, {
+    sessionToolRegistryService: options.sessionToolRegistryService,
+  });
   await registerCharacterRoutes(app, connection);
   await registerFloorRoutes(app, connection);
   await registerUserRoutes(app, connection);

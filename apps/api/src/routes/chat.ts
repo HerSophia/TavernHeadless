@@ -31,6 +31,7 @@ import {
   editAndRegenerateBodyJsonSchema,
   respondSuccessResponseJsonSchema,
   regenerateSuccessResponseJsonSchema,
+  retryFloorBodyJsonSchema,
   editAndRegenerateSuccessResponseJsonSchema,
   dryRunSuccessResponseJsonSchema,
   streamResponseExample,
@@ -53,10 +54,12 @@ const messageIdParamsSchema = z.object({
 });
 
 const turnConfigSchema = z.object({
+  enableTools: z.boolean().optional(),
   enableDirector: z.boolean().optional(),
   enableVerifier: z.boolean().optional(),
   enableMemoryConsolidation: z.boolean().optional(),
   verifierFailStrategy: z.enum(["warn", "block", "retry"]).optional(),
+  toolMode: z.enum(["inline", "standalone", "both"]).optional(),
   maxRetries: z.number().int().min(0).max(5).optional(),
 });
 
@@ -95,12 +98,16 @@ const editAndRegenerateBodySchema = regenerateBodySchema.extend({
   branch_id: z.string().min(1).optional(),
 });
 
-const retryFloorBodySchema = regenerateBodySchema;
+const retryFloorBodySchema = regenerateBodySchema.extend({
+  confirmed_execution_ids: z.array(z.string().min(1)).optional(),
+});
+
 
 
 const chatMutationErrorResponses = {
   400: errorResponseJsonSchema,
   404: errorResponseJsonSchema,
+  499: errorResponseJsonSchema,
   409: errorResponseJsonSchema,
   500: errorResponseJsonSchema,
   503: errorResponseJsonSchema,
@@ -250,9 +257,11 @@ export async function registerChatRoutes(
 
     const abortController = new AbortController();
     let completed = false;
+    let clientClosed = false;
 
     reply.raw.on("close", () => {
       if (!completed) {
+        clientClosed = true;
         abortController.abort();
       }
     });
@@ -269,10 +278,28 @@ export async function registerChatRoutes(
       onChunk: (chunk) => {
         writeSse(reply.raw, "chunk", { chunk });
       },
+      onTool: (tool) => {
+        writeSse(reply.raw, "tool", {
+          execution_id: tool.executionId,
+          tool_name: tool.toolName,
+          provider_id: tool.providerId,
+          provider_type: tool.providerType ?? null,
+          side_effect_level: tool.sideEffectLevel ?? null,
+          phase: tool.phase,
+          message: tool.message ?? null,
+          duration_ms: tool.durationMs ?? null,
+          replay_safety: tool.replaySafety,
+        });
+      },
     };
 
     try {
       const result = await chatService.respond(parsedParams.data.id, respondRequest, runtimeOptions, accountId);
+
+      if (clientClosed || reply.raw.destroyed || reply.raw.writableEnded) {
+        completed = true;
+        return;
+      }
 
       if (result.summaries.length > 0) {
         writeSse(reply.raw, "summary", { summaries: result.summaries });
@@ -290,6 +317,11 @@ export async function registerChatRoutes(
       completed = true;
       reply.raw.end();
     } catch (error) {
+      if (clientClosed || abortController.signal.aborted || reply.raw.destroyed || reply.raw.writableEnded) {
+        completed = true;
+        return;
+      }
+
       logNativePipelineError(error, request, "respond_stream");
 
       const mapped = error instanceof ChatServiceError
@@ -425,7 +457,7 @@ export async function registerChatRoutes(
       summary: "Retry a failed floor",
       description: "Retry generation for an existing failed floor.",
       params: idParamsJsonSchema,
-      body: regenerateBodyJsonSchema,
+      body: retryFloorBodyJsonSchema,
       response: {
         200: respondSuccessResponseJsonSchema,
         ...chatMutationErrorResponses,
@@ -448,6 +480,7 @@ export async function registerChatRoutes(
       generationParams: parsedBody.data.generation_params
         ? mapGenerationParams(parsedBody.data.generation_params)
         : undefined,
+      confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -579,13 +612,20 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
       return { statusCode: 404, code: error.code, message: error.message };
     case "invalid_message_role":
     case "invalid_message_scope":
+    case "invalid_tool_mode":
       return { statusCode: 400, code: error.code, message: error.message };
     case "invalid_state":
     case "branch_exists":
+      return { statusCode: 409, code: error.code, message: error.message };
+    case "generation_cancelled":
+      return { statusCode: 499, code: error.code, message: error.message };
     case "generation_conflict":
     case "commit_conflict":
       return { statusCode: 409, code: error.code, message: error.message };
+    case "tool_replay_blocked":
+    case "tool_replay_confirmation_required":
     case "profile_not_found":
+    case "tool_catalog_conflict":
     case "profile_disabled":
       return { statusCode: 409, code: error.code, message: error.message };
     case "secret_unavailable":
@@ -611,7 +651,7 @@ function handleChatError(error: unknown, request: FastifyRequest, reply: import(
   }
 
   const mapped = mapChatServiceError(error);
-  return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
+  return sendError(reply, mapped.statusCode, mapped.code, mapped.message, error.details);
 }
 
 function logNativePipelineError(

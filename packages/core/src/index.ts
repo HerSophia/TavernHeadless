@@ -144,7 +144,12 @@ export type {
   VerifierIssue,
   VerifierResult,
 } from './orchestration/index.js';
-export { TurnOrchestrator, TurnError } from './orchestration/index.js';
+export {
+  TurnOrchestrator,
+  TurnError,
+  ToolReplayBlockedError,
+  UnsupportedToolModeError,
+} from './orchestration/index.js';
 export type {
   TurnOrchestratorDeps,
   TurnPhase,
@@ -185,9 +190,19 @@ export type {
   ToolDefinition,
   ToolCallResult,
   ToolCallStatus,
+  ToolExecutionStatus,
+  ToolExecutionLifecycleState,
+  ToolExecutionCommitOutcome,
+  ToolExecutionProviderType,
   ToolCallRecord,
   ExecutedToolCallRecord,
+  ToolExecutionOpenRecord,
+  ToolExecutionFinishPatch,
   ToolExecutionContext,
+  ToolReplaySafety,
+  ToolProviderCompensationMode,
+  ToolReplaySafetyEvaluation,
+  BufferedToolVariableMutation,
   ToolPermissions,
   ToolProviderType,
   ToolProvider,
@@ -199,5 +214,11 @@ export { ToolExecutor } from './tools/index.js';
 export type { LLMToolEntry } from './tools/index.js';
 export { BuiltinToolProvider } from './tools/index.js';
 export { PresetToolProvider } from './tools/index.js';
+export { ToolMutationBuffer } from './tools/index.js';
+export {
+  evaluateExecutedToolCallReplaySafety,
+  evaluateToolReplaySafety,
+  isAutoReplaySafe,
+  resolveToolProviderCompensationMode,
+} from './tools/index.js';
 export type { PresetToolInput } from './tools/index.js';
-

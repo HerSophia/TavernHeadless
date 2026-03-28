@@ -3719,6 +3719,437 @@
         ]
       }
     },
+    "/floors/{id}/tool-executions": {
+      "get": {
+        "operationId": "queryFloorToolExecutionRecords",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "floor_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "caller_slot",
+            "required": false,
+            "schema": {
+              "enum": [
+                "narrator",
+                "director",
+                "verifier",
+                "memory"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tool_name",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "running",
+                "success",
+                "error",
+                "denied",
+                "timeout",
+                "uncertain",
+                "blocked"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lifecycle_state",
+            "required": false,
+            "schema": {
+              "enum": [
+                "opened",
+                "finished"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "commit_outcome",
+            "required": false,
+            "schema": {
+              "enum": [
+                "pending",
+                "committed",
+                "discarded",
+                "replay_blocked",
+                "uncertain"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider_type",
+            "required": false,
+            "schema": {
+              "enum": [
+                "builtin",
+                "preset",
+                "mcp",
+                "unknown"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "enum": [
+                "created_at",
+                "started_at",
+                "finished_at"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "args": {},
+                          "attempt_no": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "caller_slot": {
+                            "enum": [
+                              "narrator",
+                              "director",
+                              "verifier",
+                              "memory"
+                            ],
+                            "type": "string"
+                          },
+                          "commit_outcome": {
+                            "enum": [
+                              "pending",
+                              "committed",
+                              "discarded",
+                              "replay_blocked",
+                              "uncertain"
+                            ],
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "duration_ms": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "error_message": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "finished_at": {
+                            "anyOf": [
+                              {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "floor_id": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "lifecycle_state": {
+                            "enum": [
+                              "opened",
+                              "finished"
+                            ],
+                            "type": "string"
+                          },
+                          "page_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "provider_id": {
+                            "type": "string"
+                          },
+                          "provider_type": {
+                            "enum": [
+                              "builtin",
+                              "preset",
+                              "mcp",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "replay_parent_execution_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "result": {},
+                          "run_id": {
+                            "type": "string"
+                          },
+                          "side_effect_level": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "none",
+                                  "sandbox",
+                                  "irreversible"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "started_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "status": {
+                            "enum": [
+                              "running",
+                              "success",
+                              "error",
+                              "denied",
+                              "timeout",
+                              "uncertain",
+                              "blocked"
+                            ],
+                            "type": "string"
+                          },
+                          "tool_name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "run_id",
+                          "floor_id",
+                          "page_id",
+                          "caller_slot",
+                          "provider_id",
+                          "provider_type",
+                          "tool_name",
+                          "args",
+                          "result",
+                          "status",
+                          "lifecycle_state",
+                          "commit_outcome",
+                          "side_effect_level",
+                          "error_message",
+                          "duration_ms",
+                          "started_at",
+                          "finished_at",
+                          "attempt_no",
+                          "replay_parent_execution_id",
+                          "created_at"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "has_more": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sort_by": {
+                          "type": "string"
+                        },
+                        "sort_order": {
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ],
+                          "type": "string"
+                        },
+                        "total": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "limit",
+                        "offset",
+                        "has_more",
+                        "sort_by",
+                        "sort_order"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Query tool execution journal for a floor",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "responses": {
@@ -20458,6 +20889,277 @@
         ]
       }
     },
+    "/sessions/{id}/tools/runtime": {
+      "get": {
+        "operationId": "getSessionRuntimeToolCatalog",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "conflicts": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "provider_ids": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "reason": {
+                                "enum": [
+                                  "name_conflict"
+                                ],
+                                "type": "string"
+                              },
+                              "tool_name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "tool_name",
+                              "provider_ids",
+                              "reason"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "generated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "tools": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowed_slots": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "availability": {
+                                "enum": [
+                                  "available",
+                                  "unavailable",
+                                  "conflict"
+                                ],
+                                "type": "string"
+                              },
+                              "availability_reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "provider_id": {
+                                "type": "string"
+                              },
+                              "provider_type": {
+                                "enum": [
+                                  "builtin",
+                                  "preset",
+                                  "mcp"
+                                ],
+                                "type": "string"
+                              },
+                              "replay_safety": {
+                                "enum": [
+                                  "safe",
+                                  "confirm_on_replay",
+                                  "never_auto_replay",
+                                  "uncertain"
+                                ],
+                                "type": "string"
+                              },
+                              "side_effect_level": {
+                                "enum": [
+                                  "none",
+                                  "sandbox",
+                                  "irreversible"
+                                ],
+                                "type": "string"
+                              },
+                              "source": {
+                                "enum": [
+                                  "builtin",
+                                  "resource",
+                                  "custom",
+                                  "preset",
+                                  "character",
+                                  "mcp"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "provider_id",
+                              "provider_type",
+                              "source",
+                              "side_effect_level",
+                              "allowed_slots",
+                              "availability",
+                              "replay_safety"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "session_id",
+                        "generated_at",
+                        "tools",
+                        "conflicts"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get session runtime tool catalog",
+        "tags": [
+          "sessions",
+          "tools"
+        ]
+      }
+    },
     "/sessions/batch/delete": {
       "post": {
         "operationId": "batchDeleteSessions",
@@ -20693,6 +21395,428 @@
         "summary": "Batch update session status",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/tool-executions": {
+      "get": {
+        "operationId": "queryToolExecutionRecords",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "floor_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "caller_slot",
+            "required": false,
+            "schema": {
+              "enum": [
+                "narrator",
+                "director",
+                "verifier",
+                "memory"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tool_name",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "running",
+                "success",
+                "error",
+                "denied",
+                "timeout",
+                "uncertain",
+                "blocked"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lifecycle_state",
+            "required": false,
+            "schema": {
+              "enum": [
+                "opened",
+                "finished"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "commit_outcome",
+            "required": false,
+            "schema": {
+              "enum": [
+                "pending",
+                "committed",
+                "discarded",
+                "replay_blocked",
+                "uncertain"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider_type",
+            "required": false,
+            "schema": {
+              "enum": [
+                "builtin",
+                "preset",
+                "mcp",
+                "unknown"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "enum": [
+                "created_at",
+                "started_at",
+                "finished_at"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "args": {},
+                          "attempt_no": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "caller_slot": {
+                            "enum": [
+                              "narrator",
+                              "director",
+                              "verifier",
+                              "memory"
+                            ],
+                            "type": "string"
+                          },
+                          "commit_outcome": {
+                            "enum": [
+                              "pending",
+                              "committed",
+                              "discarded",
+                              "replay_blocked",
+                              "uncertain"
+                            ],
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "duration_ms": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "error_message": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "finished_at": {
+                            "anyOf": [
+                              {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "floor_id": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "lifecycle_state": {
+                            "enum": [
+                              "opened",
+                              "finished"
+                            ],
+                            "type": "string"
+                          },
+                          "page_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "provider_id": {
+                            "type": "string"
+                          },
+                          "provider_type": {
+                            "enum": [
+                              "builtin",
+                              "preset",
+                              "mcp",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "replay_parent_execution_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "result": {},
+                          "run_id": {
+                            "type": "string"
+                          },
+                          "side_effect_level": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "none",
+                                  "sandbox",
+                                  "irreversible"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "started_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "status": {
+                            "enum": [
+                              "running",
+                              "success",
+                              "error",
+                              "denied",
+                              "timeout",
+                              "uncertain",
+                              "blocked"
+                            ],
+                            "type": "string"
+                          },
+                          "tool_name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "run_id",
+                          "floor_id",
+                          "page_id",
+                          "caller_slot",
+                          "provider_id",
+                          "provider_type",
+                          "tool_name",
+                          "args",
+                          "result",
+                          "status",
+                          "lifecycle_state",
+                          "commit_outcome",
+                          "side_effect_level",
+                          "error_message",
+                          "duration_ms",
+                          "started_at",
+                          "finished_at",
+                          "attempt_no",
+                          "replay_parent_execution_id",
+                          "created_at"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "has_more": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sort_by": {
+                          "type": "string"
+                        },
+                        "sort_order": {
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ],
+                          "type": "string"
+                        },
+                        "total": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "limit",
+                        "offset",
+                        "has_more",
+                        "sort_by",
+                        "sort_order"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Query tool execution journal",
+        "tags": [
+          "tools"
         ]
       }
     },
@@ -23788,6 +24912,72 @@
               }
             },
             "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Upsert variable",
@@ -23850,6 +25040,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -24288,9 +25511,628 @@
               }
             },
             "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Batch upsert variables",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
+    "/variables/resolve": {
+      "get": {
+        "operationId": "resolveVariablesContext",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "floor_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_layers",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "context": {
+                      "account_id": "default-admin",
+                      "floor_id": "floor-a",
+                      "global_scope_id": "global",
+                      "page_id": "page-a",
+                      "session_id": "session-a"
+                    },
+                    "layers": {
+                      "chat": {
+                        "items": [
+                          {
+                            "id": "var_mood",
+                            "key": "mood",
+                            "scope": "chat",
+                            "scope_id": "session-a",
+                            "updated_at": 1735689720000,
+                            "value": {
+                              "score": 20
+                            }
+                          }
+                        ],
+                        "scope": "chat",
+                        "scope_id": "session-a"
+                      },
+                      "global": {
+                        "items": [
+                          {
+                            "id": "var_global_theme",
+                            "key": "theme",
+                            "scope": "global",
+                            "scope_id": "global",
+                            "updated_at": 1735689700000,
+                            "value": "midnight"
+                          }
+                        ],
+                        "scope": "global",
+                        "scope_id": "global"
+                      }
+                    },
+                    "resolved": [
+                      {
+                        "key": "mood",
+                        "source_scope": "floor",
+                        "source_scope_id": "floor-a",
+                        "updated_at": 1735689720000,
+                        "value": "tense"
+                      }
+                    ]
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "context": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "account_id": {
+                              "type": "string"
+                            },
+                            "floor_id": {
+                              "type": "string"
+                            },
+                            "global_scope_id": {
+                              "type": "string"
+                            },
+                            "page_id": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "account_id",
+                            "session_id",
+                            "global_scope_id"
+                          ],
+                          "type": "object"
+                        },
+                        "layers": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "chat": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "example": {
+                                      "id": "var_mood",
+                                      "key": "mood",
+                                      "scope": "chat",
+                                      "scope_id": "session-a",
+                                      "updated_at": 1735689720000,
+                                      "value": {
+                                        "score": 20
+                                      }
+                                    },
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "type": "string"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "global",
+                                          "chat",
+                                          "floor",
+                                          "page"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "scope_id": {
+                                        "type": "string"
+                                      },
+                                      "updated_at": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "value": {}
+                                    },
+                                    "required": [
+                                      "id",
+                                      "scope",
+                                      "scope_id",
+                                      "key",
+                                      "value",
+                                      "updated_at"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "scope": {
+                                  "enum": [
+                                    "global",
+                                    "chat",
+                                    "floor",
+                                    "page"
+                                  ],
+                                  "type": "string"
+                                },
+                                "scope_id": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "scope_id",
+                                "items"
+                              ],
+                              "type": "object"
+                            },
+                            "floor": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "example": {
+                                      "id": "var_mood",
+                                      "key": "mood",
+                                      "scope": "chat",
+                                      "scope_id": "session-a",
+                                      "updated_at": 1735689720000,
+                                      "value": {
+                                        "score": 20
+                                      }
+                                    },
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "type": "string"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "global",
+                                          "chat",
+                                          "floor",
+                                          "page"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "scope_id": {
+                                        "type": "string"
+                                      },
+                                      "updated_at": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "value": {}
+                                    },
+                                    "required": [
+                                      "id",
+                                      "scope",
+                                      "scope_id",
+                                      "key",
+                                      "value",
+                                      "updated_at"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "scope": {
+                                  "enum": [
+                                    "global",
+                                    "chat",
+                                    "floor",
+                                    "page"
+                                  ],
+                                  "type": "string"
+                                },
+                                "scope_id": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "scope_id",
+                                "items"
+                              ],
+                              "type": "object"
+                            },
+                            "global": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "example": {
+                                      "id": "var_mood",
+                                      "key": "mood",
+                                      "scope": "chat",
+                                      "scope_id": "session-a",
+                                      "updated_at": 1735689720000,
+                                      "value": {
+                                        "score": 20
+                                      }
+                                    },
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "type": "string"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "global",
+                                          "chat",
+                                          "floor",
+                                          "page"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "scope_id": {
+                                        "type": "string"
+                                      },
+                                      "updated_at": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "value": {}
+                                    },
+                                    "required": [
+                                      "id",
+                                      "scope",
+                                      "scope_id",
+                                      "key",
+                                      "value",
+                                      "updated_at"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "scope": {
+                                  "enum": [
+                                    "global",
+                                    "chat",
+                                    "floor",
+                                    "page"
+                                  ],
+                                  "type": "string"
+                                },
+                                "scope_id": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "scope_id",
+                                "items"
+                              ],
+                              "type": "object"
+                            },
+                            "page": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "example": {
+                                      "id": "var_mood",
+                                      "key": "mood",
+                                      "scope": "chat",
+                                      "scope_id": "session-a",
+                                      "updated_at": 1735689720000,
+                                      "value": {
+                                        "score": 20
+                                      }
+                                    },
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "type": "string"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "global",
+                                          "chat",
+                                          "floor",
+                                          "page"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "scope_id": {
+                                        "type": "string"
+                                      },
+                                      "updated_at": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "value": {}
+                                    },
+                                    "required": [
+                                      "id",
+                                      "scope",
+                                      "scope_id",
+                                      "key",
+                                      "value",
+                                      "updated_at"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "scope": {
+                                  "enum": [
+                                    "global",
+                                    "chat",
+                                    "floor",
+                                    "page"
+                                  ],
+                                  "type": "string"
+                                },
+                                "scope_id": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "scope_id",
+                                "items"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "resolved": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "source_scope": {
+                                "enum": [
+                                  "global",
+                                  "chat",
+                                  "floor",
+                                  "page"
+                                ],
+                                "type": "string"
+                              },
+                              "source_scope_id": {
+                                "type": "string"
+                              },
+                              "updated_at": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "value": {}
+                            },
+                            "required": [
+                              "key",
+                              "value",
+                              "source_scope",
+                              "source_scope_id",
+                              "updated_at"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "context",
+                        "resolved"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Resolve visible variable snapshot",
         "tags": [
           "variables"
         ]

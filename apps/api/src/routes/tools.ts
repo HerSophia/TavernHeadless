@@ -1,7 +1,7 @@
 /**
  * Tool Management API Routes
  *
- * 11 endpoints:
+ * 13 endpoints:
  *   GET    /tools/builtin                       — List built-in tools
  *   GET    /tools/definitions                    — List custom tool definitions
  *   GET    /tools/definitions/:id                — Get single definition
@@ -9,6 +9,8 @@
  *   PATCH  /tools/definitions/:id                — Update definition
  *   DELETE /tools/definitions/:id                — Delete definition
  *   PATCH  /tools/definitions/:id/toggle         — Toggle enable/disable
+ *   GET    /tool-executions                      — Query primary tool execution journal
+ *   GET    /floors/:id/tool-executions           — Query tool execution journal for a floor
  *   GET    /tools/call-records                   — Query tool call records
  *   GET    /sessions/:id/tool-permissions        — Get session tool permissions
  *   PUT    /sessions/:id/tool-permissions        — Replace session tool permissions
@@ -36,6 +38,10 @@ const toolSourceSchema = z.enum(["preset", "character", "custom"]);
 const handlerTypeSchema = z.enum(["script", "prompt", "delegate"]);
 const instanceSlotSchema = z.enum(["narrator", "director", "verifier", "memory"]);
 const callRecordStatusSchema = z.enum(["success", "error", "denied"]);
+const toolExecutionStatusSchema = z.enum(["running", "success", "error", "denied", "timeout", "uncertain", "blocked"]);
+const toolExecutionLifecycleStateSchema = z.enum(["opened", "finished"]);
+const toolExecutionCommitOutcomeSchema = z.enum(["pending", "committed", "discarded", "replay_blocked", "uncertain"]);
+const toolExecutionProviderTypeSchema = z.enum(["builtin", "preset", "mcp", "unknown"]);
 
 const definitionParamsSchema = z.object({ id: z.string().min(1) });
 
@@ -88,6 +94,27 @@ const callRecordsQuerySchema = listQuerySchemaBase.extend({
   (v) => v.page_id !== undefined || v.floor_id !== undefined,
   "Either page_id or floor_id must be provided",
 );
+
+const toolExecutionsQuerySchemaBase = listQuerySchemaBase.extend({
+  run_id: z.string().min(1).optional(),
+  caller_slot: instanceSlotSchema.optional(),
+  tool_name: z.string().min(1).optional(),
+  status: toolExecutionStatusSchema.optional(),
+  lifecycle_state: toolExecutionLifecycleStateSchema.optional(),
+  commit_outcome: toolExecutionCommitOutcomeSchema.optional(),
+  provider_type: toolExecutionProviderTypeSchema.optional(),
+  sort_by: z.enum(["created_at", "started_at", "finished_at"]).default("started_at"),
+});
+
+const toolExecutionsQuerySchema = toolExecutionsQuerySchemaBase.extend({
+  session_id: z.string().min(1).optional(),
+  floor_id: z.string().min(1).optional(),
+}).refine(
+  (value) => value.session_id !== undefined || value.floor_id !== undefined || value.run_id !== undefined,
+  "Either session_id, floor_id, or run_id must be provided",
+);
+
+const floorToolExecutionsQuerySchema = toolExecutionsQuerySchemaBase;
 
 const sessionIdParamsSchema = z.object({ id: z.string().min(1) });
 
@@ -215,6 +242,87 @@ const callRecordJsonSchema = {
     status: { type: "string", enum: ["success", "error", "denied"] },
     duration_ms: { type: "integer", minimum: 0 },
     created_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const toolExecutionJsonSchema = {
+  type: "object",
+  required: [
+    "id",
+    "run_id",
+    "floor_id",
+    "page_id",
+    "caller_slot",
+    "provider_id",
+    "provider_type",
+    "tool_name",
+    "args",
+    "result",
+    "status",
+    "lifecycle_state",
+    "commit_outcome",
+    "side_effect_level",
+    "error_message",
+    "duration_ms",
+    "started_at",
+    "finished_at",
+    "attempt_no",
+    "replay_parent_execution_id",
+    "created_at",
+  ],
+  properties: {
+    id: { type: "string" },
+    run_id: { type: "string" },
+    floor_id: { type: "string" },
+    page_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    caller_slot: { type: "string", enum: ["narrator", "director", "verifier", "memory"] },
+    provider_id: { type: "string" },
+    provider_type: { type: "string", enum: ["builtin", "preset", "mcp", "unknown"] },
+    tool_name: { type: "string" },
+    args: {},
+    result: {},
+    status: { type: "string", enum: ["running", "success", "error", "denied", "timeout", "uncertain", "blocked"] },
+    lifecycle_state: { type: "string", enum: ["opened", "finished"] },
+    commit_outcome: { type: "string", enum: ["pending", "committed", "discarded", "replay_blocked", "uncertain"] },
+    side_effect_level: { anyOf: [{ type: "string", enum: ["none", "sandbox", "irreversible"] }, { type: "null" }] },
+    error_message: { anyOf: [{ type: "string" }, { type: "null" }] },
+    duration_ms: { type: "integer", minimum: 0 },
+    started_at: { type: "integer", minimum: 0 },
+    finished_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    attempt_no: { type: "integer", minimum: 1 },
+    replay_parent_execution_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    created_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const toolExecutionsQueryJsonSchema = {
+  type: "object",
+  properties: {
+    session_id: { type: "string", minLength: 1 },
+    floor_id: { type: "string", minLength: 1 },
+    run_id: { type: "string", minLength: 1 },
+    caller_slot: { type: "string", enum: ["narrator", "director", "verifier", "memory"] },
+    tool_name: { type: "string", minLength: 1 },
+    status: { type: "string", enum: ["running", "success", "error", "denied", "timeout", "uncertain", "blocked"] },
+    lifecycle_state: { type: "string", enum: ["opened", "finished"] },
+    commit_outcome: { type: "string", enum: ["pending", "committed", "discarded", "replay_blocked", "uncertain"] },
+    provider_type: { type: "string", enum: ["builtin", "preset", "mcp", "unknown"] },
+    limit: { type: "integer", minimum: 1, maximum: 100 },
+    offset: { type: "integer", minimum: 0 },
+    sort_order: { type: "string", enum: ["asc", "desc"] },
+    sort_by: { type: "string", enum: ["created_at", "started_at", "finished_at"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const toolExecutionListResponseJsonSchema = {
+  type: "object",
+  required: ["data", "meta"],
+  properties: {
+    data: { type: "array", items: toolExecutionJsonSchema },
+    meta: listMetaJsonSchema,
   },
   additionalProperties: false,
 } as const;
@@ -525,6 +633,103 @@ export async function registerToolRoutes(
     return reply.send({ data: def });
   });
 
+  // ── GET /tool-executions ────────────────────────────
+
+  app.get("/tool-executions", {
+    schema: {
+      tags: ["tools"],
+      summary: "Query tool execution journal",
+      operationId: "queryToolExecutionRecords",
+      querystring: toolExecutionsQueryJsonSchema,
+      response: {
+        200: toolExecutionListResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedQuery = parseWithSchema(toolExecutionsQuerySchema, request.query, reply);
+    if (!parsedQuery.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const { records, total } = await toolService.queryExecutionRecords({
+      accountId: auth.accountId,
+      sessionId: parsedQuery.data.session_id,
+      floorId: parsedQuery.data.floor_id,
+      runId: parsedQuery.data.run_id,
+      callerSlot: parsedQuery.data.caller_slot,
+      toolName: parsedQuery.data.tool_name,
+      status: parsedQuery.data.status,
+      lifecycleState: parsedQuery.data.lifecycle_state,
+      commitOutcome: parsedQuery.data.commit_outcome,
+      providerType: parsedQuery.data.provider_type,
+      limit: parsedQuery.data.limit,
+      offset: parsedQuery.data.offset,
+      sortBy: parsedQuery.data.sort_by,
+      sortOrder: parsedQuery.data.sort_order,
+    });
+
+    return reply.send({
+      data: records,
+      meta: buildListMeta({
+        total,
+        limit: parsedQuery.data.limit,
+        offset: parsedQuery.data.offset,
+        sortBy: parsedQuery.data.sort_by,
+        sortOrder: parsedQuery.data.sort_order,
+      }),
+    });
+  });
+
+  // ── GET /floors/:id/tool-executions ─────────────────
+
+  app.get("/floors/:id/tool-executions", {
+    schema: {
+      tags: ["tools"],
+      summary: "Query tool execution journal for a floor",
+      operationId: "queryFloorToolExecutionRecords",
+      params: idParamsJsonSchema,
+      querystring: toolExecutionsQueryJsonSchema,
+      response: {
+        200: toolExecutionListResponseJsonSchema,
+        400: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const parsedQuery = parseWithSchema(floorToolExecutionsQuerySchema, request.query, reply);
+    if (!parsedQuery.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    const { records, total } = await toolService.queryExecutionRecords({
+      accountId: auth.accountId,
+      floorId: parsedParams.data.id,
+      runId: parsedQuery.data.run_id,
+      callerSlot: parsedQuery.data.caller_slot,
+      toolName: parsedQuery.data.tool_name,
+      status: parsedQuery.data.status,
+      lifecycleState: parsedQuery.data.lifecycle_state,
+      commitOutcome: parsedQuery.data.commit_outcome,
+      providerType: parsedQuery.data.provider_type,
+      limit: parsedQuery.data.limit,
+      offset: parsedQuery.data.offset,
+      sortBy: parsedQuery.data.sort_by,
+      sortOrder: parsedQuery.data.sort_order,
+    });
+
+    return reply.send({
+      data: records,
+      meta: buildListMeta({
+        total,
+        limit: parsedQuery.data.limit,
+        offset: parsedQuery.data.offset,
+        sortBy: parsedQuery.data.sort_by,
+        sortOrder: parsedQuery.data.sort_order,
+      }),
+    });
+  });
+
   // ── GET /tools/call-records ─────────────────────────
 
   app.get("/tools/call-records", {
@@ -549,6 +754,7 @@ export async function registerToolRoutes(
       status: parsedQuery.data.status as any,
       limit: parsedQuery.data.limit,
       offset: parsedQuery.data.offset,
+      sortBy: parsedQuery.data.sort_by,
       sortOrder: parsedQuery.data.sort_order,
     });
 

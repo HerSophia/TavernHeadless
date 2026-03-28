@@ -10,10 +10,12 @@ import WorkspaceOverlayLayer from "./components/workspace/WorkspaceOverlayLayer.
 import WorkspaceTopBar from "./components/workspace/WorkspaceTopBar.vue";
 import WorkspaceViewportFrame from "./components/workspace/WorkspaceViewportFrame.vue";
 import { useWorkspaceLlmManagerDialog } from "./composables/workspace/llm";
+import { useWorkspaceMcpManagerDialog } from "./composables/workspace/mcp";
 import { useWorkspaceAssetBrowserDialog, useWorkspaceAssetContextMenu, useWorkspaceAssetImportDialog, useWorkspaceAssetManagerDialogs, useWorkspaceAssetMenuActions, useWorkspaceRuntimeActions } from "./composables/workspace/assets";
 import { useWorkspaceMessageDialog } from "./composables/workspace/messages";
 import { useWorkspacePresetActions, useWorkspacePresetSelection } from "./composables/workspace/presets";
 import { useWorkspaceSessionActionDispatch, useWorkspaceSessionActions, useWorkspaceSessionContextMenuState } from "./composables/workspace/sessions";
+import { useWorkspaceToolManagerDialog } from "./composables/workspace/tools";
 import { useWorkspaceDisplayHelpers, useWorkspaceEventRouting, useWorkspaceLifecycle, useWorkspacePaneLayout, useWorkspaceShellState, useWorkspaceViewLifecycle } from "./composables/workspace/shell";
 import {
   useWorkspaceStore,
@@ -62,7 +64,7 @@ const {
 } = storeToRefs(workspace);
 
 const workspaceUi = useWorkspaceUiStore();
-const { events, toasts } = storeToRefs(workspaceUi);
+const { events, respondStreamState, toasts } = storeToRefs(workspaceUi);
 
 const messageInput = ref("");
 const {
@@ -168,6 +170,36 @@ const {
 } = useWorkspaceLlmManagerDialog({ activeSessionId: computed(() => activeSession.value?.id ?? null), addEvent, currentAccount, t });
 
 const {
+  beginCreateToolDefinitionDraft,
+  closeToolManagerDialog,
+  deleteToolDefinitionById,
+  openToolManagerDialog,
+  refreshToolManagerDialog,
+  resetToolManagerDialog,
+  saveSessionToolPermissions,
+  saveToolDefinition,
+  selectToolDefinition,
+  toggleToolDefinitionEnabled,
+  toolManagerDialog
+} = useWorkspaceToolManagerDialog({ activeSessionId: computed(() => activeSession.value?.id ?? null), addEvent, currentAccount, t });
+
+const {
+  beginCreateMcpServerDraft,
+  closeMcpManagerDialog,
+  connectSelectedMcpServer,
+  deleteMcpServerById,
+  disconnectSelectedMcpServer,
+  mcpManagerDialog,
+  openMcpManagerDialog,
+  refreshMcpManagerDialog,
+  resetMcpManagerDialog,
+  saveMcpServer,
+  selectMcpServer,
+  testSelectedMcpServerConfig,
+  toggleMcpServerEnabled
+} = useWorkspaceMcpManagerDialog({ addEvent, currentAccount, t });
+
+const {
   assetImportDialog,
   clearAssetImportFailures,
   closeAssetImportDialog,
@@ -218,12 +250,14 @@ const {
   confirmDeleteMessage,
   confirmEditAndRegenerate,
   confirmEditMessage,
+  confirmToolReplay,
   confirmRetryFloor,
   messageDialog,
   messageDialogRoleLabel,
   openDeleteMessageDialog,
   openEditMessageDialog,
-  openRetryFloorDialog
+  openRetryFloorDialog,
+  toolReplayConfirmDialog
 } = useWorkspaceMessageDialog({
   activeTimeline,
   addEvent,
@@ -244,6 +278,7 @@ const {
   closeAssetBrowserDialog,
   closeMessageDialogs,
   closeLlmManagerDialog,
+  resetMcpManagerDialog,
   closeSessionContextMenu,
   currentAccount,
   messageInput,
@@ -252,6 +287,7 @@ const {
   resetCharacterManagerDialog,
   resetAssetBrowserDialog,
   resetPresetManagerDialog,
+  resetToolManagerDialog,
   resetWorldbookManagerDialog,
   workspace,
   workspaceUi
@@ -358,10 +394,12 @@ const {
   closeAssetBrowserDialog,
   closeMessageDialogs,
   closeLlmManagerDialog,
+  resetMcpManagerDialog,
   closeSessionContextMenu,
   createSession,
   resetCharacterManagerDialog,
   resetPresetManagerDialog,
+  resetToolManagerDialog,
   resetWorldbookManagerDialog,
   sendMessage,
   setActiveTab
@@ -410,6 +448,33 @@ function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
   closeAssetBrowserDialog();
   openAssetImportDialog(kind);
 }
+
+function openLlmManagerFromNav(): void {
+  closeNavDrawer();
+  closeSessionContextMenu();
+  closeAssetContextMenu();
+  resetToolManagerDialog();
+  resetMcpManagerDialog();
+  void openLlmManagerDialog();
+}
+
+function openToolManagerFromNav(): void {
+  closeNavDrawer();
+  closeSessionContextMenu();
+  closeAssetContextMenu();
+  closeLlmManagerDialog();
+  closeMcpManagerDialog();
+  void openToolManagerDialog();
+}
+
+function openMcpManagerFromNav(): void {
+  closeNavDrawer();
+  closeSessionContextMenu();
+  closeAssetContextMenu();
+  closeLlmManagerDialog();
+  closeToolManagerDialog();
+  void openMcpManagerDialog();
+}
 </script>
 
 <template>
@@ -456,7 +521,9 @@ function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
         @open-asset-browser="openAssetBrowserFromNav"
         @switch-current-preset="switchCurrentPreset"
         @export-current-preset="void exportCurrentPreset()"
-        @open-llm-manager="void openLlmManagerDialog()"
+        @open-llm-manager="openLlmManagerFromNav"
+        @open-mcp-manager="openMcpManagerFromNav"
+        @open-tool-manager="openToolManagerFromNav"
       />
     </template>
 
@@ -515,6 +582,7 @@ function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
         :current-account="currentAccount"
         :events="events"
         :lang="lang"
+        :respond-stream-state="respondStreamState"
         :runtime-character-name="runtimeCharacterName"
         :runtime-user-name="runtimeUserName"
         :show-inspector-drawer="showInspectorDrawer"
@@ -530,6 +598,7 @@ function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
 
     <template #overlays>
       <WorkspaceOverlayLayer
+        :active-session-id="activeSession?.id ?? null"
         :asset-browser-dialog="assetBrowserDialog"
         :asset-context-menu="assetContextMenu"
         :asset-import-dialog="assetImportDialog"
@@ -537,6 +606,7 @@ function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
         :context-action-disabled="contextActionDisabled"
         :context-menu="contextMenu"
         :format-time="formatTime"
+        :mcp-manager-dialog="mcpManagerDialog"
         :has-active-session="hasActiveSession"
         :llm-manager-dialog="llmManagerDialog"
         :llm-profile-draft-title="profileDraftTitle"
@@ -558,6 +628,8 @@ function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
         :on-confirm-edit-message="confirmEditMessage"
         :on-confirm-preset-manager-action="confirmPresetManagerAction"
         :on-confirm-retry-floor="confirmRetryFloor"
+        :on-confirm-tool-replay="confirmToolReplay"
+        :on-confirm-save-mcp-server="saveMcpServer"
         :on-confirm-worldbook-manager-action="confirmWorldbookManagerAction"
         :on-open-llm-slot-drawer="openSlotDrawer"
         :on-apply-llm-slot-preset-params="applySlotPresetParams"
@@ -572,6 +644,7 @@ function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
         :on-handle-asset-menu-action="handleAssetMenuAction"
         :on-handle-session-action="handleSessionAction"
         :on-apply-asset-from-browser="applyLibraryAsset"
+        :on-confirm-save-tool-definition="saveToolDefinition"
         :on-open-asset-from-browser="openLibraryAsset"
         :on-open-asset-context-menu-from-browser="openAssetContextMenu"
         :on-open-asset-import-dialog-from-browser="openAssetImportDialogFromBrowser"
@@ -580,6 +653,18 @@ function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
         :on-move-preset-manager-entry="movePresetManagerEntry"
         :on-open-preset-manager-entry="openPresetManagerEntry"
         :on-request-character-delete="requestCharacterDelete"
+        :on-connect-mcp-server="connectSelectedMcpServer"
+        :on-create-mcp-server-draft="beginCreateMcpServerDraft"
+        :on-create-tool-definition-draft="beginCreateToolDefinitionDraft"
+        :on-delete-mcp-server="deleteMcpServerById"
+        :on-delete-tool-definition="deleteToolDefinitionById"
+        :on-disconnect-mcp-server="disconnectSelectedMcpServer"
+        :on-refresh-mcp-manager-dialog="refreshMcpManagerDialog"
+        :on-refresh-tool-manager-dialog="refreshToolManagerDialog"
+        :on-save-session-tool-permissions="saveSessionToolPermissions"
+        :on-select-mcp-server="selectMcpServer"
+        :on-select-tool-definition="selectToolDefinition"
+        :on-test-mcp-server="testSelectedMcpServerConfig"
         :on-request-character-restore="requestCharacterRestore"
         :on-edit-llm-profile-draft="beginEditLlmProfileDraft"
         :on-patch-llm-profile-draft="patchLlmProfileDraft"
@@ -593,10 +678,14 @@ function openAssetImportDialogFromBrowser(kind: WorkspaceAsset["kind"]): void {
         :on-set-preset-manager-view="setPresetManagerView"
         :on-toggle-preset-manager-entry-enabled="togglePresetManagerEntryEnabled"
         :on-update-preset-manager-entry="updatePresetManagerEntry"
+        :on-toggle-mcp-server="(payload) => toggleMcpServerEnabled(payload.serverId, payload.enabled)"
+        :on-toggle-tool-definition="(payload) => toggleToolDefinitionEnabled(payload.definitionId, payload.enabled)"
         :preset-manager-dialog="presetManagerDialog"
+        :tool-manager-dialog="toolManagerDialog"
         :show-inspector-drawer="showInspectorDrawer"
         :show-nav-drawer="showNavDrawer"
         :t="t"
+        :tool-replay-confirm-dialog="toolReplayConfirmDialog"
         :toasts="toasts"
         :worldbook-manager-dialog="worldbookManagerDialog"
       />

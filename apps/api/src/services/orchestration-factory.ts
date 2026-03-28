@@ -29,6 +29,7 @@ import {
   type MemoryRepository,
   type VariableRepository,
   type TokenCounter,
+  type ToolExecutionRepository,
 } from "@tavern/core";
 
 // ── 配置类型 ──────────────────────────────────────────
@@ -89,6 +90,7 @@ export function createOrchestrationContext(
   floorRepo: FloorRepository,
   memoryRepo: MemoryRepository,
   variableRepo: VariableRepository,
+  toolExecutionRepo?: ToolExecutionRepository,
 ): OrchestrationContext {
   // ── 1. 基础设施 ──
   const eventBus = createEventBus();
@@ -131,6 +133,7 @@ export function createOrchestrationContext(
     director,
     verifier,
     eventBus,
+    toolExecutionRepository: toolExecutionRepo,
   });
 
   return {

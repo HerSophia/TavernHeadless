@@ -6,7 +6,7 @@
 
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import type { AppDb } from "../db/client.js";
-import { toolCallRecords, toolDefinitions } from "../db/schema.js";
+import { messagePages, toolCallRecords, toolDefinitions } from "../db/schema.js";
 import type { ToolCallRecord, ToolCallStatus } from "@tavern/core";
 import type { InstanceSlot } from "@tavern/core";
 
@@ -33,6 +33,7 @@ export interface ToolCallRecordQuery {
   limit?: number;
   offset?: number;
   sortOrder?: 'asc' | 'desc';
+  sortBy?: 'seq' | 'created_at';
 }
 
 // ── ToolDefinition 持久化 ────────────────────────────
@@ -103,6 +104,7 @@ export class DrizzleToolRepository {
   }> {
     const conditions = [];
 
+
     if (query.pageId) {
       conditions.push(eq(toolCallRecords.pageId, query.pageId));
     }
@@ -112,31 +114,37 @@ export class DrizzleToolRepository {
     if (query.status) {
       conditions.push(eq(toolCallRecords.status, query.status));
     }
+    if (query.floorId) {
+      conditions.push(eq(messagePages.floorId, query.floorId));
+    }
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
     const limit = query.limit ?? 50;
     const offset = query.offset ?? 0;
-    const order = query.sortOrder === 'desc'
-      ? desc(toolCallRecords.seq)
-      : asc(toolCallRecords.seq);
+    const sortColumn = query.sortBy === 'created_at'
+      ? toolCallRecords.createdAt
+      : toolCallRecords.seq;
+    const order = query.sortOrder === 'desc' ? desc(sortColumn) : asc(sortColumn);
 
     const rows = await this.db
-      .select()
+      .select({ row: toolCallRecords })
       .from(toolCallRecords)
+      .innerJoin(messagePages, eq(toolCallRecords.pageId, messagePages.id))
       .where(where)
-      .orderBy(order)
+      .orderBy(order, asc(toolCallRecords.seq))
       .limit(limit)
       .offset(offset);
 
     const [countRow] = await this.db
       .select({ count: sql<number>`count(*)` })
       .from(toolCallRecords)
+      .innerJoin(messagePages, eq(toolCallRecords.pageId, messagePages.id))
       .where(where);
 
     const total = countRow?.count ?? 0;
 
     return {
-      records: rows.map((row) => ({
+      records: rows.map(({ row }) => ({
         id: row.id,
         pageId: row.pageId,
         seq: row.seq,

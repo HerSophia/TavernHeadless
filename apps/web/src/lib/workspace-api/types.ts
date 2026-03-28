@@ -6,6 +6,8 @@ import type {
   PresetEditorOrderContext,
   RegenerateResult,
   RespondGenerationParams,
+  TavernRespondStreamEvent,
+  TavernRespondToolPayload,
   RespondResult,
   WorldbookDetail,
 } from "@tavern/sdk";
@@ -116,6 +118,7 @@ export type WorkspaceRespondResult = Pick<
   | "inputTokens"
   | "outputTokens"
   | "summaries"
+  | "totalUsage"
   | "totalTokens"
 >;
 
@@ -131,6 +134,7 @@ export type WorkspaceRegenerateResult = Pick<
   | "summaries"
   | "sourceFloorId"
   | "sourceMessageId"
+  | "totalUsage"
   | "totalTokens"
 >;
 
@@ -142,13 +146,34 @@ export type StreamStartPayload = {
   floor_no?: number;
 };
 
+export type WorkspaceRespondToolPayload = TavernRespondToolPayload;
+
+export type WorkspaceRespondStreamEvent = TavernRespondStreamEvent;
+
+export type WorkspaceToolReplaySafety = "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+
+export type WorkspaceReplayBlockingExecution = {
+  errorMessage?: string;
+  executionId: string;
+  lifecycleState: string | null;
+  providerId: string;
+  providerType: string | null;
+  reason: string;
+  replaySafety: WorkspaceToolReplaySafety;
+  sideEffectLevel: string | null;
+  status: string;
+  toolName: string;
+};
+
 export type StreamRespondOptions = {
   accountId?: string;
   generationParams?: WorkspaceGenerationParams;
   onChunk?: (chunk: string) => void;
   onDone?: (result: WorkspaceRespondResult) => void;
+  onEvent?: (event: WorkspaceRespondStreamEvent) => void;
   onError?: (message: string) => void;
   onStart?: (payload: StreamStartPayload) => void;
   onSummary?: (summaries: string[]) => void;
+  onTool?: (payload: WorkspaceRespondToolPayload) => void;
   signal?: AbortSignal;
 };

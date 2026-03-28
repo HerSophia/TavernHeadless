@@ -3,6 +3,11 @@ import type { FloorEntity } from '../types.js';
 import type { ModelConfig, TokenUsage } from '../llm/types.js';
 import type { MemoryItem } from '../memory/types.js';
 import type { InstanceSlot } from '../llm/types.js';
+import type {
+  ToolExecutionProviderType,
+  ToolExecutionStatus,
+  ToolSideEffectLevel,
+} from '../tools/types.js';
 
 /** 楼层状态变更事件 */
 export interface FloorStateChangedEvent {
@@ -174,6 +179,10 @@ export interface ToolCallStartedEvent {
   floorId: string;
   pageId?: string;
   callerSlot: InstanceSlot;
+  executionId: string;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  sideEffectLevel?: ToolSideEffectLevel;
   toolName: string;
   args: Record<string, unknown>;
 }
@@ -183,8 +192,13 @@ export interface ToolCallCompletedEvent {
   floorId: string;
   pageId?: string;
   callerSlot: InstanceSlot;
+  executionId: string;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  sideEffectLevel?: ToolSideEffectLevel;
   toolName: string;
   result: unknown;
+  status: Extract<ToolExecutionStatus, 'success'>;
   durationMs: number;
 }
 
@@ -193,8 +207,14 @@ export interface ToolCallFailedEvent {
   floorId: string;
   pageId?: string;
   callerSlot: InstanceSlot;
+  executionId: string;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  sideEffectLevel?: ToolSideEffectLevel;
   toolName: string;
+  status: Extract<ToolExecutionStatus, 'error' | 'timeout' | 'uncertain' | 'blocked'>;
   error: Error;
+  durationMs: number;
 }
 
 /** 工具调用被拒绝事件 */
@@ -202,7 +222,12 @@ export interface ToolCallDeniedEvent {
   floorId: string;
   pageId?: string;
   callerSlot: InstanceSlot;
+  executionId: string;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  sideEffectLevel?: ToolSideEffectLevel;
   toolName: string;
+  status: Extract<ToolExecutionStatus, 'denied'>;
   reason: string;
 }
 

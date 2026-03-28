@@ -14,6 +14,7 @@ import { createSessionActions } from "./workspace/actions/session";
 import { createWorldbookActions } from "./workspace/actions/worldbook";
 import { DEFAULT_ASSETS, DEFAULT_SESSIONS } from "./workspace/defaults";
 import { mergeLibraryAsset, toTimelineMessage } from "./workspace/mappers";
+import { useWorkspaceUiStore } from "./workspace-ui";
 import type {
   LibraryHydrationResult,
   MessageBucketLocation,
@@ -27,6 +28,7 @@ export * from "./workspace/types";
 
 export const useWorkspaceStore = defineStore("workspace", () => {
   const apiStatus = ref("Checking /health ...");
+  const workspaceUi = useWorkspaceUiStore();
 
   const accounts = ref(["studio-alpha", "studio-beta"]);
   const users = ref(["Detective Rowan", "Archivist Lin", "Field Agent Mira"]);
@@ -224,7 +226,9 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     findActiveMessage,
     hydrateActiveTimeline,
     hydrateSessionTimeline,
-    isStreaming
+    isStreaming,
+    recordRespondStreamEvent: workspaceUi.recordRespondStreamEvent,
+    resetRespondStreamState: workspaceUi.resetRespondStreamState
   });
 
   function touchLibraryAsset(asset: WorkspaceAsset): void {

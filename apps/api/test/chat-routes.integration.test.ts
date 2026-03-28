@@ -155,6 +155,13 @@ describe("chat routes", () => {
       errorCode: "profile_disabled",
     },
     {
+      name: "tool_replay_blocked",
+      code: "tool_replay_blocked",
+      message: "Verifier retry blocked because replaying tool executions would be unsafe: create_character (never_auto_replay)",
+      statusCode: 409,
+      errorCode: "tool_replay_blocked",
+    },
+    {
       name: "secret_unavailable",
       code: "secret_unavailable",
       message: "Secret is unavailable",
@@ -167,6 +174,13 @@ describe("chat routes", () => {
       message: "Generation queue timed out",
       statusCode: 503,
       errorCode: "generation_queue_timeout",
+    },
+    {
+      name: "generation_cancelled",
+      code: "generation_cancelled",
+      message: "Generation was cancelled before execution started",
+      statusCode: 499,
+      errorCode: "generation_cancelled",
     },
     {
       name: "commit_busy",
@@ -265,6 +279,10 @@ describe("chat routes", () => {
       message: "Generation queue timed out",
     },
     {
+      code: "generation_cancelled",
+      message: "Generation was cancelled before execution started",
+    },
+    {
       code: "commit_busy",
       message: "Turn commit failed: database is locked",
     },
@@ -292,6 +310,52 @@ describe("chat routes", () => {
     expect(response.body).toContain("event: error");
     expect(response.body).toContain(`"code":"${code}"`);
     expect(response.body).toContain(`"message":"${message}"`);
+  });
+
+  it("emits tool events in SSE payloads on /sessions/:id/respond/stream", async () => {
+    const chatService = createChatService({
+      respond: vi.fn(async (_sessionId, _request, runtimeOptions) => {
+        runtimeOptions.onStart?.({ branchId: "main", floorId: "floor-1", floorNo: 1 });
+        runtimeOptions.onTool?.({
+          executionId: "exec-1",
+          toolName: "set_variable",
+          providerId: "builtin",
+          providerType: "builtin",
+          sideEffectLevel: "sandbox",
+          phase: "start",
+          replaySafety: "uncertain",
+        });
+        runtimeOptions.onTool?.({
+          executionId: "exec-1",
+          toolName: "set_variable",
+          providerId: "builtin",
+          providerType: "builtin",
+          sideEffectLevel: "sandbox",
+          phase: "success",
+          durationMs: 7,
+          replaySafety: "safe",
+        });
+
+        return {
+          floorId: "floor-1",
+          floorNo: 1,
+          branchId: "main",
+          generatedText: "hello",
+          summaries: [],
+          totalUsage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
+          finalState: "committed",
+        };
+      }),
+    });
+
+    await mountChatRoutes(chatService, { enableSseChat: true });
+
+    const response = await app.inject({ method: "POST", url: "/sessions/s1/respond/stream", payload: { message: "hello" } });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain("event: tool");
+    expect(response.body).toContain('"execution_id":"exec-1"');
+    expect(response.body).toContain('"phase":"success"');
+    expect(response.body).toContain('"replay_safety":"safe"');
   });
 
   it("returns 500 when /sessions/:id/respond raises an unexpected error", async () => {
@@ -455,6 +519,63 @@ describe("chat routes", () => {
         },
       },
       "default-admin"
+    );
+  });
+
+  it("maps confirmed_execution_ids and preserves replay confirmation details on /floors/:id/retry", async () => {
+    const chatService = createChatService({
+      retryFloor: vi.fn(async () => {
+        throw new ChatServiceError(
+          "tool_replay_confirmation_required",
+          "Retry requires explicit confirmation for 1 prior tool execution(s).",
+          undefined,
+          {
+            blocking_executions: [
+              {
+                execution_id: "exec-1",
+                tool_name: "create_character",
+                replay_safety: "never_auto_replay",
+              },
+            ],
+          },
+        );
+      }),
+    });
+
+    await mountChatRoutes(chatService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/floors/f1/retry",
+      payload: {
+        confirmed_execution_ids: ["exec-1", "exec-2"],
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: {
+        code: "tool_replay_confirmation_required",
+        message: "Retry requires explicit confirmation for 1 prior tool execution(s).",
+        details: {
+          blocking_executions: [
+            {
+              execution_id: "exec-1",
+              tool_name: "create_character",
+              replay_safety: "never_auto_replay",
+            },
+          ],
+        },
+      },
+    });
+    expect(chatService.retryFloor).toHaveBeenCalledWith(
+      "f1",
+      {
+        config: undefined,
+        generationParams: undefined,
+        confirmedExecutionIds: ["exec-1", "exec-2"],
+      },
+      "default-admin",
     );
   });
 

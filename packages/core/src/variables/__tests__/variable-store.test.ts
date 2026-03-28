@@ -5,6 +5,7 @@ import type { VariableContext } from '../../types.js';
 import { createEventBus, type CoreEventBus } from '../../events/index.js';
 import { VariableResolver } from '../variable-resolver.js';
 import { VariableStore } from '../variable-store.js';
+import { ToolMutationBuffer } from '../../tools/tool-mutation-buffer.js';
 import { InvalidScopePromotionError, MissingScopeIdError, VariableNotFoundError } from '../../errors.js';
 
 interface StoredVariableRow extends VariableEntry {
@@ -238,6 +239,37 @@ describe('VariableStore', () => {
       await expect(store.set('x', 1, ctx, 'page')).rejects.toThrow(
         MissingScopeIdError
       );
+    });
+
+    it('buffers tool-originated writes and keeps persisted storage unchanged until commit flush', async () => {
+      const bufferedContext: VariableContext = {
+        ...fullContext,
+        toolMutationBuffer: new ToolMutationBuffer('run-1'),
+        toolMutationAttemptNo: 1,
+      };
+
+      const entry = await store.set('mood', 'happy', bufferedContext);
+
+      expect(entry.scope).toBe('page');
+      expect(await store.get('mood', bufferedContext)).toBe('happy');
+      expect(await store.get('mood', fullContext)).toBeUndefined();
+      await expect(repo.findByKey('page', 'page-1', 'mood')).resolves.toBeNull();
+    });
+
+    it('prefers buffered tool writes over persisted variables during the active attempt', async () => {
+      repo.seed('page', 'page-1', 'mood', 'sad');
+
+      const bufferedContext: VariableContext = {
+        ...fullContext,
+        toolMutationBuffer: new ToolMutationBuffer('run-1'),
+        toolMutationAttemptNo: 1,
+      };
+
+      await store.set('mood', 'happy', bufferedContext);
+
+      expect(await store.get('mood', bufferedContext)).toBe('happy');
+      expect(await store.get('mood', fullContext)).toBe('sad');
+      await expect(repo.findByKey('page', 'page-1', 'mood')).resolves.toMatchObject({ value: 'sad' });
     });
   });
 

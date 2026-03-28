@@ -9,7 +9,12 @@ import { sendError, zodIssues } from "./lib/http";
 import { registerCrudRoutes } from "./routes";
 import { registerChatRoutes } from "./routes/chat";
 import { registerWsPlugin, type WsBridge } from "./ws";
-import { DrizzleFloorRepository, DrizzleMemoryRepository, DrizzleVariableRepository } from "./adapters";
+import {
+  DrizzleFloorRepository,
+  DrizzleMemoryRepository,
+  DrizzleToolExecutionRepository,
+  DrizzleVariableRepository,
+} from "./adapters";
 import {
   ChatService,
   ChatServiceError,
@@ -38,8 +43,9 @@ import { ensureDefaultAdminAccount } from "./accounts/service";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "./accounts/constants";
 import { registerCors, type CorsConfig } from "./plugins/cors";
 import { McpService } from "./services/mcp-service";
-import { McpConnectionManager, McpToolProvider } from "./mcp";
+import { McpConnectionManager } from "./mcp";
 import { registerMcpRuntimeRoutes } from "./routes/mcp";
+import { SessionToolRegistryService } from "./services/session-tool-registry-service";
 import { ToolRegistry, BuiltinToolProvider } from "@tavern/core";
 import { ResourceToolProvider } from "./tools/index.js";
 
@@ -311,23 +317,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
   let orchestrationContext: OrchestrationContext | undefined;
   let wsBridge: WsBridge | undefined;
+  let baseToolRegistry: ToolRegistry | undefined;
+  let sessionToolRegistryService: SessionToolRegistryService | undefined;
 
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
     const memoryRepo = new DrizzleMemoryRepository(database.db);
     const variableRepo = new DrizzleVariableRepository(database.db);
+    const toolExecutionRepo = new DrizzleToolExecutionRepository(database.db);
 
     orchestrationContext = createOrchestrationContext(
       options.orchestration,
       floorRepo,
       memoryRepo,
-      variableRepo
+      variableRepo,
+      toolExecutionRepo,
     );
   }
-
-  await registerCrudRoutes(app, database, {
-    variableEventBus: orchestrationContext?.eventBus,
-  });
 
   // ── 可选：MCP 工具集成 ──
   let mcpManager: McpConnectionManager | undefined;
@@ -347,11 +353,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       await mcpManager!.shutdown();
     });
 
-    app.log.info(
-      { serverCount: mcpConfigs.length },
-      'MCP integration enabled',
-    );
+    app.log.info({ serverCount: mcpConfigs.length }, 'MCP integration enabled');
   }
+
+  if (options.orchestration && orchestrationContext) {
+    baseToolRegistry = new ToolRegistry();
+    baseToolRegistry.register(new BuiltinToolProvider({
+      variableStore: orchestrationContext.variableStore,
+      memoryStore: options.enableMemory ? orchestrationContext.memoryStore : undefined,
+    }));
+    baseToolRegistry.register(new ResourceToolProvider(database.db));
+
+    sessionToolRegistryService = new SessionToolRegistryService(database.db, {
+      baseRegistry: baseToolRegistry,
+      mcpManager,
+    });
+  }
+
+  await registerCrudRoutes(app, database, {
+    variableEventBus: orchestrationContext?.eventBus,
+    sessionToolRegistryService,
+  });
 
   // ── 可选：记忆维护任务（deprecate / purge） ──
   // 注意：当前实现为进程内定时器，不带分布式锁。
@@ -396,19 +418,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
     const llmProfileService = new LlmProfileService(database.db);
 
-    // ── 构建 ToolRegistry ──
-    const toolRegistry = new ToolRegistry();
-    toolRegistry.register(new BuiltinToolProvider({
-      variableStore: activeOrchestrationContext.variableStore,
-      memoryStore: options.enableMemory ? activeOrchestrationContext.memoryStore : undefined,
-    }));
-    toolRegistry.register(new ResourceToolProvider(database.db));
+    const toolRegistry = baseToolRegistry ?? new ToolRegistry();
+
     // 默认协调器仍为单实例内存实现。
     // queueMode 只影响当前进程内的互斥 / 排队行为，
     // 不提供跨实例共享锁或共享队列。
     const generationCoordinator = options.generationCoordinator ?? new InMemoryGenerationCoordinator();
-
-    // MCP 工具提供者在 mcpManager 初始化后通过 mcpManager 注册（见下方）。
 
     const chatService = new ChatService(
       database.db,
@@ -472,6 +487,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
           },
         },
         toolRegistry,
+        sessionToolRegistryService,
         eventBus: activeOrchestrationContext.eventBus,
       }
     );

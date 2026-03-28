@@ -287,6 +287,11 @@ console.log(response.headers.get("content-disposition"));
 ### Tool Calling
 
 ```ts
+const runtimeCatalog = await client.sessions.getRuntimeToolCatalog({
+  accountId: "account-1",
+  sessionId: "session-1",
+});
+
 const builtinTools = await client.tools.listBuiltin({
   accountId: "account-1",
 });
@@ -306,7 +311,22 @@ const records = await client.tools.listCallRecords({
 });
 ```
 
-`listCallRecords()` 当前仍对应公开兼容查询面 `/tools/call-records`。在后端公开新的 `tool_execution_record` 查询路由前，SDK 不会提前发明新的 execution records 资源方法。
+```ts
+const executions = await client.tools.listExecutions({
+  accountId: "account-1",
+  floorId: "floor-1",
+  sortBy: "started_at",
+  sortOrder: "desc",
+});
+```
+
+`listExecutions()` 读取新的主执行审计路由。`listCallRecords()` 仍保留为兼容查询面。
+
+运行时工具目录通过 `client.sessions.getRuntimeToolCatalog()` 读取。它是**会话级**快照，对应某个 session 在当前权限、启用状态和 MCP 连接状态下真正可调用的工具集合，不是全局静态目录。
+
+公开审计模型已经是 `tool_execution_record`，因此新的查询应优先使用 `listExecutions()`；`tool_call_record` 和 `listCallRecords()` 只用于兼容旧查询面。
+
+如果你在生成请求里显式传 `toolMode`，当前运行时只支持 `inline`。`standalone` 和 `both` 还不受支持，服务端会返回结构化配置错误，而不是悄悄降级。
 
 ### MCP
 
@@ -324,6 +344,10 @@ const tools = await client.mcp.listServerTools({
   serverId: "mcp-1",
 });
 ```
+
+`getServerStatus()` 和 `listStatuses()` 会保留 `reconnectRequired`、`lastTimeoutAt` 这些运行时字段。
+
+当服务端返回 `mcp_call_uncertain_timeout` 时，含义是这次调用结果**不确定**，并且连接需要重建；它不是普通的确定性失败。
 
 ## 错误处理
 
@@ -350,13 +374,17 @@ try {
 对于流式接口（比如 `respond/stream`），SDK 内部已经完成了这些事：
 
 - 发起 `text/event-stream` 请求
-- 逐行解析 `start` → `chunk` → `summary` → `done` 事件
+- 逐行解析 `start` → `chunk` → `tool` → `summary` → `done` 事件
 - 遇到 `error` 事件时抛出 `TavernApiError`
-- 保留 `error` 事件里的后端错误码，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`
+- 保留 `error` 事件里的后端错误码，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`、`tool_replay_confirmation_required`、`mcp_call_uncertain_timeout`
 - 在 `done` 中保留 `branchId`、`generatedText`、`summaries`、`totalUsage`、`finalState`
+- 通过 `onTool` 暴露运行时工具事件，包括 `executionId`、`providerId`、`providerType`、`phase`、`replaySafety`、`durationMs`
+- 通过 `onEvent` 原样转发每一个已解析事件，其中也包括真实的 `done`
 - 流结束但没收到 `done` 时也会抛出错误
 
 一般场景直接用 `client.sessions.respondStream()` 就够了。如果需要更底层的控制，可以自己调 `readSseStream()`。
+
+如果你在应用层自己累积流式状态，应直接消费这条真实 `done` 事件，不要再额外合成第二个 `done`。
 
 需要注意的是，SSE 连接一旦已经建立，运行期错误通常不再切换 HTTP 状态码，因此这类 `TavernApiError` 的 `status` 常常仍是 `200`。接入方应同时看 `error.code`。
 
@@ -436,6 +464,6 @@ pnpm sdk:check
 
 ## 当前状态
 
-已覆盖 Batch 1 到 Batch 4 的主要资源。`apps/web` 中可复用的请求逻辑已在逐步迁入。
+已覆盖会话、内容结构、变量、记忆、导入导出，以及 Tool Calling / MCP 的主要第一方接入面。`apps/web` 已经直接使用这里的运行时工具目录、执行审计、MCP 状态和 SSE 事件能力。
 
 后续如果后端继续扩展资源，按同样的方式在这里扩充就好，不需要在各个前端里重复写请求层。

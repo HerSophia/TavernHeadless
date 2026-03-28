@@ -178,6 +178,37 @@ export type SessionToolPermissions = {
   slotDenyList?: Record<string, string[]>;
 };
 
+export type SessionRuntimeToolProviderType = "builtin" | "preset" | "mcp";
+export type SessionRuntimeToolSource = "builtin" | "resource" | "custom" | "preset" | "character" | "mcp";
+export type SessionRuntimeToolAvailability = "available" | "unavailable" | "conflict";
+export type SessionRuntimeToolReplaySafety = "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+export type SessionRuntimeToolSlot = "narrator" | "director" | "verifier" | "memory";
+
+export type SessionRuntimeToolCatalogEntry = {
+  allowedSlots: SessionRuntimeToolSlot[];
+  availability: SessionRuntimeToolAvailability;
+  availabilityReason: string | null;
+  name: string;
+  providerId: string;
+  providerType: SessionRuntimeToolProviderType;
+  replaySafety: SessionRuntimeToolReplaySafety;
+  sideEffectLevel: "none" | "sandbox" | "irreversible";
+  source: SessionRuntimeToolSource;
+};
+
+export type SessionRuntimeToolCatalogConflict = {
+  providerIds: string[];
+  reason: "name_conflict";
+  toolName: string;
+};
+
+export type SessionRuntimeToolCatalog = {
+  conflicts: SessionRuntimeToolCatalogConflict[];
+  generatedAt: number;
+  sessionId: string;
+  tools: SessionRuntimeToolCatalogEntry[];
+};
+
 export type RespondDryRunMessage = {
   content: string;
   role: "system" | "user" | "assistant";
@@ -354,6 +385,11 @@ export type SessionsToolPermissionsOptions = {
   sessionId: string;
 };
 
+export type SessionsGetRuntimeToolCatalogOptions = {
+  accountId?: string;
+  sessionId: string;
+};
+
 export type SessionsPutToolPermissionsOptions = SessionsToolPermissionsOptions & {
   permissions: SessionToolPermissions;
 };
@@ -368,6 +404,7 @@ export type SessionsResource = {
   create(options?: SessionsCreateOptions): Promise<SessionRecord | null>;
   diffBranches(options: SessionsDiffBranchesOptions): Promise<SessionBranchDiff>;
   getDetail(options: SessionsGetDetailOptions): Promise<SessionDetail>;
+  getRuntimeToolCatalog(options: SessionsGetRuntimeToolCatalogOptions): Promise<SessionRuntimeToolCatalog>;
   getToolPermissions(options: SessionsToolPermissionsOptions): Promise<SessionToolPermissions>;
   list(options?: SessionsListOptions): Promise<SessionRecord[]>;
   listBranches(options: SessionsListBranchesOptions): Promise<SessionBranchSummary[]>;
@@ -460,6 +497,17 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
       }
 
       return payload;
+    },
+    async getRuntimeToolCatalog(options): Promise<SessionRuntimeToolCatalog> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/tools/runtime`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+
+      return mapRuntimeToolCatalog(readRecord(response.body)?.data);
     },
     async getToolPermissions(options): Promise<SessionToolPermissions> {
       const response = await client.fetchJson<Record<string, unknown>>(
@@ -584,6 +632,7 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
         onEvent: (event) => options.onEvent?.(event),
         onStart: (payload) => options.onStart?.(payload),
         onSummary: (payload) => options.onSummary?.(payload),
+        onTool: (payload) => options.onTool?.(payload),
       });
 
       return mapDonePayload(donePayload);
@@ -1073,6 +1122,34 @@ function mapTimelinePage(value: Record<string, unknown>): TimelinePage {
   };
 }
 
+function mapRuntimeToolCatalog(value: unknown): SessionRuntimeToolCatalog {
+  const record = readRecord(value);
+
+  return {
+    conflicts: readArray(record?.conflicts)
+      .map(mapRuntimeToolCatalogConflict)
+      .filter((item): item is SessionRuntimeToolCatalogConflict => item !== null),
+    generatedAt: readNumber(record?.generated_at),
+    sessionId: readString(record?.session_id),
+    tools: readArray(record?.tools)
+      .map(mapRuntimeToolCatalogEntry)
+      .filter((item): item is SessionRuntimeToolCatalogEntry => item !== null),
+  };
+}
+
+function mapRuntimeToolCatalogConflict(value: unknown): SessionRuntimeToolCatalogConflict | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    providerIds: mapStringArray(record.provider_ids),
+    reason: readString(record.reason, "name_conflict") as SessionRuntimeToolCatalogConflict["reason"],
+    toolName: readString(record.tool_name),
+  };
+}
+
 function mapToolPermissionsRequest(permissions: SessionToolPermissions): Record<string, unknown> {
   return compactObject({
     allow_irreversible: permissions.allowIrreversible,
@@ -1100,6 +1177,25 @@ function mapToolPermissions(value: unknown): SessionToolPermissions {
     maxStepsPerGeneration: record && typeof record.max_steps_per_generation === "number" ? record.max_steps_per_generation : undefined,
     slotAllowList: mapStringArrayRecord(record?.slot_allow_list),
     slotDenyList: mapStringArrayRecord(record?.slot_deny_list),
+  };
+}
+
+function mapRuntimeToolCatalogEntry(value: unknown): SessionRuntimeToolCatalogEntry | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    allowedSlots: mapStringArray(record.allowed_slots) as SessionRuntimeToolCatalogEntry["allowedSlots"],
+    availability: readString(record.availability, "unavailable") as SessionRuntimeToolCatalogEntry["availability"],
+    availabilityReason: readNullableString(record.availability_reason),
+    name: readString(record.name),
+    providerId: readString(record.provider_id),
+    providerType: readString(record.provider_type, "builtin") as SessionRuntimeToolCatalogEntry["providerType"],
+    replaySafety: readString(record.replay_safety, "uncertain") as SessionRuntimeToolCatalogEntry["replaySafety"],
+    sideEffectLevel: readString(record.side_effect_level, "none") as SessionRuntimeToolCatalogEntry["sideEffectLevel"],
+    source: readString(record.source, "builtin") as SessionRuntimeToolCatalogEntry["source"],
   };
 }
 

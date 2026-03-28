@@ -15,6 +15,11 @@ export type ToolDefinitionSource = "preset" | "character" | "custom";
 export type ToolHandlerType = "script" | "prompt" | "delegate";
 export type ToolCallRecordStatus = "success" | "error" | "denied";
 
+export type ToolExecutionStatus = ToolCallRecordStatus | "running" | "timeout" | "uncertain" | "blocked";
+export type ToolExecutionLifecycleState = "opened" | "finished";
+export type ToolExecutionCommitOutcome = "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
+export type ToolExecutionProviderType = "builtin" | "preset" | "mcp" | "unknown";
+
 export type BuiltinToolRecord = {
   allowedSlots: string[];
   description: string;
@@ -42,7 +47,7 @@ export type ToolDefinitionRecord = {
 
 /**
  * 兼容查询记录模型，对应公开路由 `/tools/call-records`。
- * 当前主审计模型已经是内部的 `tool_execution_record`，但在 API 对外公开新的查询路由前，SDK 继续保留这组兼容期结果类型。
+ * 当前主审计模型已经切换到 `tool_execution_record`，SDK 仍保留这组兼容期结果类型。
  */
 export type ToolCallRecord = {
   args: unknown;
@@ -54,6 +59,30 @@ export type ToolCallRecord = {
   result: unknown;
   seq: number;
   status: ToolCallRecordStatus;
+  toolName: string;
+};
+
+export type ToolExecutionRecord = {
+  args: unknown;
+  attemptNo: number;
+  callerSlot: string;
+  commitOutcome: ToolExecutionCommitOutcome;
+  createdAt: number;
+  durationMs: number;
+  errorMessage: string | null;
+  finishedAt: number | null;
+  floorId: string;
+  id: string;
+  lifecycleState: ToolExecutionLifecycleState;
+  pageId: string | null;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  replayParentExecutionId: string | null;
+  result: unknown;
+  runId: string;
+  sideEffectLevel: ToolSideEffectLevel | null;
+  startedAt: number;
+  status: ToolExecutionStatus;
   toolName: string;
 };
 
@@ -74,6 +103,11 @@ export type ToolDefinitionsListResult = {
 export type ToolCallRecordsListResult = {
   meta: ToolsListMeta;
   records: ToolCallRecord[];
+};
+
+export type ToolExecutionsListResult = {
+  meta: ToolsListMeta;
+  records: ToolExecutionRecord[];
 };
 
 export type ToolsResource = {
@@ -106,6 +140,22 @@ export type ToolsResource = {
     sortOrder?: "asc" | "desc";
     status?: ToolCallRecordStatus;
   }): Promise<ToolCallRecordsListResult>;
+  listExecutions(options: {
+    accountId?: string;
+    callerSlot?: string;
+    commitOutcome?: ToolExecutionCommitOutcome;
+    floorId?: string;
+    lifecycleState?: ToolExecutionLifecycleState;
+    limit?: number;
+    offset?: number;
+    providerType?: ToolExecutionProviderType;
+    runId?: string;
+    sessionId?: string;
+    sortBy?: "created_at" | "started_at" | "finished_at";
+    sortOrder?: "asc" | "desc";
+    status?: ToolExecutionStatus;
+    toolName?: string;
+  }): Promise<ToolExecutionsListResult>;
   listDefinitions(options?: {
     accountId?: string;
     enabled?: boolean;
@@ -205,6 +255,42 @@ export function createToolsResource(client: TransportClient): ToolsResource {
         records: readArray(readRecord(response.body)?.data)
           .map(mapToolCallRecord)
           .filter((item): item is ToolCallRecord => item !== null),
+      };
+    },
+    async listExecutions(options): Promise<ToolExecutionsListResult> {
+      const queryParams = compactObject({
+        caller_slot: options.callerSlot,
+        commit_outcome: options.commitOutcome,
+        lifecycle_state: options.lifecycleState,
+        limit: options.limit,
+        offset: options.offset,
+        provider_type: options.providerType,
+        run_id: options.runId,
+        session_id: options.sessionId,
+        sort_by: options.sortBy,
+        sort_order: options.sortOrder,
+        status: options.status,
+        tool_name: options.toolName,
+      });
+      const query = buildQueryString(queryParams);
+      const pathname = options.floorId
+        ? query
+          ? `/floors/${encodeURIComponent(options.floorId)}/tool-executions?${query}`
+          : `/floors/${encodeURIComponent(options.floorId)}/tool-executions`
+        : (() => {
+            const globalQuery = buildQueryString({ ...queryParams, floor_id: options.floorId });
+            return globalQuery ? `/tool-executions?${globalQuery}` : "/tool-executions";
+          })();
+      const response = await client.fetchJson<Record<string, unknown>>(pathname, {
+        headers: buildAccountHeaders(options.accountId),
+        method: "GET",
+      });
+
+      return {
+        meta: mapListMeta(readRecord(response.body)?.meta),
+        records: readArray(readRecord(response.body)?.data)
+          .map(mapToolExecutionRecord)
+          .filter((item): item is ToolExecutionRecord => item !== null),
       };
     },
     async listDefinitions(options = {}): Promise<ToolDefinitionsListResult> {
@@ -339,6 +425,37 @@ function mapToolCallRecord(value: unknown): ToolCallRecord | null {
     result: record.result,
     seq: readNumber(record.seq),
     status: readString(record.status, "success") as ToolCallRecordStatus,
+    toolName: readString(record.tool_name),
+  };
+}
+
+function mapToolExecutionRecord(value: unknown): ToolExecutionRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    args: record.args,
+    attemptNo: readNumber(record.attempt_no),
+    callerSlot: readString(record.caller_slot),
+    commitOutcome: readString(record.commit_outcome, "pending") as ToolExecutionCommitOutcome,
+    createdAt: readNumber(record.created_at),
+    durationMs: readNumber(record.duration_ms),
+    errorMessage: readNullableString(record.error_message),
+    finishedAt: typeof record.finished_at === "number" ? record.finished_at : null,
+    floorId: readString(record.floor_id),
+    id: readString(record.id),
+    lifecycleState: readString(record.lifecycle_state, "opened") as ToolExecutionLifecycleState,
+    pageId: readNullableString(record.page_id),
+    providerId: readString(record.provider_id),
+    providerType: readString(record.provider_type, "unknown") as ToolExecutionProviderType,
+    replayParentExecutionId: readNullableString(record.replay_parent_execution_id),
+    result: record.result,
+    runId: readString(record.run_id),
+    sideEffectLevel: readNullableString(record.side_effect_level) as ToolExecutionRecord["sideEffectLevel"],
+    startedAt: readNumber(record.started_at),
+    status: readString(record.status, "running") as ToolExecutionStatus,
     toolName: readString(record.tool_name),
   };
 }

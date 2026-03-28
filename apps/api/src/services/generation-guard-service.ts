@@ -13,6 +13,7 @@ export interface GenerationCoordinatorExecutionInput<T> {
   branchId: string;
   mode: GenerationExecutionMode;
   timeoutMs?: number;
+  abortSignal?: AbortSignal;
   onQueued?: (position: number) => void;
   task: (runtime: CoordinatorRuntime) => Promise<T>;
 }
@@ -42,14 +43,27 @@ export class GenerationCoordinatorQueueTimeoutError extends Error {
   }
 }
 
+export class GenerationCoordinatorCancelledError extends Error {
+  constructor(
+    public readonly sessionId: string,
+    public readonly branchId: string,
+  ) {
+    super(`Generation was cancelled before execution started for session '${sessionId}' branch '${branchId}'`);
+    this.name = "GenerationCoordinatorCancelledError";
+  }
+}
+
 type QueuedExecution<T> = {
   requestId: string;
   sessionId: string;
   branchId: string;
   timeoutMs?: number;
   task: (runtime: CoordinatorRuntime) => Promise<T>;
+  abortSignal?: AbortSignal;
+  abortListener?: () => void;
   resolve: (value: T | PromiseLike<T>) => void;
   reject: (reason?: unknown) => void;
+
   timer?: ReturnType<typeof setTimeout>;
   cancelled: boolean;
 };
@@ -69,6 +83,7 @@ export class InMemoryGenerationCoordinator implements GenerationCoordinator {
   private readonly states = new Map<string, QueueState>();
 
   async execute<T>(input: GenerationCoordinatorExecutionInput<T>): Promise<T> {
+    this.throwIfAborted(input.sessionId, input.branchId, input.abortSignal);
     if (input.mode === "queue") {
       return this.executeQueued(input);
     }
@@ -110,9 +125,10 @@ export class InMemoryGenerationCoordinator implements GenerationCoordinator {
 
   private async executeReject<T>(input: GenerationCoordinatorExecutionInput<T>): Promise<T> {
     const release = this.acquire(input.sessionId, input.branchId);
-    const runtime = this.createRuntime();
+    const runtime = this.createRuntime(undefined, input.abortSignal);
 
     try {
+      this.throwIfAborted(input.sessionId, input.branchId, input.abortSignal);
       return await input.task(runtime);
     } finally {
       release();
@@ -124,10 +140,12 @@ export class InMemoryGenerationCoordinator implements GenerationCoordinator {
     const state = this.ensureState(key);
 
     if (!state.active && state.queue.length === 0) {
+      this.throwIfAborted(input.sessionId, input.branchId, input.abortSignal);
       state.active = true;
-      const runtime = this.createRuntime();
+      const runtime = this.createRuntime(undefined, input.abortSignal);
 
       try {
+        this.throwIfAborted(input.sessionId, input.branchId, input.abortSignal);
         return await input.task(runtime);
       } finally {
         this.release(key);
@@ -135,16 +153,42 @@ export class InMemoryGenerationCoordinator implements GenerationCoordinator {
     }
 
     return new Promise<T>((resolve, reject) => {
-      const queued: QueuedExecution<T> = {
+      let queued!: QueuedExecution<T>;
+      const rejectAsCancelled = () => {
+        if (queued.cancelled) {
+          return;
+        }
+
+        queued.cancelled = true;
+        this.removeQueuedExecution(key, queued);
+        reject(new GenerationCoordinatorCancelledError(input.sessionId, input.branchId));
+      };
+
+      queued = {
         requestId: nanoid(),
         sessionId: input.sessionId,
         branchId: input.branchId,
         timeoutMs: input.timeoutMs,
         task: input.task,
+        abortSignal: input.abortSignal,
         resolve,
         reject,
         cancelled: false,
       };
+
+      if (queued.abortSignal) {
+        if (queued.abortSignal.aborted) {
+          reject(new GenerationCoordinatorCancelledError(input.sessionId, input.branchId));
+          return;
+        }
+
+        queued.abortListener = () => rejectAsCancelled();
+        queued.abortSignal.addEventListener("abort", queued.abortListener, { once: true });
+        if (queued.abortSignal.aborted) {
+          rejectAsCancelled();
+          return;
+        }
+      }
 
       state.queue.push(queued as QueuedExecution<unknown>);
 
@@ -156,6 +200,10 @@ export class InMemoryGenerationCoordinator implements GenerationCoordinator {
 
       if (input.timeoutMs && input.timeoutMs > 0) {
         queued.timer = setTimeout(() => {
+          if (queued.cancelled) {
+            return;
+          }
+
           queued.cancelled = true;
           this.removeQueuedExecution(key, queued);
           reject(new GenerationCoordinatorQueueTimeoutError(
@@ -196,11 +244,18 @@ export class InMemoryGenerationCoordinator implements GenerationCoordinator {
       }
 
       this.clearQueuedTimer(next);
+      this.clearQueuedAbortListener(next);
       if (next.cancelled) {
         continue;
       }
 
-      const runtime = this.createRuntime(next.requestId);
+      if (next.abortSignal?.aborted) {
+        next.cancelled = true;
+        next.reject(new GenerationCoordinatorCancelledError(next.sessionId, next.branchId));
+        continue;
+      }
+
+      const runtime = this.createRuntime(next.requestId, next.abortSignal);
       void this.runQueuedExecution(key, next, runtime);
       return;
     }
@@ -221,6 +276,7 @@ export class InMemoryGenerationCoordinator implements GenerationCoordinator {
     }
 
     this.clearQueuedTimer(queued);
+    this.clearQueuedAbortListener(queued);
     this.cleanupState(key);
   }
 
@@ -231,12 +287,29 @@ export class InMemoryGenerationCoordinator implements GenerationCoordinator {
     }
   }
 
-  private createRuntime(requestId = nanoid()): CoordinatorRuntime {
+  private clearQueuedAbortListener<T>(queued: QueuedExecution<T>): void {
+    if (queued.abortSignal && queued.abortListener) {
+      queued.abortSignal.removeEventListener("abort", queued.abortListener);
+      queued.abortListener = undefined;
+    }
+  }
+
+  private createRuntime(requestId = nanoid(), abortSignal?: AbortSignal): CoordinatorRuntime {
     return {
       requestId,
       acquiredAt: Date.now(),
-      abortSignal: new AbortController().signal,
+      abortSignal: abortSignal ?? new AbortController().signal,
     };
+  }
+
+  private throwIfAborted(
+    sessionId: string,
+    branchId: string,
+    abortSignal?: AbortSignal,
+  ): void {
+    if (abortSignal?.aborted) {
+      throw new GenerationCoordinatorCancelledError(sessionId, branchId);
+    }
   }
 
   private ensureState(key: string): QueueState {

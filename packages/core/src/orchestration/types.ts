@@ -2,7 +2,12 @@ import type { ChatMessage } from '../prompt/types.js';
 import type { GenerationParams, InstanceSlot, ModelConfig, TokenUsage } from '../llm/types.js';
 import type { SummaryExtractorOptions } from '../generation/summary-extractor.js';
 import type { MemoryInjectionOptions, MemoryInjectionResult, MemoryItem } from '../memory/types.js';
-import type { ExecutedToolCallRecord, ToolPermissions, ToolCallRecord } from '../tools/types.js';
+import type {
+  BufferedToolVariableMutation,
+  ExecutedToolCallRecord,
+  ToolPermissions,
+  ToolCallRecord,
+} from '../tools/types.js';
 import type { ToolRegistry } from '../tools/tool-registry.js';
 import type { DirectorInput, DirectorResult } from './director.js';
 import type { VerifierInput, VerifierResult } from './verifier.js';
@@ -54,6 +59,12 @@ export interface TurnInput {
   generationParams: GenerationParams;
   /** 回合配置 */
   config?: TurnConfig;
+  /**
+   * 当前回合工具执行日志使用的 runId。
+   *
+   * 上层可显式注入，以便在失败边界也能准确回收同一组 execution journal。
+   */
+  toolExecutionRunId?: string;
   /**
    * @deprecated 使用 modelOverrides 代替。仍可作为 narrator 的快捷方式。
    */
@@ -135,6 +146,8 @@ export interface TurnExecutionResult {
   totalUsage: TokenUsage;
   /** 本回合真实执行过的工具调用记录 */
   toolExecutionRecords?: ExecutedToolCallRecord[];
+  /** 本回合工具产生但尚未持久化的变量写入 */
+  bufferedVariableMutations?: BufferedToolVariableMutation[];
   /**
    * 旧的摘要式工具调用记录。
    *
@@ -145,4 +158,3 @@ export interface TurnExecutionResult {
 
 /** @deprecated 使用 TurnExecutionResult。 */
 export type TurnOutput = TurnExecutionResult;
-

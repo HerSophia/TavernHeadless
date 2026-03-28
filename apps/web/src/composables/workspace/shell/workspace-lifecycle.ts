@@ -35,8 +35,10 @@ type UseWorkspaceLifecycleOptions = {
   resetActiveTab: () => void;
   resetAssetImportDialog: () => void;
   resetCharacterManagerDialog: () => void;
+  resetMcpManagerDialog: () => void;
   resetAssetBrowserDialog: () => void;
   resetPresetManagerDialog: () => void;
+  resetToolManagerDialog: () => void;
   resetWorldbookManagerDialog: () => void;
   workspace: WorkspaceLifecycleStore;
   workspaceUi: WorkspaceUiLifecycleStore;
@@ -72,6 +74,8 @@ export function useWorkspaceLifecycle(options: UseWorkspaceLifecycleOptions) {
     options.resetAssetImportDialog();
     options.resetPresetManagerDialog();
     options.resetCharacterManagerDialog();
+    options.resetToolManagerDialog();
+    options.resetMcpManagerDialog();
     options.resetAssetBrowserDialog();
     options.resetWorldbookManagerDialog();
   }

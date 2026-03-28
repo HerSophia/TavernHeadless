@@ -12,22 +12,32 @@ type KnownApiErrorCode =
   | "generation_conflict"
   | "generation_queue_timeout"
   | "generation_timeout"
+  | "generation_cancelled"
   | "commit_busy"
   | "commit_conflict"
   | "preset_conflict"
   | "worldbook_conflict"
   | "regex_profile_conflict"
+  | "tool_catalog_conflict"
+  | "tool_replay_blocked"
+  | "tool_replay_confirmation_required"
+  | "mcp_call_uncertain_timeout"
   | "turn_commit_failed";
 
 const KNOWN_API_ERROR_CODE_MAP: Record<KnownApiErrorCode, Pick<UiStateError, "kind" | "retryable">> = {
   generation_conflict: { kind: "conflict", retryable: true },
   generation_queue_timeout: { kind: "server", retryable: true },
   generation_timeout: { kind: "server", retryable: true },
+  generation_cancelled: { kind: "network", retryable: true },
   commit_busy: { kind: "server", retryable: true },
   commit_conflict: { kind: "conflict", retryable: true },
   preset_conflict: { kind: "conflict", retryable: true },
   worldbook_conflict: { kind: "conflict", retryable: true },
   regex_profile_conflict: { kind: "conflict", retryable: true },
+  tool_catalog_conflict: { kind: "conflict", retryable: true },
+  tool_replay_blocked: { kind: "conflict", retryable: true },
+  tool_replay_confirmation_required: { kind: "conflict", retryable: true },
+  mcp_call_uncertain_timeout: { kind: "server", retryable: true },
   turn_commit_failed: { kind: "server", retryable: true },
 };
 

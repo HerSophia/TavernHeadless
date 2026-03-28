@@ -7,5 +7,10 @@ export type {
   TavernRespondStartPayload,
   TavernRespondStreamEvent,
   TavernRespondSummaryPayload,
+  TavernRespondToolPayload,
+  TavernRespondToolPhase,
+  TavernRespondToolProviderType,
+  TavernRespondToolReplaySafety,
+  TavernRespondToolSideEffectLevel,
 } from "./event-types.js";
 export { readSseStream } from "./read-sse.js";

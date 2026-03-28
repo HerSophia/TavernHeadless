@@ -16,7 +16,12 @@ export type {
 } from './verifier.js';
 
 // ── Turn Orchestrator ─────────────────────────────────
-export { TurnOrchestrator, TurnError } from './turn-orchestrator.js';
+export {
+  TurnOrchestrator,
+  TurnError,
+  ToolReplayBlockedError,
+  UnsupportedToolModeError,
+} from './turn-orchestrator.js';
 export type { TurnOrchestratorDeps, TurnPhase } from './turn-orchestrator.js';
 export type {
   TurnConfig,

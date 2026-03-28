@@ -3,7 +3,9 @@ import type { VariableContext } from '../types.js';
 import type { VariableRepository, VariableRepositoryOptions } from '../ports/index.js';
 
 /** scope → VariableContext 中对应字段的映射 */
-const SCOPE_TO_CONTEXT_KEY: Record<VariableScope, keyof VariableContext> = {
+type ScopeContextKey = 'pageId' | 'floorId' | 'sessionId' | 'globalScopeId';
+
+const SCOPE_TO_CONTEXT_KEY: Record<VariableScope, ScopeContextKey> = {
   page: 'pageId',
   floor: 'floorId',
   chat: 'sessionId',
@@ -33,6 +35,23 @@ function getRepositoryOptions(context: VariableContext): VariableRepositoryOptio
   return { accountId: context.accountId };
 }
 
+function getToolMutationState(context: VariableContext): {
+  buffer: NonNullable<VariableContext['toolMutationBuffer']>;
+  generationAttemptNo: number;
+} | null {
+  if (!context.toolMutationBuffer) {
+    return null;
+  }
+
+  const attemptNo = context.toolMutationAttemptNo;
+
+  if (typeof attemptNo !== 'number' || !Number.isInteger(attemptNo) || attemptNo < 1) {
+    return null;
+  }
+
+  return { buffer: context.toolMutationBuffer, generationAttemptNo: attemptNo };
+}
+
 /**
  * 变量级联读取器
  *
@@ -48,10 +67,22 @@ export class VariableResolver {
    */
   async resolve(key: string, context: VariableContext): Promise<VariableEntry | null> {
     const repoOptions = getRepositoryOptions(context);
+    const toolMutationState = getToolMutationState(context);
 
     for (const scope of SCOPE_PRIORITY) {
       const scopeId = getScopeId(scope, context);
       if (scopeId === undefined) continue;
+
+      if (toolMutationState) {
+        const bufferedEntry = toolMutationState.buffer.findByKey({
+          generationAttemptNo: toolMutationState.generationAttemptNo,
+          scope,
+          scopeId,
+          key,
+          accountId: context.accountId,
+        });
+        if (bufferedEntry) return bufferedEntry;
+      }
 
       const entry = await this.variableRepo.findByKey(scope, scopeId, key, repoOptions);
       if (entry) return entry;
@@ -95,6 +126,7 @@ export class VariableResolver {
   async resolveAll(context: VariableContext): Promise<Map<string, VariableEntry>> {
     const merged = new Map<string, VariableEntry>();
     const repoOptions = getRepositoryOptions(context);
+    const toolMutationState = getToolMutationState(context);
 
     // 反向遍历：global → chat → floor → page，后写入的覆盖先写入的
     const reversedScopes = [...SCOPE_PRIORITY].reverse();
@@ -106,6 +138,23 @@ export class VariableResolver {
       const entries = await this.variableRepo.findAllByScope(scope, scopeId, repoOptions);
       for (const entry of entries) {
         merged.set(entry.key, entry);
+      }
+    }
+
+    if (toolMutationState) {
+      for (const scope of reversedScopes) {
+        const scopeId = getScopeId(scope, context);
+        if (scopeId === undefined) continue;
+
+        const bufferedEntries = toolMutationState.buffer.findAllByScope({
+          generationAttemptNo: toolMutationState.generationAttemptNo,
+          scope,
+          scopeId,
+          accountId: context.accountId,
+        });
+        for (const entry of bufferedEntries) {
+          merged.set(entry.key, entry);
+        }
       }
     }
 

@@ -134,6 +134,13 @@
       "when": 1761800000000,
       "tag": "0018_variable_account_isolation",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1761900000000,
+      "tag": "0019_tool_execution_journal",
+      "breakpoints": true
     }
   ]
 }

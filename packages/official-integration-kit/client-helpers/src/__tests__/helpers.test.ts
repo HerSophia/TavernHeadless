@@ -5,10 +5,12 @@ import { TavernApiError } from "@tavern/sdk";
 import * as clientHelpers from "../index.js";
 import { mapApiErrorToUiState } from "../errors/map-api-error-to-ui-state.js";
 import { getActivePage } from "../selectors/get-active-page.js";
+import { groupToolEventsByExecution } from "../stream/group-tool-events-by-execution.js";
 import { createInitialRespondStreamState, reduceRespondStream } from "../stream/reduce-respond-stream.js";
 import { buildTimelineMessages } from "../timeline/build-timeline-messages.js";
 import { flattenVariableSnapshot, formatVariablePreview, sortVariableInspectorRows } from "../variables/index.js";
 import { resolveUsage } from "../usage/resolve-usage.js";
+import { summarizeRuntimeToolCatalog } from "../tools/summarize-runtime-tool-catalog.js";
 
 describe("client-helpers public exports", () => {
   it("exposes the expected runtime helpers", () => {
@@ -19,8 +21,10 @@ describe("client-helpers public exports", () => {
       mapApiErrorToUiState: expect.any(Function),
       flattenVariableSnapshot: expect.any(Function),
       formatVariablePreview: expect.any(Function),
+      groupToolEventsByExecution: expect.any(Function),
       reduceRespondStream: expect.any(Function),
       resolveUsage: expect.any(Function),
+      summarizeRuntimeToolCatalog: expect.any(Function),
       sortVariableInspectorRows: expect.any(Function),
     });
   });
@@ -320,6 +324,108 @@ describe("reduceRespondStream", () => {
       status: "error",
     });
   });
+
+  it("accumulates tool events active tools and warnings", () => {
+    const state1 = reduceRespondStream(createInitialRespondStreamState(), {
+      payload: {
+        executionId: "exec-1",
+        toolName: "set_variable",
+        providerId: "builtin",
+        providerType: "builtin",
+        sideEffectLevel: "sandbox",
+        phase: "start",
+        replaySafety: "uncertain",
+      },
+      type: "tool",
+    });
+    const state2 = reduceRespondStream(state1, {
+      payload: {
+        executionId: "exec-1",
+        toolName: "set_variable",
+        providerId: "builtin",
+        providerType: "builtin",
+        sideEffectLevel: "sandbox",
+        phase: "success",
+        durationMs: 7,
+        replaySafety: "safe",
+      },
+      type: "tool",
+    });
+    const state3 = reduceRespondStream(state2, {
+      payload: {
+        executionId: "exec-2",
+        toolName: "create_character",
+        providerId: "mcp:studio",
+        providerType: "mcp",
+        sideEffectLevel: "irreversible",
+        phase: "uncertain",
+        message: "timeout",
+        replaySafety: "uncertain",
+      },
+      type: "tool",
+    });
+
+    expect(state1.activeTools).toEqual({
+      "exec-1": {
+        executionId: "exec-1",
+        toolName: "set_variable",
+        providerId: "builtin",
+        providerType: "builtin",
+        sideEffectLevel: "sandbox",
+        phase: "start",
+        replaySafety: "uncertain",
+      },
+    });
+    expect(state2.activeTools).toEqual({});
+    expect(state3.toolEvents).toHaveLength(3);
+    expect(state3.warnings).toEqual([
+      {
+        code: "tool_execution_uncertain",
+        executionId: "exec-2",
+        message: "timeout",
+        toolName: "create_character",
+      },
+    ]);
+  });
+});
+
+describe("tool helpers", () => {
+  it("groups tool events by execution and keeps the latest terminal state", () => {
+    const groups = groupToolEventsByExecution([
+      { executionId: "exec-1", toolName: "set_variable", providerId: "builtin", phase: "start", replaySafety: "uncertain" },
+      { executionId: "exec-1", toolName: "set_variable", providerId: "builtin", phase: "success", durationMs: 7, replaySafety: "safe" },
+      { executionId: "exec-2", toolName: "create_character", providerId: "mcp:studio", phase: "blocked", replaySafety: "safe", message: "blocked" },
+    ]);
+
+    expect(groups).toEqual([
+      expect.objectContaining({ executionId: "exec-1", isTerminal: true, phases: ["start", "success"], replaySafety: "safe", durationMs: 7 }),
+      expect.objectContaining({ executionId: "exec-2", isTerminal: true, message: "blocked", phases: ["blocked"] }),
+    ]);
+  });
+
+  it("summarizes runtime tool catalog availability and replay warnings", () => {
+    expect(summarizeRuntimeToolCatalog({
+      sessionId: "session-1",
+      generatedAt: 1,
+      tools: [
+        { name: "set_variable", providerId: "builtin", providerType: "builtin", source: "builtin", sideEffectLevel: "sandbox", allowedSlots: ["narrator"], availability: "available", availabilityReason: null, replaySafety: "safe" },
+        { name: "mcp_fetch", providerId: "mcp:mcp-1", providerType: "mcp", source: "mcp", sideEffectLevel: "irreversible", allowedSlots: ["narrator"], availability: "available", availabilityReason: null, replaySafety: "never_auto_replay" },
+        { name: "conflict_tool", providerId: "mcp:mcp-2", providerType: "mcp", source: "mcp", sideEffectLevel: "sandbox", allowedSlots: ["narrator"], availability: "conflict", availabilityReason: "name_conflict", replaySafety: "confirm_on_replay" },
+      ],
+      conflicts: [{ toolName: "conflict_tool", providerIds: ["custom:acc-1", "mcp:mcp-2"], reason: "name_conflict" }],
+    })).toEqual({
+      availableTools: 2,
+      confirmOnReplayTools: 1,
+      conflictRecords: 1,
+      conflictTools: 1,
+      neverAutoReplayTools: 1,
+      replayWarnings: 2,
+      safeTools: 1,
+      totalTools: 3,
+      unavailableTools: 0,
+      uncertainTools: 0,
+    });
+  });
 });
 
 describe("mapApiErrorToUiState", () => {
@@ -359,6 +465,11 @@ describe("mapApiErrorToUiState", () => {
     ["preset_conflict", 409, "conflict", true],
     ["worldbook_conflict", 409, "conflict", true],
     ["regex_profile_conflict", 409, "conflict", true],
+    ["tool_catalog_conflict", 409, "conflict", true],
+    ["tool_replay_blocked", 409, "conflict", true],
+    ["tool_replay_confirmation_required", 409, "conflict", true],
+    ["mcp_call_uncertain_timeout", 503, "server", true],
+    ["generation_cancelled", 499, "network", true],
     ["turn_commit_failed", 409, "server", true],
   ] as const)("prefers known api code mapping for %s", (code, status, kind, retryable) => {
     const mapped = mapApiErrorToUiState(

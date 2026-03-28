@@ -10,7 +10,9 @@ import { InvalidScopePromotionError, MissingScopeIdError, VariableNotFoundError 
 import { VariableResolver } from './variable-resolver.js';
 
 /** scope → VariableContext 中对应字段的映射 */
-const SCOPE_TO_CONTEXT_KEY: Record<VariableScope, keyof VariableContext> = {
+type ScopeContextKey = 'pageId' | 'floorId' | 'sessionId' | 'globalScopeId';
+
+const SCOPE_TO_CONTEXT_KEY: Record<VariableScope, ScopeContextKey> = {
   page: 'pageId',
   floor: 'floorId',
   chat: 'sessionId',
@@ -47,6 +49,23 @@ function getRepositoryOptions(accountId?: string): VariableRepositoryOptions | u
   }
 
   return { accountId };
+}
+
+function getToolMutationState(context: VariableContext): {
+  buffer: NonNullable<VariableContext['toolMutationBuffer']>;
+  generationAttemptNo: number;
+} | null {
+  if (!context.toolMutationBuffer) {
+    return null;
+  }
+
+  const attemptNo = context.toolMutationAttemptNo;
+
+  if (typeof attemptNo !== 'number' || !Number.isInteger(attemptNo) || attemptNo < 1) {
+    return null;
+  }
+
+  return { buffer: context.toolMutationBuffer, generationAttemptNo: attemptNo };
 }
 
 /**
@@ -90,8 +109,34 @@ export class VariableStore {
     const targetScope = scope ?? findLowestAvailableScope(context);
     const scopeId = requireScopeId(targetScope, context);
     const repoOptions = getRepositoryOptions(context.accountId);
+    const toolMutationState = getToolMutationState(context);
 
-    // 检查是否已存在（用于事件的 isNew 标志）
+    if (toolMutationState) {
+      const existing = toolMutationState.buffer.findByKey({
+        generationAttemptNo: toolMutationState.generationAttemptNo,
+        scope: targetScope,
+        scopeId,
+        key,
+        accountId: context.accountId,
+      }) ?? await this.variableRepo.findByKey(targetScope, scopeId, key, repoOptions);
+
+      const entry = toolMutationState.buffer.upsert({
+        generationAttemptNo: toolMutationState.generationAttemptNo,
+        scope: targetScope,
+        scopeId,
+        key,
+        value,
+        accountId: context.accountId,
+      });
+
+      await this.eventBus.emit('variable.set', {
+        entry,
+        isNew: existing === null,
+      });
+
+      return entry;
+    }
+
     const existing = await this.variableRepo.findByKey(targetScope, scopeId, key, repoOptions);
     const entry = await this.variableRepo.upsert(targetScope, scopeId, key, value, repoOptions);
 
