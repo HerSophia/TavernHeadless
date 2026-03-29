@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { nanoid } from 'nanoid';
 
 import { createDatabase, type AppDb } from '../../db/client.js';
-import { accounts, sessions, floors, messagePages, messages, variables } from '../../db/schema.js';
+import { accounts, sessions, floors, messagePages, memoryEdges, memoryItems, messages, variables } from '../../db/schema.js';
 import { DEFAULT_ADMIN_ACCOUNT_ID } from '../../accounts/constants.js';
 import { stringifyJsonField } from '../../lib/http.js';
 import { TH_CHAT_SPEC, TH_CHAT_SPEC_VERSION } from '@tavern/shared';
@@ -250,6 +250,84 @@ describe('serializeSessionToThChat', () => {
 
     const result = serializeSessionToThChat(db, sessionId, { accountId: ACCOUNT_ID, includeVariables: true });
     expect(result.data.variables).toEqual([{ scope: 'chat', scope_id_ref: null, key: 'local_var', value: 42, updated_at: NOW }]);
+  });
+
+  it('exports memory v2 metadata and extended relations in thchat format', () => {
+    const { sessionId, floorId, msg1Id } = seedMinimalSession(db);
+    const microMemoryId = nanoid();
+    const macroMemoryId = nanoid();
+
+    db.insert(memoryItems).values([
+      {
+        id: microMemoryId,
+        accountId: ACCOUNT_ID,
+        scope: 'chat',
+        scopeId: sessionId,
+        type: 'summary',
+        summaryTier: 'micro',
+        contentJson: JSON.stringify({ text: 'micro summary' }),
+        factKey: null,
+        importance: 0.6,
+        confidence: 1,
+        sourceFloorId: floorId,
+        sourceMessageId: msg1Id,
+        status: 'active',
+        lifecycleStatus: 'active',
+        sourceJobId: 'memory-job:ingest_turn:floor-1',
+        tokenCountEstimate: 48,
+        lastUsedAt: NOW + 1,
+        coverageStartFloorNo: 0,
+        coverageEndFloorNo: 0,
+        derivedFromCount: null,
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+      {
+        id: macroMemoryId,
+        accountId: ACCOUNT_ID,
+        scope: 'chat',
+        scopeId: sessionId,
+        type: 'summary',
+        summaryTier: 'macro',
+        contentJson: JSON.stringify({ text: 'macro summary' }),
+        factKey: null,
+        importance: 0.9,
+        confidence: 1,
+        sourceFloorId: floorId,
+        sourceMessageId: msg1Id,
+        status: 'active',
+        lifecycleStatus: 'compacted',
+        sourceJobId: 'memory-job:compact_macro:chat:session-1:scope-micro-3',
+        tokenCountEstimate: 96,
+        lastUsedAt: NOW + 2,
+        coverageStartFloorNo: 0,
+        coverageEndFloorNo: 4,
+        derivedFromCount: 3,
+        createdAt: NOW,
+        updatedAt: NOW + 10,
+      },
+    ]).run();
+
+    db.insert(memoryEdges).values({
+      id: nanoid(),
+      accountId: ACCOUNT_ID,
+      fromId: macroMemoryId,
+      toId: microMemoryId,
+      relation: 'derived_from',
+      createdAt: NOW + 10,
+    }).run();
+
+    const result = serializeSessionToThChat(db, sessionId, { includeMemories: true });
+
+    expect(result.data.memories).toEqual({
+      items: expect.arrayContaining([
+        expect.objectContaining({ _original_id: microMemoryId, summary_tier: 'micro', lifecycle_status: 'active', source_job_id: 'memory-job:ingest_turn:floor-1', token_count_estimate: 48 }),
+        expect.objectContaining({ _original_id: macroMemoryId, summary_tier: 'macro', lifecycle_status: 'compacted', source_job_id: 'memory-job:compact_macro:chat:session-1:scope-micro-3', coverage_start_floor_no: 0, coverage_end_floor_no: 4, derived_from_count: 3 }),
+      ]),
+      edges: [
+        expect.objectContaining({ from_id_ref: macroMemoryId, to_id_ref: microMemoryId, relation: 'derived_from' }),
+      ],
+    });
   });
 });
 

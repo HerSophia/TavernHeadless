@@ -67,7 +67,7 @@ import {
   characters,
   characterVersions,
 } from "../db/schema.js";
-import { memoryItems, memoryEdges } from "../db/schema.js";
+import { memoryItems, memoryEdges, memoryScopeStates } from "../db/schema.js";
 import { parseWithSchema, sendError, parseJsonField, stringifyJsonField } from "../lib/http.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { type JsonRecord, toPresetEditorDocument, toRawPresetFromEditor } from "../lib/preset-utils.js";
@@ -2266,6 +2266,112 @@ async function handleThChatImport(
   });
 }
 
+function resolveThChatImportScopeId(input: {
+  scope: "chat" | "floor" | "page";
+  scopeIdRef: string | null;
+  sessionId: string;
+  idMap: Map<string, string>;
+}): string {
+  if (input.scope === "chat") {
+    return input.sessionId;
+  }
+
+  if (!input.scopeIdRef) {
+    return input.sessionId;
+  }
+
+  return input.idMap.get(input.scopeIdRef) ?? input.scopeIdRef;
+}
+
+function buildImportedMemoryScopeStateRows(input: {
+  accountId: string;
+  data: ThChatFile["data"];
+  idMap: Map<string, string>;
+  now: number;
+  sessionId: string;
+}): Array<typeof memoryScopeStates.$inferInsert> {
+  const makeScopeKey = (
+    scope: typeof memoryScopeStates.$inferInsert["scope"],
+    scopeId: string,
+  ): string => JSON.stringify([scope, scopeId]);
+
+  const scopeMeta = new Map<string, { revision: number; hasMacroSummary: boolean }>();
+  const scopeRows = new Map<string, typeof memoryScopeStates.$inferInsert>();
+  const chatLastProcessedFloorNo = input.data.floors.reduce<number | null>(
+    (maxFloorNo, floor) => (maxFloorNo === null ? floor.floor_no : Math.max(maxFloorNo, floor.floor_no)),
+    null,
+  );
+
+  if (input.data.memories) {
+    for (const item of input.data.memories.items) {
+      const scopeId = resolveThChatImportScopeId({
+        scope: item.scope,
+        scopeIdRef: item.scope_id_ref,
+        sessionId: input.sessionId,
+        idMap: input.idMap,
+      });
+      const scopeKey = makeScopeKey(item.scope, scopeId);
+      const currentMeta = scopeMeta.get(scopeKey) ?? { revision: 0, hasMacroSummary: false };
+
+      currentMeta.revision = 1;
+      if (item.type === "summary" && item.summary_tier === "macro" && item.status === "active") {
+        currentMeta.hasMacroSummary = true;
+      }
+
+      scopeMeta.set(scopeKey, currentMeta);
+    }
+  }
+
+  const chatScopeKey = makeScopeKey("chat", input.sessionId);
+  if (chatLastProcessedFloorNo !== null || scopeMeta.has(chatScopeKey)) {
+    const chatMeta = scopeMeta.get(chatScopeKey);
+    scopeRows.set(chatScopeKey, {
+      accountId: input.accountId,
+      scope: "chat",
+      scopeId: input.sessionId,
+      revision: chatMeta?.revision ?? 0,
+      lastProcessedFloorNo: chatLastProcessedFloorNo,
+      lastCompactionAt: chatMeta?.hasMacroSummary ? input.now : null,
+      updatedAt: input.now,
+    });
+  }
+
+  for (const floor of input.data.floors) {
+    const scopeId = input.idMap.get(floor._original_id)!;
+    const scopeKey = makeScopeKey("floor", scopeId);
+    const floorMeta = scopeMeta.get(scopeKey);
+
+    scopeRows.set(scopeKey, {
+      accountId: input.accountId,
+      scope: "floor",
+      scopeId,
+      revision: floorMeta?.revision ?? 0,
+      lastProcessedFloorNo: floor.floor_no,
+      lastCompactionAt: floorMeta?.hasMacroSummary ? input.now : null,
+      updatedAt: input.now,
+    });
+  }
+
+  for (const [scopeKey, meta] of scopeMeta.entries()) {
+    if (scopeRows.has(scopeKey)) {
+      continue;
+    }
+
+    const [scope, scopeId] = JSON.parse(scopeKey) as [typeof memoryScopeStates.$inferInsert["scope"], string];
+    scopeRows.set(scopeKey, {
+      accountId: input.accountId,
+      scope,
+      scopeId,
+      revision: meta.revision,
+      lastProcessedFloorNo: scope === "chat" ? chatLastProcessedFloorNo : null,
+      lastCompactionAt: meta.hasMacroSummary ? input.now : null,
+      updatedAt: input.now,
+    });
+  }
+
+  return Array.from(scopeRows.values());
+}
+
 function createSessionFromThChatImport(
   db: DatabaseConnection["db"],
   input: {
@@ -2402,9 +2508,12 @@ function createSessionFromThChatImport(
         accountId: input.accountId,
         items: data.variables.map((v) => ({
           scope: v.scope,
-          scopeId: v.scope === "chat"
-            ? sessionId
-            : (v.scope_id_ref ? (input.idMap.get(v.scope_id_ref) ?? v.scope_id_ref) : sessionId),
+          scopeId: resolveThChatImportScopeId({
+            scope: v.scope,
+            scopeIdRef: v.scope_id_ref,
+            sessionId,
+            idMap: input.idMap,
+          }),
           key: v.key,
           value: v.value,
           updatedAt: v.updated_at,
@@ -2419,15 +2528,21 @@ function createSessionFromThChatImport(
     if (data.memories) {
       for (const item of data.memories.items) {
         const itemId = input.idMap.get(item._original_id)!;
-        const scopeId = item.scope === "chat"
-          ? sessionId
-          : (item.scope_id_ref ? (input.idMap.get(item.scope_id_ref) ?? item.scope_id_ref) : sessionId);
+        const scopeId = resolveThChatImportScopeId({
+          scope: item.scope,
+          scopeIdRef: item.scope_id_ref,
+          sessionId,
+          idMap: input.idMap,
+        });
 
         tx.insert(memoryItems).values({
           id: itemId,
           scope: item.scope,
           scopeId,
           type: item.type,
+          summaryTier: item.type === "summary"
+            ? (item.summary_tier ?? null)
+            : null,
           contentJson: JSON.stringify(item.content),
           importance: item.importance,
           confidence: item.confidence,
@@ -2439,6 +2554,19 @@ function createSessionFromThChatImport(
             : null,
           accountId: input.accountId,
           status: item.status,
+          lifecycleStatus: item.lifecycle_status ?? (item.status === "deprecated" ? "deprecated" : "active"),
+          sourceJobId: item.source_job_id ?? null,
+          tokenCountEstimate: item.token_count_estimate ?? null,
+          lastUsedAt: item.last_used_at ?? null,
+          coverageStartFloorNo: item.type === "summary"
+            ? (item.coverage_start_floor_no ?? null)
+            : null,
+          coverageEndFloorNo: item.type === "summary"
+            ? (item.coverage_end_floor_no ?? null)
+            : null,
+          derivedFromCount: item.type === "summary"
+            ? (item.derived_from_count ?? null)
+            : null,
           createdAt: item.created_at,
           updatedAt: item.updated_at,
         }).run();
@@ -2460,6 +2588,18 @@ function createSessionFromThChatImport(
         }).run();
         memoryEdgeCount++;
       }
+    }
+
+    // 7. 为导入的聊天与楼层 scope 合成记忆状态，便于后续维护、重建与手动 compact
+    const scopeStateRows = buildImportedMemoryScopeStateRows({
+      accountId: input.accountId,
+      data,
+      idMap: input.idMap,
+      now: input.now,
+      sessionId,
+    });
+    if (scopeStateRows.length > 0) {
+      tx.insert(memoryScopeStates).values(scopeStateRows).run();
     }
 
     return {

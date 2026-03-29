@@ -16,6 +16,8 @@ export type {
   CommitRetryEvent,
   CommitBusyEvent,
   CommitSucceededAfterRetryEvent,
+  MemoryEventContext,
+  MemoryJobEventContext,
   MemoryCreatedEvent,
   MemoryUpdatedEvent,
   MemoryDeprecatedEvent,
@@ -123,12 +125,44 @@ export type {
   MemoryEdge,
   MemoryQuery,
   MemoryConsolidationOutput,
+  MemoryFactAddOperation,
+  MemoryFactUpdateOperation,
+  MemoryFactDeprecateOperation,
+  MemoryOpenLoopAddOperation,
+  MemoryOpenLoopResolveOperation,
+  MemoryCompactionOutput,
+  MemoryIngestOutput,
   MemoryInjectionOptions,
   MemoryInjectionResult,
+  MemoryAccessOptions,
 } from './memory/index.js';
 export { MemoryStore } from './memory/index.js';
 export { MemoryConsolidator } from './memory/index.js';
+export { MemoryInjectionSelector } from './memory/index.js';
+export { MemoryIngestProcessor } from './memory/index.js';
+export { MemoryCompactionPlanner, MemoryCompactionProcessor } from './memory/index.js';
+export {
+  MemoryScopeResolver,
+  MemoryScopeResolutionError,
+  MemoryMutationApplier,
+  MemoryRevisionGuard,
+  MemoryRevisionConflictError,
+} from './memory/index.js';
+export type {
+  MemoryInjectionStrategy,
+  MemoryScopeResolutionContext,
+  ResolvedMemoryScopeRef,
+  MemoryMutationStore,
+  MemoryMutationEvent,
+  MemoryMutationCounts,
+  MemorySummaryMutationResult,
+  MemoryRevisionRef,
+  MemoryRevisionSnapshot,
+} from './memory/index.js';
 export type { ConsolidationInput, ConsolidationResult } from './memory/index.js';
+export type { MemoryIngestInput, MemoryIngestResult } from './memory/index.js';
+export type { MemoryCompactionPlannerInput, MemoryCompactionPlan, MemoryCompactionPlannerOptions, MemoryCompactionTriggerReason } from './memory/index.js';
+export type { MemoryCompactionInput, MemoryCompactionResult } from './memory/index.js';
 
 // ── Orchestration ─────────────────────────────────────
 export { Director } from './orchestration/index.js';

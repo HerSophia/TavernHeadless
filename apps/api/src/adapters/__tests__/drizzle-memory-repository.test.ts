@@ -1,10 +1,21 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createDatabase, type AppDb } from "../../db/client";
+import { accounts } from "../../db/schema";
 import { DrizzleMemoryRepository } from "../drizzle-memory-repository";
 import type { MemoryItem, MemoryEdge } from "@tavern/core";
 
 type CreateInput = Omit<MemoryItem, "id" | "createdAt" | "updatedAt">;
+
+async function seedAccount(db: AppDb, id: string): Promise<void> {
+  const now = Date.now();
+  await db.insert(accounts).values({
+    id,
+    name: id,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
 
 function makeItem(overrides: Partial<CreateInput> = {}): CreateInput {
   return {
@@ -29,6 +40,10 @@ describe("DrizzleMemoryRepository", () => {
     db = conn.db;
     closeDb = conn.close;
     repo = new DrizzleMemoryRepository(db);
+  });
+
+  afterEach(() => {
+    closeDb();
   });
 
   // ── findById ────────────────────────────────────────
@@ -76,6 +91,42 @@ describe("DrizzleMemoryRepository", () => {
     const found = await repo.findById(item.id);
     expect(found!.sourceFloorId).toBe("floor-1");
     expect(found!.sourceMessageId).toBe("msg-1");
+  });
+
+  it("maps Memory V2 summary metadata and supports lifecycle filters", async () => {
+    const item = await repo.create(
+      makeItem({
+        type: "summary",
+        content: "Micro summary",
+        summaryTier: "micro",
+        lifecycleStatus: "compacted",
+        sourceJobId: "job-1",
+        tokenCountEstimate: 128,
+        lastUsedAt: 1_735_689_660_000,
+        coverageStartFloorNo: 3,
+        coverageEndFloorNo: 5,
+        derivedFromCount: 2,
+      }),
+    );
+
+    const result = await repo.findMany({
+      type: "summary",
+      summaryTier: "micro",
+      lifecycleStatus: "compacted",
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: item.id,
+      summaryTier: "micro",
+      lifecycleStatus: "compacted",
+      sourceJobId: "job-1",
+      tokenCountEstimate: 128,
+      lastUsedAt: 1_735_689_660_000,
+      coverageStartFloorNo: 3,
+      coverageEndFloorNo: 5,
+      derivedFromCount: 2,
+    });
   });
 
   it("handles undefined sourceFloorId/sourceMessageId", async () => {
@@ -227,6 +278,16 @@ describe("DrizzleMemoryRepository", () => {
     expect(updated!.factKey).toBe("home_location");
   });
 
+  it("updates lifecycleStatus without forcing deprecated status", async () => {
+    const created = await repo.create(makeItem({ type: "summary", summaryTier: "micro", lifecycleStatus: "active" }));
+
+    const updated = await repo.update(created.id, { lifecycleStatus: "compacted" });
+
+    expect(updated).not.toBeNull();
+    expect(updated!.status).toBe("active");
+    expect(updated!.lifecycleStatus).toBe("compacted");
+  });
+
   // ── deprecate ───────────────────────────────────────
 
   it("returns null when deprecating non-existent item", async () => {
@@ -240,6 +301,7 @@ describe("DrizzleMemoryRepository", () => {
     const deprecated = await repo.deprecate(created.id);
 
     expect(deprecated!.status).toBe("deprecated");
+    expect(deprecated!.lifecycleStatus).toBe("deprecated");
     expect(deprecated!.updatedAt).toBeGreaterThanOrEqual(created.updatedAt);
   });
 
@@ -285,5 +347,50 @@ describe("DrizzleMemoryRepository", () => {
     expect(edges).toHaveLength(2);
     const relations = edges.map((e) => e.relation).sort();
     expect(relations).toEqual(["contradicts", "supports"]);
+  });
+
+  it("supports shared-repository account isolation through query.accountId", async () => {
+    await seedAccount(db, "account-a");
+    await seedAccount(db, "account-b");
+
+    const sharedRepo = new DrizzleMemoryRepository(db);
+    await sharedRepo.create(makeItem({ scopeId: "shared-session", content: "A" }), { accountId: "account-a" });
+    await sharedRepo.create(makeItem({ scopeId: "shared-session", content: "B" }), { accountId: "account-b" });
+
+    const accountAItems = await sharedRepo.findMany({
+      accountId: "account-a",
+      scope: "chat",
+      scopeId: "shared-session",
+    });
+    const accountBItems = await sharedRepo.findMany({
+      accountId: "account-b",
+      scope: "chat",
+      scopeId: "shared-session",
+    });
+
+    expect(accountAItems.map((item) => item.content)).toEqual(["A"]);
+    expect(accountBItems.map((item) => item.content)).toEqual(["B"]);
+  });
+
+  it("does not read or mutate records across account boundaries", async () => {
+    await seedAccount(db, "account-a");
+    await seedAccount(db, "account-b");
+
+    const accountARepo = new DrizzleMemoryRepository(db, "account-a");
+    const accountBRepo = new DrizzleMemoryRepository(db, "account-b");
+    const accountBItem = await accountBRepo.create(makeItem({ content: "Account B item" }));
+
+    expect(await accountARepo.findById(accountBItem.id)).toBeNull();
+    expect(await accountARepo.update(accountBItem.id, { content: "changed" })).toBeNull();
+    expect(await accountARepo.deprecate(accountBItem.id)).toBeNull();
+
+    const stillOwnedByAccountB = await accountBRepo.findById(accountBItem.id);
+    expect(stillOwnedByAccountB).not.toBeNull();
+    expect(stillOwnedByAccountB!.content).toBe("Account B item");
+    expect(stillOwnedByAccountB!.status).toBe("active");
+
+    const edge = await accountBRepo.createEdge({ fromId: accountBItem.id, toId: accountBItem.id, relation: "supports" });
+    expect(await accountARepo.findEdges(accountBItem.id)).toEqual([]);
+    expect(await accountBRepo.findEdges(accountBItem.id)).toEqual([edge]);
   });
 });

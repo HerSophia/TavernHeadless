@@ -1547,7 +1547,9 @@ export interface paths {
                     scope?: "global" | "chat" | "floor";
                     scope_id?: string;
                     type?: "fact" | "summary" | "open_loop";
+                    summary_tier?: "micro" | "macro";
                     status?: "active" | "deprecated";
+                    lifecycle_status?: "active" | "compacted" | "deprecated";
                     fact_key?: string;
                     source_floor_id?: string;
                     source_message_id?: string;
@@ -1608,17 +1610,26 @@ export interface paths {
                             data: {
                                 confidence: number;
                                 content: unknown;
+                                coverage_end_floor_no?: number | null;
+                                coverage_start_floor_no?: number | null;
                                 created_at: number;
+                                derived_from_count?: number | null;
                                 fact_key?: string | null;
                                 id: string;
                                 importance: number;
+                                last_used_at?: number | null;
+                                /** @enum {string} */
+                                lifecycle_status?: "active" | "compacted" | "deprecated";
                                 /** @enum {string} */
                                 scope: "global" | "chat" | "floor";
                                 scope_id: string;
                                 source_floor_id?: string | null;
+                                source_job_id?: string | null;
                                 source_message_id?: string | null;
                                 /** @enum {string} */
                                 status: "active" | "deprecated";
+                                summary_tier?: ("micro" | "macro") | null;
+                                token_count_estimate?: number | null;
                                 /** @enum {string} */
                                 type: "fact" | "summary" | "open_loop";
                                 updated_at: number;
@@ -1671,12 +1682,16 @@ export interface paths {
                         fact_key?: string | null;
                         importance?: number;
                         /** @enum {string} */
+                        lifecycle_status?: "active" | "compacted" | "deprecated";
+                        /** @enum {string} */
                         scope: "global" | "chat" | "floor";
                         scope_id: string;
                         source_floor_id?: string;
                         source_message_id?: string;
                         /** @enum {string} */
                         status?: "active" | "deprecated";
+                        /** @enum {string} */
+                        summary_tier?: "micro" | "macro";
                         /** @enum {string} */
                         type: "fact" | "summary" | "open_loop";
                     };
@@ -1733,17 +1748,26 @@ export interface paths {
                             data: {
                                 confidence: number;
                                 content: unknown;
+                                coverage_end_floor_no?: number | null;
+                                coverage_start_floor_no?: number | null;
                                 created_at: number;
+                                derived_from_count?: number | null;
                                 fact_key?: string | null;
                                 id: string;
                                 importance: number;
+                                last_used_at?: number | null;
+                                /** @enum {string} */
+                                lifecycle_status?: "active" | "compacted" | "deprecated";
                                 /** @enum {string} */
                                 scope: "global" | "chat" | "floor";
                                 scope_id: string;
                                 source_floor_id?: string | null;
+                                source_job_id?: string | null;
                                 source_message_id?: string | null;
                                 /** @enum {string} */
                                 status: "active" | "deprecated";
+                                summary_tier?: ("micro" | "macro") | null;
+                                token_count_estimate?: number | null;
                                 /** @enum {string} */
                                 type: "fact" | "summary" | "open_loop";
                                 updated_at: number;
@@ -1862,17 +1886,26 @@ export interface paths {
                             data: {
                                 confidence: number;
                                 content: unknown;
+                                coverage_end_floor_no?: number | null;
+                                coverage_start_floor_no?: number | null;
                                 created_at: number;
+                                derived_from_count?: number | null;
                                 fact_key?: string | null;
                                 id: string;
                                 importance: number;
+                                last_used_at?: number | null;
+                                /** @enum {string} */
+                                lifecycle_status?: "active" | "compacted" | "deprecated";
                                 /** @enum {string} */
                                 scope: "global" | "chat" | "floor";
                                 scope_id: string;
                                 source_floor_id?: string | null;
+                                source_job_id?: string | null;
                                 source_message_id?: string | null;
                                 /** @enum {string} */
                                 status: "active" | "deprecated";
+                                summary_tier?: ("micro" | "macro") | null;
+                                token_count_estimate?: number | null;
                                 /** @enum {string} */
                                 type: "fact" | "summary" | "open_loop";
                                 updated_at: number;
@@ -1974,12 +2007,16 @@ export interface paths {
                         fact_key?: string | null;
                         importance?: number;
                         /** @enum {string} */
+                        lifecycle_status?: "active" | "compacted" | "deprecated";
+                        /** @enum {string} */
                         scope?: "global" | "chat" | "floor";
                         scope_id?: string;
                         source_floor_id?: string;
                         source_message_id?: string;
                         /** @enum {string} */
                         status?: "active" | "deprecated";
+                        /** @enum {string} */
+                        summary_tier?: "micro" | "macro";
                         /** @enum {string} */
                         type?: "fact" | "summary" | "open_loop";
                     };
@@ -2036,17 +2073,26 @@ export interface paths {
                             data: {
                                 confidence: number;
                                 content: unknown;
+                                coverage_end_floor_no?: number | null;
+                                coverage_start_floor_no?: number | null;
                                 created_at: number;
+                                derived_from_count?: number | null;
                                 fact_key?: string | null;
                                 id: string;
                                 importance: number;
+                                last_used_at?: number | null;
+                                /** @enum {string} */
+                                lifecycle_status?: "active" | "compacted" | "deprecated";
                                 /** @enum {string} */
                                 scope: "global" | "chat" | "floor";
                                 scope_id: string;
                                 source_floor_id?: string | null;
+                                source_job_id?: string | null;
                                 source_message_id?: string | null;
                                 /** @enum {string} */
                                 status: "active" | "deprecated";
+                                summary_tier?: ("micro" | "macro") | null;
+                                token_count_estimate?: number | null;
                                 /** @enum {string} */
                                 type: "fact" | "summary" | "open_loop";
                                 updated_at: number;
@@ -2140,7 +2186,9 @@ export interface paths {
                     scope?: "global" | "chat" | "floor";
                     scope_id?: string;
                     type?: "fact" | "summary" | "open_loop";
+                    summary_tier?: "micro" | "macro";
                     status?: "active" | "deprecated";
+                    lifecycle_status?: "active" | "compacted" | "deprecated";
                     fact_key?: string;
                     source_floor_id?: string;
                     source_message_id?: string;
@@ -2227,7 +2275,7 @@ export interface paths {
                     sort_by?: "created_at";
                     from_id?: string;
                     to_id?: string;
-                    relation?: "supports" | "contradicts" | "updates";
+                    relation?: "supports" | "contradicts" | "updates" | "derived_from" | "compacts" | "resolves";
                 };
                 header?: never;
                 path?: never;
@@ -2247,7 +2295,7 @@ export interface paths {
                                 from_id: string;
                                 id: string;
                                 /** @enum {string} */
-                                relation: "supports" | "contradicts" | "updates";
+                                relation: "supports" | "contradicts" | "updates" | "derived_from" | "compacts" | "resolves";
                                 to_id: string;
                             }[];
                             meta: {
@@ -2295,7 +2343,7 @@ export interface paths {
                     "application/json": {
                         from_id: string;
                         /** @enum {string} */
-                        relation: "supports" | "contradicts" | "updates";
+                        relation: "supports" | "contradicts" | "updates" | "derived_from" | "compacts" | "resolves";
                         to_id: string;
                     };
                 };
@@ -2313,7 +2361,7 @@ export interface paths {
                                 from_id: string;
                                 id: string;
                                 /** @enum {string} */
-                                relation: "supports" | "contradicts" | "updates";
+                                relation: "supports" | "contradicts" | "updates" | "derived_from" | "compacts" | "resolves";
                                 to_id: string;
                             };
                         };
@@ -2392,7 +2440,7 @@ export interface paths {
                                 from_id: string;
                                 id: string;
                                 /** @enum {string} */
-                                relation: "supports" | "contradicts" | "updates";
+                                relation: "supports" | "contradicts" | "updates" | "derived_from" | "compacts" | "resolves";
                                 to_id: string;
                             };
                         };
@@ -2488,7 +2536,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         /** @enum {string} */
-                        relation: "supports" | "contradicts" | "updates";
+                        relation: "supports" | "contradicts" | "updates" | "derived_from" | "compacts" | "resolves";
                     };
                 };
             };
@@ -2505,7 +2553,7 @@ export interface paths {
                                 from_id: string;
                                 id: string;
                                 /** @enum {string} */
-                                relation: "supports" | "contradicts" | "updates";
+                                relation: "supports" | "contradicts" | "updates" | "derived_from" | "compacts" | "resolves";
                                 to_id: string;
                             };
                         };
@@ -2547,6 +2595,538 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/memory/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List memory jobs */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    offset?: number;
+                    sort_order?: "asc" | "desc";
+                    scope?: "global" | "chat" | "floor";
+                    scope_id?: string;
+                    job_type?: "ingest_turn" | "compact_macro" | "maintenance" | "rebuild_scope";
+                    status?: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                    floor_id?: string;
+                    created_from?: number;
+                    created_to?: number;
+                    available_from?: number;
+                    available_to?: number;
+                    sort_by?: "created_at" | "updated_at" | "available_at";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                attempt_count: number;
+                                available_at: number;
+                                based_on_revision?: number | null;
+                                created_at: number;
+                                finished_at?: number | null;
+                                floor_id?: string | null;
+                                id: string;
+                                /** @enum {string} */
+                                job_type: "ingest_turn" | "compact_macro" | "maintenance" | "rebuild_scope";
+                                last_error?: string | null;
+                                lease_owner?: string | null;
+                                lease_until?: number | null;
+                                max_attempts: number;
+                                payload?: unknown;
+                                /** @enum {string} */
+                                scope: "global" | "chat" | "floor";
+                                scope_id: string;
+                                /** @enum {string} */
+                                status: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                                updated_at: number;
+                            }[];
+                            meta: {
+                                has_more: boolean;
+                                limit: number;
+                                offset: number;
+                                sort_by: string;
+                                /** @enum {string} */
+                                sort_order: "asc" | "desc";
+                                total: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memory/jobs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a pending memory job */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                coverage_end_floor_no?: number | null;
+                                coverage_start_floor_no?: number | null;
+                                created: boolean;
+                                job_id: string;
+                                reason?: string;
+                                /** @enum {string} */
+                                scope?: "global" | "chat" | "floor";
+                                scope_id?: string;
+                                source_micro_ids?: string[];
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memory/jobs/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a memory job */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                coverage_end_floor_no?: number | null;
+                                coverage_start_floor_no?: number | null;
+                                created: boolean;
+                                job_id: string;
+                                reason?: string;
+                                /** @enum {string} */
+                                scope?: "global" | "chat" | "floor";
+                                scope_id?: string;
+                                source_micro_ids?: string[];
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memory/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List memory scope states */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    offset?: number;
+                    sort_order?: "asc" | "desc";
+                    scope?: "global" | "chat" | "floor";
+                    scope_id?: string;
+                    sort_by?: "updated_at" | "revision" | "last_compaction_at" | "last_processed_floor_no";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                last_compaction_at?: number | null;
+                                last_processed_floor_no?: number | null;
+                                lease_owner?: string | null;
+                                lease_until?: number | null;
+                                revision: number;
+                                /** @enum {string} */
+                                scope: "global" | "chat" | "floor";
+                                scope_id: string;
+                                updated_at: number;
+                            }[];
+                            meta: {
+                                has_more: boolean;
+                                limit: number;
+                                offset: number;
+                                sort_by: string;
+                                /** @enum {string} */
+                                sort_order: "asc" | "desc";
+                                total: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memory/scopes/{scope}/{scopeId}/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue a manual macro compaction job */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    scope: "global" | "chat" | "floor";
+                    scopeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        force?: boolean;
+                        trigger_floor_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                coverage_end_floor_no?: number | null;
+                                coverage_start_floor_no?: number | null;
+                                created: boolean;
+                                job_id: string;
+                                reason?: string;
+                                /** @enum {string} */
+                                scope?: "global" | "chat" | "floor";
+                                scope_id?: string;
+                                source_micro_ids?: string[];
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memory/scopes/{scope}/{scopeId}/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue a scope rebuild job */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    scope: "global" | "chat" | "floor";
+                    scopeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        force_compaction?: boolean;
+                        trigger_floor_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                coverage_end_floor_no?: number | null;
+                                coverage_start_floor_no?: number | null;
+                                created: boolean;
+                                job_id: string;
+                                reason?: string;
+                                /** @enum {string} */
+                                scope?: "global" | "chat" | "floor";
+                                scope_id?: string;
+                                source_micro_ids?: string[];
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/messages": {
@@ -8603,17 +9183,26 @@ export interface operations {
                                 data?: {
                                     confidence: number;
                                     content: unknown;
+                                    coverage_end_floor_no?: number | null;
+                                    coverage_start_floor_no?: number | null;
                                     created_at: number;
+                                    derived_from_count?: number | null;
                                     fact_key?: string | null;
                                     id: string;
                                     importance: number;
+                                    last_used_at?: number | null;
+                                    /** @enum {string} */
+                                    lifecycle_status?: "active" | "compacted" | "deprecated";
                                     /** @enum {string} */
                                     scope: "global" | "chat" | "floor";
                                     scope_id: string;
                                     source_floor_id?: string | null;
+                                    source_job_id?: string | null;
                                     source_message_id?: string | null;
                                     /** @enum {string} */
                                     status: "active" | "deprecated";
+                                    summary_tier?: ("micro" | "macro") | null;
+                                    token_count_estimate?: number | null;
                                     /** @enum {string} */
                                     type: "fact" | "summary" | "open_loop";
                                     updated_at: number;

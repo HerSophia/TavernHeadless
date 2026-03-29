@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 import type { MemoryInjectionOptions } from "@tavern/core";
 
-import { createDatabase } from "./db/client";
+import { createDatabase, type DatabaseConnection } from "./db/client";
 import { sendError, zodIssues } from "./lib/http";
 import { registerCrudRoutes } from "./routes";
 import { registerChatRoutes } from "./routes/chat";
@@ -15,6 +15,7 @@ import {
   DrizzleToolExecutionRepository,
   DrizzleVariableRepository,
 } from "./adapters";
+import { memoryItems, memoryScopeStates } from "./db/schema.js";
 import {
   ChatService,
   ChatServiceError,
@@ -26,6 +27,9 @@ import {
   type GenerationExecutionMode,
 } from "./services/generation-guard-service";
 import {
+  TurnCommitService,
+} from "./services/turn-commit-service.js";
+import {
   MemoryMaintenanceService,
   type MemoryMaintenancePolicy,
 } from "./services/memory-maintenance-service";
@@ -34,6 +38,7 @@ import {
   type OrchestrationConfig,
   type OrchestrationContext,
 } from "./services/orchestration-factory";
+import { ChatMessagePersistence } from "./services/chat-message-persistence.js";
 import { LlmProfileService, LlmProfileServiceError } from "./services/llm-profile-service";
 import { registerOpenApi } from "./plugins/openapi";
 import { registerRequestLogging } from "./plugins/request-logging";
@@ -48,6 +53,8 @@ import { registerMcpRuntimeRoutes } from "./routes/mcp";
 import { SessionToolRegistryService } from "./services/session-tool-registry-service";
 import { ToolRegistry, BuiltinToolProvider } from "@tavern/core";
 import { ResourceToolProvider } from "./tools/index.js";
+import { MemoryWorker } from "./services/memory-worker.js";
+import { MemoryJobScheduler } from "./services/memory-job-scheduler.js";
 
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
@@ -119,6 +126,21 @@ export type BuildAppOptions = {
   enablePromptDryRun?: boolean;
   /** 是否默认启用 MemoryConsolidator（可被请求级 turn config 覆盖） */
   enableMemoryConsolidation?: boolean;
+  /** 是否启用异步记忆入队主路径（Phase 2 切换开关） */
+  enableAsyncMemoryIngest?: boolean;
+  /** 是否启用 macro summary 压缩（Phase 4 切换开关） */
+  enableMacroCompaction?: boolean;
+  /** 是否启用 micro/macro 双层摘要注入（Phase 4 切换开关） */
+  enableDualSummaryInjection?: boolean;
+  /** 可选：MemoryWorker 运行参数 */
+  memoryWorker?: {
+    pollIntervalMs?: number;
+    leaseTtlMs?: number;
+    maxConcurrentJobs?: number;
+    retryBaseDelayMs?: number;
+    maxRetryDelayMs?: number;
+    candidateScanLimit?: number;
+  };
   /** 服务端默认生成超时（毫秒） */
   llmDefaultTimeoutMs?: number;
   /**
@@ -161,17 +183,58 @@ export type BuildAppResult = {
   mcpManager?: McpConnectionManager;
 };
 
+export type MemoryMaintenanceScopeRef = {
+  accountId: string;
+  scope: "global" | "chat" | "floor";
+  scopeId: string;
+};
+
+export async function listMemoryMaintenanceScopes(
+  db: DatabaseConnection["db"],
+): Promise<MemoryMaintenanceScopeRef[]> {
+  const [itemScopes, scopeStateScopes] = await Promise.all([
+    db
+      .select({
+        accountId: memoryItems.accountId,
+        scope: memoryItems.scope,
+        scopeId: memoryItems.scopeId,
+      })
+      .from(memoryItems)
+      .groupBy(memoryItems.accountId, memoryItems.scope, memoryItems.scopeId),
+    db
+      .select({
+        accountId: memoryScopeStates.accountId,
+        scope: memoryScopeStates.scope,
+        scopeId: memoryScopeStates.scopeId,
+      })
+      .from(memoryScopeStates),
+  ]);
+
+  const uniqueScopes = new Map<string, MemoryMaintenanceScopeRef>();
+  for (const scopeRef of [...itemScopes, ...scopeStateScopes]) {
+    const key = [scopeRef.accountId, scopeRef.scope, scopeRef.scopeId].join("\u0000");
+    uniqueScopes.set(key, scopeRef);
+  }
+
+  return [...uniqueScopes.values()];
+}
+
 export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppResult> {
   const app = Fastify({ logger: options.logger ?? true });
   const database = createDatabase(options.databasePath);
   const accountMode = options.accountMode ?? "single";
 
   let memoryMaintenanceTimer: NodeJS.Timeout | undefined;
+  let memoryWorker: MemoryWorker | undefined;
 
   app.addHook("onClose", async () => {
     if (memoryMaintenanceTimer) {
       clearInterval(memoryMaintenanceTimer);
       memoryMaintenanceTimer = undefined;
+    }
+    if (memoryWorker) {
+      await memoryWorker.stop();
+      memoryWorker = undefined;
     }
     database.close();
   });
@@ -373,44 +436,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   await registerCrudRoutes(app, database, {
     variableEventBus: orchestrationContext?.eventBus,
     sessionToolRegistryService,
+    memoryJobs: {
+      enableBackgroundWorker: options.enableMemory === true && options.orchestration !== undefined && (
+        options.enableAsyncMemoryIngest === true
+        || options.enableMacroCompaction === true
+        || options.memoryMaintenance !== undefined
+      ),
+    },
   });
-
-  // ── 可选：记忆维护任务（deprecate / purge） ──
-  // 注意：当前实现为进程内定时器，不带分布式锁。
-  // 多实例部署时，只允许一个实例启用记忆维护；
-  // 其余 API 实例应关闭该开关，或改由独立 maintenance job / worker 负责。
-  // 当前 beta 仅记录该部署约束，不在这里实现多实例协调。
-  if (options.enableMemory === true && options.memoryMaintenance) {
-    const maintenance = options.memoryMaintenance;
-    const service = new MemoryMaintenanceService(database.db);
-    const intervalMs = Math.max(10_000, maintenance.intervalMs);
-    const batchSize = maintenance.batchSize;
-    const policy = maintenance.policy;
-    const dryRun = maintenance.dryRun === true;
-
-    let running = false;
-
-    const runOnce = async () => {
-      if (running) return;
-      running = true;
-      try {
-        const result = await service.run({
-          batchSize,
-          policy,
-          dryRun,
-        });
-        app.log.info({ result }, "Memory maintenance completed");
-      } catch (error) {
-        app.log.error({ error }, "Memory maintenance failed");
-      } finally {
-        running = false;
-      }
-    };
-
-    memoryMaintenanceTimer = setInterval(() => {
-      void runOnce();
-    }, intervalMs);
-  }
 
   // ── 可选：聊天业务路由 ──
   if (options.orchestration && orchestrationContext) {
@@ -425,6 +458,78 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     // 不提供跨实例共享锁或共享队列。
     const generationCoordinator = options.generationCoordinator ?? new InMemoryGenerationCoordinator();
 
+    const turnCommitService = new TurnCommitService(
+      database.db,
+      new ChatMessagePersistence(database.db, activeOrchestrationContext.tokenCounter),
+      activeOrchestrationContext.eventBus,
+      {
+        enableAsyncMemoryIngest: options.enableMemory === true && options.enableAsyncMemoryIngest === true,
+      },
+    );
+
+    const shouldStartMemoryWorker = options.enableMemory === true && (
+      options.enableAsyncMemoryIngest === true
+      || options.enableMacroCompaction === true
+      || options.memoryMaintenance !== undefined
+    );
+
+    if (shouldStartMemoryWorker) {
+      memoryWorker = new MemoryWorker(
+        database.db,
+        activeOrchestrationContext.memoryStore,
+        activeOrchestrationContext.memoryIngestProcessor,
+        activeOrchestrationContext.memoryCompactionProcessor,
+        activeOrchestrationContext.eventBus,
+        {
+          ...options.memoryWorker,
+          logger: app.log,
+          enableMacroCompaction: options.enableMacroCompaction === true,
+        },
+      );
+      memoryWorker.start();
+    }
+
+    if (options.enableMemory === true && options.memoryMaintenance && memoryWorker) {
+      const maintenance = options.memoryMaintenance;
+      const intervalMs = Math.max(10_000, maintenance.intervalMs);
+      const batchSize = maintenance.batchSize;
+      const policy = maintenance.policy;
+      const dryRun = maintenance.dryRun === true;
+      const memoryJobScheduler = new MemoryJobScheduler();
+
+      const enqueueMaintenanceJobs = async () => {
+        try {
+          const scheduledAt = Date.now();
+          const scheduleBucket = Math.floor(scheduledAt / intervalMs);
+          const scopes = await listMemoryMaintenanceScopes(database.db);
+
+          const result = database.db.transaction((tx) => scopes.map((scopeRef) => memoryJobScheduler.enqueueMaintenance(tx, {
+            accountId: scopeRef.accountId,
+            scope: scopeRef.scope,
+            scopeId: scopeRef.scopeId,
+            scheduleBucket,
+            scheduledAt,
+            batchSize,
+            dryRun,
+            policy,
+          })));
+
+          app.log.info({
+            scopeCount: scopes.length,
+            enqueued: result.filter((entry) => entry.created).length,
+            scheduleBucket,
+          }, "Memory maintenance jobs enqueued");
+        } catch (error) {
+          app.log.error({ error }, "Memory maintenance enqueue failed");
+        }
+      };
+
+      memoryMaintenanceTimer = setInterval(() => {
+        void enqueueMaintenanceJobs();
+      }, intervalMs);
+      void enqueueMaintenanceJobs();
+    }
+
     const chatService = new ChatService(
       database.db,
       activeOrchestrationContext.orchestrator,
@@ -434,6 +539,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         memoryStore: options.enableMemory ? activeOrchestrationContext.memoryStore : undefined,
         memoryInjectionDecay: options.memoryInjectionDecay,
         enableMemoryConsolidationByDefault: options.enableMemoryConsolidation,
+        enableAsyncMemoryIngest: options.enableAsyncMemoryIngest,
+        enableDualSummaryInjection: options.enableDualSummaryInjection,
+        turnCommitService,
         resolveTurnModels: async (sessionId, accountId = DEFAULT_ADMIN_ACCOUNT_ID) => {
           try {
             const profileMap = await llmProfileService.resolveActiveProfiles(sessionId, accountId);
@@ -504,6 +612,38 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       });
     }
   }
+
+  if (options.enableMemory === true && options.memoryMaintenance && !memoryMaintenanceTimer) {
+    const maintenance = options.memoryMaintenance;
+    const service = new MemoryMaintenanceService(database.db);
+    const intervalMs = Math.max(10_000, maintenance.intervalMs);
+    const batchSize = maintenance.batchSize;
+    const policy = maintenance.policy;
+    const dryRun = maintenance.dryRun === true;
+
+    let running = false;
+
+    const runOnce = async () => {
+      if (running) {
+        return;
+      }
+      running = true;
+      try {
+        const result = await service.run({ batchSize, policy, dryRun });
+        app.log.info({ result }, "Memory maintenance completed");
+      } catch (error) {
+        app.log.error({ error }, "Memory maintenance failed");
+      } finally {
+        running = false;
+      }
+    };
+
+    memoryMaintenanceTimer = setInterval(() => {
+      void runOnce();
+    }, intervalMs);
+    void runOnce();
+  }
+
 
   return { app, orchestrationContext, wsBridge, mcpManager };
 }

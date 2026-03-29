@@ -141,6 +141,13 @@
       "when": 1761900000000,
       "tag": "0019_tool_execution_journal",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1762000000000,
+      "tag": "0020_memory_v2_schema_infra",
+      "breakpoints": true
     }
   ]
 }

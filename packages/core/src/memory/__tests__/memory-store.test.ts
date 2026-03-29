@@ -13,7 +13,7 @@ function createMockRepo(): MemoryRepository {
   const storage = new Map<string, MemoryItem>();
 
   return {
-    async findById(id) {
+    async findById(id, _options) {
       return storage.get(id) ?? null;
     },
     async findMany(query) {
@@ -22,7 +22,11 @@ function createMockRepo(): MemoryRepository {
       if (query.scopeId) items = items.filter((i) => i.scopeId === query.scopeId);
       if (query.scope) items = items.filter((i) => i.scope === query.scope);
       if (query.type) items = items.filter((i) => i.type === query.type);
+      if (query.summaryTier) items = items.filter((i) => i.summaryTier === query.summaryTier);
       if (query.status) items = items.filter((i) => i.status === query.status);
+      if (query.lifecycleStatus) {
+        items = items.filter((i) => (i.lifecycleStatus ?? 'active') === query.lifecycleStatus);
+      }
       if (query.minImportance !== undefined) {
         items = items.filter((i) => i.importance >= query.minImportance!);
       }
@@ -51,7 +55,7 @@ function createMockRepo(): MemoryRepository {
       if (query.limit) items = items.slice(0, query.limit);
       return items;
     },
-    async create(input) {
+    async create(input, _options) {
       const now = Date.now();
       const item: MemoryItem = {
         id: `mem_${nextId++}`,
@@ -62,24 +66,28 @@ function createMockRepo(): MemoryRepository {
       storage.set(item.id, item);
       return item;
     },
-    async update(id, patch) {
+    async update(id, patch, _options) {
       const item = storage.get(id);
       if (!item) return null;
-      const updated = { ...item, ...patch, updatedAt: Date.now() };
+      const updated = {
+        ...item,
+        ...patch,
+        updatedAt: Date.now(),
+      };
       storage.set(id, updated);
       return updated;
     },
-    async deprecate(id) {
+    async deprecate(id, _options) {
       const item = storage.get(id);
       if (!item) return null;
       const deprecated = { ...item, status: 'deprecated' as const, updatedAt: Date.now() };
       storage.set(id, deprecated);
       return deprecated;
     },
-    async createEdge(input) {
+    async createEdge(input, _options) {
       return { id: `edge_${nextId++}`, ...input, createdAt: Date.now() };
     },
-    async findEdges() {
+    async findEdges(_itemId, _options) {
       return [];
     },
   };
@@ -174,6 +182,9 @@ describe('MemoryStore', () => {
 
       expect(eventBus.emit).toHaveBeenCalledTimes(2);
       expect(eventBus.emit).toHaveBeenCalledWith('memory.created', expect.objectContaining({
+        sessionId: 'session-1',
+        scope: 'chat',
+        scopeId: 'session-1',
         source: 'extraction',
       }));
     });
@@ -395,6 +406,92 @@ describe('MemoryStore', () => {
       expect(result.items.filter((item) => item.type === 'summary')).toHaveLength(1);
     });
 
+    it('supports dual-summary injection ordering and treats legacy summaries as micro', async () => {
+      const { store, repo } = createStore();
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'fact',
+        content: 'alliance_status: cautious allies',
+        factKey: 'alliance_status',
+        importance: 0.95,
+        confidence: 1.0,
+        status: 'active',
+        lifecycleStatus: 'active',
+      });
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'open_loop',
+        content: 'Can the guide be trusted?',
+        importance: 0.8,
+        confidence: 1.0,
+        status: 'active',
+        lifecycleStatus: 'active',
+      });
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'summary',
+        content: 'Legacy summary rows should still act like micro summaries.',
+        importance: 0.75,
+        confidence: 1.0,
+        status: 'active',
+        lifecycleStatus: 'active',
+      });
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'summary',
+        summaryTier: 'micro',
+        content: 'A recent micro summary of the latest turn.',
+        importance: 0.7,
+        confidence: 1.0,
+        status: 'active',
+        lifecycleStatus: 'active',
+      });
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'summary',
+        summaryTier: 'macro',
+        content: 'A macro summary of the recent phase.',
+        importance: 0.65,
+        confidence: 1.0,
+        status: 'active',
+        lifecycleStatus: 'active',
+      });
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'summary',
+        summaryTier: 'micro',
+        content: 'Compacted summaries must stay out of active injection.',
+        importance: 0.9,
+        confidence: 1.0,
+        status: 'active',
+        lifecycleStatus: 'compacted',
+      });
+
+      const result = await store.prepareInjection('session-1', {
+        maxTokens: 10000,
+        maxItems: 24,
+        minImportance: 0.35,
+        includeTypes: ['open_loop', 'fact', 'summary'],
+        strategy: 'dual_summary',
+      });
+
+      expect(result.formattedText).toContain('[Memory Facts]');
+      expect(result.formattedText).toContain('[Open Loops]');
+      expect(result.formattedText).toContain('[Recent Micro Summaries]');
+      expect(result.formattedText).toContain('[Macro Summary]');
+      expect(result.formattedText.indexOf('[Memory Facts]')).toBeLessThan(result.formattedText.indexOf('[Open Loops]'));
+      expect(result.formattedText.indexOf('[Open Loops]')).toBeLessThan(result.formattedText.indexOf('[Recent Micro Summaries]'));
+      expect(result.formattedText.indexOf('[Recent Micro Summaries]')).toBeLessThan(result.formattedText.indexOf('[Macro Summary]'));
+      expect(result.formattedText).toContain('Legacy summary rows should still act like micro summaries.');
+      expect(result.formattedText).not.toContain('Compacted summaries must stay out of active injection.');
+    });
+
     it('formats memory text correctly', async () => {
       const { store } = createStore();
       await store.ingestSummaries(['Important event'], 'chat', 'session-1');
@@ -424,12 +521,15 @@ describe('MemoryStore', () => {
       expect(eventBus.emit).toHaveBeenCalledWith('memory.created', expect.objectContaining({
         source: 'consolidation',
       }));
-      expect(eventBus.emit).toHaveBeenCalledWith('memory.consolidated', {
+      expect(eventBus.emit).toHaveBeenCalledWith('memory.consolidated', expect.objectContaining({
+        sessionId: 'session-1',
+        scope: 'chat',
+        scopeId: 'session-1',
         floorId: 'floor-1',
         created: 1,
         updated: 0,
         deprecated: 0,
-      });
+      }));
     });
 
     it('creates new facts from factsAdd', async () => {
@@ -497,12 +597,15 @@ describe('MemoryStore', () => {
       expect(depCalls).toHaveLength(1);
       expect(depCalls[0]![1].reason).toBe('conflict_resolution:mood');
 
-      expect(eventBus.emit).toHaveBeenCalledWith('memory.consolidated', {
+      expect(eventBus.emit).toHaveBeenCalledWith('memory.consolidated', expect.objectContaining({
+        sessionId: 'session-1',
+        scope: 'chat',
+        scopeId: 'session-1',
         floorId: 'floor-1',
         created: 1,
         updated: 0,
         deprecated: 1,
-      });
+      }));
     });
 
     it('updates existing facts from factsUpdate', async () => {
@@ -590,12 +693,15 @@ describe('MemoryStore', () => {
         (c) => c[0] === 'memory.consolidated',
       );
       expect(consolidatedCalls).toHaveLength(1);
-      expect(consolidatedCalls[0]![1]).toEqual({
+      expect(consolidatedCalls[0]![1]).toEqual(expect.objectContaining({
+        sessionId: 'session-1',
+        scope: 'chat',
+        scopeId: 'session-1',
         floorId: 'floor-1',
         created: 2, // turnSummary + 1 fact
         updated: 1,
         deprecated: 0,
-      });
+      }));
     });
   });
 
@@ -627,10 +733,13 @@ describe('MemoryStore', () => {
 
       await store.deprecate(item.id, 'outdated');
 
-      expect(eventBus.emit).toHaveBeenCalledWith('memory.deprecated', {
+      expect(eventBus.emit).toHaveBeenCalledWith('memory.deprecated', expect.objectContaining({
+        sessionId: 's1',
+        scope: 'chat',
+        scopeId: 's1',
         item: expect.objectContaining({ id: item.id, status: 'deprecated' }),
         reason: 'outdated',
-      });
+      }));
     });
 
     it('does nothing for non-existent ID', async () => {
@@ -660,10 +769,13 @@ describe('MemoryStore', () => {
       });
 
       expect(item.content).toBe('manually added fact');
-      expect(eventBus.emit).toHaveBeenCalledWith('memory.created', {
+      expect(eventBus.emit).toHaveBeenCalledWith('memory.created', expect.objectContaining({
+        sessionId: 'session-1',
+        scope: 'chat',
+        scopeId: 'session-1',
         item,
         source: 'manual',
-      });
+      }));
     });
   });
 });

@@ -145,23 +145,35 @@ export class WsBridge {
 /**
  * 从事件数据中提取 sessionId。
  *
- * 不同事件的 sessionId 在不同字段中：
+ * 优先级：
  * - floor 事件：data.floor.sessionId
- * - variable / commit / memory 事件：直接读取 data.sessionId
+ * - 通用直接字段：data.sessionId
+ * - memory 事件兜底：data.item.scope === 'chat' 时使用 data.item.scopeId
+ * - memory 汇总兜底：data.scope === 'chat' 时使用 data.scopeId
  */
-function extractSessionId(eventName: string, data: unknown): string | undefined {
+function extractSessionId(_eventName: string, data: unknown): string | undefined {
   if (!data || typeof data !== 'object') return undefined;
 
   const d = data as Record<string, unknown>;
 
-  // floor 事件
   if (d.floor && typeof d.floor === 'object') {
     return (d.floor as Record<string, unknown>).sessionId as string | undefined;
   }
 
-  // 直接带 sessionId 的事件（如 commit.* / memory.*）
   if (typeof d.sessionId === 'string') {
     return d.sessionId;
+  }
+
+  const item = d.item;
+  if (item && typeof item === 'object') {
+    const itemRecord = item as Record<string, unknown>;
+    if (itemRecord.scope === 'chat' && typeof itemRecord.scopeId === 'string') {
+      return itemRecord.scopeId;
+    }
+  }
+
+  if (d.scope === 'chat' && typeof d.scopeId === 'string') {
+    return d.scopeId;
   }
 
   return undefined;

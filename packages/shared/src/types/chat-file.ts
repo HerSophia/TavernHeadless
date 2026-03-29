@@ -74,12 +74,20 @@ export const thChatMemoryItemSchema = z.object({
   scope: z.enum(['chat', 'floor']),
   scope_id_ref: z.string().nullable(),
   type: z.enum(['fact', 'summary', 'open_loop']),
+  summary_tier: z.enum(['micro', 'macro']).nullable().optional(),
   content: z.unknown(),
   importance: z.number(),
   confidence: z.number(),
   source_floor_id_ref: z.string().nullable(),
   source_message_id_ref: z.string().nullable(),
   status: z.enum(['active', 'deprecated']),
+  lifecycle_status: z.enum(['active', 'compacted', 'deprecated']).optional(),
+  source_job_id: z.string().nullable().optional(),
+  token_count_estimate: z.number().int().min(0).nullable().optional(),
+  last_used_at: z.number().int().min(0).nullable().optional(),
+  coverage_start_floor_no: z.number().int().min(0).nullable().optional(),
+  coverage_end_floor_no: z.number().int().min(0).nullable().optional(),
+  derived_from_count: z.number().int().min(0).nullable().optional(),
   created_at: z.number(),
   updated_at: z.number(),
 });
@@ -89,7 +97,7 @@ export type ThChatMemoryItem = z.infer<typeof thChatMemoryItemSchema>;
 export const thChatMemoryEdgeSchema = z.object({
   from_id_ref: z.string(),
   to_id_ref: z.string(),
-  relation: z.enum(['supports', 'contradicts', 'updates']),
+  relation: z.enum(['supports', 'contradicts', 'updates', 'derived_from', 'compacts', 'resolves']),
   created_at: z.number(),
 });
 

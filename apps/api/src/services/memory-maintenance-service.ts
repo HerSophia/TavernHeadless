@@ -1,6 +1,7 @@
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, sql, type SQL } from "drizzle-orm";
+import type { MemoryScope } from "@tavern/shared";
 
-import type { AppDb } from "../db/client.js";
+import type { AppDb, DbExecutor } from "../db/client.js";
 import { memoryItems } from "../db/schema.js";
 
 export type MemoryMaintenancePolicy = {
@@ -21,6 +22,12 @@ export type MemoryMaintenancePolicy = {
   deprecatedPurgeAgeMs?: number;
 };
 
+export interface MemoryMaintenanceScopeFilter {
+  accountId: string;
+  scope: MemoryScope;
+  scopeId: string;
+}
+
 export type MemoryMaintenanceRunOptions = {
   /** 运行时刻（ms），默认 Date.now() */
   now?: number;
@@ -30,6 +37,8 @@ export type MemoryMaintenanceRunOptions = {
   batchSize?: number;
   /** 清理策略 */
   policy?: MemoryMaintenancePolicy;
+  /** 可选：只处理单个 scope。 */
+  scope?: MemoryMaintenanceScopeFilter;
 };
 
 export type MemoryMaintenanceRunResult = {
@@ -37,6 +46,7 @@ export type MemoryMaintenanceRunResult = {
   dryRun: boolean;
   batchSize: number;
   policy: MemoryMaintenancePolicy;
+  scope?: MemoryMaintenanceScopeFilter;
   deprecated: {
     summary: number;
     openLoop: number;
@@ -46,15 +56,49 @@ export type MemoryMaintenanceRunResult = {
   durationMs: number;
 };
 
+type MaintenanceExecutor = AppDb | DbExecutor;
+
+function buildScopeFilters(scope: MemoryMaintenanceScopeFilter | undefined): SQL[] {
+  if (!scope) {
+    return [];
+  }
+
+  return [
+    eq(memoryItems.accountId, scope.accountId),
+    eq(memoryItems.scope, scope.scope),
+    eq(memoryItems.scopeId, scope.scopeId),
+  ];
+}
+
+function countRows(executor: MaintenanceExecutor, whereClause: SQL | undefined): number {
+  const [row] = whereClause === undefined
+    ? executor.select({ count: sql<number>`count(*)` }).from(memoryItems).all()
+    : executor.select({ count: sql<number>`count(*)` }).from(memoryItems).where(whereClause).all();
+
+  return row?.count ?? 0;
+}
+
 export class MemoryMaintenanceService {
   constructor(private readonly db: AppDb) {}
 
   async run(options: MemoryMaintenanceRunOptions = {}): Promise<MemoryMaintenanceRunResult> {
+    return this.runWithExecutor(this.db, options);
+  }
+
+  runInTransaction(tx: DbExecutor, options: MemoryMaintenanceRunOptions = {}): MemoryMaintenanceRunResult {
+    return this.runWithExecutor(tx, options);
+  }
+
+  private runWithExecutor(
+    executor: MaintenanceExecutor,
+    options: MemoryMaintenanceRunOptions,
+  ): MemoryMaintenanceRunResult {
     const startedAt = Date.now();
     const now = options.now ?? Date.now();
     const dryRun = options.dryRun === true;
     const batchSize = Math.max(1, Math.floor(options.batchSize ?? 500));
     const policy = options.policy ?? {};
+    const scope = options.scope;
 
     let deprecatedSummary = 0;
     let deprecatedOpenLoop = 0;
@@ -63,22 +107,22 @@ export class MemoryMaintenanceService {
     if (policy.summaryMaxAgeMs !== undefined && policy.summaryMaxAgeMs > 0) {
       const createdBefore = now - policy.summaryMaxAgeMs;
       deprecatedSummary = dryRun
-        ? await this.countActiveBefore("summary", createdBefore)
-        : await this.deprecateActiveBefore("summary", createdBefore, batchSize, now);
+        ? this.countActiveBefore(executor, "summary", createdBefore, scope)
+        : this.deprecateActiveBefore(executor, "summary", createdBefore, batchSize, now, scope);
     }
 
     if (policy.openLoopMaxAgeMs !== undefined && policy.openLoopMaxAgeMs > 0) {
       const createdBefore = now - policy.openLoopMaxAgeMs;
       deprecatedOpenLoop = dryRun
-        ? await this.countActiveBefore("open_loop", createdBefore)
-        : await this.deprecateActiveBefore("open_loop", createdBefore, batchSize, now);
+        ? this.countActiveBefore(executor, "open_loop", createdBefore, scope)
+        : this.deprecateActiveBefore(executor, "open_loop", createdBefore, batchSize, now, scope);
     }
 
     if (policy.deprecatedPurgeAgeMs !== undefined && policy.deprecatedPurgeAgeMs > 0) {
       const deprecatedUntouchedBefore = now - policy.deprecatedPurgeAgeMs;
       purged = dryRun
-        ? await this.countDeprecatedBefore(deprecatedUntouchedBefore)
-        : await this.purgeDeprecatedBefore(deprecatedUntouchedBefore, batchSize);
+        ? this.countDeprecatedBefore(executor, deprecatedUntouchedBefore, scope)
+        : this.purgeDeprecatedBefore(executor, deprecatedUntouchedBefore, batchSize, scope);
     }
 
     const durationMs = Date.now() - startedAt;
@@ -88,6 +132,7 @@ export class MemoryMaintenanceService {
       dryRun,
       batchSize,
       policy,
+      ...(scope ? { scope } : {}),
       deprecated: {
         summary: deprecatedSummary,
         openLoop: deprecatedOpenLoop,
@@ -98,88 +143,111 @@ export class MemoryMaintenanceService {
     };
   }
 
-  private async countActiveBefore(
+  private countActiveBefore(
+    executor: MaintenanceExecutor,
     type: "summary" | "open_loop",
     createdBefore: number,
-  ): Promise<number> {
-    const [row] = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(memoryItems)
-      .where(
-        and(
-          eq(memoryItems.status, "active"),
-          eq(memoryItems.type, type),
-          lt(memoryItems.createdAt, createdBefore),
-        ),
-      );
+    scope: MemoryMaintenanceScopeFilter | undefined,
+  ): number {
+    const whereClause = and(
+      ...buildScopeFilters(scope),
+      eq(memoryItems.status, "active"),
+      eq(memoryItems.type, type),
+      lt(memoryItems.createdAt, createdBefore),
+    );
 
-    return row?.count ?? 0;
+    return countRows(executor, whereClause);
   }
 
-  private async countDeprecatedBefore(deprecatedUntouchedBefore: number): Promise<number> {
-    const [row] = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(memoryItems)
-      .where(and(eq(memoryItems.status, "deprecated"), lt(memoryItems.updatedAt, deprecatedUntouchedBefore)));
+  private countDeprecatedBefore(
+    executor: MaintenanceExecutor,
+    deprecatedUntouchedBefore: number,
+    scope: MemoryMaintenanceScopeFilter | undefined,
+  ): number {
+    const whereClause = and(
+      ...buildScopeFilters(scope),
+      eq(memoryItems.status, "deprecated"),
+      lt(memoryItems.updatedAt, deprecatedUntouchedBefore),
+    );
 
-    return row?.count ?? 0;
+    return countRows(executor, whereClause);
   }
 
-  private async deprecateActiveBefore(
+  private deprecateActiveBefore(
+    executor: MaintenanceExecutor,
     type: "summary" | "open_loop",
     createdBefore: number,
     batchSize: number,
     now: number,
-  ): Promise<number> {
+    scope: MemoryMaintenanceScopeFilter | undefined,
+  ): number {
     let total = 0;
 
     while (true) {
-      const rows = await this.db
+      const rows = executor
         .select({ id: memoryItems.id })
         .from(memoryItems)
-        .where(
-          and(
-            eq(memoryItems.status, "active"),
-            eq(memoryItems.type, type),
-            lt(memoryItems.createdAt, createdBefore),
-          ),
-        )
-        .limit(batchSize);
+        .where(and(
+          ...buildScopeFilters(scope),
+          eq(memoryItems.status, "active"),
+          eq(memoryItems.type, type),
+          lt(memoryItems.createdAt, createdBefore),
+        ))
+        .limit(batchSize)
+        .all();
 
       const ids = rows.map((row) => row.id);
-      if (ids.length === 0) break;
+      if (ids.length === 0) {
+        break;
+      }
 
-      await this.db
+      executor
         .update(memoryItems)
-        .set({ status: "deprecated", updatedAt: now })
-        .where(inArray(memoryItems.id, ids));
+        .set({ status: "deprecated", lifecycleStatus: "deprecated", updatedAt: now })
+        .where(inArray(memoryItems.id, ids))
+        .run();
 
       total += ids.length;
 
-      if (ids.length < batchSize) break;
+      if (ids.length < batchSize) {
+        break;
+      }
     }
 
     return total;
   }
 
-  private async purgeDeprecatedBefore(deprecatedUntouchedBefore: number, batchSize: number): Promise<number> {
+  private purgeDeprecatedBefore(
+    executor: MaintenanceExecutor,
+    deprecatedUntouchedBefore: number,
+    batchSize: number,
+    scope: MemoryMaintenanceScopeFilter | undefined,
+  ): number {
     let total = 0;
 
     while (true) {
-      const rows = await this.db
+      const rows = executor
         .select({ id: memoryItems.id })
         .from(memoryItems)
-        .where(and(eq(memoryItems.status, "deprecated"), lt(memoryItems.updatedAt, deprecatedUntouchedBefore)))
-        .limit(batchSize);
+        .where(and(
+          ...buildScopeFilters(scope),
+          eq(memoryItems.status, "deprecated"),
+          lt(memoryItems.updatedAt, deprecatedUntouchedBefore),
+        ))
+        .limit(batchSize)
+        .all();
 
       const ids = rows.map((row) => row.id);
-      if (ids.length === 0) break;
+      if (ids.length === 0) {
+        break;
+      }
 
-      await this.db.delete(memoryItems).where(inArray(memoryItems.id, ids));
-
+      executor.delete(memoryItems).where(inArray(memoryItems.id, ids)).run();
       total += ids.length;
 
-      if (ids.length < batchSize) break;
+      if (ids.length < batchSize) {
+        break;
+      }
     }
 
     return total;

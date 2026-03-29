@@ -1,4 +1,4 @@
-import type { FloorState, VariableScope, VariableEntry } from '@tavern/shared';
+import type { FloorState, MemoryJobType, MemoryScope, VariableScope, VariableEntry } from '@tavern/shared';
 import type { FloorEntity } from '../types.js';
 import type { ModelConfig, TokenUsage } from '../llm/types.js';
 import type { MemoryItem } from '../memory/types.js';
@@ -114,30 +114,45 @@ export interface CommitSucceededAfterRetryEvent {
 
 // ── Memory 事件 ──────────────────────────────────────
 
+/** 记忆事件共享上下文 */
+export interface MemoryEventContext {
+  sessionId?: string;
+  scope: MemoryScope;
+  scopeId: string;
+  floorId?: string;
+  sourceJobId?: string;
+}
+
+/** 记忆作业 / 处理事件共享上下文 */
+export interface MemoryJobEventContext extends MemoryEventContext {
+  jobType?: MemoryJobType;
+}
+
 /** 记忆创建事件 */
-export interface MemoryCreatedEvent {
+export interface MemoryCreatedEvent extends MemoryEventContext {
   item: MemoryItem;
   source: 'extraction' | 'consolidation' | 'manual';
 }
 
 /** 记忆更新事件 */
-export interface MemoryUpdatedEvent {
+export interface MemoryUpdatedEvent extends MemoryEventContext {
   item: MemoryItem;
   previousContent?: string;
 }
 
 /** 记忆标记过时事件 */
-export interface MemoryDeprecatedEvent {
+export interface MemoryDeprecatedEvent extends MemoryEventContext {
   item: MemoryItem;
   reason: string;
 }
 
 /** 记忆整理完成事件 */
-export interface MemoryConsolidatedEvent {
-  floorId: string;
+export interface MemoryConsolidatedEvent extends MemoryEventContext {
   created: number;
   updated: number;
   deprecated: number;
+  purged?: number;
+  jobType?: MemoryJobType;
 }
 
 /** 记忆注入失败事件（降级为跳过，不阻断主流程） */
@@ -147,28 +162,23 @@ export interface MemoryInjectionFailedEvent {
 }
 
 /** 记忆持久化失败事件（提交事务将回滚） */
-export interface MemoryPersistFailedEvent {
-  floorId: string;
-  sessionId: string;
+export interface MemoryPersistFailedEvent extends MemoryJobEventContext {
   error: Error;
 }
 
 /** 记忆整理上下文加载失败事件（降级为跳过整理） */
-export interface MemoryConsolidationContextFailedEvent {
-  sessionId: string;
+export interface MemoryConsolidationContextFailedEvent extends MemoryJobEventContext {
   error: Error;
 }
 
 /** 记忆整理 JSON 解析失败事件（降级为仅写 turnSummary） */
-export interface MemoryConsolidationJsonParseFailedEvent {
-  floorId: string;
+export interface MemoryConsolidationJsonParseFailedEvent extends MemoryJobEventContext {
   rawText: string;
   error: Error;
 }
 
 /** 记忆整理失败事件（降级为警告，不阻断回合） */
-export interface MemoryConsolidationFailedEvent {
-  floorId: string;
+export interface MemoryConsolidationFailedEvent extends MemoryJobEventContext {
   error: Error;
 }
 

@@ -13,8 +13,10 @@ import {
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import {
+  accounts,
   floors,
   memoryEdges,
+  memoryJobs,
   memoryItems,
   messagePages,
   messages,
@@ -27,10 +29,31 @@ import {
 import { ChatMessagePersistence } from "../chat-message-persistence.js";
 import { TurnCommitService } from "../turn-commit-service.js";
 
-async function seedSession(database: DatabaseConnection, sessionId: string, now: number): Promise<void> {
+const DEFAULT_ACCOUNT_ID = "default-admin";
+
+async function seedAccount(
+  database: DatabaseConnection,
+  accountId: string,
+  now: number,
+): Promise<void> {
+  await database.db.insert(accounts).values({
+    id: accountId,
+    name: accountId,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+async function seedSession(
+  database: DatabaseConnection,
+  sessionId: string,
+  now: number,
+  accountId: string = DEFAULT_ACCOUNT_ID,
+): Promise<void> {
   await database.db.insert(sessions).values({
     id: sessionId,
     title: "Turn Commit Test",
+    accountId,
     status: "active",
     createdAt: now,
     updatedAt: now,
@@ -92,6 +115,27 @@ async function seedVariable(args: {
     key: args.key,
     valueJson: JSON.stringify(args.value),
     updatedAt: args.now,
+  });
+}
+
+async function seedUserMessage(args: {
+  database: DatabaseConnection;
+  pageId: string;
+  messageId: string;
+  content: string;
+  now: number;
+}): Promise<void> {
+  await args.database.db.insert(messages).values({
+    id: args.messageId,
+    pageId: args.pageId,
+    seq: 0,
+    role: "user",
+    content: args.content,
+    contentFormat: "text",
+    tokenCount: args.content.length,
+    isHidden: false,
+    source: "api",
+    createdAt: args.now,
   });
 }
 
@@ -254,6 +298,7 @@ describe("TurnCommitService", () => {
     eventBus.on("memory.consolidated", memoryConsolidatedHandler);
 
     const result = await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
       floorId,
       sessionId,
       execution,
@@ -452,13 +497,204 @@ describe("TurnCommitService", () => {
       })
     );
     expect(memoryConsolidatedHandler).toHaveBeenCalledOnce();
-    expect(memoryConsolidatedHandler).toHaveBeenCalledWith({
+    expect(memoryConsolidatedHandler).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId,
+      scope: "chat",
+      scopeId: sessionId,
       floorId,
       created: 2,
       updated: 1,
       deprecated: 2,
-    });
+    }));
   });
+
+  it("scopes memory writes by accountId and resolves global/chat/floor scopeId correctly", async () => {
+    const accountId = "account-a";
+    const foreignAccountId = "account-b";
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_735_689_760_000;
+    const committedAt = now + 1_000;
+    const foreignFactId = nanoid();
+
+    await seedAccount(database, accountId, now);
+    await seedAccount(database, foreignAccountId, now);
+    await seedSession(database, sessionId, now, accountId);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+
+    await database.db.insert(memoryItems).values({
+      id: foreignFactId,
+      accountId: foreignAccountId,
+      scope: "chat",
+      scopeId: sessionId,
+      type: "fact",
+      contentJson: JSON.stringify("foreign: untouched"),
+      factKey: "foreign",
+      importance: 0.4,
+      confidence: 1,
+      sourceFloorId: "foreign-floor",
+      sourceMessageId: null,
+      status: "active",
+      createdAt: now - 5_000,
+      updatedAt: now - 5_000,
+    });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Scoped memory commit.",
+      rawText: "Scoped memory commit.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 7,
+        completionTokens: 9,
+        totalTokens: 16,
+      },
+    };
+
+    await service.commit({
+      accountId,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      memoryCommit: {
+        consolidationOutput: {
+          turnSummary: "",
+          factsAdd: [
+            { key: "world_rule", value: "magic has a price", scope: "global", importance: 0.8 },
+            { key: "scene", value: "watchtower balcony", scope: "floor", importance: 0.7 },
+            { key: "mood", value: "focused", scope: "chat", importance: 0.6 },
+          ],
+          factsUpdate: [{ id: foreignFactId, value: "foreign: changed" }],
+          factsDeprecate: [{ id: foreignFactId, reason: "should_not_apply" }],
+        },
+      },
+    });
+
+    const createdFacts = await database.db
+      .select()
+      .from(memoryItems)
+      .where(and(eq(memoryItems.accountId, accountId), eq(memoryItems.sourceFloorId, floorId), eq(memoryItems.type, "fact")));
+
+    expect(createdFacts).toHaveLength(3);
+
+    const createdByKey = new Map(createdFacts.map((row) => [row.factKey, row]));
+    expect(createdByKey.get("world_rule")).toMatchObject({
+      scope: "global",
+      scopeId: accountId,
+      status: "active",
+    });
+    expect(createdByKey.get("scene")).toMatchObject({
+      scope: "floor",
+      scopeId: floorId,
+      status: "active",
+    });
+    expect(createdByKey.get("mood")).toMatchObject({
+      scope: "chat",
+      scopeId: sessionId,
+      status: "active",
+    });
+
+    expect(JSON.parse(createdByKey.get("world_rule")!.contentJson)).toBe("world_rule: magic has a price");
+    expect(JSON.parse(createdByKey.get("scene")!.contentJson)).toBe("scene: watchtower balcony");
+    expect(JSON.parse(createdByKey.get("mood")!.contentJson)).toBe("mood: focused");
+
+    const [foreignFact] = await database.db.select().from(memoryItems).where(eq(memoryItems.id, foreignFactId));
+    expect(foreignFact).toMatchObject({
+      id: foreignFactId,
+      accountId: foreignAccountId,
+      status: "active",
+      updatedAt: now - 5_000,
+    });
+    expect(JSON.parse(foreignFact!.contentJson)).toBe("foreign: untouched");
+  });
+
+  it("enqueues ingest_turn jobs inside the commit transaction when async memory ingest is enabled", async () => {
+    const asyncService = new TurnCommitService(
+      database.db,
+      new ChatMessagePersistence(database.db, new SimpleTokenCounter()),
+      eventBus,
+      { enableAsyncMemoryIngest: true },
+    );
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const userMessageId = nanoid();
+    const now = 1_735_689_770_000;
+    const committedAt = now + 1_000;
+    const userMessage = "Async memory enqueue should only schedule work.";
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+    await seedInputPage({ database, floorId, pageId, now });
+    await seedUserMessage({
+      database,
+      pageId,
+      messageId: userMessageId,
+      content: userMessage,
+      now,
+    });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Assistant reply with async memory ingest.",
+      rawText: "Assistant reply with async memory ingest.",
+      summaries: ["A deferred summary from the assistant."],
+      totalUsage: {
+        promptTokens: 11,
+        completionTokens: 12,
+        totalTokens: 23,
+      },
+    };
+
+    const result = await asyncService.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      variableCommit: { pageId },
+      memoryCommit: {
+        summaries: execution.summaries,
+        enableConsolidation: true,
+      },
+    });
+
+    expect(result.finalState).toBe("committed");
+    expect(await database.db.select().from(memoryItems)).toEqual([]);
+
+    const [job] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.floorId, floorId));
+    expect(job).toMatchObject({
+      id: `memory-job:ingest_turn:${floorId}`,
+      accountId: DEFAULT_ACCOUNT_ID,
+      scope: "chat",
+      scopeId: sessionId,
+      jobType: "ingest_turn",
+      status: "pending",
+      floorId,
+      basedOnRevision: null,
+      attemptCount: 0,
+      maxAttempts: 5,
+      availableAt: committedAt,
+      leaseOwner: null,
+      leaseUntil: null,
+    });
+
+    expect(JSON.parse(job!.payloadJson)).toEqual(expect.objectContaining({
+      accountId: DEFAULT_ACCOUNT_ID,
+      sessionId,
+      floorId,
+      floorNo: 0,
+      assistantMessageId: result.assistantMessageId,
+      userInputDigest: expect.any(String),
+      committedAt,
+      summaries: execution.summaries,
+      enableConsolidation: true,
+    }));
+  });
+
 
   it("flushes buffered tool variable mutations before page-to-floor promotion", async () => {
     const sessionId = nanoid();
@@ -496,6 +732,7 @@ describe("TurnCommitService", () => {
     };
 
     await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
       floorId,
       sessionId,
       execution,
@@ -565,6 +802,7 @@ describe("TurnCommitService", () => {
     ];
 
     const result = await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
       floorId,
       sessionId,
       execution,
@@ -638,6 +876,7 @@ describe("TurnCommitService", () => {
     eventBus.on("variable.promoted", promotedHandler);
 
     await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
       floorId,
       sessionId,
       execution,
@@ -732,6 +971,7 @@ describe("TurnCommitService", () => {
 
     await expect(
       service.commit({
+        accountId: DEFAULT_ACCOUNT_ID,
         floorId,
         sessionId,
         execution,

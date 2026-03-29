@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { SimpleTokenCounter, type TurnExecutionResult } from "@tavern/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WebSocket } from "ws";
 
 import { buildApp, type BuildAppResult } from "../src/app";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
@@ -41,7 +42,7 @@ function createMockSocket() {
     on: (event: string, handler: (...args: unknown[]) => void) => typeof socket;
     close: () => void;
     _sent: string[];
-  };
+  } & WebSocket;
 }
 
 function parseSent(socket: ReturnType<typeof createMockSocket>): WsMessage[] {
@@ -264,6 +265,7 @@ describe("variable events shared event bus and websocket integration", () => {
     };
 
     await commitService.commit({
+      accountId: "default-admin",
       floorId,
       sessionId,
       execution,

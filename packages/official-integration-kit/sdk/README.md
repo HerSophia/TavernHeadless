@@ -237,17 +237,46 @@ console.log(snapshot.layers?.page?.items.length ?? 0);
 // 读取记忆
 const memories = await client.memories.list({
   accountId: "account-1",
-  factKey: "relationship",
   scope: "chat",
   scopeId: "session-1",
-  status: "active",
-  type: "fact",
+  type: "summary",
+  summaryTier: "macro",
+  lifecycleStatus: "active",
 });
 
-console.log(memories[0]?.factKey);
+console.log(memories[0]?.summaryTier);
+console.log(memories[0]?.lifecycleStatus);
+console.log(memories[0]?.sourceJobId);
+console.log(memories[0]?.coverageStartFloorNo);
+
+// 读取记忆任务与 scope 状态
+const jobs = await client.memoryJobs.list({
+  accountId: "account-1",
+  scope: "chat",
+  scopeId: "session-1",
+  status: "retry_waiting",
+});
+
+const scopes = await client.memoryScopes.list({
+  accountId: "account-1",
+  scope: "chat",
+  scopeId: "session-1",
+});
+
+await client.memoryScopes.compact({
+  accountId: "account-1",
+  force: true,
+  scope: "chat",
+  scopeId: "session-1",
+});
+
+console.log(jobs.jobs[0]?.jobType);
+console.log(scopes.scopes[0]?.revision);
 ```
 
-`factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。
+`factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。`summaryTier` 和 `lifecycleStatus` 对应 Memory V2 的公开字段；其中 `status` 仍保留兼容层面的粗粒度状态，而 `lifecycleStatus` 会进一步区分 `compacted`。
+
+`memoryJobs` 和 `memoryScopes` 分别对应后台任务观测面与 scope 状态观测面。`memoryScopes.rebuild()`、`memoryScopes.compact()` 需要服务端已经启用 background worker。
 
 `variables.resolveContext()` 对应后端的 `GET /variables/resolve`，会返回当前 `global/chat/floor/page` 可见变量的最终胜出结果，并可选附带各层原始快照。
 
@@ -399,7 +428,7 @@ try {
 | 会话与内容结构 | `health`、`sessions`、`messages`、`floors`、`pages`、`branches` |
 | 角色、资料与配置 | `characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles` |
 | 导入、导出与模型 | `imports`、`exports`、`llmProfiles`、`llmInstances` |
-| 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges` |
+| 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes` |
 | 工具与运行集成 | `tools`、`mcp` |
 
 ## 和 `@tavern/client-helpers` 怎么配合
@@ -464,6 +493,6 @@ pnpm sdk:check
 
 ## 当前状态
 
-已覆盖会话、内容结构、变量、记忆、导入导出，以及 Tool Calling / MCP 的主要第一方接入面。`apps/web` 已经直接使用这里的运行时工具目录、执行审计、MCP 状态和 SSE 事件能力。
+已覆盖会话、内容结构、变量、记忆条目 / 边 / 作业 / scope 状态、导入导出，以及 Tool Calling / MCP 的主要第一方接入面。`apps/web` 已经直接使用这里的运行时工具目录、执行审计、MCP 状态和 SSE 事件能力。
 
 后续如果后端继续扩展资源，按同样的方式在这里扩充就好，不需要在各个前端里重复写请求层。

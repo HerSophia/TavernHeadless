@@ -15,6 +15,7 @@ import { eq } from "drizzle-orm";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import { floors, memoryItems, messagePages, messages, sessions } from "../src/db/schema";
 import { ChatService } from "../src/services/chat-service";
+import type { TurnCommitService } from "../src/services/turn-commit-service";
 import {
   createEventBus,
   SimpleTokenCounter,
@@ -189,6 +190,7 @@ describe("Memory Injection", () => {
     expect(memoryStore.prepareInjection).toHaveBeenCalledWith(
       sessionId,
       expect.objectContaining({
+        accountId: "default-admin",
         maxTokens: 500,
         selectionMode: "balanced",
         includeTypes: ["open_loop", "fact", "summary"],
@@ -205,6 +207,130 @@ describe("Memory Injection", () => {
     expect(memoryMsg!.role).toBe("system");
     expect(memoryMsg!.content).toContain("Alice is a brave adventurer.");
   });
+
+  it("should switch to dual-summary injection when the Phase 4 flag is enabled", async () => {
+    const orchestrator = createMockOrchestrator(database);
+    const memoryStore = createMockMemoryStore();
+    (memoryStore.prepareInjection as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      items: [],
+      formattedText: [
+        "[Memory Facts]",
+        "- alliance_status: cautious allies",
+        "",
+        "[Open Loops]",
+        "- Can the guide be trusted?",
+        "",
+        "[Recent Micro Summaries]",
+        "- Alice and Bob found the map.",
+        "",
+        "[Macro Summary]",
+        "- Alice entered the city and began tracking the archive.",
+      ].join("\n"),
+      tokenCount: 40,
+    });
+    const chatService = new ChatService(
+      database.db,
+      orchestrator,
+      new SimpleTokenCounter(),
+      { memoryStore, enableDualSummaryInjection: true }
+    );
+
+    await chatService.respond(sessionId, { message: "Hello" });
+
+    const injectionOptions = (memoryStore.prepareInjection as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(injectionOptions).toEqual(expect.objectContaining({
+      strategy: "dual_summary",
+      maxTokens: 500,
+      maxItems: 24,
+      includeTypes: ["open_loop", "fact", "summary"],
+    }));
+    expect(injectionOptions.selectionMode).toBeUndefined();
+
+    const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const memoryMsg = turnInput.messages.find((m: { role: string; content: string }) => m.content.includes("[Macro Summary]"));
+    expect(memoryMsg?.content).toContain("[Recent Micro Summaries]");
+  });
+
+  it("should pass accountId into consolidation context memory queries", async () => {
+    const orchestrator = createMockOrchestrator(database);
+    const memoryStore = createMockMemoryStore();
+    const chatService = new ChatService(
+      database.db,
+      orchestrator,
+      new SimpleTokenCounter(),
+      {
+        memoryStore,
+        enableMemoryConsolidationByDefault: true,
+      }
+    );
+
+    await chatService.respond(sessionId, { message: "Hello" });
+
+    expect(memoryStore.query).toHaveBeenCalledTimes(2);
+    expect(memoryStore.query).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        scope: "chat",
+        scopeId: sessionId,
+        accountId: "default-admin",
+        type: "summary",
+      })
+    );
+    expect(memoryStore.query).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        scope: "chat",
+        scopeId: sessionId,
+        accountId: "default-admin",
+        type: "fact",
+      })
+    );
+  });
+
+  it("should disable synchronous memory consolidation in ChatService when async memory ingest is enabled", async () => {
+    const orchestrator = createMockOrchestrator(database);
+    const memoryStore = createMockMemoryStore();
+    const turnCommitService = {
+      commit: vi.fn(async () => ({
+        floorId: "committed-floor",
+        outputPageId: "output-page",
+        assistantMessageId: "assistant-message",
+        finalState: "committed" as const,
+        usage: { promptTokens: 80, completionTokens: 30, totalTokens: 110 },
+      })),
+    } as unknown as TurnCommitService;
+    const chatService = new ChatService(
+      database.db,
+      orchestrator,
+      new SimpleTokenCounter(),
+      {
+        memoryStore,
+        enableMemoryConsolidationByDefault: true,
+        enableAsyncMemoryIngest: true,
+        turnCommitService,
+      }
+    );
+
+    await chatService.respond(sessionId, { message: "Hello" });
+
+    expect(memoryStore.query).not.toHaveBeenCalled();
+
+    const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.config).toEqual(expect.objectContaining({
+      enableMemoryConsolidation: false,
+    }));
+
+    expect(turnCommitService.commit).toHaveBeenCalledOnce();
+    expect(turnCommitService.commit).toHaveBeenCalledWith(expect.objectContaining({
+      memoryCommit: expect.objectContaining({
+        summaries: ["Alice met Bob at the tavern."],
+        enableConsolidation: true,
+        consolidationOutput: undefined,
+      }),
+    }));
+  });
+
+
 
   it("should place memory summary after the first system message", async () => {
     const orchestrator = createMockOrchestrator(database);

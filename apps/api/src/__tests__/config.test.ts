@@ -81,6 +81,51 @@ describe("loadConfig", () => {
     expect(config.enableMemoryConsolidation).toBe(true);
   });
 
+  it("defaults Memory V2 feature flags to false", () => {
+    const config = loadConfig();
+    expect(config.enableAsyncMemoryIngest).toBe(false);
+    expect(config.enableMacroCompaction).toBe(false);
+    expect(config.enableDualSummaryInjection).toBe(false);
+  });
+
+  it("reads Memory V2 feature flags", () => {
+    vi.stubEnv("ENABLE_ASYNC_MEMORY_INGEST", "true");
+    vi.stubEnv("ENABLE_MACRO_COMPACTION", "true");
+    vi.stubEnv("ENABLE_DUAL_SUMMARY_INJECTION", "true");
+    const config = loadConfig();
+    expect(config.enableAsyncMemoryIngest).toBe(true);
+    expect(config.enableMacroCompaction).toBe(true);
+    expect(config.enableDualSummaryInjection).toBe(true);
+  });
+
+  it("reads MemoryWorker tuning envs", () => {
+    vi.stubEnv("MEMORY_WORKER_POLL_INTERVAL_MS", "500");
+    vi.stubEnv("MEMORY_WORKER_LEASE_TTL_MS", "60000");
+    vi.stubEnv("MEMORY_WORKER_MAX_CONCURRENT_JOBS", "8");
+    vi.stubEnv("MEMORY_WORKER_RETRY_BASE_DELAY_MS", "1500");
+    vi.stubEnv("MEMORY_WORKER_MAX_RETRY_DELAY_MS", "45000");
+    vi.stubEnv("MEMORY_WORKER_CANDIDATE_SCAN_LIMIT", "64");
+
+    const config = loadConfig();
+    expect(config.memoryWorker).toEqual({
+      pollIntervalMs: 500,
+      leaseTtlMs: 60_000,
+      maxConcurrentJobs: 8,
+      retryBaseDelayMs: 1_500,
+      maxRetryDelayMs: 45_000,
+      candidateScanLimit: 64,
+    });
+  });
+
+  it("ignores invalid MemoryWorker tuning envs", () => {
+    vi.stubEnv("MEMORY_WORKER_POLL_INTERVAL_MS", "0");
+    vi.stubEnv("MEMORY_WORKER_LEASE_TTL_MS", "-1");
+    vi.stubEnv("MEMORY_WORKER_MAX_CONCURRENT_JOBS", "abc");
+
+    const config = loadConfig();
+    expect(config.memoryWorker).toBeUndefined();
+  });
+
   it("reads LLM_DEFAULT_TIMEOUT_MS as positive int", () => {
     vi.stubEnv("LLM_DEFAULT_TIMEOUT_MS", "90000");
 
