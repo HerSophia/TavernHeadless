@@ -26,6 +26,8 @@ outline: [2, 3]
 4. `global(*)` — 全局通配配置
 5. `default` — 系统默认值（enabled=true, params=null）
 
+这些解析结果会直接进入真实 turn 执行链路，不再只是只读观察值。
+
 ## Instance Config 对象
 
 | 字段 | 类型 | 说明 |
@@ -124,6 +126,14 @@ PUT /llm-instances/:slot
 | `preset_id` | string \| null | 否 | 关联预设 ID |
 | `enabled` | boolean | 否 | 是否启用（默认 `true`） |
 | `params` | object \| null | 否 | 生成参数覆盖 |
+
+运行时语义说明：
+
+- `enabled=false` 且 `slot=narrator` 时，真实聊天执行会返回 `409 instance_slot_disabled_required`，不会再回退到环境变量 narrator。
+- `enabled=false` 且 `slot=director` / `verifier` / `memory` 时，对应子流程会在本轮 turn 中被强制跳过。
+- `preset_id` 在当前实现中作为 narrator Prompt 组装阶段的显式覆盖值；当它为非空字符串时，优先于 `session.presetId`。
+- `params` 采用浅层 merge，同名键覆盖。当前槽位原有参数（包括 Profile 绑定参数和默认运行参数）先建立基线，再由 `llm_instance_config.params` 覆盖同名字段。
+- 如果你需要查看“Profile 解析结果”，使用 `/llm-profiles/runtime`；如果你需要查看“实例侧 enabled / preset_id / params 的最终解析结果”，应使用 `/llm-instances/resolved`。
 
 `params` 可覆盖的字段：
 

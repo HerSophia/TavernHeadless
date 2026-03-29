@@ -125,6 +125,27 @@ export class ProviderRegistry {
   private modelGetters = new Map<string, (modelId: string) => LanguageModel>();
   private customFactories = new Map<string, ProviderFactory>();
 
+  private resolveFactory(config: ProviderConfig): ProviderFactory {
+    const factory = this.customFactories.get(config.type) ?? BUILTIN_FACTORIES[config.type];
+    if (!factory) {
+      throw new ProviderInitError(
+        config.id,
+        new Error(`Unsupported provider type: '${config.type}'. Register a custom factory first.`),
+      );
+    }
+
+    return factory;
+  }
+
+  createModel(config: ProviderConfig, modelId: string): LanguageModel {
+    try {
+      return this.resolveFactory(config)(config)(modelId);
+    } catch (e) {
+      if (e instanceof ProviderInitError) throw e;
+      throw new ProviderInitError(config.id, e);
+    }
+  }
+
   /**
    * 注册自定义 Provider 工厂。
    * 注册后的工厂可通过 ProviderConfig.type 使用。
@@ -142,16 +163,8 @@ export class ProviderRegistry {
    * @throws {ProviderInitError} 工厂初始化失败时
    */
   register(config: ProviderConfig): void {
-    const factory = this.customFactories.get(config.type) ?? BUILTIN_FACTORIES[config.type];
-    if (!factory) {
-      throw new ProviderInitError(
-        config.id,
-        new Error(`Unsupported provider type: '${config.type}'. Register a custom factory first.`),
-      );
-    }
-
     try {
-      const getter = factory(config);
+      const getter = this.resolveFactory(config)(config);
       this.configs.set(config.id, config);
       this.modelGetters.set(config.id, getter);
     } catch (e) {

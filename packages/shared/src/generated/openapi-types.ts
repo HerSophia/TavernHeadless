@@ -1074,6 +1074,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/llm-profiles/bindings/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unbind LLM profile from a scope slot */
+        delete: operations["unbindLlmProfile"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/llm-profiles/models/discover": {
         parameters: {
             query?: never;
@@ -8702,6 +8719,84 @@ export interface operations {
             };
             /** @description Default Response */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    unbindLlmProfile: {
+        parameters: {
+            query?: {
+                scope?: "global" | "session";
+                session_id?: string;
+            };
+            header?: never;
+            path: {
+                slot: "*" | "narrator" | "director" | "verifier" | "memory";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "instance_slot": "director",
+                     *         "scope": "session",
+                     *         "scope_id": "sess_demo",
+                     *         "unbound": true
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            /** @enum {string} */
+                            instance_slot: "*" | "narrator" | "director" | "verifier" | "memory";
+                            /** @enum {string} */
+                            scope: "global" | "session";
+                            scope_id: string;
+                            unbound: boolean;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

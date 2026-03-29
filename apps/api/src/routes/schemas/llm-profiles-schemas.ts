@@ -97,6 +97,15 @@ export const activateResponseExample = {
   },
 } as const;
 
+export const unbindResponseExample = {
+  data: {
+    scope: "session",
+    scope_id: "sess_demo",
+    instance_slot: "director",
+    unbound: true,
+  },
+} as const;
+
 export const runtimeSlotExample = {
   slot: "director",
   source: "session_profile",
@@ -244,6 +253,24 @@ export const activateBodyJsonSchema = {
   additionalProperties: false,
 } as const;
 
+export const bindingSlotParamsJsonSchema = {
+  type: "object",
+  required: ["slot"],
+  properties: {
+    slot: { type: "string", enum: [...runtimeSlots] },
+  },
+  additionalProperties: false,
+} as const;
+
+export const unbindQueryJsonSchema = {
+  type: "object",
+  properties: {
+    scope: { type: "string", enum: ["global", "session"], default: "global" },
+    session_id: { type: "string", minLength: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
 export const discoverModelsBodyJsonSchema = {
   type: "object",
   required: ["api_key", "provider"],
@@ -341,6 +368,26 @@ export const activateResponseJsonSchema = {
     },
   },
   examples: [activateResponseExample],
+  additionalProperties: false,
+} as const;
+
+export const unbindResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["scope", "scope_id", "instance_slot", "unbound"],
+      properties: {
+        scope: { type: "string", enum: ["global", "session"] },
+        scope_id: { type: "string" },
+        instance_slot: { type: "string", enum: [...runtimeSlots] },
+        unbound: { type: "boolean" },
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [unbindResponseExample],
   additionalProperties: false,
 } as const;
 

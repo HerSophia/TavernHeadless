@@ -118,6 +118,7 @@ type LlmManagerDialogState = {
   selectedPresetBySlot: Record<WorkspaceLlmInstanceSlot, string>;
   selectedProfileBySlot: Record<WorkspaceLlmInstanceSlot, string>;
   slotParamsDraft: WorkspaceLlmGenerationParams;
+  unbindingSlot: WorkspaceLlmInstanceSlot | null;
 };
 
 type ToolReplayConfirmDialogState = {
@@ -168,6 +169,7 @@ const props = defineProps<{
   onPatchLlmSlotParams: (patch: Partial<WorkspaceLlmGenerationParams>) => void;
   onResetLlmSlotParams: () => void;
   onSubmitLlmSlotDrawer: () => MaybePromise;
+  onUnbindLlmSlotDrawer: () => MaybePromise;
   onCreateLlmProfileDraft: () => void;
   onConfirmRetryFloor: () => MaybePromise;
   onConfirmWorldbookManagerAction: () => MaybePromise;
@@ -410,6 +412,7 @@ const props = defineProps<{
     :selected-preset-by-slot="props.llmManagerDialog.selectedPresetBySlot"
     :slot-params-draft="props.llmManagerDialog.slotParamsDraft"
     :t="props.t"
+    :unbinding-slot="props.llmManagerDialog.unbindingSlot"
     @apply-slot-preset-params="void props.onApplyLlmSlotPresetParams()"
     @cancel-profile-draft="props.onCancelLlmProfileDraft"
     @close-slot-drawer="props.onCloseLlmSlotDrawer"
@@ -423,6 +426,7 @@ const props = defineProps<{
     @reset-slot-params="props.onResetLlmSlotParams"
     @submit-profile-draft="void props.onSubmitLlmProfileDraft()"
     @submit-slot-drawer="void props.onSubmitLlmSlotDrawer()"
+    @unbind-slot-drawer="void props.onUnbindLlmSlotDrawer()"
     @test-profile-model="void props.onTestLlmProfileModel()"
     @update:page="props.onSetLlmManagerPage"
     @update:profile-draft="props.onPatchLlmProfileDraft"

@@ -255,9 +255,24 @@ API 侧提供 `GET /variables/resolve`，用于解析当前 `session / floor / p
 
 在 `compat_strict` 模式下，只启用 Narrator，其余实例全部关闭。这样行为和酒馆完全一致。切到 `compat_plus` 或 `native` 模式后才会按需开启其他实例。
 
+`llm_instance_config` 现在已经直接进入真实 turn 执行链路：
+
+- `enabled=false` 且 `slot=narrator` 时，聊天请求会返回显式领域错误，不再回退到环境变量 narrator。
+- `enabled=false` 且 `slot=director` / `verifier` / `memory` 时，对应子流程会在该 turn 中被强制关闭。
+- `preset_id` 用于覆盖 narrator 的 `session.presetId`。
+- `params` 采用浅层 merge，同名键覆盖。
+
 ### LLM 实例与 Profile 的关系
 
 每个 LLM 实例（Narrator / Director / Verifier / Memory）可以独立绑定不同的 **LLM Profile**。Profile 是一组加密存储的 LLM 凭证配置，包含 provider、modelId、apiKey 等。
+
+从实现上看，静态 provider 仍由共享 `ProviderRegistry` 管理；但动态 `LLM Profile` 已改为 **turn 级 provider 快照**：
+
+- turn 启动时先解析 Profile 与 Instance 配置；
+- 再为本轮创建独立的 provider handle；
+- 运行中的 turn 只消费自己的快照，不会被中途 Profile 更新覆盖。
+
+这样可以保证：当前 turn 和下一次 turn 可以看到不同的 Profile 更新结果，但同一个运行中的 turn 不会被共享稳定 providerId 覆盖污染。
 
 #### Instance Slot
 

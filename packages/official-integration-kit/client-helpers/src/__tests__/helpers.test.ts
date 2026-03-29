@@ -470,6 +470,12 @@ describe("mapApiErrorToUiState", () => {
     ["tool_replay_confirmation_required", 409, "conflict", true],
     ["mcp_call_uncertain_timeout", 503, "server", true],
     ["generation_cancelled", 499, "network", true],
+    ["profile_conflict", 409, "conflict", false],
+    ["profile_in_use", 409, "conflict", false],
+    ["profile_inactive", 409, "conflict", false],
+    ["binding_not_found", 404, "not_found", false],
+    ["session_scope_not_found", 404, "not_found", false],
+    ["instance_slot_disabled_required", 409, "conflict", false],
     ["turn_commit_failed", 409, "server", true],
   ] as const)("prefers known api code mapping for %s", (code, status, kind, retryable) => {
     const mapped = mapApiErrorToUiState(

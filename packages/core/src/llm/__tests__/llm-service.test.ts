@@ -306,5 +306,36 @@ describe('LLMService', () => {
       });
       expect(r2.text).toBe('from model2');
     });
+
+    it('uses request.model.languageModel without consulting the registry', async () => {
+      const frozenHandle = new MockLanguageModelV1({
+        doGenerate: async () => ({
+          rawCall: { rawPrompt: null, rawSettings: {} },
+          text: 'from frozen handle',
+          usage: { promptTokens: 2, completionTokens: 1 },
+          finishReason: 'stop',
+        }),
+      });
+
+      const registry = createMockRegistry(new MockLanguageModelV1({
+        doGenerate: async () => ({
+          rawCall: { rawPrompt: null, rawSettings: {} },
+          text: 'from registry',
+          usage: { promptTokens: 1, completionTokens: 1 },
+          finishReason: 'stop',
+        }),
+      }));
+      const getModelSpy = vi.spyOn(registry, 'getModel');
+      const service = new LLMService(registry, defaultModel);
+
+      const response = await service.generate({
+        messages: [{ role: 'user', content: 'test' }],
+        params: {},
+        model: { providerId: 'p-frozen', modelId: 'm-frozen', languageModel: frozenHandle },
+      });
+
+      expect(response.text).toBe('from frozen handle');
+      expect(getModelSpy).not.toHaveBeenCalled();
+    });
   });
 });

@@ -213,6 +213,27 @@ await client.presets.update({
 
 兼容旧调用方时，也仍然可以继续传 `expectedUpdatedAt`，但新的接入应优先使用 `expectedVersion`。
 
+### LLM Profiles 绑定与解绑
+
+```ts
+await client.llmProfiles.activate({
+  profileId: "profile-1",
+  scope: "session",
+  sessionId: "session-1",
+  slot: "narrator",
+});
+
+await client.llmProfiles.unbind({
+  scope: "session",
+  sessionId: "session-1",
+  slot: "narrator",
+});
+
+const resolvedSlots = await client.llmInstances.listResolved({ sessionId: "session-1" });
+```
+
+如果 narrator 在实例侧被显式禁用，聊天接口会返回固定错误码 `instance_slot_disabled_required`。
+
 ### 变量和记忆
 
 ```ts

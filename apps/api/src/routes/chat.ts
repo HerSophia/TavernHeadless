@@ -626,6 +626,7 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
     case "tool_replay_confirmation_required":
     case "profile_not_found":
     case "tool_catalog_conflict":
+    case "instance_slot_disabled_required":
     case "profile_disabled":
       return { statusCode: 409, code: error.code, message: error.message };
     case "secret_unavailable":

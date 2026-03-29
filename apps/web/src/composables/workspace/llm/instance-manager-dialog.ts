@@ -1,4 +1,5 @@
 import { computed, reactive, type Ref } from "vue";
+import { isTavernApiError } from "@tavern/sdk";
 
 import {
   activateLlmProfileBinding,
@@ -11,6 +12,7 @@ import {
   fetchLlmRuntime,
   testLlmModel,
   updateLlmProfile,
+  unbindLlmProfileBinding,
   type WorkspaceLlmDiscoveredModel,
   type WorkspaceLlmGenerationParams,
   type WorkspaceLlmInstanceSlot,
@@ -252,7 +254,8 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
     slotParamsDraft: createSlotParamsDraft(),
     scope: "session" as "global" | "session",
     selectedPresetBySlot: createSlotPresetSelection(),
-    selectedProfileBySlot: createSlotProfileSelection()
+    selectedProfileBySlot: createSlotProfileSelection(),
+    unbindingSlot: null as WorkspaceLlmInstanceSlot | null,
   });
 
   const runtimeBySlot = computed(() => {
@@ -296,6 +299,24 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
   });
 
   function resolveErrorMessage(error: unknown, fallbackKey: string): string {
+    if (isTavernApiError(error)) {
+      if (error.code === "instance_slot_disabled_required") {
+        return options.t("dialogs.llmManagerNarratorDisabled");
+      }
+
+      if (error.code === "binding_not_found") {
+        return options.t("dialogs.llmManagerBindingNotFound");
+      }
+
+      if (error.code === "session_scope_not_found") {
+        return options.t("dialogs.llmManagerSessionScopeNotFound");
+      }
+
+      if (error.code === "profile_in_use") {
+        return options.t("dialogs.llmManagerProfileDeleteBlocked");
+      }
+    }
+
     if (error instanceof Error) {
       if (error.message.includes("APP_SECRETS_MASTER_KEY")) {
         return options.t("dialogs.llmManagerProfileMasterKeyRequired");
@@ -609,6 +630,7 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
     llmManagerDialog.selectedPresetBySlot = createSlotPresetSelection();
     llmManagerDialog.applyingPresetParams = false;
     llmManagerDialog.profileTesting = false;
+    llmManagerDialog.unbindingSlot = null;
     resetProfileModelOptions();
     closeSlotDrawer();
   }
@@ -622,6 +644,7 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
     llmManagerDialog.selectedPresetBySlot = createSlotPresetSelection();
     llmManagerDialog.applyingPresetParams = false;
     llmManagerDialog.profileTesting = false;
+    llmManagerDialog.unbindingSlot = null;
     closeSlotDrawer();
     await refreshLlmManagerDialog();
   }
@@ -676,13 +699,56 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
       await refreshLlmManagerDialog();
       return true;
     } catch (error) {
-      llmManagerDialog.errorMessage = error instanceof Error ? error.message : options.t("dialogs.llmManagerApplyFailed");
+      llmManagerDialog.errorMessage = resolveErrorMessage(error, "dialogs.llmManagerApplyFailed");
       options.addEvent("events.llmBindingFailed", "warn", {
         slot: options.t(workspaceLlmInstanceSlotLabelKeyMap[slot])
       });
       return false;
     } finally {
       llmManagerDialog.applyingSlot = null;
+    }
+  }
+
+  async function unbindLlmSlotBinding(slot?: WorkspaceLlmInstanceSlot): Promise<boolean> {
+    const targetSlot = slot ?? llmManagerDialog.drawerSlot;
+    if (!targetSlot) {
+      return false;
+    }
+
+    const scope = resolveScope(llmManagerDialog.scope);
+    const sessionId = scope === "session" ? options.activeSessionId.value ?? undefined : undefined;
+    if (scope === "session" && !sessionId) {
+      llmManagerDialog.errorMessage = options.t("dialogs.llmManagerSessionRequired");
+      return false;
+    }
+
+    llmManagerDialog.unbindingSlot = targetSlot;
+    llmManagerDialog.errorMessage = "";
+
+    try {
+      const unbound = await unbindLlmProfileBinding(
+        targetSlot,
+        { scope, sessionId },
+        options.currentAccount.value,
+      );
+      if (!unbound) {
+        throw new Error(options.t("dialogs.llmManagerUnbindFailed"));
+      }
+
+      options.addEvent("events.llmBindingRemoved", "success", {
+        slot: options.t(workspaceLlmInstanceSlotLabelKeyMap[targetSlot]),
+      });
+
+      await refreshLlmManagerDialog();
+      return true;
+    } catch (error) {
+      llmManagerDialog.errorMessage = resolveErrorMessage(error, "dialogs.llmManagerUnbindFailed");
+      options.addEvent("events.llmBindingRemoveFailed", "warn", {
+        slot: options.t(workspaceLlmInstanceSlotLabelKeyMap[targetSlot]),
+      });
+      return false;
+    } finally {
+      llmManagerDialog.unbindingSlot = null;
     }
   }
 
@@ -902,6 +968,7 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
     activeModelName,
     applySlotPresetParams,
     applyLlmSlotBinding,
+    unbindLlmSlotBinding,
     beginCreateLlmProfileDraft,
     beginEditLlmProfileDraft,
     cancelLlmProfileDraft,

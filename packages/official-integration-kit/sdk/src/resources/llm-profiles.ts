@@ -46,6 +46,12 @@ export type LlmProfilesResource = {
     sessionId?: string;
     slot: LlmInstanceSlot;
   }): Promise<boolean>;
+  unbind(options: {
+    accountId?: AccountIdHint;
+    scope: "global" | "session";
+    sessionId?: string;
+    slot: LlmInstanceSlot;
+  }): Promise<boolean>;
   create(options: {
     accountId?: AccountIdHint;
     apiKey: string;
@@ -100,6 +106,20 @@ export function createLlmProfilesResource(client: TransportClient): LlmProfilesR
       });
 
       return readBoolean(readRecord(readRecord(response.body)?.data)?.activated);
+    },
+    async unbind(options): Promise<boolean> {
+      const query = buildQueryString({
+        scope: options.scope,
+        session_id: options.sessionId,
+      });
+      const base = `/llm-profiles/bindings/${encodeURIComponent(options.slot)}`;
+      const pathname = query ? `${base}?${query}` : base;
+      const response = await client.fetchJson<Record<string, unknown>>(pathname, {
+        headers: buildAccountHeaders(options.accountId),
+        method: "DELETE",
+      });
+
+      return readBoolean(readRecord(readRecord(response.body)?.data)?.unbound);
     },
     async create(options): Promise<LlmProfile> {
       const response = await client.fetchJson<Record<string, unknown>>("/llm-profiles", {

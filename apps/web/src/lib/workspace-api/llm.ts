@@ -174,6 +174,22 @@ export async function activateLlmProfileBinding(
   });
 }
 
+export async function unbindLlmProfileBinding(
+  slot: WorkspaceLlmInstanceSlot,
+  payload: {
+    scope: "global" | "session";
+    sessionId?: string;
+  },
+  accountId?: string
+): Promise<boolean> {
+  return apiClient.llmProfiles.unbind({
+    accountId,
+    scope: payload.scope,
+    sessionId: payload.sessionId,
+    slot,
+  });
+}
+
 export type WorkspaceLlmInstanceScope = "global" | "session";
 
 export type WorkspaceLlmInstanceConfig = {

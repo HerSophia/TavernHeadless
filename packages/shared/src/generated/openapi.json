@@ -7722,6 +7722,181 @@
         ]
       }
     },
+    "/llm-profiles/bindings/{slot}": {
+      "delete": {
+        "operationId": "unbindLlmProfile",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "global",
+              "enum": [
+                "global",
+                "session"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "enum": [
+                "*",
+                "narrator",
+                "director",
+                "verifier",
+                "memory"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "instance_slot": "director",
+                    "scope": "session",
+                    "scope_id": "sess_demo",
+                    "unbound": true
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "instance_slot": {
+                          "enum": [
+                            "*",
+                            "narrator",
+                            "director",
+                            "verifier",
+                            "memory"
+                          ],
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "global",
+                            "session"
+                          ],
+                          "type": "string"
+                        },
+                        "scope_id": {
+                          "type": "string"
+                        },
+                        "unbound": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "scope_id",
+                        "instance_slot",
+                        "unbound"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Unbind LLM profile from a scope slot",
+        "tags": [
+          "llm-profiles"
+        ]
+      }
+    },
     "/llm-profiles/models/discover": {
       "post": {
         "operationId": "discoverLlmProfileModels",

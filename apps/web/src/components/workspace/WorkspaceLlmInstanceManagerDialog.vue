@@ -71,6 +71,7 @@ const props = defineProps<{
   selectedProfileBySlot: Record<WorkspaceLlmInstanceSlot, string>;
   slotParamsDraft: WorkspaceLlmGenerationParams;
   t: Translator;
+  unbindingSlot: WorkspaceLlmInstanceSlot | null;
 }>();
 
 const emit = defineEmits<{
@@ -86,6 +87,7 @@ const emit = defineEmits<{
   refresh: [];
   resetSlotParams: [];
   submitProfileDraft: [];
+  unbindSlotDrawer: [];
   submitSlotDrawer: [];
   testProfileModel: [];
   "update:open": [value: boolean];
@@ -240,7 +242,20 @@ const drawerHasProfileSelection = computed(() => {
 });
 
 const drawerActionBusy = computed(() => {
-  return !props.drawerSlot || props.loading || props.applyingSlot !== null || props.applyingPresetParams;
+  return !props.drawerSlot || props.loading || props.applyingSlot !== null || props.applyingPresetParams || props.unbindingSlot !== null;
+});
+
+const drawerCanUnbind = computed(() => {
+  if (!props.drawerSlot) {
+    return false;
+  }
+
+  const runtime = runtimeBySlot.value[props.drawerSlot];
+  return Boolean(runtime?.profileId && runtime.source !== "env");
+});
+
+const drawerUnbindDisabled = computed(() => {
+  return drawerActionBusy.value || props.unbindingSlot !== null || !drawerCanUnbind.value;
 });
 
 const drawerApplyPresetDisabled = computed(() => {
@@ -630,6 +645,14 @@ function handleMaxRetriesInput(event: Event): void {
               <UiDialogButton type="button" variant="primary" :disabled="drawerSubmitDisabled" @click="emit('submitSlotDrawer')">
                 {{
                   props.applyingSlot === props.drawerSlot ? props.t("dialogs.llmManagerApplying") : props.t("dialogs.llmManagerApply")
+                }}
+              </UiDialogButton>
+            </div>
+
+            <div class="mt-2 flex justify-end">
+              <UiDialogButton type="button" variant="danger" :disabled="drawerUnbindDisabled" @click="emit('unbindSlotDrawer')">
+                {{
+                  props.unbindingSlot === props.drawerSlot ? props.t("dialogs.llmManagerUnbinding") : props.t("dialogs.llmManagerUnbind")
                 }}
               </UiDialogButton>
             </div>

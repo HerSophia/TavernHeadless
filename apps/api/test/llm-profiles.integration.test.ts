@@ -5,15 +5,24 @@ import { buildApp } from "../src/app";
 
 describe("LLM Profile Routes", () => {
   let app: FastifyInstance;
+  let originalAllowPrivateBaseUrl: string | undefined;
   let originalMasterKey: string | undefined;
 
   beforeEach(async () => {
+    originalAllowPrivateBaseUrl = process.env.ALLOW_PRIVATE_BASE_URL;
     originalMasterKey = process.env.APP_SECRETS_MASTER_KEY;
+    delete process.env.ALLOW_PRIVATE_BASE_URL;
     process.env.APP_SECRETS_MASTER_KEY = "test-master-key";
     ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
   });
 
   afterEach(async () => {
+    if (originalAllowPrivateBaseUrl === undefined) {
+      delete process.env.ALLOW_PRIVATE_BASE_URL;
+    } else {
+      process.env.ALLOW_PRIVATE_BASE_URL = originalAllowPrivateBaseUrl;
+    }
+
     if (originalMasterKey === undefined) {
       delete process.env.APP_SECRETS_MASTER_KEY;
     } else {
@@ -181,6 +190,106 @@ describe("LLM Profile Routes", () => {
 
     const body = deleteRes.json() as { error: { code: string } };
     expect(body.error.code).toBe("profile_in_use");
+  });
+
+  it("unbinds an existing binding by scope and slot", async () => {
+    const sessionRes = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      payload: { title: "Profile Unbind Session" },
+    });
+    expect(sessionRes.statusCode).toBe(201);
+    const sessionId = (sessionRes.json() as { data: { id: string } }).data.id;
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Unbindable Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        api_key: "sk-test-unbind",
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const profileId = (createRes.json() as { data: { id: string } }).data.id;
+
+    const activateRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${profileId}/activate`,
+      payload: {
+        scope: "session",
+        session_id: sessionId,
+        instance_slot: "director",
+      },
+    });
+    expect(activateRes.statusCode).toBe(200);
+
+    const unbindRes = await app.inject({
+      method: "DELETE",
+      url: `/llm-profiles/bindings/director?scope=session&session_id=${sessionId}`,
+    });
+    expect(unbindRes.statusCode).toBe(200);
+    expect((unbindRes.json() as {
+      data: { scope: string; scope_id: string; instance_slot: string; unbound: boolean };
+    }).data).toEqual({
+      scope: "session",
+      scope_id: sessionId,
+      instance_slot: "director",
+      unbound: true,
+    });
+
+    const deleteRes = await app.inject({
+      method: "DELETE",
+      url: `/llm-profiles/${profileId}`,
+    });
+    expect(deleteRes.statusCode).toBe(200);
+  });
+
+  it("cleans session-scoped bindings during session deletion so profile deletion is no longer blocked", async () => {
+    const sessionRes = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      payload: { title: "Profile Binding Cleanup Session" },
+    });
+    expect(sessionRes.statusCode).toBe(201);
+    const sessionId = (sessionRes.json() as { data: { id: string } }).data.id;
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Cleanup Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        api_key: "sk-test-cleanup",
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const profileId = (createRes.json() as { data: { id: string } }).data.id;
+
+    const activateRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${profileId}/activate`,
+      payload: {
+        scope: "session",
+        session_id: sessionId,
+        instance_slot: "narrator",
+      },
+    });
+    expect(activateRes.statusCode).toBe(200);
+
+    const deleteSessionRes = await app.inject({
+      method: "DELETE",
+      url: `/sessions/${sessionId}`,
+    });
+    expect(deleteSessionRes.statusCode).toBe(200);
+
+    const deleteProfileRes = await app.inject({
+      method: "DELETE",
+      url: `/llm-profiles/${profileId}`,
+    });
+    expect(deleteProfileRes.statusCode).toBe(200);
   });
 
   it("activates profile with params and exposes effective params in runtime", async () => {
@@ -380,6 +489,14 @@ describe("LLM Profile Routes", () => {
     expect(missingSessionIdRes.statusCode).toBe(400);
     expect((missingSessionIdRes.json() as { error: { code: string } }).error.code).toBe("validation_error");
 
+    const missingSessionRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${profileId}/activate`,
+      payload: { scope: "session", session_id: "missing-session", instance_slot: "narrator" },
+    });
+    expect(missingSessionRes.statusCode).toBe(404);
+    expect((missingSessionRes.json() as { error: { code: string } }).error.code).toBe("session_scope_not_found");
+
     const missingProfileRes = await app.inject({
       method: "POST",
       url: "/llm-profiles/missing-profile/activate",
@@ -402,6 +519,14 @@ describe("LLM Profile Routes", () => {
     });
     expect(globalProfileRes.statusCode).toBe(201);
     const globalProfileId = (globalProfileRes.json() as { data: { id: string } }).data.id;
+
+    const sessionRes = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      payload: { title: "Runtime Override Session" },
+    });
+    expect(sessionRes.statusCode).toBe(201);
+    const sessionId = (sessionRes.json() as { data: { id: string } }).data.id;
 
     const sessionProfileRes = await app.inject({
       method: "POST",
@@ -426,13 +551,13 @@ describe("LLM Profile Routes", () => {
     const sessionActivateRes = await app.inject({
       method: "POST",
       url: `/llm-profiles/${sessionProfileId}/activate`,
-      payload: { scope: "session", session_id: "sess-override", instance_slot: "narrator" },
+      payload: { scope: "session", session_id: sessionId, instance_slot: "narrator" },
     });
     expect(sessionActivateRes.statusCode).toBe(200);
 
     const runtimeSessionRes = await app.inject({
       method: "GET",
-      url: "/llm-profiles/runtime?session_id=sess-override",
+      url: `/llm-profiles/runtime?session_id=${sessionId}`,
     });
     expect(runtimeSessionRes.statusCode).toBe(200);
     const sessionNarrator = (runtimeSessionRes.json() as {
@@ -877,6 +1002,81 @@ describe("LLM Profile Routes", () => {
     expect(res.json()).toEqual(
       expect.objectContaining({ error: expect.objectContaining({ code: "ssrf_blocked" }) }),
     );
+  });
+
+  it("blocks create with private base_url when ALLOW_PRIVATE_BASE_URL is not true", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Private Create Blocked",
+        provider: "openai-compatible",
+        model_id: "llama3",
+        base_url: "http://127.0.0.1:11434",
+        api_key: "sk-test",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(
+      expect.objectContaining({ error: expect.objectContaining({ code: "ssrf_blocked" }) }),
+    );
+  });
+
+  it("blocks patch with private base_url when ALLOW_PRIVATE_BASE_URL is not true", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Private Patch Blocked",
+        provider: "openai-compatible",
+        model_id: "llama3",
+        api_key: "sk-test",
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const profileId = (createRes.json() as { data: { id: string } }).data.id;
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/llm-profiles/${profileId}`,
+      payload: {
+        base_url: "http://192.168.1.100:8080",
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual(
+      expect.objectContaining({ error: expect.objectContaining({ code: "ssrf_blocked" }) }),
+    );
+  });
+
+  it("allows create and patch with private base_url when ALLOW_PRIVATE_BASE_URL is true", async () => {
+    process.env.ALLOW_PRIVATE_BASE_URL = "true";
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Private Base URL Allowed",
+        provider: "openai-compatible",
+        model_id: "llama3",
+        base_url: "http://127.0.0.1:11434",
+        api_key: "sk-test",
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json() as { data: { id: string; base_url: string | null } };
+    expect(created.data.base_url).toBe("http://127.0.0.1:11434");
+    const profileId = created.data.id;
+
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/llm-profiles/${profileId}`,
+      payload: { base_url: "http://192.168.1.100:8080" },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    expect((patchRes.json() as { data: { base_url: string | null } }).data.base_url).toBe("http://192.168.1.100:8080");
   });
 
   it("allows discover with private base_url when allow_private_network is true", async () => {

@@ -249,10 +249,12 @@ export interface RespondRuntimeOptions {
 }
 
 export interface ResolvedTurnModel {
-  model: ModelConfig;
+  model?: ModelConfig;
   source: "env" | "global_profile" | "session_profile";
   profileId?: string;
   generationParams?: Partial<GenerationParams>;
+  enabled?: boolean;
+  presetId?: string;
 }
 
 export type ResolvedTurnModels = Partial<Record<InstanceSlot, ResolvedTurnModel>>;
@@ -477,6 +479,9 @@ export class ChatService {
       branchId,
       runtimeOptions.abortSignal,
       async (generationRuntime) => {
+        const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+        this.assertNarratorSlotEnabled(resolvedTurnModels);
+
         // ── 2. 确定分支上下文 + 加载历史 ──
         const branchContext = await this.resolveRespondBranchContext(
           sessionId,
@@ -507,17 +512,7 @@ export class ChatService {
 
         try {
           // ── 5. 构建 TurnInput + 执行编排 ──
-          const sessionInfo: SessionPromptInfo = {
-            presetId: session.presetId,
-            worldbookProfileId: session.worldbookProfileId,
-            regexProfileId: session.regexProfileId,
-            metadataJson: session.metadataJson,
-            characterSnapshotJson: session.characterSnapshotJson,
-            promptMode: session.promptMode,
-            userSnapshotJson: session.userSnapshotJson,
-          };
-
-          const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+          const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
           const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
           const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
@@ -548,7 +543,7 @@ export class ChatService {
             stream: !!runtimeOptions.onChunk,
           });
 
-          const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config);
+          const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config, resolvedTurnModels);
           const memoryConsolidationRequested = this.shouldRequestMemoryConsolidation(requestedTurnConfig);
           const turnConfig = this.toOrchestratorTurnConfig(requestedTurnConfig);
           const toolRuntime = await this.resolveTurnToolingForFloor({
@@ -640,15 +635,7 @@ export class ChatService {
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
     const maxContextTokensOverride = normalizePositiveInt(narratorParams?.maxContextTokens);
 
-    const sessionInfo: SessionPromptInfo = {
-      presetId: session.presetId,
-      worldbookProfileId: session.worldbookProfileId,
-      regexProfileId: session.regexProfileId,
-      metadataJson: session.metadataJson,
-      characterSnapshotJson: session.characterSnapshotJson,
-      promptMode: session.promptMode,
-      userSnapshotJson: session.userSnapshotJson,
-    };
+    const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
 
     const assembled = await assemblePrompt(
       this.db,
@@ -747,6 +734,9 @@ export class ChatService {
       // ── 4b. 记忆检索 ──
       const memorySummary = await this.retrieveMemorySummary(sessionId, accountId);
 
+      const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+      this.assertNarratorSlotEnabled(resolvedTurnModels);
+
       const newFloorId = nanoid();
       const now = Date.now();
       const { userMessageRef } = this.createDraftFloorWithUserMessage({
@@ -769,17 +759,7 @@ export class ChatService {
       });
 
       // ── 8. 构建 TurnInput + 执行编排 ──
-      const sessionInfo: SessionPromptInfo = {
-        presetId: session.presetId,
-        worldbookProfileId: session.worldbookProfileId,
-        regexProfileId: session.regexProfileId,
-        metadataJson: session.metadataJson,
-        characterSnapshotJson: session.characterSnapshotJson,
-        promptMode: session.promptMode,
-        userSnapshotJson: session.userSnapshotJson,
-      };
-
-      const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
       const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
       const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
@@ -809,7 +789,7 @@ export class ChatService {
         availableForReply: assembled.tokenUsage.availableForReply,
       });
 
-      const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config);
+      const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config, resolvedTurnModels);
       const memoryConsolidationRequested = this.shouldRequestMemoryConsolidation(requestedTurnConfig);
       const turnConfig = this.toOrchestratorTurnConfig(requestedTurnConfig);
       const toolRuntime = await this.resolveTurnToolingForFloor({
@@ -929,6 +909,8 @@ export class ChatService {
         );
         const memorySummary = await this.retrieveMemorySummary(targetFloor.sessionId, accountId);
         const now = Date.now();
+        const resolvedTurnModels = await this.resolveTurnModelsForSession(targetFloor.sessionId, accountId);
+        this.assertNarratorSlotEnabled(resolvedTurnModels);
 
         this.db.transaction((tx) => {
           this.messagePersistence.clearOutputForRetry(tx, targetFloor.id);
@@ -939,17 +921,7 @@ export class ChatService {
             .run();
         });
 
-        const sessionInfo: SessionPromptInfo = {
-          presetId: session.presetId,
-          worldbookProfileId: session.worldbookProfileId,
-          regexProfileId: session.regexProfileId,
-          metadataJson: session.metadataJson,
-          characterSnapshotJson: session.characterSnapshotJson,
-          promptMode: session.promptMode,
-          userSnapshotJson: session.userSnapshotJson,
-        };
-
-        const resolvedTurnModels = await this.resolveTurnModelsForSession(targetFloor.sessionId, accountId);
+        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
         const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
         const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
@@ -983,7 +955,7 @@ export class ChatService {
           availableForReply: assembled.tokenUsage.availableForReply,
         });
 
-        const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config);
+        const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config, resolvedTurnModels);
         const memoryConsolidationRequested = this.shouldRequestMemoryConsolidation(requestedTurnConfig);
         const turnConfig = this.toOrchestratorTurnConfig(requestedTurnConfig);
         const toolRuntime = await this.resolveTurnToolingForFloor({
@@ -1630,17 +1602,9 @@ export class ChatService {
   }): Promise<RetryFloorResult> {
     const memorySummary = await this.retrieveMemorySummary(args.sessionId, args.accountId);
 
-    const sessionInfo: SessionPromptInfo = {
-      presetId: args.session.presetId,
-      worldbookProfileId: args.session.worldbookProfileId,
-      regexProfileId: args.session.regexProfileId,
-      metadataJson: args.session.metadataJson,
-      characterSnapshotJson: args.session.characterSnapshotJson,
-      promptMode: args.session.promptMode,
-      userSnapshotJson: args.session.userSnapshotJson,
-    };
-
     const resolvedTurnModels = await this.resolveTurnModelsForSession(args.sessionId, args.accountId);
+    this.assertNarratorSlotEnabled(resolvedTurnModels);
+    const sessionInfo = this.buildSessionPromptInfo(args.session, resolvedTurnModels);
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
     const maxContextTokensOverride = this.resolveMaxContextTokensOverride(args.request.generationParams, narratorParams);
 
@@ -1674,7 +1638,7 @@ export class ChatService {
       availableForReply: assembled.tokenUsage.availableForReply,
     });
 
-    const requestedTurnConfig = this.resolveRequestedTurnConfig(args.request.config);
+    const requestedTurnConfig = this.resolveRequestedTurnConfig(args.request.config, resolvedTurnModels);
     const memoryConsolidationRequested = this.shouldRequestMemoryConsolidation(requestedTurnConfig);
     const turnConfig = this.toOrchestratorTurnConfig(requestedTurnConfig);
     const toolRuntime = await this.resolveTurnToolingForFloor({
@@ -1780,6 +1744,43 @@ export class ChatService {
     });
 
     return { floorId, userMessageRef };
+  }
+
+  private buildSessionPromptInfo(
+    session: Pick<
+      typeof sessions.$inferSelect,
+      | "presetId"
+      | "worldbookProfileId"
+      | "regexProfileId"
+      | "metadataJson"
+      | "characterSnapshotJson"
+      | "promptMode"
+      | "userSnapshotJson"
+    >,
+    resolvedTurnModels: ResolvedTurnModels,
+  ): SessionPromptInfo {
+    return {
+      presetId: resolvedTurnModels.narrator?.presetId ?? session.presetId,
+      worldbookProfileId: session.worldbookProfileId,
+      regexProfileId: session.regexProfileId,
+      metadataJson: session.metadataJson,
+      characterSnapshotJson: session.characterSnapshotJson,
+      promptMode: session.promptMode,
+      userSnapshotJson: session.userSnapshotJson,
+    };
+  }
+
+  private isSlotDisabled(models: ResolvedTurnModels, slot: InstanceSlot): boolean {
+    return models[slot]?.enabled === false;
+  }
+
+  private assertNarratorSlotEnabled(models: ResolvedTurnModels): void {
+    if (this.isSlotDisabled(models, "narrator")) {
+      throw new ChatServiceError(
+        "instance_slot_disabled_required",
+        "LLM instance slot 'narrator' is disabled for this session",
+      );
+    }
   }
 
   private buildGenerationParams(args: {
@@ -1956,7 +1957,7 @@ export class ChatService {
     // 如果有多 slot 解析器，取 narrator slot 作为兼容返回
     if (this.resolveTurnModels) {
       const models = await this.resolveTurnModels(sessionId, accountId);
-      return models.narrator;
+      return models.narrator?.model ? models.narrator : undefined;
     }
     return (await this.resolveTurnModel!(sessionId, accountId)) ?? undefined;
   }
@@ -1992,7 +1993,7 @@ export class ChatService {
         // ResolvedTurnModels – mark each unique profile
         const seen = new Set<string>();
         for (const resolved of Object.values(model as ResolvedTurnModels)) {
-          if (resolved && resolved.profileId && !seen.has(resolved.profileId)) {
+          if (resolved && resolved.enabled !== false && resolved.profileId && !seen.has(resolved.profileId)) {
             seen.add(resolved.profileId);
             await this.onTurnModelUsed(resolved, accountId);
           }
@@ -2009,10 +2010,13 @@ export class ChatService {
   private buildModelOverrides(
     models: ResolvedTurnModels,
   ): Partial<Record<InstanceSlot, ModelConfig>> | undefined {
-    const entries = Object.entries(models) as [InstanceSlot, ResolvedTurnModel][];
+    const entries = (Object.entries(models) as [InstanceSlot, ResolvedTurnModel][])
+      .filter(([, resolved]) => resolved.model !== undefined);
     if (entries.length === 0) return undefined;
+
     const overrides: Partial<Record<InstanceSlot, ModelConfig>> = {};
     for (const [slot, resolved] of entries) {
+      if (!resolved.model) continue;
       overrides[slot] = resolved.model;
     }
     return overrides;
@@ -2025,6 +2029,10 @@ export class ChatService {
 
     (Object.entries(models) as [InstanceSlot, ResolvedTurnModel][]).forEach(([slot, resolved]) => {
       if (slot === "narrator") {
+        return;
+      }
+
+      if (resolved.enabled === false) {
         return;
       }
 
@@ -2043,6 +2051,10 @@ export class ChatService {
     models: ResolvedTurnModels,
     slot: InstanceSlot,
   ): Partial<GenerationParams> | undefined {
+    if (models[slot]?.enabled === false) {
+      return undefined;
+    }
+
     return models[slot]?.generationParams;
   }
 
@@ -2057,23 +2069,57 @@ export class ChatService {
     return rest;
   }
 
-  private resolveRequestedTurnConfig(config?: TurnConfig): TurnConfig | undefined {
+  private resolveRequestedTurnConfig(
+    config: TurnConfig | undefined,
+    models: ResolvedTurnModels,
+  ): TurnConfig | undefined {
+    let nextConfig = config;
+
     if (!this.memoryStore) {
-      return config;
+      if (this.isSlotDisabled(models, "director") && nextConfig?.enableDirector) {
+        nextConfig = { ...nextConfig, enableDirector: false };
+      }
+      if (this.isSlotDisabled(models, "verifier") && nextConfig?.enableVerifier) {
+        nextConfig = { ...nextConfig, enableVerifier: false };
+      }
+      return nextConfig;
     }
 
-    if (config?.enableMemoryConsolidation !== undefined) {
-      return config;
+    if (nextConfig?.enableMemoryConsolidation !== undefined) {
+      if (this.isSlotDisabled(models, "director") && nextConfig.enableDirector) {
+        nextConfig = { ...nextConfig, enableDirector: false };
+      }
+      if (this.isSlotDisabled(models, "verifier") && nextConfig.enableVerifier) {
+        nextConfig = { ...nextConfig, enableVerifier: false };
+      }
+      if (this.isSlotDisabled(models, "memory") && nextConfig.enableMemoryConsolidation) {
+        nextConfig = { ...nextConfig, enableMemoryConsolidation: false };
+      }
+      return nextConfig;
     }
 
     if (!this.enableMemoryConsolidationByDefault) {
-      return config;
+      if (this.isSlotDisabled(models, "director") && nextConfig?.enableDirector) {
+        nextConfig = { ...nextConfig, enableDirector: false };
+      }
+      if (this.isSlotDisabled(models, "verifier") && nextConfig?.enableVerifier) {
+        nextConfig = { ...nextConfig, enableVerifier: false };
+      }
+      return nextConfig;
     }
 
-    return {
-      ...config,
-      enableMemoryConsolidation: true,
-    };
+    nextConfig = { ...nextConfig, enableMemoryConsolidation: true };
+    if (this.isSlotDisabled(models, "director") && nextConfig.enableDirector) {
+      nextConfig.enableDirector = false;
+    }
+    if (this.isSlotDisabled(models, "verifier") && nextConfig.enableVerifier) {
+      nextConfig.enableVerifier = false;
+    }
+    if (this.isSlotDisabled(models, "memory")) {
+      nextConfig.enableMemoryConsolidation = false;
+    }
+
+    return nextConfig;
   }
 
   private shouldRequestMemoryConsolidation(config?: TurnConfig): boolean {
