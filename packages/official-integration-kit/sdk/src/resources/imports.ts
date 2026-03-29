@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { readNumber, readOptionalString, readRecord, readString } from "./utils.js";
 
 export type ImportedResource = {
@@ -29,11 +29,11 @@ export type ImportedChat = {
 };
 
 export type ImportsResource = {
-  character(options: { accountId?: string; createSession?: boolean; payload: Record<string, unknown>; title: string }): Promise<ImportedCharacter>;
-  chat(options: { accountId?: string; characterId?: string; data: string; title?: string }): Promise<ImportedChat>;
-  preset(options: { accountId?: string; data: Record<string, unknown>; name: string }): Promise<ImportedResource>;
-  regex(options: { accountId?: string; data: string; name: string }): Promise<ImportedRegexProfile>;
-  worldbook(options: { accountId?: string; data: Record<string, unknown>; name: string }): Promise<ImportedResource>;
+  character(options: { accountId?: AccountIdHint; createSession?: boolean; payload: Record<string, unknown>; title: string }): Promise<ImportedCharacter>;
+  chat(options: { accountId?: AccountIdHint; characterId?: string; data: string; title?: string }): Promise<ImportedChat>;
+  preset(options: { accountId?: AccountIdHint; data: Record<string, unknown>; name: string }): Promise<ImportedResource>;
+  regex(options: { accountId?: AccountIdHint; data: string; name: string }): Promise<ImportedRegexProfile>;
+  worldbook(options: { accountId?: AccountIdHint; data: Record<string, unknown>; name: string }): Promise<ImportedResource>;
 };
 
 export function createImportsResource(client: TransportClient): ImportsResource {

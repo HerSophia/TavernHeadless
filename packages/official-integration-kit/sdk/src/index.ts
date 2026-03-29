@@ -1,5 +1,5 @@
 export { createTavernClient } from "./client/create-tavern-client.js";
-export { buildAccountHeaders, resolvePath, type TavernClientOptions } from "./client/transport.js";
+export { buildAccountHeaders, resolvePath, type AccountIdHint, type TavernClientOptions } from "./client/transport.js";
 export type { TavernClient } from "./client/create-tavern-client.js";
 export { TavernApiError, isTavernApiError } from "./errors/tavern-api-error.js";
 export {

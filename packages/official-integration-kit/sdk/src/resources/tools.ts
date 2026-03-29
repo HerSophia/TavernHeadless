@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   buildQueryString,
   compactObject,
@@ -112,7 +112,7 @@ export type ToolExecutionsListResult = {
 
 export type ToolsResource = {
   createDefinition(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     allowedSlots?: string[];
     description?: string;
     enabled?: boolean;
@@ -124,13 +124,13 @@ export type ToolsResource = {
     source?: ToolDefinitionSource;
     sourceId?: string | null;
   }): Promise<ToolDefinitionRecord>;
-  getDefinition(options: { accountId?: string; definitionId: string }): Promise<ToolDefinitionRecord>;
-  listBuiltin(options?: { accountId?: string }): Promise<BuiltinToolRecord[]>;
+  getDefinition(options: { accountId?: AccountIdHint; definitionId: string }): Promise<ToolDefinitionRecord>;
+  listBuiltin(options?: { accountId?: AccountIdHint }): Promise<BuiltinToolRecord[]>;
   /**
    * 兼容查询入口。仅承接当前公开的 `/tools/call-records`，不代表长期主审计模型。
    */
   listCallRecords(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     callerSlot?: string;
     floorId?: string;
     limit?: number;
@@ -141,7 +141,7 @@ export type ToolsResource = {
     status?: ToolCallRecordStatus;
   }): Promise<ToolCallRecordsListResult>;
   listExecutions(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     callerSlot?: string;
     commitOutcome?: ToolExecutionCommitOutcome;
     floorId?: string;
@@ -157,7 +157,7 @@ export type ToolsResource = {
     toolName?: string;
   }): Promise<ToolExecutionsListResult>;
   listDefinitions(options?: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     enabled?: boolean;
     limit?: number;
     offset?: number;
@@ -166,10 +166,10 @@ export type ToolsResource = {
     source?: ToolDefinitionSource;
     sourceId?: string;
   }): Promise<ToolDefinitionsListResult>;
-  removeDefinition(options: { accountId?: string; definitionId: string }): Promise<boolean>;
-  toggleDefinition(options: { accountId?: string; definitionId: string; enabled: boolean }): Promise<ToolDefinitionRecord>;
+  removeDefinition(options: { accountId?: AccountIdHint; definitionId: string }): Promise<boolean>;
+  toggleDefinition(options: { accountId?: AccountIdHint; definitionId: string; enabled: boolean }): Promise<ToolDefinitionRecord>;
   updateDefinition(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     allowedSlots?: string[];
     definitionId: string;
     description?: string;

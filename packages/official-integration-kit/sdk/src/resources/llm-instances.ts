@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import type { LlmGenerationParams, LlmInstanceScope, LlmInstanceSlot } from "./llm-shared.js";
 import { buildQueryString, compactObject, readArray, readBoolean, readNullableString, readRecord, readString } from "./utils.js";
 
@@ -25,12 +25,12 @@ export type LlmResolvedInstanceSlot = {
 };
 
 export type LlmInstancesResource = {
-  list(options?: { accountId?: string; scope?: LlmInstanceScope; sessionId?: string }): Promise<LlmInstanceConfig[]>;
-  listBySlot(options: { accountId?: string; scope?: LlmInstanceScope; sessionId?: string; slot: LlmInstanceSlot }): Promise<LlmInstanceConfig[]>;
-  listResolved(options?: { accountId?: string; sessionId?: string }): Promise<LlmResolvedInstanceSlot[]>;
-  remove(options: { accountId?: string; scope?: LlmInstanceScope; sessionId?: string; slot: LlmInstanceSlot }): Promise<boolean>;
+  list(options?: { accountId?: AccountIdHint; scope?: LlmInstanceScope; sessionId?: string }): Promise<LlmInstanceConfig[]>;
+  listBySlot(options: { accountId?: AccountIdHint; scope?: LlmInstanceScope; sessionId?: string; slot: LlmInstanceSlot }): Promise<LlmInstanceConfig[]>;
+  listResolved(options?: { accountId?: AccountIdHint; sessionId?: string }): Promise<LlmResolvedInstanceSlot[]>;
+  remove(options: { accountId?: AccountIdHint; scope?: LlmInstanceScope; sessionId?: string; slot: LlmInstanceSlot }): Promise<boolean>;
   upsert(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     enabled?: boolean;
     params?: LlmGenerationParams | null;
     presetId?: string | null;

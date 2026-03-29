@@ -48,6 +48,7 @@ import { ensureDefaultAdminAccount } from "./accounts/service";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "./accounts/constants";
 import { registerCors, type CorsConfig } from "./plugins/cors";
 import { McpService } from "./services/mcp-service";
+import { repairCrossAccountSessionCharacterBindings } from "./services/resource-ownership";
 import { McpConnectionManager } from "./mcp";
 import { registerMcpRuntimeRoutes } from "./routes/mcp";
 import { SessionToolRegistryService } from "./services/session-tool-registry-service";
@@ -240,6 +241,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   });
 
   await ensureDefaultAdminAccount(database.db);
+  const repairedCrossAccountCharacterBindings = await repairCrossAccountSessionCharacterBindings(database.db);
+  if (repairedCrossAccountCharacterBindings > 0) {
+    app.log.warn({
+      repaired_session_count: repairedCrossAccountCharacterBindings,
+    }, "Repaired cross-account session character bindings");
+  }
 
   const auth = options.auth ?? { mode: "off" };
 
@@ -248,6 +255,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   await registerOpenApi(app, { authMode: auth.mode });
   await registerRequestLogging(app);
   await registerAuth(app, auth, {
+    db: database.db,
     accountMode,
     defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
   });
@@ -403,7 +411,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
   if (options.enableMcp) {
     const mcpService = new McpService(database.db);
-    const mcpConfigs = await mcpService.listEnabledConfigs();
+    const mcpConfigs = await mcpService.listAllEnabledConfigs();
 
     mcpManager = new McpConnectionManager(app.log);
     await mcpManager.initialize(mcpConfigs);
@@ -609,6 +617,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     if (options.enableWebSocket !== false) {
       wsBridge = await registerWsPlugin(app, {
         eventBus: activeOrchestrationContext.eventBus,
+        db: database.db,
       });
     }
   }

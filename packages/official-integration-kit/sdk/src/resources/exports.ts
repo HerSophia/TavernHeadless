@@ -1,17 +1,17 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { buildQueryString, compactObject } from "./utils.js";
 
 export type ExportChatFormat = "thchat" | "st_jsonl";
 
 export type ExportsResource = {
   character(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     characterId: string;
     signal?: AbortSignal;
     versionId?: string;
   }): Promise<Response>;
   chat(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     format?: ExportChatFormat;
     includeMemories?: boolean;
     includeVariables?: boolean;
@@ -19,17 +19,17 @@ export type ExportsResource = {
     signal?: AbortSignal;
   }): Promise<Response>;
   preset(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     presetId: string;
     signal?: AbortSignal;
   }): Promise<Response>;
   regex(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     profileId: string;
     signal?: AbortSignal;
   }): Promise<Response>;
   worldbook(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     signal?: AbortSignal;
     worldbookId: string;
   }): Promise<Response>;

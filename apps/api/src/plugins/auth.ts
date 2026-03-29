@@ -2,7 +2,9 @@ import fastifyJwt from "@fastify/jwt";
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { getAccountAuthState } from "../accounts/service.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "../accounts/constants.js";
+import type { AppDb } from "../db/client.js";
 import { sendError } from "../lib/http.js";
 
 export type AuthMode = "off" | "api_key" | "jwt";
@@ -15,10 +17,12 @@ export type AuthConfig =
 export type AuthContext = {
   accountId: string;
   role: "admin" | "user";
+  status: "active" | "disabled";
   subject?: string;
 };
 
 type RegisterAuthOptions = {
+  db: AppDb;
   accountMode?: AccountMode;
   defaultAccountId?: string;
 };
@@ -34,8 +38,9 @@ const PUBLIC_PATHS = new Set(["/health", "/openapi.json", "/docs-en", "/docs-zh"
 export async function registerAuth(
   app: FastifyInstance,
   auth: AuthConfig,
-  options: RegisterAuthOptions = {}
+  options: RegisterAuthOptions
 ): Promise<void> {
+  const db = options.db;
   const accountMode = options.accountMode ?? "single";
   const defaultAccountId = options.defaultAccountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
 
@@ -55,6 +60,7 @@ export async function registerAuth(
       request.authContext = {
         accountId: defaultAccountId,
         role: "admin",
+        status: "active",
       };
       return;
     }
@@ -63,6 +69,7 @@ export async function registerAuth(
       request.authContext = {
         accountId: defaultAccountId,
         role: "admin",
+        status: "active",
       };
       return;
     }
@@ -90,10 +97,12 @@ export async function registerAuth(
         return;
       }
 
-      request.authContext = {
-        accountId,
-        role: accountId === defaultAccountId ? "admin" : "user",
-      };
+      const accountContext = await resolveAccountContext(db, reply, accountId);
+      if (!accountContext) {
+        return;
+      }
+
+      request.authContext = accountContext;
       return;
     }
 
@@ -112,9 +121,13 @@ export async function registerAuth(
       return;
     }
 
+    const accountContext = await resolveAccountContext(db, reply, accountId);
+    if (!accountContext) {
+      return;
+    }
+
     request.authContext = {
-      accountId,
-      role: resolveRole(payload, accountId, defaultAccountId),
+      ...accountContext,
       subject: typeof payload.sub === "string" ? payload.sub : undefined,
     };
   });
@@ -124,6 +137,7 @@ export function getRequestAuthContext(request: FastifyRequest): AuthContext {
   return request.authContext ?? {
     accountId: DEFAULT_ADMIN_ACCOUNT_ID,
     role: "admin",
+    status: "active",
   };
 }
 
@@ -162,6 +176,29 @@ async function verifyJwt(
   }
 }
 
+async function resolveAccountContext(
+  db: AppDb,
+  reply: FastifyReply,
+  accountId: string
+): Promise<Pick<AuthContext, "accountId" | "role" | "status"> | null> {
+  const account = await getAccountAuthState(db, accountId);
+  if (!account) {
+    sendError(reply, 401, "auth_account_not_found", "Authenticated account does not exist");
+    return null;
+  }
+
+  if (account.status !== "active") {
+    sendError(reply, 403, "auth_account_disabled", "Authenticated account is disabled");
+    return null;
+  }
+
+  return {
+    accountId: account.id,
+    role: account.role,
+    status: account.status,
+  };
+}
+
 function resolveJwtAccountId(payload: Record<string, unknown>, claimKey: string): string | null {
   const claim = payload[claimKey];
   if (typeof claim !== "string") {
@@ -170,19 +207,6 @@ function resolveJwtAccountId(payload: Record<string, unknown>, claimKey: string)
 
   const accountId = claim.trim();
   return accountId.length > 0 ? accountId : null;
-}
-
-function resolveRole(
-  payload: Record<string, unknown>,
-  accountId: string,
-  defaultAccountId: string
-): "admin" | "user" {
-  const rawRole = payload.role;
-  if (rawRole === "admin" || rawRole === "user") {
-    return rawRole;
-  }
-
-  return accountId === defaultAccountId ? "admin" : "user";
 }
 
 function timingSafeApiKeyMatch(

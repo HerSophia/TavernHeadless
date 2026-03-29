@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../src/app";
 import { createDatabase } from "../src/db/client";
-import { characterVersions } from "../src/db/schema";
+import { characterVersions, sessions } from "../src/db/schema";
 
 const CHARACTER_CARD_V2 = {
   spec: "chara_card_v2",
@@ -23,6 +23,13 @@ const CHARACTER_CARD_V2 = {
     first_mes: "The record is ready whenever you are.",
     mes_example: "<START>\nLyra: We can annotate this thread together.",
   },
+};
+
+type ErrorResponse = {
+  error: {
+    code: string;
+    message: string;
+  };
 };
 
 describe("Session character sync route", () => {
@@ -149,10 +156,172 @@ describe("Session character sync route", () => {
   });
 });
 
-async function importCharacter(app: FastifyInstance): Promise<{ character_id: string; character_version_id: string }> {
+describe("Session character binding multi-account isolation", () => {
+  let app: FastifyInstance;
+  let databasePath: string;
+  let tempDir: string;
+  let rootToken: string;
+  let tokenA: string;
+  let tokenB: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "tavern-session-binding-"));
+    databasePath = join(tempDir, "api.db");
+    ({ app } = await buildApp({
+      databasePath,
+      logger: false,
+      accountMode: "multi",
+      auth: { mode: "jwt", jwtSecret: "test-secret" },
+    }));
+
+    rootToken = app.jwt.sign({ sub: "root", account_id: "default-admin", role: "user" });
+
+    await createAccount(app, rootToken, "acc-a", "Account A");
+    await createAccount(app, rootToken, "acc-b", "Account B");
+
+    tokenA = app.jwt.sign({ sub: "u-a", account_id: "acc-a", role: "admin" });
+    tokenB = app.jwt.sign({ sub: "u-b", account_id: "acc-b", role: "admin" });
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("rejects foreign character bindings on create and patch", async () => {
+    const foreignCharacter = await importCharacter(app, authHeader(tokenB));
+    const ownCharacter = await importCharacter(app, authHeader(tokenA));
+
+    const createByForeignCharacterId = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      headers: authHeader(tokenA),
+      payload: {
+        title: "foreign-char-id",
+        character_id: foreignCharacter.character_id,
+      },
+    });
+    expect(createByForeignCharacterId.statusCode).toBe(404);
+    expect(createByForeignCharacterId.json<ErrorResponse>().error.code).toBe("character_not_found");
+
+    const createByForeignVersionId = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      headers: authHeader(tokenA),
+      payload: {
+        title: "foreign-version-id",
+        character_version_id: foreignCharacter.character_version_id,
+      },
+    });
+    expect(createByForeignVersionId.statusCode).toBe(404);
+    expect(createByForeignVersionId.json<ErrorResponse>().error.code).toBe("character_not_found");
+
+    const createOwnedSession = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      headers: authHeader(tokenA),
+      payload: {
+        title: "owned-char",
+        character_id: ownCharacter.character_id,
+      },
+    });
+    expect(createOwnedSession.statusCode, createOwnedSession.body).toBe(201);
+    const sessionId = createOwnedSession.json<{ data: { id: string } }>().data.id;
+
+    const patchForeignCharacterId = await app.inject({
+      method: "PATCH",
+      url: `/sessions/${sessionId}`,
+      headers: authHeader(tokenA),
+      payload: {
+        character_id: foreignCharacter.character_id,
+      },
+    });
+    expect(patchForeignCharacterId.statusCode).toBe(404);
+    expect(patchForeignCharacterId.json<ErrorResponse>().error.code).toBe("character_not_found");
+
+    const patchForeignVersionId = await app.inject({
+      method: "PATCH",
+      url: `/sessions/${sessionId}`,
+      headers: authHeader(tokenA),
+      payload: {
+        character_version_id: foreignCharacter.character_version_id,
+      },
+    });
+    expect(patchForeignVersionId.statusCode).toBe(404);
+    expect(patchForeignVersionId.json<ErrorResponse>().error.code).toBe("character_not_found");
+  });
+
+  it("repairs historical cross-account character bindings on startup", async () => {
+    const foreignCharacter = await importCharacter(app, authHeader(tokenB));
+
+    const createSessionRes = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      headers: authHeader(tokenA),
+      payload: { title: "legacy-dirty-binding" },
+    });
+    expect(createSessionRes.statusCode, createSessionRes.body).toBe(201);
+    const sessionId = createSessionRes.json<{ data: { id: string } }>().data.id;
+
+    await app.close();
+
+    const connection = createDatabase(databasePath);
+    try {
+      await connection.db
+        .update(sessions)
+        .set({
+          characterId: foreignCharacter.character_id,
+          characterVersionId: foreignCharacter.character_version_id,
+          characterSnapshotJson: JSON.stringify({ name: "Foreign Snapshot" }),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, sessionId));
+    } finally {
+      connection.close();
+    }
+
+    ({ app } = await buildApp({
+      databasePath,
+      logger: false,
+      accountMode: "multi",
+      auth: { mode: "jwt", jwtSecret: "test-secret" },
+    }));
+
+    tokenA = app.jwt.sign({ sub: "u-a", account_id: "acc-a", role: "admin" });
+
+    const getSessionRes = await app.inject({
+      method: "GET",
+      url: `/sessions/${sessionId}`,
+      headers: authHeader(tokenA),
+    });
+    expect(getSessionRes.statusCode, getSessionRes.body).toBe(200);
+    expect(getSessionRes.json<{ data: { character_binding: unknown | null } }>().data.character_binding).toBeNull();
+  });
+});
+
+function authHeader(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+async function createAccount(app: FastifyInstance, token: string, id: string, name: string) {
+  const response = await app.inject({
+    method: "POST",
+    url: "/accounts",
+    headers: authHeader(token),
+    payload: { id, name },
+  });
+
+  expect(response.statusCode, response.body).toBe(201);
+}
+
+async function importCharacter(
+  app: FastifyInstance,
+  headers?: Record<string, string>
+): Promise<{ character_id: string; character_version_id: string }> {
   const importRes = await app.inject({
     method: "POST",
     url: "/import/character",
+    headers,
     payload: {
       payload: CHARACTER_CARD_V2,
       create_session: false,

@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { TavernApiError } from "../errors/tavern-api-error.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
 import type { RespondGenerationParams, RespondResult, RespondTurnConfig } from "./sessions.js";
@@ -41,7 +41,7 @@ export type RegenerateResult = RespondResult & {
 };
 
 export type MessagesCreateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   content: string;
   contentFormat?: MessageContentFormat;
   isHidden?: boolean;
@@ -53,7 +53,7 @@ export type MessagesCreateOptions = {
 };
 
 export type MessagesListOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   isHidden?: boolean;
   limit?: number;
   offset?: number;
@@ -64,12 +64,12 @@ export type MessagesListOptions = {
 };
 
 export type MessagesGetDetailOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   messageId: string;
 };
 
 export type MessagesUpdateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   content?: string;
   contentFormat?: MessageContentFormat;
   isHidden?: boolean;
@@ -81,12 +81,12 @@ export type MessagesUpdateOptions = {
 };
 
 export type MessagesRemoveOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   messageId: string;
 };
 
 export type MessagesBatchUpdateVisibilityOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   ids: string[];
   isHidden: boolean;
 };
@@ -107,7 +107,7 @@ export type MessagesBatchUpdateVisibilityResult = {
 };
 
 export type MessagesBatchDeleteOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   ids: string[];
 };
 
@@ -125,7 +125,7 @@ export type MessagesBatchDeleteResult = {
 };
 
 export type MessagesEditAndRegenerateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   branchId?: string;
   config?: RespondTurnConfig;
   content: string;

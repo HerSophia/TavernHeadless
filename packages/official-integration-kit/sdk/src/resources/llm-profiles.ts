@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import type { LlmGenerationParams, LlmInstanceScope, LlmInstanceSlot, LlmProvider, LlmProfileStatus } from "./llm-shared.js";
 import { buildQueryString, compactObject, readArray, readBoolean, readNullableNumber, readNullableString, readRecord, readString } from "./utils.js";
 
@@ -39,7 +39,7 @@ export type LlmModelTestResult = {
 
 export type LlmProfilesResource = {
   activate(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     params?: LlmGenerationParams | null;
     profileId: string;
     scope: "global" | "session";
@@ -47,7 +47,7 @@ export type LlmProfilesResource = {
     slot: LlmInstanceSlot;
   }): Promise<boolean>;
   create(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     apiKey: string;
     apiKeyName?: string;
     baseUrl?: string;
@@ -55,25 +55,25 @@ export type LlmProfilesResource = {
     presetName: string;
     provider: LlmProvider;
   }): Promise<LlmProfile>;
-  delete(options: { accountId?: string; profileId: string }): Promise<boolean>;
+  delete(options: { accountId?: AccountIdHint; profileId: string }): Promise<boolean>;
   discoverModels(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     apiKey: string;
     baseUrl?: string;
     provider: LlmProvider;
   }): Promise<LlmDiscoveredModel[]>;
-  getDetail(options: { accountId?: string; profileId: string }): Promise<LlmProfile>;
-  list(options?: { accountId?: string }): Promise<LlmProfile[]>;
-  runtime(options?: { accountId?: string; sessionId?: string }): Promise<LlmRuntimeSlot[]>;
+  getDetail(options: { accountId?: AccountIdHint; profileId: string }): Promise<LlmProfile>;
+  list(options?: { accountId?: AccountIdHint }): Promise<LlmProfile[]>;
+  runtime(options?: { accountId?: AccountIdHint; sessionId?: string }): Promise<LlmRuntimeSlot[]>;
   testModel(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     apiKey: string;
     baseUrl?: string;
     modelId: string;
     provider: LlmProvider;
   }): Promise<LlmModelTestResult>;
   update(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     apiKey?: string;
     apiKeyName?: string | null;
     baseUrl?: string | null;

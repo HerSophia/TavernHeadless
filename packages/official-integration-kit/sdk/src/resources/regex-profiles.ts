@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { compactObject, readArray, readNumber, readRecord, readString } from "./utils.js";
 
 export type RegexProfileListItem = {
@@ -15,11 +15,11 @@ export type RegexProfileDetail = RegexProfileListItem & {
 };
 
 export type RegexProfilesResource = {
-  getDetail(options: { accountId?: string; profileId: string }): Promise<RegexProfileDetail>;
-  list(options?: { accountId?: string }): Promise<RegexProfileListItem[]>;
-  remove(options: { accountId?: string; profileId: string }): Promise<boolean>;
+  getDetail(options: { accountId?: AccountIdHint; profileId: string }): Promise<RegexProfileDetail>;
+  list(options?: { accountId?: AccountIdHint }): Promise<RegexProfileListItem[]>;
+  remove(options: { accountId?: AccountIdHint; profileId: string }): Promise<boolean>;
   update(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     data: string;
     expectedVersion?: number;
     expectedUpdatedAt?: number;

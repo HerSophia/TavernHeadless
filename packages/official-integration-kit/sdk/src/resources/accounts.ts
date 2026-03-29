@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { compactObject, readArray, readBoolean, readNumber, readRecord, readString } from "./utils.js";
 
 export type AccountRole = "admin" | "user";
@@ -18,16 +18,16 @@ export type AccountDetail = AccountRecord;
 
 export type AccountsResource = {
   create(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     id?: string;
     name: string;
     role?: AccountRole;
   }): Promise<AccountRecord>;
-  getDetail(options: { accountId?: string; accountRecordId: string }): Promise<AccountDetail>;
-  list(options?: { accountId?: string }): Promise<AccountRecord[]>;
-  remove(options: { accountId?: string; accountRecordId: string }): Promise<boolean>;
+  getDetail(options: { accountId?: AccountIdHint; accountRecordId: string }): Promise<AccountDetail>;
+  list(options?: { accountId?: AccountIdHint }): Promise<AccountRecord[]>;
+  remove(options: { accountId?: AccountIdHint; accountRecordId: string }): Promise<boolean>;
   update(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     accountRecordId: string;
     name?: string;
     role?: AccountRole;

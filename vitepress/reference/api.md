@@ -31,10 +31,23 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | `jwt` | JWT | `Authorization: Bearer <token>` |
 
 `api_key` 模式下，可在 `AUTH_API_KEYS` 中配置多个 key，逗号分隔。
+若同时启用 `ACCOUNT_MODE=multi`，还必须配置 `AUTH_API_KEY_ACCOUNTS`，把每个 key 映射到具体账号。
 
 `jwt` 模式下，需要设置 `AUTH_JWT_SECRET`。
+若同时启用 `ACCOUNT_MODE=multi`，JWT 还必须携带账号 claim，默认字段名为 `account_id`，也可以通过 `AUTH_JWT_ACCOUNT_CLAIM` 改名。
 
-多账号隔离时，`ACCOUNT_MODE=multi`，各资源自动按 `account_id` 隔离。
+多账号隔离时，`ACCOUNT_MODE=multi`，各资源自动按账号隔离；该模式不能与 `AUTH_MODE=off` 一起使用。
+
+认证后的授权真相来源是数据库中的账号行：
+
+- `accounts.role` 决定管理员能力
+- `accounts.status` 决定账号是否可用
+- JWT 的 `role` claim 不直接授予管理员权限
+
+WebSocket 也遵循相同边界：
+
+- `/ws?session_id=...` 会在握手期校验 session ownership
+- 不带 `session_id` 的全局订阅仅允许数据库 `role=admin` 的账号建立
 
 ## 响应格式
 
@@ -83,10 +96,10 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | `201` | 创建成功 |
 | `204` | 删除成功（无响应体） |
 | `400` | 请求参数错误 |
-| `401` | 未认证 |
-| `403` | 权限不足 |
-| `404` | 资源不存在 |
-| `409` | 冲突（如重名、乐观锁失败） |
+| `401` | 未认证，或认证后的账号不存在 |
+| `403` | 账号被禁用，或缺少系统级能力 |
+| `404` | 资源不存在，或资源存在但不属于当前账号 |
+| `409` | 冲突（如账号内重名、乐观锁失败） |
 | `413` | 请求体过大 |
 | `500` | 服务端错误 |
 | `502` | 上游 LLM 服务错误 |

@@ -119,7 +119,7 @@ describe("apps/api integration", () => {
       payload: { session_id: "missing", floor_no: 1, branch_id: "main" }
     });
 
-    expect(fkErrorResponse.statusCode).toBe(409);
+    expect(fkErrorResponse.statusCode).toBe(404);
 
     const createdFloor = await createFloor(app, {
       session_id: session.id,

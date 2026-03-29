@@ -586,6 +586,7 @@ export const mcpServerConfigs = sqliteTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
     transport: text("transport", { enum: ["stdio", "http"] }).notNull(),
     configJson: text("config_json").notNull(),
     toolPrefix: text("tool_prefix"),
@@ -600,6 +601,10 @@ export const mcpServerConfigs = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
   },
   (table) => ({
-    nameUnique: uniqueIndex("mcp_server_config_name_uq").on(table.name),
+    accountNameUnique: uniqueIndex("mcp_server_config_account_name_uq").on(
+      table.accountId,
+      table.name,
+    ),
+    accountUpdatedIdx: index("mcp_server_config_account_updated_idx").on(table.accountId, table.updatedAt),
   })
 );

@@ -359,11 +359,12 @@ describe("variables routes", () => {
     });
 
     it("isolates global variables by account and hides foreign session hosts", async () => {
+      const rootToken = app.jwt.sign({ sub: "root", account_id: "default-admin", role: "user" });
       const tokenA = app.jwt.sign({ sub: "u-a", account_id: "acc-a", role: "admin" });
       const tokenB = app.jwt.sign({ sub: "u-b", account_id: "acc-b", role: "admin" });
 
-      await createAccount(app, tokenA, "acc-a", "Account A");
-      await createAccount(app, tokenB, "acc-b", "Account B");
+      await createAccount(app, rootToken, "acc-a", "Account A");
+      await createAccount(app, rootToken, "acc-b", "Account B");
 
       const varA = await upsertVar(app, { scope: "global", scopeId: "global", key: "theme", value: "red" }, authHeader(tokenA));
       const varB = await upsertVar(app, { scope: "global", scopeId: "global", key: "theme", value: "blue" }, authHeader(tokenB));

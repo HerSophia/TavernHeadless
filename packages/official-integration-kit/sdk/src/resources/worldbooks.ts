@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { compactObject, readArray, readNumber, readRecord, readString } from "./utils.js";
 
 export type WorldbookListItem = {
@@ -15,11 +15,11 @@ export type WorldbookDetail = WorldbookListItem & {
 };
 
 export type WorldbooksResource = {
-  getDetail(options: { accountId?: string; worldbookId: string }): Promise<WorldbookDetail>;
-  list(options?: { accountId?: string }): Promise<WorldbookListItem[]>;
-  remove(options: { accountId?: string; worldbookId: string }): Promise<void>;
+  getDetail(options: { accountId?: AccountIdHint; worldbookId: string }): Promise<WorldbookDetail>;
+  list(options?: { accountId?: AccountIdHint }): Promise<WorldbookListItem[]>;
+  remove(options: { accountId?: AccountIdHint; worldbookId: string }): Promise<void>;
   update(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     data: Record<string, unknown>;
     expectedVersion?: number;
     expectedUpdatedAt?: number;

@@ -3099,6 +3099,39 @@
             },
             "description": "Default Response"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -14237,6 +14270,39 @@
             },
             "description": "Default Response"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -15581,6 +15647,39 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
             "content": {
               "application/json": {
                 "schema": {

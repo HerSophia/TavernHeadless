@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { createDatabase, type AppDb } from '../../db/client.js';
+import { accounts } from '../../db/schema.js';
 import { ToolService, type CreateDefinitionInput } from '../tool-service.js';
 import { DEFAULT_ADMIN_ACCOUNT_ID } from '../../accounts/constants.js';
 
@@ -27,10 +28,22 @@ describe('ToolService', () => {
   let closeDb: () => void;
   let service: ToolService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const conn = createDatabase(':memory:');
     db = conn.db;
     closeDb = conn.close;
+
+    const now = Date.now();
+    await db.insert(accounts).values({
+      id: 'acc-other',
+      name: 'Other Account',
+      role: 'user',
+      status: 'active',
+      isDefault: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
     service = new ToolService(db);
   });
 
@@ -68,17 +81,24 @@ describe('ToolService', () => {
 
   describe('getDefinition', () => {
     it('returns null for non-existent id', async () => {
-      const result = await service.getDefinition('nope');
+      const result = await service.getDefinition('nope', DEFAULT_ADMIN_ACCOUNT_ID);
       expect(result).toBeNull();
     });
 
     it('returns created definition by id', async () => {
       const created = await service.createDefinition(makeInput(), DEFAULT_ADMIN_ACCOUNT_ID);
-      const fetched = await service.getDefinition(created.id);
+      const fetched = await service.getDefinition(created.id, DEFAULT_ADMIN_ACCOUNT_ID);
 
       expect(fetched).not.toBeNull();
       expect(fetched!.id).toBe(created.id);
       expect(fetched!.name).toBe('test_tool');
+    });
+
+    it('returns null when definition belongs to another account', async () => {
+      const created = await service.createDefinition(makeInput(), DEFAULT_ADMIN_ACCOUNT_ID);
+      const fetched = await service.getDefinition(created.id, 'acc-other');
+
+      expect(fetched).toBeNull();
     });
   });
 
@@ -97,7 +117,7 @@ describe('ToolService', () => {
     it('updates name and description', async () => {
       const created = await service.createDefinition(makeInput(), DEFAULT_ADMIN_ACCOUNT_ID);
 
-      const updated = await service.updateDefinition(created.id, {
+      const updated = await service.updateDefinition(created.id, DEFAULT_ADMIN_ACCOUNT_ID, {
         name: 'renamed_tool',
         description: 'Updated description',
       });
@@ -110,7 +130,7 @@ describe('ToolService', () => {
     it('updates parameters and side_effect_level', async () => {
       const created = await service.createDefinition(makeInput(), DEFAULT_ADMIN_ACCOUNT_ID);
 
-      const updated = await service.updateDefinition(created.id, {
+      const updated = await service.updateDefinition(created.id, DEFAULT_ADMIN_ACCOUNT_ID, {
         parameters: { type: 'object', properties: { y: { type: 'string' } } },
         side_effect_level: 'sandbox',
       });
@@ -121,7 +141,7 @@ describe('ToolService', () => {
     it('updates allowed_slots, source, source_id, handler_type, handler', async () => {
       const created = await service.createDefinition(makeInput(), DEFAULT_ADMIN_ACCOUNT_ID);
 
-      const updated = await service.updateDefinition(created.id, {
+      const updated = await service.updateDefinition(created.id, DEFAULT_ADMIN_ACCOUNT_ID, {
         allowed_slots: ['director'],
         source: 'preset',
         source_id: 'preset-123',
@@ -137,12 +157,12 @@ describe('ToolService', () => {
     it('returns unchanged definition when no fields are provided', async () => {
       const created = await service.createDefinition(makeInput(), DEFAULT_ADMIN_ACCOUNT_ID);
 
-      const result = await service.updateDefinition(created.id, {});
+      const result = await service.updateDefinition(created.id, DEFAULT_ADMIN_ACCOUNT_ID, {});
       expect(result!.name).toBe(created.name);
     });
 
     it('returns null for non-existent id', async () => {
-      const result = await service.updateDefinition('nope', { name: 'x' });
+      const result = await service.updateDefinition('nope', DEFAULT_ADMIN_ACCOUNT_ID, { name: 'x' });
       expect(result).toBeNull();
     });
   });
@@ -151,15 +171,15 @@ describe('ToolService', () => {
     it('deletes existing definition', async () => {
       const created = await service.createDefinition(makeInput(), DEFAULT_ADMIN_ACCOUNT_ID);
 
-      const ok = await service.deleteDefinition(created.id);
+      const ok = await service.deleteDefinition(created.id, DEFAULT_ADMIN_ACCOUNT_ID);
       expect(ok).toBe(true);
 
-      const fetched = await service.getDefinition(created.id);
+      const fetched = await service.getDefinition(created.id, DEFAULT_ADMIN_ACCOUNT_ID);
       expect(fetched).toBeNull();
     });
 
     it('returns false for non-existent id', async () => {
-      const ok = await service.deleteDefinition('nope');
+      const ok = await service.deleteDefinition('nope', DEFAULT_ADMIN_ACCOUNT_ID);
       expect(ok).toBe(false);
     });
   });
@@ -169,15 +189,15 @@ describe('ToolService', () => {
       const created = await service.createDefinition(makeInput(), DEFAULT_ADMIN_ACCOUNT_ID);
       expect(created.enabled).toBe(true);
 
-      const disabled = await service.toggleDefinition(created.id, false);
+      const disabled = await service.toggleDefinition(created.id, DEFAULT_ADMIN_ACCOUNT_ID, false);
       expect(disabled!.enabled).toBe(false);
 
-      const enabled = await service.toggleDefinition(created.id, true);
+      const enabled = await service.toggleDefinition(created.id, DEFAULT_ADMIN_ACCOUNT_ID, true);
       expect(enabled!.enabled).toBe(true);
     });
 
     it('returns null for non-existent id', async () => {
-      const result = await service.toggleDefinition('nope', true);
+      const result = await service.toggleDefinition('nope', DEFAULT_ADMIN_ACCOUNT_ID, true);
       expect(result).toBeNull();
     });
   });
@@ -186,7 +206,7 @@ describe('ToolService', () => {
 
   describe('queryCallRecords', () => {
     it('returns empty list when no records exist', async () => {
-      const result = await service.queryCallRecords({});
+      const result = await service.queryCallRecords({ accountId: DEFAULT_ADMIN_ACCOUNT_ID });
       expect(result.records).toEqual([]);
       expect(result.total).toBe(0);
     });

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createTavernClient, TavernApiError } from "../index.js";
+import { buildAccountHeaders, createTavernClient, TavernApiError } from "../index.js";
 
 describe("createTavernClient", () => {
-  it("merges default headers with request headers", async () => {
+  it("merges authorization headers with the legacy account compatibility header", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
         headers: { "content-type": "application/json" },
@@ -18,7 +18,7 @@ describe("createTavernClient", () => {
     });
 
     await client.get("/health", {
-      headers: { "x-account-id": "acc-1" },
+      headers: buildAccountHeaders("acc-1"),
     });
 
     const [, init] = fetchImpl.mock.calls[0]!;

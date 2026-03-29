@@ -303,13 +303,15 @@ describe("Character routes with multi-account auth", () => {
       auth: { mode: "jwt", jwtSecret: "test-secret" }
     }));
 
+    const rootToken = app.jwt.sign({ sub: "root", account_id: "default-admin", role: "user" });
+
     tokenA = app.jwt.sign({ sub: "u-a", account_id: "acc-a", role: "admin" });
     tokenB = app.jwt.sign({ sub: "u-b", account_id: "acc-b", role: "admin" });
 
     const createAccountARes = await app.inject({
       method: "POST",
       url: "/accounts",
-      headers: { authorization: `Bearer ${tokenA}` },
+      headers: { authorization: `Bearer ${rootToken}` },
       payload: { id: "acc-a", name: "Account A" }
     });
     expect(createAccountARes.statusCode).toBe(201);
@@ -317,7 +319,7 @@ describe("Character routes with multi-account auth", () => {
     const createAccountBRes = await app.inject({
       method: "POST",
       url: "/accounts",
-      headers: { authorization: `Bearer ${tokenB}` },
+      headers: { authorization: `Bearer ${rootToken}` },
       payload: { id: "acc-b", name: "Account B" }
     });
     expect(createAccountBRes.statusCode).toBe(201);

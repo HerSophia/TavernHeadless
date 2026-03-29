@@ -358,7 +358,7 @@ export class SessionToolRegistryService {
       registry.register(new PresetToolProvider(descriptor.providerId, descriptor.tools));
     }
 
-    await this.appendMcpProviders(registry, snapshot, callableOwners);
+    await this.appendMcpProviders(registry, snapshot, callableOwners, accountId);
 
     sortSnapshot(snapshot);
 
@@ -485,12 +485,13 @@ export class SessionToolRegistryService {
     registry: ToolRegistry,
     snapshot: SessionRuntimeToolCatalogSnapshot,
     callableOwners: Map<string, RuntimeToolCandidate>,
+    accountId: string,
   ): Promise<void> {
     if (!this.options.mcpManager || !this.mcpService) {
       return;
     }
 
-    const configs = await this.mcpService.listEnabledConfigs();
+    const configs = await this.mcpService.listEnabledConfigs(accountId);
     if (configs.length === 0) {
       return;
     }

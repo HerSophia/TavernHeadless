@@ -358,16 +358,19 @@ describe('WsBridge', () => {
     }));
   });
 
-  it('sends events without sessionId to all filtered clients', async () => {
-    const socket = createMockSocket();
-    bridge.addClient(socket, 'session-1');
+  it('does not send events without sessionId to session-scoped clients, but still sends them to global clients', async () => {
+    const sessionSocket = createMockSocket();
+    const globalSocket = createMockSocket();
+    bridge.addClient(sessionSocket, 'session-1');
+    bridge.addClient(globalSocket);
 
-    // generation.started has floorId but no sessionId in data → no sessionId extracted → forward to all
+    // generation.started has floorId but no sessionId in data.
     await eventBus.emit('generation.started', {
       floorId: 'floor-1',
     });
 
-    expect(parseSent(socket)).toHaveLength(1);
+    expect(parseSent(sessionSocket)).toHaveLength(0);
+    expect(parseSent(globalSocket)).toHaveLength(1);
   });
 
   it('client without sessionId receives all events', async () => {

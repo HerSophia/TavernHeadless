@@ -7,6 +7,7 @@ outline: [2, 3]
 账号是资源隔离的顶层实体。单账号模式（`ACCOUNT_MODE=single`）下，系统自动创建默认账号。多账号模式下，可通过 API 创建和管理多个账号。
 
 所有账号端点仅限 `admin` 角色访问，非 admin 请求返回 `403`。
+这里的 `admin` 以数据库 `accounts.role` 为准，不依赖 JWT `role` claim。
 
 ## Account 对象
 
@@ -15,7 +16,7 @@ outline: [2, 3]
 | `id` | string | 账号 ID |
 | `name` | string | 账号名称 |
 | `role` | string | 角色：`admin` / `user` |
-| `status` | string | 状态：`active` / `suspended` |
+| `status` | string | 状态：`active` / `disabled` |
 | `is_default` | boolean | 是否为默认账号 |
 | `created_at` | integer | 创建时间 |
 | `updated_at` | integer | 更新时间 |

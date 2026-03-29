@@ -28,6 +28,7 @@ import { buildListMeta, listQuerySchemaBase } from '../lib/pagination.js';
 import { McpService, McpServiceError } from '../services/mcp-service.js';
 import type { McpConnectionManager } from '../mcp/mcp-connection-manager.js';
 import { McpConnection } from '../mcp/mcp-connection.js';
+import { getRequestAuthContext } from '../plugins/auth.js';
 
 // ══════════════════════════════════════════════════
 // Zod Schemas
@@ -153,7 +154,9 @@ export async function registerMcpConfigRoutes(
   }, async (request, reply) => {
     const parsed = parseWithSchema(listServersQuerySchema, request.query, reply);
     if (!parsed.ok) return;
-    const result = await service.listConfigs({
+    const auth = getRequestAuthContext(request);
+
+    const result = await service.listConfigs(auth.accountId, {
       enabled: parsed.data.enabled,
       limit: parsed.data.limit,
       offset: parsed.data.offset,
@@ -184,7 +187,8 @@ export async function registerMcpConfigRoutes(
     },
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const config = await service.getConfig(id);
+    const auth = getRequestAuthContext(request);
+    const config = await service.getConfig(id, auth.accountId);
     if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
     return { data: config };
   });
@@ -203,8 +207,9 @@ export async function registerMcpConfigRoutes(
   }, async (request, reply) => {
     const parsed = parseWithSchema(createServerSchema, request.body, reply);
     if (!parsed.ok) return;
+    const auth = getRequestAuthContext(request);
     try {
-      const config = await service.createConfig(parsed.data);
+      const config = await service.createConfig(parsed.data, auth.accountId);
       return reply.code(201).send({ data: config });
     } catch (err) {
       if (err instanceof McpServiceError) {
@@ -232,8 +237,9 @@ export async function registerMcpConfigRoutes(
     const { id } = request.params as { id: string };
     const parsed = parseWithSchema(updateServerSchema, request.body, reply);
     if (!parsed.ok) return;
+    const auth = getRequestAuthContext(request);
     try {
-      const config = await service.updateConfig(id, parsed.data);
+      const config = await service.updateConfig(id, parsed.data, auth.accountId);
       if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
       return { data: config };
     } catch (err) {
@@ -258,7 +264,8 @@ export async function registerMcpConfigRoutes(
     },
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const deleted = await service.deleteConfig(id);
+    const auth = getRequestAuthContext(request);
+    const deleted = await service.deleteConfig(id, auth.accountId);
     if (!deleted) return sendError(reply, 404, 'not_found', 'MCP server not found');
     return { data: { deleted: true } };
   });
@@ -278,7 +285,8 @@ export async function registerMcpConfigRoutes(
     const { id } = request.params as { id: string };
     const parsed = parseWithSchema(toggleServerSchema, request.body, reply);
     if (!parsed.ok) return;
-    const config = await service.toggleConfig(id, parsed.data.enabled);
+    const auth = getRequestAuthContext(request);
+    const config = await service.toggleConfig(id, parsed.data.enabled, auth.accountId);
     if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
     return { data: config };
   });
@@ -308,6 +316,10 @@ export async function registerMcpRuntimeRoutes(
     },
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    const auth = getRequestAuthContext(request);
+    const config = await service.getConfigEntity(id, auth.accountId);
+    if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
+
     const status = mcpManager.getStatus(id);
     if (!status) return sendError(reply, 404, 'not_found', 'MCP server not found in manager');
     return { data: formatStatus(status) };
@@ -322,9 +334,19 @@ export async function registerMcpRuntimeRoutes(
         200: { type: 'object', properties: { data: { type: 'array', items: mcpStatusResponseSchema } } },
       },
     },
-  }, async () => {
+  }, async (request) => {
+    const auth = getRequestAuthContext(request);
     const statuses = mcpManager.getStatuses();
-    return { data: statuses.map(formatStatus) };
+    const ownedServerIds = new Set(await service.getOwnedConfigIds(
+      auth.accountId,
+      statuses.map((status) => status.serverId),
+    ));
+
+    return {
+      data: statuses
+        .filter((status) => ownedServerIds.has(status.serverId))
+        .map(formatStatus),
+    };
   });
 
   // POST /mcp/servers/:id/connect
@@ -340,11 +362,11 @@ export async function registerMcpRuntimeRoutes(
     },
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    const auth = getRequestAuthContext(request);
+    const config = await service.getConfigEntity(id, auth.accountId);
+    if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
 
     if (!mcpManager.hasServer(id)) {
-      // 可能是新添加的服务器，从数据库加载配置后添加
-      const config = await service.getConfigEntity(id);
-      if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
       await mcpManager.addServer(config);
     } else {
       await mcpManager.reconnect(id);
@@ -367,6 +389,10 @@ export async function registerMcpRuntimeRoutes(
     },
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    const auth = getRequestAuthContext(request);
+    const config = await service.getConfigEntity(id, auth.accountId);
+    if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
+
     const connection = mcpManager.getConnectionSync(id);
     if (!connection) return sendError(reply, 404, 'not_found', 'MCP server not found in manager');
 
@@ -405,6 +431,10 @@ export async function registerMcpRuntimeRoutes(
     },
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    const auth = getRequestAuthContext(request);
+    const config = await service.getConfigEntity(id, auth.accountId);
+    if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
+
     const conn = await mcpManager.getConnection(id);
     if (!conn) return sendError(reply, 404, 'not_found', 'MCP server not found in manager');
 
@@ -445,7 +475,8 @@ export async function registerMcpRuntimeRoutes(
     },
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const config = await service.getConfigEntity(id);
+    const auth = getRequestAuthContext(request);
+    const config = await service.getConfigEntity(id, auth.accountId);
     if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
 
     const startTime = Date.now();

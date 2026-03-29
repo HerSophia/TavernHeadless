@@ -14,7 +14,7 @@ export interface WsMessage {
 
 interface ClientInfo {
   socket: WebSocket;
-  /** 如果设置了 sessionId，只接收该会话的事件 */
+  /** 如果设置了 sessionId，则该客户端为 session client，只接收已解析出相同 sessionId 的事件 */
   sessionId?: string;
 }
 
@@ -123,10 +123,12 @@ export class WsBridge {
     const sessionId = extractSessionId(eventName, data);
 
     for (const client of this.clients) {
-      // 如果客户端设置了 sessionId 过滤，且事件有 sessionId 信息，
-      // 则只转发匹配的事件。如果事件没有 sessionId（全局事件），则总是转发。
-      if (client.sessionId && sessionId && client.sessionId !== sessionId) {
-        continue;
+      // session client 只接收已解析出相同 sessionId 的事件。
+      // 不带 sessionId 的事件只发给全局客户端。
+      if (client.sessionId) {
+        if (!sessionId || client.sessionId !== sessionId) {
+          continue;
+        }
       }
 
       try {

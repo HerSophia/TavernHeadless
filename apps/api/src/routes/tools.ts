@@ -517,7 +517,8 @@ export async function registerToolRoutes(
     const parsedParams = parseWithSchema(definitionParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
 
-    const def = await toolService.getDefinition(parsedParams.data.id);
+    const auth = getRequestAuthContext(request);
+    const def = await toolService.getDefinition(parsedParams.data.id, auth.accountId);
     if (!def) {
       return sendError(reply, 404, "not_found", "Tool definition not found");
     }
@@ -570,7 +571,8 @@ export async function registerToolRoutes(
     const parsedBody = parseWithSchema(updateDefinitionSchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const def = await toolService.updateDefinition(parsedParams.data.id, parsedBody.data);
+    const auth = getRequestAuthContext(request);
+    const def = await toolService.updateDefinition(parsedParams.data.id, auth.accountId, parsedBody.data);
     if (!def) {
       return sendError(reply, 404, "not_found", "Tool definition not found");
     }
@@ -595,7 +597,8 @@ export async function registerToolRoutes(
     const parsedParams = parseWithSchema(definitionParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
 
-    const deleted = await toolService.deleteDefinition(parsedParams.data.id);
+    const auth = getRequestAuthContext(request);
+    const deleted = await toolService.deleteDefinition(parsedParams.data.id, auth.accountId);
     if (!deleted) {
       return sendError(reply, 404, "not_found", "Tool definition not found");
     }
@@ -625,7 +628,8 @@ export async function registerToolRoutes(
     const parsedBody = parseWithSchema(toggleDefinitionSchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const def = await toolService.toggleDefinition(parsedParams.data.id, parsedBody.data.enabled);
+    const auth = getRequestAuthContext(request);
+    const def = await toolService.toggleDefinition(parsedParams.data.id, auth.accountId, parsedBody.data.enabled);
     if (!def) {
       return sendError(reply, 404, "not_found", "Tool definition not found");
     }
@@ -747,7 +751,9 @@ export async function registerToolRoutes(
     const parsedQuery = parseWithSchema(callRecordsQuerySchema, request.query, reply);
     if (!parsedQuery.ok) return;
 
+    const auth = getRequestAuthContext(request);
     const { records, total } = await toolService.queryCallRecords({
+      accountId: auth.accountId,
       pageId: parsedQuery.data.page_id,
       floorId: parsedQuery.data.floor_id,
       callerSlot: parsedQuery.data.caller_slot,
