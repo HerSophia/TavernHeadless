@@ -6,8 +6,26 @@ export type { VariableScope, VariableEntry } from './variable.js';
 
 export { CoreEvents } from './events.js';
 
-export { MEMORY_SCOPES, MEMORY_TYPES, MEMORY_STATUSES, MEMORY_RELATIONS } from './memory.js';
-export type { MemoryScope, MemoryType, MemoryStatus, MemoryRelation } from './memory.js';
+export {
+  MEMORY_SCOPES,
+  MEMORY_TYPES,
+  MEMORY_SUMMARY_TIERS,
+  MEMORY_STATUSES,
+  MEMORY_LIFECYCLE_STATUSES,
+  MEMORY_RELATIONS,
+  MEMORY_JOB_TYPES,
+  MEMORY_JOB_STATUSES,
+} from './memory.js';
+export type {
+  MemoryScope,
+  MemoryType,
+  MemorySummaryTier,
+  MemoryStatus,
+  MemoryLifecycleStatus,
+  MemoryRelation,
+  MemoryJobType,
+  MemoryJobStatus,
+} from './memory.js';
 
 export { TH_CHAT_SPEC, TH_CHAT_SPEC_VERSION } from './chat-file.js';
 export {

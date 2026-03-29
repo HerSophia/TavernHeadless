@@ -1,7 +1,7 @@
 import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
 import { buildQueryString, readArray, readBoolean, readNumber, readRecord, readString } from "./utils.js";
 
-export type MemoryRelation = "supports" | "contradicts" | "updates";
+export type MemoryRelation = "supports" | "contradicts" | "updates" | "derived_from" | "compacts" | "resolves";
 
 export type MemoryEdgeRecord = {
   createdAt: number;

@@ -162,13 +162,15 @@ page → floor → chat → global
 记忆的来源有两个：
 
 1. **LLM 摘要**：从 AI 回复中自动提取 `<summary>` 等标签的内容。
-2. **Memory 实例整理**：回合结束后，Memory 实例读取近期内容，输出结构化的记忆操作（新增 / 更新 / 弃用事实）。
+2. **Memory 实例整理**：回合同步提交完成后，异步 `memory_job` worker 读取近期内容，输出结构化的记忆操作（新增 / 更新 / 弃用事实）。
 
-每条记忆有类型（fact / summary / open_loop）、所属层级、来源追溯、重要度评分和状态（active / deprecated）。记忆之间还可以有关系（支持、矛盾、更新）。
+每条记忆有类型（fact / summary / open_loop）、所属层级、来源追溯、重要度评分和状态。`type: "summary"` 进一步区分 `summary_tier: "micro" | "macro"`。生命周期状态使用 `lifecycle_status: "active" | "compacted" | "deprecated"`，同时保留兼容字段 `status: "active" | "deprecated"`。
+
+记忆之间还可以有关系（`supports`、`contradicts`、`updates`、`derived_from`、`compacts`、`resolves`）。系统也提供 `memory_job` 与 `memory_scope_state` 两个管理面，用于异步摄取、宏摘要压缩、维护任务和手动回填。
 
 组装提示词时，编排器按 token 预算和重要度选取记忆条目，打包注入到提示词中。
 
-系统还提供自动维护任务：按半衰期衰减排序、自动弃用过期摘要、清理已弃用条目。
+系统还提供自动维护任务：按半衰期衰减排序、自动弃用过期摘要、清理已弃用条目。宏摘要压缩默认由 active micro 数量、micro token 总量和楼层跨度阈值触发，也可以通过后台任务手动触发。
 
 ### 事件系统
 
@@ -228,7 +230,7 @@ SillyTavern 兼容适配层。负责：
 - 默认请求头和基础 transport。
 - SSE 事件流读取与错误归一化。
 - 面向接入方的第一方资源调用入口。
-- 当前已覆盖会话、页面、分支、角色、预设、世界书、正则、账号、变量、记忆、导出、Tools、MCP、LLM 配置等主要域。
+- 当前已覆盖会话、页面、分支、角色、预设、世界书、正则、账号、变量、记忆条目 / 边 / 作业 / scope 状态、导出、Tools、MCP、LLM 配置等主要域。
 - 保留底层 `request/get/post/put/patch/delete` 能力，供需要精确访问底层协议的接入方使用。
 
 ### `packages/official-integration-kit/client-helpers`

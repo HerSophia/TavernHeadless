@@ -9,6 +9,9 @@ import { createHealthResource, type HealthResource } from "../resources/health.j
 import { createImportsResource, type ImportsResource } from "../resources/imports.js";
 import { createLlmInstancesResource, type LlmInstancesResource } from "../resources/llm-instances.js";
 import { createLlmProfilesResource, type LlmProfilesResource } from "../resources/llm-profiles.js";
+import { createMcpResource, type McpResource } from "../resources/mcp.js";
+import { createMemoryJobsResource, type MemoryJobsResource } from "../resources/memory-jobs.js";
+import { createMemoryScopesResource, type MemoryScopesResource } from "../resources/memory-scopes.js";
 import { createMemoriesResource, type MemoriesResource } from "../resources/memories.js";
 import { createMemoryEdgesResource, type MemoryEdgesResource } from "../resources/memory-edges.js";
 import { createMessagesResource, type MessagesResource } from "../resources/messages.js";
@@ -20,7 +23,6 @@ import { createSessionsResource, type SessionsResource } from "../resources/sess
 import { createToolsResource, type ToolsResource } from "../resources/tools.js";
 import { createUsersResource, type UsersResource } from "../resources/users.js";
 import { createVariablesResource, type VariablesResource } from "../resources/variables.js";
-import { createMcpResource, type McpResource } from "../resources/mcp.js";
 import { createWorldbookEntriesResource, type WorldbookEntriesResource } from "../resources/worldbook-entries.js";
 import { createWorldbooksResource, type WorldbooksResource } from "../resources/worldbooks.js";
 import { createTransportClient, type TavernClientOptions } from "./transport.js";
@@ -37,8 +39,10 @@ export type TavernClient = ApiClient & {
   llmProfiles: LlmProfilesResource;
   mcp: McpResource;
   memories: MemoriesResource;
+  memoryJobs: MemoryJobsResource;
   memoryEdges: MemoryEdgesResource;
   messages: MessagesResource;
+  memoryScopes: MemoryScopesResource;
   pages: PagesResource;
   presetEntries: PresetEntriesResource;
   presets: PresetsResource;
@@ -68,9 +72,11 @@ export function createTavernClient(options: TavernClientOptions): TavernClient {
     llmInstances: createLlmInstancesResource(transport),
     llmProfiles: createLlmProfilesResource(transport),
     mcp: createMcpResource(transport),
+    memoryJobs: createMemoryJobsResource(transport),
     memories: createMemoriesResource(transport),
     memoryEdges: createMemoryEdgesResource(transport),
     messages: createMessagesResource(transport),
+    memoryScopes: createMemoryScopesResource(transport),
     pages: createPagesResource(transport),
     presetEntries: createPresetEntriesResource(transport),
     presets: createPresetsResource(transport),

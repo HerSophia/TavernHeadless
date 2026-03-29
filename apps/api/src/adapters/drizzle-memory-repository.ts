@@ -1,20 +1,39 @@
 import { and, asc, desc, eq, gte, or, type SQL } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type {
-  MemoryItem,
+  MemoryAccessOptions,
   MemoryEdge,
+  MemoryItem,
   MemoryQuery,
   MemoryRepository,
 } from "@tavern/core";
-import type { MemoryRelation, MemoryScope, MemoryStatus, MemoryType } from "@tavern/shared";
+import type {
+  MemoryLifecycleStatus,
+  MemoryRelation,
+  MemoryScope,
+  MemoryStatus,
+  MemorySummaryTier,
+  MemoryType,
+} from "@tavern/shared";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
-import { memoryItems, memoryEdges } from "../db/schema.js";
+import { memoryEdges, memoryItems } from "../db/schema.js";
 
 // ── 内部映射 ──────────────────────────────────────────
 
 type MemoryItemRow = typeof memoryItems.$inferSelect;
 type MemoryEdgeRow = typeof memoryEdges.$inferSelect;
+
+function toLifecycleStatus(status: MemoryStatus): MemoryLifecycleStatus {
+  return status === "deprecated" ? "deprecated" : "active";
+}
+
+function resolveLifecycleStatus(
+  status: MemoryStatus,
+  lifecycleStatus: MemoryLifecycleStatus | undefined,
+): MemoryLifecycleStatus {
+  return lifecycleStatus ?? toLifecycleStatus(status);
+}
 
 function toMemoryItem(row: MemoryItemRow): MemoryItem {
   return {
@@ -23,6 +42,7 @@ function toMemoryItem(row: MemoryItemRow): MemoryItem {
     scopeId: row.scopeId,
     type: row.type as MemoryType,
     content: parseContent(row.contentJson),
+    summaryTier: (row.summaryTier as MemorySummaryTier | null) ?? undefined,
     factKey: row.factKey ?? undefined,
     importance: row.importance,
     confidence: row.confidence,
@@ -30,6 +50,13 @@ function toMemoryItem(row: MemoryItemRow): MemoryItem {
     sourceMessageId: row.sourceMessageId ?? undefined,
     status: row.status as MemoryStatus,
     createdAt: row.createdAt,
+    lifecycleStatus: (row.lifecycleStatus as MemoryLifecycleStatus | null) ?? toLifecycleStatus(row.status as MemoryStatus),
+    sourceJobId: row.sourceJobId ?? undefined,
+    tokenCountEstimate: row.tokenCountEstimate ?? undefined,
+    lastUsedAt: row.lastUsedAt ?? undefined,
+    coverageStartFloorNo: row.coverageStartFloorNo ?? undefined,
+    coverageEndFloorNo: row.coverageEndFloorNo ?? undefined,
+    derivedFromCount: row.derivedFromCount ?? undefined,
     updatedAt: row.updatedAt,
   };
 }
@@ -78,17 +105,23 @@ export class DrizzleMemoryRepository implements MemoryRepository {
     this.accountId = accountId ?? "default-admin";
   }
 
-  async findById(id: string): Promise<MemoryItem | null> {
+  private resolveAccountId(queryAccountId?: string, options?: MemoryAccessOptions): string {
+    return queryAccountId ?? options?.accountId ?? this.accountId;
+  }
+
+  async findById(id: string, options?: MemoryAccessOptions): Promise<MemoryItem | null> {
+    const accountId = this.resolveAccountId(undefined, options);
     const [row] = await this.db
       .select()
       .from(memoryItems)
-      .where(eq(memoryItems.id, id));
+      .where(and(eq(memoryItems.id, id), eq(memoryItems.accountId, accountId)));
 
     return row ? toMemoryItem(row) : null;
   }
 
   async findMany(query: MemoryQuery): Promise<MemoryItem[]> {
-    const conditions: SQL[] = [];
+    const accountId = this.resolveAccountId(query.accountId);
+    const conditions: SQL[] = [eq(memoryItems.accountId, accountId)];
 
     if (query.scope !== undefined) {
       conditions.push(eq(memoryItems.scope, query.scope));
@@ -98,6 +131,12 @@ export class DrizzleMemoryRepository implements MemoryRepository {
     }
     if (query.type !== undefined) {
       conditions.push(eq(memoryItems.type, query.type));
+    }
+    if (query.summaryTier !== undefined) {
+      conditions.push(eq(memoryItems.summaryTier, query.summaryTier));
+    }
+    if (query.lifecycleStatus !== undefined) {
+      conditions.push(eq(memoryItems.lifecycleStatus, query.lifecycleStatus));
     }
     if (query.status !== undefined) {
       conditions.push(eq(memoryItems.status, query.status));
@@ -109,7 +148,7 @@ export class DrizzleMemoryRepository implements MemoryRepository {
       conditions.push(gte(memoryItems.importance, query.minImportance));
     }
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const whereClause = and(...conditions);
 
     // 排序
     const orderColumn =
@@ -124,11 +163,8 @@ export class DrizzleMemoryRepository implements MemoryRepository {
     let builder = this.db
       .select()
       .from(memoryItems)
+      .where(whereClause)
       .$dynamic();
-
-    if (whereClause) {
-      builder = builder.where(whereClause);
-    }
 
     builder = builder.orderBy(orderFn(orderColumn));
 
@@ -142,18 +178,22 @@ export class DrizzleMemoryRepository implements MemoryRepository {
 
   async create(
     item: Omit<MemoryItem, "id" | "createdAt" | "updatedAt">,
+    options?: MemoryAccessOptions,
   ): Promise<MemoryItem> {
     const now = Date.now();
+    const accountId = this.resolveAccountId(undefined, options);
+    const lifecycleStatus = resolveLifecycleStatus(item.status, item.lifecycleStatus);
     const normalizedFactKey = item.type === "fact" ? normalizeFactKey(item.factKey) : undefined;
 
     const [row] = await this.db
       .insert(memoryItems)
       .values({
         id: nanoid(),
-        accountId: this.accountId,
+        accountId,
         scope: item.scope,
         scopeId: item.scopeId,
         type: item.type,
+        summaryTier: item.type === "summary" ? item.summaryTier ?? null : null,
         factKey: normalizedFactKey ?? null,
         contentJson: toContentJson(item.content),
         importance: item.importance,
@@ -161,6 +201,13 @@ export class DrizzleMemoryRepository implements MemoryRepository {
         sourceFloorId: item.sourceFloorId ?? null,
         sourceMessageId: item.sourceMessageId ?? null,
         status: item.status,
+        lifecycleStatus,
+        sourceJobId: item.sourceJobId ?? null,
+        tokenCountEstimate: item.tokenCountEstimate ?? null,
+        lastUsedAt: item.lastUsedAt ?? null,
+        coverageStartFloorNo: item.type === "summary" ? item.coverageStartFloorNo ?? null : null,
+        coverageEndFloorNo: item.type === "summary" ? item.coverageEndFloorNo ?? null : null,
+        derivedFromCount: item.type === "summary" ? item.derivedFromCount ?? null : null,
         createdAt: now,
         updatedAt: now,
       })
@@ -171,8 +218,10 @@ export class DrizzleMemoryRepository implements MemoryRepository {
 
   async update(
     id: string,
-    patch: Partial<Pick<MemoryItem, "content" | "factKey" | "importance" | "confidence" | "status">>,
+    patch: Partial<Pick<MemoryItem, "content" | "factKey" | "importance" | "confidence" | "status" | "lifecycleStatus">>,
+    options?: MemoryAccessOptions,
   ): Promise<MemoryItem | null> {
+    const accountId = this.resolveAccountId(undefined, options);
     const updates: Record<string, unknown> = {
       updatedAt: Date.now(),
     };
@@ -190,35 +239,45 @@ export class DrizzleMemoryRepository implements MemoryRepository {
     if (patch.confidence !== undefined) {
       updates.confidence = patch.confidence;
     }
+
+    if (patch.lifecycleStatus !== undefined) {
+      updates.lifecycleStatus = patch.lifecycleStatus;
+    }
+
     if (patch.status !== undefined) {
       updates.status = patch.status;
+      if (patch.lifecycleStatus === undefined) {
+        updates.lifecycleStatus = toLifecycleStatus(patch.status);
+      }
     }
 
     const [row] = await this.db
       .update(memoryItems)
       .set(updates)
-      .where(eq(memoryItems.id, id))
+      .where(and(eq(memoryItems.id, id), eq(memoryItems.accountId, accountId)))
       .returning();
 
     return row ? toMemoryItem(row) : null;
   }
 
-  async deprecate(id: string): Promise<MemoryItem | null> {
-    return this.update(id, { status: "deprecated" as MemoryStatus });
+  async deprecate(id: string, options?: MemoryAccessOptions): Promise<MemoryItem | null> {
+    return this.update(id, { status: "deprecated" as MemoryStatus }, options);
   }
 
   // ── 关系边操作 ──
 
   async createEdge(
     edge: Omit<MemoryEdge, "id" | "createdAt">,
+    options?: MemoryAccessOptions,
   ): Promise<MemoryEdge> {
     const now = Date.now();
+    const accountId = this.resolveAccountId(undefined, options);
 
     const [row] = await this.db
       .insert(memoryEdges)
       .values({
         id: nanoid(),
-        accountId: this.accountId,
+        accountId,
         fromId: edge.fromId,
         toId: edge.toId,
         relation: edge.relation,
@@ -229,14 +288,18 @@ export class DrizzleMemoryRepository implements MemoryRepository {
     return toMemoryEdge(row!);
   }
 
-  async findEdges(itemId: string): Promise<MemoryEdge[]> {
+  async findEdges(itemId: string, options?: MemoryAccessOptions): Promise<MemoryEdge[]> {
+    const accountId = this.resolveAccountId(undefined, options);
     const rows = await this.db
       .select()
       .from(memoryEdges)
       .where(
-        or(
-          eq(memoryEdges.fromId, itemId),
-          eq(memoryEdges.toId, itemId),
+        and(
+          eq(memoryEdges.accountId, accountId),
+          or(
+            eq(memoryEdges.fromId, itemId),
+            eq(memoryEdges.toId, itemId),
+          ),
         ),
       );
 

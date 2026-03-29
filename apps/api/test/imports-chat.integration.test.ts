@@ -257,6 +257,10 @@ describe("Import chat routes", () => {
           source_floor_id_ref: null,
           source_message_id_ref: null,
           status: "active",
+          lifecycle_status: "active",
+          source_job_id: "memory-job:ingest_turn:seed-floor",
+          token_count_estimate: 14,
+          last_used_at: 1700000000450,
           created_at: 1700000000400,
           updated_at: 1700000000500,
         },
@@ -265,18 +269,26 @@ describe("Import chat routes", () => {
           scope: "floor",
           scope_id_ref: "floor_001",
           type: "summary",
+          summary_tier: "macro",
           content: { text: "Floor summary" },
           importance: 0.5,
           confidence: 0.9,
           source_floor_id_ref: "floor_001",
           source_message_id_ref: "msg_001",
-          status: "deprecated",
+          status: "active",
+          lifecycle_status: "compacted",
+          source_job_id: "memory-job:compact_macro:floor_001:seed",
+          token_count_estimate: 28,
+          last_used_at: 1700000000650,
+          coverage_start_floor_no: 0,
+          coverage_end_floor_no: 0,
+          derived_from_count: 3,
           created_at: 1700000000600,
           updated_at: 1700000000700,
         },
       ],
       edges: [
-        { from_id_ref: "mem_001", to_id_ref: "mem_002", relation: "supports", created_at: 1700000000800 },
+        { from_id_ref: "mem_001", to_id_ref: "mem_002", relation: "derived_from", created_at: 1700000000800 },
         { from_id_ref: "mem_001", to_id_ref: "missing_ref", relation: "updates", created_at: 1700000000900 },
       ],
     };
@@ -351,24 +363,126 @@ describe("Import chat routes", () => {
       url: `/memories?scope=chat&scope_id=${sessionId}&limit=10&offset=0&sort_by=created_at&sort_order=asc`,
     });
     expect(chatMemoriesRes.statusCode).toBe(200);
-    const chatMemoriesBody = chatMemoriesRes.json<ListResponse<{ id: string }>>();
+    const chatMemoriesBody = chatMemoriesRes.json<ListResponse<{
+      id: string;
+      lifecycle_status: string;
+      source_job_id: string | null;
+      token_count_estimate: number | null;
+      last_used_at: number | null;
+    }>>();
     expect(chatMemoriesBody.data).toHaveLength(1);
+    expect(chatMemoriesBody.data[0]).toEqual(expect.objectContaining({
+      lifecycle_status: "active",
+      source_job_id: "memory-job:ingest_turn:seed-floor",
+      token_count_estimate: 14,
+      last_used_at: 1700000000450,
+    }));
 
     const floorMemoriesRes = await app.inject({
       method: "GET",
       url: `/memories?scope=floor&scope_id=${floorId}&limit=10&offset=0&sort_by=created_at&sort_order=asc`,
     });
     expect(floorMemoriesRes.statusCode).toBe(200);
-    const floorMemoriesBody = floorMemoriesRes.json<ListResponse<{ id: string }>>();
+    const floorMemoriesBody = floorMemoriesRes.json<ListResponse<{
+      id: string;
+      summary_tier: string | null;
+      lifecycle_status: string;
+      source_job_id: string | null;
+      token_count_estimate: number | null;
+      last_used_at: number | null;
+      coverage_start_floor_no: number | null;
+      coverage_end_floor_no: number | null;
+      derived_from_count: number | null;
+    }>>();
     expect(floorMemoriesBody.data).toHaveLength(1);
+    expect(floorMemoriesBody.data[0]).toEqual(expect.objectContaining({
+      summary_tier: "macro",
+      lifecycle_status: "compacted",
+      source_job_id: "memory-job:compact_macro:floor_001:seed",
+      token_count_estimate: 28,
+      last_used_at: 1700000000650,
+      coverage_start_floor_no: 0,
+      coverage_end_floor_no: 0,
+      derived_from_count: 3,
+    }));
+
+    const chatScopeStatesRes = await app.inject({
+      method: "GET",
+      url: `/memory/scopes?scope=chat&scope_id=${sessionId}&limit=10&offset=0&sort_by=updated_at&sort_order=asc`,
+    });
+    expect(chatScopeStatesRes.statusCode).toBe(200);
+    const chatScopeStatesBody = chatScopeStatesRes.json<ListResponse<{
+      revision: number;
+      last_processed_floor_no: number | null;
+      last_compaction_at: number | null;
+    }>>();
+    expect(chatScopeStatesBody.data).toEqual([
+      expect.objectContaining({ revision: 1, last_processed_floor_no: 0, last_compaction_at: null }),
+    ]);
+
+    const floorScopeStatesRes = await app.inject({
+      method: "GET",
+      url: `/memory/scopes?scope=floor&scope_id=${floorId}&limit=10&offset=0&sort_by=updated_at&sort_order=asc`,
+    });
+    expect(floorScopeStatesRes.statusCode).toBe(200);
+    const floorScopeStatesBody = floorScopeStatesRes.json<ListResponse<{
+      revision: number;
+      last_processed_floor_no: number | null;
+      last_compaction_at: number | null;
+    }>>();
+    expect(floorScopeStatesBody.data).toEqual([
+      expect.objectContaining({ revision: 1, last_processed_floor_no: 0, last_compaction_at: expect.any(Number) }),
+    ]);
 
     const memoryEdgesRes = await app.inject({
       method: "GET",
       url: `/memory-edges?from_id=${chatMemoriesBody.data[0]!.id}&limit=10&offset=0&sort_by=created_at&sort_order=asc`,
     });
     expect(memoryEdgesRes.statusCode).toBe(200);
-    const memoryEdgesBody = memoryEdgesRes.json<ListResponse<{ id: string }>>();
-    expect(memoryEdgesBody.data).toHaveLength(1);
+    const memoryEdgesBody = memoryEdgesRes.json<ListResponse<{ id: string; relation: string }>>();
+    expect(memoryEdgesBody.data).toEqual([
+      expect.objectContaining({ relation: "derived_from" }),
+    ]);
+  });
+
+  it("POST /import/chat synthesizes memory scope states for .thchat files without memories", async () => {
+    const file = makeMinimalThChatFile();
+
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/import/chat",
+      payload: { data: JSON.stringify(file) },
+    });
+
+    expect(importRes.statusCode, importRes.body).toBe(201);
+    const importBody = importRes.json<ChatImportResponse>();
+    expect(importBody.data.memory_item_count).toBe(0);
+
+    const sessionId = importBody.data.session_id;
+    const timelineRes = await app.inject({ method: "GET", url: `/sessions/${sessionId}/timeline` });
+    expect(timelineRes.statusCode).toBe(200);
+    const timelineBody = timelineRes.json<TimelineResponse>();
+    const floorId = timelineBody.data.floors[0]!.id;
+
+    const chatScopeStatesRes = await app.inject({
+      method: "GET",
+      url: `/memory/scopes?scope=chat&scope_id=${sessionId}&limit=10&offset=0&sort_by=updated_at&sort_order=asc`,
+    });
+    expect(chatScopeStatesRes.statusCode).toBe(200);
+    const chatScopeStatesBody = chatScopeStatesRes.json<ListResponse<{ revision: number; last_processed_floor_no: number | null; last_compaction_at: number | null }>>();
+    expect(chatScopeStatesBody.data).toEqual([
+      expect.objectContaining({ revision: 0, last_processed_floor_no: 0, last_compaction_at: null }),
+    ]);
+
+    const floorScopeStatesRes = await app.inject({
+      method: "GET",
+      url: `/memory/scopes?scope=floor&scope_id=${floorId}&limit=10&offset=0&sort_by=updated_at&sort_order=asc`,
+    });
+    expect(floorScopeStatesRes.statusCode).toBe(200);
+    const floorScopeStatesBody = floorScopeStatesRes.json<ListResponse<{ revision: number; last_processed_floor_no: number | null; last_compaction_at: number | null }>>();
+    expect(floorScopeStatesBody.data).toEqual([
+      expect.objectContaining({ revision: 0, last_processed_floor_no: 0, last_compaction_at: null }),
+    ]);
   });
 
   it("POST /import/chat returns 400 when .thchat variables contain duplicate targets", async () => {

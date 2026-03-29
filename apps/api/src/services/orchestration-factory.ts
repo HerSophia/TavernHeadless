@@ -14,6 +14,8 @@ import {
   GenerationPipeline,
   LLMService,
   MemoryConsolidator,
+  MemoryIngestProcessor,
+  MemoryCompactionProcessor,
   MemoryStore,
   Director,
   Verifier,
@@ -60,6 +62,12 @@ export interface OrchestrationContext {
   tokenCounter: TokenCounter;
   /** 记忆存储服务 */
   memoryStore: MemoryStore;
+  /** 记忆整理器 */
+  memoryConsolidator: MemoryConsolidator;
+  /** ingest_turn 作业处理器 */
+  memoryIngestProcessor: MemoryIngestProcessor;
+  /** macro summary 压缩处理器 */
+  memoryCompactionProcessor: MemoryCompactionProcessor;
   /** 变量解析器 */
   variableResolver: VariableResolver;
   /** 变量读写服务 */
@@ -120,6 +128,8 @@ export function createOrchestrationContext(
   const variableResolver = new VariableResolver(variableRepo);
   const variableStore = new VariableStore(variableRepo, variableResolver, eventBus);
   const memoryConsolidator = new MemoryConsolidator(memoryLLM, memoryStore);
+  const memoryIngestProcessor = new MemoryIngestProcessor(memoryLLM);
+  const memoryCompactionProcessor = new MemoryCompactionProcessor(memoryLLM);
   const generationPipeline = new GenerationPipeline(narratorLLM);
   const director = new Director(directorLLM);
   const verifier = new Verifier(verifierLLM);
@@ -142,6 +152,9 @@ export function createOrchestrationContext(
     providerRegistry,
     tokenCounter,
     memoryStore,
+    memoryConsolidator,
+    memoryIngestProcessor,
+    memoryCompactionProcessor,
     variableResolver,
     variableStore,
   };

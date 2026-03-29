@@ -157,16 +157,47 @@ await client.worldbooks.update({
 兼容旧调用方时，也仍然可以继续传 `expectedUpdatedAt`。新的接入建议统一切到 `expectedVersion`。
 
 ```ts
-// 读取带结构化 factKey 的事实记忆
+// 读取 Memory V2 摘要
 const memories = await client.memories.list({
   scope: "chat",
   scopeId: "session-1",
-  type: "fact",
-  factKey: "relationship",
+  type: "summary",
+  summaryTier: "macro",
+  lifecycleStatus: "active",
 });
+
+console.log(memories[0]?.summaryTier);
+console.log(memories[0]?.lifecycleStatus);
+console.log(memories[0]?.sourceJobId);
+console.log(memories[0]?.coverageStartFloorNo);
 ```
 
-`factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。
+```ts
+// 读取后台任务与 scope 状态
+const jobs = await client.memoryJobs.list({
+  scope: "chat",
+  scopeId: "session-1",
+  status: "retry_waiting",
+});
+
+const scopes = await client.memoryScopes.list({
+  scope: "chat",
+  scopeId: "session-1",
+});
+
+await client.memoryScopes.compact({
+  scope: "chat",
+  scopeId: "session-1",
+  force: true,
+});
+
+console.log(jobs.jobs[0]?.jobType);
+console.log(scopes.scopes[0]?.revision);
+```
+
+`factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。`summaryTier`、`lifecycleStatus`、`sourceJobId` 等字段对应 Memory V2 的公开元数据。
+
+`memoryJobs` 和 `memoryScopes` 对应后台任务与 scope 状态的管理接口。`memoryScopes.rebuild()`、`memoryScopes.compact()` 需要服务端已经启用 background worker。
 
 ```ts
 // 解析当前上下文可见变量快照
@@ -268,7 +299,7 @@ try {
 | 会话与内容结构 | `health`、`sessions`、`messages`、`floors`、`pages`、`branches` |
 | 角色、资料与配置 | `characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles` |
 | 导入、导出与模型 | `imports`、`exports`、`llmProfiles`、`llmInstances` |
-| 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges` |
+| 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes` |
 | 工具与运行集成 | `tools`、`mcp` |
 
 ### 底层能力

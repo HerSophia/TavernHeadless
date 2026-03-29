@@ -4,6 +4,7 @@ import {
   compactObject,
   readArray,
   readBoolean,
+  readNullableNumber,
   readNullableString,
   readNumber,
   readRecord,
@@ -13,19 +14,29 @@ import {
 export type MemoryScope = "global" | "chat" | "floor";
 export type MemoryType = "fact" | "summary" | "open_loop";
 export type MemoryStatus = "active" | "deprecated";
+export type MemorySummaryTier = "micro" | "macro";
+export type MemoryLifecycleStatus = "active" | "compacted" | "deprecated";
 
 export type MemoryRecord = {
   confidence: number;
   content: unknown;
+  coverageEndFloorNo: number | null;
+  coverageStartFloorNo: number | null;
   createdAt: number;
+  derivedFromCount: number | null;
   factKey?: string | null;
   id: string;
   importance: number;
+  lastUsedAt: number | null;
+  lifecycleStatus: MemoryLifecycleStatus;
   scope: MemoryScope;
   scopeId: string;
   sourceFloorId: string | null;
+  sourceJobId: string | null;
   sourceMessageId: string | null;
   status: MemoryStatus;
+  summaryTier: MemorySummaryTier | null;
+  tokenCountEstimate: number | null;
   type: MemoryType;
   updatedAt: number;
 };
@@ -81,6 +92,7 @@ export type MemoriesListOptions = {
   factKey?: string;
   importanceMax?: number;
   importanceMin?: number;
+  lifecycleStatus?: MemoryLifecycleStatus;
   limit?: number;
   offset?: number;
   q?: string;
@@ -91,6 +103,7 @@ export type MemoriesListOptions = {
   sourceFloorId?: string;
   sourceMessageId?: string;
   status?: MemoryStatus;
+  summaryTier?: MemorySummaryTier;
   type?: MemoryType;
   updatedFrom?: number;
   updatedTo?: number;
@@ -105,11 +118,13 @@ export type MemoriesResource = {
     content: unknown;
     factKey?: string | null;
     importance?: number;
+    lifecycleStatus?: MemoryLifecycleStatus;
     scope: MemoryScope;
     scopeId: string;
     sourceFloorId?: string;
     sourceMessageId?: string;
     status?: MemoryStatus;
+    summaryTier?: MemorySummaryTier;
     type: MemoryType;
   }): Promise<MemoryRecord>;
   getDetail(options: { accountId?: string; memoryId: string }): Promise<MemoryRecord>;
@@ -122,12 +137,14 @@ export type MemoriesResource = {
     content?: unknown;
     factKey?: string | null;
     importance?: number;
+    lifecycleStatus?: MemoryLifecycleStatus;
     memoryId: string;
     scope?: MemoryScope;
     scopeId?: string;
     sourceFloorId?: string;
     sourceMessageId?: string;
     status?: MemoryStatus;
+    summaryTier?: MemorySummaryTier;
     type?: MemoryType;
   }): Promise<MemoryRecord>;
 };
@@ -164,11 +181,13 @@ export function createMemoriesResource(client: TransportClient): MemoriesResourc
           content: options.content,
           fact_key: options.factKey,
           importance: options.importance,
+          lifecycle_status: options.lifecycleStatus,
           scope: options.scope,
           scope_id: options.scopeId,
           source_floor_id: options.sourceFloorId,
           source_message_id: options.sourceMessageId,
           status: options.status,
+          summary_tier: options.summaryTier,
           type: options.type,
         }),
         headers: buildAccountHeaders(options.accountId),
@@ -252,11 +271,13 @@ export function createMemoriesResource(client: TransportClient): MemoriesResourc
           content: options.content,
           fact_key: options.factKey,
           importance: options.importance,
+          lifecycle_status: options.lifecycleStatus,
           scope: options.scope,
           scope_id: options.scopeId,
           source_floor_id: options.sourceFloorId,
           source_message_id: options.sourceMessageId,
           status: options.status,
+          summary_tier: options.summaryTier,
           type: options.type,
         }),
         headers: buildAccountHeaders(options.accountId),
@@ -282,12 +303,14 @@ function buildMemoryQuery(options: MemoriesListOptions): Record<string, unknown>
     fact_key: options.factKey,
     importance_max: options.importanceMax,
     importance_min: options.importanceMin,
+    lifecycle_status: options.lifecycleStatus,
     q: options.q,
     scope: options.scope,
     scope_id: options.scopeId,
     source_floor_id: options.sourceFloorId,
     source_message_id: options.sourceMessageId,
     status: options.status,
+    summary_tier: options.summaryTier,
     type: options.type,
     updated_from: options.updatedFrom,
     updated_to: options.updatedTo,
@@ -300,18 +323,31 @@ function mapMemoryRecord(value: unknown): MemoryRecord | null {
     return null;
   }
 
+  const status = readString(record.status, "active") as MemoryStatus;
+
   return {
     confidence: readNumber(record.confidence),
     content: record.content,
-    factKey: readNullableString(record.fact_key),
+    coverageEndFloorNo: readNullableNumber(record.coverage_end_floor_no),
+    coverageStartFloorNo: readNullableNumber(record.coverage_start_floor_no),
     createdAt: readNumber(record.created_at),
+    derivedFromCount: readNullableNumber(record.derived_from_count),
+    factKey: readNullableString(record.fact_key),
     id: readString(record.id),
     importance: readNumber(record.importance),
+    lastUsedAt: readNullableNumber(record.last_used_at),
+    lifecycleStatus: readString(
+      record.lifecycle_status,
+      status === "deprecated" ? "deprecated" : "active",
+    ) as MemoryLifecycleStatus,
     scope: readString(record.scope, "global") as MemoryScope,
     scopeId: readString(record.scope_id),
     sourceFloorId: readNullableString(record.source_floor_id),
+    sourceJobId: readNullableString(record.source_job_id),
     sourceMessageId: readNullableString(record.source_message_id),
-    status: readString(record.status, "active") as MemoryStatus,
+    status,
+    summaryTier: readNullableString(record.summary_tier) as MemorySummaryTier | null,
+    tokenCountEstimate: readNullableNumber(record.token_count_estimate),
     type: readString(record.type, "fact") as MemoryType,
     updatedAt: readNumber(record.updated_at),
   };

@@ -119,7 +119,12 @@ const emit = defineEmits<{
         @replace-user="emit('replaceUser')"
       />
       <WorkspaceInspectorToolsPanel v-else-if="props.activeTab === 'tools'" :state="props.respondStreamState" :t="props.t" />
-      <WorkspaceInspectorMemoryPanel v-else-if="props.activeTab === 'memory'" :t="props.t" />
+      <WorkspaceInspectorMemoryPanel
+        v-else-if="props.activeTab === 'memory'"
+        :active-session-id="props.activeSessionId"
+        :current-account="props.currentAccount"
+        :t="props.t"
+      />
       <WorkspaceInspectorImpactPanel v-else :t="props.t" />
     </div>
 

@@ -379,9 +379,12 @@ export class TurnOrchestrator {
     input: TurnInput,
   ): Promise<MemoryInjectionResult> {
     try {
+      const memoryOptions = input.memoryOptions
+        ? { ...input.memoryOptions, accountId: input.accountId ?? input.memoryOptions.accountId }
+        : undefined;
       return await this.deps.memoryStore.prepareInjection(
         input.sessionId,
-        input.memoryOptions!,
+        memoryOptions!,
       );
     } catch (error) {
       throw new TurnError(
@@ -597,8 +600,12 @@ export class TurnOrchestrator {
       if (result.degraded?.reason === 'json_parse_failed') {
         try {
           await this.deps.eventBus.emit('memory.consolidation_json_parse_failed', {
+            sessionId: input.sessionId,
+            scope: 'chat',
+            scopeId: input.sessionId,
             floorId: input.floorId,
             rawText: result.degraded.rawText,
+            sourceJobId: undefined,
             error: result.degraded.error,
           });
         } catch {
@@ -612,6 +619,9 @@ export class TurnOrchestrator {
       // 发出事件供外部监控，但不抛出异常
       try {
         await this.deps.eventBus.emit('memory.consolidation_failed', {
+          sessionId: input.sessionId,
+          scope: 'chat',
+          scopeId: input.sessionId,
           floorId: input.floorId,
           error: error instanceof Error ? error : new Error(String(error)),
         });

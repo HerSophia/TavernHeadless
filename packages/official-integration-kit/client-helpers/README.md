@@ -276,6 +276,16 @@ try {
 
 默认服务配置仍是 `queueMode: "reject"`，所以同一 `session + branch` 的并发请求通常更容易看到 `generation_conflict`。`generation_queue_timeout` 一般只会在服务端显式启用 `queue` 模式时出现，而且排队范围仍只限单实例进程内。
 
+### Memory V2 数据
+
+Memory V2 的公开字段和管理路由现在由 `@tavern/sdk` 直接提供：
+
+- `client.memories`：记忆条目，包含 `summaryTier`、`lifecycleStatus` 等字段
+- `client.memoryJobs`：后台任务观测与 retry / cancel
+- `client.memoryScopes`：scope 状态观测与 rebuild / compact
+
+当前还没有稳定、通用、与框架无关的记忆视图整理逻辑，因此本包暂不新增专门的 memory helper。
+
 ## 设计边界
 
 **适合放进来的：**
@@ -307,4 +317,4 @@ try {
 
 ## 当前状态
 
-`apps/web` 现在已经直接使用这里的 timeline、变量快照、流式 reducer、工具事件分组和错误映射逻辑来支撑 inspector、重放确认和管理界面。后续会继续按这个原则扩展，但不会引入框架绑定层。
+`apps/web` 现在已经直接使用这里的 timeline、变量快照、流式 reducer、工具事件分组和错误映射逻辑来支撑 inspector、重放确认和管理界面。Memory V2 的条目、任务和 scope 数据目前保持在 SDK 资源层暴露。后续会继续按这个原则扩展，但不会引入框架绑定层。

@@ -191,6 +191,76 @@ describe('WsBridge', () => {
     });
   });
 
+  it('filters memory.created event by top-level sessionId', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-1');
+    bridge.addClient(socket2, 'session-2');
+
+    await eventBus.emit('memory.created', {
+      sessionId: 'session-1',
+      scope: 'chat',
+      scopeId: 'session-1',
+      floorId: 'floor-1',
+      sourceJobId: 'memory-job:ingest_turn:floor-1',
+      item: {
+        id: 'mem-1',
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'summary',
+        summaryTier: 'micro',
+        content: 'Alice keeps the key.',
+        importance: 0.7,
+        confidence: 1,
+        sourceFloorId: 'floor-1',
+        sourceMessageId: 'msg-1',
+        status: 'active',
+        lifecycleStatus: 'active',
+        sourceJobId: 'memory-job:ingest_turn:floor-1',
+        tokenCountEstimate: 6,
+        coverageStartFloorNo: 3,
+        coverageEndFloorNo: 3,
+        createdAt: 123,
+        updatedAt: 123,
+      },
+      source: 'consolidation',
+    });
+
+    expect(parseSent(socket1)).toHaveLength(1);
+    expect(parseSent(socket2)).toHaveLength(0);
+  });
+
+  it('falls back to memory item chat scope when memory sessionId is absent', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-1');
+    bridge.addClient(socket2, 'session-2');
+
+    await eventBus.emit('memory.updated', {
+      scope: 'chat',
+      scopeId: 'session-1',
+      floorId: 'floor-1',
+      item: {
+        id: 'mem-2',
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'fact',
+        content: 'key_owner: Alice',
+        factKey: 'key_owner',
+        importance: 0.9,
+        confidence: 1,
+        status: 'active',
+        lifecycleStatus: 'active',
+        createdAt: 123,
+        updatedAt: 456,
+      },
+      previousContent: 'key_owner: unknown',
+    });
+
+    expect(parseSent(socket1)).toHaveLength(1);
+    expect(parseSent(socket2)).toHaveLength(0);
+  });
+
   it('filters variable.set event by sessionId', async () => {
     const socket1 = createMockSocket();
     const socket2 = createMockSocket();
@@ -256,6 +326,36 @@ describe('WsBridge', () => {
     expect(parseSent(socket1)).toHaveLength(1);
     // socket2 subscribed to session-2, should NOT receive
     expect(parseSent(socket2)).toHaveLength(0);
+  });
+
+  it('forwards memory.consolidated job metadata and filters by sessionId', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-1');
+    bridge.addClient(socket2, 'session-2');
+
+    await eventBus.emit('memory.consolidated', {
+      sessionId: 'session-1',
+      scope: 'chat',
+      scopeId: 'session-1',
+      floorId: 'floor-9',
+      sourceJobId: 'memory-job:compact_macro:session-1:micro-9',
+      created: 1,
+      updated: 3,
+      deprecated: 0,
+      jobType: 'compact_macro',
+    });
+
+    const messages1 = parseSent(socket1);
+    const messages2 = parseSent(socket2);
+
+    expect(messages1).toHaveLength(1);
+    expect(messages2).toHaveLength(0);
+    expect(messages1[0]!.event).toBe('memory.consolidated');
+    expect(messages1[0]!.data).toEqual(expect.objectContaining({
+      jobType: 'compact_macro',
+      sourceJobId: 'memory-job:compact_macro:session-1:micro-9',
+    }));
   });
 
   it('sends events without sessionId to all filtered clients', async () => {

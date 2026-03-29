@@ -4,8 +4,12 @@ export {
   CoreEvents,
   MEMORY_SCOPES,
   MEMORY_TYPES,
+  MEMORY_SUMMARY_TIERS,
   MEMORY_STATUSES,
+  MEMORY_LIFECYCLE_STATUSES,
   MEMORY_RELATIONS,
+  MEMORY_JOB_TYPES,
+  MEMORY_JOB_STATUSES,
 } from './types/index.js';
 
 export {
@@ -28,8 +32,12 @@ export type {
   VariableEntry,
   MemoryScope,
   MemoryType,
+  MemorySummaryTier,
   MemoryStatus,
+  MemoryLifecycleStatus,
   MemoryRelation,
+  MemoryJobType,
+  MemoryJobStatus,
 } from './types/index.js';
 
 export type {

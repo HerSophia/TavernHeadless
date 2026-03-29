@@ -200,6 +200,7 @@ const handlers: Record<string, ToolHandler> = {
 
     const items = await deps.memoryStore.query({
       scopeId: context.sessionId,
+      accountId: context.accountId,
       ...(type ? { type: type as any } : {}),
       ...(minImportance !== undefined ? { minImportance } : {}),
       limit,

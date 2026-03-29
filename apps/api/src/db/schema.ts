@@ -203,6 +203,7 @@ export const memoryItems = sqliteTable(
     scope: text("scope", { enum: ["global", "chat", "floor"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     type: text("type", { enum: ["fact", "summary", "open_loop"] }).notNull(),
+    summaryTier: text("summary_tier", { enum: ["micro", "macro"] }),
     contentJson: text("content_json").notNull(),
     factKey: text("fact_key"),
     importance: real("importance").notNull().default(0.5),
@@ -211,12 +212,35 @@ export const memoryItems = sqliteTable(
     sourceMessageId: text("source_message_id"),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
     status: text("status", { enum: ["active", "deprecated"] }).notNull().default("active"),
+    lifecycleStatus: text("lifecycle_status", { enum: ["active", "compacted", "deprecated"] }).notNull().default("active"),
+    sourceJobId: text("source_job_id"),
+    tokenCountEstimate: integer("token_count_estimate"),
+    lastUsedAt: integer("last_used_at"),
+    coverageStartFloorNo: integer("coverage_start_floor_no"),
+    coverageEndFloorNo: integer("coverage_end_floor_no"),
+    derivedFromCount: integer("derived_from_count"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
   (table) => ({
     accountScopeIdx: index("memory_item_account_scope_idx").on(table.accountId, table.scope, table.scopeId),
     factLookupIdx: index("memory_item_fact_lookup_idx").on(table.accountId, table.scope, table.scopeId, table.type, table.status, table.factKey),
+    accountScopeLifecycleTypeUpdatedIdx: index("memory_item_account_scope_lifecycle_type_updated_idx").on(
+      table.accountId,
+      table.scope,
+      table.scopeId,
+      table.lifecycleStatus,
+      table.type,
+      table.updatedAt,
+    ),
+    accountScopeSummaryTierLifecycleIdx: index("memory_item_account_scope_summary_tier_lifecycle_idx").on(
+      table.accountId,
+      table.scope,
+      table.scopeId,
+      table.summaryTier,
+      table.lifecycleStatus,
+      table.updatedAt,
+    ),
   })
 );
 
@@ -226,12 +250,75 @@ export const memoryEdges = sqliteTable(
     id: text("id").primaryKey(),
     fromId: text("from_id").notNull().references(() => memoryItems.id, { onDelete: "cascade" }),
     toId: text("to_id").notNull().references(() => memoryItems.id, { onDelete: "cascade" }),
-    relation: text("relation", { enum: ["supports", "contradicts", "updates"] }).notNull(),
+    relation: text("relation", { enum: ["supports", "contradicts", "updates", "derived_from", "compacts", "resolves"] }).notNull(),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
     createdAt: integer("created_at").notNull(),
   },
   (table) => ({
     accountIdx: index("memory_edge_account_idx").on(table.accountId),
+  })
+);
+
+export const memoryScopeStates = sqliteTable(
+  "memory_scope_state",
+  {
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    scope: text("scope", { enum: ["global", "chat", "floor"] }).notNull(),
+    scopeId: text("scope_id").notNull(),
+    revision: integer("revision").notNull().default(0),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: integer("lease_until"),
+    lastProcessedFloorNo: integer("last_processed_floor_no"),
+    lastCompactionAt: integer("last_compaction_at"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountScopeScopeIdUnique: uniqueIndex("memory_scope_state_account_scope_scope_id_uq").on(
+      table.accountId,
+      table.scope,
+      table.scopeId,
+    ),
+    leaseIdx: index("memory_scope_state_lease_idx").on(table.leaseUntil),
+  })
+);
+
+export const memoryJobs = sqliteTable(
+  "memory_job",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    scope: text("scope", { enum: ["global", "chat", "floor"] }).notNull(),
+    scopeId: text("scope_id").notNull(),
+    jobType: text("job_type", { enum: ["ingest_turn", "compact_macro", "maintenance", "rebuild_scope"] }).notNull(),
+    status: text("status", { enum: ["pending", "leased", "running", "retry_waiting", "succeeded", "dead_letter", "cancelled"] }).notNull().default("pending"),
+    floorId: text("floor_id").references(() => floors.id, { onDelete: "set null" }),
+    basedOnRevision: integer("based_on_revision"),
+    payloadJson: text("payload_json").notNull().default("{}"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    availableAt: integer("available_at").notNull(),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: integer("lease_until"),
+    lastError: text("last_error"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    finishedAt: integer("finished_at"),
+  },
+  (table) => ({
+    statusAvailableIdx: index("memory_job_status_available_idx").on(table.status, table.availableAt),
+    accountScopeStatusAvailableIdx: index("memory_job_account_scope_status_available_idx").on(
+      table.accountId,
+      table.scope,
+      table.scopeId,
+      table.status,
+      table.availableAt,
+    ),
+    accountScopeCreatedIdx: index("memory_job_account_scope_created_idx").on(
+      table.accountId,
+      table.scope,
+      table.scopeId,
+      table.createdAt,
+    ),
   })
 );
 

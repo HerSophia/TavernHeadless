@@ -7,6 +7,7 @@ import { registerCharacterRoutes } from "./characters";
 import { registerFloorRoutes } from "./floors";
 import { registerImportRoutes } from "./imports";
 import { registerMemoryRoutes } from "./memories";
+import { registerMemoryJobRoutes, type MemoryJobRoutesOptions } from "./memory-jobs";
 import { registerMessageRoutes } from "./messages";
 import { registerWorldbookEntryRoutes } from "./worldbook-entries";
 import { registerPresetEntryRoutes } from "./preset-entries";
@@ -25,6 +26,7 @@ import { registerExportRoutes } from "./exports";
 export interface CrudRoutesOptions {
   variableEventBus?: CoreEventBus;
   sessionToolRegistryService?: SessionToolRegistryService;
+  memoryJobs?: MemoryJobRoutesOptions;
 }
 
 export async function registerCrudRoutes(
@@ -44,6 +46,7 @@ export async function registerCrudRoutes(
   await registerMessageRoutes(app, connection);
   await registerVariableRoutes(app, connection, { eventBus: options.variableEventBus });
   await registerMemoryRoutes(app, connection);
+  await registerMemoryJobRoutes(app, connection, options.memoryJobs);
   await registerImportRoutes(app, connection);
   await registerLlmProfileRoutes(app, connection);
   await registerLlmInstanceRoutes(app, connection);

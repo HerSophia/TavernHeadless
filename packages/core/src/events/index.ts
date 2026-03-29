@@ -15,6 +15,8 @@ export type {
   CommitRetryEvent,
   CommitBusyEvent,
   CommitSucceededAfterRetryEvent,
+  MemoryEventContext,
+  MemoryJobEventContext,
   MemoryCreatedEvent,
   MemoryUpdatedEvent,
   MemoryDeprecatedEvent,

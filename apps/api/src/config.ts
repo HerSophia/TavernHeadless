@@ -18,6 +18,9 @@
  * - ENABLE_PROMPT_DRY_RUN: 是否启用 Prompt Dry-run 调试端点（默认 false）
  * - CHAT_HISTORY_MAX_FLOORS: 可选历史楼层上限（最近 N 层）
  * - ENABLE_MEMORY_CONSOLIDATION: 是否默认启用 MemoryConsolidator（默认 false）
+ * - ENABLE_ASYNC_MEMORY_INGEST: 是否启用异步记忆入队主路径（默认 false）
+ * - ENABLE_MACRO_COMPACTION: 是否启用 macro summary 压缩能力（默认 false）
+ * - ENABLE_DUAL_SUMMARY_INJECTION: 是否启用 micro/macro 双层摘要注入预算（默认 false）
  * - MEMORY_INJECTION_DECAY_HALF_LIFE_DAYS: 可选，启用记忆注入衰减排序的半衰期（天）
  * - MEMORY_INJECTION_DECAY_MIN_FACTOR: 可选，衰减因子下限（0-1，默认 0.05）
  * - MEMORY_INJECTION_DECAY_BY: 可选，衰减使用的时间字段（updatedAt | createdAt，默认 updatedAt）
@@ -28,6 +31,12 @@
  * - MEMORY_MAINTENANCE_DEPRECATE_OPEN_LOOP_DAYS: 可选，open_loop 超过 N 天自动 deprecated（默认 7，设为 0 禁用）
  * - MEMORY_MAINTENANCE_PURGE_DEPRECATED_DAYS: 可选，deprecated 且自上次更新后超过 N 天自动删除（以 updatedAt 作为最后变更时间，默认 90，设为 0 禁用）
  * - MEMORY_MAINTENANCE_DRY_RUN: 可选，仅统计不执行写入/删除（默认 false）
+ * - MEMORY_WORKER_POLL_INTERVAL_MS: 可选，MemoryWorker 轮询间隔（默认 2000）
+ * - MEMORY_WORKER_LEASE_TTL_MS: 可选，MemoryWorker lease TTL（默认 120000）
+ * - MEMORY_WORKER_MAX_CONCURRENT_JOBS: 可选，MemoryWorker 最大并发作业数（默认 4）
+ * - MEMORY_WORKER_RETRY_BASE_DELAY_MS: 可选，MemoryWorker 重试基础退避（默认 1000）
+ * - MEMORY_WORKER_MAX_RETRY_DELAY_MS: 可选，MemoryWorker 最大重试退避（默认 30000）
+ * - MEMORY_WORKER_CANDIDATE_SCAN_LIMIT: 可选，MemoryWorker 单轮候选扫描上限（默认 32）
  * - ENABLE_MCP: 是否启用 MCP 工具集成（默认 false）
  * - AUTH_MODE: 认证模式（off | api_key | jwt，默认 off）
  * - AUTH_API_KEYS: API Key 模式下的 key 列表（逗号分隔）
@@ -78,6 +87,21 @@ export interface AppConfig {
   enablePromptDryRun: boolean;
   /** 是否默认启用 MemoryConsolidator */
   enableMemoryConsolidation: boolean;
+  /** 是否启用异步记忆入队主路径 */
+  enableAsyncMemoryIngest: boolean;
+  /** 是否启用 macro summary 压缩 */
+  enableMacroCompaction: boolean;
+  /** 是否启用 micro/macro 双层摘要注入 */
+  enableDualSummaryInjection: boolean;
+  /** 可选：MemoryWorker 运行参数 */
+  memoryWorker?: {
+    pollIntervalMs?: number;
+    leaseTtlMs?: number;
+    maxConcurrentJobs?: number;
+    retryBaseDelayMs?: number;
+    maxRetryDelayMs?: number;
+    candidateScanLimit?: number;
+  };
   /** 服务端默认生成超时（毫秒） */
   llmDefaultTimeoutMs: number;
   /** commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数 */
@@ -112,6 +136,9 @@ export function loadConfig(): AppConfig {
   const enablePromptDryRun = process.env.ENABLE_PROMPT_DRY_RUN === "true";
   const accountMode = parseAccountMode(process.env.ACCOUNT_MODE);
   const enableMemoryConsolidation = process.env.ENABLE_MEMORY_CONSOLIDATION === "true";
+  const enableAsyncMemoryIngest = process.env.ENABLE_ASYNC_MEMORY_INGEST === "true";
+  const enableMacroCompaction = process.env.ENABLE_MACRO_COMPACTION === "true";
+  const enableDualSummaryInjection = process.env.ENABLE_DUAL_SUMMARY_INJECTION === "true";
   const llmDefaultTimeoutMs = parsePositiveInt(process.env.LLM_DEFAULT_TIMEOUT_MS) ?? 60_000;
   const turnCommitMaxRetries = parseNonNegativeInt(process.env.TURN_COMMIT_MAX_RETRIES) ?? 2;
   const turnCommitRetryBaseDelayMs = parsePositiveInt(process.env.TURN_COMMIT_RETRY_BASE_DELAY_MS) ?? 100;
@@ -121,6 +148,14 @@ export function loadConfig(): AppConfig {
     process.env.MEMORY_INJECTION_DECAY_HALF_LIFE_DAYS,
     process.env.MEMORY_INJECTION_DECAY_MIN_FACTOR,
     process.env.MEMORY_INJECTION_DECAY_BY
+  );
+  const memoryWorker = parseMemoryWorkerConfig(
+    process.env.MEMORY_WORKER_POLL_INTERVAL_MS,
+    process.env.MEMORY_WORKER_LEASE_TTL_MS,
+    process.env.MEMORY_WORKER_MAX_CONCURRENT_JOBS,
+    process.env.MEMORY_WORKER_RETRY_BASE_DELAY_MS,
+    process.env.MEMORY_WORKER_MAX_RETRY_DELAY_MS,
+    process.env.MEMORY_WORKER_CANDIDATE_SCAN_LIMIT,
   );
 
   const memoryMaintenance = parseMemoryMaintenanceConfig(
@@ -164,6 +199,10 @@ export function loadConfig(): AppConfig {
       enableSseChat,
       enablePromptDryRun,
       enableMemoryConsolidation,
+      enableAsyncMemoryIngest,
+      enableMacroCompaction,
+      enableDualSummaryInjection,
+      memoryWorker,
       llmDefaultTimeoutMs,
       turnCommitMaxRetries,
       turnCommitRetryBaseDelayMs,
@@ -224,6 +263,10 @@ export function loadConfig(): AppConfig {
     enableSseChat,
     enablePromptDryRun,
     enableMemoryConsolidation,
+    enableAsyncMemoryIngest,
+    enableMacroCompaction,
+    enableDualSummaryInjection,
+    memoryWorker,
     llmDefaultTimeoutMs,
     turnCommitMaxRetries,
     turnCommitRetryBaseDelayMs,
@@ -350,6 +393,42 @@ function parseMemoryMaintenanceConfig(
     batchSize,
     policy,
     dryRun: dryRunRaw === "true",
+  };
+}
+
+function parseMemoryWorkerConfig(
+  pollIntervalMsRaw: string | undefined,
+  leaseTtlMsRaw: string | undefined,
+  maxConcurrentJobsRaw: string | undefined,
+  retryBaseDelayMsRaw: string | undefined,
+  maxRetryDelayMsRaw: string | undefined,
+  candidateScanLimitRaw: string | undefined,
+): AppConfig["memoryWorker"] | undefined {
+  const pollIntervalMs = parsePositiveInt(pollIntervalMsRaw);
+  const leaseTtlMs = parsePositiveInt(leaseTtlMsRaw);
+  const maxConcurrentJobs = parsePositiveInt(maxConcurrentJobsRaw);
+  const retryBaseDelayMs = parsePositiveInt(retryBaseDelayMsRaw);
+  const maxRetryDelayMs = parsePositiveInt(maxRetryDelayMsRaw);
+  const candidateScanLimit = parsePositiveInt(candidateScanLimitRaw);
+
+  if (
+    pollIntervalMs === undefined
+    && leaseTtlMs === undefined
+    && maxConcurrentJobs === undefined
+    && retryBaseDelayMs === undefined
+    && maxRetryDelayMs === undefined
+    && candidateScanLimit === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
+    ...(leaseTtlMs !== undefined ? { leaseTtlMs } : {}),
+    ...(maxConcurrentJobs !== undefined ? { maxConcurrentJobs } : {}),
+    ...(retryBaseDelayMs !== undefined ? { retryBaseDelayMs } : {}),
+    ...(maxRetryDelayMs !== undefined ? { maxRetryDelayMs } : {}),
+    ...(candidateScanLimit !== undefined ? { candidateScanLimit } : {}),
   };
 }
 

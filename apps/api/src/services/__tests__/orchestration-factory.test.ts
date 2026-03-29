@@ -162,6 +162,9 @@ describe("createOrchestrationContext", () => {
     expect(ctx.providerRegistry).toBeDefined();
     expect(ctx.tokenCounter).toBeDefined();
     expect(ctx.memoryStore).toBeDefined();
+    expect(ctx.memoryConsolidator).toBeDefined();
+    expect(ctx.memoryIngestProcessor).toBeDefined();
+    expect(ctx.memoryCompactionProcessor).toBeDefined();
     expect(ctx.variableResolver).toBeDefined();
     expect(ctx.variableStore).toBeDefined();
   });

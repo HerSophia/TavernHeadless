@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { memoryItems } from "../src/db/schema";
+import { accounts, memoryItems, memoryScopeStates } from "../src/db/schema";
 import { MemoryMaintenanceService } from "../src/services/memory-maintenance-service";
-import { buildApp } from "../src/app";
+import { buildApp, listMemoryMaintenanceScopes } from "../src/app";
 
 function toContentJson(text: string): string {
   return JSON.stringify(text);
@@ -183,6 +183,64 @@ describe("MemoryMaintenanceService", () => {
 
     expect(remaining.map((row) => row.id).sort()).toEqual(["dep-touched"]);
   });
+
+  it("includes scopes that only exist in memory_scope_state when scheduling maintenance", async () => {
+    const now = new Date("2020-01-04T00:00:00.000Z").getTime();
+
+    await database.db.insert(accounts).values({
+      id: "maintenance-account",
+      name: "maintenance-account",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(memoryItems).values({
+      id: "scope-chat-item",
+      accountId: "maintenance-account",
+      scope: "chat",
+      scopeId: "session-1",
+      type: "summary",
+      contentJson: toContentJson("session summary"),
+      importance: 0.5,
+      confidence: 1,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(memoryScopeStates).values([
+      {
+        accountId: "maintenance-account",
+        scope: "chat",
+        scopeId: "session-1",
+        revision: 1,
+        leaseOwner: null,
+        leaseUntil: null,
+        lastProcessedFloorNo: 4,
+        lastCompactionAt: null,
+        updatedAt: now,
+      },
+      {
+        accountId: "maintenance-account",
+        scope: "global",
+        scopeId: "maintenance-account",
+        revision: 2,
+        leaseOwner: null,
+        leaseUntil: null,
+        lastProcessedFloorNo: 8,
+        lastCompactionAt: now - 1_000,
+        updatedAt: now,
+      },
+    ]);
+
+    const scopes = await listMemoryMaintenanceScopes(database.db);
+
+    expect(scopes).toHaveLength(2);
+    expect(scopes).toEqual(expect.arrayContaining([
+      { accountId: "maintenance-account", scope: "chat", scopeId: "session-1" },
+      { accountId: "maintenance-account", scope: "global", scopeId: "maintenance-account" },
+    ]));
+  });
 });
 
 describe("buildApp memory maintenance scheduler", () => {
@@ -207,6 +265,41 @@ describe("buildApp memory maintenance scheduler", () => {
 
       const timerCountAfter = vi.getTimerCount();
       expect(timerCountAfter).toBeLessThan(timerCountBefore);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the async memory worker interval on app.close", async () => {
+    vi.useFakeTimers();
+    try {
+      const { app } = await buildApp({
+        databasePath: ":memory:",
+        logger: false,
+        enableWebSocket: false,
+        enableMemory: true,
+        enableAsyncMemoryIngest: true,
+        orchestration: {
+          providers: [
+            {
+              id: "test-provider",
+              type: "openai-compatible",
+              apiKey: "sk-test",
+            },
+          ],
+          defaultModel: {
+            providerId: "test-provider",
+            modelId: "gpt-4o-mini",
+          },
+        },
+      });
+
+      const timerCountBefore = vi.getTimerCount();
+      expect(timerCountBefore).toBeGreaterThan(0);
+
+      await app.close();
+
+      expect(vi.getTimerCount()).toBeLessThan(timerCountBefore);
     } finally {
       vi.useRealTimers();
     }

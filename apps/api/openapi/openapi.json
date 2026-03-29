@@ -9159,11 +9159,36 @@
           },
           {
             "in": "query",
+            "name": "summary_tier",
+            "required": false,
+            "schema": {
+              "enum": [
+                "micro",
+                "macro"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "status",
             "required": false,
             "schema": {
               "enum": [
                 "active",
+                "deprecated"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lifecycle_status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "active",
+                "compacted",
                 "deprecated"
               ],
               "type": "string"
@@ -9345,9 +9370,42 @@
                             "type": "number"
                           },
                           "content": {},
+                          "coverage_end_floor_no": {
+                            "anyOf": [
+                              {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "coverage_start_floor_no": {
+                            "anyOf": [
+                              {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "created_at": {
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "derived_from_count": {
+                            "anyOf": [
+                              {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "fact_key": {
                             "anyOf": [
@@ -9367,6 +9425,25 @@
                             "minimum": 0,
                             "type": "number"
                           },
+                          "last_used_at": {
+                            "anyOf": [
+                              {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lifecycle_status": {
+                            "enum": [
+                              "active",
+                              "compacted",
+                              "deprecated"
+                            ],
+                            "type": "string"
+                          },
                           "scope": {
                             "enum": [
                               "global",
@@ -9379,6 +9456,16 @@
                             "type": "string"
                           },
                           "source_floor_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "source_job_id": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -9404,6 +9491,31 @@
                               "deprecated"
                             ],
                             "type": "string"
+                          },
+                          "summary_tier": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "micro",
+                                  "macro"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "token_count_estimate": {
+                            "anyOf": [
+                              {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "type": {
                             "enum": [
@@ -9552,6 +9664,14 @@
                     "minimum": 0,
                     "type": "number"
                   },
+                  "lifecycle_status": {
+                    "enum": [
+                      "active",
+                      "compacted",
+                      "deprecated"
+                    ],
+                    "type": "string"
+                  },
                   "scope": {
                     "enum": [
                       "global",
@@ -9576,6 +9696,13 @@
                     "enum": [
                       "active",
                       "deprecated"
+                    ],
+                    "type": "string"
+                  },
+                  "summary_tier": {
+                    "enum": [
+                      "micro",
+                      "macro"
                     ],
                     "type": "string"
                   },
@@ -9652,9 +9779,42 @@
                           "type": "number"
                         },
                         "content": {},
+                        "coverage_end_floor_no": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "coverage_start_floor_no": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "created_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "derived_from_count": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "fact_key": {
                           "anyOf": [
@@ -9674,6 +9834,25 @@
                           "minimum": 0,
                           "type": "number"
                         },
+                        "last_used_at": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lifecycle_status": {
+                          "enum": [
+                            "active",
+                            "compacted",
+                            "deprecated"
+                          ],
+                          "type": "string"
+                        },
                         "scope": {
                           "enum": [
                             "global",
@@ -9686,6 +9865,16 @@
                           "type": "string"
                         },
                         "source_floor_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "source_job_id": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -9711,6 +9900,31 @@
                             "deprecated"
                           ],
                           "type": "string"
+                        },
+                        "summary_tier": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "micro",
+                                "macro"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "token_count_estimate": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "type": {
                           "enum": [
@@ -9977,9 +10191,42 @@
                           "type": "number"
                         },
                         "content": {},
+                        "coverage_end_floor_no": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "coverage_start_floor_no": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "created_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "derived_from_count": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "fact_key": {
                           "anyOf": [
@@ -9999,6 +10246,25 @@
                           "minimum": 0,
                           "type": "number"
                         },
+                        "last_used_at": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lifecycle_status": {
+                          "enum": [
+                            "active",
+                            "compacted",
+                            "deprecated"
+                          ],
+                          "type": "string"
+                        },
                         "scope": {
                           "enum": [
                             "global",
@@ -10011,6 +10277,16 @@
                           "type": "string"
                         },
                         "source_floor_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "source_job_id": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -10036,6 +10312,31 @@
                             "deprecated"
                           ],
                           "type": "string"
+                        },
+                        "summary_tier": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "micro",
+                                "macro"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "token_count_estimate": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "type": {
                           "enum": [
@@ -10154,6 +10455,14 @@
                     "minimum": 0,
                     "type": "number"
                   },
+                  "lifecycle_status": {
+                    "enum": [
+                      "active",
+                      "compacted",
+                      "deprecated"
+                    ],
+                    "type": "string"
+                  },
                   "scope": {
                     "enum": [
                       "global",
@@ -10178,6 +10487,13 @@
                     "enum": [
                       "active",
                       "deprecated"
+                    ],
+                    "type": "string"
+                  },
+                  "summary_tier": {
+                    "enum": [
+                      "micro",
+                      "macro"
                     ],
                     "type": "string"
                   },
@@ -10248,9 +10564,42 @@
                           "type": "number"
                         },
                         "content": {},
+                        "coverage_end_floor_no": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "coverage_start_floor_no": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "created_at": {
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "derived_from_count": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "fact_key": {
                           "anyOf": [
@@ -10270,6 +10619,25 @@
                           "minimum": 0,
                           "type": "number"
                         },
+                        "last_used_at": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lifecycle_status": {
+                          "enum": [
+                            "active",
+                            "compacted",
+                            "deprecated"
+                          ],
+                          "type": "string"
+                        },
                         "scope": {
                           "enum": [
                             "global",
@@ -10282,6 +10650,16 @@
                           "type": "string"
                         },
                         "source_floor_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "source_job_id": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -10307,6 +10685,31 @@
                             "deprecated"
                           ],
                           "type": "string"
+                        },
+                        "summary_tier": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "micro",
+                                "macro"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "token_count_estimate": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "type": {
                           "enum": [
@@ -10751,9 +11154,42 @@
                                     "type": "number"
                                   },
                                   "content": {},
+                                  "coverage_end_floor_no": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "coverage_start_floor_no": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "created_at": {
                                     "minimum": 0,
                                     "type": "integer"
+                                  },
+                                  "derived_from_count": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "fact_key": {
                                     "anyOf": [
@@ -10773,6 +11209,25 @@
                                     "minimum": 0,
                                     "type": "number"
                                   },
+                                  "last_used_at": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "lifecycle_status": {
+                                    "enum": [
+                                      "active",
+                                      "compacted",
+                                      "deprecated"
+                                    ],
+                                    "type": "string"
+                                  },
                                   "scope": {
                                     "enum": [
                                       "global",
@@ -10785,6 +11240,16 @@
                                     "type": "string"
                                   },
                                   "source_floor_id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "source_job_id": {
                                     "anyOf": [
                                       {
                                         "type": "string"
@@ -10810,6 +11275,31 @@
                                       "deprecated"
                                     ],
                                     "type": "string"
+                                  },
+                                  "summary_tier": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "micro",
+                                          "macro"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "token_count_estimate": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "type": {
                                     "enum": [
@@ -10952,11 +11442,36 @@
           },
           {
             "in": "query",
+            "name": "summary_tier",
+            "required": false,
+            "schema": {
+              "enum": [
+                "micro",
+                "macro"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "status",
             "required": false,
             "schema": {
               "enum": [
                 "active",
+                "deprecated"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lifecycle_status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "active",
+                "compacted",
                 "deprecated"
               ],
               "type": "string"
@@ -11265,7 +11780,10 @@
               "enum": [
                 "supports",
                 "contradicts",
-                "updates"
+                "updates",
+                "derived_from",
+                "compacts",
+                "resolves"
               ],
               "type": "string"
             }
@@ -11296,7 +11814,10 @@
                             "enum": [
                               "supports",
                               "contradicts",
-                              "updates"
+                              "updates",
+                              "derived_from",
+                              "compacts",
+                              "resolves"
                             ],
                             "type": "string"
                           },
@@ -11419,7 +11940,10 @@
                     "enum": [
                       "supports",
                       "contradicts",
-                      "updates"
+                      "updates",
+                      "derived_from",
+                      "compacts",
+                      "resolves"
                     ],
                     "type": "string"
                   },
@@ -11463,7 +11987,10 @@
                           "enum": [
                             "supports",
                             "contradicts",
-                            "updates"
+                            "updates",
+                            "derived_from",
+                            "compacts",
+                            "resolves"
                           ],
                           "type": "string"
                         },
@@ -11690,7 +12217,10 @@
                           "enum": [
                             "supports",
                             "contradicts",
-                            "updates"
+                            "updates",
+                            "derived_from",
+                            "compacts",
+                            "resolves"
                           ],
                           "type": "string"
                         },
@@ -11778,7 +12308,10 @@
                     "enum": [
                       "supports",
                       "contradicts",
-                      "updates"
+                      "updates",
+                      "derived_from",
+                      "compacts",
+                      "resolves"
                     ],
                     "type": "string"
                   }
@@ -11816,7 +12349,10 @@
                           "enum": [
                             "supports",
                             "contradicts",
-                            "updates"
+                            "updates",
+                            "derived_from",
+                            "compacts",
+                            "resolves"
                           ],
                           "type": "string"
                         },
@@ -11911,6 +12447,1330 @@
           }
         },
         "summary": "Update memory edge relation",
+        "tags": [
+          "memories"
+        ]
+      }
+    },
+    "/memory/jobs": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "enum": [
+                "global",
+                "chat",
+                "floor"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "job_type",
+            "required": false,
+            "schema": {
+              "enum": [
+                "ingest_turn",
+                "compact_macro",
+                "maintenance",
+                "rebuild_scope"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "pending",
+                "leased",
+                "running",
+                "retry_waiting",
+                "succeeded",
+                "dead_letter",
+                "cancelled"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "floor_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_to",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "available_from",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "available_to",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "enum": [
+                "created_at",
+                "updated_at",
+                "available_at"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "attempt_count": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "available_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "based_on_revision": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "created_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "finished_at": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "floor_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "job_type": {
+                            "enum": [
+                              "ingest_turn",
+                              "compact_macro",
+                              "maintenance",
+                              "rebuild_scope"
+                            ],
+                            "type": "string"
+                          },
+                          "last_error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lease_owner": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lease_until": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "max_attempts": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "payload": {},
+                          "scope": {
+                            "enum": [
+                              "global",
+                              "chat",
+                              "floor"
+                            ],
+                            "type": "string"
+                          },
+                          "scope_id": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "leased",
+                              "running",
+                              "retry_waiting",
+                              "succeeded",
+                              "dead_letter",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "scope",
+                          "scope_id",
+                          "job_type",
+                          "status",
+                          "attempt_count",
+                          "max_attempts",
+                          "available_at",
+                          "created_at",
+                          "updated_at"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "has_more": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sort_by": {
+                          "type": "string"
+                        },
+                        "sort_order": {
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ],
+                          "type": "string"
+                        },
+                        "total": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "limit",
+                        "offset",
+                        "has_more",
+                        "sort_by",
+                        "sort_order"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List memory jobs",
+        "tags": [
+          "memories"
+        ]
+      }
+    },
+    "/memory/jobs/{id}/cancel": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "coverage_end_floor_no": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "coverage_start_floor_no": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created": {
+                          "type": "boolean"
+                        },
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "global",
+                            "chat",
+                            "floor"
+                          ],
+                          "type": "string"
+                        },
+                        "scope_id": {
+                          "type": "string"
+                        },
+                        "source_micro_ids": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "created"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Cancel a pending memory job",
+        "tags": [
+          "memories"
+        ]
+      }
+    },
+    "/memory/jobs/{id}/retry": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "coverage_end_floor_no": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "coverage_start_floor_no": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created": {
+                          "type": "boolean"
+                        },
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "global",
+                            "chat",
+                            "floor"
+                          ],
+                          "type": "string"
+                        },
+                        "scope_id": {
+                          "type": "string"
+                        },
+                        "source_micro_ids": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "created"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Retry a memory job",
+        "tags": [
+          "memories"
+        ]
+      }
+    },
+    "/memory/scopes": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "enum": [
+                "global",
+                "chat",
+                "floor"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "enum": [
+                "updated_at",
+                "revision",
+                "last_compaction_at",
+                "last_processed_floor_no"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "last_compaction_at": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "last_processed_floor_no": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lease_owner": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lease_until": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "revision": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "scope": {
+                            "enum": [
+                              "global",
+                              "chat",
+                              "floor"
+                            ],
+                            "type": "string"
+                          },
+                          "scope_id": {
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "scope",
+                          "scope_id",
+                          "revision",
+                          "updated_at"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "has_more": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sort_by": {
+                          "type": "string"
+                        },
+                        "sort_order": {
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ],
+                          "type": "string"
+                        },
+                        "total": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "limit",
+                        "offset",
+                        "has_more",
+                        "sort_by",
+                        "sort_order"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List memory scope states",
+        "tags": [
+          "memories"
+        ]
+      }
+    },
+    "/memory/scopes/{scope}/{scopeId}/compact": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "enum": [
+                "global",
+                "chat",
+                "floor"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scopeId",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "trigger_floor_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "coverage_end_floor_no": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "coverage_start_floor_no": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created": {
+                          "type": "boolean"
+                        },
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "global",
+                            "chat",
+                            "floor"
+                          ],
+                          "type": "string"
+                        },
+                        "scope_id": {
+                          "type": "string"
+                        },
+                        "source_micro_ids": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "created"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Enqueue a manual macro compaction job",
+        "tags": [
+          "memories"
+        ]
+      }
+    },
+    "/memory/scopes/{scope}/{scopeId}/rebuild": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "enum": [
+                "global",
+                "chat",
+                "floor"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scopeId",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "force_compaction": {
+                    "type": "boolean"
+                  },
+                  "trigger_floor_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "coverage_end_floor_no": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "coverage_start_floor_no": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created": {
+                          "type": "boolean"
+                        },
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "global",
+                            "chat",
+                            "floor"
+                          ],
+                          "type": "string"
+                        },
+                        "scope_id": {
+                          "type": "string"
+                        },
+                        "source_micro_ids": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "created"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Enqueue a scope rebuild job",
         "tags": [
           "memories"
         ]

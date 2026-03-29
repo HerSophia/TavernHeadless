@@ -268,7 +268,11 @@ describe('BuiltinToolProvider', () => {
       expect(data.count).toBe(1);
       expect(data.items).toHaveLength(1);
       expect(data.items[0].content).toBe('The hero has 50 HP');
-      expect(ms.query).toHaveBeenCalledWith(expect.objectContaining({ limit: 5 }));
+      expect(ms.query).toHaveBeenCalledWith(expect.objectContaining({
+        scopeId: 'session-1',
+        accountId: 'account-1',
+        limit: 5,
+      }));
     });
 
     it('未提供 MemoryStore 时返回错误', async () => {
@@ -283,7 +287,10 @@ describe('BuiltinToolProvider', () => {
       const provider = new BuiltinToolProvider({ memoryStore: ms });
       await provider.executeTool('query_memory', { limit: 200 }, makeContext());
 
-      expect(ms.query).toHaveBeenCalledWith(expect.objectContaining({ limit: 50 }));
+      expect(ms.query).toHaveBeenCalledWith(expect.objectContaining({
+        accountId: 'account-1',
+        limit: 50,
+      }));
     });
   });
 

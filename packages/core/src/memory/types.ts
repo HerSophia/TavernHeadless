@@ -1,6 +1,13 @@
 // ── 记忆领域类型 ──────────────────────────────────────
 
-import type { MemoryScope, MemoryType, MemoryStatus, MemoryRelation } from '@tavern/shared';
+import type {
+  MemoryLifecycleStatus,
+  MemoryRelation,
+  MemoryScope,
+  MemoryStatus,
+  MemorySummaryTier,
+  MemoryType,
+} from '@tavern/shared';
 
 /**
  * 记忆条目领域对象
@@ -13,6 +20,8 @@ export interface MemoryItem {
   scope: MemoryScope;
   scopeId: string;
   type: MemoryType;
+  /** type=summary 时可区分 micro / macro；其余类型通常为空 */
+  summaryTier?: MemorySummaryTier;
   /** 纯文本内容 */
   content: string;
   /** fact 类型的结构化键。summary / open_loop 通常为空 */
@@ -27,6 +36,20 @@ export interface MemoryItem {
   sourceMessageId?: string;
   /** 条目状态 */
   status: MemoryStatus;
+  /** V2 生命周期状态；Phase 1 起为 schema 一等字段 */
+  lifecycleStatus?: MemoryLifecycleStatus;
+  /** 来源异步作业 ID */
+  sourceJobId?: string;
+  /** 文本 token 估计值 */
+  tokenCountEstimate?: number;
+  /** 最近一次注入时间 */
+  lastUsedAt?: number;
+  /** summary 覆盖起始 floorNo */
+  coverageStartFloorNo?: number;
+  /** summary 覆盖结束 floorNo */
+  coverageEndFloorNo?: number;
+  /** macro summary 压缩来源数量 */
+  derivedFromCount?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -49,6 +72,10 @@ export interface MemoryEdge {
  *
  * 所有字段可选，组合使用实现灵活查询。
  */
+export interface MemoryAccessOptions {
+  accountId?: string;
+}
+
 export interface MemoryQuery {
   /** 限定作用域 */
   scope?: MemoryScope;
@@ -56,8 +83,12 @@ export interface MemoryQuery {
   scopeId?: string;
   /** 限定类型 */
   type?: MemoryType;
+  /** 限定摘要分层（仅 summary 类型有效） */
+  summaryTier?: MemorySummaryTier;
   /** 限定状态 */
   status?: MemoryStatus;
+  /** 限定生命周期状态 */
+  lifecycleStatus?: MemoryLifecycleStatus;
   /** 最低重要度阈值 */
   minImportance?: number;
   /** 限定结构化 factKey（仅 fact 类型有效） */
@@ -68,6 +99,8 @@ export interface MemoryQuery {
   orderBy?: 'importance' | 'createdAt' | 'updatedAt';
   /** 排序方向 */
   orderDir?: 'asc' | 'desc';
+  /** 当前账户 ID（多账号场景下必须传入） */
+  accountId?: string;
 }
 
 /**
@@ -75,36 +108,90 @@ export interface MemoryQuery {
  *
  * 对应架构文档中 Memory 实例的 JSON 输出。
  */
+export interface MemoryFactAddOperation {
+  /** 新事实的结构化键。 */
+  factKey?: string;
+  /** @deprecated 使用 factKey。 */
+  key?: string;
+  value: string;
+  /** 未显式提供时使用默认作用域。 */
+  scope?: MemoryScope;
+  importance?: number;
+}
+
+export interface MemoryFactUpdateOperation {
+  id: string;
+  value: string;
+  factKey?: string;
+  importance?: number;
+}
+
+export interface MemoryFactDeprecateOperation {
+  id: string;
+  reason: string;
+}
+
+export interface MemoryOpenLoopAddOperation {
+  content: string;
+  /** 未显式提供时使用默认作用域。 */
+  scope?: MemoryScope;
+  importance?: number;
+}
+
+export interface MemoryOpenLoopResolveOperation {
+  id: string;
+  resolution: string;
+}
+
 export interface MemoryConsolidationOutput {
   /** 本回合摘要 */
   turnSummary: string;
   /** 新增事实。factKey 为推荐字段，key 为兼容旧输出。 */
-  factsAdd: {
-    factKey?: string;
-    /** @deprecated 使用 factKey。 */
-    key?: string;
-    value: string;
-    scope: MemoryScope;
-    importance?: number;
-  }[];
+  factsAdd: MemoryFactAddOperation[];
   /**
    * 更新已有事实。
    *
    * 事实的主键仍以已落库的 factKey 为准。
    * 对于旧数据或需要显式回填 factKey 的场景，可附带 factKey。
    */
-  factsUpdate: {
-    id: string;
-    value: string;
-    factKey?: string;
-    importance?: number;
-  }[];
+  factsUpdate: MemoryFactUpdateOperation[];
   /** 标记过时 */
-  factsDeprecate: {
-    id: string;
-    reason: string;
-  }[];
+  factsDeprecate: MemoryFactDeprecateOperation[];
 }
+
+/**
+ * `ingest_turn` 异步作业的标准化输出。
+ *
+ * Phase 3 起由 worker-side MemoryIngestProcessor 使用。
+ */
+export interface MemoryIngestOutput {
+  /** 当前 committed floor 的 micro summary。允许为空字符串。 */
+  microSummary: string;
+  factsAdd: MemoryFactAddOperation[];
+  factsUpdate: MemoryFactUpdateOperation[];
+  factsDeprecate: MemoryFactDeprecateOperation[];
+  openLoopsAdd: MemoryOpenLoopAddOperation[];
+  openLoopsResolve: MemoryOpenLoopResolveOperation[];
+}
+
+/**
+ * `compact_macro` 异步作业的标准化输出。
+ *
+ * Phase 4 起由 worker-side MemoryCompactionProcessor 使用。
+ */
+export interface MemoryCompactionOutput {
+  /** 选定 micro summaries 的 macro summary。 */
+  macroSummary: string;
+  factsAdd: MemoryFactAddOperation[];
+  factsUpdate: MemoryFactUpdateOperation[];
+  factsDeprecate: MemoryFactDeprecateOperation[];
+  openLoopsAdd: MemoryOpenLoopAddOperation[];
+  openLoopsResolve: MemoryOpenLoopResolveOperation[];
+  /** 实际参与本次压缩的 source micro summary IDs。 */
+  sourceMicroIds: string[];
+}
+
+export type MemoryInjectionStrategy = 'legacy' | 'dual_summary';
 
 /**
  * 记忆注入选项
@@ -122,6 +209,8 @@ export interface MemoryInjectionOptions {
   includeTypes?: MemoryType[];
   /** 选择策略（默认 importance） */
   selectionMode?: 'importance' | 'balanced';
+  /** 注入策略：legacy 保持当前行为，dual_summary 启用 micro / macro 双层预算。 */
+  strategy?: MemoryInjectionStrategy;
   /** balanced 模式下的类型顺序 */
   typeOrder?: MemoryType[];
   /** balanced 模式下各类型最多条目数 */
@@ -139,6 +228,8 @@ export interface MemoryInjectionOptions {
   };
   /** 限定作用域 */
   scope?: MemoryScope;
+  /** 当前账户 ID（多账号场景下必须传入） */
+  accountId?: string;
 }
 
 /**

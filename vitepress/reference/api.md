@@ -142,7 +142,7 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | Characters | 角色卡管理、版本控制 | [Characters](./api/characters) |
 | Users | 用户卡管理 | [Users](./api/users) |
 | Variables | 四级变量系统 | [Variables](./api/variables) |
-| Memories | 记忆条目与边 | [Memories](./api/memories) |
+| Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
 | Exports | 资源导出（聊天、预设、世界书、正则、角色卡） | [Exports](./api/exports) |
 | Presets | 预设管理、编辑器视图、条目级 CRUD | [Presets](./api/presets) |
@@ -168,7 +168,7 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 - 会话与内容结构：`sessions`、`messages`、`floors`、`pages`、`branches`
 - 角色、资料与配置：`characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles`
 - 导入、导出与模型配置：`imports`、`exports`、`llmProfiles`、`llmInstances`
-- 账号、变量与记忆：`accounts`、`variables`、`memories`、`memoryEdges`
+- 账号、变量与记忆：`accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes`
 - 工具与运行集成：`tools`、`mcp`
 
 变量系统相关的接入现在建议直接使用：

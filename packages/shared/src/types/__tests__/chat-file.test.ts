@@ -119,24 +119,37 @@ describe('thChatFileSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts optional memories', () => {
+  it('accepts memory v2 metadata and extended edge relations', () => {
     const file = makeMinimalFile();
     (file.data as Record<string, unknown>).memories = {
       items: [{
         _original_id: 'mem_001',
         scope: 'chat',
         scope_id_ref: null,
-        type: 'fact',
-        content: { text: 'something' },
+        type: 'summary',
+        summary_tier: 'macro',
+        content: { text: 'macro summary' },
         importance: 0.8,
         confidence: 1.0,
         source_floor_id_ref: null,
         source_message_id_ref: null,
         status: 'active',
+        lifecycle_status: 'compacted',
+        source_job_id: 'memory-job:compact_macro:session-1:mem-3',
+        token_count_estimate: 128,
+        last_used_at: 1700000000100,
+        coverage_start_floor_no: 1,
+        coverage_end_floor_no: 6,
+        derived_from_count: 3,
         created_at: 1700000000000,
-        updated_at: 1700000000000,
+        updated_at: 1700000000200,
       }],
-      edges: [],
+      edges: [{
+        from_id_ref: 'mem_001',
+        to_id_ref: 'mem_002',
+        relation: 'derived_from',
+        created_at: 1700000000200,
+      }],
     };
     const result = thChatFileSchema.safeParse(file);
     expect(result.success).toBe(true);

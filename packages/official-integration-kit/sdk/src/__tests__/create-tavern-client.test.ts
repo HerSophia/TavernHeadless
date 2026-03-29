@@ -105,8 +105,15 @@ describe("createTavernClient", () => {
     expect(typeof client.memories.getStats).toBe("function");
     expect(typeof client.memories.batchDelete).toBe("function");
 
+    expect(client.memoryJobs).toBeDefined();
+    expect(typeof client.memoryJobs.list).toBe("function");
+    expect(typeof client.memoryJobs.retry).toBe("function");
+
     expect(client.memoryEdges).toBeDefined();
     expect(typeof client.memoryEdges.list).toBe("function");
+
+    expect(client.memoryScopes).toBeDefined();
+    expect(typeof client.memoryScopes.compact).toBe("function");
 
     expect(client.exports).toBeDefined();
     expect(typeof client.exports.chat).toBe("function");

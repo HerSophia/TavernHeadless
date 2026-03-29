@@ -324,10 +324,21 @@ export interface ChatServiceOptions {
    */
   enableMemoryConsolidationByDefault?: boolean;
   /**
+   * 是否启用异步记忆入队主路径。
+   * 启用后，回合请求不再同步执行 MemoryConsolidator。
+   */
+  enableAsyncMemoryIngest?: boolean;
+  /**
+   * 是否启用 micro / macro 双层摘要注入预算。
+   */
+  enableDualSummaryInjection?: boolean;
+  /**
    * @deprecated 使用 resolveTurnModels 代替。
    * 可选：为当前会话解析本轮使用的模型配置（仅 narrator）。
    */
   resolveTurnModel?: ResolveTurnModelFn;
+  /** 可选：外部注入提交服务。 */
+  turnCommitService?: TurnCommitService;
   /**
    * 可选：按 slot 粒度为当前会话解析模型配置。
    * 优先于 resolveTurnModel。
@@ -378,6 +389,8 @@ export class ChatService {
   private readonly memoryStore?: MemoryStore;
   private readonly memoryInjectionDecay?: MemoryInjectionOptions["decay"];
   private readonly enableMemoryConsolidationByDefault: boolean;
+  private readonly enableAsyncMemoryIngest: boolean;
+  private readonly enableDualSummaryInjection: boolean;
   private readonly resolveTurnModel?: ResolveTurnModelFn;
   private readonly resolveTurnModels?: ResolveTurnModelsFn;
   private readonly onTurnModelUsed?: OnTurnModelUsedFn;
@@ -405,6 +418,8 @@ export class ChatService {
     this.memoryInjectionDecay = options.memoryInjectionDecay;
     this.enableMemoryConsolidationByDefault =
       options.enableMemoryConsolidationByDefault === true;
+    this.enableAsyncMemoryIngest = options.enableAsyncMemoryIngest === true;
+    this.enableDualSummaryInjection = options.enableDualSummaryInjection === true;
     this.resolveTurnModel = options.resolveTurnModel;
     this.resolveTurnModels = options.resolveTurnModels;
     this.onTurnModelUsed = options.onTurnModelUsed;
@@ -414,7 +429,10 @@ export class ChatService {
     this.eventBus = options.eventBus ?? createEventBus();
     this.floorStateMachine = new FloorStateMachine(new DrizzleFloorRepository(db), this.eventBus);
     this.toolExecutionRepository = new DrizzleToolExecutionRepository(db);
-    this.turnCommitService = new TurnCommitService(db, this.messagePersistence, this.eventBus);
+    this.turnCommitService = options.turnCommitService
+      ?? new TurnCommitService(db, this.messagePersistence, this.eventBus, {
+        enableAsyncMemoryIngest: this.enableAsyncMemoryIngest,
+      });
     this.generationCoordinator = options.generationCoordinator
       ?? options.generationGuard
       ?? new InMemoryGenerationCoordinator();
@@ -468,7 +486,7 @@ export class ChatService {
         const history = await this.historyLoader.loadHistory(sessionId, branchId, branchContext.nextFloorNo);
 
         // ── 2b. 记忆检索 ──
-        const memorySummary = await this.retrieveMemorySummary(sessionId);
+        const memorySummary = await this.retrieveMemorySummary(sessionId, accountId);
 
         // ── 3. 创建新楼层 ──
         const nextFloorNo = branchContext.nextFloorNo;
@@ -530,7 +548,9 @@ export class ChatService {
             stream: !!runtimeOptions.onChunk,
           });
 
-          const turnConfig = this.resolveTurnConfig(request.config);
+          const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config);
+          const memoryConsolidationRequested = this.shouldRequestMemoryConsolidation(requestedTurnConfig);
+          const turnConfig = this.toOrchestratorTurnConfig(requestedTurnConfig);
           const toolRuntime = await this.resolveTurnToolingForFloor({
             floorId,
             sessionId,
@@ -539,6 +559,7 @@ export class ChatService {
           });
           const consolidationContext = await this.buildConsolidationContext(
             sessionId,
+            accountId,
             request.message,
             turnConfig
           );
@@ -573,6 +594,7 @@ export class ChatService {
             orchestrationFailureCode: "orchestration_failed",
             orchestrationFailureMessage: "Turn orchestration failed",
             commitFailureMessage: "Turn commit failed",
+            memoryConsolidationRequested,
             persistMemory: this.memoryStore !== undefined,
           });
 
@@ -613,7 +635,7 @@ export class ChatService {
     }
 
     const history = await this.historyLoader.loadHistory(sessionId);
-    const memorySummary = await this.retrieveMemorySummary(sessionId);
+    const memorySummary = await this.retrieveMemorySummary(sessionId, accountId);
     const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
     const maxContextTokensOverride = normalizePositiveInt(narratorParams?.maxContextTokens);
@@ -723,7 +745,7 @@ export class ChatService {
       const history = await this.historyLoader.loadHistoryBeforeFloor(sessionId, targetFloor.floorNo);
 
       // ── 4b. 记忆检索 ──
-      const memorySummary = await this.retrieveMemorySummary(sessionId);
+      const memorySummary = await this.retrieveMemorySummary(sessionId, accountId);
 
       const newFloorId = nanoid();
       const now = Date.now();
@@ -787,7 +809,9 @@ export class ChatService {
         availableForReply: assembled.tokenUsage.availableForReply,
       });
 
-      const turnConfig = this.resolveTurnConfig(request.config);
+      const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config);
+      const memoryConsolidationRequested = this.shouldRequestMemoryConsolidation(requestedTurnConfig);
+      const turnConfig = this.toOrchestratorTurnConfig(requestedTurnConfig);
       const toolRuntime = await this.resolveTurnToolingForFloor({
         floorId: newFloorId,
         sessionId,
@@ -796,6 +820,7 @@ export class ChatService {
       });
       const consolidationContext = await this.buildConsolidationContext(
         sessionId,
+        accountId,
         userMessage,
         turnConfig
       );
@@ -829,6 +854,7 @@ export class ChatService {
         orchestrationFailureCode: "orchestration_failed",
         orchestrationFailureMessage: "Regeneration orchestration failed",
         commitFailureMessage: "Regeneration commit failed",
+        memoryConsolidationRequested,
         persistMemory: this.memoryStore !== undefined,
       });
 
@@ -901,7 +927,7 @@ export class ChatService {
           targetFloor.floorNo,
           targetFloor.branchId
         );
-        const memorySummary = await this.retrieveMemorySummary(targetFloor.sessionId);
+        const memorySummary = await this.retrieveMemorySummary(targetFloor.sessionId, accountId);
         const now = Date.now();
 
         this.db.transaction((tx) => {
@@ -957,7 +983,9 @@ export class ChatService {
           availableForReply: assembled.tokenUsage.availableForReply,
         });
 
-        const turnConfig = this.resolveTurnConfig(request.config);
+        const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config);
+        const memoryConsolidationRequested = this.shouldRequestMemoryConsolidation(requestedTurnConfig);
+        const turnConfig = this.toOrchestratorTurnConfig(requestedTurnConfig);
         const toolRuntime = await this.resolveTurnToolingForFloor({
           floorId: targetFloor.id,
           sessionId: targetFloor.sessionId,
@@ -966,6 +994,7 @@ export class ChatService {
         });
         const consolidationContext = await this.buildConsolidationContext(
           targetFloor.sessionId,
+          accountId,
           userMessage,
           turnConfig
         );
@@ -999,6 +1028,7 @@ export class ChatService {
           orchestrationFailureCode: "orchestration_failed",
           orchestrationFailureMessage: "Retry orchestration failed",
           persistMemory: this.memoryStore !== undefined,
+          memoryConsolidationRequested,
           commitFailureMessage: "Retry commit failed",
         });
 
@@ -1135,6 +1165,7 @@ export class ChatService {
     orchestrationFailureCode: string;
     orchestrationFailureMessage: string;
     persistMemory: boolean;
+    memoryConsolidationRequested: boolean;
     commitFailureMessage: string;
   }): Promise<{
     execution: TurnExecutionResult;
@@ -1198,6 +1229,7 @@ export class ChatService {
     }
 
     const commitInput = {
+      accountId: args.accountId,
       floorId: args.floorId,
       sessionId: args.sessionId,
       execution,
@@ -1208,6 +1240,7 @@ export class ChatService {
       toolExecutionRecords: execution.toolExecutionRecords,
       memoryCommit: args.persistMemory
         ? {
+            enableConsolidation: args.memoryConsolidationRequested,
             summaries: execution.summaries,
             consolidationOutput: execution.consolidationResult?.output,
           }
@@ -1595,7 +1628,7 @@ export class ChatService {
     accountId: string;
     abortSignal?: AbortSignal;
   }): Promise<RetryFloorResult> {
-    const memorySummary = await this.retrieveMemorySummary(args.sessionId);
+    const memorySummary = await this.retrieveMemorySummary(args.sessionId, args.accountId);
 
     const sessionInfo: SessionPromptInfo = {
       presetId: args.session.presetId,
@@ -1641,7 +1674,9 @@ export class ChatService {
       availableForReply: assembled.tokenUsage.availableForReply,
     });
 
-    const turnConfig = this.resolveTurnConfig(args.request.config);
+    const requestedTurnConfig = this.resolveRequestedTurnConfig(args.request.config);
+    const memoryConsolidationRequested = this.shouldRequestMemoryConsolidation(requestedTurnConfig);
+    const turnConfig = this.toOrchestratorTurnConfig(requestedTurnConfig);
     const toolRuntime = await this.resolveTurnToolingForFloor({
       floorId: args.floorId,
       sessionId: args.sessionId,
@@ -1650,6 +1685,7 @@ export class ChatService {
     });
     const consolidationContext = await this.buildConsolidationContext(
       args.sessionId,
+      args.accountId,
       args.userMessage,
       turnConfig
     );
@@ -1683,6 +1719,7 @@ export class ChatService {
       orchestrationFailureCode: "orchestration_failed",
       orchestrationFailureMessage: "Turn orchestration failed",
       commitFailureMessage: "Turn commit failed",
+      memoryConsolidationRequested,
       persistMemory: this.memoryStore !== undefined,
     });
 
@@ -1783,21 +1820,36 @@ export class ChatService {
    * 如果未配置 MemoryStore 或无可用记忆，返回 undefined。
    */
   private async retrieveMemorySummary(
-    sessionId: string
+    sessionId: string,
+    accountId: string,
   ): Promise<string | undefined> {
     if (!this.memoryStore) return undefined;
 
     try {
-      const injection = await this.memoryStore.prepareInjection(sessionId, {
-        maxTokens: 500,
-        maxItems: 24,
-        minImportance: 0.35,
-        includeTypes: ["open_loop", "fact", "summary"],
-        selectionMode: "balanced",
-        typeOrder: ["open_loop", "fact", "summary"],
-        typeMaxItems: { open_loop: 6, fact: 10, summary: 8 },
-        decay: this.memoryInjectionDecay,
-      });
+      const injection = await this.memoryStore.prepareInjection(
+        sessionId,
+        this.enableDualSummaryInjection
+          ? {
+              accountId,
+              maxTokens: 500,
+              maxItems: 24,
+              minImportance: 0.35,
+              includeTypes: ["open_loop", "fact", "summary"],
+              strategy: "dual_summary",
+              decay: this.memoryInjectionDecay,
+            }
+          : {
+              accountId,
+              maxTokens: 500,
+              maxItems: 24,
+              minImportance: 0.35,
+              includeTypes: ["open_loop", "fact", "summary"],
+              selectionMode: "balanced",
+              typeOrder: ["open_loop", "fact", "summary"],
+              typeMaxItems: { open_loop: 6, fact: 10, summary: 8 },
+              decay: this.memoryInjectionDecay,
+            },
+      );
 
       // 保持向下兼容：上层字段名仍为 memorySummary。
       return injection.formattedText || undefined;
@@ -2005,7 +2057,7 @@ export class ChatService {
     return rest;
   }
 
-  private resolveTurnConfig(config?: TurnConfig): TurnConfig | undefined {
+  private resolveRequestedTurnConfig(config?: TurnConfig): TurnConfig | undefined {
     if (!this.memoryStore) {
       return config;
     }
@@ -2024,10 +2076,26 @@ export class ChatService {
     };
   }
 
+  private shouldRequestMemoryConsolidation(config?: TurnConfig): boolean {
+    return config?.enableMemoryConsolidation === true;
+  }
+
+  private toOrchestratorTurnConfig(config?: TurnConfig): TurnConfig | undefined {
+    if (!this.enableAsyncMemoryIngest || !config?.enableMemoryConsolidation) {
+      return config;
+    }
+
+    return {
+      ...config,
+      enableMemoryConsolidation: false,
+    };
+  }
+
   private async buildConsolidationContext(
     sessionId: string,
+    accountId: string,
     currentFloorContent: string,
-    config?: TurnConfig
+    config?: TurnConfig,
   ): Promise<TurnInput["consolidationContext"] | undefined> {
     if (!this.memoryStore) {
       return undefined;
@@ -2047,8 +2115,10 @@ export class ChatService {
         this.memoryStore.query({
           scope: "chat",
           scopeId: sessionId,
+          accountId,
           type: "summary",
           status: "active",
+          lifecycleStatus: "active",
           orderBy: "updatedAt",
           orderDir: "desc",
           limit: 20,
@@ -2056,8 +2126,10 @@ export class ChatService {
         this.memoryStore.query({
           scope: "chat",
           scopeId: sessionId,
+          accountId,
           type: "fact",
           status: "active",
+          lifecycleStatus: "active",
           orderBy: "importance",
           orderDir: "desc",
           limit: 50,
@@ -2072,6 +2144,8 @@ export class ChatService {
     } catch (error) {
       await this.emitBestEffortEvent("memory.consolidation_context_failed", {
         sessionId,
+        scope: "chat",
+        scopeId: sessionId,
         error: error instanceof Error ? error : new Error(String(error)),
       });
 

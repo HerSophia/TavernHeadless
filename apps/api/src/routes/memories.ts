@@ -13,10 +13,12 @@ import { getRequestAuthContext } from "../plugins/auth.js";
 
 const memoryScopeSchema = z.enum(["global", "chat", "floor"]);
 const memoryTypeSchema = z.enum(["fact", "summary", "open_loop"]);
+const memorySummaryTierSchema = z.enum(["micro", "macro"]);
 const memoryStatusSchema = z.enum(["active", "deprecated"]);
+const memoryLifecycleStatusSchema = z.enum(["active", "compacted", "deprecated"]);
 const memoryFactKeyInputSchema = z.string().trim().min(1).nullable().optional();
 const memoryFactKeyFilterSchema = z.string().trim().min(1).optional();
-const memoryRelationSchema = z.enum(["supports", "contradicts", "updates"]);
+const memoryRelationSchema = z.enum(["supports", "contradicts", "updates", "derived_from", "compacts", "resolves"]);
 
 function normalizeFactKey(value: string | null | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase();
@@ -34,6 +36,25 @@ function resolveStoredFactKey(
   return normalizeFactKey(value) ?? null;
 }
 
+function toLifecycleStatus(status: z.infer<typeof memoryStatusSchema>) {
+  return status === "deprecated" ? "deprecated" : "active";
+}
+
+function resolveStoredStatus(
+  status: z.infer<typeof memoryStatusSchema> | undefined,
+  lifecycleStatus: z.infer<typeof memoryLifecycleStatusSchema> | undefined,
+) {
+  if (status !== undefined) {
+    return status;
+  }
+
+  return lifecycleStatus === "deprecated" ? "deprecated" : "active";
+}
+
+function resolveStoredLifecycleStatus(status: z.infer<typeof memoryStatusSchema>, lifecycleStatus: z.infer<typeof memoryLifecycleStatusSchema> | undefined) {
+  return lifecycleStatus ?? toLifecycleStatus(status);
+}
+
 const memoryItemParamsSchema = z.object({
   id: z.string().min(1)
 });
@@ -46,13 +67,15 @@ const createMemoryItemSchema = z.object({
   scope: memoryScopeSchema,
   scope_id: z.string().min(1),
   type: memoryTypeSchema,
+  summary_tier: memorySummaryTierSchema.optional(),
   content: z.unknown(),
   importance: z.number().min(0).max(1).optional(),
   fact_key: memoryFactKeyInputSchema,
   confidence: z.number().min(0).max(1).optional(),
   source_floor_id: z.string().min(1).optional(),
   source_message_id: z.string().min(1).optional(),
-  status: memoryStatusSchema.optional()
+  status: memoryStatusSchema.optional(),
+  lifecycle_status: memoryLifecycleStatusSchema.optional(),
 });
 
 const updateMemoryItemSchema = z
@@ -60,13 +83,15 @@ const updateMemoryItemSchema = z
     scope: memoryScopeSchema.optional(),
     scope_id: z.string().min(1).optional(),
     type: memoryTypeSchema.optional(),
+    summary_tier: memorySummaryTierSchema.optional(),
     content: z.unknown().optional(),
     importance: z.number().min(0).max(1).optional(),
     fact_key: memoryFactKeyInputSchema,
     confidence: z.number().min(0).max(1).optional(),
     source_floor_id: z.string().min(1).optional(),
     source_message_id: z.string().min(1).optional(),
-    status: memoryStatusSchema.optional()
+    status: memoryStatusSchema.optional(),
+    lifecycle_status: memoryLifecycleStatusSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 
@@ -102,7 +127,9 @@ const memoryFilterSchemaShape = {
   scope: memoryScopeSchema.optional(),
   scope_id: z.string().min(1).optional(),
   type: memoryTypeSchema.optional(),
+  summary_tier: memorySummaryTierSchema.optional(),
   status: memoryStatusSchema.optional(),
+  lifecycle_status: memoryLifecycleStatusSchema.optional(),
   fact_key: memoryFactKeyFilterSchema,
   source_floor_id: z.string().min(1).optional(),
   source_message_id: z.string().min(1).optional(),
@@ -315,6 +342,7 @@ const memoryItemJsonSchema = {
     scope: { type: "string", enum: ["global", "chat", "floor"] },
     scope_id: { type: "string" },
     type: { type: "string", enum: ["fact", "summary", "open_loop"] },
+    summary_tier: { anyOf: [{ type: "string", enum: ["micro", "macro"] }, { type: "null" }] },
     content: {},
     importance: { type: "number", minimum: 0, maximum: 1 },
     fact_key: { anyOf: [{ type: "string" }, { type: "null" }] },
@@ -322,6 +350,13 @@ const memoryItemJsonSchema = {
     source_floor_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     source_message_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     status: { type: "string", enum: ["active", "deprecated"] },
+    lifecycle_status: { type: "string", enum: ["active", "compacted", "deprecated"] },
+    source_job_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    token_count_estimate: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    last_used_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    coverage_start_floor_no: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    coverage_end_floor_no: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    derived_from_count: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
   },
@@ -336,7 +371,7 @@ const memoryEdgeJsonSchema = {
     id: { type: "string" },
     from_id: { type: "string" },
     to_id: { type: "string" },
-    relation: { type: "string", enum: ["supports", "contradicts", "updates"] },
+    relation: { type: "string", enum: ["supports", "contradicts", "updates", "derived_from", "compacts", "resolves"] },
     created_at: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
@@ -346,7 +381,9 @@ const memoryFilterJsonSchemaProperties = {
   scope: { type: "string", enum: ["global", "chat", "floor"] },
   scope_id: { type: "string", minLength: 1 },
   type: { type: "string", enum: ["fact", "summary", "open_loop"] },
+  summary_tier: { type: "string", enum: ["micro", "macro"] },
   status: { type: "string", enum: ["active", "deprecated"] },
+  lifecycle_status: { type: "string", enum: ["active", "compacted", "deprecated"] },
   fact_key: { type: "string", minLength: 1 },
   source_floor_id: { type: "string", minLength: 1 },
   source_message_id: { type: "string", minLength: 1 },
@@ -368,6 +405,7 @@ const createMemoryBodyJsonSchema = {
     scope: { type: "string", enum: ["global", "chat", "floor"] },
     scope_id: { type: "string", minLength: 1 },
     type: { type: "string", enum: ["fact", "summary", "open_loop"] },
+    summary_tier: { type: "string", enum: ["micro", "macro"] },
     content: {},
     importance: { type: "number", minimum: 0, maximum: 1 },
     fact_key: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
@@ -375,6 +413,7 @@ const createMemoryBodyJsonSchema = {
     source_floor_id: { type: "string", minLength: 1 },
     source_message_id: { type: "string", minLength: 1 },
     status: { type: "string", enum: ["active", "deprecated"] },
+    lifecycle_status: { type: "string", enum: ["active", "compacted", "deprecated"] },
   },
   additionalProperties: false,
 } as const;
@@ -435,7 +474,7 @@ const listMemoryEdgesQueryJsonSchema = {
     sort_by: { type: "string", enum: ["created_at"] },
     from_id: { type: "string", minLength: 1 },
     to_id: { type: "string", minLength: 1 },
-    relation: { type: "string", enum: ["supports", "contradicts", "updates"] },
+    relation: { type: "string", enum: ["supports", "contradicts", "updates", "derived_from", "compacts", "resolves"] },
   },
   additionalProperties: false,
 } as const;
@@ -452,7 +491,7 @@ const createMemoryEdgeBodyJsonSchema = {
   properties: {
     from_id: { type: "string", minLength: 1 },
     to_id: { type: "string", minLength: 1 },
-    relation: { type: "string", enum: ["supports", "contradicts", "updates"] },
+    relation: { type: "string", enum: ["supports", "contradicts", "updates", "derived_from", "compacts", "resolves"] },
   },
   additionalProperties: false,
 } as const;
@@ -461,7 +500,7 @@ const updateMemoryEdgeBodyJsonSchema = {
   type: "object",
   required: ["relation"],
   properties: {
-    relation: { type: "string", enum: ["supports", "contradicts", "updates"] },
+    relation: { type: "string", enum: ["supports", "contradicts", "updates", "derived_from", "compacts", "resolves"] },
   },
   additionalProperties: false,
 } as const;
@@ -653,6 +692,7 @@ function toMemoryItemResponse(row: typeof memoryItems.$inferSelect) {
     scope: row.scope,
     scope_id: row.scopeId,
     type: row.type,
+    summary_tier: row.summaryTier,
     content: parseJsonField(row.contentJson),
     fact_key: row.factKey,
     importance: row.importance,
@@ -660,6 +700,13 @@ function toMemoryItemResponse(row: typeof memoryItems.$inferSelect) {
     source_floor_id: row.sourceFloorId,
     source_message_id: row.sourceMessageId,
     status: row.status,
+    lifecycle_status: row.lifecycleStatus,
+    source_job_id: row.sourceJobId,
+    token_count_estimate: row.tokenCountEstimate,
+    last_used_at: row.lastUsedAt,
+    coverage_start_floor_no: row.coverageStartFloorNo,
+    coverage_end_floor_no: row.coverageEndFloorNo,
+    derived_from_count: row.derivedFromCount,
     created_at: row.createdAt,
     updated_at: row.updatedAt
   };
@@ -682,7 +729,9 @@ function buildMemoryFilters(
     | "scope"
     | "scope_id"
     | "type"
+    | "summary_tier"
     | "status"
+    | "lifecycle_status"
     | "fact_key"
     | "source_floor_id"
     | "source_message_id"
@@ -712,8 +761,16 @@ function buildMemoryFilters(
     filters.push(eq(memoryItems.type, query.type));
   }
 
+  if (query.summary_tier !== undefined) {
+    filters.push(eq(memoryItems.summaryTier, query.summary_tier));
+  }
+
   if (query.status !== undefined) {
     filters.push(eq(memoryItems.status, query.status));
+  }
+
+  if (query.lifecycle_status !== undefined) {
+    filters.push(eq(memoryItems.lifecycleStatus, query.lifecycle_status));
   }
 
   if (query.fact_key !== undefined) {
@@ -800,6 +857,8 @@ export async function registerMemoryRoutes(
     }
 
     const now = Date.now();
+    const storedStatus = resolveStoredStatus(parsedBody.data.status, parsedBody.data.lifecycle_status);
+    const storedLifecycleStatus = resolveStoredLifecycleStatus(storedStatus, parsedBody.data.lifecycle_status);
 
     const createdRows = await db
       .insert(memoryItems)
@@ -809,13 +868,21 @@ export async function registerMemoryRoutes(
         scope: parsedBody.data.scope,
         scopeId: parsedBody.data.scope_id,
         type: parsedBody.data.type,
+        summaryTier: parsedBody.data.type === "summary" ? parsedBody.data.summary_tier ?? null : null,
         contentJson,
         factKey: resolveStoredFactKey(parsedBody.data.type, parsedBody.data.fact_key),
         importance: parsedBody.data.importance ?? 0.5,
         confidence: parsedBody.data.confidence ?? 1,
         sourceFloorId: parsedBody.data.source_floor_id ?? null,
         sourceMessageId: parsedBody.data.source_message_id ?? null,
-        status: parsedBody.data.status ?? "active",
+        status: storedStatus,
+        lifecycleStatus: storedLifecycleStatus,
+        sourceJobId: null,
+        tokenCountEstimate: null,
+        lastUsedAt: null,
+        coverageStartFloorNo: null,
+        coverageEndFloorNo: null,
+        derivedFromCount: null,
         createdAt: now,
         updatedAt: now
       })
@@ -1011,6 +1078,7 @@ export async function registerMemoryRoutes(
       .update(memoryItems)
       .set({
         status: parsedBody.data.status,
+        lifecycleStatus: toLifecycleStatus(parsedBody.data.status),
         updatedAt: now,
       })
       .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
@@ -1167,6 +1235,14 @@ export async function registerMemoryRoutes(
       updates.type = parsedBody.data.type;
     }
 
+    if (nextType === "summary") {
+      if (parsedBody.data.summary_tier !== undefined) {
+        updates.summaryTier = parsedBody.data.summary_tier;
+      }
+    } else if (parsedBody.data.type !== undefined || parsedBody.data.summary_tier !== undefined) {
+      updates.summaryTier = null;
+    }
+
     if (parsedBody.data.content !== undefined) {
       const contentJson = stringifyJsonField(parsedBody.data.content);
 
@@ -1203,6 +1279,12 @@ export async function registerMemoryRoutes(
 
     if (parsedBody.data.status !== undefined) {
       updates.status = parsedBody.data.status;
+    }
+
+    if (parsedBody.data.lifecycle_status !== undefined) {
+      updates.lifecycleStatus = parsedBody.data.lifecycle_status;
+    } else if (parsedBody.data.status !== undefined) {
+      updates.lifecycleStatus = toLifecycleStatus(parsedBody.data.status);
     }
 
     const updatedRows = await db
