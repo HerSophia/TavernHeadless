@@ -8,6 +8,8 @@ import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js
 import { messages } from "../db/schema";
 import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
+import { getRequestAuthContext } from "../plugins/auth";
+import { getOwnedMessageById, getOwnedMessageIds, getOwnedPageById, getOwnedPageIds } from "../services/resource-ownership";
 
 const messageRoleSchema = z.enum(["user", "assistant", "system", "narrator"]);
 const messageFormatSchema = z.enum(["text", "markdown", "json"]);
@@ -371,6 +373,7 @@ export async function registerMessageRoutes(
         },
         400: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -378,6 +381,13 @@ export async function registerMessageRoutes(
 
     if (!parsedBody.ok) {
       return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const page = await getOwnedPageById(db, auth.accountId, parsedBody.data.page_id);
+
+    if (!page) {
+      return sendError(reply, 404, "not_found", "Message page not found");
     }
 
     const createdRows = await db
@@ -424,11 +434,27 @@ export async function registerMessageRoutes(
       return;
     }
 
-    const filters = [];
+    const auth = getRequestAuthContext(request);
+    const ownedPageIds = await getOwnedPageIds(
+      db,
+      auth.accountId,
+      parsedQuery.data.page_id !== undefined ? [parsedQuery.data.page_id] : undefined
+    );
 
-    if (parsedQuery.data.page_id !== undefined) {
-      filters.push(eq(messages.pageId, parsedQuery.data.page_id));
+    if (ownedPageIds.length === 0) {
+      return reply.send({
+        data: [],
+        meta: buildListMeta({
+          total: 0,
+          limit: parsedQuery.data.limit,
+          offset: parsedQuery.data.offset,
+          sortBy: parsedQuery.data.sort_by,
+          sortOrder: parsedQuery.data.sort_order
+        })
+      });
     }
+
+    const filters = [inArray(messages.pageId, ownedPageIds)];
 
     if (parsedQuery.data.role !== undefined) {
       filters.push(eq(messages.role, parsedQuery.data.role));
@@ -494,13 +520,19 @@ export async function registerMessageRoutes(
       return;
     }
 
-    const updatedRows = await db
-      .update(messages)
-      .set({
-        isHidden: parsedBody.data.is_hidden,
-      })
-      .where(inArray(messages.id, parsedBody.data.ids))
-      .returning();
+    const auth = getRequestAuthContext(request);
+    const ownedMessageIds = await getOwnedMessageIds(db, auth.accountId, parsedBody.data.ids);
+
+    const updatedRows =
+      ownedMessageIds.length === 0
+        ? []
+        : await db
+            .update(messages)
+            .set({
+              isHidden: parsedBody.data.is_hidden,
+            })
+            .where(inArray(messages.id, ownedMessageIds))
+            .returning();
 
     const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
     const results = parsedBody.data.ids.map((id, index) => {
@@ -549,10 +581,16 @@ export async function registerMessageRoutes(
       return;
     }
 
-    const deletedRows = await db
-      .delete(messages)
-      .where(inArray(messages.id, parsedBody.data.ids))
-      .returning();
+    const auth = getRequestAuthContext(request);
+    const ownedMessageIds = await getOwnedMessageIds(db, auth.accountId, parsedBody.data.ids);
+
+    const deletedRows =
+      ownedMessageIds.length === 0
+        ? []
+        : await db
+            .delete(messages)
+            .where(inArray(messages.id, ownedMessageIds))
+            .returning();
 
     const deletedIds = new Set(deletedRows.map((row) => row.id));
     const results = parsedBody.data.ids.map((id, index) => ({
@@ -596,11 +634,13 @@ export async function registerMessageRoutes(
       return;
     }
 
-    const [row] = await db.select().from(messages).where(eq(messages.id, parsedParams.data.id));
+    const auth = getRequestAuthContext(request);
+    const row = await getOwnedMessageById(db, auth.accountId, parsedParams.data.id);
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Message not found");
     }
+
 
     return reply.send({ data: toMessageResponse(row) });
   });
@@ -639,6 +679,13 @@ export async function registerMessageRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
+    const existingMessage = await getOwnedMessageById(db, auth.accountId, parsedParams.data.id);
+
+    if (!existingMessage) {
+      return sendError(reply, 404, "not_found", "Message not found");
+    }
+
     const updates: Partial<typeof messages.$inferInsert> = {};
 
     if (parsedBody.data.seq !== undefined) {
@@ -672,7 +719,7 @@ export async function registerMessageRoutes(
     const [updated] = await db
       .update(messages)
       .set(updates)
-      .where(eq(messages.id, parsedParams.data.id))
+      .where(eq(messages.id, existingMessage.id))
       .returning();
 
     if (!updated) {
@@ -708,6 +755,13 @@ export async function registerMessageRoutes(
 
     if (!parsedParams.ok) {
       return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const existingMessage = await getOwnedMessageById(db, auth.accountId, parsedParams.data.id);
+
+    if (!existingMessage) {
+      return sendError(reply, 404, "not_found", "Message not found");
     }
 
     const deleted = await db.delete(messages).where(eq(messages.id, parsedParams.data.id)).returning();

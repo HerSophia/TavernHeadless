@@ -228,10 +228,12 @@ SDK 还导出两个工具函数，用于手动构造请求时使用。
 
 ### buildAccountHeaders
 
-根据账号 ID 构造 `x-account-id` 请求头。多账号模式下使用。
+根据账号 ID 构造旧的 `x-account-id` 兼容请求头。
+
+这个头部不会单独完成认证，也不会直接切换账号。多账号身份必须来自已绑定账号的 API Key 或 JWT 账号 claim。SDK 各资源方法里的 `accountId` 参数，与这里构造的头部属于同一类兼容提示。
 
 ```ts
-import { buildAccountHeaders} from "@tavern/sdk";
+import { buildAccountHeaders } from "@tavern/sdk";
 
 const headers = buildAccountHeaders("account-1");
 // { "x-account-id": "account-1" }
@@ -239,7 +241,7 @@ const headers = buildAccountHeaders("account-1");
 
 | 参数 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `accountId` | `string?` | 账号 ID，为空时返回 `undefined` |
+| `accountId` | `string?` | 兼容用途的账号提示值；为空时返回 `undefined` |
 
 ### resolvePath
 

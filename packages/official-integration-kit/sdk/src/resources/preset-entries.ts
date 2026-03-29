@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { buildQueryString, compactObject, readArray, readBoolean, readNumber, readRecord, readString } from "./utils.js";
 
 export type PresetEntryRole = "assistant" | "system" | "user";
@@ -58,9 +58,9 @@ export type PresetEntriesBatchDeleteResult = {
 };
 
 export type PresetEntriesResource = {
-  batchDelete(options: { accountId?: string; identifiers: string[]; presetId: string }): Promise<PresetEntriesBatchDeleteResult>;
+  batchDelete(options: { accountId?: AccountIdHint; identifiers: string[]; presetId: string }): Promise<PresetEntriesBatchDeleteResult>;
   batchUpdate(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     fields: Partial<{
       content: string;
       enabled: boolean;
@@ -79,7 +79,7 @@ export type PresetEntriesResource = {
     presetId: string;
   }): Promise<PresetEntriesBatchUpdateResult>;
   create(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     content?: string;
     enabled?: boolean;
     extra?: Record<string, unknown>;
@@ -95,12 +95,12 @@ export type PresetEntriesResource = {
     role?: PresetEntryRole;
     systemPrompt?: boolean;
   }): Promise<PresetEntryRecord>;
-  getDetail(options: { accountId?: string; identifier: string; presetId: string }): Promise<PresetEntryRecord>;
-  list(options: { accountId?: string; enabled?: boolean; marker?: boolean; presetId: string }): Promise<PresetEntriesListResult>;
-  remove(options: { accountId?: string; identifier: string; presetId: string }): Promise<PresetEntryDeleteResult>;
-  reorder(options: { accountId?: string; identifiers: string[]; presetId: string }): Promise<PresetEntriesListResult>;
+  getDetail(options: { accountId?: AccountIdHint; identifier: string; presetId: string }): Promise<PresetEntryRecord>;
+  list(options: { accountId?: AccountIdHint; enabled?: boolean; marker?: boolean; presetId: string }): Promise<PresetEntriesListResult>;
+  remove(options: { accountId?: AccountIdHint; identifier: string; presetId: string }): Promise<PresetEntryDeleteResult>;
+  reorder(options: { accountId?: AccountIdHint; identifiers: string[]; presetId: string }): Promise<PresetEntriesListResult>;
   update(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     content?: string;
     enabled?: boolean;
     extra?: Record<string, unknown>;

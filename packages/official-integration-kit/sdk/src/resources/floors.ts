@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { TavernApiError } from "../errors/tavern-api-error.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
 import type { RegenerateResult } from "./messages.js";
@@ -37,7 +37,7 @@ export type FloorBranchResult = {
 };
 
 export type FloorsCreateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   branchId?: string;
   floorNo: number;
   parentFloorId?: string;
@@ -48,7 +48,7 @@ export type FloorsCreateOptions = {
 };
 
 export type FloorsListOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   branchId?: string;
   limit?: number;
   offset?: number;
@@ -59,12 +59,12 @@ export type FloorsListOptions = {
 };
 
 export type FloorsGetDetailOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   floorId: string;
 };
 
 export type FloorsUpdateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   branchId?: string;
   floorId: string;
   floorNo?: number;
@@ -75,18 +75,18 @@ export type FloorsUpdateOptions = {
 };
 
 export type FloorsRemoveOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   floorId: string;
 };
 
 export type FloorsBranchOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   branchId?: string;
   floorId: string;
 };
 
 export type FloorsRetryOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   confirmedExecutionIds?: string[];
   config?: RespondTurnConfig;
   floorId: string;

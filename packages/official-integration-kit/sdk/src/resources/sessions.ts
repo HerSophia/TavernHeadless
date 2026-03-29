@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { TavernApiError } from "../errors/tavern-api-error.js";
 import { readSseStream } from "../stream/read-sse.js";
 import type { RespondStreamCallbacks } from "../stream/event-types.js";
@@ -253,7 +253,7 @@ export type RespondDryRunResult = {
 };
 
 export type SessionsListOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   keyword?: string;
   limit?: number;
   offset?: number;
@@ -263,30 +263,30 @@ export type SessionsListOptions = {
 };
 
 export type SessionsCreateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   status?: "active" | "archived";
   title?: string;
 };
 
 export type SessionsGetDetailOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   sessionId: string;
 };
 
 export type SessionsUpdateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   sessionId: string;
   status?: "active" | "archived";
   title?: string;
 };
 
 export type SessionsRemoveOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   sessionId: string;
 };
 
 export type SessionsRespondBaseOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   branchId?: string;
   config?: RespondTurnConfig;
   generationParams?: RespondGenerationParams;
@@ -306,20 +306,20 @@ export type SessionsRespondStreamOptions = SessionsRespondOptions &
   };
 
 export type SessionsRegenerateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   config?: RespondTurnConfig;
   generationParams?: RespondGenerationParams;
   sessionId: string;
 };
 
 export type SessionsSyncCharacterOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   force?: boolean;
   sessionId: string;
 };
 
 export type SessionsTimelineOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   branchId?: string;
   limit?: number;
   offset?: number;
@@ -327,7 +327,7 @@ export type SessionsTimelineOptions = {
 };
 
 export type SessionsListBranchesOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   limit?: number;
   offset?: number;
   sessionId: string;
@@ -336,14 +336,14 @@ export type SessionsListBranchesOptions = {
 };
 
 export type SessionsDiffBranchesOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   baseBranchId?: string;
   sessionId: string;
   targetBranchId: string;
 };
 
 export type SessionsBatchUpdateStatusOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   ids: string[];
   status: "active" | "archived";
 };
@@ -363,7 +363,7 @@ export type SessionsBatchUpdateStatusResult = {
 };
 
 export type SessionsBatchDeleteOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   ids: string[];
 };
 
@@ -381,12 +381,12 @@ export type SessionsBatchDeleteResult = {
 };
 
 export type SessionsToolPermissionsOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   sessionId: string;
 };
 
 export type SessionsGetRuntimeToolCatalogOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   sessionId: string;
 };
 

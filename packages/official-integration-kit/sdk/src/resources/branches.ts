@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { buildQueryString, readNumber, readRecord, readString } from "./utils.js";
 
 export type BranchDeleteResult = {
@@ -8,7 +8,7 @@ export type BranchDeleteResult = {
 };
 
 export type BranchesRemoveOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   branchId: string;
   sessionId?: string;
 };

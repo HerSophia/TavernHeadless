@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -8,6 +8,8 @@ import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchD
 import { messagePages } from "../db/schema";
 import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
+import { getRequestAuthContext } from "../plugins/auth";
+import { getOwnedFloorById, getOwnedFloorIds, getOwnedPageById, getOwnedPageIds } from "../services/resource-ownership";
 
 const pageKindSchema = z.enum(["input", "output", "mixed"]);
 
@@ -164,6 +166,7 @@ export async function registerMessagePageRoutes(
       response: {
         201: pageResponseJsonSchema,
         400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
       },
     },
@@ -172,6 +175,13 @@ export async function registerMessagePageRoutes(
 
     if (!parsedBody.ok) {
       return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const floor = await getOwnedFloorById(db, auth.accountId, parsedBody.data.floor_id);
+
+    if (!floor) {
+      return sendError(reply, 404, "not_found", "Floor not found");
     }
 
     const now = Date.now();
@@ -214,11 +224,27 @@ export async function registerMessagePageRoutes(
       return;
     }
 
-    const filters = [];
+    const auth = getRequestAuthContext(request);
+    const ownedFloorIds = await getOwnedFloorIds(
+      db,
+      auth.accountId,
+      parsedQuery.data.floor_id !== undefined ? [parsedQuery.data.floor_id] : undefined
+    );
 
-    if (parsedQuery.data.floor_id !== undefined) {
-      filters.push(eq(messagePages.floorId, parsedQuery.data.floor_id));
+    if (ownedFloorIds.length === 0) {
+      return reply.send({
+        data: [],
+        meta: buildListMeta({
+          total: 0,
+          limit: parsedQuery.data.limit,
+          offset: parsedQuery.data.offset,
+          sortBy: parsedQuery.data.sort_by,
+          sortOrder: parsedQuery.data.sort_order
+        })
+      });
     }
+
+    const filters = [inArray(messagePages.floorId, ownedFloorIds)];
 
     if (parsedQuery.data.page_kind !== undefined) {
       filters.push(eq(messagePages.pageKind, parsedQuery.data.page_kind));
@@ -292,11 +318,13 @@ export async function registerMessagePageRoutes(
       return;
     }
 
-    const [row] = await db.select().from(messagePages).where(eq(messagePages.id, parsedParams.data.id));
+    const auth = getRequestAuthContext(request);
+    const row = await getOwnedPageById(db, auth.accountId, parsedParams.data.id);
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Message page not found");
     }
+
 
     return reply.send({ data: toPageResponse(row) });
   });
@@ -330,6 +358,13 @@ export async function registerMessagePageRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
+    const existingPage = await getOwnedPageById(db, auth.accountId, parsedParams.data.id);
+
+    if (!existingPage) {
+      return sendError(reply, 404, "not_found", "Message page not found");
+    }
+
     const updates: Partial<typeof messagePages.$inferInsert> = {
       updatedAt: Date.now()
     };
@@ -357,7 +392,7 @@ export async function registerMessagePageRoutes(
     const [updated] = await db
       .update(messagePages)
       .set(updates)
-      .where(eq(messagePages.id, parsedParams.data.id))
+      .where(eq(messagePages.id, existingPage.id))
       .returning();
 
     if (!updated) {
@@ -383,6 +418,13 @@ export async function registerMessagePageRoutes(
 
     if (!parsedParams.ok) {
       return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const existingPage = await getOwnedPageById(db, auth.accountId, parsedParams.data.id);
+
+    if (!existingPage) {
+      return sendError(reply, 404, "not_found", "Message page not found");
     }
 
     const deleted = await db.delete(messagePages).where(eq(messagePages.id, parsedParams.data.id)).returning();
@@ -414,11 +456,8 @@ export async function registerMessagePageRoutes(
 
     const targetId = parsedParams.data.id;
 
-    // 查找目标页
-    const [targetPage] = await db
-      .select()
-      .from(messagePages)
-      .where(eq(messagePages.id, targetId));
+    const auth = getRequestAuthContext(request);
+    const targetPage = await getOwnedPageById(db, auth.accountId, targetId);
 
     if (!targetPage) {
       return sendError(reply, 404, "not_found", "Message page not found");
@@ -475,12 +514,21 @@ export async function registerMessagePageRoutes(
     if (!bodyParsed.ok) return;
 
     const { ids } = bodyParsed.data;
+    const auth = getRequestAuthContext(request);
+    const ownedPageIds = new Set(await getOwnedPageIds(db, auth.accountId, ids));
+
     const results: { index: number; id: string; action: string }[] = [];
     let deleted = 0;
     let notFound = 0;
 
     db.transaction((tx) => {
       ids.forEach((id, index) => {
+        if (!ownedPageIds.has(id)) {
+          results.push({ index, id, action: "not_found" });
+          notFound++;
+          return;
+        }
+
         const rows = tx
           .delete(messagePages)
           .where(eq(messagePages.id, id))

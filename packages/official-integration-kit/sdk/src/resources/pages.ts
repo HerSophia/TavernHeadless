@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   compactObject,
   readArray,
@@ -24,7 +24,7 @@ export type PageRecord = {
 };
 
 export type PagesListOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   floorId?: string;
   isActive?: boolean;
   limit?: number;
@@ -35,7 +35,7 @@ export type PagesListOptions = {
 };
 
 export type PagesCreateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   checksum?: string;
   floorId: string;
   isActive?: boolean;
@@ -45,12 +45,12 @@ export type PagesCreateOptions = {
 };
 
 export type PagesGetDetailOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   pageId: string;
 };
 
 export type PagesUpdateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   checksum?: string;
   isActive?: boolean;
   pageId: string;
@@ -60,17 +60,17 @@ export type PagesUpdateOptions = {
 };
 
 export type PagesRemoveOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   pageId: string;
 };
 
 export type PagesActivateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   pageId: string;
 };
 
 export type PagesBatchDeleteOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   ids: string[];
 };
 

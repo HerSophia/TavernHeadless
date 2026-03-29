@@ -4,6 +4,12 @@ import type { AppDb } from "../db/client.js";
 import { accounts } from "../db/schema.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID, DEFAULT_ADMIN_ACCOUNT_NAME } from "./constants.js";
 
+export type AccountAuthState = {
+  id: string;
+  role: "admin" | "user";
+  status: "active" | "disabled";
+};
+
 export async function ensureDefaultAdminAccount(db: AppDb, now: () => number = Date.now): Promise<void> {
   const [existing] = await db
     .select({ id: accounts.id })
@@ -25,4 +31,18 @@ export async function ensureDefaultAdminAccount(db: AppDb, now: () => number = D
     createdAt: timestamp,
     updatedAt: timestamp,
   });
+}
+
+export async function getAccountAuthState(db: AppDb, accountId: string): Promise<AccountAuthState | null> {
+  const [account] = await db
+    .select({
+      id: accounts.id,
+      role: accounts.role,
+      status: accounts.status,
+    })
+    .from(accounts)
+    .where(eq(accounts.id, accountId))
+    .limit(1);
+
+  return account ?? null;
 }

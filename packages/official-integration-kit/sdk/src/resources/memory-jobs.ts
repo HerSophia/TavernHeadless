@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   buildQueryString,
   compactObject,
@@ -116,7 +116,7 @@ export type MemoryJobsListResult = {
 };
 
 export type MemoryJobsListOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   availableFrom?: number;
   availableTo?: number;
   createdFrom?: number;
@@ -140,9 +140,9 @@ export type MemoryJobMutationResult = {
 };
 
 export type MemoryJobsResource = {
-  cancel(options: { accountId?: string; jobId: string }): Promise<MemoryJobMutationResult>;
+  cancel(options: { accountId?: AccountIdHint; jobId: string }): Promise<MemoryJobMutationResult>;
   list(options?: MemoryJobsListOptions): Promise<MemoryJobsListResult>;
-  retry(options: { accountId?: string; jobId: string }): Promise<MemoryJobMutationResult>;
+  retry(options: { accountId?: AccountIdHint; jobId: string }): Promise<MemoryJobMutationResult>;
 };
 
 export function createMemoryJobsResource(client: TransportClient): MemoryJobsResource {

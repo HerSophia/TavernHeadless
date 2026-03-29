@@ -6,10 +6,11 @@ import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchDeleteBodyJsonSchema, batchStatusBodyJsonSchema, batchResultResponseJsonSchema } from "./schemas/common.js";
-import { accountUsers, characterVersions, floors, messagePages, messages, sessions } from "../db/schema";
+import { accountUsers, floors, messagePages, messages, sessions } from "../db/schema";
 import { ensureOptionalObjectBody, parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
+import { getLatestOwnedActiveCharacterVersion, getOwnedActiveCharacterVersionById } from "../services/resource-ownership";
 
 const sessionStatusSchema = z.enum(["active", "archived"]);
 const promptModeSchema = z.enum(["compat_strict", "compat_plus", "native"]);
@@ -685,6 +686,7 @@ type BindingResolutionError = {
 
 async function resolveCharacterBinding(
   db: DatabaseConnection["db"],
+  accountId: string,
   input: ResolveCharacterBindingInput
 ): Promise<ResolvedCharacterBinding | BindingResolutionError> {
   const syncPolicy = input.character_sync_policy ?? "pin";
@@ -707,18 +709,9 @@ async function resolveCharacterBinding(
     };
   }
 
-  const [versionRow] = input.character_version_id
-    ? await db
-        .select({ id: characterVersions.id, characterId: characterVersions.characterId, dataJson: characterVersions.dataJson })
-        .from(characterVersions)
-        .where(eq(characterVersions.id, input.character_version_id))
-        .limit(1)
-    : await db
-        .select({ id: characterVersions.id, characterId: characterVersions.characterId, dataJson: characterVersions.dataJson })
-        .from(characterVersions)
-        .where(eq(characterVersions.characterId, input.character_id ?? ""))
-        .orderBy(desc(characterVersions.versionNo))
-        .limit(1);
+  const versionRow = input.character_version_id
+    ? await getOwnedActiveCharacterVersionById(db, accountId, input.character_version_id)
+    : await getLatestOwnedActiveCharacterVersion(db, accountId, input.character_id ?? "");
 
   if (!versionRow) {
     return { statusCode: 404, code: "character_not_found", message: "Character or version not found" };
@@ -851,6 +844,7 @@ function sessionOwnershipFilter(sessionId: string, accountId: string) {
 
 async function syncCharacterBinding(
   db: DatabaseConnection["db"],
+  accountId: string,
   sessionRow: typeof sessions.$inferSelect,
   force: boolean
 ): Promise<SyncCharacterBindingResult | BindingResolutionError> {
@@ -870,15 +864,7 @@ async function syncCharacterBinding(
     };
   }
 
-  const [latestVersion] = await db
-    .select({
-      id: characterVersions.id,
-      dataJson: characterVersions.dataJson
-    })
-    .from(characterVersions)
-    .where(eq(characterVersions.characterId, sessionRow.characterId))
-    .orderBy(desc(characterVersions.versionNo))
-    .limit(1);
+  const latestVersion = await getLatestOwnedActiveCharacterVersion(db, accountId, sessionRow.characterId);
 
   if (!latestVersion) {
     return { statusCode: 404, code: "character_not_found", message: "Character version not found" };
@@ -931,7 +917,7 @@ export async function registerSessionRoutes(
     const now = Date.now();
     const auth = getRequestAuthContext(request);
 
-    const characterBinding = await resolveCharacterBinding(db, parsedBody.data);
+    const characterBinding = await resolveCharacterBinding(db, auth.accountId, parsedBody.data);
     const userBinding = await resolveUserBinding(db, auth.accountId, parsedBody.data);
     if ("statusCode" in characterBinding) {
       return sendError(reply, characterBinding.statusCode, characterBinding.code, characterBinding.message);
@@ -1149,6 +1135,8 @@ export async function registerSessionRoutes(
     let nextUserId = existingSession.userId;
     let nextUserSnapshotJson = existingSession.userSnapshotJson;
 
+    const existingCharacterSnapshot = (parseJsonField(existingSession.characterSnapshotJson) as z.infer<typeof characterSnapshotSchema> | null) ?? undefined;
+
     const hasCharacterBindingUpdate =
       parsedBody.data.character_id !== undefined ||
       parsedBody.data.character_version_id !== undefined ||
@@ -1158,17 +1146,24 @@ export async function registerSessionRoutes(
     const hasUserBindingUpdate = parsedBody.data.user_id !== undefined || parsedBody.data.user_snapshot !== undefined;
 
     if (hasCharacterBindingUpdate) {
+      const hasExplicitCharacterId = parsedBody.data.character_id !== undefined;
+      const hasExplicitCharacterVersionId = parsedBody.data.character_version_id !== undefined;
+      const hasExplicitCharacterTarget = hasExplicitCharacterId || hasExplicitCharacterVersionId;
+
       const bindingInput: ResolveCharacterBindingInput = {
-        character_id: parsedBody.data.character_id ?? existingSession.characterId ?? undefined,
-        character_version_id: parsedBody.data.character_version_id ?? existingSession.characterVersionId ?? undefined,
+        character_id: hasExplicitCharacterId
+          ? parsedBody.data.character_id
+          : existingSession.characterId ?? undefined,
+        character_version_id: hasExplicitCharacterVersionId
+          ? parsedBody.data.character_version_id
+          : hasExplicitCharacterId ? undefined : existingSession.characterVersionId ?? undefined,
         character_sync_policy: parsedBody.data.character_sync_policy ?? existingSession.characterSyncPolicy,
-        character_snapshot:
-          parsedBody.data.character_snapshot ??
-          (parseJsonField(existingSession.characterSnapshotJson) as z.infer<typeof characterSnapshotSchema> | null) ??
-          undefined
+        character_snapshot: parsedBody.data.character_snapshot !== undefined
+          ? parsedBody.data.character_snapshot
+          : hasExplicitCharacterTarget ? undefined : existingCharacterSnapshot
       };
 
-      const characterBinding = await resolveCharacterBinding(db, bindingInput);
+      const characterBinding = await resolveCharacterBinding(db, auth.accountId, bindingInput);
       if ("statusCode" in characterBinding) {
         return sendError(reply, characterBinding.statusCode, characterBinding.code, characterBinding.message);
       }
@@ -1315,7 +1310,7 @@ export async function registerSessionRoutes(
       return sendError(reply, 404, "not_found", "Session not found");
     }
 
-    const synced = await syncCharacterBinding(db, sessionRow, parsedBody.data.force ?? false);
+    const synced = await syncCharacterBinding(db, auth.accountId, sessionRow, parsedBody.data.force ?? false);
     if ("statusCode" in synced) {
       return sendError(reply, synced.statusCode, synced.code, synced.message);
     }

@@ -321,6 +321,8 @@ describe("Export routes multi-account isolation", () => {
     }
   });
 
+  const rootTokenForSetup = () => app.jwt.sign({ sub: "root", account_id: "default-admin", role: "user" });
+
   async function createAccount(token: string, id: string, name: string) {
     const response = await app.inject({
       method: "POST",
@@ -347,9 +349,10 @@ describe("Export routes multi-account isolation", () => {
   it("returns 404 when exporting a foreign session", async () => {
     const tokenA = app.jwt.sign({ sub: "u-a", account_id: "acc-a", role: "admin" });
     const tokenB = app.jwt.sign({ sub: "u-b", account_id: "acc-b", role: "admin" });
+    const rootToken = rootTokenForSetup();
 
-    await createAccount(tokenA, "acc-a", "Account A");
-    await createAccount(tokenB, "acc-b", "Account B");
+    await createAccount(rootToken, "acc-a", "Account A");
+    await createAccount(rootToken, "acc-b", "Account B");
 
     const sessionId = await createSession(authHeader(tokenA));
 

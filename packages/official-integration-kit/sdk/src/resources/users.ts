@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   buildQueryString,
   readArray,
@@ -21,7 +21,7 @@ export type UserDetail = UserRecord & {
 };
 
 export type UsersListOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   includeDeleted?: boolean;
   keyword?: string;
   limit?: number;
@@ -32,29 +32,29 @@ export type UsersListOptions = {
 };
 
 export type UsersCreateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   snapshot: Record<string, unknown>;
 };
 
 export type UsersGetDetailOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   userId: string;
 };
 
 export type UsersUpdateOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   snapshot?: Record<string, unknown>;
   status?: "active" | "disabled";
   userId: string;
 };
 
 export type UsersRemoveOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   userId: string;
 };
 
 export type UsersBatchUpdateStatusOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   ids: string[];
   status: "active" | "disabled";
 };
@@ -74,7 +74,7 @@ export type UsersBatchUpdateStatusResult = {
 };
 
 export type UsersBatchDeleteOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   ids: string[];
 };
 

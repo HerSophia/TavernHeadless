@@ -29,7 +29,24 @@ export type TransportClient = ApiClient & {
   fetchRaw(pathname: string, options?: TransportRequestOptions): Promise<Response>;
 };
 
-export function buildAccountHeaders(accountId?: string): Record<string, string> | undefined {
+/**
+ * 兼容用途的账号提示值。
+ *
+ * 这个值只会用于构造旧的 `x-account-id` 请求头。
+ * 它本身不会完成认证，也不会直接切换账号。
+ * 多账号身份必须来自已绑定账号的 API Key 或 JWT 账号 claim。
+ * 服务端授权以数据库中的账号记录为准。
+ */
+export type AccountIdHint = string;
+
+/**
+ * 构造旧的 `x-account-id` 兼容请求头。
+ *
+ * 这个头部不会单独完成认证，也不会直接切换账号。
+ * 多账号身份必须来自已绑定账号的 API Key 或 JWT 账号 claim。
+ * 服务端授权以数据库中的账号记录为准。
+ */
+export function buildAccountHeaders(accountId?: AccountIdHint): Record<string, string> | undefined {
   if (!accountId) {
     return undefined;
   }

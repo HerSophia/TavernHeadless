@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { buildQueryString, compactObject, readArray, readNumber, readRecord, readString } from "./utils.js";
 
 export type PresetListItem = {
@@ -49,12 +49,12 @@ export type PresetEditorDetail = PresetListItem & {
 };
 
 export type PresetsResource = {
-  getDetail(options: { accountId?: string; presetId: string }): Promise<PresetDetail>;
-  getEditor(options: { accountId?: string; presetId: string }): Promise<PresetEditorDetail>;
-  list(options?: { accountId?: string }): Promise<PresetListItem[]>;
-  remove(options: { accountId?: string; presetId: string }): Promise<void>;
+  getDetail(options: { accountId?: AccountIdHint; presetId: string }): Promise<PresetDetail>;
+  getEditor(options: { accountId?: AccountIdHint; presetId: string }): Promise<PresetEditorDetail>;
+  list(options?: { accountId?: AccountIdHint }): Promise<PresetListItem[]>;
+  remove(options: { accountId?: AccountIdHint; presetId: string }): Promise<void>;
   update(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     editor: {
       default_character_id: number;
       entries: Array<Record<string, unknown>>;

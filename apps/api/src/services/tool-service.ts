@@ -184,8 +184,11 @@ export class ToolService {
     return toDefinitionResponse(row);
   }
 
-  async getDefinition(id: string): Promise<ToolDefinitionResponse | null> {
-    const row = await this.repo.getDefinitionById(id);
+  async getDefinition(
+    id: string,
+    accountId: string,
+  ): Promise<ToolDefinitionResponse | null> {
+    const row = await this.repo.getDefinitionById(id, accountId);
     return row ? toDefinitionResponse(row) : null;
   }
 
@@ -201,6 +204,7 @@ export class ToolService {
 
   async updateDefinition(
     id: string,
+    accountId: string,
     input: UpdateDefinitionInput,
   ): Promise<ToolDefinitionResponse | null> {
     const updates: Record<string, unknown> = {};
@@ -221,21 +225,22 @@ export class ToolService {
       updates.handlerJson = stringifyJsonField(input.handler) ?? '{}';
     }
 
-    if (Object.keys(updates).length === 0) return this.getDefinition(id);
+    if (Object.keys(updates).length === 0) return this.getDefinition(id, accountId);
 
-    const row = await this.repo.updateDefinition(id, updates as any);
+    const row = await this.repo.updateDefinition(id, accountId, updates as any);
     return row ? toDefinitionResponse(row) : null;
   }
 
-  async deleteDefinition(id: string): Promise<boolean> {
-    return this.repo.deleteDefinition(id);
+  async deleteDefinition(id: string, accountId: string): Promise<boolean> {
+    return this.repo.deleteDefinition(id, accountId);
   }
 
   async toggleDefinition(
     id: string,
+    accountId: string,
     enabled: boolean,
   ): Promise<ToolDefinitionResponse | null> {
-    const row = await this.repo.toggleDefinition(id, enabled);
+    const row = await this.repo.toggleDefinition(id, accountId, enabled);
     return row ? toDefinitionResponse(row) : null;
   }
 

@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -8,6 +8,8 @@ import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js
 import { floors } from "../db/schema";
 import { ensureOptionalObjectBody, parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
+import { getRequestAuthContext } from "../plugins/auth";
+import { getOwnedFloorById, getOwnedSessionIds } from "../services/resource-ownership";
 
 const floorStateSchema = z.enum(["draft", "generating", "committed", "failed"]);
 
@@ -191,6 +193,7 @@ export async function registerFloorRoutes(
       response: {
         201: floorResponseJsonSchema,
         400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
       },
     },
@@ -199,6 +202,21 @@ export async function registerFloorRoutes(
 
     if (!parsedBody.ok) {
       return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const ownedSessionIds = await getOwnedSessionIds(db, auth.accountId, [parsedBody.data.session_id]);
+
+    if (ownedSessionIds.length === 0) {
+      return sendError(reply, 404, "not_found", "Session not found");
+    }
+
+    if (parsedBody.data.parent_floor_id !== undefined) {
+      const parentFloor = await getOwnedFloorById(db, auth.accountId, parsedBody.data.parent_floor_id);
+
+      if (!parentFloor) {
+        return sendError(reply, 404, "not_found", "Parent floor not found");
+      }
     }
 
     const now = Date.now();
@@ -241,11 +259,27 @@ export async function registerFloorRoutes(
       return;
     }
 
-    const filters = [];
+    const auth = getRequestAuthContext(request);
+    const ownedSessionIds = await getOwnedSessionIds(
+      db,
+      auth.accountId,
+      parsedQuery.data.session_id !== undefined ? [parsedQuery.data.session_id] : undefined
+    );
 
-    if (parsedQuery.data.session_id !== undefined) {
-      filters.push(eq(floors.sessionId, parsedQuery.data.session_id));
+    if (ownedSessionIds.length === 0) {
+      return reply.send({
+        data: [],
+        meta: buildListMeta({
+          total: 0,
+          limit: parsedQuery.data.limit,
+          offset: parsedQuery.data.offset,
+          sortBy: parsedQuery.data.sort_by,
+          sortOrder: parsedQuery.data.sort_order
+        })
+      });
     }
+
+    const filters = [inArray(floors.sessionId, ownedSessionIds)];
 
     if (parsedQuery.data.branch_id !== undefined) {
       filters.push(eq(floors.branchId, parsedQuery.data.branch_id));
@@ -316,11 +350,13 @@ export async function registerFloorRoutes(
       return;
     }
 
-    const [row] = await db.select().from(floors).where(eq(floors.id, parsedParams.data.id));
+    const auth = getRequestAuthContext(request);
+    const row = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Floor not found");
     }
+
 
     return reply.send({ data: toFloorResponse(row) });
   });
@@ -351,6 +387,21 @@ export async function registerFloorRoutes(
 
     if (!parsedBody.ok) {
       return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const existingFloor = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+
+    if (!existingFloor) {
+      return sendError(reply, 404, "not_found", "Floor not found");
+    }
+
+    if (parsedBody.data.parent_floor_id !== undefined) {
+      const parentFloor = await getOwnedFloorById(db, auth.accountId, parsedBody.data.parent_floor_id);
+
+      if (!parentFloor) {
+        return sendError(reply, 404, "not_found", "Parent floor not found");
+      }
     }
 
     const updates: Partial<typeof floors.$inferInsert> = {
@@ -384,7 +435,7 @@ export async function registerFloorRoutes(
     const [updated] = await db
       .update(floors)
       .set(updates)
-      .where(eq(floors.id, parsedParams.data.id))
+      .where(eq(floors.id, existingFloor.id))
       .returning();
 
     if (!updated) {
@@ -409,6 +460,13 @@ export async function registerFloorRoutes(
 
     if (!parsedParams.ok) {
       return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const existingFloor = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+
+    if (!existingFloor) {
+      return sendError(reply, 404, "not_found", "Floor not found");
     }
 
     const deleted = await db.delete(floors).where(eq(floors.id, parsedParams.data.id)).returning();
@@ -470,15 +528,13 @@ export async function registerFloorRoutes(
     const parsedBody = parseWithSchema(branchBodySchema, body, reply);
     if (!parsedBody.ok) return;
 
-    // 查找源楼层
-    const [sourceFloor] = await db
-      .select()
-      .from(floors)
-      .where(eq(floors.id, parsedParams.data.id));
+    const auth = getRequestAuthContext(request);
+    const sourceFloor = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
 
     if (!sourceFloor) {
       return sendError(reply, 404, "not_found", "Source floor not found");
     }
+
 
     if (sourceFloor.state !== "committed") {
       return sendError(reply, 409, "invalid_state", "Can only branch from a committed floor");
@@ -560,19 +616,24 @@ export async function registerFloorRoutes(
       return sendError(reply, 409, "protected_branch", "Main branch cannot be deleted");
     }
 
-    const conditions = [eq(floors.branchId, branchId)];
-    if (parsedQuery.data.session_id) {
-      conditions.push(eq(floors.sessionId, parsedQuery.data.session_id));
+    const auth = getRequestAuthContext(request);
+    const ownedSessionIds = parsedQuery.data.session_id
+      ? await getOwnedSessionIds(db, auth.accountId, [parsedQuery.data.session_id])
+      : await getOwnedSessionIds(db, auth.accountId);
+
+    if (ownedSessionIds.length === 0) {
+      return sendError(reply, 404, "not_found", "Branch not found");
     }
 
     const matchedRows = await db
       .select({ sessionId: floors.sessionId })
       .from(floors)
-      .where(and(...conditions));
+      .where(and(eq(floors.branchId, branchId), inArray(floors.sessionId, ownedSessionIds)));
 
     if (matchedRows.length === 0) {
       return sendError(reply, 404, "not_found", "Branch not found");
     }
+
 
     const sessionIds = Array.from(new Set(matchedRows.map((row) => row.sessionId)));
 

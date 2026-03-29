@@ -34,12 +34,24 @@ AUTH_MODE=off
 
 # AUTH_MODE=api_key 时启用
 # AUTH_API_KEYS=dev-key-1,dev-key-2
+# ACCOUNT_MODE=multi + AUTH_MODE=api_key 时必填
+# AUTH_API_KEY_ACCOUNTS=dev-key-1:default-admin,dev-key-2:workspace-a
 
 # AUTH_MODE=jwt 时启用
 # AUTH_JWT_SECRET=replace-with-strong-secret
+# ACCOUNT_MODE=multi + AUTH_MODE=jwt 时可选
+# 默认从 account_id claim 读取账号
+# AUTH_JWT_ACCOUNT_CLAIM=account_id
 
 # 账号模式：single（默认）| multi
 # ACCOUNT_MODE=single
+# 注意：ACCOUNT_MODE=multi 不能与 AUTH_MODE=off 一起使用
+
+# 认证后的角色和状态以数据库 account 行中的 role / status 为准
+# JWT 的 role claim 不直接授予管理员权限
+
+# WebSocket 事件转发（默认开启）
+# ENABLE_WEBSOCKET=true
 
 # LLM Profile Vault（数据库密钥加密）
 # APP_SECRETS_MASTER_KEY=replace-with-strong-secret

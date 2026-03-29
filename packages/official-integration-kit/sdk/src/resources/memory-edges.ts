@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { buildQueryString, readArray, readBoolean, readNumber, readRecord, readString } from "./utils.js";
 
 export type MemoryRelation = "supports" | "contradicts" | "updates" | "derived_from" | "compacts" | "resolves";
@@ -12,10 +12,10 @@ export type MemoryEdgeRecord = {
 };
 
 export type MemoryEdgesResource = {
-  create(options: { accountId?: string; fromId: string; relation: MemoryRelation; toId: string }): Promise<MemoryEdgeRecord>;
-  getDetail(options: { accountId?: string; edgeId: string }): Promise<MemoryEdgeRecord>;
+  create(options: { accountId?: AccountIdHint; fromId: string; relation: MemoryRelation; toId: string }): Promise<MemoryEdgeRecord>;
+  getDetail(options: { accountId?: AccountIdHint; edgeId: string }): Promise<MemoryEdgeRecord>;
   list(options?: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     fromId?: string;
     limit?: number;
     offset?: number;
@@ -24,8 +24,8 @@ export type MemoryEdgesResource = {
     sortOrder?: "asc" | "desc";
     toId?: string;
   }): Promise<MemoryEdgeRecord[]>;
-  remove(options: { accountId?: string; edgeId: string }): Promise<boolean>;
-  update(options: { accountId?: string; edgeId: string; relation: MemoryRelation }): Promise<MemoryEdgeRecord>;
+  remove(options: { accountId?: AccountIdHint; edgeId: string }): Promise<boolean>;
+  update(options: { accountId?: AccountIdHint; edgeId: string; relation: MemoryRelation }): Promise<MemoryEdgeRecord>;
 };
 
 export function createMemoryEdgesResource(client: TransportClient): MemoryEdgesResource {

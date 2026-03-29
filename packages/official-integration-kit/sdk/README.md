@@ -68,12 +68,17 @@ const client = createTavernClient({
   baseUrl: "http://localhost:3000",
   getHeaders: () => ({
     authorization: "Bearer <token>",
-    "x-account-id": "account-1",
   }),
 });
 ```
 
 这个函数支持返回 `Promise`，所以异步取 token 也没问题。
+
+如果服务端启用了多账号：
+
+- `AUTH_MODE=jwt` 时，应当使用**已经带有目标账号 claim** 的 JWT；默认 claim 字段名是 `account_id`，可由服务端通过 `AUTH_JWT_ACCOUNT_CLAIM` 改名
+- `AUTH_MODE=api_key` 时，应当由服务端通过 `AUTH_API_KEY_ACCOUNTS` 把 API Key 绑定到账号
+- SDK 各资源方法里的 `accountId` 参数，以及 `buildAccountHeaders()` 生成的 `x-account-id` 头，都只是兼容头提示，不能替代服务端认证，也不会直接切换账号
 
 ### 用底层方法直接请求
 
@@ -361,18 +366,23 @@ const executions = await client.tools.listExecutions({
 
 ```ts
 const servers = await client.mcp.listServers({
+  accountId: "account-1",
   limit: 20,
   offset: 0,
 });
 
 const status = await client.mcp.getServerStatus({
+  accountId: "account-1",
   serverId: "mcp-1",
 });
 
 const tools = await client.mcp.listServerTools({
+  accountId: "account-1",
   serverId: "mcp-1",
 });
 ```
+
+多账号模式下，MCP 配置和运行时状态都是账号私有资源。访问其他账号的 MCP 配置会得到 `404`。
 
 `getServerStatus()` 和 `listStatuses()` 会保留 `reconnectRequired`、`lastTimeoutAt` 这些运行时字段。
 

@@ -85,10 +85,15 @@ const client = createTavernClient({
   baseUrl: "http://localhost:3000",
   getHeaders: () => ({
     authorization: "Bearer <token>",
-    "x-account-id": "account-1",
   }),
 });
 ```
+
+如果服务端启用了多账号：
+
+- `AUTH_MODE=jwt` 时，应当使用已经带有目标账号 claim 的 JWT；默认 claim 字段名是 `account_id`，可由服务端通过 `AUTH_JWT_ACCOUNT_CLAIM` 改名
+- `AUTH_MODE=api_key` 时，应当由服务端通过 `AUTH_API_KEY_ACCOUNTS` 把 API Key 绑定到账号
+- SDK 各资源方法里的 `accountId` 参数，以及 `buildAccountHeaders()` 生成的 `x-account-id`，都只是兼容头提示，不能替代服务端认证，也不会直接切换账号
 
 ### 调用资源
 

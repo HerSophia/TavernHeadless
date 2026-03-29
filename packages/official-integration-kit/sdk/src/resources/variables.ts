@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   buildQueryString,
   readArray,
@@ -62,9 +62,9 @@ export type VariablesUpsertManyResult = {
 };
 
 export type VariablesResource = {
-  getDetail(options: { accountId?: string; variableId: string }): Promise<VariableRecord>;
+  getDetail(options: { accountId?: AccountIdHint; variableId: string }): Promise<VariableRecord>;
   list(options?: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     key?: string;
     limit?: number;
     offset?: number;
@@ -74,22 +74,22 @@ export type VariablesResource = {
     sortOrder?: "asc" | "desc";
   }): Promise<VariableRecord[]>;
   resolveContext(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     floorId?: string;
     includeLayers?: boolean;
     pageId?: string;
     sessionId: string;
   }): Promise<ResolvedVariablesSnapshot>;
-  remove(options: { accountId?: string; variableId: string }): Promise<boolean>;
+  remove(options: { accountId?: AccountIdHint; variableId: string }): Promise<boolean>;
   upsert(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     key: string;
     scope: VariableScope;
     scopeId: string;
     value: unknown;
   }): Promise<VariableRecord>;
   upsertMany(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     items: Array<{
       key: string;
       scope: VariableScope;

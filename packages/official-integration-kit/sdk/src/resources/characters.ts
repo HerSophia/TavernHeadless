@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   buildQueryString,
   compactObject,
@@ -43,7 +43,7 @@ export type CharacterDetail = {
 };
 
 export type CharactersListOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   keyword?: string;
   limit?: number;
   offset?: number;
@@ -53,7 +53,7 @@ export type CharactersListOptions = {
 };
 
 export type CharactersListVersionsOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   characterId: string;
   limit?: number;
   offset?: number;
@@ -62,22 +62,22 @@ export type CharactersListVersionsOptions = {
 };
 
 export type CharactersRollbackVersionOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   characterId: string;
   versionId: string;
 };
 
 export type CharactersResource = {
   createVersion(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     characterId: string;
     snapshot: Record<string, unknown>;
   }): Promise<CharacterVersion>;
-  getDetail(options: { accountId?: string; characterId: string }): Promise<CharacterDetail>;
+  getDetail(options: { accountId?: AccountIdHint; characterId: string }): Promise<CharacterDetail>;
   list(options?: CharactersListOptions): Promise<CharacterListItem[]>;
   listVersions(options: CharactersListVersionsOptions): Promise<CharacterVersion[]>;
-  remove(options: { accountId?: string; characterId: string }): Promise<void>;
-  restore(options: { accountId?: string; characterId: string }): Promise<void>;
+  remove(options: { accountId?: AccountIdHint; characterId: string }): Promise<void>;
+  restore(options: { accountId?: AccountIdHint; characterId: string }): Promise<void>;
   rollbackVersion(options: CharactersRollbackVersionOptions): Promise<CharacterRollbackVersion>;
 };
 

@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   buildQueryString,
   compactObject,
@@ -86,9 +86,9 @@ export type McpServersListResult = {
 };
 
 export type McpResource = {
-  connectServer(options: { accountId?: string; serverId: string }): Promise<McpServerStatus>;
+  connectServer(options: { accountId?: AccountIdHint; serverId: string }): Promise<McpServerStatus>;
   createServer(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     callTimeoutMs?: number;
     connectTimeoutMs?: number;
     defaultSideEffectLevel?: McpDefaultSideEffectLevel;
@@ -100,24 +100,24 @@ export type McpResource = {
     toolRefreshIntervalMs?: number;
     transport: McpTransport;
   }): Promise<McpServerRecord>;
-  disconnectServer(options: { accountId?: string; serverId: string }): Promise<McpServerStatus>;
-  getServer(options: { accountId?: string; serverId: string }): Promise<McpServerRecord>;
-  getServerStatus(options: { accountId?: string; serverId: string }): Promise<McpServerStatus>;
-  listServerTools(options: { accountId?: string; serverId: string }): Promise<McpServerToolRecord[]>;
+  disconnectServer(options: { accountId?: AccountIdHint; serverId: string }): Promise<McpServerStatus>;
+  getServer(options: { accountId?: AccountIdHint; serverId: string }): Promise<McpServerRecord>;
+  getServerStatus(options: { accountId?: AccountIdHint; serverId: string }): Promise<McpServerStatus>;
+  listServerTools(options: { accountId?: AccountIdHint; serverId: string }): Promise<McpServerToolRecord[]>;
   listServers(options?: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     enabled?: boolean;
     limit?: number;
     offset?: number;
     sortBy?: "created_at" | "name";
     sortOrder?: "asc" | "desc";
   }): Promise<McpServersListResult>;
-  listStatuses(options?: { accountId?: string }): Promise<McpServerStatus[]>;
-  removeServer(options: { accountId?: string; serverId: string }): Promise<boolean>;
-  testServer(options: { accountId?: string; serverId: string }): Promise<McpTestResult>;
-  toggleServer(options: { accountId?: string; enabled: boolean; serverId: string }): Promise<McpServerRecord>;
+  listStatuses(options?: { accountId?: AccountIdHint }): Promise<McpServerStatus[]>;
+  removeServer(options: { accountId?: AccountIdHint; serverId: string }): Promise<boolean>;
+  testServer(options: { accountId?: AccountIdHint; serverId: string }): Promise<McpTestResult>;
+  toggleServer(options: { accountId?: AccountIdHint; enabled: boolean; serverId: string }): Promise<McpServerRecord>;
   updateServer(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     callTimeoutMs?: number;
     connectTimeoutMs?: number;
     defaultSideEffectLevel?: McpDefaultSideEffectLevel;

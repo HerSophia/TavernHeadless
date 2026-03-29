@@ -148,6 +148,13 @@
       "when": 1762000000000,
       "tag": "0020_memory_v2_schema_infra",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1762100000000,
+      "tag": "0021_mcp_account_scope",
+      "breakpoints": true
     }
   ]
 }

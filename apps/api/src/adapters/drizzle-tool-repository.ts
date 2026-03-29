@@ -6,7 +6,7 @@
 
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import type { AppDb } from "../db/client.js";
-import { messagePages, toolCallRecords, toolDefinitions } from "../db/schema.js";
+import { floors, messagePages, sessions, toolCallRecords, toolDefinitions } from "../db/schema.js";
 import type { ToolCallRecord, ToolCallStatus } from "@tavern/core";
 import type { InstanceSlot } from "@tavern/core";
 
@@ -26,6 +26,7 @@ export interface ToolCallRecordInsert {
 }
 
 export interface ToolCallRecordQuery {
+  accountId: string;
   pageId?: string;
   floorId?: string;
   callerSlot?: string;
@@ -58,7 +59,7 @@ export interface ToolDefinitionInsert {
 }
 
 export interface ToolDefinitionQuery {
-  accountId?: string;
+  accountId: string;
   source?: string;
   sourceId?: string;
   enabled?: boolean;
@@ -102,7 +103,7 @@ export class DrizzleToolRepository {
     records: ToolCallRecord[];
     total: number;
   }> {
-    const conditions = [];
+    const conditions = [eq(sessions.accountId, query.accountId)];
 
 
     if (query.pageId) {
@@ -130,6 +131,8 @@ export class DrizzleToolRepository {
       .select({ row: toolCallRecords })
       .from(toolCallRecords)
       .innerJoin(messagePages, eq(toolCallRecords.pageId, messagePages.id))
+      .innerJoin(floors, eq(messagePages.floorId, floors.id))
+      .innerJoin(sessions, eq(floors.sessionId, sessions.id))
       .where(where)
       .orderBy(order, asc(toolCallRecords.seq))
       .limit(limit)
@@ -139,6 +142,8 @@ export class DrizzleToolRepository {
       .select({ count: sql<number>`count(*)` })
       .from(toolCallRecords)
       .innerJoin(messagePages, eq(toolCallRecords.pageId, messagePages.id))
+      .innerJoin(floors, eq(messagePages.floorId, floors.id))
+      .innerJoin(sessions, eq(floors.sessionId, sessions.id))
       .where(where);
 
     const total = countRow?.count ?? 0;
@@ -195,11 +200,14 @@ export class DrizzleToolRepository {
   /**
    * 按 ID 获取工具定义。
    */
-  async getDefinitionById(id: string): Promise<ToolDefinitionRow | null> {
+  async getDefinitionById(id: string, accountId: string): Promise<ToolDefinitionRow | null> {
     const [row] = await this.db
       .select()
       .from(toolDefinitions)
-      .where(eq(toolDefinitions.id, id))
+      .where(and(
+        eq(toolDefinitions.id, id),
+        eq(toolDefinitions.accountId, accountId),
+      ))
       .limit(1);
 
     return row ?? null;
@@ -212,11 +220,7 @@ export class DrizzleToolRepository {
     definitions: ToolDefinitionRow[];
     total: number;
   }> {
-    const conditions = [];
-
-    if (query.accountId) {
-      conditions.push(eq(toolDefinitions.accountId, query.accountId));
-    }
+    const conditions = [eq(toolDefinitions.accountId, query.accountId)];
     if (query.source) {
       conditions.push(eq(toolDefinitions.source, query.source as 'preset' | 'character' | 'custom'));
     }
@@ -255,9 +259,10 @@ export class DrizzleToolRepository {
    */
   async updateDefinition(
     id: string,
-    data: Partial<Omit<ToolDefinitionInsert, 'id' | 'createdAt'>>,
+    accountId: string,
+    data: Partial<Omit<ToolDefinitionInsert, 'id' | 'createdAt' | 'accountId'>>,
   ): Promise<ToolDefinitionRow | null> {
-    const existing = await this.getDefinitionById(id);
+    const existing = await this.getDefinitionById(id, accountId);
     if (!existing) return null;
 
     await this.db
@@ -266,18 +271,18 @@ export class DrizzleToolRepository {
         ...data,
         updatedAt: Date.now(),
       })
-      .where(eq(toolDefinitions.id, id));
+      .where(and(eq(toolDefinitions.id, id), eq(toolDefinitions.accountId, accountId)));
 
-    return this.getDefinitionById(id);
+    return this.getDefinitionById(id, accountId);
   }
 
   /**
    * 删除工具定义。
    */
-  async deleteDefinition(id: string): Promise<boolean> {
+  async deleteDefinition(id: string, accountId: string): Promise<boolean> {
     const result = await this.db
       .delete(toolDefinitions)
-      .where(eq(toolDefinitions.id, id));
+      .where(and(eq(toolDefinitions.id, id), eq(toolDefinitions.accountId, accountId)));
 
     return (result.changes ?? 0) > 0;
   }
@@ -285,7 +290,7 @@ export class DrizzleToolRepository {
   /**
    * 启用/禁用工具定义。
    */
-  async toggleDefinition(id: string, enabled: boolean): Promise<ToolDefinitionRow | null> {
-    return this.updateDefinition(id, { enabled });
+  async toggleDefinition(id: string, accountId: string, enabled: boolean): Promise<ToolDefinitionRow | null> {
+    return this.updateDefinition(id, accountId, { enabled });
   }
 }

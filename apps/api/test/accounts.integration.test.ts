@@ -36,8 +36,17 @@ describe("Account routes", () => {
       auth: { mode: "jwt", jwtSecret: "test-secret" }
     }));
 
-    adminToken = app.jwt.sign({ sub: "u-admin", account_id: "default-admin", role: "admin" });
-    userToken = app.jwt.sign({ sub: "u-user", account_id: "default-admin", role: "user" });
+    const bootstrapAdminToken = app.jwt.sign({ sub: "bootstrap-admin", account_id: "default-admin", role: "user" });
+    const createUserAccountRes = await app.inject({
+      method: "POST",
+      url: "/accounts",
+      headers: { authorization: `Bearer ${bootstrapAdminToken}` },
+      payload: { id: "acc-user", name: "User Account", role: "user" }
+    });
+    expect(createUserAccountRes.statusCode, createUserAccountRes.body).toBe(201);
+
+    adminToken = app.jwt.sign({ sub: "u-admin", account_id: "default-admin", role: "user" });
+    userToken = app.jwt.sign({ sub: "u-user", account_id: "acc-user", role: "admin" });
   });
 
   afterEach(async () => {
@@ -47,6 +56,23 @@ describe("Account routes", () => {
   function authHeader(token: string) {
     return { authorization: `Bearer ${token}` };
   }
+
+  it("uses account table role instead of jwt role claim", async () => {
+    const adminListRes = await app.inject({
+      method: "GET",
+      url: "/accounts",
+      headers: authHeader(adminToken)
+    });
+    expect(adminListRes.statusCode).toBe(200);
+
+    const userListRes = await app.inject({
+      method: "GET",
+      url: "/accounts",
+      headers: authHeader(userToken)
+    });
+    expect(userListRes.statusCode).toBe(403);
+    expect(userListRes.json<ErrorResponse>().error.code).toBe("account_forbidden");
+  });
 
   it("covers account create/get/update/delete branches", async () => {
     const forbiddenCreateRes = await app.inject({

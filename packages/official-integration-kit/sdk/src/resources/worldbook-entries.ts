@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { buildQueryString, compactObject, readArray, readBoolean, readNullableNumber, readNumber, readRecord, readString } from "./utils.js";
 
 export type WorldbookEntryRecord = {
@@ -57,10 +57,10 @@ export type WorldbookEntriesBatchDeleteResult = {
 };
 
 export type WorldbookEntriesResource = {
-  batchDelete(options: { accountId?: string; ids: string[]; worldbookId: string }): Promise<WorldbookEntriesBatchDeleteResult>;
-  batchReorder(options: { accountId?: string; items: Array<{ id: string; order: number }>; worldbookId: string }): Promise<WorldbookEntriesBatchUpdateResult>;
+  batchDelete(options: { accountId?: AccountIdHint; ids: string[]; worldbookId: string }): Promise<WorldbookEntriesBatchDeleteResult>;
+  batchReorder(options: { accountId?: AccountIdHint; items: Array<{ id: string; order: number }>; worldbookId: string }): Promise<WorldbookEntriesBatchUpdateResult>;
   batchUpdate(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     fields: Partial<{
       case_sensitive: boolean | null;
       comment: string;
@@ -82,7 +82,7 @@ export type WorldbookEntriesResource = {
     worldbookId: string;
   }): Promise<WorldbookEntriesBatchUpdateResult>;
   create(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     caseSensitive?: boolean | null;
     comment?: string;
     constant?: boolean;
@@ -100,9 +100,9 @@ export type WorldbookEntriesResource = {
     selectiveLogic?: number;
     worldbookId: string;
   }): Promise<WorldbookEntryRecord>;
-  getDetail(options: { accountId?: string; entryId: string; worldbookId: string }): Promise<WorldbookEntryRecord>;
+  getDetail(options: { accountId?: AccountIdHint; entryId: string; worldbookId: string }): Promise<WorldbookEntryRecord>;
   list(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     constant?: boolean;
     disable?: boolean;
     limit?: number;
@@ -113,9 +113,9 @@ export type WorldbookEntriesResource = {
     sortOrder?: "asc" | "desc";
     worldbookId: string;
   }): Promise<WorldbookEntryRecord[]>;
-  remove(options: { accountId?: string; entryId: string; worldbookId: string }): Promise<WorldbookEntryDeleteResult>;
+  remove(options: { accountId?: AccountIdHint; entryId: string; worldbookId: string }): Promise<WorldbookEntryDeleteResult>;
   update(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     caseSensitive?: boolean | null;
     comment?: string;
     constant?: boolean;

@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   buildQueryString,
   compactObject,
@@ -44,7 +44,7 @@ export type MemoryScopesListResult = {
 };
 
 export type MemoryScopesListOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   limit?: number;
   offset?: number;
   scope?: MemoryScope;
@@ -69,7 +69,7 @@ export type MemoryScopeCompactResult = MemoryScopeJobResult & {
 
 export type MemoryScopesResource = {
   compact(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     force?: boolean;
     scope: MemoryScope;
     scopeId: string;
@@ -77,7 +77,7 @@ export type MemoryScopesResource = {
   }): Promise<MemoryScopeCompactResult>;
   list(options?: MemoryScopesListOptions): Promise<MemoryScopesListResult>;
   rebuild(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     forceCompaction?: boolean;
     scope: MemoryScope;
     scopeId: string;

@@ -1,4 +1,4 @@
-import { buildAccountHeaders, type TransportClient } from "../client/transport.js";
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   buildQueryString,
   compactObject,
@@ -84,7 +84,7 @@ export type MemoriesBatchDeleteResult = {
 };
 
 export type MemoriesListOptions = {
-  accountId?: string;
+  accountId?: AccountIdHint;
   confidenceMax?: number;
   confidenceMin?: number;
   createdFrom?: number;
@@ -110,10 +110,10 @@ export type MemoriesListOptions = {
 };
 
 export type MemoriesResource = {
-  batchDelete(options: { accountId?: string; ids: string[] }): Promise<MemoriesBatchDeleteResult>;
-  batchUpdateStatus(options: { accountId?: string; ids: string[]; status: MemoryStatus }): Promise<MemoriesBatchUpdateStatusResult>;
+  batchDelete(options: { accountId?: AccountIdHint; ids: string[] }): Promise<MemoriesBatchDeleteResult>;
+  batchUpdateStatus(options: { accountId?: AccountIdHint; ids: string[]; status: MemoryStatus }): Promise<MemoriesBatchUpdateStatusResult>;
   create(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     confidence?: number;
     content: unknown;
     factKey?: string | null;
@@ -127,12 +127,12 @@ export type MemoriesResource = {
     summaryTier?: MemorySummaryTier;
     type: MemoryType;
   }): Promise<MemoryRecord>;
-  getDetail(options: { accountId?: string; memoryId: string }): Promise<MemoryRecord>;
+  getDetail(options: { accountId?: AccountIdHint; memoryId: string }): Promise<MemoryRecord>;
   getStats(options?: MemoriesListOptions): Promise<MemoryStats>;
   list(options?: MemoriesListOptions): Promise<MemoryRecord[]>;
-  remove(options: { accountId?: string; memoryId: string }): Promise<boolean>;
+  remove(options: { accountId?: AccountIdHint; memoryId: string }): Promise<boolean>;
   update(options: {
-    accountId?: string;
+    accountId?: AccountIdHint;
     confidence?: number;
     content?: unknown;
     factKey?: string | null;
