@@ -857,6 +857,7 @@ describe("Worldbook Entry Routes", () => {
         accountMode: "multi",
       }));
 
+      const rootToken = multiApp.jwt.sign({ sub: "root", account_id: "default-admin", role: "user" });
       tokenA = multiApp.jwt.sign({ sub: "u-a", account_id: "acc-a", role: "admin" });
       tokenB = multiApp.jwt.sign({ sub: "u-b", account_id: "acc-b", role: "admin" });
 
@@ -864,13 +865,13 @@ describe("Worldbook Entry Routes", () => {
       await multiApp.inject({
         method: "POST",
         url: "/accounts",
-        headers: { authorization: `Bearer ${tokenA}` },
+        headers: { authorization: `Bearer ${rootToken}` },
         payload: { id: "acc-a", name: "Account A" },
       });
       await multiApp.inject({
         method: "POST",
         url: "/accounts",
-        headers: { authorization: `Bearer ${tokenB}` },
+        headers: { authorization: `Bearer ${rootToken}` },
         payload: { id: "acc-b", name: "Account B" },
       });
     });

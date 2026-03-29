@@ -372,13 +372,14 @@ describe("LLM Instance Config Routes", () => {
       auth: { mode: "jwt", jwtSecret: "test-secret" },
     }));
 
+    const rootToken = app.jwt.sign({ sub: "root", role: "user", account_id: "default-admin" });
     const tokenA = app.jwt.sign({ sub: "user-a", role: "admin", account_id: "acc-a" });
     const tokenB = app.jwt.sign({ sub: "user-b", role: "admin", account_id: "acc-b" });
 
     const accountARes = await app.inject({
       method: "POST",
       url: "/accounts",
-      headers: { authorization: `Bearer ${tokenA}` },
+      headers: { authorization: `Bearer ${rootToken}` },
       payload: { id: "acc-a", name: "Account A" },
     });
     expect(accountARes.statusCode).toBe(201);
@@ -386,7 +387,7 @@ describe("LLM Instance Config Routes", () => {
     const accountBRes = await app.inject({
       method: "POST",
       url: "/accounts",
-      headers: { authorization: `Bearer ${tokenB}` },
+      headers: { authorization: `Bearer ${rootToken}` },
       payload: { id: "acc-b", name: "Account B" },
     });
     expect(accountBRes.statusCode).toBe(201);

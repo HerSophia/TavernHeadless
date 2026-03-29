@@ -630,13 +630,14 @@ describe("memory routes with multi-account auth", () => {
       auth: { mode: "jwt", jwtSecret: "test-secret" }
     }));
 
+    const rootToken = app.jwt.sign({ sub: "root", account_id: "default-admin", role: "user" });
     tokenA = app.jwt.sign({ sub: "u-a", account_id: "acc-a", role: "admin" });
     tokenB = app.jwt.sign({ sub: "u-b", account_id: "acc-b", role: "admin" });
 
     const createAccountAResponse = await app.inject({
       method: "POST",
       url: "/accounts",
-      headers: authHeader(tokenA),
+      headers: authHeader(rootToken),
       payload: { id: "acc-a", name: "Account A" }
     });
     expect(createAccountAResponse.statusCode).toBe(201);
@@ -644,7 +645,7 @@ describe("memory routes with multi-account auth", () => {
     const createAccountBResponse = await app.inject({
       method: "POST",
       url: "/accounts",
-      headers: authHeader(tokenB),
+      headers: authHeader(rootToken),
       payload: { id: "acc-b", name: "Account B" }
     });
     expect(createAccountBResponse.statusCode).toBe(201);
