@@ -124,13 +124,13 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
-type ErrorChainNode = {
+export type ErrorChainNode = {
   error: Error;
   code?: unknown;
   cause?: unknown;
 };
 
-function walkErrorChain(error: unknown): ErrorChainNode[] {
+export function walkErrorChain(error: unknown): ErrorChainNode[] {
   const nodes: ErrorChainNode[] = [];
   const visited = new Set<unknown>();
   let current: unknown = error;

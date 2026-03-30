@@ -24,6 +24,7 @@ export async function fetchCharacterAssetDetail(
     latestVersionId: detail.latestVersion?.id ?? null,
     latestVersionNo: detail.latestVersionNo,
     name: detail.name,
+    revision: detail.revision,
     snapshot: snapshotRecord
       ? {
           ...snapshotRecord,
@@ -53,6 +54,7 @@ export async function createCharacterAssetVersion(
   return {
     createdAt: payload.createdAt,
     id: payload.id,
+    revision: payload.revision,
     snapshot: asRecordPayload(payload.snapshot, "character") as WorkspaceCharacterAssetSnapshot,
     versionNo: payload.versionNo
   };

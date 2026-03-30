@@ -421,6 +421,7 @@ describe("sdk remaining resources", () => {
             created_at: 0,
             id: "ver-1",
             snapshot: { name: "Hero" },
+            revision: 2,
             version_no: 1,
           },
         }),
@@ -431,6 +432,7 @@ describe("sdk remaining resources", () => {
     await expect(
       client.characters.createVersion({
         characterId: "char-1",
+        expectedRevision: 4,
         snapshot: { name: "Hero" },
       }),
     ).resolves.toEqual({
@@ -440,12 +442,14 @@ describe("sdk remaining resources", () => {
       id: "ver-1",
       snapshot: { name: "Hero" },
       versionNo: 1,
+      revision: 2,
     });
 
     const [url, init] = fetchImpl.mock.calls[0]!;
     expect(url).toBe("http://localhost:3000/characters/char-1/versions");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({
+      expected_revision: 4,
       snapshot: { name: "Hero" },
     }));
 
@@ -467,6 +471,7 @@ describe("sdk remaining resources", () => {
           latest_version: "bad",
           latest_version_no: "bad",
           name: "Hero",
+          revision: "bad",
           source: "sillytavern",
           status: "active",
           updated_at: "bad",
@@ -482,6 +487,7 @@ describe("sdk remaining resources", () => {
       latestVersion: null,
       latestVersionNo: null,
       name: "Hero",
+      revision: 0,
       source: "sillytavern",
       status: "active",
       updatedAt: 0,
@@ -505,7 +511,9 @@ describe("sdk remaining resources", () => {
           {
             created_at: 1,
             id: "char-1",
+            latest_version_no: 4,
             name: "Hero",
+            revision: 5,
             source: "sillytavern",
             status: "deleted",
             updated_at: 2,
@@ -527,7 +535,9 @@ describe("sdk remaining resources", () => {
       {
         createdAt: 1,
         id: "char-1",
+        latestVersionNo: 4,
         name: "Hero",
+        revision: 5,
         source: "sillytavern",
         status: "deleted",
         updatedAt: 2,
@@ -551,16 +561,17 @@ describe("sdk remaining resources", () => {
       .mockResolvedValueOnce(jsonResponse({ data: {} }));
     const client = createTavernClient({ baseUrl, fetchImpl });
 
-    await expect(client.characters.remove({ characterId: "char-1" })).resolves.toBeUndefined();
-    await expect(client.characters.restore({ characterId: "char-1" })).resolves.toBeUndefined();
+    await expect(client.characters.remove({ characterId: "char-1", expectedRevision: 7 })).resolves.toBeUndefined();
+    await expect(client.characters.restore({ characterId: "char-1", expectedRevision: 8 })).resolves.toBeUndefined();
 
     const [removeUrl, removeInit] = fetchImpl.mock.calls[0]!;
     const [restoreUrl, restoreInit] = fetchImpl.mock.calls[1]!;
     expect(removeUrl).toBe("http://localhost:3000/characters/char-1");
     expect(removeInit?.method).toBe("DELETE");
+    expect(removeInit?.body).toBe(JSON.stringify({ expected_revision: 7 }));
     expect(restoreUrl).toBe("http://localhost:3000/characters/char-1/restore");
     expect(restoreInit?.method).toBe("POST");
-    expect(restoreInit?.body).toBe(JSON.stringify({}));
+    expect(restoreInit?.body).toBe(JSON.stringify({ expected_revision: 8 }));
   });
 
   it("creates users and throws when the create payload is invalid", async () => {
@@ -572,6 +583,7 @@ describe("sdk remaining resources", () => {
             created_at: 1,
             id: "user-1",
             name: "Alice",
+            revision: 0,
             status: "active",
             updated_at: 2,
           },
@@ -588,6 +600,7 @@ describe("sdk remaining resources", () => {
       createdAt: 1,
       id: "user-1",
       name: "Alice",
+      revision: 0,
       status: "active",
       updatedAt: 2,
     });
@@ -615,6 +628,7 @@ describe("sdk remaining resources", () => {
             created_at: 3,
             id: "user-2",
             name: "Bob",
+            revision: 0,
             status: "archived",
             updated_at: 4,
           },
@@ -635,6 +649,7 @@ describe("sdk remaining resources", () => {
         createdAt: 3,
         id: "user-2",
         name: "Bob",
+        revision: 0,
         status: "archived",
         updatedAt: 4,
       },

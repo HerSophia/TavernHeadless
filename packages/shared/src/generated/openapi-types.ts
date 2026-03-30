@@ -5145,6 +5145,7 @@ export interface paths {
                          *           "created_at": 1735689600000,
                          *           "id": "usr_demo",
                          *           "name": "Alice",
+                         *           "revision": 0,
                          *           "snapshot": {
                          *             "description": "A calm strategist who keeps concise notes.",
                          *             "name": "Alice"
@@ -5168,6 +5169,7 @@ export interface paths {
                                 created_at: number;
                                 id: string;
                                 name: string;
+                                revision: number;
                                 snapshot: {
                                     [key: string]: unknown;
                                 };
@@ -5222,16 +5224,13 @@ export interface paths {
                      *       "snapshot": {
                      *         "description": "A calm strategist who keeps concise notes.",
                      *         "name": "Alice"
-                     *       },
-                     *       "status": "active"
+                     *       }
                      *     }
                      */
                     "application/json": {
                         snapshot: {
                             [key: string]: unknown;
                         };
-                        /** @enum {string} */
-                        status?: "active" | "disabled";
                     };
                 };
             };
@@ -5248,6 +5247,7 @@ export interface paths {
                          *         "created_at": 1735689600000,
                          *         "id": "usr_demo",
                          *         "name": "Alice",
+                         *         "revision": 0,
                          *         "snapshot": {
                          *           "description": "A calm strategist who keeps concise notes.",
                          *           "name": "Alice"
@@ -5263,6 +5263,7 @@ export interface paths {
                              *       "created_at": 1735689600000,
                              *       "id": "usr_demo",
                              *       "name": "Alice",
+                             *       "revision": 0,
                              *       "snapshot": {
                              *         "description": "A calm strategist who keeps concise notes.",
                              *         "name": "Alice"
@@ -5275,6 +5276,7 @@ export interface paths {
                                 created_at: number;
                                 id: string;
                                 name: string;
+                                revision: number;
                                 snapshot: {
                                     [key: string]: unknown;
                                 };
@@ -5304,6 +5306,23 @@ export interface paths {
                 };
                 /** @description Default Response */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -5358,6 +5377,7 @@ export interface paths {
                          *         "created_at": 1735689600000,
                          *         "id": "usr_demo",
                          *         "name": "Alice",
+                         *         "revision": 0,
                          *         "snapshot": {
                          *           "description": "A calm strategist who keeps concise notes.",
                          *           "name": "Alice"
@@ -5373,6 +5393,7 @@ export interface paths {
                              *       "created_at": 1735689600000,
                              *       "id": "usr_demo",
                              *       "name": "Alice",
+                             *       "revision": 0,
                              *       "snapshot": {
                              *         "description": "A calm strategist who keeps concise notes.",
                              *         "name": "Alice"
@@ -5385,6 +5406,7 @@ export interface paths {
                                 created_at: number;
                                 id: string;
                                 name: string;
+                                revision: number;
                                 snapshot: {
                                     [key: string]: unknown;
                                 };
@@ -5426,7 +5448,13 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expected_revision?: number;
+                    };
+                };
+            };
             responses: {
                 /** @description Default Response */
                 200: {
@@ -5438,7 +5466,8 @@ export interface paths {
                          * @example {
                          *       "data": {
                          *         "deleted": true,
-                         *         "id": "usr_demo"
+                         *         "id": "usr_demo",
+                         *         "revision": 1
                          *       }
                          *     }
                          */
@@ -5446,12 +5475,64 @@ export interface paths {
                             data: {
                                 deleted: boolean;
                                 id: string;
+                                revision: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
                             };
                         };
                     };
                 };
                 /** @description Default Response */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -5485,6 +5566,7 @@ export interface paths {
                 content: {
                     /**
                      * @example {
+                     *       "expected_revision": 3,
                      *       "snapshot": {
                      *         "description": "A calm strategist who keeps concise notes.",
                      *         "name": "Alice"
@@ -5493,6 +5575,7 @@ export interface paths {
                      *     }
                      */
                     "application/json": {
+                        expected_revision?: number;
                         snapshot?: {
                             [key: string]: unknown;
                         };
@@ -5514,6 +5597,7 @@ export interface paths {
                          *         "created_at": 1735689600000,
                          *         "id": "usr_demo",
                          *         "name": "Alice",
+                         *         "revision": 0,
                          *         "snapshot": {
                          *           "description": "A calm strategist who keeps concise notes.",
                          *           "name": "Alice"
@@ -5529,6 +5613,7 @@ export interface paths {
                              *       "created_at": 1735689600000,
                              *       "id": "usr_demo",
                              *       "name": "Alice",
+                             *       "revision": 0,
                              *       "snapshot": {
                              *         "description": "A calm strategist who keeps concise notes.",
                              *         "name": "Alice"
@@ -5541,6 +5626,7 @@ export interface paths {
                                 created_at: number;
                                 id: string;
                                 name: string;
+                                revision: number;
                                 snapshot: {
                                     [key: string]: unknown;
                                 };
@@ -5587,6 +5673,23 @@ export interface paths {
                 };
                 /** @description Default Response */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -6421,6 +6524,7 @@ export interface operations {
                             id: string;
                             latest_version_no: number | null;
                             name: string;
+                            revision: number;
                             source: string;
                             /** @enum {string} */
                             status: "active" | "deleted";
@@ -6489,6 +6593,7 @@ export interface operations {
                             } | null;
                             latest_version_no: number | null;
                             name: string;
+                            revision: number;
                             source: string;
                             /** @enum {string} */
                             status: "active" | "deleted";
@@ -6525,7 +6630,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision?: number;
+                };
+            };
+        };
         responses: {
             /** @description Default Response */
             200: {
@@ -6537,14 +6648,67 @@ export interface operations {
                         data: {
                             deleted_at: number;
                             id: string;
+                            revision: number;
                             /** @enum {string} */
                             status: "deleted";
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
                         };
                     };
                 };
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6571,7 +6735,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision?: number;
+                };
+            };
+        };
         responses: {
             /** @description Default Response */
             200: {
@@ -6583,6 +6753,7 @@ export interface operations {
                         data: {
                             deleted_at: null;
                             id: string;
+                            revision: number;
                             /** @enum {string} */
                             status: "active";
                             updated_at: number;
@@ -6591,7 +6762,58 @@ export interface operations {
                 };
             };
             /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6700,6 +6922,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    expected_revision?: number;
                     snapshot: {
                         name: string;
                     } & {
@@ -6721,6 +6944,7 @@ export interface operations {
                             content_hash: string;
                             created_at: number;
                             id: string;
+                            revision: number;
                             snapshot: unknown;
                             version_no: number;
                         };
@@ -6778,6 +7002,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     rollbackCharacterVersion: {
@@ -6790,7 +7031,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_revision?: number;
+                };
+            };
+        };
         responses: {
             /** @description Default Response */
             201: {
@@ -6804,6 +7051,7 @@ export interface operations {
                             content_hash: string;
                             created_at: number;
                             id: string;
+                            revision: number;
                             rolled_back_from_version_id: string;
                             snapshot: unknown;
                             version_no: number;
@@ -6847,6 +7095,23 @@ export interface operations {
             };
             /** @description Default Response */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13182,6 +13447,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchUpdateUserStatus: {
@@ -13223,6 +13505,23 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

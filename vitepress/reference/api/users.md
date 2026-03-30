@@ -12,8 +12,9 @@ outline: [2, 3]
 | ---- | ---- | ---- |
 | `id` | string | 用户卡 ID |
 | `name` | string | 用户名称 |
-| `status` | string | `active` / `deleted` |
+| `status` | string | `active` / `disabled` / `deleted` |
 | `snapshot` | object | 用户快照（name, description 等） |
+| `revision` | integer | 用户资源版本号，用于并发写入 CAS |
 | `created_at` | integer | 创建时间 |
 | `updated_at` | integer | 更新时间 |
 
@@ -71,6 +72,15 @@ PATCH /users/:id
 
 至少提供一个字段。可更新：`snapshot`、`status`。
 
+可选字段：`expected_revision`。传入后，服务端会按 CAS 方式校验用户当前 revision；不匹配时返回 `user_revision_conflict`。
+
+```json
+{
+  "expected_revision": 3,
+  "status": "disabled"
+}
+```
+
 ## 软删除用户卡
 
 ```http
@@ -79,10 +89,12 @@ DELETE /users/:id
 
 将用户卡状态设为 `deleted`。
 
+可选请求体：`{ "expected_revision": 3 }`
+
 ### 响应 `200`
 
 ```json
-{ "data": { "id": "usr_001", "deleted": true } }
+{ "data": { "id": "usr_001", "deleted": true, "revision": 4 } }
 ```
 
 ## 批量更新用户状态
@@ -171,3 +183,11 @@ POST /users/batch/delete
 | 状态码 | 说明 |
 | ------ | ---- |
 | `400` | 请求体校验失败、ids 为空或超过 100 条、存在重复 ID |
+
+## 并发错误码
+
+| 错误码 | 说明 |
+| ---- | ---- |
+| `user_conflict` | 用户重名冲突 |
+| `user_revision_conflict` | `expected_revision` 过期，或同一 revision 上的写入已被其他请求抢先提交 |
+| `resource_busy` | SQLite `busy / locked` 重试耗尽 |

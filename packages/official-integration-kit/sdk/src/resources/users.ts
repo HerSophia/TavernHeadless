@@ -1,6 +1,7 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   buildQueryString,
+  compactObject,
   readArray,
   readBoolean,
   readNumber,
@@ -12,6 +13,7 @@ export type UserRecord = {
   createdAt: number;
   id: string;
   name: string;
+  revision: number;
   status: string;
   updatedAt: number;
 };
@@ -43,6 +45,7 @@ export type UsersGetDetailOptions = {
 
 export type UsersUpdateOptions = {
   accountId?: AccountIdHint;
+  expectedRevision?: number;
   snapshot?: Record<string, unknown>;
   status?: "active" | "disabled";
   userId: string;
@@ -50,6 +53,7 @@ export type UsersUpdateOptions = {
 
 export type UsersRemoveOptions = {
   accountId?: AccountIdHint;
+  expectedRevision?: number;
   userId: string;
 };
 
@@ -177,6 +181,7 @@ export function createUsersResource(client: TransportClient): UsersResource {
     },
     async remove(options): Promise<boolean> {
       const response = await client.fetchJson<Record<string, unknown>>(`/users/${encodeURIComponent(options.userId)}`, {
+        body: compactObject({ expected_revision: options.expectedRevision }),
         headers: buildAccountHeaders(options.accountId),
         method: "DELETE",
       });
@@ -185,10 +190,11 @@ export function createUsersResource(client: TransportClient): UsersResource {
     },
     async update(options): Promise<UserDetail> {
       const response = await client.fetchJson<Record<string, unknown>>(`/users/${encodeURIComponent(options.userId)}`, {
-        body: {
+        body: compactObject({
+          expected_revision: options.expectedRevision,
           snapshot: options.snapshot,
           status: options.status,
-        },
+        }),
         headers: buildAccountHeaders(options.accountId),
         method: "PATCH",
       });
@@ -213,6 +219,7 @@ function mapUserRecord(value: unknown, errorMessage: string | null): UserRecord 
     createdAt: detail.createdAt,
     id: detail.id,
     name: detail.name,
+    revision: detail.revision,
     status: detail.status,
     updatedAt: detail.updatedAt,
   };
@@ -231,6 +238,7 @@ function mapUserDetail(value: unknown, errorMessage: string | null): UserDetail 
     createdAt: readNumber(record.created_at),
     id: readString(record.id),
     name: readString(record.name),
+    revision: readNumber(record.revision),
     snapshot: readRecord(record.snapshot),
     status: readString(record.status),
     updatedAt: readNumber(record.updated_at),

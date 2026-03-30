@@ -2060,6 +2060,8 @@ function createCharacterFromImportInternal(
     source: input.source,
     status: "active",
     deletedAt: null,
+    revision: 0,
+    latestVersionNo: 1,
     createdAt: input.now,
     updatedAt: input.now
   }).run();

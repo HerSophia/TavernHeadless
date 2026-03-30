@@ -194,6 +194,8 @@ describe("Export route extra branches", () => {
         accountId: "default-admin",
         status: "active",
         deletedAt: null,
+        revision: 0,
+        latestVersionNo: 0,
         createdAt: now,
         updatedAt: now,
       });

@@ -14,6 +14,7 @@ outline: [2, 3]
 | `name` | string | 角色名称 |
 | `source` | string | 来源（如 `sillytavern_import`） |
 | `status` | string | `active` / `deleted` |
+| `revision` | integer | 角色资源版本号，用于并发写入 CAS |
 | `latest_version_no` | integer \| null | 最新版本号 |
 | `deleted_at` | integer \| null | 删除时间 |
 | `created_at` | integer | 创建时间 |
@@ -49,6 +50,7 @@ GET /characters/:id
     "id": "char_001",
     "name": "Luna",
     "source": "sillytavern_import",
+    "revision": 4,
     "status": "active",
     "deleted_at": null,
     "created_at": 1735689600000,
@@ -95,15 +97,18 @@ POST /characters/:id/versions
     "scenario": "...",
     "exampleDialogue": "...",
     "greeting": "*Luna turns to face you...*"
-  }
+  },
+  "expected_revision": 4
 }
 ```
 
 `snapshot.name` 是必填的。
 
+`expected_revision` 是可选字段。传入后，服务端会按 CAS 方式校验角色当前 revision；不匹配时返回 `character_revision_conflict`。
+
 ### 响应 `201`
 
-返回新创建的 CharacterVersion 对象。
+返回新创建的 CharacterVersion 对象，并额外包含最新 `revision`。
 
 ## 版本回滚
 
@@ -113,9 +118,17 @@ POST /characters/:id/versions/:versionId/rollback
 
 基于指定版本创建一个新版本（相当于复制该版本为最新版本），同时更新角色名称。
 
+### 请求体
+
+```json
+{
+  "expected_revision": 4
+}
+```
+
 ### 响应 `201`
 
-返回新创建的版本，额外包含 `rolled_back_from_version_id` 字段。
+返回新创建的版本，额外包含 `rolled_back_from_version_id` 和最新 `revision` 字段。
 
 ## 软删除角色
 
@@ -125,14 +138,18 @@ DELETE /characters/:id
 
 将角色标记为 `deleted` 状态。数据不会物理删除。
 
+可选请求体：`{ "expected_revision": 4 }`
+
 ### 响应 `200`
 
 ```json
 {
   "data": {
     "id": "char_001",
+    "revision": 5,
     "status": "deleted",
-    "deleted_at": 1735690000000
+    "deleted_at": 1735690000000,
+    "updated_at": 1735690000000
   }
 }
 ```
@@ -145,15 +162,26 @@ POST /characters/:id/restore
 
 将已删除的角色恢复为 `active` 状态。
 
+可选请求体：`{ "expected_revision": 5 }`
+
 ### 响应 `200`
 
 ```json
 {
   "data": {
     "id": "char_001",
+    "revision": 6,
     "status": "active",
     "deleted_at": null,
     "updated_at": 1735690500000
   }
 }
 ```
+
+## 并发错误码
+
+| 错误码 | 说明 |
+| ---- | ---- |
+| `character_conflict` | 角色版本号保留阶段触发唯一约束冲突 |
+| `character_revision_conflict` | `expected_revision` 过期，或同一 revision 上的写入已被其他请求抢先提交 |
+| `resource_busy` | SQLite `busy / locked` 重试耗尽 |

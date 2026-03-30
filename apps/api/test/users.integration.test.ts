@@ -5,16 +5,17 @@
  *   GET /users — status / keyword / sort_by / include_deleted
  *   POST /users — duplicate name 409 / invalid body 400
  *   GET /users/:id — missing 404
- *   PATCH /users/:id — missing 404 / rename conflict 409
- *   DELETE /users/:id — missing 404
+ *   PATCH /users/:id — missing 404 / rename conflict 409 / revision conflict 409
+ *   DELETE /users/:id — missing 404 / revision conflict 409
  *   PATCH /users/batch/status
  *   POST /users/batch/delete
  */
 
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../src/app";
+import * as retryModule from "../src/lib/retry.js";
 
 type D<T> = { data: T };
 type E = { error: { code: string; message: string } };
@@ -24,13 +25,14 @@ interface UserData {
   name: string;
   status: string;
   snapshot: Record<string, unknown>;
+  revision: number;
   created_at: number;
   updated_at: number;
 }
 
 interface BatchResult {
   results: Array<{ index: number; id: string; action: string }>;
-  meta: Record<string,unknown>;
+  meta: Record<string, unknown>;
 }
 
 async function createUser(app: FastifyInstance, name: string, description = "desc") {
@@ -51,10 +53,9 @@ describe("Users route branch coverage", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     if (app) await app.close();
   });
-
-  // ── POST /users ─────────────────────────────────────
 
   it("POST /users returns 409 for duplicate name", async () => {
     await createUser(app, "DupUser");
@@ -76,7 +77,10 @@ describe("Users route branch coverage", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  // ── GET /users ──────────────────────────────────────
+  it("POST /users returns revision on create", async () => {
+    const created = await createUser(app, "RevisionUser");
+    expect(created.revision).toBe(0);
+  });
 
   it("GET /users filters by status=active", async () => {
     const u = await createUser(app, "ActiveUser");
@@ -86,7 +90,7 @@ describe("Users route branch coverage", () => {
     const res = await app.inject({ method: "GET", url: "/users?status=active" });
     expect(res.statusCode).toBe(200);
     const data = res.json<{ data: UserData[] }>().data;
-    expect(data.every((u) => u.status === "active")).toBe(true);
+    expect(data.every((user) => user.status === "active")).toBe(true);
     expect(data).toHaveLength(1);
   });
 
@@ -104,7 +108,7 @@ describe("Users route branch coverage", () => {
     await app.inject({ method: "DELETE", url: `/users/${u.id}` });
 
     const withoutDeleted = await app.inject({ method: "GET", url: "/users" });
-   expect(withoutDeleted.json<{ data: UserData[] }>().data).toHaveLength(0);
+    expect(withoutDeleted.json<{ data: UserData[] }>().data).toHaveLength(0);
 
     const withDeleted = await app.inject({ method: "GET", url: "/users?include_deleted=true" });
     expect(withDeleted.json<{ data: UserData[] }>().data).toHaveLength(1);
@@ -127,7 +131,7 @@ describe("Users route branch coverage", () => {
 
     const res = await app.inject({ method: "GET", url: "/users?sort_by=name&sort_order=asc" });
     expect(res.statusCode).toBe(200);
-    const names = res.json<{ data: UserData[] }>().data.map((u) => u.name);
+    const names = res.json<{ data: UserData[] }>().data.map((user) => user.name);
     expect(names).toEqual(["Alice", "Bob", "Charlie"]);
   });
 
@@ -137,18 +141,14 @@ describe("Users route branch coverage", () => {
 
     const res = await app.inject({ method: "GET", url: "/users?sort_by=created_at&sort_order=asc" });
     expect(res.statusCode).toBe(200);
-    const names = res.json<{ data: UserData[] }>().data.map((u) => u.name);
+    const names = res.json<{ data: UserData[] }>().data.map((user) => user.name);
     expect(names[0]).toBe("First");
   });
-
-  // ── GET /users/:id ──────────────────────────────────
 
   it("GET /users/:id returns 404 for missing user", async () => {
     const res = await app.inject({ method: "GET", url: "/users/nonexistent" });
     expect(res.statusCode).toBe(404);
-});
-
-  // ── PATCH /users/:id ────────────────────────────────
+  });
 
   it("PATCH /users/:id returns 404 for missing user", async () => {
     const res = await app.inject({
@@ -178,7 +178,7 @@ describe("Users route branch coverage", () => {
     const res = await app.inject({
       method: "PATCH",
       url: `/users/${a.id}`,
-      payload:{ snapshot: { name: "NameB", description: "conflict" } },
+      payload: { snapshot: { name: "NameB", description: "conflict" } },
     });
     expect(res.statusCode).toBe(409);
     expect(res.json<E>().error.code).toBe("user_conflict");
@@ -187,23 +187,92 @@ describe("Users route branch coverage", () => {
   it("PATCH /users/:id allows renaming to same name", async () => {
     const u = await createUser(app, "SameName");
     const res = await app.inject({
-method: "PATCH",
+      method: "PATCH",
       url: `/users/${u.id}`,
       payload: { snapshot: { name: "SameName", description: "updated desc" } },
     });
     expect(res.statusCode).toBe(200);
+    expect(res.json<D<UserData>>().data.revision).toBe(1);
   });
 
-  // ── DELETE /users/:id ───────────────────────────────
+  it("PATCH /users/:id returns 409 for stale expected_revision", async () => {
+    const u = await createUser(app, "StaleUser");
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/users/${u.id}`,
+      payload: {
+        expected_revision: u.revision + 1,
+        snapshot: { name: "StaleUser 2", description: "changed" }
+      },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json<E>().error.code).toBe("user_revision_conflict");
+  });
+
+  it("PATCH /users/:id concurrent rename to same target returns one success and one conflict", async () => {
+    const a = await createUser(app, "RenameA");
+    const b = await createUser(app, "RenameB");
+
+    const [firstRes, secondRes] = await Promise.all([
+      app.inject({
+        method: "PATCH",
+        url: `/users/${a.id}`,
+        payload: {
+          expected_revision: a.revision,
+          snapshot: { name: "SharedTarget", description: "first" }
+        },
+      }),
+      app.inject({
+        method: "PATCH",
+        url: `/users/${b.id}`,
+        payload: {
+          expected_revision: b.revision,
+          snapshot: { name: "SharedTarget", description: "second" }
+        },
+      })
+    ]);
+
+    const responses = [firstRes, secondRes];
+    expect(responses.filter((response) => response.statusCode === 200)).toHaveLength(1);
+    expect(responses.filter((response) => response.statusCode === 409)).toHaveLength(1);
+    expect(responses.find((response) => response.statusCode === 409)!.json<E>().error.code).toBe("user_conflict");
+  });
+
+  it("PATCH /users/:id maps resource_busy", async () => {
+    const u = await createUser(app, "BusyUser");
+    vi.spyOn(retryModule, "executeWithSqliteBusyRetry").mockRejectedValueOnce(new retryModule.ResourceBusyError("database is locked"));
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/users/${u.id}`,
+      payload: { snapshot: { name: "BusyUser 2", description: "busy" } },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json<E>().error.code).toBe("resource_busy");
+  });
 
   it("DELETE /users/:id returns 404 for missing user", async () => {
     const res = await app.inject({ method: "DELETE", url: "/users/nonexistent" });
     expect(res.statusCode).toBe(404);
   });
 
-  // ── PATCH /users/batch/status ───────────────────────
+  it("DELETE /users/:id returns 409 for stale expected_revision", async () => {
+    const u = await createUser(app, "DeleteStale");
 
-  it("PATCH /users/batch/status updates mixed found/not_found", async ()=> {
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/users/${u.id}`,
+      payload: { expected_revision: u.revision + 1 },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json<E>().error.code).toBe("user_revision_conflict");
+  });
+
+  it("PATCH /users/batch/status updates mixed found/not_found", async () => {
     const a = await createUser(app, "BatchA");
     const b = await createUser(app, "BatchB");
 
@@ -216,14 +285,14 @@ method: "PATCH",
     const body = res.json<D<BatchResult>>().data;
     expect(body.meta.updated).toBe(2);
     expect(body.meta.not_found).toBe(1);
-    expect(body.results.find((r) => r.id === "nonexistent")?.action).toBe("not_found");
+    expect(body.results.find((result) => result.id === "nonexistent")?.action).toBe("not_found");
   });
 
   it("PATCH /users/batch/status skips deleted users", async () => {
     const u = await createUser(app, "DeletedBatch");
     await app.inject({ method: "DELETE", url: `/users/${u.id}` });
 
-    const res= await app.inject({
+    const res = await app.inject({
       method: "PATCH",
       url: "/users/batch/status",
       payload: { ids: [u.id], status: "active" },
@@ -241,10 +310,8 @@ method: "PATCH",
     expect(res.statusCode).toBe(400);
   });
 
-  //── POST /users/batch/delete ────────────────────────
-
   it("POST /users/batch/delete deletes mixed found/not_found", async () => {
-  const a = await createUser(app, "DelBatchA");
+    const a = await createUser(app, "DelBatchA");
 
     const res = await app.inject({
       method: "POST",
@@ -252,12 +319,12 @@ method: "PATCH",
       payload: { ids: [a.id, "nonexistent"] },
     });
     expect(res.statusCode).toBe(200);
-    const body= res.json<D<BatchResult>>().data;
+    const body = res.json<D<BatchResult>>().data;
     expect(body.meta.deleted).toBe(1);
     expect(body.meta.not_found).toBe(1);
   });
 
-  it("POST/users/batch/delete skips already-deleted users", async () => {
+  it("POST /users/batch/delete skips already-deleted users", async () => {
     const u = await createUser(app, "AlreadyDeleted");
     await app.inject({ method: "DELETE", url: `/users/${u.id}` });
 

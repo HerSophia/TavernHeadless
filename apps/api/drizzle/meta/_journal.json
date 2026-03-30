@@ -155,6 +155,13 @@
       "when": 1762100000000,
       "tag": "0021_mcp_account_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1762200000000,
+      "tag": "0022_characters_users_revisions",
+      "breakpoints": true
     }
   ]
 }

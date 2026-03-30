@@ -4,6 +4,7 @@ import {
   compactObject,
   readArray,
   readNullableNumber,
+  readNumber,
   readRecord,
   readString,
 } from "./utils.js";
@@ -11,7 +12,9 @@ import {
 export type CharacterListItem = {
   createdAt: number;
   id: string;
+  latestVersionNo: number | null;
   name: string;
+  revision: number;
   source: string;
   status: string;
   updatedAt: number;
@@ -26,7 +29,11 @@ export type CharacterVersion = {
   versionNo: number;
 };
 
-export type CharacterRollbackVersion = CharacterVersion & {
+export type CharacterWriteVersion = CharacterVersion & {
+  revision: number;
+};
+
+export type CharacterRollbackVersion = CharacterWriteVersion & {
   rolledBackFromVersionId: string;
 };
 
@@ -37,6 +44,7 @@ export type CharacterDetail = {
   latestVersion: CharacterVersion | null;
   latestVersionNo: number | null;
   name: string;
+  revision: number;
   source: string;
   status: string;
   updatedAt: number;
@@ -61,41 +69,52 @@ export type CharactersListVersionsOptions = {
   sortOrder?: "asc" | "desc";
 };
 
+export type CharactersCreateVersionOptions = {
+  accountId?: AccountIdHint;
+  characterId: string;
+  expectedRevision?: number;
+  snapshot: Record<string, unknown>;
+};
+
 export type CharactersRollbackVersionOptions = {
   accountId?: AccountIdHint;
   characterId: string;
+  expectedRevision?: number;
   versionId: string;
 };
 
+export type CharactersStateMutationOptions = {
+  accountId?: AccountIdHint;
+  characterId: string;
+  expectedRevision?: number;
+};
+
 export type CharactersResource = {
-  createVersion(options: {
-    accountId?: AccountIdHint;
-    characterId: string;
-    snapshot: Record<string, unknown>;
-  }): Promise<CharacterVersion>;
+  createVersion(options: CharactersCreateVersionOptions): Promise<CharacterWriteVersion>;
   getDetail(options: { accountId?: AccountIdHint; characterId: string }): Promise<CharacterDetail>;
   list(options?: CharactersListOptions): Promise<CharacterListItem[]>;
   listVersions(options: CharactersListVersionsOptions): Promise<CharacterVersion[]>;
-  remove(options: { accountId?: AccountIdHint; characterId: string }): Promise<void>;
-  restore(options: { accountId?: AccountIdHint; characterId: string }): Promise<void>;
+  remove(options: CharactersStateMutationOptions): Promise<void>;
+  restore(options: CharactersStateMutationOptions): Promise<void>;
   rollbackVersion(options: CharactersRollbackVersionOptions): Promise<CharacterRollbackVersion>;
 };
 
 export function createCharactersResource(client: TransportClient): CharactersResource {
   return {
-    async createVersion(options): Promise<CharacterVersion> {
+    async createVersion(options): Promise<CharacterWriteVersion> {
       const response = await client.fetchJson<Record<string, unknown>>(
         `/characters/${encodeURIComponent(options.characterId)}/versions`,
         {
-          body: {
+          body: compactObject({
+            expected_revision: options.expectedRevision,
             snapshot: options.snapshot,
-          },
+          }),
           headers: buildAccountHeaders(options.accountId),
           method: "POST",
         },
       );
 
-      const payload = mapCharacterVersion(readRecord(response.body)?.data);
+      const payload = mapCharacterWriteVersion(readRecord(response.body)?.data);
       if (!payload) {
         throw new Error("Character update returned an invalid payload");
       }
@@ -120,6 +139,7 @@ export function createCharactersResource(client: TransportClient): CharactersRes
         latestVersion: mapCharacterVersion(detail.latest_version),
         latestVersionNo: readNullableNumber(detail.latest_version_no),
         name: readString(detail.name),
+        revision: readNumber(detail.revision),
         source: readString(detail.source),
         status: readString(detail.status),
         updatedAt: typeof detail.updated_at === "number" ? detail.updated_at : 0,
@@ -163,13 +183,14 @@ export function createCharactersResource(client: TransportClient): CharactersRes
     },
     async remove(options): Promise<void> {
       await client.fetchJson(`/characters/${encodeURIComponent(options.characterId)}`, {
+        body: compactObject({ expected_revision: options.expectedRevision }),
         headers: buildAccountHeaders(options.accountId),
         method: "DELETE",
       });
     },
     async restore(options): Promise<void> {
       await client.fetchJson(`/characters/${encodeURIComponent(options.characterId)}/restore`, {
-        body: {},
+        body: compactObject({ expected_revision: options.expectedRevision }),
         headers: buildAccountHeaders(options.accountId),
         method: "POST",
       });
@@ -178,7 +199,7 @@ export function createCharactersResource(client: TransportClient): CharactersRes
       const response = await client.fetchJson<Record<string, unknown>>(
         `/characters/${encodeURIComponent(options.characterId)}/versions/${encodeURIComponent(options.versionId)}/rollback`,
         {
-          body: compactObject({}),
+          body: compactObject({ expected_revision: options.expectedRevision }),
           headers: buildAccountHeaders(options.accountId),
           method: "POST",
         },
@@ -203,7 +224,9 @@ function mapCharacterListItem(value: unknown): CharacterListItem | null {
   return {
     createdAt: typeof record.created_at === "number" ? record.created_at : 0,
     id: readString(record.id),
+    latestVersionNo: readNullableNumber(record.latest_version_no),
     name: readString(record.name),
+    revision: readNumber(record.revision),
     source: readString(record.source),
     status: readString(record.status),
     updatedAt: typeof record.updated_at === "number" ? record.updated_at : 0,
@@ -226,8 +249,21 @@ function mapCharacterVersion(value: unknown): CharacterVersion | null {
   };
 }
 
-function mapRollbackVersion(value: unknown): CharacterRollbackVersion | null {
+function mapCharacterWriteVersion(value: unknown): CharacterWriteVersion | null {
   const version = mapCharacterVersion(value);
+  const record = readRecord(value);
+  if (!version || !record) {
+    return null;
+  }
+
+  return {
+    ...version,
+    revision: readNumber(record.revision),
+  };
+}
+
+function mapRollbackVersion(value: unknown): CharacterRollbackVersion | null {
+  const version = mapCharacterWriteVersion(value);
   const record = readRecord(value);
   if (!version || !record) {
     return null;
