@@ -6,9 +6,10 @@
  */
 
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../src/app";
+import * as retryModule from "../src/lib/retry";
 
 // ── 最小有效酒馆数据 ──────────────────────────────────
 
@@ -186,6 +187,7 @@ describe("Import Routes", () => {
 
   afterEach(async () => {
     if (app) await app.close();
+    vi.restoreAllMocks();
   });
 
   // ══════════════════════════════════════════════════════
@@ -445,6 +447,45 @@ describe("Import Routes", () => {
       const getRes = await app.inject({ method: "GET", url: `/presets/${presetId}` });
       expect(getRes.statusCode).toBe(404);
     });
+
+    it("DELETE /presets/:id should return 409 when expected_version mismatches", async () => {
+      const importRes = await app.inject({
+        method: "POST",
+        url: "/import/preset",
+        payload: { name: "Delete Conflict Preset", data: MINIMAL_PRESET },
+      });
+      const presetId = (importRes.json() as ImportResponse).data.id;
+
+      const editorRes = await app.inject({ method: "GET", url: `/presets/${presetId}/editor` });
+      expect(editorRes.statusCode).toBe(200);
+      const editorBody = editorRes.json() as PresetEditorResponse;
+
+      const putRes = await app.inject({
+        method: "PUT",
+        url: `/presets/${presetId}`,
+        payload: {
+          name: "Delete Conflict Preset Updated",
+          expected_version: editorBody.data.version,
+          editor: {
+            ...editorBody.data.editor,
+            entries: editorBody.data.editor.entries.map((entry) =>
+              entry.identifier === "main"
+                ? { ...entry, content: "Updated before delete." }
+                : entry,
+            ),
+          },
+        },
+      });
+      expect(putRes.statusCode).toBe(200);
+
+      const delRes = await app.inject({
+        method: "DELETE",
+        url: `/presets/${presetId}?expected_version=${editorBody.data.version}`,
+      });
+
+      expect(delRes.statusCode).toBe(409);
+      expect((delRes.json() as { error: { code: string } }).error.code).toBe("preset_conflict");
+    });
   });
 
   // ══════════════════════════════════════════════════════
@@ -611,6 +652,135 @@ describe("Import Routes", () => {
 
       const getRes = await app.inject({ method: "GET", url: `/worldbooks/${wbId}` });
       expect(getRes.statusCode).toBe(404);
+    });
+
+    it("DELETE /worldbooks/:id should return 409 when expected_version mismatches", async () => {
+      const importRes = await app.inject({
+        method: "POST",
+        url: "/import/worldbook",
+        payload: { name: "Delete Conflict WB", data: MINIMAL_WORLDBOOK },
+      });
+      const wbId = (importRes.json() as ImportResponse).data.id;
+
+      const detailRes = await app.inject({ method: "GET", url: `/worldbooks/${wbId}` });
+      expect(detailRes.statusCode).toBe(200);
+      const detailBody = detailRes.json() as DetailResponse;
+      const worldbookData = detailBody.data.data as Record<string, unknown>;
+      const entries = Array.isArray(worldbookData.entries) ? worldbookData.entries : [];
+
+      const putRes = await app.inject({
+        method: "PUT",
+        url: `/worldbooks/${wbId}`,
+        payload: {
+          name: "Delete Conflict WB Updated",
+          expected_version: detailBody.data.version,
+          data: { ...worldbookData, entries },
+        },
+      });
+      expect(putRes.statusCode).toBe(200);
+
+      const delRes = await app.inject({
+        method: "DELETE",
+        url: `/worldbooks/${wbId}?expected_version=${detailBody.data.version}`,
+      });
+      expect(delRes.statusCode).toBe(409);
+      expect((delRes.json() as { error: { code: string } }).error.code).toBe("worldbook_conflict");
+    });
+  });
+
+  describe("account isolation", () => {
+    let multiApp: FastifyInstance;
+    let tokenA: string;
+    let tokenB: string;
+
+    beforeEach(async () => {
+      ({ app: multiApp } = await buildApp({
+        databasePath: ":memory:",
+        logger: false,
+        auth: { mode: "jwt", jwtSecret: "test-secret" },
+        accountMode: "multi",
+      }));
+
+      const rootToken = multiApp.jwt.sign({ sub: "root", account_id: "default-admin", role: "user" });
+      tokenA = multiApp.jwt.sign({ sub: "u-a", account_id: "acc-a", role: "admin" });
+      tokenB = multiApp.jwt.sign({ sub: "u-b", account_id: "acc-b", role: "admin" });
+
+      await multiApp.inject({
+        method: "POST",
+        url: "/accounts",
+        headers: { authorization: `Bearer ${rootToken}` },
+        payload: { id: "acc-a", name: "Account A" },
+      });
+      await multiApp.inject({
+        method: "POST",
+        url: "/accounts",
+        headers: { authorization: `Bearer ${rootToken}` },
+        payload: { id: "acc-b", name: "Account B" },
+      });
+    });
+
+    afterEach(async () => {
+      if (multiApp) await multiApp.close();
+    });
+
+    it("keeps presets isolated across accounts", async () => {
+      const importRes = await multiApp.inject({
+        method: "POST",
+        url: "/import/preset",
+        headers: { authorization: `Bearer ${tokenA}` },
+        payload: { name: "Preset A", data: MINIMAL_PRESET },
+      });
+      expect(importRes.statusCode).toBe(201);
+      const presetId = (importRes.json() as ImportResponse).data.id;
+
+      const listA = await multiApp.inject({ method: "GET", url: "/presets", headers: { authorization: `Bearer ${tokenA}` } });
+      expect((listA.json() as ListResponse).data).toHaveLength(1);
+
+      const listB = await multiApp.inject({ method: "GET", url: "/presets", headers: { authorization: `Bearer ${tokenB}` } });
+      expect((listB.json() as ListResponse).data).toHaveLength(0);
+
+      const detailB = await multiApp.inject({ method: "GET", url: `/presets/${presetId}`, headers: { authorization: `Bearer ${tokenB}` } });
+      expect(detailB.statusCode).toBe(404);
+    });
+
+    it("keeps worldbooks isolated across accounts", async () => {
+      const importRes = await multiApp.inject({
+        method: "POST",
+        url: "/import/worldbook",
+        headers: { authorization: `Bearer ${tokenA}` },
+        payload: { name: "World A", data: MINIMAL_WORLDBOOK },
+      });
+      expect(importRes.statusCode).toBe(201);
+      const worldbookId = (importRes.json() as ImportResponse).data.id;
+
+      const listA = await multiApp.inject({ method: "GET", url: "/worldbooks", headers: { authorization: `Bearer ${tokenA}` } });
+      expect((listA.json() as ListResponse).data).toHaveLength(1);
+
+      const listB = await multiApp.inject({ method: "GET", url: "/worldbooks", headers: { authorization: `Bearer ${tokenB}` } });
+      expect((listB.json() as ListResponse).data).toHaveLength(0);
+
+      const detailB = await multiApp.inject({ method: "GET", url: `/worldbooks/${worldbookId}`, headers: { authorization: `Bearer ${tokenB}` } });
+      expect(detailB.statusCode).toBe(404);
+    });
+  });
+
+  describe("resource busy handling", () => {
+    it("global error handler should map raw SQLITE_BUSY to 503 resource_busy", async () => {
+      app.get("/__test__/busy", async () => {
+        throw Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" });
+      });
+
+      const res = await app.inject({ method: "GET", url: "/__test__/busy" });
+      expect(res.statusCode).toBe(503);
+      expect((res.json() as { error: { code: string } }).error.code).toBe("resource_busy");
+    });
+
+    it("POST /import/preset should return 503 resource_busy when write retries are exhausted", async () => {
+      vi.spyOn(retryModule, "executeWithSqliteBusyRetry").mockRejectedValueOnce(new retryModule.ResourceBusyError("database is locked"));
+
+      const res = await app.inject({ method: "POST", url: "/import/preset", payload: { name: "Busy Preset", data: MINIMAL_PRESET } });
+      expect(res.statusCode).toBe(503);
+      expect((res.json() as { error: { code: string } }).error.code).toBe("resource_busy");
     });
   });
 

@@ -29,13 +29,13 @@ export async function updateWorldbookAsset(
   worldbookId: string,
   name: string,
   data: Record<string, unknown>,
-  expectedUpdatedAt: number | undefined,
+  expectedVersion: number | undefined,
   accountId?: string
 ): Promise<WorkspaceLibraryAsset> {
   const payload = await apiClient.worldbooks.update({
     accountId,
     data,
-    expectedUpdatedAt,
+    expectedVersion,
     name,
     worldbookId
   });
@@ -51,9 +51,14 @@ export async function updateWorldbookAsset(
   };
 }
 
-export async function deleteWorldbookAsset(worldbookId: string, accountId?: string): Promise<void> {
+export async function deleteWorldbookAsset(
+  worldbookId: string,
+  expectedVersion: number | undefined,
+  accountId?: string
+): Promise<void> {
   await apiClient.worldbooks.remove({
     accountId,
+    expectedVersion,
     worldbookId
   });
 }

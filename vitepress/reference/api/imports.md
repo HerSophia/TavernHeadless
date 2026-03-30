@@ -2,29 +2,35 @@
 outline: [2, 3]
 ---
 
-# Imports锛堝鍏ワ級
+# Imports（导入）
 
-鎻愪緵 SillyTavern 鐢熸€佺殑鍏煎瀵煎叆鎺ュ彛銆傚皢 SillyTavern 鍘熷 JSON 瑙ｆ瀽鍚庡瓨鍏ユ暟鎹簱銆?
-瀵煎叆瀹屾垚鍚庯紝閫氳繃鍚勮祫婧愮殑鐙珛绠＄悊鎺ュ彛杩涜鏌ョ湅銆佺紪杈戝拰鍒犻櫎锛?
-- [Presets锛堥璁剧鐞嗭級](./presets)
-- [Worldbooks锛堜笘鐣屼功绠＄悊锛塢(./worldbooks)
-- [Regex Profiles锛堟鍒欓厤缃鐞嗭級](./regex-profiles)
-- [Characters锛堣鑹插崱绠＄悊锛塢(./characters)
+提供 SillyTavern 生态的兼容导入接口。系统会解析原始数据，然后写入 TavernHeadless 的资源表。
 
-## 瀵煎叆 Preset
+导入完成后，后续查看、编辑和删除应使用对应的资源接口：
+
+- [Presets（预设管理）](./presets)
+- [Worldbooks（世界书管理）](./worldbooks)
+- [Regex Profiles（正则配置管理）](./regex-profiles)
+- [Characters（角色卡管理）](./characters)
+
+其中 `POST /import/preset` 和 `POST /import/worldbook` 现在也会遵循资源写入繁忙语义：当 SQLite 写入暂时繁忙且重试耗尽时，返回 `503 resource_busy`。
+
+## 导入 Preset
 
 ```http
 POST /import/preset
 ```
 
-瀵煎叆涓€涓?SillyTavern 鏍煎紡鐨勯璁撅紙Preset锛夈€傜郴缁熶細鑷姩瑙ｆ瀽 `prompts`銆乣prompt_order` 绛夊瓧娈点€?
-### 璇锋眰浣?
-| 瀛楁 | 绫诲瀷 | 蹇呭～ | 璇存槑 |
-| ---- | ---- | ---- | ---- |
-| `name` | string | 鍚?| 鑷畾涔夊悕绉帮紝涓嶄紶鍒欎粠鏁版嵁涓彁鍙?|
-| `data` | object | **鏄?* | SillyTavern 棰勮 JSON 鏁版嵁锛堝寘鍚?`prompts`銆乣prompt_order` 绛夛級 |
+导入一个 SillyTavern 格式的预设。系统会解析 `prompts`、`prompt_order` 等字段，然后写入 `preset` 资源。
 
-### 璇锋眰绀轰緥
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | 否 | 自定义名称；不传时默认使用 `Unnamed Preset` |
+| `data` | object | **是** | SillyTavern 预设 JSON 数据 |
+
+### 请求示例
 
 ```json
 {
@@ -36,7 +42,7 @@ POST /import/preset
 }
 ```
 
-### 鍝嶅簲 `201`
+### 响应 `201`
 
 ```json
 {
@@ -48,26 +54,29 @@ POST /import/preset
 }
 ```
 
-### 閿欒
+### 错误
 
-| 鐘舵€佺爜 | 璇存槑 |
-| ------ | ---- |
-| `400` | 璇锋眰浣撴牎楠屽け璐ユ垨鏁版嵁鏍煎紡閿欒 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `import_parse_error` | 请求体校验失败，或预设 JSON 无法解析 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
-## 瀵煎叆 Worldbook
+## 导入 Worldbook
 
 ```http
 POST /import/worldbook
 ```
 
-瀵煎叆涓€涓?SillyTavern 鏍煎紡鐨勪笘鐣屼功銆?
-### 璇锋眰浣?
-| 瀛楁 | 绫诲瀷 | 蹇呭～ | 璇存槑 |
-| ---- | ---- | ---- | ---- |
-| `name` | string | 鍚?| 鑷畾涔夊悕绉?|
-| `data` | object | **鏄?* | SillyTavern 涓栫晫涔?JSON 鏁版嵁 |
+导入一个 SillyTavern 格式的世界书。系统会解析世界书全局配置和条目数据，然后分别写入 `worldbook` 与 `worldbook_entry`。
 
-### 璇锋眰绀轰緥
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | 否 | 自定义名称；不传时优先使用世界书内名称，否则使用 `Unnamed Worldbook` |
+| `data` | object | **是** | SillyTavern 世界书 JSON 数据 |
+
+### 请求示例
 
 ```json
 {
@@ -83,7 +92,7 @@ POST /import/worldbook
 }
 ```
 
-### 鍝嶅簲 `201`
+### 响应 `201`
 
 ```json
 {
@@ -95,20 +104,29 @@ POST /import/worldbook
 }
 ```
 
-## 瀵煎叆 Regex 瑙勫垯
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `import_parse_error` | 请求体校验失败，或世界书 JSON 无法解析 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
+
+## 导入 Regex 规则
 
 ```http
 POST /import/regex
 ```
 
-瀵煎叆涓€缁?SillyTavern 鏍煎紡鐨勬鍒欐浛鎹㈣鍒欍€?
-### 璇锋眰浣?
-| 瀛楁 | 绫诲瀷 | 蹇呭～ | 璇存槑 |
-| ---- | ---- | ---- | ---- |
-| `name` | string | **鏄?* | 瑙勫垯闆嗗悕绉帮紙姝ｅ垯鑴氭湰鏈韩娌℃湁鍚嶇О瀛楁锛屽繀椤绘彁渚涳級 |
-| `data` | object[] | **鏄?* | SillyTavern 姝ｅ垯瑙勫垯鏁扮粍 |
+导入一组 SillyTavern 正则替换脚本。
 
-### 璇锋眰绀轰緥
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | **是** | 规则集名称 |
+| `data` | object[] | **是** | SillyTavern 正则规则数组 |
+
+### 请求示例
 
 ```json
 {
@@ -123,7 +141,7 @@ POST /import/regex
 }
 ```
 
-### 鍝嶅簲 `201`
+### 响应 `201`
 
 ```json
 {
@@ -136,21 +154,31 @@ POST /import/regex
 }
 ```
 
-## 瀵煎叆瑙掕壊鍗?
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `import_parse_error` | 请求体校验失败，或正则规则数组无法解析 |
+
+## 导入角色卡
+
 ```http
 POST /import/character
 ```
 
-瀵煎叆涓€涓?SillyTavern Character Card V2 鏍煎紡鐨勮鑹插崱銆傚彲閫夊悓鏃跺垱寤轰細璇濄€?
-璇锋眰浣撳ぇ灏忛檺鍒讹細**200KB**銆?
-### 璇锋眰浣?
-| 瀛楁 | 绫诲瀷 | 蹇呭～ | 璇存槑 |
-| ---- | ---- | ---- | ---- |
-| `payload` | object | **鏄?* | SillyTavern Character Card V2 JSON |
-| `create_session` | boolean | 鍚?| 鏄惁鍚屾椂鍒涘缓浼氳瘽锛堥粯璁?`false`锛?|
-| `title` | string | 鍚?| 浼氳瘽鏍囬锛坄create_session=true` 鏃朵娇鐢級锛?-200 瀛楃 |
+导入一个 SillyTavern 角色卡。当前优先支持 TavernCard V2。
 
-### 璇锋眰绀轰緥
+请求体大小限制是 **200KB**。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `payload` | object | **是** | SillyTavern Character Card JSON |
+| `create_session` | boolean | 否 | 是否同时创建会话，默认 `false` |
+| `title` | string | 否 | 当 `create_session=true` 时使用的会话标题 |
+
+### 请求示例
 
 ```json
 {
@@ -171,7 +199,27 @@ POST /import/character
 }
 ```
 
-### 鍝嶅簲 `201`
+### 响应 `201`（仅导入角色）
+
+```json
+{
+  "data": {
+    "create_session": false,
+    "character": {
+      "name": "Luna",
+      "description": "A moon priestess who keeps watch at night.",
+      "personality": "Calm and precise",
+      "scenario": "Night watch at the city wall",
+      "first_mes": "The moon is bright tonight.",
+      "mes_example": "<START>\n{{char}}: The tide is turning."
+    },
+    "character_id": "char_luna",
+    "character_version_id": "charver_luna_1"
+  }
+}
+```
+
+### 响应 `201`（导入角色并创建会话）
 
 ```json
 {
@@ -185,8 +233,6 @@ POST /import/character
       "first_mes": "The moon is bright tonight.",
       "mes_example": "<START>\n{{char}}: The tide is turning."
     },
-    "character_id": "char_luna",
-    "character_version_id": "charver_luna_1",
     "session": {
       "id": "sess_luna",
       "title": "Luna Demo Session",
@@ -207,33 +253,35 @@ POST /import/character
 }
 ```
 
-### 閿欒
+### 错误
 
-| 鐘舵€佺爜 | 璇存槑 |
-| ------ | ---- |
-| `400` | 璇锋眰浣撴牎楠屽け璐ユ垨瑙掕壊鍗℃牸寮忛敊璇?|
-| `413` | 璇锋眰浣撹秴杩?200KB 闄愬埗 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `import_parse_error` | 请求体校验失败，或角色卡无法解析 |
+| `413` | `import_payload_too_large` | 请求体超过 `200KB` 限制 |
 
-## 瀵煎叆鑱婂ぉ鏂囦欢
+## 导入聊天文件
 
 ```http
 POST /import/chat
 ```
 
-瀵煎叆涓€涓亰澶╂枃浠躲€傛敮鎸佷袱绉嶆牸寮忕殑鑷姩璇嗗埆锛?
-- **TavernHeadless 鍘熺敓鏍煎紡锛坄.thchat`锛?*锛欽SON 鏂囦欢锛屼俊灏佸瓧娈?`spec === "tavern_headless_chat"`
-- **SillyTavern JSONL 鏍煎紡锛坄.jsonl`锛?*锛氭瘡琛屼竴涓?JSON 瀵硅薄锛岀涓€琛屼负澶撮儴淇℃伅
+导入聊天文件。接口会自动识别两种格式：
 
-绯荤粺閫氳繃 `JSON.parse` 灏濊瘯瑙ｆ瀽鏁翠釜鍐呭锛屽鏋滄垚鍔熶笖 `spec` 瀛楁涓?`"tavern_headless_chat"`锛屽垯璧板師鐢熸牸寮忓鍏ヨ矾寰勶紱鍚﹀垯鎸?ST JSONL 鏍煎紡澶勭悊銆?
-`.thchat` 鍘熺敓鏍煎紡涓殑璁板繂鏉＄洰鐜板湪鏀寔 Memory V2 鍏冩暟鎹紝渚嬪 `summary_tier`銆乣lifecycle_status`銆乣source_job_id`銆乧overage 缁熻锛屼互鍙婃墿灞曞叧绯绘灇涓?`derived_from` / `compacts` / `resolves`銆?
-### 璇锋眰浣?
-| 瀛楁 | 绫诲瀷 | 蹇呭～ | 璇存槑 |
+- `.thchat`：TavernHeadless 原生 JSON 格式，要求 `spec === "tavern_headless_chat"`
+- `.jsonl`：SillyTavern JSONL 格式
+
+`.thchat` 中的记忆条目支持 Memory V2 元数据，例如 `summary_tier`、`lifecycle_status`、`source_job_id`、coverage 统计，以及扩展关系类型 `derived_from`、`compacts`、`resolves`。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
-| `data` | string | **鏄?* | 鑱婂ぉ鏂囦欢鐨勬枃鏈唴瀹癸紙JSONL 鎴?JSON锛?|
-| `character_id` | string | 鍚?| 缁戝畾瑙掕壊 ID锛屽鍏ュ悗浼氳瘽鍏宠仈璇ヨ鑹?|
-| `title` | string | 鍚?| 鑷畾涔変細璇濇爣棰橈紝涓嶄紶鍒欎粠鏂囦欢涓帹鏂?|
+| `data` | string | **是** | 聊天文件文本内容（JSONL 或 JSON） |
+| `character_id` | string | 否 | 绑定角色 ID；导入后会话会关联该角色 |
+| `title` | string | 否 | 自定义会话标题；不传时从文件推断 |
 
-### 璇锋眰绀轰緥
+### 请求示例
 
 ```json
 {
@@ -243,9 +291,7 @@ POST /import/chat
 }
 ```
 
-### 鍝嶅簲 `200`
-
-**ST JSONL 鏍煎紡瀵煎叆鍝嶅簲锛?*
+### 响应 `201`（SillyTavern JSONL）
 
 ```json
 {
@@ -262,7 +308,7 @@ POST /import/chat
 }
 ```
 
-**TavernHeadless 鍘熺敓鏍煎紡瀵煎叆鍝嶅簲锛?*
+### 响应 `201`（`.thchat`）
 
 ```json
 {
@@ -283,47 +329,47 @@ POST /import/chat
 }
 ```
 
-| 瀛楁 | 绫诲瀷 | 璇存槑 |
+### 返回字段说明
+
+| 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `session_id` | string | 鍒涘缓鐨勪細璇?ID |
-| `title` | string | 浼氳瘽鏍囬 |
-| `floor_count` | integer | 瀵煎叆鐨勬ゼ灞傛暟 |
-| `message_count` | integer | 瀵煎叆鐨勬秷鎭暟 |
-| `swipe_count` | integer | 瀵煎叆鐨?swipe锛堝鐗堟湰娑堟伅椤碉級鏁?|
-| `skipped_lines` | integer | 璺宠繃鐨勬棤娉曡В鏋愮殑琛屾暟锛堜粎 ST JSONL锛?|
-| `import_source` | string | 瀵煎叆鏉ユ簮鏍囪瘑 |
-| `format` | string | 妫€娴嬪埌鐨勬牸寮忥細`thchat` 鎴?`sillytavern_jsonl` |
-| `page_count` | integer | 娑堟伅椤垫€绘暟锛堜粎 thchat锛?|
-| `variable_count` | integer | 瀵煎叆鐨勫彉閲忔暟锛堜粎 thchat锛?|
-| `memory_item_count` | integer | 瀵煎叆鐨勮蹇嗘潯鐩暟锛堜粎 thchat锛?|
-| `memory_edge_count` | integer | 瀵煎叆鐨勮蹇嗗叧绯昏竟鏁帮紙浠?thchat锛?|
+| `session_id` | string | 创建的会话 ID |
+| `title` | string | 会话标题 |
+| `floor_count` | integer | 导入的楼层数 |
+| `message_count` | integer | 导入的消息数 |
+| `swipe_count` | integer | 导入的 swipe 数 |
+| `skipped_lines` | integer | 跳过的无法解析行数（仅 ST JSONL） |
+| `import_source` | string | 导入来源标识 |
+| `format` | string | 检测到的格式：`thchat` 或 `sillytavern_jsonl` |
+| `page_count` | integer | 消息页总数（仅 `.thchat`） |
+| `variable_count` | integer | 导入的变量数（仅 `.thchat`） |
+| `memory_item_count` | integer | 导入的记忆条目数（仅 `.thchat`） |
+| `memory_edge_count` | integer | 导入的记忆关系边数（仅 `.thchat`） |
 
-### ST JSONL 鏍煎紡澶勭悊缁嗚妭
+### 处理细节
 
-**娑堟伅鍒嗙粍瑙勫垯锛?*
+**消息分组规则：**
 
-- 鐢ㄦ埛娑堟伅锛坄is_user: true`锛夊紑濮嬩竴涓柊妤煎眰锛屽搴?`pageKind: "input"`
-- 鍔╂墜娑堟伅锛坄is_user: false`锛夊綊鍏ュ綋鍓嶆ゼ灞傦紝瀵瑰簲 `pageKind: "output"`
-- 寮€澶寸殑鍔╂墜娑堟伅锛堟病鏈夊墠缃敤鎴锋秷鎭級鏄犲皠涓?floor 0锛坓reeting锛?- `is_system: true` 鐨勬秷鎭爣璁颁负 `isHidden: true`
+- `is_user: true` 的消息会开启一个新的楼层，对应 `pageKind: "input"`
+- `is_user: false` 的消息会归入当前楼层，对应 `pageKind: "output"`
+- 如果文件开头就是助手消息，会映射到 greeting 楼层
+- `is_system: true` 的消息会标记为隐藏消息
 
-**Swipe 澶勭悊锛?*
+**Swipe 处理：**
 
-- 娑堟伅鐨?`swipes` 鏁扮粍涓殑姣忎釜鏉＄洰鍒涘缓涓虹嫭绔嬬殑 `message_page`锛宍version` 閫掑
-- `swipe_id` 鎸囧畾鐨勭増鏈爣璁颁负 `isActive: true`
+- `swipes` 数组中的每个条目都会生成独立的 `message_page`
+- `swipe_id` 指定的版本会标记为活动页
 
-**鏃堕棿瑙ｆ瀽锛?*
+**时间解析：**
 
-- `send_date` 鏀寔鏁板€硷紙Unix 姣锛夈€両SO 8601 瀛楃涓层€佷汉绫诲彲璇诲瓧绗︿覆
-- 鏃犳硶瑙ｆ瀽鏃跺洖閫€鍒?`Date.now()`
+- `send_date` 支持 Unix 毫秒、ISO 8601 字符串和常见文本时间格式
+- 无法解析时回退到 `Date.now()`
 
-**瀹归敊澶勭悊锛?*
+### 错误
 
-- 绌鸿鍜屾棤娉曡В鏋愮殑琛岃烦杩囪€岄潪鎶ラ敊
-- Chub Chat 鏍煎紡鐨勫璞″瀷 `mes` 瀛楁鑷姩灞曞钩
-
-### 閿欒
-
-| 鐘舵€佺爜 | 璇存槑 |
-| ------ | ---- |
-| `400` | 璇锋眰浣撴牎楠屽け璐ャ€佹枃浠跺唴瀹逛负绌恒€佸ご閮ㄧ己灏戝繀闇€瀛楁 |
-| `400` | thchat 鏍煎紡鐗堟湰涓嶅吋瀹癸紙涓荤増鏈彿涓嶅尮閰嶏級 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `import_parse_error` | 请求体校验失败，或文件内容无法解析 |
+| `400` | `import_empty` | 聊天文件中没有可导入消息 |
+| `400` | `import_unsupported_version` | `.thchat` 的 `spec_version` 主版本号不受支持 |
+| `400` | `character_not_found` | 指定的 `character_id` 不存在或当前账号不可见 |

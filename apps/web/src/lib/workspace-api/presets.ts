@@ -52,13 +52,13 @@ export async function updatePresetAsset(
     order_contexts: Array<Record<string, unknown>>;
     top_level: Record<string, unknown>;
   },
-  expectedUpdatedAt: number | undefined,
+  expectedVersion: number | undefined,
   accountId?: string
 ): Promise<WorkspaceLibraryAsset> {
   const payload = await apiClient.presets.update({
     accountId,
     editor,
-    expectedUpdatedAt,
+    expectedVersion,
     name,
     presetId
   });
@@ -74,9 +74,14 @@ export async function updatePresetAsset(
   };
 }
 
-export async function deletePresetAsset(presetId: string, accountId?: string): Promise<void> {
+export async function deletePresetAsset(
+  presetId: string,
+  expectedVersion: number | undefined,
+  accountId?: string
+): Promise<void> {
   await apiClient.presets.remove({
     accountId,
+    expectedVersion,
     presetId
   });
 }

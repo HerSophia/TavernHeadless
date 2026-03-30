@@ -24,6 +24,7 @@ import type { AppDb, DatabaseConnection, DbExecutor } from "../db/client.js";
 import { presets } from "../db/schema.js";
 import { errorResponseJsonSchema } from "./schemas/common.js";
 import { parseWithSchema, sendError, parseJsonField } from "../lib/http.js";
+import { executeWithSqliteBusyRetry, ResourceBusyError } from "../lib/retry.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import {
   type JsonRecord,
@@ -55,7 +56,12 @@ const listEntriesQuerySchema = z.object({
   marker: z.enum(["true", "false"]).optional(),
 });
 
+const deleteEntryQuerySchema = z.object({
+  expected_version: z.coerce.number().int().positive().optional(),
+});
+
 const createEntrySchema = z.object({
+  expected_version: z.number().int().positive().optional(),
   identifier: z.string().trim().min(1).max(64).regex(/^[a-zA-Z0-9_-]+$/),
   name: z.string().default(""),
   role: z.enum(["assistant", "system", "user"]).default("system"),
@@ -87,20 +93,26 @@ const updateEntryFieldsShape = {
 };
 
 const updateEntrySchema = z
-  .object(updateEntryFieldsShape)
-  .refine((value) => Object.keys(value).length > 0, "At least one field is required");
+  .object({
+    expected_version: z.number().int().positive().optional(),
+    ...updateEntryFieldsShape,
+  })
+  .refine((value) => Object.keys(value).some((key) => key !== "expected_version"), "At least one field is required");
 
 const reorderEntriesSchema = z.object({
+  expected_version: z.number().int().positive().optional(),
   identifiers: z.array(z.string().min(1)).min(1),
 });
 
 const batchUpdateSchema = z.object({
+  expected_version: z.number().int().positive().optional(),
   identifiers: z.array(z.string().min(1)).min(1),
   fields: z.object(updateEntryFieldsShape)
     .refine((value) => Object.keys(value).length > 0, "At least one field is required"),
 });
 
 const batchDeleteSchema = z.object({
+  expected_version: z.number().int().positive().optional(),
   identifiers: z.array(z.string().min(1)).min(1),
 });
 
@@ -111,6 +123,14 @@ const presetIdParamsJsonSchema = {
   required: ["preset_id"],
   properties: {
     preset_id: { type: "string" as const },
+  },
+  additionalProperties: false,
+};
+
+const deleteEntryQueryJsonSchema = {
+  type: "object" as const,
+  properties: {
+    expected_version: { type: "integer" as const, minimum: 1 },
   },
   additionalProperties: false,
 };
@@ -189,6 +209,7 @@ const createEntryBodyJsonSchema = {
   type: "object" as const,
   required: ["identifier"],
   properties: {
+    expected_version: { type: "integer" as const, minimum: 1 },
     identifier: { type: "string" as const, minLength: 1, maxLength: 64, pattern: "^[a-zA-Z0-9_-]+$" },
     name: { type: "string" as const },
     role: { type: "string" as const, enum: ["assistant", "system", "user"] },
@@ -209,6 +230,7 @@ const createEntryBodyJsonSchema = {
 const updateEntryBodyJsonSchema = {
   type: "object" as const,
   properties: {
+    expected_version: { type: "integer" as const, minimum: 1 },
     name: { type: "string" as const },
     role: { type: "string" as const, enum: ["assistant", "system", "user"] },
     content: { type: "string" as const },
@@ -229,6 +251,7 @@ const reorderBodyJsonSchema = {
   type: "object" as const,
   required: ["identifiers"],
   properties: {
+    expected_version: { type: "integer" as const, minimum: 1 },
     identifiers: { type: "array" as const, items: { type: "string" as const }, minItems: 1 },
   },
   additionalProperties: false,
@@ -238,6 +261,7 @@ const batchUpdateBodyJsonSchema = {
   type: "object" as const,
   required: ["identifiers", "fields"],
   properties: {
+    expected_version: { type: "integer" as const, minimum: 1 },
     identifiers: { type: "array" as const, items: { type: "string" as const }, minItems: 1 },
     fields: { type: "object" as const, additionalProperties: true },
   },
@@ -248,6 +272,7 @@ const batchDeleteBodyJsonSchema = {
   type: "object" as const,
   required: ["identifiers"],
   properties: {
+    expected_version: { type: "integer" as const, minimum: 1 },
     identifiers: { type: "array" as const, items: { type: "string" as const }, minItems: 1 },
   },
   additionalProperties: false,
@@ -279,6 +304,8 @@ class PresetVersionConflictError extends Error {
     super("preset_version_conflict");
   }
 }
+
+const RESOURCE_BUSY_MESSAGE = "Resource is temporarily busy, please retry";
 
 function loadPresetRaw(
   db: AppDb | DbExecutor,
@@ -326,17 +353,22 @@ function buildEntryResponseFromRaw(raw: JsonRecord, identifier: string): PresetE
   return getEditorEntryFromRaw(raw, identifier);
 }
 
-function withPresetWriteCas<T>(
+async function withPresetWriteCas<T>(
   db: AppDb,
   presetId: string,
   accountId: string,
+  options: { expectedVersion?: number },
   mutate: (state: { row: typeof presets.$inferSelect; raw: JsonRecord }) => PresetMutationResult<T>
-): PresetMutationResult<T> {
+): Promise<PresetMutationResult<T>> {
   try {
-    return db.transaction((tx) => {
+    return await executeWithSqliteBusyRetry(() => db.transaction((tx) => {
       const loaded = loadPresetRaw(tx, presetId, accountId);
       if (!loaded) {
         return { kind: "error", statusCode: 404, code: "not_found", message: "Preset not found" };
+      }
+
+      if (options.expectedVersion !== undefined && loaded.row.version !== options.expectedVersion) {
+        return { kind: "error", statusCode: 409, code: "preset_conflict", message: "Preset has been modified by another operation" };
       }
 
       const result = mutate(loaded);
@@ -354,10 +386,13 @@ function withPresetWriteCas<T>(
       }
 
       return result;
-    });
+    }));
   } catch (error) {
     if (error instanceof PresetVersionConflictError) {
       return { kind: "error", statusCode: 409, code: "preset_conflict", message: "Preset has been modified by another operation" };
+    }
+    if (error instanceof ResourceBusyError) {
+      return { kind: "error", statusCode: 503, code: "resource_busy", message: RESOURCE_BUSY_MESSAGE };
     }
     throw error;
   }
@@ -432,6 +467,7 @@ export async function registerPresetEntryRoutes(
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -442,7 +478,9 @@ export async function registerPresetEntryRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, (loaded) => {
+    const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
+      expectedVersion: parsedBody.data.expected_version,
+    }, (loaded) => {
       const { raw } = loaded;
       const identifier = parsedBody.data.identifier;
 
@@ -546,6 +584,7 @@ export async function registerPresetEntryRoutes(
         400: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -559,7 +598,9 @@ export async function registerPresetEntryRoutes(
     const identifier = parsedParams.data.identifier;
     const body = parsedBody.data;
 
-    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, ({ raw }) => {
+    const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
+      expectedVersion: body.expected_version,
+    }, ({ raw }) => {
       const fields: JsonRecord = {};
       if (body.name !== undefined) fields.name = body.name;
       if (body.role !== undefined) fields.role = body.role;
@@ -609,20 +650,27 @@ export async function registerPresetEntryRoutes(
       summary: "Delete preset prompt entry",
       operationId: "deletePresetEntry",
       params: entryParamsJsonSchema,
+      querystring: deleteEntryQueryJsonSchema,
       response: {
         200: deleteEntryResponseJsonSchema,
+        400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(entryParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
+    const parsedQuery = parseWithSchema(deleteEntryQuerySchema, request.query, reply);
+    if (!parsedQuery.ok) return;
 
     const auth = getRequestAuthContext(request);
     const identifier = parsedParams.data.identifier;
 
-    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, ({ raw }) => {
+    const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
+      expectedVersion: parsedQuery.data.expected_version,
+    }, ({ raw }) => {
       const removed = removePromptFromRaw(raw, identifier);
       if (!removed) {
         return { kind: "error", statusCode: 404, code: "entry_not_found", message: `Entry '${identifier}' not found` };
@@ -652,6 +700,7 @@ export async function registerPresetEntryRoutes(
         400: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -663,7 +712,9 @@ export async function registerPresetEntryRoutes(
 
     const auth = getRequestAuthContext(request);
 
-    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, ({ row, raw }) => {
+    const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
+      expectedVersion: parsedBody.data.expected_version,
+    }, ({ row, raw }) => {
       reorderPromptsInRaw(raw, parsedBody.data.identifiers);
 
       const validationError = validateRawPreset(raw);
@@ -703,6 +754,7 @@ export async function registerPresetEntryRoutes(
         400: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -714,7 +766,9 @@ export async function registerPresetEntryRoutes(
 
     const auth = getRequestAuthContext(request);
     const bodyFields = parsedBody.data.fields;
-    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, ({ raw }) => {
+    const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
+      expectedVersion: parsedBody.data.expected_version,
+    }, ({ raw }) => {
       const fields: JsonRecord = {};
       if (bodyFields.name !== undefined) fields.name = bodyFields.name;
       if (bodyFields.role !== undefined) fields.role = bodyFields.role;
@@ -777,8 +831,10 @@ export async function registerPresetEntryRoutes(
       body: batchDeleteBodyJsonSchema,
       response: {
         200: batchResultJsonSchema,
+        400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -790,7 +846,9 @@ export async function registerPresetEntryRoutes(
 
     const auth = getRequestAuthContext(request);
 
-    const mutation = withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, ({ raw }) => {
+    const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
+      expectedVersion: parsedBody.data.expected_version,
+    }, ({ raw }) => {
       const removedSet = new Set(removePromptsFromRaw(raw, parsedBody.data.identifiers));
 
       const results = parsedBody.data.identifiers.map((identifier, index) => {

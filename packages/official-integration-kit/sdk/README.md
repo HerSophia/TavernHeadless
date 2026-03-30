@@ -211,7 +211,32 @@ await client.presets.update({
 });
 ```
 
-兼容旧调用方时，也仍然可以继续传 `expectedUpdatedAt`，但新的接入应优先使用 `expectedVersion`。
+兼容旧调用方时，现有主资源 `PUT` 路由也仍然可以继续传 `expectedUpdatedAt`，但新的接入应优先使用 `expectedVersion`。
+
+删除主资源时，`remove(...)` 现在也支持 `expectedVersion`，SDK 会自动把它编码到 query string：
+
+```ts
+await client.presets.remove({
+  presetId: "preset-1",
+  expectedVersion: 4,
+});
+
+await client.worldbooks.remove({
+  worldbookId: "worldbook-1",
+  expectedVersion: 7,
+});
+```
+
+这遵循服务端约束：删除主资源时使用 query string `expected_version`，不使用 `DELETE` body。
+
+`presetEntries` / `worldbookEntries` 的所有写方法同样支持 `expectedVersion`：
+
+- `create(...)`、`update(...)`、`reorder(...)`、`batchUpdate(...)`、`batchDelete(...)`、`batchReorder(...)` 会通过 body 发送 `expected_version`
+- `remove(...)` 会通过 query string 发送 `expected_version`
+
+如果服务端返回 `preset_conflict` 或 `worldbook_conflict`，说明调用方持有的版本基线已经过期，应先重新拉取最新资源再决定是否重试。
+
+如果服务端返回 `resource_busy`，说明资源写入遇到了 SQLite 忙状态。它属于资源写入语义，和聊天提交链路中的 `commit_busy` 是两类不同错误。
 
 ### LLM Profiles 绑定与解绑
 

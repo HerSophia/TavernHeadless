@@ -58,8 +58,9 @@ export type PresetEntriesBatchDeleteResult = {
 };
 
 export type PresetEntriesResource = {
-  batchDelete(options: { accountId?: AccountIdHint; identifiers: string[]; presetId: string }): Promise<PresetEntriesBatchDeleteResult>;
+  batchDelete(options: { accountId?: AccountIdHint; expectedVersion?: number; identifiers: string[]; presetId: string }): Promise<PresetEntriesBatchDeleteResult>;
   batchUpdate(options: {
+    expectedVersion?: number;
     accountId?: AccountIdHint;
     fields: Partial<{
       content: string;
@@ -79,6 +80,7 @@ export type PresetEntriesResource = {
     presetId: string;
   }): Promise<PresetEntriesBatchUpdateResult>;
   create(options: {
+    expectedVersion?: number;
     accountId?: AccountIdHint;
     content?: string;
     enabled?: boolean;
@@ -97,9 +99,10 @@ export type PresetEntriesResource = {
   }): Promise<PresetEntryRecord>;
   getDetail(options: { accountId?: AccountIdHint; identifier: string; presetId: string }): Promise<PresetEntryRecord>;
   list(options: { accountId?: AccountIdHint; enabled?: boolean; marker?: boolean; presetId: string }): Promise<PresetEntriesListResult>;
-  remove(options: { accountId?: AccountIdHint; identifier: string; presetId: string }): Promise<PresetEntryDeleteResult>;
-  reorder(options: { accountId?: AccountIdHint; identifiers: string[]; presetId: string }): Promise<PresetEntriesListResult>;
+  remove(options: { accountId?: AccountIdHint; expectedVersion?: number; identifier: string; presetId: string }): Promise<PresetEntryDeleteResult>;
+  reorder(options: { accountId?: AccountIdHint; expectedVersion?: number; identifiers: string[]; presetId: string }): Promise<PresetEntriesListResult>;
   update(options: {
+    expectedVersion?: number;
     accountId?: AccountIdHint;
     content?: string;
     enabled?: boolean;
@@ -124,9 +127,10 @@ export function createPresetEntriesResource(client: TransportClient): PresetEntr
       const response = await client.fetchJson<Record<string, unknown>>(
         `/presets/${encodeURIComponent(options.presetId)}/entries/batch/delete`,
         {
-          body: {
+          body: compactObject({
+            expected_version: options.expectedVersion,
             identifiers: options.identifiers,
-          },
+          }),
           headers: buildAccountHeaders(options.accountId),
           method: "POST",
         },
@@ -138,10 +142,11 @@ export function createPresetEntriesResource(client: TransportClient): PresetEntr
       const response = await client.fetchJson<Record<string, unknown>>(
         `/presets/${encodeURIComponent(options.presetId)}/entries/batch/update`,
         {
-          body: {
+          body: compactObject({
+            expected_version: options.expectedVersion,
             fields: compactObject(options.fields),
             identifiers: options.identifiers,
-          },
+          }),
           headers: buildAccountHeaders(options.accountId),
           method: "PATCH",
         },
@@ -153,6 +158,7 @@ export function createPresetEntriesResource(client: TransportClient): PresetEntr
       const response = await client.fetchJson<Record<string, unknown>>(`/presets/${encodeURIComponent(options.presetId)}/entries`, {
         body: compactObject({
           content: options.content,
+          expected_version: options.expectedVersion,
           enabled: options.enabled,
           extra: options.extra,
           forbid_overrides: options.forbidOverrides,
@@ -218,8 +224,14 @@ export function createPresetEntriesResource(client: TransportClient): PresetEntr
       };
     },
     async remove(options): Promise<PresetEntryDeleteResult> {
+      const query = buildQueryString({
+        expected_version: options.expectedVersion,
+      });
+      const pathname = query
+        ? `/presets/${encodeURIComponent(options.presetId)}/entries/${encodeURIComponent(options.identifier)}?${query}`
+        : `/presets/${encodeURIComponent(options.presetId)}/entries/${encodeURIComponent(options.identifier)}`;
       const response = await client.fetchJson<Record<string, unknown>>(
-        `/presets/${encodeURIComponent(options.presetId)}/entries/${encodeURIComponent(options.identifier)}`,
+        pathname,
         {
           headers: buildAccountHeaders(options.accountId),
           method: "DELETE",
@@ -236,9 +248,10 @@ export function createPresetEntriesResource(client: TransportClient): PresetEntr
       const response = await client.fetchJson<Record<string, unknown>>(
         `/presets/${encodeURIComponent(options.presetId)}/entries/reorder`,
         {
-          body: {
+          body: compactObject({
+            expected_version: options.expectedVersion,
             identifiers: options.identifiers,
-          },
+          }),
           headers: buildAccountHeaders(options.accountId),
           method: "PUT",
         },
@@ -258,6 +271,7 @@ export function createPresetEntriesResource(client: TransportClient): PresetEntr
         `/presets/${encodeURIComponent(options.presetId)}/entries/${encodeURIComponent(options.identifier)}`,
         {
           body: compactObject({
+            expected_version: options.expectedVersion,
             content: options.content,
             enabled: options.enabled,
             extra: options.extra,

@@ -6,9 +6,10 @@
  */
 
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../src/app";
+import * as retryModule from "../src/lib/retry";
 
 // ── 最小有效世界书 ────────────────────────────────────
 
@@ -166,6 +167,27 @@ async function listEntries(app: FastifyInstance, wbId: string, query = ""): Prom
   return res.json() as EntryListResponse;
 }
 
+async function getWorldbookDetail(app: FastifyInstance, wbId: string) {
+  const res = await app.inject({ method: "GET", url: `/worldbooks/${wbId}` });
+  expect(res.statusCode).toBe(200);
+  return res.json() as { data: { version: number; data: Record<string, unknown> } };
+}
+
+async function bumpWorldbookVersion(app: FastifyInstance, wbId: string): Promise<number> {
+  const detail = await getWorldbookDetail(app, wbId);
+  const res = await app.inject({
+    method: "PUT",
+    url: `/worldbooks/${wbId}`,
+    payload: {
+      name: `World bumped ${detail.data.version}`,
+      expected_version: detail.data.version,
+      data: detail.data.data,
+    },
+  });
+  expect(res.statusCode, res.body).toBe(200);
+  return detail.data.version;
+}
+
 async function createEntry(
   app: FastifyInstance,
   wbId: string,
@@ -191,6 +213,7 @@ describe("Worldbook Entry Routes", () => {
 
   afterEach(async () => {
     if (app) await app.close();
+    vi.restoreAllMocks();
   });
 
   // ══════════════════════════════════════════════════════
@@ -733,6 +756,39 @@ describe("Worldbook Entry Routes", () => {
         },
       });
       expect(res.statusCode).toBe(400);
+    });
+
+    it.each([
+      (wbId: string, staleVersion: number, entryId: string) => ({ method: "POST" as const, url: `/worldbooks/${wbId}/entries`, payload: { expected_version: staleVersion, keys: ["stale"], content: "create" } }),
+      (wbId: string, staleVersion: number, entryId: string) => ({ method: "PATCH" as const, url: `/worldbooks/${wbId}/entries/${entryId}`, payload: { expected_version: staleVersion, content: "patch" } }),
+      (wbId: string, staleVersion: number, entryId: string) => ({ method: "DELETE" as const, url: `/worldbooks/${wbId}/entries/${entryId}?expected_version=${staleVersion}` }),
+      (wbId: string, staleVersion: number, entryId: string) => ({ method: "PATCH" as const, url: `/worldbooks/${wbId}/entries/batch/update`, payload: { expected_version: staleVersion, ids: [entryId], fields: { disable: true } } }),
+      (wbId: string, staleVersion: number, entryId: string) => ({ method: "POST" as const, url: `/worldbooks/${wbId}/entries/batch/delete`, payload: { expected_version: staleVersion, ids: [entryId] } }),
+      (wbId: string, staleVersion: number, entryId: string) => ({ method: "PUT" as const, url: `/worldbooks/${wbId}/entries/batch/reorder`, payload: { expected_version: staleVersion, items: [{ id: entryId, order: 999 }] } }),
+    ])("returns 409 worldbook_conflict for stale entry write baseline", async (buildRequest) => {
+      const wbId = await importWorldbook(app);
+      const list = await listEntries(app, wbId);
+      const entryId = list.data[0]!.id;
+      const staleVersion = await bumpWorldbookVersion(app, wbId);
+
+      const res = await app.inject(buildRequest(wbId, staleVersion, entryId));
+      expect(res.statusCode).toBe(409);
+      expect((res.json() as ErrorBody).error.code).toBe("worldbook_conflict");
+    });
+
+    it("returns 503 resource_busy when worldbook entry writes exhaust busy retries", async () => {
+      const wbId = await importWorldbook(app);
+      const list = await listEntries(app, wbId);
+      vi.spyOn(retryModule, "executeWithSqliteBusyRetry").mockRejectedValueOnce(new retryModule.ResourceBusyError("database is locked"));
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/worldbooks/${wbId}/entries/${list.data[0]!.id}`,
+        payload: { content: "busy patch" },
+      });
+
+      expect(res.statusCode).toBe(503);
+      expect((res.json() as ErrorBody).error.code).toBe("resource_busy");
     });
   });
 

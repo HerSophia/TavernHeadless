@@ -1,5 +1,5 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
-import { compactObject, readArray, readNumber, readRecord, readString } from "./utils.js";
+import { buildQueryString, compactObject, readArray, readNumber, readRecord, readString } from "./utils.js";
 
 export type WorldbookListItem = {
   createdAt: number;
@@ -17,7 +17,7 @@ export type WorldbookDetail = WorldbookListItem & {
 export type WorldbooksResource = {
   getDetail(options: { accountId?: AccountIdHint; worldbookId: string }): Promise<WorldbookDetail>;
   list(options?: { accountId?: AccountIdHint }): Promise<WorldbookListItem[]>;
-  remove(options: { accountId?: AccountIdHint; worldbookId: string }): Promise<void>;
+  remove(options: { accountId?: AccountIdHint; expectedVersion?: number; worldbookId: string }): Promise<void>;
   update(options: {
     accountId?: AccountIdHint;
     data: Record<string, unknown>;
@@ -62,7 +62,11 @@ export function createWorldbooksResource(client: TransportClient): WorldbooksRes
         .filter((item): item is WorldbookListItem => item !== null);
     },
     async remove(options): Promise<void> {
-      await client.fetchJson(`/worldbooks/${encodeURIComponent(options.worldbookId)}`, {
+      const query = buildQueryString({
+        expected_version: options.expectedVersion,
+      });
+      const pathname = query ? `/worldbooks/${encodeURIComponent(options.worldbookId)}?${query}` : `/worldbooks/${encodeURIComponent(options.worldbookId)}`;
+      await client.fetchJson(pathname, {
         headers: buildAccountHeaders(options.accountId),
         method: "DELETE",
       });

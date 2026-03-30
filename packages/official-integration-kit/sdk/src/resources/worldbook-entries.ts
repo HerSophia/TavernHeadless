@@ -57,9 +57,10 @@ export type WorldbookEntriesBatchDeleteResult = {
 };
 
 export type WorldbookEntriesResource = {
-  batchDelete(options: { accountId?: AccountIdHint; ids: string[]; worldbookId: string }): Promise<WorldbookEntriesBatchDeleteResult>;
-  batchReorder(options: { accountId?: AccountIdHint; items: Array<{ id: string; order: number }>; worldbookId: string }): Promise<WorldbookEntriesBatchUpdateResult>;
+  batchDelete(options: { accountId?: AccountIdHint; expectedVersion?: number; ids: string[]; worldbookId: string }): Promise<WorldbookEntriesBatchDeleteResult>;
+  batchReorder(options: { accountId?: AccountIdHint; expectedVersion?: number; items: Array<{ id: string; order: number }>; worldbookId: string }): Promise<WorldbookEntriesBatchUpdateResult>;
   batchUpdate(options: {
+    expectedVersion?: number;
     accountId?: AccountIdHint;
     fields: Partial<{
       case_sensitive: boolean | null;
@@ -82,6 +83,7 @@ export type WorldbookEntriesResource = {
     worldbookId: string;
   }): Promise<WorldbookEntriesBatchUpdateResult>;
   create(options: {
+    expectedVersion?: number;
     accountId?: AccountIdHint;
     caseSensitive?: boolean | null;
     comment?: string;
@@ -113,8 +115,9 @@ export type WorldbookEntriesResource = {
     sortOrder?: "asc" | "desc";
     worldbookId: string;
   }): Promise<WorldbookEntryRecord[]>;
-  remove(options: { accountId?: AccountIdHint; entryId: string; worldbookId: string }): Promise<WorldbookEntryDeleteResult>;
+  remove(options: { accountId?: AccountIdHint; entryId: string; expectedVersion?: number; worldbookId: string }): Promise<WorldbookEntryDeleteResult>;
   update(options: {
+    expectedVersion?: number;
     accountId?: AccountIdHint;
     caseSensitive?: boolean | null;
     comment?: string;
@@ -142,9 +145,10 @@ export function createWorldbookEntriesResource(client: TransportClient): Worldbo
       const response = await client.fetchJson<Record<string, unknown>>(
         `/worldbooks/${encodeURIComponent(options.worldbookId)}/entries/batch/delete`,
         {
-          body: {
+          body: compactObject({
+            expected_version: options.expectedVersion,
             ids: options.ids,
-          },
+          }),
           headers: buildAccountHeaders(options.accountId),
           method: "POST",
         },
@@ -156,9 +160,10 @@ export function createWorldbookEntriesResource(client: TransportClient): Worldbo
       const response = await client.fetchJson<Record<string, unknown>>(
         `/worldbooks/${encodeURIComponent(options.worldbookId)}/entries/batch/reorder`,
         {
-          body: {
+          body: compactObject({
+            expected_version: options.expectedVersion,
             items: options.items,
-          },
+          }),
           headers: buildAccountHeaders(options.accountId),
           method: "PUT",
         },
@@ -170,10 +175,11 @@ export function createWorldbookEntriesResource(client: TransportClient): Worldbo
       const response = await client.fetchJson<Record<string, unknown>>(
         `/worldbooks/${encodeURIComponent(options.worldbookId)}/entries/batch/update`,
         {
-          body: {
+          body: compactObject({
+            expected_version: options.expectedVersion,
             fields: compactObject(options.fields),
             ids: options.ids,
-          },
+          }),
           headers: buildAccountHeaders(options.accountId),
           method: "PATCH",
         },
@@ -185,6 +191,7 @@ export function createWorldbookEntriesResource(client: TransportClient): Worldbo
       const response = await client.fetchJson<Record<string, unknown>>(`/worldbooks/${encodeURIComponent(options.worldbookId)}/entries`, {
         body: compactObject({
           case_sensitive: options.caseSensitive,
+          expected_version: options.expectedVersion,
           comment: options.comment,
           constant: options.constant,
           content: options.content,
@@ -253,8 +260,14 @@ export function createWorldbookEntriesResource(client: TransportClient): Worldbo
         .filter((item): item is WorldbookEntryRecord => item !== null);
     },
     async remove(options): Promise<WorldbookEntryDeleteResult> {
+      const query = buildQueryString({
+        expected_version: options.expectedVersion,
+      });
+      const pathname = query
+        ? `/worldbooks/${encodeURIComponent(options.worldbookId)}/entries/${encodeURIComponent(options.entryId)}?${query}`
+        : `/worldbooks/${encodeURIComponent(options.worldbookId)}/entries/${encodeURIComponent(options.entryId)}`;
       const response = await client.fetchJson<Record<string, unknown>>(
-        `/worldbooks/${encodeURIComponent(options.worldbookId)}/entries/${encodeURIComponent(options.entryId)}`,
+        pathname,
         {
           headers: buildAccountHeaders(options.accountId),
           method: "DELETE",
@@ -272,6 +285,7 @@ export function createWorldbookEntriesResource(client: TransportClient): Worldbo
         `/worldbooks/${encodeURIComponent(options.worldbookId)}/entries/${encodeURIComponent(options.entryId)}`,
         {
           body: compactObject({
+            expected_version: options.expectedVersion,
             case_sensitive: options.caseSensitive,
             comment: options.comment,
             constant: options.constant,

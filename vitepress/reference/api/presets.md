@@ -24,7 +24,8 @@ GET /presets
       "name": "Story Preset",
       "source": "sillytavern",
       "created_at": 1735689600000,
-      "updated_at": 1735689660000
+      "updated_at": 1735689660000,
+      "version": 3
     }
   ]
 }
@@ -51,7 +52,8 @@ GET /presets/:id
       "prompt_order": []
     },
     "created_at": 1735689600000,
-    "updated_at": 1735689660000
+    "updated_at": 1735689660000,
+    "version": 3
   }
 }
 ```
@@ -107,7 +109,8 @@ GET /presets/:id/editor
       }
     },
     "created_at": 1735689600000,
-    "updated_at": 1735689660000
+    "updated_at": 1735689660000,
+    "version": 3
   }
 }
 ```
@@ -168,7 +171,11 @@ PUT /presets/:id
 
 使用编辑器格式更新预设。系统会将编辑器文档转回 SillyTavern 原始格式存储。
 
-支持乐观锁：传入 `expected_updated_at`，如果数据库中的 `updated_at` 不匹配则返回 `409`。
+此接口要求提供并发控制字段：
+
+- 新接入应优先传 `expected_version`
+- 现有主资源 `PUT` 路由仍兼容 `expected_updated_at`
+- 如果两者都不传，会返回 `400`
 
 ### 请求体
 
@@ -176,14 +183,15 @@ PUT /presets/:id
 | ---- | ---- | ---- | ---- |
 | `name` | string | **是** | 名称（至少 1 字符） |
 | `editor` | EditorDocument | **是** | 编辑器文档 |
-| `expected_updated_at` | integer | 否 | 乐观锁：期望的 `updated_at` 值 |
+| `expected_version` | integer | 否 | 推荐的乐观锁字段；期望的 `version` 值 |
+| `expected_updated_at` | integer | 否 | 兼容字段；仅用于已有主资源 `PUT` 调用方 |
 
 ### 请求示例
 
 ```json
 {
   "name": "Story Preset",
-  "expected_updated_at": 1735689660000,
+  "expected_version": 3,
   "editor": {
     "default_character_id": 100000,
     "entries": [
@@ -222,18 +230,20 @@ PUT /presets/:id
     "name": "Story Preset",
     "source": "sillytavern",
     "created_at": 1735689600000,
-    "updated_at": 1735690000000
+    "updated_at": 1735690000000,
+    "version": 4
   }
 }
 ```
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败 |
-| `404` | 预设不存在 |
-| `409` | 乐观锁冲突：`expected_updated_at` 不匹配 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败，或未提供 `expected_version` / `expected_updated_at` |
+| `404` | `preset_not_found` | 预设不存在 |
+| `409` | `preset_conflict` | 版本基线过期，或兼容字段 `expected_updated_at` 不匹配 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 删除 Preset
 
@@ -241,9 +251,31 @@ PUT /presets/:id
 DELETE /presets/:id
 ```
 
+删除时推荐通过 query string 传入 `expected_version`。此接口不使用 `DELETE` 请求体。
+
+### 查询参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 推荐的版本前置条件；不传时保留无前置条件删除行为 |
+
+### 请求示例
+
+```http
+DELETE /presets/preset_story?expected_version=4
+```
+
 ### 响应 `204`
 
 无响应体。
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `preset_not_found` | 预设不存在 |
+| `409` | `preset_conflict` | `expected_version` 与服务端当前版本不一致 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ---
 
@@ -252,6 +284,18 @@ DELETE /presets/:id
 对预设中的单个提示词条目进行增删改查和批量操作，无需通过编辑器视图操作整个预设。
 
 所有条目端点都挂载在 `/presets/:preset_id/entries` 下。
+
+### 写入并发控制
+
+以下写入端点都支持 `expected_version`：
+
+- `POST /presets/:preset_id/entries`
+- `PATCH /presets/:preset_id/entries/:identifier`
+- `PUT /presets/:preset_id/entries/reorder`
+- `PATCH /presets/:preset_id/entries/batch/update`
+- `POST /presets/:preset_id/entries/batch/delete`
+
+其中 `DELETE /presets/:preset_id/entries/:identifier` 使用 query string `expected_version`，其他写入端点通过 JSON body 传递 `expected_version`。当版本基线过期时返回 `409 preset_conflict`；当 SQLite 写入暂时繁忙时返回 `503 resource_busy`。
 
 ::: tip 存储方式
 预设条目存储在 `preset.data_json` 的 JSON blob 内（即 SillyTavern 原始格式中的 `prompts[]` 和 `prompt_order[]`），通过 read-modify-write 模式操作。不同于世界书条目的独立表存储。这保证了与 SillyTavern 预设格式的无损兼容。
@@ -341,6 +385,7 @@ POST /presets/:preset_id/entries
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 期望的父预设 `version` 值 |
 | `identifier` | string | **是** | 唯一标识（`[a-zA-Z0-9_-]`，1–64 字符） |
 | `name` | string | 否 | 显示名称，默认 `""` |
 | `role` | string | 否 | 角色，默认 `"system"` |
@@ -359,6 +404,7 @@ POST /presets/:preset_id/entries
 
 ```json
 {
+  "expected_version": 4,
   "identifier": "worldInfo",
   "name": "World Info Injection",
   "role": "system",
@@ -373,11 +419,12 @@ POST /presets/:preset_id/entries
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败 |
-| `404` | 预设不存在 |
-| `409` | `identifier` 已存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `preset_validation_error` | 请求体校验失败，或写回后的预设结构校验失败 |
+| `404` | `not_found` | 预设不存在 |
+| `409` | `identifier_conflict` / `preset_conflict` | `identifier` 已存在，或 `expected_version` 过期 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 获取条目
 
@@ -417,10 +464,13 @@ PATCH /presets/:preset_id/entries/:identifier
 
 部分更新，只传需要修改的字段。至少传一个字段。
 
+请求体可选传入 `expected_version`，用于校验父预设版本。
+
 ### 请求示例
 
 ```json
 {
+  "expected_version": 4,
   "content": "You are a helpful AI assistant in a fantasy world.",
   "enabled": true
 }
@@ -432,10 +482,12 @@ PATCH /presets/:preset_id/entries/:identifier
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败或未传任何字段 |
-| `404` | 预设或条目不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `preset_validation_error` | 请求体校验失败、未传任何更新字段，或写回后的预设结构校验失败 |
+| `404` | `not_found` / `entry_not_found` | 预设或条目不存在 |
+| `409` | `preset_conflict` | `expected_version` 过期 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 删除条目
 
@@ -444,6 +496,12 @@ DELETE /presets/:preset_id/entries/:identifier
 ```
 
 从 `prompts[]` 和所有 `prompt_order` 上下文中移除该条目。
+
+### 查询参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 期望的父预设 `version` 值 |
 
 ### 响应 `200`
 
@@ -458,9 +516,11 @@ DELETE /presets/:preset_id/entries/:identifier
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `404` | 预设或条目不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` / `entry_not_found` | 预设或条目不存在 |
+| `409` | `preset_conflict` | `expected_version` 过期 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 重排序条目
 
@@ -474,12 +534,14 @@ PUT /presets/:preset_id/entries/reorder
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 期望的父预设 `version` 值 |
 | `identifiers` | string[] | **是** | 条目标识数组，表示期望的顺序 |
 
 ### 请求示例
 
 ```json
 {
+  "expected_version": 4,
   "identifiers": ["main", "chatHistory", "worldInfo"]
 }
 ```
@@ -504,10 +566,12 @@ PUT /presets/:preset_id/entries/reorder
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败 |
-| `404` | 预设不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `preset_validation_error` | 请求体校验失败，或写回后的预设结构校验失败 |
+| `404` | `not_found` | 预设不存在 |
+| `409` | `preset_conflict` | `expected_version` 过期 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 批量更新条目
 
@@ -521,6 +585,7 @@ PATCH /presets/:preset_id/entries/batch/update
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 期望的父预设 `version` 值 |
 | `identifiers` | string[] | **是** | 条目标识数组 |
 | `fields` | object | **是** | 要更新的字段（同更新条目的请求体） |
 
@@ -528,6 +593,7 @@ PATCH /presets/:preset_id/entries/batch/update
 
 ```json
 {
+  "expected_version": 4,
   "identifiers": ["main", "worldInfo"],
   "fields": {
     "enabled": false
@@ -572,12 +638,14 @@ POST /presets/:preset_id/entries/batch/delete
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 期望的父预设 `version` 值 |
 | `identifiers` | string[] | **是** | 条目标识数组 |
 
 ### 请求示例
 
 ```json
 {
+  "expected_version": 4,
   "identifiers": ["worldInfo", "customPrompt"]
 }
 ```
@@ -602,7 +670,9 @@ POST /presets/:preset_id/entries/batch/delete
 
 ### 错误（所有批量端点通用）
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败 |
-| `404` | 预设不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `preset_validation_error` | 请求体校验失败，或写回后的预设结构校验失败 |
+| `404` | `not_found` | 预设不存在 |
+| `409` | `preset_conflict` | `expected_version` 过期 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |

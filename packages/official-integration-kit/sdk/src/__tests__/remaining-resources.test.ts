@@ -255,10 +255,10 @@ describe("sdk remaining resources", () => {
       },
     ]);
 
-    await expect(client.presets.remove({ presetId: "preset-1" })).resolves.toBeUndefined();
+    await expect(client.presets.remove({ expectedVersion: 3, presetId: "preset-1" })).resolves.toBeUndefined();
 
     const [removeUrl, removeInit] = fetchImpl.mock.calls[1]!;
-    expect(removeUrl).toBe("http://localhost:3000/presets/preset-1");
+    expect(removeUrl).toBe("http://localhost:3000/presets/preset-1?expected_version=3");
     expect(removeInit?.method).toBe("DELETE");
   });
 
@@ -386,7 +386,12 @@ describe("sdk remaining resources", () => {
         updatedAt: 2,
       },
     ]);
-    await expect(client.worldbooks.remove({ worldbookId: "wb-1" })).resolves.toBeUndefined();
+    await expect(client.worldbooks.remove({ expectedVersion: 2, worldbookId: "wb-1" })).resolves.toBeUndefined();
+
+    const [removeUrl, removeInit] = fetchImpl.mock.calls[1]!;
+    expect(removeUrl).toBe("http://localhost:3000/worldbooks/wb-1?expected_version=2");
+    expect(removeInit?.method).toBe("DELETE");
+
     await expect(
       client.worldbooks.update({
         data: { entries: [] },

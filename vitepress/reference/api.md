@@ -103,12 +103,12 @@ WebSocket 也遵循相同边界：
 | `413` | 请求体过大 |
 | `500` | 服务端错误 |
 | `502` | 上游 LLM 服务错误 |
-| `503` | 服务不可用（如 LLM Vault 未配置） |
+| `503` | 服务不可用或暂时繁忙（如 `secret_unavailable`、`resource_busy`、`commit_busy`、`generation_queue_timeout`） |
 | `504` | 上游生成超时 |
 
-对于已经建立的 SSE 聊天流，运行期失败会通过 `event: error` 事件返回，而不是再切换 HTTP 状态码。此时应读取 `error.code`，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`。
+对于已经建立的 SSE 聊天流，运行期失败会通过 `event: error` 事件返回，而不是再切换 HTTP 状态码。此时应读取 `error.code`，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`。资源写入路径上的 `resource_busy` 不会复用聊天链路的 `commit_busy`。
 
-当前默认服务配置使用单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发生成通常直接返回 `generation_conflict`。只有部署方显式启用 `queue` 模式时，才可能看到 `generation_queue_timeout`；即便如此，排队也只在当前进程内生效。
+当前默认服务配置使用单实例内存协调器，且 `GENERATION_QUEUE_MODE=reject`。因此同一 `session + branch` 的并发生成通常直接返回 `generation_conflict`。只有部署方显式启用 `GENERATION_QUEUE_MODE=queue` 时，才可能看到 `generation_queue_timeout`；`GENERATION_QUEUE_TIMEOUT_MS` 用于控制 queue 模式下的等待超时。即便如此，排队也只在当前进程内生效。
 
 ## 分页
 
@@ -138,8 +138,12 @@ WebSocket 也遵循相同边界：
 更新这些资源时，新的并发控制字段是 `expected_version`。
 
 - 推荐新接入统一使用 `expected_version`
-- 旧调用方仍可继续传 `expected_updated_at` 作为兼容令牌
+- 现有主资源 `PUT` 路由仍可继续传 `expected_updated_at` 作为兼容令牌
+- `DELETE /presets/:id` 与 `DELETE /worldbooks/:id` 只使用 query string `expected_version`，不使用 `DELETE` body
+- preset / worldbook 的条目写入接口也支持 `expected_version`
 - 当版本不匹配时，会返回 `409`，例如 `preset_conflict`、`worldbook_conflict`、`regex_profile_conflict`
+- 当资源写入遇到 SQLite 忙状态时，会返回 `503 resource_busy`
+- `resource_busy` 属于资源写入语义，和聊天提交链路的 `commit_busy` 是两类不同错误
 
 聊天 dry-run 的 `prompt_snapshot` 与落库的 `prompt_snapshot` 记录也会保存 `preset_version`、`worldbook_version`、`regex_profile_version`，用于说明当轮生成实际冻结使用的资源版本。
 

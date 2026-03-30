@@ -8,6 +8,7 @@ import type { GenerationParams, MemoryInjectionOptions } from "@tavern/core";
 import { createDatabase, type DatabaseConnection } from "./db/client";
 import { sendError, zodIssues } from "./lib/http";
 import { registerCrudRoutes } from "./routes";
+import { isSqliteBusyError, ResourceBusyError } from "./lib/retry.js";
 import { registerChatRoutes } from "./routes/chat";
 import { registerWsPlugin, type WsBridge } from "./ws";
 import {
@@ -311,6 +312,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       return sendError(reply, 409, "constraint_error", "Database constraint violation", {
         sqlite_code: code,
         message: errorMessage
+      });
+    }
+
+    if (error instanceof ResourceBusyError || isSqliteBusyError(error)) {
+      app.log.warn({
+        err: error,
+        message: errorMessage,
+      }, "resource write is busy");
+
+      return sendError(reply, 503, "resource_busy", "Resource is temporarily busy, please retry", {
+        message: errorMessage,
+        sqlite_code: typeof code === "string" ? code : undefined,
       });
     }
 

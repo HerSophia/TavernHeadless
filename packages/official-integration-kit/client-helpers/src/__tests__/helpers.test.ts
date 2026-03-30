@@ -470,6 +470,7 @@ describe("mapApiErrorToUiState", () => {
     ["tool_replay_confirmation_required", 409, "conflict", true],
     ["mcp_call_uncertain_timeout", 503, "server", true],
     ["generation_cancelled", 499, "network", true],
+    ["resource_busy", 503, "server", true],
     ["profile_conflict", 409, "conflict", false],
     ["profile_in_use", 409, "conflict", false],
     ["profile_inactive", 409, "conflict", false],

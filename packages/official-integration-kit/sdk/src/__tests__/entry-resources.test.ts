@@ -135,6 +135,7 @@ describe("sdk entry resources", () => {
     await expect(
       presetEntries.create({
         content: "System prompt",
+        expectedVersion: 3,
         extra: { source: "test" },
         forbidOverrides: true,
         identifier: "entry-1",
@@ -186,6 +187,7 @@ describe("sdk entry resources", () => {
 
     await expect(
       presetEntries.update({
+        expectedVersion: 4,
         identifier: "entry-1",
         name: "Core 2",
         presetId: "preset-1",
@@ -208,6 +210,7 @@ describe("sdk entry resources", () => {
 
     await expect(
       presetEntries.reorder({
+        expectedVersion: 8,
         identifiers: ["entry-1"],
         presetId: "preset-1",
       }),
@@ -235,6 +238,7 @@ describe("sdk entry resources", () => {
 
     await expect(
       presetEntries.remove({
+        expectedVersion: 5,
         identifier: "entry-1",
         presetId: "preset-1",
       }),
@@ -245,6 +249,7 @@ describe("sdk entry resources", () => {
 
     await expect(
       presetEntries.batchUpdate({
+        expectedVersion: 6,
         fields: {
           enabled: false,
         },
@@ -289,6 +294,7 @@ describe("sdk entry resources", () => {
 
     await expect(
       presetEntries.batchDelete({
+        expectedVersion: 7,
         identifiers: ["entry-1", "missing"],
         presetId: "preset-1",
       }),
@@ -306,6 +312,7 @@ describe("sdk entry resources", () => {
 
     const [listUrl] = fetchImpl.mock.calls[0]!;
     const [, createInit] = fetchImpl.mock.calls[1]!;
+    const [removeUrl] = fetchImpl.mock.calls[5]!;
     const [, updateInit] = fetchImpl.mock.calls[3]!;
     const [, reorderInit] = fetchImpl.mock.calls[4]!;
     const [, batchUpdateInit] = fetchImpl.mock.calls[6]!;
@@ -313,11 +320,14 @@ describe("sdk entry resources", () => {
 
     const listRequestUrl = new URL(listUrl as string);
     expect(listRequestUrl.pathname).toBe("/presets/preset-1/entries");
+    const removeRequestUrl = new URL(removeUrl as string);
+    expect(removeRequestUrl.searchParams.get("expected_version")).toBe("5");
     expect(listRequestUrl.searchParams.get("enabled")).toBe("true");
     expect(listRequestUrl.searchParams.get("marker")).toBe("false");
 
     expect(createInit?.body).toBe(JSON.stringify({
       content: "System prompt",
+      expected_version: 3,
       extra: { source: "test" },
       forbid_overrides: true,
       identifier: "entry-1",
@@ -330,18 +340,22 @@ describe("sdk entry resources", () => {
       system_prompt: true,
     }));
     expect(updateInit?.body).toBe(JSON.stringify({
+      expected_version: 4,
       name: "Core 2",
     }));
     expect(reorderInit?.body).toBe(JSON.stringify({
+      expected_version: 8,
       identifiers: ["entry-1"],
     }));
     expect(batchUpdateInit?.body).toBe(JSON.stringify({
+      expected_version: 6,
       fields: {
         enabled: false,
       },
       identifiers: ["entry-1", "missing"],
     }));
     expect(batchDeleteInit?.body).toBe(JSON.stringify({
+      expected_version: 7,
       identifiers: ["entry-1", "missing"],
     }));
   });
@@ -483,6 +497,7 @@ describe("sdk entry resources", () => {
     await expect(
       worldbookEntries.create({
         comment: "Kingdom basics",
+        expectedVersion: 2,
         content: "The kingdom is vast.",
         keys: ["kingdom"],
         keysSecondary: ["realm"],
@@ -542,6 +557,7 @@ describe("sdk entry resources", () => {
     await expect(
       worldbookEntries.update({
         comment: "Changed",
+        expectedVersion: 3,
         entryId: "entry-1",
         worldbookId: "wb-1",
       }),
@@ -571,6 +587,7 @@ describe("sdk entry resources", () => {
     await expect(
       worldbookEntries.remove({
         entryId: "entry-1",
+        expectedVersion: 4,
         worldbookId: "wb-1",
       }),
     ).resolves.toEqual({
@@ -580,6 +597,7 @@ describe("sdk entry resources", () => {
 
     await expect(
       worldbookEntries.batchUpdate({
+        expectedVersion: 5,
         fields: {
           disable: true,
         },
@@ -631,6 +649,7 @@ describe("sdk entry resources", () => {
 
     await expect(
       worldbookEntries.batchDelete({
+        expectedVersion: 6,
         ids: ["entry-1", "missing"],
         worldbookId: "wb-1",
       }),
@@ -648,6 +667,7 @@ describe("sdk entry resources", () => {
 
     await expect(
       worldbookEntries.batchReorder({
+        expectedVersion: 7,
         items: [
           { id: "entry-1", order: 10 },
           { id: "missing", order: 20 },
@@ -699,6 +719,7 @@ describe("sdk entry resources", () => {
 
     const [listUrl] = fetchImpl.mock.calls[0]!;
     const [, createInit] = fetchImpl.mock.calls[1]!;
+    const [removeUrl] = fetchImpl.mock.calls[4]!;
     const [, updateInit] = fetchImpl.mock.calls[3]!;
     const [, batchUpdateInit] = fetchImpl.mock.calls[5]!;
     const [, batchDeleteInit] = fetchImpl.mock.calls[6]!;
@@ -706,6 +727,8 @@ describe("sdk entry resources", () => {
 
     const listRequestUrl = new URL(listUrl as string);
     expect(listRequestUrl.pathname).toBe("/worldbooks/wb-1/entries");
+    const removeRequestUrl = new URL(removeUrl as string);
+    expect(removeRequestUrl.searchParams.get("expected_version")).toBe("4");
     expect(listRequestUrl.searchParams.get("disable")).toBe("false");
     expect(listRequestUrl.searchParams.get("constant")).toBe("false");
     expect(listRequestUrl.searchParams.get("position")).toBe("0");
@@ -716,24 +739,29 @@ describe("sdk entry resources", () => {
     expect(listRequestUrl.searchParams.get("offset")).toBe("1");
 
     expect(createInit?.body).toBe(JSON.stringify({
+      expected_version: 2,
       comment: "Kingdom basics",
       content: "The kingdom is vast.",
       keys: ["kingdom"],
       keys_secondary: ["realm"],
     }));
     expect(updateInit?.body).toBe(JSON.stringify({
+      expected_version: 3,
       comment: "Changed",
     }));
     expect(batchUpdateInit?.body).toBe(JSON.stringify({
+      expected_version: 5,
       fields: {
         disable: true,
       },
       ids: ["entry-1", "missing"],
     }));
     expect(batchDeleteInit?.body).toBe(JSON.stringify({
+      expected_version: 6,
       ids: ["entry-1", "missing"],
     }));
     expect(batchReorderInit?.body).toBe(JSON.stringify({
+      expected_version: 7,
       items: [
         { id: "entry-1", order: 10 },
         { id: "missing", order: 20 },

@@ -21,8 +21,8 @@ type AddEvent = (key: string, tone?: EventTone, vars?: Record<string, number | s
 
 type WorkspaceAssetManagerStore = {
   deleteCharacterLibraryAsset: (assetId: string) => Promise<CharacterAssetMutationResult>;
-  deletePresetLibraryAsset: (assetId: string) => Promise<PresetAssetDeleteResult>;
-  deleteWorldbookLibraryAsset: (assetId: string) => Promise<WorldbookAssetMutationResult>;
+  deletePresetLibraryAsset: (assetId: string, expectedVersion: number | undefined) => Promise<PresetAssetDeleteResult>;
+  deleteWorldbookLibraryAsset: (assetId: string, expectedVersion: number | undefined) => Promise<WorldbookAssetMutationResult>;
   loadCharacterAssetDetail: (assetId: string) => Promise<CharacterAssetDetailResult>;
   loadPresetAssetDetail: (assetId: string) => Promise<PresetAssetDetailResult>;
   loadWorldbookAssetDetail: (assetId: string) => Promise<WorldbookAssetDetailResult>;
@@ -32,14 +32,14 @@ type WorkspaceAssetManagerStore = {
     assetId: string,
     name: string,
     editor: WorkspacePresetEditorDocument,
-    expectedUpdatedAt: number | undefined,
+    expectedVersion: number | undefined,
     mode: PresetAssetSaveMode
   ) => Promise<PresetAssetMutationResult>;
   saveWorldbookAsset: (
     assetId: string,
     name: string,
     data: Record<string, unknown>,
-    expectedUpdatedAt: number | undefined,
+    expectedVersion: number | undefined,
     mode: WorldbookAssetSaveMode
   ) => Promise<WorldbookAssetMutationResult>;
 };
@@ -67,7 +67,7 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
     activeEntryId: "",
     editorDraft: null as WorkspacePresetEditorDocument | null,
     errorMessage: "",
-    expectedUpdatedAt: 0,
+    expectedVersion: 0,
     loading: false,
     mode: "edit" as PresetManagerMode,
     open: false,
@@ -99,7 +99,7 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
     draftJson: "",
     draftName: "",
     errorMessage: "",
-    expectedUpdatedAt: 0,
+    expectedVersion: 0,
     loading: false,
     mode: "edit" as WorldbookManagerMode,
     open: false,
@@ -113,7 +113,7 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
     presetManagerDialog.activeEntryId = "";
     presetManagerDialog.editorDraft = null;
     presetManagerDialog.errorMessage = "";
-    presetManagerDialog.expectedUpdatedAt = 0;
+    presetManagerDialog.expectedVersion = 0;
     presetManagerDialog.loading = false;
     presetManagerDialog.mode = "edit";
     presetManagerDialog.open = false;
@@ -145,7 +145,7 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
     worldbookManagerDialog.draftJson = "";
     worldbookManagerDialog.draftName = "";
     worldbookManagerDialog.errorMessage = "";
-    worldbookManagerDialog.expectedUpdatedAt = 0;
+    worldbookManagerDialog.expectedVersion = 0;
     worldbookManagerDialog.loading = false;
     worldbookManagerDialog.mode = "edit";
     worldbookManagerDialog.open = false;
@@ -163,6 +163,38 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
 
   function clearWorldbookManagerError(): void {
     worldbookManagerDialog.errorMessage = "";
+  }
+
+  function handlePresetManagerFailure(reason: PresetAssetDeleteResult["reason"] | PresetAssetMutationResult["reason"] | undefined): void {
+    if (reason === "preset_conflict") {
+      presetManagerDialog.errorMessage = options.t("dialogs.presetManagerConflict");
+      options.addEvent("events.assetPresetConflict", "warn");
+      return;
+    }
+
+    if (reason === "resource_busy") {
+      presetManagerDialog.errorMessage = options.t("dialogs.presetManagerBusy");
+      options.addEvent("events.assetResourceBusy", "warn");
+      return;
+    }
+
+    options.addEvent("events.assetManageFailed", "warn");
+  }
+
+  function handleWorldbookManagerFailure(reason: WorldbookAssetMutationResult["reason"] | undefined): void {
+    if (reason === "worldbook_conflict") {
+      worldbookManagerDialog.errorMessage = options.t("dialogs.worldbookManagerConflict");
+      options.addEvent("events.assetWorldbookConflict", "warn");
+      return;
+    }
+
+    if (reason === "resource_busy") {
+      worldbookManagerDialog.errorMessage = options.t("dialogs.worldbookManagerBusy");
+      options.addEvent("events.assetResourceBusy", "warn");
+      return;
+    }
+
+    options.addEvent("events.assetManageFailed", "warn");
   }
 
   function buildPresetDuplicateName(name: string): string {
@@ -369,7 +401,7 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
     const detail = detailResult.detail;
     presetManagerDialog.assetId = detail.id;
     presetManagerDialog.sourceName = detail.name;
-    presetManagerDialog.expectedUpdatedAt = detail.updatedAt;
+    presetManagerDialog.expectedVersion = detail.version;
     presetManagerDialog.draftName = mode === "duplicate" ? buildPresetDuplicateName(detail.name) : detail.name;
     presetManagerDialog.editorDraft = clonePresetEditorDraft(detail.editor);
     presetManagerDialog.activeEntryId = detail.editor.entries[0]?.identifier ?? "";
@@ -454,7 +486,7 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
     const detail = detailResult.detail;
     worldbookManagerDialog.assetId = detail.id;
     worldbookManagerDialog.sourceName = detail.name;
-    worldbookManagerDialog.expectedUpdatedAt = detail.updatedAt;
+    worldbookManagerDialog.expectedVersion = detail.version;
     worldbookManagerDialog.draftName = mode === "duplicate" ? buildPresetDuplicateName(detail.name) : detail.name;
     worldbookManagerDialog.draftJson = JSON.stringify(detail.data, null, 2);
     worldbookManagerDialog.loading = false;
@@ -488,9 +520,9 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
 
     try {
       if (presetManagerDialog.mode === "delete") {
-        const result = await options.workspace.deletePresetLibraryAsset(assetId);
+        const result = await options.workspace.deletePresetLibraryAsset(assetId, presetManagerDialog.expectedVersion);
         if (!result.ok) {
-          options.addEvent("events.assetManageFailed", "warn");
+          handlePresetManagerFailure(result.reason);
           return;
         }
 
@@ -522,12 +554,12 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
         assetId,
         name,
         editor,
-        presetManagerDialog.mode === "duplicate" ? undefined : presetManagerDialog.expectedUpdatedAt,
+        presetManagerDialog.mode === "duplicate" ? undefined : presetManagerDialog.expectedVersion,
         saveMode
       );
 
       if (!result.ok) {
-        options.addEvent("events.assetManageFailed", "warn");
+        handlePresetManagerFailure(result.reason);
         return;
       }
 
@@ -647,9 +679,9 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
 
     try {
       if (worldbookManagerDialog.mode === "delete") {
-        const result = await options.workspace.deleteWorldbookLibraryAsset(assetId);
+        const result = await options.workspace.deleteWorldbookLibraryAsset(assetId, worldbookManagerDialog.expectedVersion);
         if (!result.ok) {
-          options.addEvent("events.assetManageFailed", "warn");
+          handleWorldbookManagerFailure(result.reason);
           return;
         }
         if (result.apiSyncFailed) {
@@ -684,12 +716,12 @@ export function useWorkspaceAssetManagerDialogs(options: UseWorkspaceAssetManage
         assetId,
         name,
         data,
-        mode === "duplicate" ? undefined : worldbookManagerDialog.expectedUpdatedAt,
+        mode === "duplicate" ? undefined : worldbookManagerDialog.expectedVersion,
         mode
       );
 
       if (!result.ok) {
-        options.addEvent("events.assetManageFailed", "warn");
+        handleWorldbookManagerFailure(result.reason);
         return;
       }
 

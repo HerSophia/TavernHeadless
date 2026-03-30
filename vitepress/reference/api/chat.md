@@ -61,7 +61,9 @@ POST /sessions/:id/respond
 | `504` | `generation_timeout` | LLM 执行超时 |
 | `500` | `orchestration_failed` / `turn_commit_failed` | 生成过程出现未分类内部错误 |
 
-当前默认服务配置使用单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发生成通常直接返回 `generation_conflict`。只有部署方显式启用 `queue` 模式时，才可能看到 `generation_queue_timeout`；即便如此，排队也只在当前进程内生效，不提供跨实例共享锁。
+这里的 `commit_busy` 是聊天提交链路专用错误，不复用资源写入路径上的 `resource_busy`。
+
+当前默认服务配置使用单实例内存协调器，且 `GENERATION_QUEUE_MODE=reject`。因此同一 `session + branch` 的并发生成通常直接返回 `generation_conflict`。只有部署方显式启用 `GENERATION_QUEUE_MODE=queue` 时，才可能看到 `generation_queue_timeout`；`GENERATION_QUEUE_TIMEOUT_MS` 用于控制 queue 模式下的等待超时。即便如此，排队也只在当前进程内生效，不提供跨实例共享锁。
 
 ## SSE 流式生成
 
@@ -96,7 +98,7 @@ event: error
 data: {"code":"generation_timeout","message":"Turn orchestration failed: LLM request timed out after 60000ms"}
 ```
 
-一旦 SSE 连接已经建立，运行期错误会通过 `error` 事件返回，不再切换 HTTP 状态码。`code` 可能为 `generation_conflict`、`generation_queue_timeout`、`generation_timeout`、`commit_busy`、`commit_conflict` 等值。
+一旦 SSE 连接已经建立，运行期错误会通过 `error` 事件返回，不再切换 HTTP 状态码。`code` 可能为 `generation_conflict`、`generation_queue_timeout`、`generation_timeout`、`commit_busy`、`commit_conflict` 等值。资源写入路径上的 `resource_busy` 不会通过这里复用。
 
 客户端断开连接时，服务端会自动中止生成。
 

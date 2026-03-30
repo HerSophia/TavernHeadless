@@ -24,7 +24,8 @@ GET /regex-profiles
       "name": "Safety Filters",
       "source": "sillytavern",
       "created_at": 1735689600000,
-      "updated_at": 1735689660000
+      "updated_at": 1735689660000,
+      "version": 2
     }
   ]
 }
@@ -54,7 +55,8 @@ GET /regex-profiles/:id
       }
     ],
     "created_at": 1735689600000,
-    "updated_at": 1735689660000
+    "updated_at": 1735689660000,
+    "version": 2
   }
 }
 ```
@@ -73,7 +75,11 @@ PUT /regex-profiles/:id
 
 整体更新正则配置的名称和规则数据。请求中需提供完整的 `name` 和 `data` 数组。系统会对 `data` 中的正则脚本进行校验。
 
-支持 `expected_updated_at` 乐观锁：如果传入该字段且与服务端当前值不一致，返回 `409`。
+此接口要求提供并发控制字段：
+
+- 新接入应优先传 `expected_version`
+- 现有主资源 `PUT` 路由仍兼容 `expected_updated_at`
+- 如果两者都不传，会返回 `400`
 
 ### 路径参数
 
@@ -87,13 +93,15 @@ PUT /regex-profiles/:id
 | ---- | ---- | ---- | ---- |
 | `name` | string | **是** | 规则集名称 |
 | `data` | object[] | **是** | SillyTavern 正则规则数组 |
-| `expected_updated_at` | integer | 否 | 乐观锁：期望的 `updated_at` 值 |
+| `expected_version` | integer | 否 | 推荐的乐观锁字段；期望的 `version` 值 |
+| `expected_updated_at` | integer | 否 | 兼容字段；仅用于已有主资源 `PUT` 调用方 |
 
 ### 请求示例
 
 ```json
 {
   "name": "Updated Filters",
+  "expected_version": 2,
   "data": [
     {
       "scriptName": "trim_whitespace",
@@ -116,18 +124,19 @@ PUT /regex-profiles/:id
     "name": "Updated Filters",
     "source": "sillytavern",
     "created_at": 1735689600000,
-    "updated_at": 1735689700000
+    "updated_at": 1735689700000,
+    "version": 3
   }
 }
 ```
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败或正则脚本解析出错 |
-| `404` | 正则配置不存在 |
-| `409` | `expected_updated_at` 与服务端不一致（乐观锁冲突） |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败、正则脚本解析出错，或未提供 `expected_version` / `expected_updated_at` |
+| `404` | `regex_profile_not_found` | 正则配置不存在 |
+| `409` | `regex_profile_conflict` | 版本基线过期，或兼容字段 `expected_updated_at` 不匹配 |
 
 ## 删除 Regex Profile
 
