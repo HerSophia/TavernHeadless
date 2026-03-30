@@ -259,6 +259,12 @@ try {
 | `generation_cancelled` | `network` | 是 |
 | `commit_busy` | `server` | 是 |
 | `commit_conflict` | `conflict` | 是 |
+| `profile_conflict` | `conflict` | 否 |
+| `profile_in_use` | `conflict` | 否 |
+| `profile_inactive` | `conflict` | 否 |
+| `binding_not_found` | `not_found` | 否 |
+| `session_scope_not_found` | `not_found` | 否 |
+| `instance_slot_disabled_required` | `conflict` | 否 |
 | `preset_conflict` | `conflict` | 是 |
 | `worldbook_conflict` | `conflict` | 是 |
 | `regex_profile_conflict` | `conflict` | 是 |

@@ -1,9 +1,10 @@
-import { and, count, desc, eq, ne, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, ne, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import type { DbExecutor } from "../db/client";
 import type { InstanceSlot, ProviderType } from "@tavern/core";
 
 import type { AppDb } from "../db/client";
-import { llmProfileBindings, llmProfiles } from "../db/schema";
+import { llmProfileBindings, llmProfiles, sessions } from "../db/schema";
 import { decryptSecret, encryptSecret, maskSecret } from "../lib/secrets";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants";
 import { normalizeBindingParams, parseBindingParamsJson, LlmParamsValidationError, type LlmBindingGenerationParams } from "../lib/llm-params";
@@ -61,12 +62,14 @@ export type UpdateLlmProfileInput = {
 export class LlmProfileServiceError extends Error {
   constructor(
     public readonly code:
-      | "profile_not_found"
+      | "binding_not_found"
+      | "invalid_params"
       | "profile_conflict"
       | "profile_in_use"
       | "profile_inactive"
-      | "invalid_params"
-      | "secret_unavailable",
+      | "profile_not_found"
+      | "secret_unavailable"
+      | "session_scope_not_found",
     message: string
   ) {
     super(message);
@@ -108,33 +111,50 @@ export class LlmProfileService {
     input: CreateLlmProfileInput,
     accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
   ): Promise<LlmProfileListItem> {
-    const existingByName = await this.findProfileByName(input.presetName, accountId);
-    if (existingByName) {
-      throw new LlmProfileServiceError("profile_conflict", `Profile name already exists: ${input.presetName}`);
+    try {
+      return this.db.transaction((tx) => {
+        const existingByName = tx
+          .select()
+          .from(llmProfiles)
+          .where(and(eq(llmProfiles.presetName, input.presetName), eq(llmProfiles.accountId, accountId)))
+          .limit(1)
+          .get();
+        if (existingByName) {
+          throw new LlmProfileServiceError("profile_conflict", `Profile name already exists: ${input.presetName}`);
+        }
+
+        const now = this.now();
+        const id = nanoid();
+        const apiKeyEncrypted = this.encrypt(input.apiKey);
+
+        tx.insert(llmProfiles).values({
+          id,
+          presetName: input.presetName,
+          accountId,
+          provider: input.provider,
+          modelId: input.modelId,
+          baseUrl: input.baseUrl ?? null,
+          apiKeyName: input.apiKeyName ?? null,
+          apiKeyEncrypted,
+          apiKeyMasked: maskSecret(input.apiKey),
+          status: "active",
+          lastUsedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        }).run();
+
+        const profile = tx
+          .select()
+          .from(llmProfiles)
+          .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
+          .limit(1)
+          .get();
+
+        return requireProfile(profile ? this.toListItem(profile) : null, id);
+      });
+    } catch (error) {
+      throw this.mapWriteError(error, input.presetName);
     }
-
-    const now = this.now();
-    const id = nanoid();
-    const apiKeyEncrypted = this.encrypt(input.apiKey);
-
-    await this.db.insert(llmProfiles).values({
-      id,
-      presetName: input.presetName,
-      accountId,
-      provider: input.provider,
-      modelId: input.modelId,
-      baseUrl: input.baseUrl ?? null,
-      apiKeyName: input.apiKeyName ?? null,
-      apiKeyEncrypted,
-      apiKeyMasked: maskSecret(input.apiKey),
-      status: "active",
-      lastUsedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const profile = await this.getProfile(id, accountId);
-    return requireProfile(profile, id);
   }
 
   async listProfiles(options: { includeDeleted?: boolean; accountId?: string } = {}): Promise<LlmProfileListItem[]> {
@@ -153,89 +173,129 @@ export class LlmProfileService {
   }
 
   async updateProfile(id: string, patch: UpdateLlmProfileInput, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID): Promise<LlmProfileListItem> {
-    const current = await this.findProfileById(id, accountId);
-    if (!current) {
-      throw new LlmProfileServiceError("profile_not_found", `Profile not found: ${id}`);
+    try {
+      return this.db.transaction((tx) => {
+        const current = tx
+          .select()
+          .from(llmProfiles)
+          .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
+          .limit(1)
+          .get();
+        if (!current) {
+          throw new LlmProfileServiceError("profile_not_found", `Profile not found: ${id}`);
+        }
+
+        if (current.status === "deleted") {
+          throw new LlmProfileServiceError("profile_inactive", `Profile already deleted: ${id}`);
+        }
+
+        if (patch.presetName && patch.presetName !== current.presetName) {
+          const existingByName = tx
+            .select()
+            .from(llmProfiles)
+            .where(and(eq(llmProfiles.presetName, patch.presetName), eq(llmProfiles.accountId, accountId)))
+            .limit(1)
+            .get();
+          if (existingByName && existingByName.id !== id) {
+            throw new LlmProfileServiceError("profile_conflict", `Profile name already exists: ${patch.presetName}`);
+          }
+        }
+
+        const update: Partial<typeof llmProfiles.$inferInsert> = {
+          updatedAt: this.now(),
+        };
+
+        if (patch.presetName !== undefined) {
+          update.presetName = patch.presetName;
+        }
+
+        if (patch.provider !== undefined) {
+          update.provider = patch.provider;
+        }
+
+        if (patch.modelId !== undefined) {
+          update.modelId = patch.modelId;
+        }
+
+        if (patch.baseUrl !== undefined) {
+          update.baseUrl = patch.baseUrl;
+        }
+
+        if (patch.apiKeyName !== undefined) {
+          update.apiKeyName = patch.apiKeyName;
+        }
+
+        if (patch.status !== undefined) {
+          update.status = patch.status;
+        }
+
+        if (patch.apiKey !== undefined) {
+          update.apiKeyEncrypted = this.encrypt(patch.apiKey);
+          update.apiKeyMasked = maskSecret(patch.apiKey);
+        }
+
+        tx.update(llmProfiles)
+          .set(update)
+          .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
+          .run();
+
+        const profile = tx
+          .select()
+          .from(llmProfiles)
+          .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
+          .limit(1)
+          .get();
+
+        return requireProfile(profile ? this.toListItem(profile) : null, id);
+      });
+    } catch (error) {
+      throw this.mapWriteError(error, patch.presetName);
     }
-
-    if (current.status === "deleted") {
-      throw new LlmProfileServiceError("profile_inactive", `Profile already deleted: ${id}`);
-    }
-
-    if (patch.presetName && patch.presetName !== current.presetName) {
-      const existingByName = await this.findProfileByName(patch.presetName, accountId);
-      if (existingByName && existingByName.id !== id) {
-        throw new LlmProfileServiceError("profile_conflict", `Profile name already exists: ${patch.presetName}`);
-      }
-    }
-
-    const update: Partial<typeof llmProfiles.$inferInsert> = {
-      updatedAt: this.now(),
-    };
-
-    if (patch.presetName !== undefined) {
-      update.presetName = patch.presetName;
-    }
-
-    if (patch.provider !== undefined) {
-      update.provider = patch.provider;
-    }
-
-    if (patch.modelId !== undefined) {
-      update.modelId = patch.modelId;
-    }
-
-    if (patch.baseUrl !== undefined) {
-      update.baseUrl = patch.baseUrl;
-    }
-
-    if (patch.apiKeyName !== undefined) {
-      update.apiKeyName = patch.apiKeyName;
-    }
-
-    if (patch.status !== undefined) {
-      update.status = patch.status;
-    }
-
-    if (patch.apiKey !== undefined) {
-      update.apiKeyEncrypted = this.encrypt(patch.apiKey);
-      update.apiKeyMasked = maskSecret(patch.apiKey);
-    }
-
-    await this.db.update(llmProfiles).set(update).where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)));
-
-    const profile = await this.getProfile(id, accountId);
-    return requireProfile(profile, id);
   }
 
   async deleteProfile(id: string, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID): Promise<LlmProfileListItem> {
-    const profile = await this.findProfileById(id, accountId);
-    if (!profile) {
-      throw new LlmProfileServiceError("profile_not_found", `Profile not found: ${id}`);
-    }
+    return this.db.transaction((tx) => {
+      const profile = tx
+        .select()
+        .from(llmProfiles)
+        .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
+        .limit(1)
+        .get();
+      if (!profile) {
+        throw new LlmProfileServiceError("profile_not_found", `Profile not found: ${id}`);
+      }
 
-    const bindingCountRows = await this.db
-      .select({ total: count() })
-      .from(llmProfileBindings)
-      .where(and(eq(llmProfileBindings.profileId, id), eq(llmProfileBindings.accountId, accountId)));
-    const totalBindings = bindingCountRows[0]?.total ?? 0;
+      this.cleanupStaleSessionBindingsForProfile(tx, id, accountId);
 
-    if (totalBindings > 0) {
-      throw new LlmProfileServiceError("profile_in_use", `Profile is currently bound and cannot be deleted: ${id}`);
-    }
+      const bindingCountRow = tx
+        .select({ total: count() })
+        .from(llmProfileBindings)
+        .where(and(eq(llmProfileBindings.profileId, id), eq(llmProfileBindings.accountId, accountId)))
+        .get();
+      const totalBindings = Number(bindingCountRow?.total ?? 0);
 
+      if (totalBindings > 0) {
+        throw new LlmProfileServiceError("profile_in_use", `Profile is currently bound and cannot be deleted: ${id}`);
+      }
 
-    const now = this.now();
-    await this.db
-      .update(llmProfiles)
-      .set({
-        status: "deleted",
-        updatedAt: now,
-      })
-      .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)));
+      const now = this.now();
+      tx.update(llmProfiles)
+        .set({
+          status: "deleted",
+          updatedAt: now,
+        })
+        .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
+        .run();
 
-    const updated = await this.getProfile(id, accountId);
-    return requireProfile(updated, id);
+      const updated = tx
+        .select()
+        .from(llmProfiles)
+        .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
+        .limit(1)
+        .get();
+
+      return requireProfile(updated ? this.toListItem(updated) : null, id);
+    });
   }
 
   async activateProfile(
@@ -246,17 +306,6 @@ export class LlmProfileService {
     params?: LlmBindingGenerationParams | null,
     accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
   ): Promise<void> {
-    const profile = await this.findProfileById(profileId, accountId);
-    if (!profile) {
-      throw new LlmProfileServiceError("profile_not_found", `Profile not found: ${profileId}`);
-    }
-
-    if (profile.status !== "active") {
-      throw new LlmProfileServiceError("profile_inactive", `Profile is not active: ${profileId}`);
-    }
-
-    const now = this.now();
-    const bindingScopeId = scope === "global" ? GLOBAL_SCOPE_ID : scopeId;
     let normalizedParams: LlmBindingGenerationParams | undefined;
     try {
       normalizedParams = normalizeBindingParams(params, true);
@@ -266,33 +315,86 @@ export class LlmProfileService {
       }
       throw e;
     }
-    const paramsJson = normalizedParams ? JSON.stringify(normalizedParams) : null;
 
-    const conflictSet: Partial<typeof llmProfileBindings.$inferInsert> = {
-      profileId,
-      updatedAt: now,
-    };
-    if (params !== undefined) {
-      conflictSet.paramsJson = paramsJson;
-    }
+    this.db.transaction((tx) => {
+      const profile = tx
+        .select()
+        .from(llmProfiles)
+        .where(and(eq(llmProfiles.id, profileId), eq(llmProfiles.accountId, accountId)))
+        .limit(1)
+        .get();
+      if (!profile) {
+        throw new LlmProfileServiceError("profile_not_found", `Profile not found: ${profileId}`);
+      }
 
-    await this.db
-      .insert(llmProfileBindings)
-      .values({
-        id: nanoid(),
-        scope,
-        accountId,
-        scopeId: bindingScopeId,
-        instanceSlot,
+      if (profile.status !== "active") {
+        throw new LlmProfileServiceError("profile_inactive", `Profile is not active: ${profileId}`);
+      }
+
+      const now = this.now();
+      const bindingScopeId = scope === "global" ? GLOBAL_SCOPE_ID : scopeId;
+      if (scope === "session") {
+        this.ensureSessionScopeExists(tx, bindingScopeId, accountId);
+      }
+      const paramsJson = normalizedParams ? JSON.stringify(normalizedParams) : null;
+
+      const conflictSet: Partial<typeof llmProfileBindings.$inferInsert> = {
         profileId,
-        paramsJson,
-        createdAt: now,
         updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [llmProfileBindings.accountId, llmProfileBindings.scope, llmProfileBindings.scopeId, llmProfileBindings.instanceSlot],
-        set: conflictSet,
-      });
+      };
+      if (params !== undefined) {
+        conflictSet.paramsJson = paramsJson;
+      }
+
+      tx.insert(llmProfileBindings)
+        .values({
+          id: nanoid(),
+          scope,
+          accountId,
+          scopeId: bindingScopeId,
+          instanceSlot,
+          profileId,
+          paramsJson,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [llmProfileBindings.accountId, llmProfileBindings.scope, llmProfileBindings.scopeId, llmProfileBindings.instanceSlot],
+          set: conflictSet,
+        })
+        .run();
+    });
+  }
+
+  async unbindProfile(
+    scope: LlmProfileScope,
+    scopeId: string,
+    instanceSlot: string = '*',
+    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID,
+  ): Promise<void> {
+    this.db.transaction((tx) => {
+      const bindingScopeId = scope === "global" ? GLOBAL_SCOPE_ID : scopeId;
+      if (scope === "session") {
+        this.ensureSessionScopeExists(tx, bindingScopeId, accountId);
+      }
+
+      const deleted = tx.delete(llmProfileBindings)
+        .where(and(
+          eq(llmProfileBindings.accountId, accountId),
+          eq(llmProfileBindings.scope, scope),
+          eq(llmProfileBindings.scopeId, bindingScopeId),
+          eq(llmProfileBindings.instanceSlot, instanceSlot),
+        ))
+        .returning({ id: llmProfileBindings.id })
+        .all();
+
+      if (deleted.length === 0) {
+        throw new LlmProfileServiceError(
+          "binding_not_found",
+          `Profile binding not found for scope=${scope} scopeId=${bindingScopeId} slot=${instanceSlot}`,
+        );
+      }
+    });
   }
 
   async resolveActiveProfile(
@@ -454,6 +556,76 @@ export class LlmProfileService {
   private async findProfileByName(name: string, accountId: string): Promise<typeof llmProfiles.$inferSelect | null> {
     const rows = await this.db.select().from(llmProfiles).where(and(eq(llmProfiles.presetName, name), eq(llmProfiles.accountId, accountId))).limit(1);
     return rows[0] ?? null;
+  }
+
+  private ensureSessionScopeExists(tx: DbExecutor, sessionId: string, accountId: string): void {
+    const session = tx
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
+      .limit(1)
+      .get();
+
+    if (!session) {
+      throw new LlmProfileServiceError("session_scope_not_found", `Session not found for session-scoped binding: ${sessionId}`);
+    }
+  }
+
+  private cleanupStaleSessionBindingsForProfile(tx: DbExecutor, profileId: string, accountId: string): void {
+    const sessionBindings = tx
+      .select({ id: llmProfileBindings.id, scopeId: llmProfileBindings.scopeId })
+      .from(llmProfileBindings)
+      .where(and(
+        eq(llmProfileBindings.profileId, profileId),
+        eq(llmProfileBindings.accountId, accountId),
+        eq(llmProfileBindings.scope, "session"),
+      ))
+      .all();
+
+    if (sessionBindings.length === 0) {
+      return;
+    }
+
+    const scopeIds = sessionBindings.map((binding) => binding.scopeId);
+    const existingSessions = new Set(
+      tx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(and(eq(sessions.accountId, accountId), inArray(sessions.id, scopeIds)))
+        .all()
+        .map((row) => row.id),
+    );
+
+    const staleBindingIds = sessionBindings
+      .filter((binding) => !existingSessions.has(binding.scopeId))
+      .map((binding) => binding.id);
+
+    if (staleBindingIds.length === 0) {
+      return;
+    }
+
+    tx.delete(llmProfileBindings)
+      .where(and(
+        eq(llmProfileBindings.accountId, accountId),
+        inArray(llmProfileBindings.id, staleBindingIds),
+      ))
+      .run();
+  }
+
+  private mapWriteError(error: unknown, presetName?: string): LlmProfileServiceError {
+    if (error instanceof LlmProfileServiceError) {
+      return error;
+    }
+
+    const code = typeof error === "object" && error !== null ? (error as { code?: string }).code : undefined;
+    if (typeof code === "string" && code.startsWith("SQLITE_CONSTRAINT")) {
+      return new LlmProfileServiceError(
+        "profile_conflict",
+        presetName ? `Profile name already exists: ${presetName}` : "Profile name already exists",
+      );
+    }
+
+    throw error;
   }
 
   private encrypt(value: string): string {

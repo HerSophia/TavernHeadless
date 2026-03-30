@@ -22,7 +22,13 @@ type KnownApiErrorCode =
   | "tool_replay_blocked"
   | "tool_replay_confirmation_required"
   | "mcp_call_uncertain_timeout"
-  | "turn_commit_failed";
+  | "turn_commit_failed"
+  | "profile_conflict"
+  | "profile_in_use"
+  | "profile_inactive"
+  | "binding_not_found"
+  | "session_scope_not_found"
+  | "instance_slot_disabled_required";
 
 const KNOWN_API_ERROR_CODE_MAP: Record<KnownApiErrorCode, Pick<UiStateError, "kind" | "retryable">> = {
   generation_conflict: { kind: "conflict", retryable: true },
@@ -39,6 +45,12 @@ const KNOWN_API_ERROR_CODE_MAP: Record<KnownApiErrorCode, Pick<UiStateError, "ki
   tool_replay_confirmation_required: { kind: "conflict", retryable: true },
   mcp_call_uncertain_timeout: { kind: "server", retryable: true },
   turn_commit_failed: { kind: "server", retryable: true },
+  profile_conflict: { kind: "conflict", retryable: false },
+  profile_in_use: { kind: "conflict", retryable: false },
+  profile_inactive: { kind: "conflict", retryable: false },
+  binding_not_found: { kind: "not_found", retryable: false },
+  session_scope_not_found: { kind: "not_found", retryable: false },
+  instance_slot_disabled_required: { kind: "conflict", retryable: false },
 };
 
 export function mapApiErrorToUiState(error: unknown): UiStateError {

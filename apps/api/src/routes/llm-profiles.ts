@@ -23,10 +23,13 @@ import {
   deleteResponseJsonSchema,
   activateBodyJsonSchema,
   activateResponseJsonSchema,
+  bindingSlotParamsJsonSchema,
   discoverModelsBodyJsonSchema,
   discoverModelsResponseJsonSchema,
   testModelBodyJsonSchema,
   testModelResponseJsonSchema,
+  unbindQueryJsonSchema,
+  unbindResponseJsonSchema,
   runtimeResponseJsonSchema,
 } from "./schemas/llm-profiles-schemas.js";
 import {
@@ -103,6 +106,20 @@ const activateProfileSchema = z
     path: ["session_id"],
   });
 
+const bindingSlotParamsSchema = z.object({
+  slot: instanceSlotSchema,
+});
+
+const unbindBindingSchema = z
+  .object({
+    scope: activateScopeSchema.default("global"),
+    session_id: z.string().trim().min(1).optional(),
+  })
+  .refine((value) => value.scope === "global" || Boolean(value.session_id), {
+    message: "session_id is required when scope=session",
+    path: ["session_id"],
+  });
+
 const discoverModelsSchema = z.object({
   api_key: z.string().trim().min(1).max(2048),
   base_url: z.string().trim().min(1).max(500).optional(),
@@ -143,6 +160,11 @@ export async function registerLlmProfileRoutes(app: FastifyInstance, connection:
       const parsed = parseWithSchema(createProfileSchema, request.body, reply);
       if (!parsed.ok) {
         return;
+      }
+
+      const createBaseUrlError = guardProfileBaseUrl(reply, parsed.data.base_url);
+      if (createBaseUrlError) {
+        return createBaseUrlError;
       }
 
       try {
@@ -223,15 +245,11 @@ export async function registerLlmProfileRoutes(app: FastifyInstance, connection:
         return;
       }
 
-      if (body.data.base_url) {
-        try {
-          assertSafeUrl(body.data.base_url, {
-            allowPrivateNetwork: body.data.allow_private_network || process.env.ALLOW_PRIVATE_BASE_URL === "true",
-          });
-        } catch (error) {
-          if (error instanceof UrlGuardError) return sendError(reply, 400, error.code, error.message);
-          throw error;
-        }
+      const discoverBaseUrlError = guardProfileBaseUrl(reply, body.data.base_url, {
+        allowPrivateNetwork: body.data.allow_private_network || isPrivateBaseUrlAllowed(),
+      });
+      if (discoverBaseUrlError) {
+        return discoverBaseUrlError;
       }
 
       try {
@@ -273,17 +291,12 @@ export async function registerLlmProfileRoutes(app: FastifyInstance, connection:
         return;
       }
 
-      if (body.data.base_url) {
-        try {
-          assertSafeUrl(body.data.base_url, {
-            allowPrivateNetwork: body.data.allow_private_network || process.env.ALLOW_PRIVATE_BASE_URL === "true",
-          });
-        } catch (error) {
-          if (error instanceof UrlGuardError) return sendError(reply, 400, error.code, error.message);
-          throw error;
-        }
+      const testBaseUrlError = guardProfileBaseUrl(reply, body.data.base_url, {
+        allowPrivateNetwork: body.data.allow_private_network || isPrivateBaseUrlAllowed(),
+      });
+      if (testBaseUrlError) {
+        return testBaseUrlError;
       }
-
       try {
         const tested = await testProviderModelWithHello({
           apiKey: body.data.api_key,
@@ -362,6 +375,11 @@ export async function registerLlmProfileRoutes(app: FastifyInstance, connection:
       const body = parseWithSchema(updateProfileSchema, request.body, reply);
       if (!body.ok) {
         return;
+      }
+
+      const updateBaseUrlError = guardProfileBaseUrl(reply, body.data.base_url);
+      if (updateBaseUrlError) {
+        return updateBaseUrlError;
       }
 
       try {
@@ -526,6 +544,52 @@ export async function registerLlmProfileRoutes(app: FastifyInstance, connection:
       }
     }
   );
+
+  app.delete(
+    "/llm-profiles/bindings/:slot",
+    {
+      schema: {
+        tags: ["llm-profiles"],
+        summary: "Unbind LLM profile from a scope slot",
+        operationId: "unbindLlmProfile",
+        params: bindingSlotParamsJsonSchema,
+        querystring: unbindQueryJsonSchema,
+        response: {
+          200: unbindResponseJsonSchema,
+          400: errorResponseJsonSchema,
+          404: errorResponseJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const params = parseWithSchema(bindingSlotParamsSchema, request.params, reply);
+      if (!params.ok) {
+        return;
+      }
+
+      const query = parseWithSchema(unbindBindingSchema, request.query, reply);
+      if (!query.ok) {
+        return;
+      }
+
+      const scopeId = query.data.scope === "global" ? "global" : query.data.session_id ?? "";
+
+      try {
+        const auth = getRequestAuthContext(request);
+        await service.unbindProfile(query.data.scope, scopeId, params.data.slot, auth.accountId);
+        return reply.send({
+          data: {
+            scope: query.data.scope,
+            scope_id: scopeId,
+            instance_slot: params.data.slot,
+            unbound: true,
+          },
+        });
+      } catch (error) {
+        return sendServiceError(reply, error);
+      }
+    }
+  );
 }
 
 function toApiProfile(profile: LlmProfileListItem) {
@@ -550,6 +614,10 @@ function sendServiceError(reply: FastifyReply, error: unknown) {
       return sendError(reply, 404, error.code, error.message);
     }
 
+    if (error.code === "binding_not_found" || error.code === "session_scope_not_found") {
+      return sendError(reply, 404, error.code, error.message);
+    }
+
     if (error.code === "profile_conflict" || error.code === "profile_in_use" || error.code === "profile_inactive") {
       return sendError(reply, 409, error.code, error.message);
     }
@@ -564,6 +632,33 @@ function sendServiceError(reply: FastifyReply, error: unknown) {
   }
 
   throw error;
+}
+
+function isPrivateBaseUrlAllowed(): boolean {
+  return process.env.ALLOW_PRIVATE_BASE_URL === "true";
+}
+
+function guardProfileBaseUrl(
+  reply: FastifyReply,
+  baseUrl: string | null | undefined,
+  options?: { allowPrivateNetwork?: boolean },
+): FastifyReply | undefined {
+  if (!baseUrl) {
+    return undefined;
+  }
+
+  try {
+    assertSafeUrl(baseUrl, {
+      allowPrivateNetwork: options?.allowPrivateNetwork ?? isPrivateBaseUrlAllowed(),
+    });
+  } catch (error) {
+    if (error instanceof UrlGuardError) {
+      return sendError(reply, 400, error.code, error.message);
+    }
+    throw error;
+  }
+
+  return undefined;
 }
 
 function fromApiGenerationParams(

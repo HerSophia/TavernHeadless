@@ -59,6 +59,9 @@ POST /llm-profiles
 
 返回 `{ "data": LLMProfile }` 。
 
+> 如果请求中提供 `base_url`，服务端会在保存前执行与模型探测接口相同的 URL Guard。默认拒绝私网、本地回环和其他保留地址。若部署确实需要保存这类地址，必须在服务端设置 `ALLOW_PRIVATE_BASE_URL=true`。
+> `POST /llm-profiles` 不接受 `allow_private_network` 请求字段。是否允许私网地址，只由服务端环境变量策略决定。
+
 ## 列出 Profiles
 
 ```http
@@ -92,6 +95,8 @@ PATCH /llm-profiles/:id
 
 至少提供一个字段。可更新：`preset_name`、`provider`、`model_id`、`base_url`、`api_key_name`、`api_key`、`status`（`active` / `disabled`）。
 
+如果更新 `base_url`，服务端会执行同样的 URL Guard。`PATCH /llm-profiles/:id` 也不接受 `allow_private_network` 请求字段；是否允许私网地址，仍由服务端 `ALLOW_PRIVATE_BASE_URL` 控制。
+
 ## 删除 Profile
 
 ```http
@@ -107,6 +112,8 @@ POST /llm-profiles/:id/activate
 ```
 
 将 Profile 绑定到指定的作用域和实例槽位。
+
+当 `scope="session"` 时，服务端除了校验 `session_id` 字段存在，还会校验该 session 真实存在；若不存在，返回 `404 session_scope_not_found`。
 
 ### 请求体
 
@@ -147,6 +154,42 @@ POST /llm-profiles/:id/activate
   }
 }
 ```
+
+## 解绑 Profile 绑定
+
+```http
+DELETE /llm-profiles/bindings/:slot
+```
+
+按 `scope + scope_id + instance_slot` 解绑一个已有 binding。
+
+### 路径参数
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `slot` | string | 实例槽位：`*` / `narrator` / `director` / `verifier` / `memory` |
+
+### 查询参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `scope` | string | 否 | `global`（默认）/ `session` |
+| `session_id` | string | 条件 | 当 `scope=session` 时必填 |
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "scope": "session",
+    "scope_id": "sess_demo",
+    "instance_slot": "director",
+    "unbound": true
+  }
+}
+```
+
+若目标 binding 不存在，返回 `404 binding_not_found`。当 `scope=session` 且 session 不存在时，返回 `404 session_scope_not_found`。
 
 ## 运行时解析
 
@@ -195,6 +238,8 @@ GET /llm-profiles/runtime
 ```
 
 `source` 可能的值：`env`（环境变量 fallback）、`global_profile`、`session_profile`。
+
+这个接口描述的是 **Profile 侧** 的 provider / model 解析结果。若还需要查看实例侧的 `enabled`、`preset_id`、`params` 最终解析，应再查询 `GET /llm-instances/resolved`。
 
 ## 发现可用模型
 
@@ -253,3 +298,5 @@ POST /llm-profiles/models/test
   }
 }
 ```
+
+另外，session 删除时服务端会同步清理该 session 对应的 `llm_profile_binding`；`DELETE /llm-profiles/:id` 也会在判定前自动清理失效的 session 绑定，避免历史脏数据长期阻塞 Profile 删除。

@@ -44,6 +44,30 @@ describe("sdk llm resources", () => {
     }));
   });
 
+  it("unbinds a profile with query-string scope fields and reads boolean results", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          unbound: true,
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(
+      client.llmProfiles.unbind({
+        accountId: "acc-1",
+        scope: "session",
+        sessionId: "session-1",
+        slot: "director",
+      }),
+    ).resolves.toBe(true);
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("http://localhost:3000/llm-profiles/bindings/director?scope=session&session_id=session-1");
+    expect(init?.method).toBe("DELETE");
+  });
+
   it("creates llm profiles with normalized fields", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({

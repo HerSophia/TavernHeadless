@@ -117,4 +117,24 @@ describe("LLM Profiles extra branch coverage", () => {
     expect(res.statusCode).toBe(503);
     expect((res.json() as { error: { code: string } }).error.code).toBe("secret_unavailable");
   });
+
+  it("returns 404 when unbinding a missing binding", async () => {
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/llm-profiles/bindings/narrator?scope=global",
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect((res.json() as { error: { code: string } }).error.code).toBe("binding_not_found");
+  });
+
+  it("returns 404 when unbinding a session scope for a missing session", async () => {
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/llm-profiles/bindings/narrator?scope=session&session_id=missing-session",
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect((res.json() as { error: { code: string } }).error.code).toBe("session_scope_not_found");
+  });
 });

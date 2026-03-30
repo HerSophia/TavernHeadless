@@ -1,8 +1,9 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { nanoid } from "nanoid";
 import { ZodError } from "zod";
 import { readFileSync } from "node:fs";
 
-import type { MemoryInjectionOptions } from "@tavern/core";
+import type { GenerationParams, MemoryInjectionOptions } from "@tavern/core";
 
 import { createDatabase, type DatabaseConnection } from "./db/client";
 import { sendError, zodIssues } from "./lib/http";
@@ -39,6 +40,7 @@ import {
   type OrchestrationContext,
 } from "./services/orchestration-factory";
 import { ChatMessagePersistence } from "./services/chat-message-persistence.js";
+import { LlmInstanceService } from "./services/llm-instance-service";
 import { LlmProfileService, LlmProfileServiceError } from "./services/llm-profile-service";
 import { registerOpenApi } from "./plugins/openapi";
 import { registerRequestLogging } from "./plugins/request-logging";
@@ -218,6 +220,18 @@ export async function listMemoryMaintenanceScopes(
   }
 
   return [...uniqueScopes.values()];
+}
+
+function mergeTurnGenerationParams(
+  base?: Partial<GenerationParams> | null,
+  override?: Partial<GenerationParams> | null,
+): Partial<GenerationParams> | undefined {
+  const merged = { ...(base ?? {}), ...(override ?? {}) };
+  if (Object.keys(merged).length === 0) {
+    return undefined;
+  }
+
+  return merged;
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppResult> {
@@ -458,6 +472,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     const activeOrchestrationContext = orchestrationContext;
 
     const llmProfileService = new LlmProfileService(database.db);
+    const llmInstanceService = new LlmInstanceService(database.db);
 
     const toolRegistry = baseToolRegistry ?? new ToolRegistry();
 
@@ -552,30 +567,73 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         turnCommitService,
         resolveTurnModels: async (sessionId, accountId = DEFAULT_ADMIN_ACCOUNT_ID) => {
           try {
-            const profileMap = await llmProfileService.resolveActiveProfiles(sessionId, accountId);
+            const [profileMap, instanceSlots] = await Promise.all([
+              llmProfileService.resolveActiveProfiles(sessionId, accountId),
+              llmInstanceService.resolveConfigs(accountId, sessionId),
+            ]);
             const result: ResolvedTurnModels = {};
+            const instanceMap = new Map(instanceSlots.map((item) => [item.slot, item] as const));
 
-            for (const [slot, resolved] of Object.entries(profileMap)) {
-              if (!resolved) continue;
+            for (const slot of ["narrator", "director", "verifier", "memory"] as const) {
+              const resolvedProfile = profileMap[slot];
+              const resolvedInstance = instanceMap.get(slot);
+              const generationParams = mergeTurnGenerationParams(
+                resolvedProfile?.params,
+                resolvedInstance?.params,
+              );
+              const presetId = resolvedInstance?.presetId ?? undefined;
+              const enabled = resolvedInstance?.enabled ?? true;
 
-              const providerId = `llm-profile-${resolved.profileId}`;
-              activeOrchestrationContext.providerRegistry.register({
-                id: providerId,
-                type: resolved.provider,
-                apiKey: resolved.apiKey,
-                baseURL: resolved.baseUrl ?? undefined,
-              });
+              if (resolvedProfile) {
+                if (enabled) {
+                  const providerId = `llm-profile-${resolvedProfile.profileId}-turn-${nanoid(8)}`;
+                  const languageModel = activeOrchestrationContext.providerRegistry.createModel(
+                    {
+                      id: providerId,
+                      type: resolvedProfile.provider,
+                      apiKey: resolvedProfile.apiKey,
+                      baseURL: resolvedProfile.baseUrl ?? undefined,
+                    },
+                    resolvedProfile.modelId,
+                  );
 
-              // resolveActiveProfiles 已经对每个具体槽位完成 fallback 解析，忽略通配位
-              if (slot === "*") continue;
-              const concreteSlot = slot as keyof ResolvedTurnModels;
+                  result[slot] = {
+                    model: { providerId, modelId: resolvedProfile.modelId, languageModel },
+                    source: resolvedProfile.source === "session" ? "session_profile" : "global_profile",
+                    profileId: resolvedProfile.profileId,
+                    generationParams,
+                    enabled,
+                    presetId,
+                  };
+                  continue;
+                }
 
-              result[concreteSlot] = {
-                model: { providerId, modelId: resolved.modelId },
-                source: resolved.source === "session" ? "session_profile" : "global_profile",
-                profileId: resolved.profileId,
-                generationParams: resolved.params,
-              };
+                result[slot] = {
+                  source: resolvedProfile.source === "session" ? "session_profile" : "global_profile",
+                  profileId: resolvedProfile.profileId,
+                  generationParams,
+                  enabled,
+                  presetId,
+                };
+                continue;
+              }
+
+              if (
+                resolvedInstance
+                && (
+                  resolvedInstance.enabled === false
+                  || presetId !== undefined
+                  || generationParams !== undefined
+                  || resolvedInstance.source !== "default"
+                )
+              ) {
+                result[slot] = {
+                  source: "env",
+                  generationParams,
+                  enabled,
+                  presetId,
+                };
+              }
             }
 
             return result;

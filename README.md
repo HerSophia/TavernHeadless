@@ -25,6 +25,7 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 - 官方集成层两包：`@tavern/sdk`、`@tavern/client-helpers`，并已覆盖会话、内容结构、变量、记忆条目 / 边 / 作业 / scope 状态、导出、Tools、MCP 等主要接入域
 - 三种认证模式、多账号隔离、LLM 密钥加密存储
 - 变量、记忆、消息、会话、用户等批量操作接口
+- LLM Profiles / Instance Slots 已接入真实执行链路，并使用 turn 级 provider 快照隔离运行中的配置
 
 当前重点：部署文档完善、正式发布准备。真实 LLM 集成回归已通过。
 

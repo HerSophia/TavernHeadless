@@ -153,6 +153,14 @@ page → floor → chat → global
 
 一次回合中，实例按 Director → Memory 检索 → Narrator 生成 → Verifier 检查 → Memory 整理 的顺序执行。
 
+这些实例配置现在会直接影响真实执行：
+
+- narrator 被实例配置显式禁用时，请求会返回明确错误，不再偷偷回退到环境变量 narrator。
+- director / verifier / memory 被禁用时，对应子流程会在该 turn 中跳过。
+- narrator 的 `preset_id` 可以覆盖 `session.presetId`。
+- `params` 采用浅层 merge，同名键覆盖。
+- 动态 Profile 会在 turn 启动时冻结为独立 provider handle，运行中的 turn 不会被中途 Profile 更新污染。
+
 每个实例通过 **LLM Profile** 绑定凭证配置（provider / model / apiKey 等）。Profile 支持按 scope（global / session）和 slot 粒度绑定，解析时按五级优先级回退。不配置 Profile 时使用环境变量作为默认值。
 
 ### 记忆系统

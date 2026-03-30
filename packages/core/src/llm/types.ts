@@ -33,6 +33,8 @@ export interface ModelConfig {
   providerId: string;
   /** 模型 ID（如 'gpt-4o', 'claude-3-5-sonnet-latest'） */
   modelId: string;
+  /** 可选：turn 级冻结的 LanguageModel 句柄。提供后优先于 providerId 动态查找。 */
+  languageModel?: LanguageModel;
   /** 显示名称 */
   displayName?: string;
 }

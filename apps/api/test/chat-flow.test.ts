@@ -35,7 +35,7 @@ import type { ProviderConfig, ProviderFactory } from "@tavern/core";
 // 只测试路由层 + ChatService 的 DB 逻辑。
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { sessions, floors, messagePages, messages, promptSnapshots, toolExecutionRecords, variables } from "../src/db/schema";
+import { sessions, floors, messagePages, messages, presets, promptSnapshots, toolExecutionRecords, variables } from "../src/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants";
 import { nanoid } from "nanoid";
@@ -653,6 +653,115 @@ describe("ChatService", () => {
     const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(turnInput.modelOverrides).toBeUndefined();
     expect(onTurnModelUsed).not.toHaveBeenCalled();
+  });
+
+  it("should reject respond before creating a draft floor when narrator slot is explicitly disabled", async () => {
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      resolveTurnModels: vi.fn().mockResolvedValue({
+        narrator: {
+          source: "env",
+          enabled: false,
+        },
+      }),
+    });
+
+    await expect(
+      service.respond(sessionId, { message: "Narrator disabled" })
+    ).rejects.toMatchObject({ code: "instance_slot_disabled_required" });
+
+    expect(mockOrchestrator.executeTurn).not.toHaveBeenCalled();
+
+    const floorRows = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
+    expect(floorRows).toHaveLength(0);
+  });
+
+  it("should apply narrator preset override from runtime resolution into the committed prompt snapshot", async () => {
+    const now = Date.now();
+    const basePresetId = "preset-base";
+    const overridePresetId = "preset-override";
+
+    await database.db.insert(presets).values([
+      {
+        id: basePresetId,
+        name: "Base Preset",
+        source: "sillytavern",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        dataJson: "{}",
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: overridePresetId,
+        name: "Override Preset",
+        source: "sillytavern",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        dataJson: "{}",
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    await database.db
+      .update(sessions)
+      .set({ presetId: basePresetId, updatedAt: now + 1 })
+      .where(eq(sessions.id, sessionId));
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      resolveTurnModels: vi.fn().mockResolvedValue({
+        narrator: {
+          source: "env",
+          enabled: true,
+          presetId: overridePresetId,
+          generationParams: { temperature: 0.55 },
+        },
+      }),
+    });
+
+    const result = await service.respond(sessionId, { message: "Use preset override" });
+
+    const [snapshotRow] = await database.db
+      .select()
+      .from(promptSnapshots)
+      .where(eq(promptSnapshots.floorId, result.floorId));
+
+    expect(snapshotRow).toBeDefined();
+    expect(snapshotRow!.presetId).toBe(overridePresetId);
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.generationParams.temperature).toBe(0.55);
+  });
+
+  it("should force disabled director verifier and memory instance slots out of the effective turn config", async () => {
+    const memoryStore = {
+      prepareInjection: vi.fn().mockResolvedValue({ formattedText: "", items: [], tokenCount: 0 }),
+    } as any;
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      memoryStore,
+      enableMemoryConsolidationByDefault: true,
+      resolveTurnModels: vi.fn().mockResolvedValue({
+        director: { source: "env", enabled: false },
+        verifier: { source: "env", enabled: false },
+        memory: { source: "env", enabled: false },
+      }),
+    });
+
+    await service.respond(sessionId, {
+      message: "Skip disabled subflows",
+      config: {
+        enableDirector: true,
+        enableVerifier: true,
+      },
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.config).toEqual({
+      enableDirector: false,
+      enableVerifier: false,
+      enableMemoryConsolidation: false,
+    });
   });
 
   it("should reject cross-account respond access", async () => {

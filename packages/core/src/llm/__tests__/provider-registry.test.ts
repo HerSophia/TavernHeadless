@@ -128,6 +128,18 @@ describe('ProviderRegistry', () => {
       registry.getModel('p1', 'claude-3');
       expect(getter).toHaveBeenCalledWith('claude-3');
     });
+
+    it('creates a turn-scoped model handle without mutating the registry', () => {
+      const registry = new ProviderRegistry();
+      registry.registerFactory('test', trackingFactory);
+
+      const model = registry.createModel({ id: 'turn-scope', type: 'test' as any }, 'claude-3');
+
+      expect(model).toBeDefined();
+      expect(model.modelId).toBe('claude-3');
+      expect(model.provider).toBe('turn-scope');
+      expect(registry.has('turn-scope')).toBe(false);
+    });
   });
 
   describe('listProviders', () => {

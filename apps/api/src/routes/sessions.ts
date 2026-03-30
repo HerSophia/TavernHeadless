@@ -4,9 +4,9 @@ import { nanoid } from "nanoid";
 import { SimpleTokenCounter } from "@tavern/core";
 import { z } from "zod";
 
-import type { DatabaseConnection } from "../db/client";
+import type { DatabaseConnection, DbExecutor } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchDeleteBodyJsonSchema, batchStatusBodyJsonSchema, batchResultResponseJsonSchema } from "./schemas/common.js";
-import { accountUsers, floors, messagePages, messages, sessions } from "../db/schema";
+import { accountUsers, floors, llmProfileBindings, messagePages, messages, sessions } from "../db/schema";
 import { ensureOptionalObjectBody, parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
@@ -842,6 +842,24 @@ function sessionOwnershipFilter(sessionId: string, accountId: string) {
   return and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId));
 }
 
+function deleteSessionOwnedProfileBindings(tx: DbExecutor, sessionId: string, accountId: string): void {
+  tx.delete(llmProfileBindings)
+    .where(and(
+      eq(llmProfileBindings.accountId, accountId),
+      eq(llmProfileBindings.scope, "session"),
+      eq(llmProfileBindings.scopeId, sessionId),
+    ))
+    .run();
+}
+
+function deleteOwnedSessionAndBindings(tx: DbExecutor, sessionId: string, accountId: string) {
+  const deleted = tx.delete(sessions).where(sessionOwnershipFilter(sessionId, accountId)).returning({ id: sessions.id }).all();
+  if (deleted.length > 0) {
+    deleteSessionOwnedProfileBindings(tx, sessionId, accountId);
+  }
+  return deleted;
+}
+
 async function syncCharacterBinding(
   db: DatabaseConnection["db"],
   accountId: string,
@@ -1336,7 +1354,9 @@ export async function registerSessionRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const deleted = await db.delete(sessions).where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId)).returning();
+    const deleted = db.transaction((tx) => (
+      deleteOwnedSessionAndBindings(tx, parsedParams.data.id, auth.accountId)
+    ));
 
     if (deleted.length === 0) {
       return sendError(reply, 404, "not_found", "Session not found");
@@ -1767,7 +1787,7 @@ export async function registerSessionRoutes(
 
     db.transaction((tx) => {
       ids.forEach((id, index) => {
-        const rows = tx.delete(sessions).where(sessionOwnershipFilter(id, auth.accountId)).returning({ id: sessions.id }).all();
+        const rows = deleteOwnedSessionAndBindings(tx, id, auth.accountId);
 
         if (rows.length > 0) {
           results.push({ index, id, action: "deleted" });

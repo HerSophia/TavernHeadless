@@ -155,6 +155,13 @@ describe("chat routes", () => {
       errorCode: "profile_disabled",
     },
     {
+      name: "instance_slot_disabled_required",
+      code: "instance_slot_disabled_required",
+      message: "LLM instance slot 'narrator' is disabled for this session",
+      statusCode: 409,
+      errorCode: "instance_slot_disabled_required",
+    },
+    {
       name: "tool_replay_blocked",
       code: "tool_replay_blocked",
       message: "Verifier retry blocked because replaying tool executions would be unsafe: create_character (never_auto_replay)",
@@ -289,6 +296,10 @@ describe("chat routes", () => {
     {
       code: "generation_timeout",
       message: "Turn orchestration failed: LLM request timed out after 60000ms",
+    },
+    {
+      code: "instance_slot_disabled_required",
+      message: "LLM instance slot 'narrator' is disabled for this session",
     },
   ])("emits %s in SSE error payload on /sessions/:id/respond/stream", async ({ code, message }) => {
     const chatService = createChatService({

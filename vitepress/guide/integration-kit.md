@@ -111,6 +111,30 @@ console.log(result.finalState);
 
 `finalState === "committed"` 表示公开提交边界已经完成，相关持久化写入已经结束。
 
+### LLM Profiles 与 Instance 运行时
+
+```ts
+// 绑定一个 Profile 到 narrator 槽位
+await client.llmProfiles.activate({
+  profileId: "profile-1",
+  scope: "session",
+  sessionId: "session-1",
+  slot: "narrator",
+});
+
+// 如需显式解绑
+await client.llmProfiles.unbind({
+  scope: "session",
+  sessionId: "session-1",
+  slot: "narrator",
+});
+
+// 查看实例侧 enabled / preset / params 的最终解析
+const resolvedSlots = await client.llmInstances.listResolved({ sessionId: "session-1" });
+```
+
+如果 narrator 在实例侧被显式禁用，聊天请求会返回固定错误码 `instance_slot_disabled_required`。
+
 ```ts
 // 流式回复
 const result = await client.sessions.respondStream({

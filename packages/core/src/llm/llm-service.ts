@@ -171,6 +171,10 @@ export class LLMService implements LLMPort {
    */
   private getLanguageModel(request: LLMRequest): LanguageModel {
     const model = request.model ?? this.defaultModel;
+    if (model.languageModel) {
+      return model.languageModel;
+    }
+
     return this.registry.getModel(model.providerId, model.modelId);
   }
 

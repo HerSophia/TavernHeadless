@@ -165,6 +165,7 @@ const {
   setLlmManagerScope,
   submitLlmProfileDraft,
   submitSlotDrawer,
+  unbindLlmSlotBinding,
   resetSlotParams,
   testLlmProfileModel
 } = useWorkspaceLlmManagerDialog({ activeSessionId: computed(() => activeSession.value?.id ?? null), addEvent, currentAccount, t });
@@ -636,6 +637,7 @@ function openMcpManagerFromNav(): void {
         :on-patch-llm-slot-params="patchSlotParams"
         :on-reset-llm-slot-params="resetSlotParams"
         :on-submit-llm-slot-drawer="submitSlotDrawer"
+        :on-unbind-llm-slot-drawer="() => { void unbindLlmSlotBinding(); }"
         :on-delete-preset-manager-entry="deletePresetManagerEntry"
         :on-create-llm-profile-draft="beginCreateLlmProfileDraft"
         :on-delete-llm-profile="removeLlmProfile"
