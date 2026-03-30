@@ -23,6 +23,7 @@ import { errorResponseJsonSchema } from "./schemas/common.js";
 import { worldbookEntries, worldbooks } from "../db/schema";
 import { parseJsonField, parseWithSchema, sendError } from "../lib/http";
 import { buildListMeta, toOrderBy } from "../lib/pagination";
+import { executeWithSqliteBusyRetry, ResourceBusyError } from "../lib/retry";
 import { getRequestAuthContext } from "../plugins/auth.js";
 
 // ── Zod Schemas ───────────────────────────────────────
@@ -36,7 +37,12 @@ const entryParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+const deleteEntryQuerySchema = z.object({
+  expected_version: z.coerce.number().int().positive().optional(),
+});
+
 const createEntrySchema = z.object({
+  expected_version: z.number().int().positive().optional(),
   keys: z.array(z.string()),
   content: z.string(),
   comment: z.string().optional(),
@@ -73,8 +79,8 @@ const updateEntryFieldsShape = {
 };
 
 const updateEntrySchema = z
-  .object(updateEntryFieldsShape)
-  .refine((value) => Object.keys(value).length > 0, "At least one field is required");
+  .object({ expected_version: z.number().int().positive().optional(), ...updateEntryFieldsShape })
+  .refine((value) => Object.keys(value).some((key) => key !== "expected_version"), "At least one field is required");
 
 const listEntriesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -108,6 +114,7 @@ const entryIdArraySchema = z
   });
 
 const batchUpdateEntriesSchema = z.object({
+  expected_version: z.number().int().positive().optional(),
   ids: entryIdArraySchema,
   fields: z
     .object(updateEntryFieldsShape)
@@ -115,10 +122,12 @@ const batchUpdateEntriesSchema = z.object({
 });
 
 const batchDeleteEntriesSchema = z.object({
+  expected_version: z.number().int().positive().optional(),
   ids: entryIdArraySchema,
 });
 
 const batchReorderEntriesSchema = z.object({
+  expected_version: z.number().int().positive().optional(),
   items: z
     .array(
       z.object({
@@ -265,6 +274,14 @@ const entryParamsJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const deleteEntryQueryJsonSchema = {
+  type: "object",
+  properties: {
+    expected_version: { type: "integer", minimum: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
 const entryFieldsJsonSchemaProperties = {
   keys: { type: "array", items: { type: "string" } },
   content: { type: "string" },
@@ -337,15 +354,14 @@ const listEntriesQueryJsonSchema = {
 const createEntryBodyJsonSchema = {
   type: "object",
   required: ["keys", "content"],
-  properties: entryFieldsJsonSchemaProperties,
+  properties: { expected_version: { type: "integer", minimum: 1 }, ...entryFieldsJsonSchemaProperties },
   additionalProperties: false,
 } as const;
 
 const updateEntryBodyJsonSchema = {
   type: "object",
-  properties: entryFieldsJsonSchemaProperties,
+  properties: { expected_version: { type: "integer", minimum: 1 }, ...entryFieldsJsonSchemaProperties },
   additionalProperties: false,
-  minProperties: 1,
 } as const;
 
 const entryResponseJsonSchema = {
@@ -419,6 +435,7 @@ const batchUpdateEntriesBodyJsonSchema = {
   type: "object",
   required: ["ids", "fields"],
   properties: {
+    expected_version: { type: "integer", minimum: 1 },
     ids: batchEntryIdsJsonSchema,
     fields: {
       type: "object",
@@ -475,6 +492,7 @@ const batchDeleteEntriesBodyJsonSchema = {
   type: "object",
   required: ["ids"],
   properties: {
+    expected_version: { type: "integer", minimum: 1 },
     ids: batchEntryIdsJsonSchema,
   },
   examples: [batchDeleteEntriesBodyExample],
@@ -513,6 +531,7 @@ const batchReorderEntriesBodyJsonSchema = {
   type: "object",
   required: ["items"],
   properties: {
+    expected_version: { type: "integer", minimum: 1 },
     items: {
       type: "array",
       minItems: 1,
@@ -553,6 +572,8 @@ class WorldbookVersionConflictError extends Error {
     super("worldbook_version_conflict");
   }
 }
+
+const RESOURCE_BUSY_MESSAGE = "Resource is temporarily busy, please retry";
 
 function loadOwnedWorldbook(db: AppDb | DbExecutor, worldbookId: string, accountId: string) {
   return db.select().from(worldbooks).where(and(eq(worldbooks.id, worldbookId), eq(worldbooks.accountId, accountId))).get();
@@ -628,17 +649,22 @@ function bumpWorldbookVersion(
   return updateResult.changes > 0;
 }
 
-function withWorldbookWriteCas<T>(
+async function withWorldbookWriteCas<T>(
   db: AppDb,
   worldbookId: string,
   accountId: string,
+  options: { expectedVersion?: number },
   mutate: (tx: DbExecutor, worldbook: typeof worldbooks.$inferSelect, now: number) => WorldbookMutationResult<T>
-): WorldbookMutationResult<T> {
+): Promise<WorldbookMutationResult<T>> {
   try {
-    return db.transaction((tx) => {
+    return await executeWithSqliteBusyRetry(() => db.transaction((tx) => {
       const worldbook = loadOwnedWorldbook(tx, worldbookId, accountId);
       if (!worldbook) {
         return { kind: "error", statusCode: 404, code: "not_found", message: "Worldbook not found" };
+      }
+
+      if (options.expectedVersion !== undefined && worldbook.version !== options.expectedVersion) {
+        return { kind: "error", statusCode: 409, code: "worldbook_conflict", message: "Worldbook has been modified by another operation" };
       }
 
       const now = Date.now();
@@ -653,10 +679,13 @@ function withWorldbookWriteCas<T>(
         throw new WorldbookVersionConflictError();
       }
       return result;
-    });
+    }));
   } catch (error) {
     if (error instanceof WorldbookVersionConflictError) {
       return { kind: "error", statusCode: 409, code: "worldbook_conflict", message: "Worldbook has been modified by another operation" };
+    }
+    if (error instanceof ResourceBusyError) {
+      return { kind: "error", statusCode: 503, code: "resource_busy", message: RESOURCE_BUSY_MESSAGE };
     }
     throw error;
   }
@@ -779,6 +808,7 @@ export async function registerWorldbookEntryRoutes(
         400: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -789,10 +819,11 @@ export async function registerWorldbookEntryRoutes(
     const parsedBody = parseWithSchema(createEntrySchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const mutation = withWorldbookWriteCas(
+    const mutation = await withWorldbookWriteCas(
       db,
       parsedParams.data.worldbook_id,
       auth.accountId,
+      { expectedVersion: parsedBody.data.expected_version },
       (tx, worldbook, now) => {
         const maxUidRow = tx
           .select({ maxUid: max(worldbookEntries.uid) })
@@ -857,6 +888,7 @@ export async function registerWorldbookEntryRoutes(
         400: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -867,7 +899,9 @@ export async function registerWorldbookEntryRoutes(
     const parsedBody = parseWithSchema(batchUpdateEntriesSchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const mutation = withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, (tx, worldbook, now) => {
+    const mutation = await withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, {
+      expectedVersion: parsedBody.data.expected_version,
+    }, (tx, worldbook, now) => {
       const updates = buildEntryUpdates(parsedBody.data.fields, now);
       const updatedRows = tx
         .update(worldbookEntries)
@@ -920,6 +954,7 @@ export async function registerWorldbookEntryRoutes(
         400: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -930,7 +965,9 @@ export async function registerWorldbookEntryRoutes(
     const parsedBody = parseWithSchema(batchDeleteEntriesSchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const mutation = withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, (tx, worldbook) => {
+    const mutation = await withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, {
+      expectedVersion: parsedBody.data.expected_version,
+    }, (tx, worldbook) => {
       const deletedRows = tx
         .delete(worldbookEntries)
         .where(and(inArray(worldbookEntries.id, parsedBody.data.ids), eq(worldbookEntries.worldbookId, worldbook.id)))
@@ -979,6 +1016,7 @@ export async function registerWorldbookEntryRoutes(
         400: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -989,7 +1027,9 @@ export async function registerWorldbookEntryRoutes(
     const parsedBody = parseWithSchema(batchReorderEntriesSchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const mutation = withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, (tx, worldbook, now) => {
+    const mutation = await withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, {
+      expectedVersion: parsedBody.data.expected_version,
+    }, (tx, worldbook, now) => {
       let updated = 0;
       const results = parsedBody.data.items.map((item, index) => {
         const existing = tx
@@ -1095,6 +1135,7 @@ export async function registerWorldbookEntryRoutes(
         400: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -1105,7 +1146,9 @@ export async function registerWorldbookEntryRoutes(
     const parsedBody = parseWithSchema(updateEntrySchema, request.body, reply);
     if (!parsedBody.ok) return;
 
-    const mutation = withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, (tx, worldbook, now) => {
+    const mutation = await withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, {
+      expectedVersion: parsedBody.data.expected_version,
+    }, (tx, worldbook, now) => {
       const updates = buildEntryUpdates(parsedBody.data, now);
       const [updated] = tx
         .update(worldbookEntries)
@@ -1136,18 +1179,25 @@ export async function registerWorldbookEntryRoutes(
       summary: "Delete worldbook entry",
       operationId: "deleteWorldbookEntry",
       params: entryParamsJsonSchema,
+      querystring: deleteEntryQueryJsonSchema,
       response: {
         200: deleteResponseJsonSchema,
+        400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(entryParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
+    const parsedQuery = parseWithSchema(deleteEntryQuerySchema, request.query, reply);
+    if (!parsedQuery.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const mutation = withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, (tx, worldbook) => {
+    const mutation = await withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, {
+      expectedVersion: parsedQuery.data.expected_version,
+    }, (tx, worldbook) => {
       const deleted = tx
         .delete(worldbookEntries)
         .where(and(eq(worldbookEntries.id, parsedParams.data.id), eq(worldbookEntries.worldbookId, worldbook.id)))

@@ -1,5 +1,7 @@
 import type { ComputedRef, Ref } from "vue";
 
+import { mapApiErrorToUiState } from "@tavern/client-helpers";
+
 import {
   createCharacterAssetVersion as createCharacterAssetVersionApi,
   deleteCharacterAsset as deleteCharacterAssetApi,
@@ -52,6 +54,32 @@ type AssetsActionsContext = {
   syncSessionWorldbookCount: (session: SessionState) => void;
   touchLibraryAsset: (asset: WorkspaceAsset) => void;
 };
+
+type PresetAssetMutationFailureReason = Exclude<PresetAssetMutationResult["reason"], "missing" | "unsupported" | undefined>;
+
+type WorldbookAssetMutationFailureReason = Exclude<WorldbookAssetMutationResult["reason"], "missing" | "unsupported" | undefined>;
+
+function resolvePresetAssetMutationFailureReason(error: unknown): PresetAssetMutationFailureReason {
+  const uiError = mapApiErrorToUiState(error);
+  if (uiError.code === "preset_conflict") {
+    return "preset_conflict";
+  }
+  if (uiError.code === "resource_busy") {
+    return "resource_busy";
+  }
+  return "failed";
+}
+
+function resolveWorldbookAssetMutationFailureReason(error: unknown): WorldbookAssetMutationFailureReason {
+  const uiError = mapApiErrorToUiState(error);
+  if (uiError.code === "worldbook_conflict") {
+    return "worldbook_conflict";
+  }
+  if (uiError.code === "resource_busy") {
+    return "resource_busy";
+  }
+  return "failed";
+}
 
 export function createAssetsActions(context: AssetsActionsContext) {
   function toggleLibraryFavorite(assetId: string): AssetFavoriteResult {
@@ -311,7 +339,7 @@ export function createAssetsActions(context: AssetsActionsContext) {
     assetId: string,
     name: string,
     editor: WorkspacePresetEditorDocument,
-    expectedUpdatedAt: number | undefined,
+    expectedVersion: number | undefined,
     mode: PresetAssetSaveMode
   ): Promise<PresetAssetMutationResult> {
     const asset = context.findLibraryAsset(assetId);
@@ -354,7 +382,7 @@ export function createAssetsActions(context: AssetsActionsContext) {
           assetId,
           name,
           toApiPresetEditorDocument(editor),
-          expectedUpdatedAt,
+          expectedVersion,
           context.currentAccount.value
         );
         targetAssetId = updated.id;
@@ -368,13 +396,13 @@ export function createAssetsActions(context: AssetsActionsContext) {
         deleteSyncFailed: false,
         ok: true
       };
-    } catch {
+    } catch (error) {
       return {
         apiSyncFailed: false,
         asset: null,
         deleteSyncFailed: false,
         ok: false,
-        reason: "failed"
+        reason: resolvePresetAssetMutationFailureReason(error)
       };
     }
   }
@@ -383,7 +411,7 @@ export function createAssetsActions(context: AssetsActionsContext) {
     assetId: string,
     name: string,
     data: Record<string, unknown>,
-    expectedUpdatedAt: number | undefined,
+    expectedVersion: number | undefined,
     mode: WorldbookAssetSaveMode
   ): Promise<WorldbookAssetMutationResult> {
     const asset = context.findLibraryAsset(assetId);
@@ -418,7 +446,7 @@ export function createAssetsActions(context: AssetsActionsContext) {
         );
         targetAssetId = imported.id;
       } else {
-        const updated = await updateWorldbookAssetApi(assetId, name, data, expectedUpdatedAt, context.currentAccount.value);
+        const updated = await updateWorldbookAssetApi(assetId, name, data, expectedVersion, context.currentAccount.value);
         targetAssetId = updated.id;
       }
 
@@ -429,17 +457,20 @@ export function createAssetsActions(context: AssetsActionsContext) {
         asset: nextAsset,
         ok: true
       };
-    } catch {
+    } catch (error) {
       return {
         apiSyncFailed: false,
         asset: null,
         ok: false,
-        reason: "failed"
+        reason: resolveWorldbookAssetMutationFailureReason(error)
       };
     }
   }
 
-  async function deletePresetLibraryAsset(assetId: string): Promise<PresetAssetDeleteResult> {
+  async function deletePresetLibraryAsset(
+    assetId: string,
+    expectedVersion: number | undefined
+  ): Promise<PresetAssetDeleteResult> {
     const asset = context.findLibraryAsset(assetId);
     if (!asset) {
       return {
@@ -460,24 +491,27 @@ export function createAssetsActions(context: AssetsActionsContext) {
     }
 
     try {
-      await deletePresetAssetApi(asset.id, context.currentAccount.value);
+      await deletePresetAssetApi(asset.id, expectedVersion, context.currentAccount.value);
       const hydration = await context.hydrateLibraryAssets(context.currentAccount.value);
       return {
         apiSyncFailed: hydration.apiSyncFailed,
         deleteSyncFailed: false,
         ok: true
       };
-    } catch {
+    } catch (error) {
       return {
         apiSyncFailed: false,
         deleteSyncFailed: false,
         ok: false,
-        reason: "failed"
+        reason: resolvePresetAssetMutationFailureReason(error)
       };
     }
   }
 
-  async function deleteWorldbookLibraryAsset(assetId: string): Promise<WorldbookAssetMutationResult> {
+  async function deleteWorldbookLibraryAsset(
+    assetId: string,
+    expectedVersion: number | undefined
+  ): Promise<WorldbookAssetMutationResult> {
     const asset = context.findLibraryAsset(assetId);
     if (!asset) {
       return {
@@ -498,7 +532,7 @@ export function createAssetsActions(context: AssetsActionsContext) {
     }
 
     try {
-      await deleteWorldbookAssetApi(asset.id, context.currentAccount.value);
+      await deleteWorldbookAssetApi(asset.id, expectedVersion, context.currentAccount.value);
       const hydration = await context.hydrateLibraryAssets(context.currentAccount.value);
       context.sessions.value
         .filter((session) => session.account === context.currentAccount.value && session.worldbookProfileId === asset.id)
@@ -511,12 +545,12 @@ export function createAssetsActions(context: AssetsActionsContext) {
         asset: null,
         ok: true
       };
-    } catch {
+    } catch (error) {
       return {
         apiSyncFailed: false,
         asset: null,
         ok: false,
-        reason: "failed"
+        reason: resolveWorldbookAssetMutationFailureReason(error)
       };
     }
   }

@@ -183,7 +183,35 @@ await client.worldbooks.update({
 });
 ```
 
-兼容旧调用方时，也仍然可以继续传 `expectedUpdatedAt`。新的接入建议统一切到 `expectedVersion`。
+兼容旧调用方时，现有主资源 `PUT` 路由仍可继续传 `expectedUpdatedAt`。新的接入建议统一切到 `expectedVersion`。
+
+删除主资源时，`remove(...)` 会把 `expectedVersion` 放到 query string，而不是 `DELETE` body：
+
+```ts
+await client.presets.remove({
+  presetId: "preset-1",
+  expectedVersion: 4,
+});
+
+await client.worldbooks.remove({
+  worldbookId: "worldbook-1",
+  expectedVersion: 7,
+});
+```
+
+`presetEntries` / `worldbookEntries` 的写方法也支持 `expectedVersion`：
+
+- `create(...)`、`update(...)`、`reorder(...)`、`batchUpdate(...)`、`batchDelete(...)`、`batchReorder(...)` 会通过 body 发送 `expected_version`
+- `remove(...)` 会通过 query string 发送 `expected_version`
+
+如果服务端返回：
+
+- `preset_conflict`
+- `worldbook_conflict`
+
+说明调用方持有的版本基线已经过期，应先重新拉取最新资源再决定是否重试。
+
+如果服务端返回 `resource_busy`，说明资源写入遇到了 SQLite 忙状态。它是资源写入语义，和聊天提交链路里的 `commit_busy` 是两类不同错误。
 
 ```ts
 // 读取 Memory V2 摘要
@@ -304,6 +332,7 @@ try {
 - `generation_timeout` → `server`
 - `commit_busy` → `server`
 - `commit_conflict` → `conflict`
+- `resource_busy` → `server`
 - `preset_conflict` → `conflict`
 - `worldbook_conflict` → `conflict`
 - `regex_profile_conflict` → `conflict`
@@ -311,7 +340,7 @@ try {
 
 这条规则同样覆盖流式 `respond/stream` 的 SSE `error` 事件。流已经建立后，SDK 抛出的 `TavernApiError.status` 可能仍然是 `200`，但 `code` 会保留下来，因此接入方应优先看 `code`。
 
-默认服务配置仍是单实例内存协调器，且 `queueMode` 为 `reject`。因此同一 `session + branch` 的并发请求通常直接返回 `generation_conflict`。只有服务端显式启用 `queue` 模式时，接入方才可能看到 `generation_queue_timeout`；即便如此，排队范围也只在当前进程内。
+默认服务配置仍是单实例内存协调器，且 `GENERATION_QUEUE_MODE=reject`。因此同一 `session + branch` 的并发请求通常直接返回 `generation_conflict`。只有服务端显式启用 `GENERATION_QUEUE_MODE=queue` 时，接入方才可能看到 `generation_queue_timeout`；`GENERATION_QUEUE_TIMEOUT_MS` 用于控制 queue 模式下的等待超时。即便如此，排队范围也只在当前进程内。
 
 ### 资源乐观锁与版本快照
 

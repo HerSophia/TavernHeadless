@@ -14,6 +14,8 @@
  * - LLM_DEFAULT_TIMEOUT_MS: 服务端默认生成超时（毫秒，默认 60000）
  * - TURN_COMMIT_MAX_RETRIES: commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数（默认 2）
  * - TURN_COMMIT_RETRY_BASE_DELAY_MS: commit 重试基础退避时间（毫秒，默认 100）
+ * - GENERATION_QUEUE_MODE: 同一 session + branch 的生成并发策略（reject | queue，默认 reject）
+ * - GENERATION_QUEUE_TIMEOUT_MS: queue 模式下的排队等待超时（毫秒，可选）
  * - ENABLE_SSE_CHAT: 是否启用 SSE 流式聊天端点（默认 false）
  * - ENABLE_PROMPT_DRY_RUN: 是否启用 Prompt Dry-run 调试端点（默认 false）
  * - CHAT_HISTORY_MAX_FLOORS: 可选历史楼层上限（最近 N 层）
@@ -56,6 +58,7 @@ import type { OrchestrationConfig } from "./services/orchestration-factory.js";
 import type { AuthConfig, AuthMode } from "./plugins/auth.js";
 import type { AccountMode } from "./accounts/constants.js";
 import { parseCorsOrigins, type CorsConfig } from "./plugins/cors.js";
+import type { GenerationExecutionMode } from "./services/generation-guard-service.js";
 
 // ── 类型 ──────────────────────────────────────────────
 
@@ -106,6 +109,10 @@ export interface AppConfig {
   llmDefaultTimeoutMs: number;
   /** commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数 */
   turnCommitMaxRetries: number;
+  /** 同一 session + branch 的生成并发策略 */
+  generationQueueMode: GenerationExecutionMode;
+  /** queue 模式下的排队等待超时（毫秒） */
+  generationQueueTimeoutMs?: number;
   /** commit 重试基础退避时间（毫秒） */
   turnCommitRetryBaseDelayMs: number;
   /** 认证配置 */
@@ -142,6 +149,8 @@ export function loadConfig(): AppConfig {
   const llmDefaultTimeoutMs = parsePositiveInt(process.env.LLM_DEFAULT_TIMEOUT_MS) ?? 60_000;
   const turnCommitMaxRetries = parseNonNegativeInt(process.env.TURN_COMMIT_MAX_RETRIES) ?? 2;
   const turnCommitRetryBaseDelayMs = parsePositiveInt(process.env.TURN_COMMIT_RETRY_BASE_DELAY_MS) ?? 100;
+  const generationQueueMode = parseGenerationQueueMode(process.env.GENERATION_QUEUE_MODE);
+  const generationQueueTimeoutMs = parsePositiveInt(process.env.GENERATION_QUEUE_TIMEOUT_MS);
   const cors = parseCorsConfig(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN, process.env.CORS_CREDENTIALS);
   const enableMcp = process.env.ENABLE_MCP === "true";
   const memoryInjectionDecay = parseMemoryInjectionDecay(
@@ -205,6 +214,8 @@ export function loadConfig(): AppConfig {
       memoryWorker,
       llmDefaultTimeoutMs,
       turnCommitMaxRetries,
+      generationQueueMode,
+      generationQueueTimeoutMs,
       turnCommitRetryBaseDelayMs,
       auth,
       accountMode,
@@ -269,6 +280,8 @@ export function loadConfig(): AppConfig {
     memoryWorker,
     llmDefaultTimeoutMs,
     turnCommitMaxRetries,
+    generationQueueMode,
+    generationQueueTimeoutMs,
     turnCommitRetryBaseDelayMs,
     auth,
     accountMode,
@@ -321,6 +334,20 @@ function parsePositiveNumber(value: string | undefined): number | undefined {
   }
 
   return parsed;
+}
+
+function parseGenerationQueueMode(raw: string | undefined): GenerationExecutionMode {
+  if (!raw || raw.trim().length === 0) {
+    return "reject";
+  }
+
+  const normalized = raw.trim();
+
+  if (normalized === "reject" || normalized === "queue") {
+    return normalized;
+  }
+
+  throw new Error(`Unsupported GENERATION_QUEUE_MODE: ${raw}`);
 }
 
 function parseMemoryInjectionDecay(

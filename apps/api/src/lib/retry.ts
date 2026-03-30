@@ -1,9 +1,25 @@
 import { normalizePositiveInt } from "./utils.js";
 
+export const DEFAULT_RESOURCE_WRITE_RETRY_POLICY: RetryPolicy = {
+  maxRetries: 2,
+  baseDelayMs: 25,
+};
+
 export interface RetryPolicy {
   maxRetries: number;
   baseDelayMs: number;
   maxDelayMs?: number;
+}
+
+export class ResourceBusyError extends Error {
+  override cause?: unknown;
+  readonly code = "resource_busy";
+
+  constructor(message = "Resource is temporarily busy, please retry", cause?: unknown) {
+    super(message);
+    this.name = "ResourceBusyError";
+    this.cause = cause;
+  }
 }
 
 export interface RetryAttemptContext {
@@ -38,6 +54,26 @@ export async function executeWithRetry<T>(
       await options.onRetry?.({ attempt, error, delayMs });
       await sleep(delayMs);
     }
+  }
+}
+
+export async function executeWithSqliteBusyRetry<T>(
+  task: (attempt: number) => T | Promise<T>,
+  policy: RetryPolicy = DEFAULT_RESOURCE_WRITE_RETRY_POLICY,
+): Promise<T> {
+  try {
+    return await executeWithRetry(
+      async (attempt) => await task(attempt),
+      policy,
+      {
+        shouldRetry: (error) => isSqliteBusyError(error),
+      },
+    );
+  } catch (error) {
+    if (isSqliteBusyError(error)) {
+      throw new ResourceBusyError(undefined, error);
+    }
+    throw error;
   }
 }
 

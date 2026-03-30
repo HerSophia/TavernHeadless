@@ -120,6 +120,7 @@ export type PresetAssetDetail = {
   name: string;
   source: string;
   updatedAt: number;
+  version: number;
 };
 
 export type PresetAssetDetailResult = {
@@ -135,7 +136,7 @@ export type PresetAssetMutationResult = {
   asset: WorkspaceAsset | null;
   deleteSyncFailed: boolean;
   ok: boolean;
-  reason?: "failed" | "missing" | "unsupported";
+  reason?: "failed" | "missing" | "preset_conflict" | "resource_busy" | "unsupported";
 };
 
 export type PresetAssetDeleteResult = Omit<PresetAssetMutationResult, "asset">;
@@ -147,6 +148,7 @@ export type WorldbookAssetDetail = {
   name: string;
   source: string;
   updatedAt: number;
+  version: number;
 };
 
 export type WorldbookAssetDetailResult = {
@@ -161,7 +163,7 @@ export type WorldbookAssetMutationResult = {
   apiSyncFailed: boolean;
   asset: WorkspaceAsset | null;
   ok: boolean;
-  reason?: "failed" | "missing" | "unsupported";
+  reason?: "failed" | "missing" | "resource_busy" | "unsupported" | "worldbook_conflict";
 };
 
 export type CharacterAssetDetail = {

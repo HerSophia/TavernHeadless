@@ -71,6 +71,7 @@ import { memoryItems, memoryEdges, memoryScopeStates } from "../db/schema.js";
 import { parseWithSchema, sendError, parseJsonField, stringifyJsonField } from "../lib/http.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { type JsonRecord, toPresetEditorDocument, toRawPresetFromEditor } from "../lib/preset-utils.js";
+import { executeWithSqliteBusyRetry, ResourceBusyError } from "../lib/retry.js";
 import { VariableService } from "../services/variable-service.js";
 import { VariableServiceError } from "../services/variable-service-errors.js";
 
@@ -169,6 +170,10 @@ const updateRegexProfileSchema = z.object({
   data: z.array(z.record(z.unknown())),
   expected_version: z.number().int().positive().optional(),
   expected_updated_at: z.number().int().nonnegative().optional(),
+});
+
+const resourceDeleteQuerySchema = z.object({
+  expected_version: z.coerce.number().int().positive().optional(),
 });
 
 
@@ -686,6 +691,14 @@ const regexProfileUpdateResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const resourceDeleteQueryJsonSchema = {
+  type: "object",
+  properties: {
+    expected_version: { type: "integer", minimum: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
 type ResourceConcurrencyBody = {
   expected_version?: number;
   expected_updated_at?: number;
@@ -699,6 +712,12 @@ type VersionedResourceRow = {
   updatedAt: number;
   version: number;
 };
+
+type ResourceRouteMutationResult<T> =
+  | { kind: "ok"; data: T }
+  | { kind: "error"; statusCode: number; code: string; message: string };
+
+const RESOURCE_BUSY_MESSAGE = "Resource is temporarily busy, please retry";
 
 function toResourceListItem(row: VersionedResourceRow) {
   return {
@@ -731,6 +750,20 @@ function resolveExpectedResourceVersion(
   return { ok: false, statusCode: 400, code: "validation_error", message: "expected_version or expected_updated_at is required" };
 }
 
+async function executeResourceWrite<T>(
+  task: () => ResourceRouteMutationResult<T> | Promise<ResourceRouteMutationResult<T>>
+): Promise<ResourceRouteMutationResult<T>> {
+  try {
+    return await executeWithSqliteBusyRetry(async () => await task());
+  } catch (error) {
+    if (error instanceof ResourceBusyError) {
+      return { kind: "error", statusCode: 503, code: "resource_busy", message: RESOURCE_BUSY_MESSAGE };
+    }
+
+    throw error;
+  }
+}
+
 // ── Route Registration ────────────────────────────────
 
 export async function registerImportRoutes(
@@ -756,7 +789,8 @@ export async function registerImportRoutes(
       body: importPresetBodyJsonSchema,
       response: {
         201: importResourceResponseJsonSchema,
-        400: errorResponseJsonSchema
+        400: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
@@ -779,18 +813,29 @@ export async function registerImportRoutes(
     const name = parsed.data.name || "Unnamed Preset";
     const now = Date.now();
 
-    await db.insert(presets).values({
-      id,
-      name,
-      source: "sillytavern",
-      accountId: auth.accountId,
-      dataJson: JSON.stringify(parsed.data.data),
-      createdAt: now,
-      updatedAt: now,
+    const mutation = await executeResourceWrite(async () => {
+      await db.insert(presets).values({
+        id,
+        name,
+        source: "sillytavern",
+        accountId: auth.accountId,
+        dataJson: JSON.stringify(parsed.data.data),
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      return {
+        kind: "ok",
+        data: { id, name, source: "sillytavern" },
+      };
     });
 
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
+    }
+
     return reply.code(201).send({
-      data: { id, name, source: "sillytavern" },
+      data: mutation.data,
     });
   });
 
@@ -807,7 +852,8 @@ export async function registerImportRoutes(
       body: importWorldbookBodyJsonSchema,
       response: {
         201: importResourceResponseJsonSchema,
-        400: errorResponseJsonSchema
+        400: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
@@ -833,47 +879,58 @@ export async function registerImportRoutes(
 
     const { entries, name: _wbName, ...globalSettings } = stWorldBook;
 
-    db.transaction((tx) => {
-      tx.insert(worldbooks).values({
-        id,
-        name,
-        source: "sillytavern",
-        accountId: auth.accountId,
-        dataJson: JSON.stringify(globalSettings),
-        createdAt: now,
-        updatedAt: now,
-      }).run();
+    const mutation = await executeResourceWrite(async () => {
+      db.transaction((tx) => {
+        tx.insert(worldbooks).values({
+          id,
+          name,
+          source: "sillytavern",
+          accountId: auth.accountId,
+          dataJson: JSON.stringify(globalSettings),
+          createdAt: now,
+          updatedAt: now,
+        }).run();
 
-      if (entries.length > 0) {
-        tx.insert(worldbookEntries).values(
-          entries.map((entry, index) => ({
-            id: nanoid(),
-            worldbookId: id,
-            uid: entry.uid ?? index,
-            comment: entry.comment ?? "",
-            content: entry.content ?? "",
-            keysJson: JSON.stringify(entry.key ?? []),
-            keysSecondaryJson: JSON.stringify(entry.keysecondary ?? []),
-            selective: entry.selective ?? true,
-            selectiveLogic: entry.selectiveLogic ?? 0,
-            constant: entry.constant ?? false,
-            position: entry.position ?? 0,
-            order: entry.order ?? 100,
-            depth: entry.depth ?? 4,
-            role: entry.role ?? 0,
-            disable: entry.disable ?? false,
-            scanDepth: entry.scanDepth ?? null,
-            caseSensitive: entry.caseSensitive ?? null,
-            matchWholeWords: entry.matchWholeWords ?? null,
-            createdAt: now,
-            updatedAt: now,
-          }))
-        ).run();
-      }
+        if (entries.length > 0) {
+          tx.insert(worldbookEntries).values(
+            entries.map((entry, index) => ({
+              id: nanoid(),
+              worldbookId: id,
+              uid: entry.uid ?? index,
+              comment: entry.comment ?? "",
+              content: entry.content ?? "",
+              keysJson: JSON.stringify(entry.key ?? []),
+              keysSecondaryJson: JSON.stringify(entry.keysecondary ?? []),
+              selective: entry.selective ?? true,
+              selectiveLogic: entry.selectiveLogic ?? 0,
+              constant: entry.constant ?? false,
+              position: entry.position ?? 0,
+              order: entry.order ?? 100,
+              depth: entry.depth ?? 4,
+              role: entry.role ?? 0,
+              disable: entry.disable ?? false,
+              scanDepth: entry.scanDepth ?? null,
+              caseSensitive: entry.caseSensitive ?? null,
+              matchWholeWords: entry.matchWholeWords ?? null,
+              createdAt: now,
+              updatedAt: now,
+            }))
+          ).run();
+        }
+      });
+
+      return {
+        kind: "ok",
+        data: { id, name, source: "sillytavern" },
+      };
     });
 
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
+    }
+
     return reply.code(201).send({
-      data: { id, name, source: "sillytavern" },
+      data: mutation.data,
     });
   });
 
@@ -1283,7 +1340,8 @@ export async function registerImportRoutes(
         200: presetUpdateResponseJsonSchema,
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
-        409: errorResponseJsonSchema
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
@@ -1293,51 +1351,62 @@ export async function registerImportRoutes(
     if (!bodyParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [row] = await db
-      .select()
-      .from(presets)
-      .where(and(eq(presets.id, paramsParsed.data.id), eq(presets.accountId, auth.accountId)));
+    const mutation = await executeResourceWrite(async () => {
+      const [row] = await db
+        .select()
+        .from(presets)
+        .where(and(eq(presets.id, paramsParsed.data.id), eq(presets.accountId, auth.accountId)));
 
-    if (!row) {
-      return sendError(reply, 404, "preset_not_found", "Preset not found");
-    }
+      if (!row) {
+        return { kind: "error", statusCode: 404, code: "preset_not_found", message: "Preset not found" };
+      }
 
-    const now = Date.now();
-    const nextVersion = row.version + 1;
-    let nextPreset: JsonRecord;
-    try {
-      nextPreset = toRawPresetFromEditor(bodyParsed.data.editor);
-    } catch (error) {
-      return sendError(
-        reply,
-        400,
-        "preset_validation_error",
-        error instanceof Error ? error.message : "Preset validation failed"
-      );
-    }
+      let nextPreset: JsonRecord;
+      try {
+        nextPreset = toRawPresetFromEditor(bodyParsed.data.editor);
+      } catch (error) {
+        return {
+          kind: "error",
+          statusCode: 400,
+          code: "preset_validation_error",
+          message: error instanceof Error ? error.message : "Preset validation failed",
+        };
+      }
 
-    const expectedVersionResult = resolveExpectedResourceVersion(bodyParsed.data, row, "preset_conflict", "Preset");
-    if (!expectedVersionResult.ok) {
-      return sendError(reply, expectedVersionResult.statusCode, expectedVersionResult.code, expectedVersionResult.message);
-    }
+      const expectedVersionResult = resolveExpectedResourceVersion(bodyParsed.data, row, "preset_conflict", "Preset");
+      if (!expectedVersionResult.ok) {
+        return { kind: "error", statusCode: expectedVersionResult.statusCode, code: expectedVersionResult.code, message: expectedVersionResult.message };
+      }
 
-    const updateResult = db.update(presets).set({
-      name: bodyParsed.data.name,
-      dataJson: JSON.stringify(nextPreset),
-      updatedAt: now,
-      version: nextVersion,
-    }).where(and(
-      eq(presets.id, row.id),
-      eq(presets.accountId, auth.accountId),
-      eq(presets.version, expectedVersionResult.expectedVersion)
-    )).run();
+      const now = Date.now();
+      const nextVersion = row.version + 1;
+      const updateResult = db.update(presets).set({
+        name: bodyParsed.data.name,
+        dataJson: JSON.stringify(nextPreset),
+        updatedAt: now,
+        version: nextVersion,
+      }).where(and(
+        eq(presets.id, row.id),
+        eq(presets.accountId, auth.accountId),
+        eq(presets.version, expectedVersionResult.expectedVersion)
+      )).run();
 
-    if (updateResult.changes === 0) {
-      return sendError(reply, 409, "preset_conflict", "Preset has been modified by another operation");
+      if (updateResult.changes === 0) {
+        return { kind: "error", statusCode: 409, code: "preset_conflict", message: "Preset has been modified by another operation" };
+      }
+
+      return {
+        kind: "ok",
+        data: toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion })
+      };
+    });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
     }
 
     return reply.send({
-      data: toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion })
+      data: mutation.data
     });
   });
 
@@ -1348,19 +1417,63 @@ export async function registerImportRoutes(
       summary: "Delete imported preset",
       operationId: "deleteImportedPreset",
       params: idParamsJsonSchema,
+      querystring: resourceDeleteQueryJsonSchema,
       response: {
         204: { type: "null" },
-        400: errorResponseJsonSchema
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
-    const parsed = parseWithSchema(idParamsSchema, request.params, reply);
-    if (!parsed.ok) return;
+    const paramsParsed = parseWithSchema(idParamsSchema, request.params, reply);
+    if (!paramsParsed.ok) return;
+    const queryParsed = parseWithSchema(resourceDeleteQuerySchema, request.query, reply);
+    if (!queryParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
-    await db
-      .delete(presets)
-      .where(and(eq(presets.id, parsed.data.id), eq(presets.accountId, auth.accountId)));
+    const mutation = await executeResourceWrite(async () => {
+      if (queryParsed.data.expected_version === undefined) {
+        await db
+          .delete(presets)
+          .where(and(eq(presets.id, paramsParsed.data.id), eq(presets.accountId, auth.accountId)));
+
+        return { kind: "ok", data: undefined };
+      }
+
+      const [row] = await db
+        .select()
+        .from(presets)
+        .where(and(eq(presets.id, paramsParsed.data.id), eq(presets.accountId, auth.accountId)));
+
+      if (!row) {
+        return { kind: "error", statusCode: 404, code: "preset_not_found", message: "Preset not found" };
+      }
+
+      if (row.version !== queryParsed.data.expected_version) {
+        return { kind: "error", statusCode: 409, code: "preset_conflict", message: "Preset has been modified by another operation" };
+      }
+
+      const deleteResult = db
+        .delete(presets)
+        .where(and(
+          eq(presets.id, paramsParsed.data.id),
+          eq(presets.accountId, auth.accountId),
+          eq(presets.version, queryParsed.data.expected_version)
+        ))
+        .run();
+
+      if (deleteResult.changes === 0) {
+        return { kind: "error", statusCode: 409, code: "preset_conflict", message: "Preset has been modified by another operation" };
+      }
+
+      return { kind: "ok", data: undefined };
+    });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
+    }
 
     return reply.code(204).send();
   });
@@ -1479,7 +1592,8 @@ export async function registerImportRoutes(
         200: worldbookUpdateResponseJsonSchema,
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
-        409: errorResponseJsonSchema
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
@@ -1489,93 +1603,104 @@ export async function registerImportRoutes(
     if (!bodyParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [row] = await db
-      .select()
-      .from(worldbooks)
-      .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId)));
+    const mutation = await executeResourceWrite(async () => {
+      const [row] = await db
+        .select()
+        .from(worldbooks)
+        .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId)));
 
-    if (!row) {
-      return sendError(reply, 404, "worldbook_not_found", "Worldbook not found");
-    }
-
-    const nextVersion = row.version + 1;
-    let nextWorldbook;
-    try {
-      nextWorldbook = parseWorldBook(bodyParsed.data.data);
-    } catch (error) {
-      return sendError(
-        reply,
-        400,
-        "worldbook_validation_error",
-        error instanceof Error ? error.message : "Worldbook validation failed"
-      );
-    }
-
-    const expectedVersionResult = resolveExpectedResourceVersion(bodyParsed.data, row, "worldbook_conflict", "Worldbook");
-    if (!expectedVersionResult.ok) {
-      return sendError(reply, expectedVersionResult.statusCode, expectedVersionResult.code, expectedVersionResult.message);
-    }
-
-    const now = Date.now();
-    const { entries, name: _wbName, ...globalSettings } = nextWorldbook;
-    let updateApplied = false;
-
-    db.transaction((tx) => {
-      const updateResult = tx
-        .update(worldbooks)
-        .set({
-          name: bodyParsed.data.name,
-          dataJson: JSON.stringify(globalSettings),
-          updatedAt: now,
-          version: nextVersion,
-        })
-        .where(and(eq(worldbooks.id, row.id), eq(worldbooks.accountId, auth.accountId), eq(worldbooks.version, expectedVersionResult.expectedVersion)))
-        .run();
-
-      if (updateResult.changes === 0) {
-        return;
+      if (!row) {
+        return { kind: "error", statusCode: 404, code: "worldbook_not_found", message: "Worldbook not found" };
       }
-      updateApplied = true;
 
-      tx
-        .delete(worldbookEntries)
-        .where(eq(worldbookEntries.worldbookId, row.id))
-        .run();
+      let nextWorldbook;
+      try {
+        nextWorldbook = parseWorldBook(bodyParsed.data.data);
+      } catch (error) {
+        return {
+          kind: "error",
+          statusCode: 400,
+          code: "worldbook_validation_error",
+          message: error instanceof Error ? error.message : "Worldbook validation failed",
+        };
+      }
 
-      if (entries.length > 0) {
-        tx.insert(worldbookEntries).values(
-          entries.map((entry, index) => ({
-            id: nanoid(),
-            worldbookId: row.id,
-            uid: entry.uid ?? index,
-            comment: entry.comment ?? "",
-            content: entry.content ?? "",
-            keysJson: JSON.stringify(entry.key ?? []),
-            keysSecondaryJson: JSON.stringify(entry.keysecondary ?? []),
-            selective: entry.selective ?? true,
-            selectiveLogic: entry.selectiveLogic ?? 0,
-            constant: entry.constant ?? false,
-            position: entry.position ?? 0,
-            order: entry.order ?? 100,
-            depth: entry.depth ?? 4,
-            role: entry.role ?? 0,
-            disable: entry.disable ?? false,
-            scanDepth: entry.scanDepth ?? null,
-            caseSensitive: entry.caseSensitive ?? null,
-            matchWholeWords: entry.matchWholeWords ?? null,
-            createdAt: now,
+      const expectedVersionResult = resolveExpectedResourceVersion(bodyParsed.data, row, "worldbook_conflict", "Worldbook");
+      if (!expectedVersionResult.ok) {
+        return { kind: "error", statusCode: expectedVersionResult.statusCode, code: expectedVersionResult.code, message: expectedVersionResult.message };
+      }
+
+      const now = Date.now();
+      const nextVersion = row.version + 1;
+      const { entries, name: _wbName, ...globalSettings } = nextWorldbook;
+      let updateApplied = false;
+
+      db.transaction((tx) => {
+        const updateResult = tx
+          .update(worldbooks)
+          .set({
+            name: bodyParsed.data.name,
+            dataJson: JSON.stringify(globalSettings),
             updatedAt: now,
-          }))
-        ).run();
+            version: nextVersion,
+          })
+          .where(and(eq(worldbooks.id, row.id), eq(worldbooks.accountId, auth.accountId), eq(worldbooks.version, expectedVersionResult.expectedVersion)))
+          .run();
+
+        if (updateResult.changes === 0) {
+          return;
+        }
+        updateApplied = true;
+
+        tx
+          .delete(worldbookEntries)
+          .where(eq(worldbookEntries.worldbookId, row.id))
+          .run();
+
+        if (entries.length > 0) {
+          tx.insert(worldbookEntries).values(
+            entries.map((entry, index) => ({
+              id: nanoid(),
+              worldbookId: row.id,
+              uid: entry.uid ?? index,
+              comment: entry.comment ?? "",
+              content: entry.content ?? "",
+              keysJson: JSON.stringify(entry.key ?? []),
+              keysSecondaryJson: JSON.stringify(entry.keysecondary ?? []),
+              selective: entry.selective ?? true,
+              selectiveLogic: entry.selectiveLogic ?? 0,
+              constant: entry.constant ?? false,
+              position: entry.position ?? 0,
+              order: entry.order ?? 100,
+              depth: entry.depth ?? 4,
+              role: entry.role ?? 0,
+              disable: entry.disable ?? false,
+              scanDepth: entry.scanDepth ?? null,
+              caseSensitive: entry.caseSensitive ?? null,
+              matchWholeWords: entry.matchWholeWords ?? null,
+              createdAt: now,
+              updatedAt: now,
+            }))
+          ).run();
+        }
+      });
+
+      if (!updateApplied) {
+        return { kind: "error", statusCode: 409, code: "worldbook_conflict", message: "Worldbook has been modified by another operation" };
       }
+
+      return {
+        kind: "ok",
+        data: toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion })
+      };
     });
 
-    if (!updateApplied) {
-      return sendError(reply, 409, "worldbook_conflict", "Worldbook has been modified by another operation");
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
     }
 
     return reply.send({
-      data: toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion })
+      data: mutation.data
     });
   });
 
@@ -1586,19 +1711,63 @@ export async function registerImportRoutes(
       summary: "Delete imported worldbook",
       operationId: "deleteImportedWorldbook",
       params: idParamsJsonSchema,
+      querystring: resourceDeleteQueryJsonSchema,
       response: {
         204: { type: "null" },
-        400: errorResponseJsonSchema
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
-    const parsed = parseWithSchema(idParamsSchema, request.params, reply);
-    if (!parsed.ok) return;
+    const paramsParsed = parseWithSchema(idParamsSchema, request.params, reply);
+    if (!paramsParsed.ok) return;
+    const queryParsed = parseWithSchema(resourceDeleteQuerySchema, request.query, reply);
+    if (!queryParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
-    await db
-      .delete(worldbooks)
-      .where(and(eq(worldbooks.id, parsed.data.id), eq(worldbooks.accountId, auth.accountId)));
+    const mutation = await executeResourceWrite(async () => {
+      if (queryParsed.data.expected_version === undefined) {
+        await db
+          .delete(worldbooks)
+          .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId)));
+
+        return { kind: "ok", data: undefined };
+      }
+
+      const [row] = await db
+        .select()
+        .from(worldbooks)
+        .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId)));
+
+      if (!row) {
+        return { kind: "error", statusCode: 404, code: "worldbook_not_found", message: "Worldbook not found" };
+      }
+
+      if (row.version !== queryParsed.data.expected_version) {
+        return { kind: "error", statusCode: 409, code: "worldbook_conflict", message: "Worldbook has been modified by another operation" };
+      }
+
+      const deleteResult = db
+        .delete(worldbooks)
+        .where(and(
+          eq(worldbooks.id, paramsParsed.data.id),
+          eq(worldbooks.accountId, auth.accountId),
+          eq(worldbooks.version, queryParsed.data.expected_version)
+        ))
+        .run();
+
+      if (deleteResult.changes === 0) {
+        return { kind: "error", statusCode: 409, code: "worldbook_conflict", message: "Worldbook has been modified by another operation" };
+      }
+
+      return { kind: "ok", data: undefined };
+    });
+
+    if (mutation.kind === "error") {
+      return sendError(reply, mutation.statusCode, mutation.code, mutation.message);
+    }
 
     return reply.code(204).send();
   });

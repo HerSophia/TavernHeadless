@@ -27,6 +27,8 @@ const { app } = await buildApp({
   llmDefaultTimeoutMs: config.llmDefaultTimeoutMs,
   turnCommitMaxRetries: config.turnCommitMaxRetries,
   turnCommitRetryBaseDelayMs: config.turnCommitRetryBaseDelayMs,
+  generationQueueMode: config.generationQueueMode,
+  generationQueueTimeoutMs: config.generationQueueTimeoutMs,
   enableSseChat: config.enableSseChat,
   enablePromptDryRun: config.enablePromptDryRun,
   accountMode: config.accountMode,

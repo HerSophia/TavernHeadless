@@ -13,6 +13,7 @@ import type {
   PresetAssetDetail,
   SessionState,
   TimelineMessage,
+  WorldbookAssetDetail,
   WorkspaceAsset
 } from "./types";
 
@@ -66,25 +67,20 @@ export function toPresetAssetDetail(detail: WorkspacePresetEditorDetail): Preset
     id: detail.id,
     name: detail.name,
     source: detail.source,
-    updatedAt: detail.updatedAt
+    updatedAt: detail.updatedAt,
+    version: detail.version
   };
 }
 
-export function toWorldbookAssetDetail(detail: WorkspaceWorldbookAssetDetail): {
-  createdAt: number;
-  data: Record<string, unknown>;
-  id: string;
-  name: string;
-  source: string;
-  updatedAt: number;
-} {
+export function toWorldbookAssetDetail(detail: WorkspaceWorldbookAssetDetail): WorldbookAssetDetail {
   return {
     createdAt: detail.createdAt,
     data: { ...detail.data },
     id: detail.id,
     name: detail.name,
     source: detail.source,
-    updatedAt: detail.updatedAt
+    updatedAt: detail.updatedAt,
+    version: detail.version
   };
 }
 

@@ -7402,6 +7402,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     importRegexProfile: {
@@ -7538,6 +7555,23 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10725,11 +10759,30 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     deleteImportedPreset: {
         parameters: {
-            query?: never;
+            query?: {
+                expected_version?: number;
+            };
             header?: never;
             path: {
                 id: string;
@@ -10747,6 +10800,57 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10961,6 +11065,7 @@ export interface operations {
                 "application/json": {
                     content?: string;
                     enabled?: boolean;
+                    expected_version?: number;
                     extra?: {
                         [key: string]: unknown;
                     };
@@ -11058,6 +11163,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     getPresetEntry: {
@@ -11121,7 +11243,9 @@ export interface operations {
     };
     deletePresetEntry: {
         parameters: {
-            query?: never;
+            query?: {
+                expected_version?: number;
+            };
             header?: never;
             path: {
                 preset_id: string;
@@ -11141,6 +11265,23 @@ export interface operations {
                         data: {
                             deleted?: boolean;
                             identifier?: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
                         };
                     };
                 };
@@ -11179,6 +11320,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     updatePresetEntry: {
@@ -11196,6 +11354,7 @@ export interface operations {
                 "application/json": {
                     content?: string;
                     enabled?: boolean;
+                    expected_version?: number;
                     extra?: {
                         [key: string]: unknown;
                     };
@@ -11292,6 +11451,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchDeletePresetEntries: {
@@ -11306,6 +11482,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    expected_version?: number;
                     identifiers: string[];
                 };
             };
@@ -11325,6 +11502,23 @@ export interface operations {
                             results?: {
                                 [key: string]: unknown;
                             }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
                         };
                     };
                 };
@@ -11363,6 +11557,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchUpdatePresetEntries: {
@@ -11377,6 +11588,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    expected_version?: number;
                     fields: {
                         [key: string]: unknown;
                     };
@@ -11454,6 +11666,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     reorderPresetEntries: {
@@ -11468,6 +11697,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    expected_version?: number;
                     identifiers: string[];
                 };
             };
@@ -11541,6 +11771,23 @@ export interface operations {
             };
             /** @description Default Response */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14010,11 +14257,30 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     deleteImportedWorldbook: {
         parameters: {
-            query?: never;
+            query?: {
+                expected_version?: number;
+            };
             header?: never;
             path: {
                 id: string;
@@ -14032,6 +14298,57 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14205,6 +14522,7 @@ export interface operations {
                     content: string;
                     depth?: number;
                     disable?: boolean;
+                    expected_version?: number;
                     keys: string[];
                     keys_secondary?: string[];
                     match_whole_words?: boolean | null;
@@ -14361,6 +14679,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     getWorldbookEntry: {
@@ -14488,7 +14823,9 @@ export interface operations {
     };
     deleteWorldbookEntry: {
         parameters: {
-            query?: never;
+            query?: {
+                expected_version?: number;
+            };
             header?: never;
             path: {
                 worldbook_id: string;
@@ -14516,6 +14853,23 @@ export interface operations {
                         data: {
                             deleted: boolean;
                             id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
                         };
                     };
                 };
@@ -14554,6 +14908,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     updateWorldbookEntry: {
@@ -14575,6 +14946,7 @@ export interface operations {
                     content?: string;
                     depth?: number;
                     disable?: boolean;
+                    expected_version?: number;
                     keys?: string[];
                     keys_secondary?: string[];
                     match_whole_words?: boolean | null;
@@ -14731,6 +15103,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchDeleteWorldbookEntries: {
@@ -14753,6 +15142,7 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
+                    expected_version?: number;
                     ids: string[];
                 };
             };
@@ -14855,6 +15245,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchReorderWorldbookEntries: {
@@ -14883,6 +15290,7 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
+                    expected_version?: number;
                     items: {
                         id: string;
                         order: number;
@@ -15066,6 +15474,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchUpdateWorldbookEntries: {
@@ -15091,6 +15516,7 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
+                    expected_version?: number;
                     fields: {
                         case_sensitive?: boolean | null;
                         comment?: string;
@@ -15273,6 +15699,23 @@ export interface operations {
             };
             /** @description Default Response */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

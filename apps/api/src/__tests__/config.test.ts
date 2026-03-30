@@ -21,6 +21,8 @@ describe("loadConfig", () => {
     expect(config.llmDefaultTimeoutMs).toBe(60_000);
     expect(config.turnCommitMaxRetries).toBe(2);
     expect(config.turnCommitRetryBaseDelayMs).toBe(100);
+    expect(config.generationQueueMode).toBe("reject");
+    expect(config.generationQueueTimeoutMs).toBeUndefined();
   });
 
   it("returns config with orchestration when LLM_API_KEY is set", () => {
@@ -151,6 +153,26 @@ describe("loadConfig", () => {
     expect(config.llmDefaultTimeoutMs).toBe(60_000);
     expect(config.turnCommitMaxRetries).toBe(2);
     expect(config.turnCommitRetryBaseDelayMs).toBe(100);
+  });
+
+  it("reads GENERATION_QUEUE_MODE and GENERATION_QUEUE_TIMEOUT_MS", () => {
+    vi.stubEnv("GENERATION_QUEUE_MODE", "queue");
+    vi.stubEnv("GENERATION_QUEUE_TIMEOUT_MS", "2500");
+
+    const config = loadConfig();
+    expect(config.generationQueueMode).toBe("queue");
+    expect(config.generationQueueTimeoutMs).toBe(2_500);
+  });
+
+  it("throws for unsupported GENERATION_QUEUE_MODE", () => {
+    vi.stubEnv("GENERATION_QUEUE_MODE", "later");
+
+    expect(() => loadConfig()).toThrow("Unsupported GENERATION_QUEUE_MODE: later");
+  });
+
+  it("ignores invalid GENERATION_QUEUE_TIMEOUT_MS", () => {
+    vi.stubEnv("GENERATION_QUEUE_TIMEOUT_MS", "0");
+    expect(loadConfig().generationQueueTimeoutMs).toBeUndefined();
   });
 
   it("reads ENABLE_MCP=true", () => {

@@ -259,6 +259,7 @@ try {
 | `generation_cancelled` | `network` | 是 |
 | `commit_busy` | `server` | 是 |
 | `commit_conflict` | `conflict` | 是 |
+| `resource_busy` | `server` | 是 |
 | `profile_conflict` | `conflict` | 否 |
 | `profile_in_use` | `conflict` | 否 |
 | `profile_inactive` | `conflict` | 否 |
@@ -276,7 +277,7 @@ try {
 
 这样做的目的是让界面默认语义更稳定。同时，原始 `code` 仍会保留在返回结果里，接入方如果需要更细的 UI 分支，仍可继续自行判断。
 
-这也覆盖了资源编辑时的新版本冲突场景。比如 preset、worldbook、regex profile 的乐观锁写入失败，会落到 `conflict` 且保持可重试。
+这也覆盖了资源编辑时的新版本冲突和繁忙场景。比如 preset、worldbook、regex profile 的乐观锁写入失败，会落到 `conflict` 且保持可重试；`resource_busy` 则会落到 `server` 且保持可重试。
 
 其中 `mcp_call_uncertain_timeout` 表示结果不确定，并且调用方通常需要触发重连；它不应被当成普通、确定性的失败来处理。
 

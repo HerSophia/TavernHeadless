@@ -52,7 +52,7 @@ export type PresetsResource = {
   getDetail(options: { accountId?: AccountIdHint; presetId: string }): Promise<PresetDetail>;
   getEditor(options: { accountId?: AccountIdHint; presetId: string }): Promise<PresetEditorDetail>;
   list(options?: { accountId?: AccountIdHint }): Promise<PresetListItem[]>;
-  remove(options: { accountId?: AccountIdHint; presetId: string }): Promise<void>;
+  remove(options: { accountId?: AccountIdHint; expectedVersion?: number; presetId: string }): Promise<void>;
   update(options: {
     accountId?: AccountIdHint;
     editor: {
@@ -130,7 +130,9 @@ export function createPresetsResource(client: TransportClient): PresetsResource 
         .filter((item): item is PresetListItem => item !== null);
     },
     async remove(options): Promise<void> {
-      const query = buildQueryString({});
+      const query = buildQueryString({
+        expected_version: options.expectedVersion,
+      });
       const pathname = query ? `/presets/${encodeURIComponent(options.presetId)}?${query}` : `/presets/${encodeURIComponent(options.presetId)}`;
       await client.fetchJson(pathname, {
         headers: buildAccountHeaders(options.accountId),

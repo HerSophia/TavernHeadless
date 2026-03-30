@@ -25,6 +25,7 @@ type KnownApiErrorCode =
   | "turn_commit_failed"
   | "profile_conflict"
   | "profile_in_use"
+  | "resource_busy"
   | "profile_inactive"
   | "binding_not_found"
   | "session_scope_not_found"
@@ -46,6 +47,7 @@ const KNOWN_API_ERROR_CODE_MAP: Record<KnownApiErrorCode, Pick<UiStateError, "ki
   mcp_call_uncertain_timeout: { kind: "server", retryable: true },
   turn_commit_failed: { kind: "server", retryable: true },
   profile_conflict: { kind: "conflict", retryable: false },
+  resource_busy: { kind: "server", retryable: true },
   profile_in_use: { kind: "conflict", retryable: false },
   profile_inactive: { kind: "conflict", retryable: false },
   binding_not_found: { kind: "not_found", retryable: false },

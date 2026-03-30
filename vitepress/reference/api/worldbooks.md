@@ -24,7 +24,8 @@ GET /worldbooks
       "name": "Kingdom Lore",
       "source": "sillytavern",
       "created_at": 1735689600000,
-      "updated_at": 1735689660000
+      "updated_at": 1735689660000,
+      "version": 2
     }
   ]
 }
@@ -55,7 +56,8 @@ GET /worldbooks/:id
       ]
     },
     "created_at": 1735689600000,
-    "updated_at": 1735689660000
+    "updated_at": 1735689660000,
+    "version": 2
   }
 }
 ```
@@ -72,7 +74,11 @@ GET /worldbooks/:id
 PUT /worldbooks/:id
 ```
 
-支持乐观锁：传入 `expected_updated_at`，如果数据库中的 `updated_at` 不匹配则返回 `409`。
+此接口要求提供并发控制字段：
+
+- 新接入应优先传 `expected_version`
+- 现有主资源 `PUT` 路由仍兼容 `expected_updated_at`
+- 如果两者都不传，会返回 `400`
 
 ### 请求体
 
@@ -80,13 +86,15 @@ PUT /worldbooks/:id
 | ---- | ---- | ---- | ---- |
 | `name` | string | **是** | 名称（至少 1 字符） |
 | `data` | object | **是** | 世界书 JSON 数据 |
-| `expected_updated_at` | integer | 否 | 乐观锁 |
+| `expected_version` | integer | 否 | 推荐的乐观锁字段；期望的 `version` 值 |
+| `expected_updated_at` | integer | 否 | 兼容字段；仅用于已有主资源 `PUT` 调用方 |
 
 ### 请求示例
 
 ```json
 {
   "name": "Kingdom Lore v2",
+  "expected_version": 2,
   "data": {
     "entries": [
       {
@@ -94,8 +102,7 @@ PUT /worldbooks/:id
         "content": "The kingdom has entered a new era of peace."
       }
     ]
-  },
-  "expected_updated_at": 1735689660000
+  }
 }
 ```
 
@@ -108,18 +115,20 @@ PUT /worldbooks/:id
     "name": "Kingdom Lore v2",
     "source": "sillytavern",
     "created_at": 1735689600000,
-    "updated_at": 1735690000000
+    "updated_at": 1735690000000,
+    "version": 3
   }
 }
 ```
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败 |
-| `404` | 世界书不存在 |
-| `409` | 乐观锁冲突 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败，或未提供 `expected_version` / `expected_updated_at` |
+| `404` | `worldbook_not_found` | 世界书不存在 |
+| `409` | `worldbook_conflict` | 版本基线过期，或兼容字段 `expected_updated_at` 不匹配 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 删除 Worldbook
 
@@ -129,9 +138,31 @@ DELETE /worldbooks/:id
 
 删除世界书时，其下所有条目会被级联删除。
 
+删除时推荐通过 query string 传入 `expected_version`。此接口不使用 `DELETE` 请求体。
+
+### 查询参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 推荐的版本前置条件；不传时保留无前置条件删除行为 |
+
+### 请求示例
+
+```http
+DELETE /worldbooks/wb_kingdom?expected_version=3
+```
+
 ### 响应 `204`
 
 无响应体。
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `worldbook_not_found` | 世界书不存在 |
+| `409` | `worldbook_conflict` | `expected_version` 与服务端当前版本不一致 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ---
 
@@ -140,6 +171,18 @@ DELETE /worldbooks/:id
 对单个世界书条目进行增删改查和批量操作，无需操作整个世界书 JSON。
 
 所有条目端点都挂载在 `/worldbooks/:worldbook_id/entries` 下。
+
+### 写入并发控制
+
+以下写入端点都支持 `expected_version`：
+
+- `POST /worldbooks/:worldbook_id/entries`
+- `PATCH /worldbooks/:worldbook_id/entries/:id`
+- `PATCH /worldbooks/:worldbook_id/entries/batch/update`
+- `POST /worldbooks/:worldbook_id/entries/batch/delete`
+- `PUT /worldbooks/:worldbook_id/entries/batch/reorder`
+
+其中 `DELETE /worldbooks/:worldbook_id/entries/:id` 使用 query string `expected_version`，其他写入端点通过 JSON body 传递 `expected_version`。当版本基线过期时返回 `409 worldbook_conflict`；当 SQLite 写入暂时繁忙时返回 `503 resource_busy`。
 
 ## 条目字段说明
 
@@ -234,6 +277,7 @@ POST /worldbooks/:worldbook_id/entries
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 期望的父世界书 `version` 值 |
 | `keys` | string[] | **是** | 主关键词 |
 | `content` | string | **是** | 注入内容 |
 | `comment` | string | 否 | 标题/备注 |
@@ -254,6 +298,7 @@ POST /worldbooks/:worldbook_id/entries
 
 ```json
 {
+  "expected_version": 3,
   "keys": ["kingdom", "realm"],
   "content": "The kingdom is vast and ancient.",
   "comment": "Kingdom basics"
@@ -266,10 +311,12 @@ POST /worldbooks/:worldbook_id/entries
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败 |
-| `404` | 世界书不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败 |
+| `404` | `not_found` | 世界书不存在 |
+| `409` | `worldbook_conflict` | `expected_version` 过期 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 获取条目
 
@@ -320,10 +367,13 @@ PATCH /worldbooks/:worldbook_id/entries/:id
 
 部分更新，只传需要修改的字段。至少传一个字段。
 
+请求体可选传入 `expected_version`，用于校验父世界书版本。
+
 ### 请求示例
 
 ```json
 {
+  "expected_version": 3,
   "content": "The kingdom has entered a new golden age.",
   "disable": false
 }
@@ -335,16 +385,24 @@ PATCH /worldbooks/:worldbook_id/entries/:id
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败或未传任何字段 |
-| `404` | 世界书或条目不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败或未传任何更新字段 |
+| `404` | `not_found` | 世界书或条目不存在 |
+| `409` | `worldbook_conflict` | `expected_version` 过期 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 删除条目
 
 ```http
 DELETE /worldbooks/:worldbook_id/entries/:id
 ```
+
+### 查询参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 期望的父世界书 `version` 值 |
 
 ### 响应 `200`
 
@@ -359,9 +417,11 @@ DELETE /worldbooks/:worldbook_id/entries/:id
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `404` | 世界书或条目不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 世界书或条目不存在 |
+| `409` | `worldbook_conflict` | `expected_version` 过期 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 批量更新条目
 
@@ -375,6 +435,7 @@ PATCH /worldbooks/:worldbook_id/entries/batch/update
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 期望的父世界书 `version` 值 |
 | `ids` | string[] | **是** | 条目 ID 数组（1–100，不可重复） |
 | `fields` | object | **是** | 要更新的字段（同更新条目的请求体） |
 
@@ -382,6 +443,7 @@ PATCH /worldbooks/:worldbook_id/entries/batch/update
 
 ```json
 {
+  "expected_version": 3,
   "ids": ["ent_abc123", "ent_def456"],
   "fields": {
     "disable": true
@@ -426,12 +488,14 @@ POST /worldbooks/:worldbook_id/entries/batch/delete
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 期望的父世界书 `version` 值 |
 | `ids` | string[] | **是** | 条目 ID 数组（1–100，不可重复） |
 
 ### 请求示例
 
 ```json
 {
+  "expected_version": 3,
   "ids": ["ent_abc123", "ent_def456"]
 }
 ```
@@ -466,6 +530,7 @@ PUT /worldbooks/:worldbook_id/entries/batch/reorder
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 期望的父世界书 `version` 值 |
 | `items` | object[] | **是** | 排序项数组（1–100，id 不可重复） |
 | `items[].id` | string | **是** | 条目 ID |
 | `items[].order` | integer | **是** | 新的排序值 |
@@ -474,6 +539,7 @@ PUT /worldbooks/:worldbook_id/entries/batch/reorder
 
 ```json
 {
+  "expected_version": 3,
   "items": [
     { "id": "ent_abc123", "order": 10 },
     { "id": "ent_def456", "order": 20 }
@@ -511,7 +577,9 @@ PUT /worldbooks/:worldbook_id/entries/batch/reorder
 
 ### 错误（所有批量端点通用）
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败或 ID 数组有重复 |
-| `404` | 世界书不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败或 ID 数组有重复 |
+| `404` | `not_found` | 世界书不存在 |
+| `409` | `worldbook_conflict` | `expected_version` 过期 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
