@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../src/app";
+import * as retryModule from "../src/lib/retry.js";
 
 const BASE_CHARACTER_CARD_V2 = {
   spec: "chara_card_v2",
@@ -76,24 +77,27 @@ describe("Character lifecycle routes", () => {
     const listRes = await app.inject({ method: "GET", url: "/characters?sort_by=created_at&sort_order=asc" });
     expect(listRes.statusCode).toBe(200);
     const listBody = listRes.json<{
-      data: Array<{ id: string; latest_version_no: number | null }>;
+      data: Array<{ id: string; latest_version_no: number | null; revision: number }>;
       meta: { total: number };
     }>();
     expect(listBody.meta.total).toBe(1);
     expect(listBody.data[0]?.id).toBe(characterId);
     expect(listBody.data[0]?.latest_version_no).toBe(1);
+    expect(listBody.data[0]?.revision).toBe(0);
 
     const detailRes = await app.inject({ method: "GET", url: `/characters/${characterId}` });
     expect(detailRes.statusCode).toBe(200);
     const detailBody = detailRes.json<{
       data: {
         status: "active" | "deleted";
+        revision: number;
         latest_version: { id: string; version_no: number } | null;
       };
     }>();
     expect(detailBody.data.status).toBe("active");
     expect(detailBody.data.latest_version?.id).toBe(initialVersionId);
     expect(detailBody.data.latest_version?.version_no).toBe(1);
+    expect(detailBody.data.revision).toBe(0);
 
     const newVersionRes = await app.inject({
       method: "POST",
@@ -107,9 +111,10 @@ describe("Character lifecycle routes", () => {
     });
     expect(newVersionRes.statusCode, newVersionRes.body).toBe(201);
     const newVersionBody = newVersionRes.json<{
-      data: { id: string; version_no: number };
+      data: { id: string; version_no: number; revision: number };
     }>();
     expect(newVersionBody.data.version_no).toBe(2);
+    expect(newVersionBody.data.revision).toBe(1);
 
     const versionsRes = await app.inject({
       method: "GET",
@@ -130,13 +135,15 @@ describe("Character lifecycle routes", () => {
     });
     expect(rollbackRes.statusCode, rollbackRes.body).toBe(201);
     const rollbackBody = rollbackRes.json<{
-      data: { version_no: number; rolled_back_from_version_id: string };
+      data: { version_no: number; rolled_back_from_version_id: string; revision: number };
     }>();
     expect(rollbackBody.data.version_no).toBe(3);
     expect(rollbackBody.data.rolled_back_from_version_id).toBe(initialVersionId);
+    expect(rollbackBody.data.revision).toBe(2);
 
     const deleteRes = await app.inject({ method: "DELETE", url: `/characters/${characterId}` });
     expect(deleteRes.statusCode).toBe(200);
+    expect(deleteRes.json<{ data: { revision: number } }>().data.revision).toBe(3);
 
     const appendAfterDeleteRes = await app.inject({
       method: "POST",
@@ -148,9 +155,11 @@ describe("Character lifecycle routes", () => {
       }
     });
     expect(appendAfterDeleteRes.statusCode).toBe(409);
+    expect(appendAfterDeleteRes.json<ErrorResponse>().error.code).toBe("character_deleted");
 
     const restoreRes = await app.inject({ method: "POST", url: `/characters/${characterId}/restore` });
     expect(restoreRes.statusCode).toBe(200);
+    expect(restoreRes.json<{ data: { revision: number } }>().data.revision).toBe(4);
 
     const appendAfterRestoreRes = await app.inject({
       method: "POST",
@@ -163,9 +172,95 @@ describe("Character lifecycle routes", () => {
     });
     expect(appendAfterRestoreRes.statusCode).toBe(201);
     const appendAfterRestoreBody = appendAfterRestoreRes.json<{
-      data: { version_no: number };
+      data: { version_no: number; revision: number };
     }>();
     expect(appendAfterRestoreBody.data.version_no).toBe(4);
+    expect(appendAfterRestoreBody.data.revision).toBe(5);
+  });
+
+  it("rejects stale expected_revision on concurrent version append attempts", async () => {
+    const imported = await importCharacter("Concurrent Nia");
+
+    const detailRes = await app.inject({ method: "GET", url: `/characters/${imported.character_id}` });
+    expect(detailRes.statusCode).toBe(200);
+    const revision = detailRes.json<{ data: { revision: number } }>().data.revision;
+
+    const [firstRes, secondRes] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: `/characters/${imported.character_id}/versions`,
+        payload: { snapshot: { name: "Concurrent Nia A" }, expected_revision: revision }
+      }),
+      app.inject({
+        method: "POST",
+        url: `/characters/${imported.character_id}/versions`,
+        payload: { snapshot: { name: "Concurrent Nia B" }, expected_revision: revision }
+      })
+    ]);
+
+    const responses = [firstRes, secondRes];
+    expect(responses.filter((response) => response.statusCode === 201)).toHaveLength(1);
+    expect(responses.filter((response) => response.statusCode === 409)).toHaveLength(1);
+
+    const conflict = responses.find((response) => response.statusCode === 409)!;
+    expect(["character_revision_conflict", "character_conflict"]).toContain(conflict.json<ErrorResponse>().error.code);
+
+    const detailAfterRes = await app.inject({ method: "GET", url: `/characters/${imported.character_id}` });
+    expect(detailAfterRes.statusCode).toBe(200);
+    expect(detailAfterRes.json<{ data: { latest_version_no: number | null; revision: number } }>().data).toEqual(
+      expect.objectContaining({ latest_version_no: 2, revision: 1 })
+    );
+  });
+
+  it("returns one success and one conflict for append versus delete with the same expected_revision", async () => {
+    const imported = await importCharacter("Race Delete");
+
+    const detailRes = await app.inject({ method: "GET", url: `/characters/${imported.character_id}` });
+    expect(detailRes.statusCode).toBe(200);
+    const revision = detailRes.json<{ data: { revision: number } }>().data.revision;
+
+    const [appendRes, deleteRes] = await Promise.all([
+      app.inject({
+        method: "POST",
+        url: `/characters/${imported.character_id}/versions`,
+        payload: { snapshot: { name: "Race Delete v2" }, expected_revision: revision }
+      }),
+      app.inject({
+        method: "DELETE",
+        url: `/characters/${imported.character_id}`,
+        payload: { expected_revision: revision }
+      })
+    ]);
+
+    const responses = [appendRes, deleteRes];
+    expect(responses.filter((response) => response.statusCode === 201 || response.statusCode === 200)).toHaveLength(1);
+    expect(responses.filter((response) => response.statusCode === 409)).toHaveLength(1);
+
+    const conflict = responses.find((response) => response.statusCode === 409)!;
+    expect(["character_revision_conflict", "character_deleted"]).toContain(conflict.json<ErrorResponse>().error.code);
+
+    const detailAfterRes = await app.inject({ method: "GET", url: `/characters/${imported.character_id}` });
+    expect(detailAfterRes.statusCode).toBe(200);
+    const detailAfter = detailAfterRes.json<{ data: { status: string; latest_version_no: number | null; revision: number } }>().data;
+    expect(detailAfter.revision).toBe(1);
+    expect([
+      { status: "active", latest_version_no: 2 },
+      { status: "deleted", latest_version_no: 1 }
+    ]).toContainEqual({ status: detailAfter.status, latest_version_no: detailAfter.latest_version_no });
+  });
+
+  it("maps resource_busy on character writes", async () => {
+    const imported = await importCharacter("Busy Character");
+    vi.spyOn(retryModule, "executeWithSqliteBusyRetry").mockRejectedValueOnce(new retryModule.ResourceBusyError("database is locked"));
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/characters/${imported.character_id}/versions`,
+      payload: { snapshot: { name: "Busy Character v2" } }
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json<ErrorResponse>().error.code).toBe("resource_busy");
   });
 
   it("covers list filters, missing branches, and rollback edge cases", async () => {
@@ -326,6 +421,7 @@ describe("Character routes with multi-account auth", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await app.close();
   });
 

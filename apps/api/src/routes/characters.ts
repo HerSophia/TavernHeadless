@@ -1,17 +1,24 @@
-import { and, count, desc, eq, inArray, like, sql } from "drizzle-orm";
+import { and, count, eq, like } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
-import type { DatabaseConnection } from "../db/client";
-import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
+import type { DatabaseConnection, DbExecutor } from "../db/client";
 import { characters, characterVersions } from "../db/schema";
+import { ensureOptionalObjectBody, parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
-import { parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http";
 import { getRequestAuthContext } from "../plugins/auth.js";
+import {
+  CHARACTER_VERSION_CONSTRAINT_MAPPING,
+  ResourceWriteRouteError,
+  assertRevisionWriteApplied,
+  withResourceWriteCas,
+} from "../services/resource-write.js";
+import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 
 const characterStatusSchema = z.enum(["active", "deleted"]);
+const expectedRevisionSchema = z.number().int().nonnegative().optional();
 
 const idParamsSchema = z.object({
   id: z.string().trim().min(1)
@@ -38,20 +45,13 @@ const characterSnapshotSchema = z
   .passthrough();
 
 const createCharacterVersionBodySchema = z.object({
-  snapshot: characterSnapshotSchema
+  snapshot: characterSnapshotSchema,
+  expected_revision: expectedRevisionSchema
 });
 
-class CharacterRouteError extends Error {
-  readonly statusCode: number;
-  readonly code: string;
-
-  constructor(statusCode: number, code: string, message: string) {
-    super(message);
-    this.statusCode = statusCode;
-    this.code = code;
-  }
-}
-
+const expectedRevisionBodySchema = z.object({
+  expected_revision: expectedRevisionSchema
+}).default({});
 
 const versionParamsJsonSchema = {
   type: "object",
@@ -98,7 +98,16 @@ const createCharacterVersionBodyJsonSchema = {
         name: { type: "string", minLength: 1, maxLength: 200 }
       },
       additionalProperties: true
-    }
+    },
+    expected_revision: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+
+const expectedRevisionBodyJsonSchema = {
+  type: "object",
+  properties: {
+    expected_revision: { type: "integer", minimum: 0 }
   },
   additionalProperties: false
 } as const;
@@ -117,14 +126,33 @@ const characterVersionJsonSchema = {
   additionalProperties: false
 } as const;
 
+const characterWriteVersionJsonSchema = {
+  ...characterVersionJsonSchema,
+  required: [...characterVersionJsonSchema.required, "revision"],
+  properties: {
+    ...characterVersionJsonSchema.properties,
+    revision: { type: "integer", minimum: 0 }
+  }
+} as const;
+
+const rollbackCharacterVersionJsonSchema = {
+  ...characterWriteVersionJsonSchema,
+  required: [...characterWriteVersionJsonSchema.required, "rolled_back_from_version_id"],
+  properties: {
+    ...characterWriteVersionJsonSchema.properties,
+    rolled_back_from_version_id: { type: "string" }
+  }
+} as const;
+
 const characterListItemJsonSchema = {
   type: "object",
-  required: ["id", "name", "source", "status", "latest_version_no", "deleted_at", "created_at", "updated_at"],
+  required: ["id", "name", "source", "status", "revision", "latest_version_no", "deleted_at", "created_at", "updated_at"],
   properties: {
     id: { type: "string" },
     name: { type: "string" },
     source: { type: "string" },
     status: { type: "string", enum: ["active", "deleted"] },
+    revision: { type: "integer", minimum: 0 },
     latest_version_no: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
     deleted_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
     created_at: { type: "integer", minimum: 0 },
@@ -146,7 +174,6 @@ const listMetaJsonSchema = {
   },
   additionalProperties: false
 } as const;
-
 
 const characterResponseJsonSchema = {
   type: "object",
@@ -173,6 +200,100 @@ const characterListResponseJsonSchema = {
   },
   additionalProperties: false
 } as const;
+
+const deleteCharacterResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["id", "status", "deleted_at", "updated_at", "revision"],
+      properties: {
+        id: { type: "string" },
+        status: { type: "string", enum: ["deleted"] },
+        deleted_at: { type: "integer", minimum: 0 },
+        updated_at: { type: "integer", minimum: 0 },
+        revision: { type: "integer", minimum: 0 }
+      },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+} as const;
+
+const restoreCharacterResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["id", "status", "deleted_at", "updated_at", "revision"],
+      properties: {
+        id: { type: "string" },
+        status: { type: "string", enum: ["active"] },
+        deleted_at: { type: "null" },
+        updated_at: { type: "integer", minimum: 0 },
+        revision: { type: "integer", minimum: 0 }
+      },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+} as const;
+
+function loadOwnedCharacter(tx: DbExecutor, characterId: string, accountId: string) {
+  return tx
+    .select()
+    .from(characters)
+    .where(and(eq(characters.id, characterId), eq(characters.accountId, accountId)))
+    .limit(1)
+    .get();
+}
+
+function loadCharacterVersionByNo(tx: DbExecutor, characterId: string, versionNo: number) {
+  return tx
+    .select()
+    .from(characterVersions)
+    .where(and(eq(characterVersions.characterId, characterId), eq(characterVersions.versionNo, versionNo)))
+    .limit(1)
+    .get();
+}
+
+function loadCharacterVersionById(tx: DbExecutor, characterId: string, versionId: string) {
+  return tx
+    .select()
+    .from(characterVersions)
+    .where(and(eq(characterVersions.id, versionId), eq(characterVersions.characterId, characterId)))
+    .limit(1)
+    .get();
+}
+
+function toCharacterVersionResponse(row: typeof characterVersions.$inferSelect) {
+  return {
+    id: row.id,
+    character_id: row.characterId,
+    version_no: row.versionNo,
+    content_hash: row.contentHash,
+    snapshot: parseJsonField(row.dataJson),
+    created_at: row.createdAt
+  };
+}
+
+function toApiLatestVersionNo(value: number): number | null {
+  return value > 0 ? value : null;
+}
+
+function createCharacterRevisionConflictError() {
+  return new ResourceWriteRouteError(409, "character_revision_conflict", "Character has been modified by another operation");
+}
+
+function createCharacterDeletedError(message: string) {
+  return new ResourceWriteRouteError(409, "character_deleted", message);
+}
+
+function sendCharacterWriteError(reply: Parameters<typeof sendError>[0], error: ResourceWriteRouteError) {
+  return sendError(reply, error.statusCode, error.code, error.message, error.details);
+}
 
 export async function registerCharacterRoutes(
   app: FastifyInstance,
@@ -225,6 +346,8 @@ export async function registerCharacterRoutes(
         name: characters.name,
         source: characters.source,
         status: characters.status,
+        revision: characters.revision,
+        latestVersionNo: characters.latestVersionNo,
         deletedAt: characters.deletedAt,
         createdAt: characters.createdAt,
         updatedAt: characters.updatedAt
@@ -235,32 +358,14 @@ export async function registerCharacterRoutes(
       .limit(parsed.data.limit)
       .offset(parsed.data.offset);
 
-    const latestVersionRows =
-      rows.length === 0
-        ? []
-        : await db
-            .select({
-              characterId: characterVersions.characterId,
-              latestVersionNo: sql<number>`max(${characterVersions.versionNo})`
-            })
-            .from(characterVersions)
-            .where(inArray(characterVersions.characterId, rows.map((row) => row.id)))
-            .groupBy(characterVersions.characterId);
-
-    const latestVersionMap = new Map<string, number>();
-    for (const row of latestVersionRows) {
-      if (row.latestVersionNo !== null) {
-        latestVersionMap.set(row.characterId, row.latestVersionNo);
-      }
-    }
-
     return reply.send({
       data: rows.map((row) => ({
         id: row.id,
         name: row.name,
         source: row.source,
         status: row.status,
-        latest_version_no: latestVersionMap.get(row.id) ?? null,
+        revision: row.revision,
+        latest_version_no: toApiLatestVersionNo(row.latestVersionNo),
         deleted_at: row.deletedAt,
         created_at: row.createdAt,
         updated_at: row.updatedAt
@@ -293,17 +398,24 @@ export async function registerCharacterRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const [character] = await db.select().from(characters).where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId))).limit(1);
+    const [character] = await db
+      .select()
+      .from(characters)
+      .where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId)))
+      .limit(1);
+
     if (!character) {
       return sendError(reply, 404, "not_found", "Character not found");
     }
 
-    const [latestVersion] = await db
-      .select()
-      .from(characterVersions)
-      .where(eq(characterVersions.characterId, character.id))
-      .orderBy(desc(characterVersions.versionNo))
-      .limit(1);
+    const [latestVersion] =
+      character.latestVersionNo > 0
+        ? await db
+            .select()
+            .from(characterVersions)
+            .where(and(eq(characterVersions.characterId, character.id), eq(characterVersions.versionNo, character.latestVersionNo)))
+            .limit(1)
+        : [];
 
     return reply.send({
       data: {
@@ -311,20 +423,12 @@ export async function registerCharacterRoutes(
         name: character.name,
         source: character.source,
         status: character.status,
+        revision: character.revision,
         deleted_at: character.deletedAt,
         created_at: character.createdAt,
         updated_at: character.updatedAt,
-        latest_version_no: latestVersion?.versionNo ?? null,
-        latest_version: latestVersion
-          ? {
-              id: latestVersion.id,
-              character_id: latestVersion.characterId,
-              version_no: latestVersion.versionNo,
-              content_hash: latestVersion.contentHash,
-              snapshot: parseJsonField(latestVersion.dataJson),
-              created_at: latestVersion.createdAt
-            }
-          : null
+        latest_version_no: toApiLatestVersionNo(character.latestVersionNo),
+        latest_version: latestVersion ? toCharacterVersionResponse(latestVersion) : null
       }
     });
   });
@@ -337,7 +441,15 @@ export async function registerCharacterRoutes(
       params: idParamsJsonSchema,
       querystring: listVersionsQueryJsonSchema,
       response: {
-        200: { type: "object", required: ["data", "meta"], properties: { data: { type: "array", items: characterVersionJsonSchema }, meta: listMetaJsonSchema }, additionalProperties: false },
+        200: {
+          type: "object",
+          required: ["data", "meta"],
+          properties: {
+            data: { type: "array", items: characterVersionJsonSchema },
+            meta: listMetaJsonSchema
+          },
+          additionalProperties: false
+        },
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema
       }
@@ -381,14 +493,7 @@ export async function registerCharacterRoutes(
       .offset(parsedQuery.data.offset);
 
     return reply.send({
-      data: rows.map((row) => ({
-        id: row.id,
-        character_id: row.characterId,
-        version_no: row.versionNo,
-        content_hash: row.contentHash,
-        snapshot: parseJsonField(row.dataJson),
-        created_at: row.createdAt
-      })),
+      data: rows.map(toCharacterVersionResponse),
       meta: buildListMeta({
         total: totalRow?.value ?? 0,
         limit: parsedQuery.data.limit,
@@ -407,10 +512,16 @@ export async function registerCharacterRoutes(
       params: idParamsJsonSchema,
       body: createCharacterVersionBodyJsonSchema,
       response: {
-        201: { type: "object", required: ["data"], properties: { data: characterVersionJsonSchema }, additionalProperties: false },
+        201: {
+          type: "object",
+          required: ["data"],
+          properties: { data: characterWriteVersionJsonSchema },
+          additionalProperties: false
+        },
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
-        409: errorResponseJsonSchema
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
@@ -424,64 +535,61 @@ export async function registerCharacterRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
+
     try {
-      const created = db.transaction((tx) => {
-        const auth = getRequestAuthContext(request);
-        const character = tx
-          .select()
-          .from(characters)
-          .where(and(eq(characters.id, parsedParams.data.id), eq(characters.accountId, auth.accountId)))
-          .limit(1)
-          .get();
+      const created = await withResourceWriteCas({
+        db,
+        expectedRevision: parsedBody.data.expected_revision,
+        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId),
+        getRevision: (row) => row.revision,
+        onMissing: () => new ResourceWriteRouteError(404, "not_found", "Character not found"),
+        onRevisionConflict: createCharacterRevisionConflictError,
+        validateLoaded: (row) => {
+          if (row.status === "deleted") {
+            throw createCharacterDeletedError("Cannot create version for deleted character");
+          }
+        },
+        constraintMappings: [CHARACTER_VERSION_CONSTRAINT_MAPPING],
+        mutate: ({ tx, row }) => {
+          const now = Date.now();
+          const versionId = nanoid();
+          const versionNo = row.latestVersionNo + 1;
+          const snapshotJson = stringifyJsonField(parsedBody.data.snapshot) ?? "{}";
+          const contentHash = createHash("sha256").update(snapshotJson).digest("hex");
 
-        if (!character) {
-          throw new CharacterRouteError(404, "not_found", "Character not found");
+          const updateResult = tx
+            .update(characters)
+            .set({
+              name: parsedBody.data.snapshot.name,
+              latestVersionNo: versionNo,
+              revision: row.revision + 1,
+              updatedAt: now
+            })
+            .where(and(eq(characters.id, row.id), eq(characters.accountId, auth.accountId), eq(characters.revision, row.revision)))
+            .run();
+
+          assertRevisionWriteApplied(updateResult.changes, createCharacterRevisionConflictError);
+
+          tx.insert(characterVersions).values({
+            id: versionId,
+            characterId: row.id,
+            versionNo,
+            dataJson: snapshotJson,
+            contentHash,
+            createdAt: now
+          }).run();
+
+          return {
+            id: versionId,
+            characterId: row.id,
+            versionNo,
+            contentHash,
+            snapshot: parsedBody.data.snapshot,
+            createdAt: now,
+            revision: row.revision + 1
+          };
         }
-
-        if (character.status === "deleted") {
-          throw new CharacterRouteError(409, "character_deleted", "Cannot create version for deleted character");
-        }
-
-        const latestVersion = tx
-          .select({ versionNo: characterVersions.versionNo })
-          .from(characterVersions)
-          .where(eq(characterVersions.characterId, character.id))
-          .orderBy(desc(characterVersions.versionNo))
-          .limit(1)
-          .get();
-
-        const now = Date.now();
-        const versionId = nanoid();
-        const versionNo = (latestVersion?.versionNo ?? 0) + 1;
-        const snapshotJson = stringifyJsonField(parsedBody.data.snapshot) ?? "{}";
-        const contentHash = createHash("sha256").update(snapshotJson).digest("hex");
-
-        tx.insert(characterVersions).values({
-          id: versionId,
-          characterId: character.id,
-          versionNo,
-          dataJson: snapshotJson,
-          contentHash,
-          createdAt: now
-        }).run();
-
-        tx
-          .update(characters)
-          .set({
-            name: parsedBody.data.snapshot.name,
-            updatedAt: now
-          })
-          .where(eq(characters.id, character.id))
-          .run();
-
-        return {
-          id: versionId,
-          characterId: character.id,
-          versionNo,
-          contentHash,
-          snapshot: parsedBody.data.snapshot,
-          createdAt: now
-        };
       });
 
       return reply.code(201).send({
@@ -491,12 +599,13 @@ export async function registerCharacterRoutes(
           version_no: created.versionNo,
           content_hash: created.contentHash,
           snapshot: created.snapshot,
-          created_at: created.createdAt
+          created_at: created.createdAt,
+          revision: created.revision
         }
       });
     } catch (error) {
-      if (error instanceof CharacterRouteError) {
-        return sendError(reply, error.statusCode, error.code, error.message);
+      if (error instanceof ResourceWriteRouteError) {
+        return sendCharacterWriteError(reply, error);
       }
 
       throw error;
@@ -504,102 +613,104 @@ export async function registerCharacterRoutes(
   });
 
   app.post("/characters/:id/versions/:versionId/rollback", {
+    preValidation: (request, _reply, done) => {
+      ensureOptionalObjectBody(request);
+      done();
+    },
     schema: {
       tags: ["characters"],
       summary: "Rollback character to target version",
       operationId: "rollbackCharacterVersion",
       params: versionParamsJsonSchema,
+      body: expectedRevisionBodyJsonSchema,
       response: {
-        201: { type: "object", required: ["data"], properties: { data: { ...characterVersionJsonSchema, required: [...characterVersionJsonSchema.required, "rolled_back_from_version_id"], properties: { ...characterVersionJsonSchema.properties, rolled_back_from_version_id: { type: "string" } } } }, additionalProperties: false },
+        201: {
+          type: "object",
+          required: ["data"],
+          properties: { data: rollbackCharacterVersionJsonSchema },
+          additionalProperties: false
+        },
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
-        409: errorResponseJsonSchema
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
-    const parsed = parseWithSchema(versionParamsSchema, request.params, reply);
-    if (!parsed.ok) {
+    const parsedParams = parseWithSchema(versionParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
       return;
     }
 
+    const parsedBody = parseWithSchema(expectedRevisionBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+
     try {
-      const rolledBack = db.transaction((tx) => {
-        const auth = getRequestAuthContext(request);
-        const character = tx
-          .select()
-          .from(characters)
-          .where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId)))
-          .limit(1)
-          .get();
+      const rolledBack = await withResourceWriteCas({
+        db,
+        expectedRevision: parsedBody.data.expected_revision,
+        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId),
+        getRevision: (row) => row.revision,
+        onMissing: () => new ResourceWriteRouteError(404, "not_found", "Character not found"),
+        onRevisionConflict: createCharacterRevisionConflictError,
+        validateLoaded: (row) => {
+          if (row.status === "deleted") {
+            throw createCharacterDeletedError("Cannot rollback deleted character");
+          }
+        },
+        constraintMappings: [CHARACTER_VERSION_CONSTRAINT_MAPPING],
+        mutate: ({ tx, row }) => {
+          const targetVersion = loadCharacterVersionById(tx, row.id, parsedParams.data.versionId);
+          if (!targetVersion) {
+            throw new ResourceWriteRouteError(404, "not_found", "Target character version not found");
+          }
 
-        if (!character) {
-          throw new CharacterRouteError(404, "not_found", "Character not found");
+          const snapshot = parseJsonField(targetVersion.dataJson) as { name?: unknown } | null;
+          const snapshotName = typeof snapshot?.name === "string" && snapshot.name.trim().length > 0
+            ? snapshot.name.trim()
+            : row.name;
+
+          const now = Date.now();
+          const versionNo = row.latestVersionNo + 1;
+          const rolledBackVersionId = nanoid();
+
+          const updateResult = tx
+            .update(characters)
+            .set({
+              name: snapshotName,
+              latestVersionNo: versionNo,
+              revision: row.revision + 1,
+              updatedAt: now
+            })
+            .where(and(eq(characters.id, row.id), eq(characters.accountId, auth.accountId), eq(characters.revision, row.revision)))
+            .run();
+
+          assertRevisionWriteApplied(updateResult.changes, createCharacterRevisionConflictError);
+
+          tx.insert(characterVersions).values({
+            id: rolledBackVersionId,
+            characterId: row.id,
+            versionNo,
+            dataJson: targetVersion.dataJson,
+            contentHash: targetVersion.contentHash,
+            createdAt: now
+          }).run();
+
+          return {
+            id: rolledBackVersionId,
+            characterId: row.id,
+            versionNo,
+            contentHash: targetVersion.contentHash,
+            snapshot,
+            createdAt: now,
+            rolledBackFrom: targetVersion.id,
+            revision: row.revision + 1
+          };
         }
-
-        if (character.status === "deleted") {
-          throw new CharacterRouteError(409, "character_deleted", "Cannot rollback deleted character");
-        }
-
-        const targetVersion = tx
-          .select()
-          .from(characterVersions)
-          .where(
-            and(
-              eq(characterVersions.id, parsed.data.versionId),
-              eq(characterVersions.characterId, character.id)
-            )
-          )
-          .limit(1)
-          .get();
-
-        if (!targetVersion) {
-          throw new CharacterRouteError(404, "not_found", "Target character version not found");
-        }
-
-        const latestVersion = tx
-          .select({ versionNo: characterVersions.versionNo })
-          .from(characterVersions)
-          .where(eq(characterVersions.characterId, character.id))
-          .orderBy(desc(characterVersions.versionNo))
-          .limit(1)
-          .get();
-
-        const versionNo = (latestVersion?.versionNo ?? 0) + 1;
-        const now = Date.now();
-        const rolledBackVersionId = nanoid();
-
-        tx.insert(characterVersions).values({
-          id: rolledBackVersionId,
-          characterId: character.id,
-          versionNo,
-          dataJson: targetVersion.dataJson,
-          contentHash: targetVersion.contentHash,
-          createdAt: now
-        }).run();
-
-        const snapshot = parseJsonField(targetVersion.dataJson) as { name?: unknown } | null;
-        const snapshotName = typeof snapshot?.name === "string" && snapshot.name.trim().length > 0
-          ? snapshot.name.trim()
-          : character.name;
-
-        tx
-          .update(characters)
-          .set({
-            name: snapshotName,
-            updatedAt: now
-          })
-          .where(eq(characters.id, character.id))
-          .run();
-
-        return {
-          id: rolledBackVersionId,
-          characterId: character.id,
-          versionNo,
-          contentHash: targetVersion.contentHash,
-          snapshot,
-          createdAt: now,
-          rolledBackFrom: targetVersion.id
-        };
       });
 
       return reply.code(201).send({
@@ -610,12 +721,13 @@ export async function registerCharacterRoutes(
           content_hash: rolledBack.contentHash,
           snapshot: rolledBack.snapshot,
           created_at: rolledBack.createdAt,
-          rolled_back_from_version_id: rolledBack.rolledBackFrom
+          rolled_back_from_version_id: rolledBack.rolledBackFrom,
+          revision: rolledBack.revision
         }
       });
     } catch (error) {
-      if (error instanceof CharacterRouteError) {
-        return sendError(reply, error.statusCode, error.code, error.message);
+      if (error instanceof ResourceWriteRouteError) {
+        return sendCharacterWriteError(reply, error);
       }
 
       throw error;
@@ -623,87 +735,182 @@ export async function registerCharacterRoutes(
   });
 
   app.delete("/characters/:id", {
+    preValidation: (request, _reply, done) => {
+      ensureOptionalObjectBody(request);
+      done();
+    },
     schema: {
       tags: ["characters"],
       summary: "Soft-delete character",
       operationId: "deleteCharacter",
       params: idParamsJsonSchema,
+      body: expectedRevisionBodyJsonSchema,
       response: {
-        200: { type: "object", required: ["data"], properties: { data: { type: "object", required: ["id", "status", "deleted_at"], properties: { id: { type: "string" }, status: { type: "string", enum: ["deleted"] }, deleted_at: { type: "integer", minimum: 0 } }, additionalProperties: false } }, additionalProperties: false },
-        404: errorResponseJsonSchema
+        200: deleteCharacterResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
-    const parsed = parseWithSchema(idParamsSchema, request.params, reply);
-    if (!parsed.ok) {
+    const parsedParams = parseWithSchema(idParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const parsedBody = parseWithSchema(expectedRevisionBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
       return;
     }
 
     const auth = getRequestAuthContext(request);
-    const now = Date.now();
 
-    const result = await db
-      .update(characters)
-      .set({
-        status: "deleted",
-        deletedAt: now,
-        updatedAt: now
-      })
-      .where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId)));
+    try {
+      const deleted = await withResourceWriteCas({
+        db,
+        expectedRevision: parsedBody.data.expected_revision,
+        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId),
+        getRevision: (row) => row.revision,
+        onMissing: () => new ResourceWriteRouteError(404, "not_found", "Character not found"),
+        onRevisionConflict: createCharacterRevisionConflictError,
+        mutate: ({ tx, row }) => {
+          if (row.status === "deleted") {
+            return {
+              id: row.id,
+              deletedAt: row.deletedAt ?? row.updatedAt,
+              updatedAt: row.updatedAt,
+              revision: row.revision
+            };
+          }
 
-    if (result.changes === 0) {
-      return sendError(reply, 404, "not_found", "Character not found");
-    }
+          const now = Date.now();
+          const updateResult = tx
+            .update(characters)
+            .set({
+              status: "deleted",
+              deletedAt: now,
+              updatedAt: now,
+              revision: row.revision + 1
+            })
+            .where(and(eq(characters.id, row.id), eq(characters.accountId, auth.accountId), eq(characters.revision, row.revision)))
+            .run();
 
-    return reply.send({
-      data: {
-        id: parsed.data.id,
-        status: "deleted",
-        deleted_at: now
+          assertRevisionWriteApplied(updateResult.changes, createCharacterRevisionConflictError);
+
+          return {
+            id: row.id,
+            deletedAt: now,
+            updatedAt: now,
+            revision: row.revision + 1
+          };
+        }
+      });
+
+      return reply.send({
+        data: {
+          id: deleted.id,
+          status: "deleted",
+          deleted_at: deleted.deletedAt,
+          updated_at: deleted.updatedAt,
+          revision: deleted.revision
+        }
+      });
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendCharacterWriteError(reply, error);
       }
-    });
+
+      throw error;
+    }
   });
 
   app.post("/characters/:id/restore", {
+    preValidation: (request, _reply, done) => {
+      ensureOptionalObjectBody(request);
+      done();
+    },
     schema: {
       tags: ["characters"],
       summary: "Restore deleted character",
       operationId: "restoreCharacter",
       params: idParamsJsonSchema,
+      body: expectedRevisionBodyJsonSchema,
       response: {
-        200: { type: "object", required: ["data"], properties: { data: { type: "object", required: ["id", "status", "deleted_at", "updated_at"], properties: { id: { type: "string" }, status: { type: "string", enum: ["active"] }, deleted_at: { type: "null" }, updated_at: { type: "integer", minimum: 0 } }, additionalProperties: false } }, additionalProperties: false },
-        404: errorResponseJsonSchema
+        200: restoreCharacterResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
-    const parsed = parseWithSchema(idParamsSchema, request.params, reply);
-    if (!parsed.ok) {
+    const parsedParams = parseWithSchema(idParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const parsedBody = parseWithSchema(expectedRevisionBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
       return;
     }
 
     const auth = getRequestAuthContext(request);
-    const now = Date.now();
 
-    const result = await db
-      .update(characters)
-      .set({
-        status: "active",
-        deletedAt: null,
-        updatedAt: now
-      })
-      .where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId)));
+    try {
+      const restored = await withResourceWriteCas({
+        db,
+        expectedRevision: parsedBody.data.expected_revision,
+        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId),
+        getRevision: (row) => row.revision,
+        onMissing: () => new ResourceWriteRouteError(404, "not_found", "Character not found"),
+        onRevisionConflict: createCharacterRevisionConflictError,
+        mutate: ({ tx, row }) => {
+          if (row.status === "active") {
+            return {
+              id: row.id,
+              updatedAt: row.updatedAt,
+              revision: row.revision
+            };
+          }
 
-    if (result.changes === 0) {
-      return sendError(reply, 404, "not_found", "Character not found");
-    }
+          const now = Date.now();
+          const updateResult = tx
+            .update(characters)
+            .set({
+              status: "active",
+              deletedAt: null,
+              updatedAt: now,
+              revision: row.revision + 1
+            })
+            .where(and(eq(characters.id, row.id), eq(characters.accountId, auth.accountId), eq(characters.revision, row.revision)))
+            .run();
 
-    return reply.send({
-      data: {
-        id: parsed.data.id,
-        status: "active",
-        deleted_at: null,
-        updated_at: now
+          assertRevisionWriteApplied(updateResult.changes, createCharacterRevisionConflictError);
+
+          return {
+            id: row.id,
+            updatedAt: now,
+            revision: row.revision + 1
+          };
+        }
+      });
+
+      return reply.send({
+        data: {
+          id: restored.id,
+          status: "active",
+          deleted_at: null,
+          updated_at: restored.updatedAt,
+          revision: restored.revision
+        }
+      });
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendCharacterWriteError(reply, error);
       }
-    });
+
+      throw error;
+    }
   });
 }

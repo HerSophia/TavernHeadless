@@ -20,6 +20,7 @@ describe("sdk users expanded resource", () => {
             created_at: 10,
             id: "user-1",
             name: "Alice",
+            revision: 0,
             snapshot: { name: "Alice" },
             status: "active",
             updated_at: 11,
@@ -41,6 +42,7 @@ describe("sdk users expanded resource", () => {
         createdAt: 10,
         id: "user-1",
         name: "Alice",
+        revision: 0,
         status: "active",
         updatedAt: 11,
       },
@@ -64,6 +66,7 @@ describe("sdk users expanded resource", () => {
             created_at: 10,
             id: "user-1",
             name: "Alice",
+            revision: 0,
             snapshot: { description: "desc", name: "Alice" },
             status: "active",
             updated_at: 11,
@@ -76,6 +79,7 @@ describe("sdk users expanded resource", () => {
             created_at: 10,
             id: "user-1",
             name: "Alice 2",
+            revision: 1,
             snapshot: { description: "changed", name: "Alice 2" },
             status: "disabled",
             updated_at: 12,
@@ -88,6 +92,7 @@ describe("sdk users expanded resource", () => {
       createdAt: 10,
       id: "user-1",
       name: "Alice",
+      revision: 0,
       snapshot: { description: "desc", name: "Alice" },
       status: "active",
       updatedAt: 11,
@@ -95,6 +100,7 @@ describe("sdk users expanded resource", () => {
 
     await expect(
       client.users.update({
+        expectedRevision: 0,
         snapshot: { description: "changed", name: "Alice 2" },
         status: "disabled",
         userId: "user-1",
@@ -103,6 +109,7 @@ describe("sdk users expanded resource", () => {
       createdAt: 10,
       id: "user-1",
       name: "Alice 2",
+      revision: 1,
       snapshot: { description: "changed", name: "Alice 2" },
       status: "disabled",
       updatedAt: 12,
@@ -110,6 +117,7 @@ describe("sdk users expanded resource", () => {
 
     const [, init] = fetchImpl.mock.calls[1]!;
     expect(init?.body).toBe(JSON.stringify({
+      expected_revision: 0,
       snapshot: { description: "changed", name: "Alice 2" },
       status: "disabled",
     }));
@@ -159,7 +167,11 @@ describe("sdk users expanded resource", () => {
       );
     const client = createTavernClient({ baseUrl, fetchImpl });
 
-    await expect(client.users.remove({ userId: "user-1" })).resolves.toBe(true);
+    await expect(client.users.remove({ userId: "user-1", expectedRevision: 3 })).resolves.toBe(true);
+
+    const [removeUrl, removeInit] = fetchImpl.mock.calls[0]!;
+    expect(removeUrl).toBe("http://localhost:3000/users/user-1");
+    expect(removeInit?.body).toBe(JSON.stringify({ expected_revision: 3 }));
 
     await expect(
       client.users.batchUpdateStatus({

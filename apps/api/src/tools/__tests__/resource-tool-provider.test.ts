@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { nanoid } from 'nanoid';
 import { eq } from 'drizzle-orm';
 
+import * as retryModule from '../../lib/retry.js';
 import { createDatabase, type AppDb } from '../../db/client.js';
 import {
   characters,
@@ -69,6 +70,7 @@ describe('ResourceToolProvider', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     closeDb();
   });
 
@@ -141,6 +143,8 @@ describe('ResourceToolProvider', () => {
       expect(charRow!.name).toBe('Alice');
       expect(charRow!.source).toBe('tool');
       expect(charRow!.accountId).toBe(ACCOUNT_A);
+      expect(charRow!.latestVersionNo).toBe(1);
+      expect(charRow!.revision).toBe(0);
 
       const [versionRow] = await db.select().from(characterVersions).limit(1);
       expect(versionRow!.versionNo).toBe(1);
@@ -166,6 +170,16 @@ describe('ResourceToolProvider', () => {
         makeContext(),
       );
       expect(result.error).toContain('name');
+    });
+
+    it('returns a busy message when sqlite write retry is exhausted', async () => {
+      vi.spyOn(retryModule, 'executeWithSqliteBusyRetry').mockRejectedValueOnce(
+        new retryModule.ResourceBusyError('database is locked'),
+      );
+
+      const result = await provider.executeTool('create_character', { name: 'Busy Alice' }, makeContext());
+
+      expect(result.error).toBe('Resource is temporarily busy, please retry');
     });
   });
 
@@ -202,6 +216,10 @@ describe('ResourceToolProvider', () => {
       // Preserved from original
       expect(latestSnapshot.greeting).toBe('Hi');
       expect(latestSnapshot.name).toBe('Bob');
+
+      const [charRow] = await db.select().from(characters).where(eq(characters.id, characterId)).limit(1);
+      expect(charRow!.latestVersionNo).toBe(2);
+      expect(charRow!.revision).toBe(1);
     });
 
     it('updates character name when changed', async () => {

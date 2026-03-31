@@ -21,7 +21,7 @@ import type {
   InstanceSlot,
 } from '@tavern/core';
 
-import type { AppDb } from '../db/client.js';
+import type { AppDb, DbExecutor } from '../db/client.js';
 import {
   characters,
   characterVersions,
@@ -31,6 +31,13 @@ import {
   presets,
 } from '../db/schema.js';
 import { parseJsonField } from '../lib/http.js';
+import {
+  CHARACTER_VERSION_CONSTRAINT_MAPPING,
+  ResourceWriteRouteError,
+  assertRevisionWriteApplied,
+  executeResourceWrite,
+  withResourceWriteCas,
+} from '../services/resource-write.js';
 import { parsePreset } from '@tavern/adapters-sillytavern';
 import {
   type JsonRecord,
@@ -672,6 +679,32 @@ function computeContentHash(json: string): string {
   return createHash('sha256').update(json).digest('hex');
 }
 
+function loadOwnedCharacter(tx: DbExecutor, characterId: string, accountId: string) {
+  return tx
+    .select()
+    .from(characters)
+    .where(and(eq(characters.id, characterId), eq(characters.accountId, accountId)))
+    .limit(1)
+    .get();
+}
+
+function loadCharacterVersionByNo(tx: DbExecutor, characterId: string, versionNo: number) {
+  return tx
+    .select()
+    .from(characterVersions)
+    .where(and(eq(characterVersions.characterId, characterId), eq(characterVersions.versionNo, versionNo)))
+    .limit(1)
+    .get();
+}
+
+function createToolCharacterRevisionConflictError() {
+  return new ResourceWriteRouteError(
+    409,
+    'character_revision_conflict',
+    'Character has been modified by another operation',
+  );
+}
+
 // ── ResourceToolProvider ────────────────────────────────
 
 export class ResourceToolProvider implements ToolProvider {
@@ -785,36 +818,46 @@ export class ResourceToolProvider implements ToolProvider {
     const contentHash = computeContentHash(snapshotJson);
     const now = Date.now();
 
-    this.db.transaction((tx) => {
-      tx.insert(characters)
-        .values({
-          id: characterId,
-          name: snapshot.name,
-          source: 'tool',
-          accountId,
-          status: 'active',
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+    const created = await executeResourceWrite(() =>
+      this.db.transaction((tx) => {
+        tx.insert(characters)
+          .values({
+            id: characterId,
+            name: snapshot.name,
+            source: 'tool',
+            accountId,
+            status: 'active',
+            revision: 0,
+            latestVersionNo: 1,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
 
-      tx.insert(characterVersions)
-        .values({
-          id: versionId,
+        tx.insert(characterVersions)
+          .values({
+            id: versionId,
+            characterId,
+            versionNo: 1,
+            dataJson: snapshotJson,
+            contentHash,
+            createdAt: now,
+          })
+          .run();
+
+        return {
           characterId,
-          versionNo: 1,
-          dataJson: snapshotJson,
-          contentHash,
-          createdAt: now,
-        })
-        .run();
-    });
+          versionId,
+          name: snapshot.name,
+        };
+      }),
+    );
 
     return {
       data: {
-        character_id: characterId,
-        version_id: versionId,
-        name: snapshot.name,
+        character_id: created.characterId,
+        version_id: created.versionId,
+        name: created.name,
       },
     };
   }
@@ -829,86 +872,91 @@ export class ResourceToolProvider implements ToolProvider {
       return { error: 'character_id is required' };
     }
 
-    // 1. 查询角色行
-    const [charRow] = await this.db
-      .select()
-      .from(characters)
-      .where(
-        and(
-          eq(characters.id, characterId),
-          eq(characters.accountId, accountId),
-          eq(characters.status, 'active'),
-        ),
-      )
-      .limit(1);
+    const updated = await withResourceWriteCas({
+      db: this.db,
+      load: (tx) => loadOwnedCharacter(tx, characterId, accountId),
+      getRevision: (row) => row.revision,
+      onMissing: () => new ResourceWriteRouteError(404, 'not_found', `Character not found: ${characterId}`),
+      onRevisionConflict: createToolCharacterRevisionConflictError,
+      validateLoaded: (row) => {
+        if (row.status !== 'active') {
+          throw new ResourceWriteRouteError(404, 'not_found', `Character not found: ${characterId}`);
+        }
+      },
+      constraintMappings: [CHARACTER_VERSION_CONSTRAINT_MAPPING],
+      mutate: ({ tx, row }) => {
+        const latestVersion =
+          row.latestVersionNo > 0 ? loadCharacterVersionByNo(tx, row.id, row.latestVersionNo) : undefined;
 
-    if (!charRow) {
-      return { error: `Character not found: ${characterId}` };
-    }
+        if (!latestVersion) {
+          throw new Error(`No version found for character: ${characterId}`);
+        }
 
-    // 2. 查询最新版本
-    const [latestVersion] = await this.db
-      .select()
-      .from(characterVersions)
-      .where(eq(characterVersions.characterId, characterId))
-      .orderBy(desc(characterVersions.versionNo))
-      .limit(1);
+        const oldSnapshot: CharacterSnapshot = JSON.parse(latestVersion.dataJson);
+        const newSnapshot: CharacterSnapshot = { ...oldSnapshot };
 
-    if (!latestVersion) {
-      return { error: `No version found for character: ${characterId}` };
-    }
+        if (typeof args.name === 'string' && args.name.trim() !== '') {
+          newSnapshot.name = (args.name as string).trim();
+        }
+        if (typeof args.description === 'string') newSnapshot.description = args.description as string;
+        if (typeof args.personality === 'string') newSnapshot.personality = args.personality as string;
+        if (typeof args.scenario === 'string') newSnapshot.scenario = args.scenario as string;
+        if (typeof args.first_mes === 'string') newSnapshot.greeting = args.first_mes as string;
+        if (typeof args.mes_example === 'string') newSnapshot.exampleDialogue = args.mes_example as string;
 
-    // 3. 合并 snapshot
-    const oldSnapshot: CharacterSnapshot = JSON.parse(latestVersion.dataJson);
-    const newSnapshot: CharacterSnapshot = { ...oldSnapshot };
+        const newVersionNo = row.latestVersionNo + 1;
+        const newVersionId = nanoid();
+        const snapshotJson = JSON.stringify(newSnapshot);
+        const contentHash = computeContentHash(snapshotJson);
+        const now = Date.now();
+        const updates: Partial<typeof characters.$inferInsert> = {
+          latestVersionNo: newVersionNo,
+          revision: row.revision + 1,
+          updatedAt: now,
+        };
 
-    if (typeof args.name === 'string' && args.name.trim() !== '') {
-      newSnapshot.name = (args.name as string).trim();
-    }
-    if (typeof args.description === 'string') newSnapshot.description = args.description as string;
-    if (typeof args.personality === 'string') newSnapshot.personality = args.personality as string;
-    if (typeof args.scenario === 'string') newSnapshot.scenario = args.scenario as string;
-    if (typeof args.first_mes === 'string') newSnapshot.greeting = args.first_mes as string;
-    if (typeof args.mes_example === 'string') newSnapshot.exampleDialogue = args.mes_example as string;
+        if (newSnapshot.name !== oldSnapshot.name) {
+          updates.name = newSnapshot.name;
+        }
 
-    // 4. 构造新版本
-    const newVersionNo = latestVersion.versionNo + 1;
-    const newVersionId = nanoid();
-    const snapshotJson = JSON.stringify(newSnapshot);
-    const contentHash = computeContentHash(snapshotJson);
-    const now = Date.now();
+        const updateResult = tx
+          .update(characters)
+          .set(updates)
+          .where(
+            and(
+              eq(characters.id, row.id),
+              eq(characters.accountId, accountId),
+              eq(characters.revision, row.revision),
+            ),
+          )
+          .run();
 
-    this.db.transaction((tx) => {
-      tx.insert(characterVersions)
-        .values({
-          id: newVersionId,
-          characterId,
+        assertRevisionWriteApplied(updateResult.changes, createToolCharacterRevisionConflictError);
+
+        tx.insert(characterVersions)
+          .values({
+            id: newVersionId,
+            characterId: row.id,
+            versionNo: newVersionNo,
+            dataJson: snapshotJson,
+            contentHash,
+            createdAt: now,
+          })
+          .run();
+
+        return {
+          characterId: row.id,
+          versionId: newVersionId,
           versionNo: newVersionNo,
-          dataJson: snapshotJson,
-          contentHash,
-          createdAt: now,
-        })
-        .run();
-
-      // 如果名称变了，同步更新角色行
-      if (newSnapshot.name !== oldSnapshot.name) {
-        tx.update(characters)
-          .set({ name: newSnapshot.name, updatedAt: now })
-          .where(eq(characters.id, characterId))
-          .run();
-      } else {
-        tx.update(characters)
-          .set({ updatedAt: now })
-          .where(eq(characters.id, characterId))
-          .run();
-      }
+        };
+      },
     });
 
     return {
       data: {
-        character_id: characterId,
-        version_id: newVersionId,
-        version_no: newVersionNo,
+        character_id: updated.characterId,
+        version_id: updated.versionId,
+        version_no: updated.versionNo,
       },
     };
   }

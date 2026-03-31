@@ -3,14 +3,29 @@ import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
-import type { DatabaseConnection } from "../db/client";
-import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchDeleteBodyJsonSchema, batchStatusBodyJsonSchema, batchResultResponseJsonSchema } from "./schemas/common.js";
+import type { DatabaseConnection, DbExecutor } from "../db/client";
 import { accountUsers } from "../db/schema";
+import { ensureOptionalObjectBody, parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
-import { parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http";
-import { getRequestAuthContext } from "../plugins/auth";
+import { getRequestAuthContext } from "../plugins/auth.js";
+import {
+  ResourceWriteRouteError,
+  USER_NAME_CONSTRAINT_MAPPING,
+  assertRevisionWriteApplied,
+  executeResourceWrite,
+  withResourceWriteCas,
+} from "../services/resource-write.js";
+import {
+  batchDeleteBodyJsonSchema,
+  batchIdArraySchema,
+  batchResultResponseJsonSchema,
+  batchStatusBodyJsonSchema,
+  errorResponseJsonSchema,
+  idParamsJsonSchema,
+} from "./schemas/common.js";
 
 const userStatusSchema = z.enum(["active", "disabled", "deleted"]);
+const expectedRevisionSchema = z.number().int().nonnegative().optional();
 
 const userSnapshotSchema = z
   .object({
@@ -37,18 +52,28 @@ const createUserSchema = z.object({
 const updateUserSchema = z
   .object({
     snapshot: userSnapshotSchema.optional(),
-    status: z.enum(["active", "disabled"]).optional()
+    status: z.enum(["active", "disabled"]).optional(),
+    expected_revision: expectedRevisionSchema
   })
-  .refine((value) => Object.keys(value).length > 0, "At least one field is required");
+  .refine((value) => Object.keys(value).some((key) => key !== "expected_revision"), "At least one field is required");
+
+const deleteUserBodySchema = z.object({
+  expected_revision: expectedRevisionSchema
+}).default({});
 
 const userSnapshotExample = {
   name: "Alice",
   description: "A calm strategist who keeps concise notes."
 } as const;
 
-const userBodyExample = {
+const userCreateBodyExample = {
+  snapshot: userSnapshotExample
+} as const;
+
+const userUpdateBodyExample = {
   snapshot: userSnapshotExample,
-  status: "active"
+  status: "active",
+  expected_revision: 3
 } as const;
 
 const userExample = {
@@ -56,6 +81,7 @@ const userExample = {
   name: "Alice",
   status: "active",
   snapshot: userSnapshotExample,
+  revision: 0,
   created_at: 1735689600000,
   updated_at: 1735689600000
 } as const;
@@ -81,10 +107,10 @@ const userListResponseExample = {
 const userDeleteResponseExample = {
   data: {
     id: "usr_demo",
-    deleted: true
+    deleted: true,
+    revision: 1
   }
 } as const;
-
 
 const listQueryJsonSchema = {
   type: "object",
@@ -100,24 +126,45 @@ const listQueryJsonSchema = {
   additionalProperties: false
 } as const;
 
-const userBodyJsonSchema = {
+const createUserBodyJsonSchema = {
+  type: "object",
+  required: ["snapshot"],
+  properties: {
+    snapshot: { type: "object", additionalProperties: true }
+  },
+  examples: [userCreateBodyExample],
+  additionalProperties: false
+} as const;
+
+const updateUserBodyJsonSchema = {
   type: "object",
   properties: {
     snapshot: { type: "object", additionalProperties: true },
-    status: { type: "string", enum: ["active", "disabled"] }
+    status: { type: "string", enum: ["active", "disabled"] },
+    expected_revision: { type: "integer", minimum: 0 }
   },
-  examples: [userBodyExample],
+  examples: [userUpdateBodyExample],
+  additionalProperties: false,
+  minProperties: 1
+} as const;
+
+const deleteUserBodyJsonSchema = {
+  type: "object",
+  properties: {
+    expected_revision: { type: "integer", minimum: 0 }
+  },
   additionalProperties: false
 } as const;
 
 const userJsonSchema = {
   type: "object",
-  required: ["id", "name", "status", "snapshot", "created_at", "updated_at"],
+  required: ["id", "name", "status", "snapshot", "revision", "created_at", "updated_at"],
   properties: {
     id: { type: "string" },
     name: { type: "string" },
     status: { type: "string", enum: ["active", "disabled", "deleted"] },
     snapshot: { type: "object", additionalProperties: true },
+    revision: { type: "integer", minimum: 0 },
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 }
   },
@@ -138,7 +185,6 @@ const listMetaJsonSchema = {
   },
   additionalProperties: false
 } as const;
-
 
 const userResponseJsonSchema = {
   type: "object",
@@ -165,10 +211,11 @@ const deleteResponseJsonSchema = {
   properties: {
     data: {
       type: "object",
-      required: ["id", "deleted"],
+      required: ["id", "deleted", "revision"],
       properties: {
         id: { type: "string" },
-        deleted: { type: "boolean" }
+        deleted: { type: "boolean" },
+        revision: { type: "integer", minimum: 0 }
       },
       additionalProperties: false
     }
@@ -177,15 +224,33 @@ const deleteResponseJsonSchema = {
   additionalProperties: false
 } as const;
 
+function loadOwnedUser(tx: DbExecutor, userId: string, accountId: string) {
+  return tx
+    .select()
+    .from(accountUsers)
+    .where(and(eq(accountUsers.id, userId), eq(accountUsers.accountId, accountId)))
+    .limit(1)
+    .get();
+}
+
 function toUserResponse(row: typeof accountUsers.$inferSelect) {
   return {
     id: row.id,
     name: row.name,
     status: row.status,
     snapshot: parseJsonField(row.snapshotJson),
+    revision: row.revision,
     created_at: row.createdAt,
     updated_at: row.updatedAt
   };
+}
+
+function createUserRevisionConflictError() {
+  return new ResourceWriteRouteError(409, "user_revision_conflict", "User has been modified by another operation");
+}
+
+function sendUserWriteError(reply: Parameters<typeof sendError>[0], error: ResourceWriteRouteError) {
+  return sendError(reply, error.statusCode, error.code, error.message, error.details);
 }
 
 export async function registerUserRoutes(app: FastifyInstance, connection: DatabaseConnection): Promise<void> {
@@ -195,14 +260,12 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
     schema: {
       tags: ["users"],
       summary: "Create user",
-      body: {
-        ...userBodyJsonSchema,
-        required: ["snapshot"]
-      },
+      body: createUserBodyJsonSchema,
       response: {
         201: userResponseJsonSchema,
         400: errorResponseJsonSchema,
-        409: errorResponseJsonSchema
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
@@ -212,33 +275,43 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
     }
 
     const auth = getRequestAuthContext(request);
-    const now = Date.now();
     const snapshotJson = stringifyJsonField(parsedBody.data.snapshot) ?? "{}";
 
-    const [existingByName] = await db
-      .select({ id: accountUsers.id })
-      .from(accountUsers)
-      .where(and(eq(accountUsers.accountId, auth.accountId), eq(accountUsers.name, parsedBody.data.snapshot.name)))
-      .limit(1);
+    try {
+      const created = await executeResourceWrite(
+        () =>
+          db.transaction((tx) => {
+            const now = Date.now();
+            const userId = nanoid();
 
-    if (existingByName) {
-      return sendError(reply, 409, "user_conflict", `User name already exists: ${parsedBody.data.snapshot.name}`);
+            tx.insert(accountUsers).values({
+              id: userId,
+              accountId: auth.accountId,
+              name: parsedBody.data.snapshot.name,
+              snapshotJson,
+              status: "active",
+              revision: 0,
+              createdAt: now,
+              updatedAt: now
+            }).run();
+
+            return loadOwnedUser(tx, userId, auth.accountId);
+          }),
+        { constraintMappings: [USER_NAME_CONSTRAINT_MAPPING] }
+      );
+
+      if (!created) {
+        throw new Error("Failed to create user");
+      }
+
+      return reply.code(201).send({ data: toUserResponse(created) });
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendUserWriteError(reply, error);
+      }
+
+      throw error;
     }
-
-    const [created] = await db
-      .insert(accountUsers)
-      .values({
-        id: nanoid(),
-        accountId: auth.accountId,
-        name: parsedBody.data.snapshot.name,
-        snapshotJson,
-        status: "active",
-        createdAt: now,
-        updatedAt: now
-      })
-      .returning();
-
-    return reply.code(201).send({ data: toUserResponse(created!) });
   });
 
   app.get("/users", {
@@ -335,15 +408,13 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
       tags: ["users"],
       summary: "Update user",
       params: idParamsJsonSchema,
-      body: {
-        ...userBodyJsonSchema,
-        minProperties: 1
-      },
+      body: updateUserBodyJsonSchema,
       response: {
         200: userResponseJsonSchema,
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
-        409: errorResponseJsonSchema
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
@@ -358,62 +429,80 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
     }
 
     const auth = getRequestAuthContext(request);
-    const [existing] = await db
-      .select()
-      .from(accountUsers)
-      .where(and(eq(accountUsers.id, parsedParams.data.id), eq(accountUsers.accountId, auth.accountId)))
-      .limit(1);
 
-    if (!existing || existing.status === "deleted") {
-      return sendError(reply, 404, "not_found", "User not found");
-    }
+    try {
+      const updated = await withResourceWriteCas({
+        db,
+        expectedRevision: parsedBody.data.expected_revision,
+        load: (tx) => loadOwnedUser(tx, parsedParams.data.id, auth.accountId),
+        getRevision: (row) => row.revision,
+        onMissing: () => new ResourceWriteRouteError(404, "not_found", "User not found"),
+        onRevisionConflict: createUserRevisionConflictError,
+        validateLoaded: (row) => {
+          if (row.status === "deleted") {
+            throw new ResourceWriteRouteError(404, "not_found", "User not found");
+          }
+        },
+        constraintMappings: [USER_NAME_CONSTRAINT_MAPPING],
+        mutate: ({ tx, row }) => {
+          const now = Date.now();
+          const updates: Partial<typeof accountUsers.$inferInsert> = {
+            updatedAt: now,
+            revision: row.revision + 1
+          };
 
-    const updates: Partial<typeof accountUsers.$inferInsert> = {
-      updatedAt: Date.now()
-    };
+          if (parsedBody.data.snapshot) {
+            updates.name = parsedBody.data.snapshot.name;
+            updates.snapshotJson = stringifyJsonField(parsedBody.data.snapshot) ?? row.snapshotJson;
+          }
 
-    if (parsedBody.data.snapshot) {
-      const name = parsedBody.data.snapshot.name;
-      if (name !== existing.name) {
-        const [conflict] = await db
-          .select({ id: accountUsers.id })
-          .from(accountUsers)
-          .where(and(eq(accountUsers.accountId, auth.accountId), eq(accountUsers.name, name)))
-          .limit(1);
-        if (conflict && conflict.id !== existing.id) {
-          return sendError(reply, 409, "user_conflict", `User name already exists: ${name}`);
+          if (parsedBody.data.status) {
+            updates.status = parsedBody.data.status;
+          }
+
+          const updateResult = tx
+            .update(accountUsers)
+            .set(updates)
+            .where(and(eq(accountUsers.id, row.id), eq(accountUsers.accountId, auth.accountId), eq(accountUsers.revision, row.revision)))
+            .run();
+
+          assertRevisionWriteApplied(updateResult.changes, createUserRevisionConflictError);
+
+          const refreshed = loadOwnedUser(tx, row.id, auth.accountId);
+          if (!refreshed) {
+            throw new Error("Failed to reload updated user");
+          }
+
+          return refreshed;
         }
+      });
+
+      return reply.send({ data: toUserResponse(updated) });
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendUserWriteError(reply, error);
       }
 
-      updates.name = parsedBody.data.snapshot.name;
-      updates.snapshotJson = stringifyJsonField(parsedBody.data.snapshot) ?? existing.snapshotJson;
+      throw error;
     }
-
-    if (parsedBody.data.status) {
-      updates.status = parsedBody.data.status;
-    }
-
-    const [updated] = await db
-      .update(accountUsers)
-      .set(updates)
-      .where(and(eq(accountUsers.id, existing.id), eq(accountUsers.accountId, auth.accountId)))
-      .returning();
-
-    if (!updated) {
-      return sendError(reply, 404, "not_found", "User not found");
-    }
-
-    return reply.send({ data: toUserResponse(updated) });
   });
 
   app.delete("/users/:id", {
+    preValidation: (request, _reply, done) => {
+      ensureOptionalObjectBody(request);
+      done();
+    },
     schema: {
       tags: ["users"],
       summary: "Delete user",
       params: idParamsJsonSchema,
+      body: deleteUserBodyJsonSchema,
       response: {
         200: deleteResponseJsonSchema,
-        404: errorResponseJsonSchema
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema
       }
     }
   }, async (request, reply) => {
@@ -422,23 +511,53 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
       return;
     }
 
-    const auth = getRequestAuthContext(request);
-    const [updated] = await db
-      .update(accountUsers)
-      .set({ status: "deleted", updatedAt: Date.now() })
-      .where(and(eq(accountUsers.id, parsedParams.data.id), eq(accountUsers.accountId, auth.accountId)))
-      .returning();
-
-    if (!updated) {
-      return sendError(reply, 404, "not_found", "User not found");
+    const parsedBody = parseWithSchema(deleteUserBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
     }
 
-    return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
+    const auth = getRequestAuthContext(request);
+
+    try {
+      const deleted = await withResourceWriteCas({
+        db,
+        expectedRevision: parsedBody.data.expected_revision,
+        load: (tx) => loadOwnedUser(tx, parsedParams.data.id, auth.accountId),
+        getRevision: (row) => row.revision,
+        onMissing: () => new ResourceWriteRouteError(404, "not_found", "User not found"),
+        onRevisionConflict: createUserRevisionConflictError,
+        validateLoaded: (row) => {
+          if (row.status === "deleted") {
+            throw new ResourceWriteRouteError(404, "not_found", "User not found");
+          }
+        },
+        mutate: ({ tx, row }) => {
+          const now = Date.now();
+          const updateResult = tx
+            .update(accountUsers)
+            .set({ status: "deleted", updatedAt: now, revision: row.revision + 1 })
+            .where(and(eq(accountUsers.id, row.id), eq(accountUsers.accountId, auth.accountId), eq(accountUsers.revision, row.revision)))
+            .run();
+
+          assertRevisionWriteApplied(updateResult.changes, createUserRevisionConflictError);
+
+          return {
+            id: row.id,
+            revision: row.revision + 1
+          };
+        }
+      });
+
+      return reply.send({ data: { id: deleted.id, deleted: true, revision: deleted.revision } });
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendUserWriteError(reply, error);
+      }
+
+      throw error;
+    }
   });
 
-  // ── Batch Operations ────────────────────────────────
-
-  /** PATCH /users/batch/status — 批量更新用户状态 */
   app.patch("/users/batch/status", {
     schema: {
       tags: ["users"],
@@ -448,6 +567,7 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
       response: {
         200: batchResultResponseJsonSchema,
         400: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -460,35 +580,51 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
 
     const auth = getRequestAuthContext(request);
     const { ids, status } = bodyParsed.data;
-    const results: { index: number; id: string; action: string }[] = [];
-    let updated = 0;
-    let notFound = 0;
 
-    db.transaction((tx) => {
-      ids.forEach((id, index) => {
-        const [row] = tx
-          .select({ id: accountUsers.id, status: accountUsers.status })
-          .from(accountUsers)
-          .where(and(eq(accountUsers.id, id), eq(accountUsers.accountId, auth.accountId)))
-          .all();
+    try {
+      const mutation = await executeResourceWrite(() => {
+        const results: { index: number; id: string; action: string }[] = [];
+        let updated = 0;
+        let notFound = 0;
 
-        if (!row || row.status === "deleted") {
-          results.push({ index, id, action: "not_found" });
-          notFound++;
-        } else {
-          tx.update(accountUsers).set({ status, updatedAt: Date.now() }).where(eq(accountUsers.id, id)).run();
-          results.push({ index, id, action: "updated" });
-          updated++;
-        }
+        db.transaction((tx) => {
+          ids.forEach((id, index) => {
+            const row = tx
+              .select({ id: accountUsers.id, status: accountUsers.status, revision: accountUsers.revision })
+              .from(accountUsers)
+              .where(and(eq(accountUsers.id, id), eq(accountUsers.accountId, auth.accountId)))
+              .limit(1)
+              .get();
+
+            if (!row || row.status === "deleted") {
+              results.push({ index, id, action: "not_found" });
+              notFound += 1;
+              return;
+            }
+
+            tx.update(accountUsers)
+              .set({ status, updatedAt: Date.now(), revision: row.revision + 1 })
+              .where(eq(accountUsers.id, id))
+              .run();
+
+            results.push({ index, id, action: "updated" });
+            updated += 1;
+          });
+        });
+
+        return { results, meta: { total: ids.length, updated, not_found: notFound, status } };
       });
-    });
 
-    return reply.send({
-      data: { results, meta: { total: ids.length, updated, not_found: notFound, status } },
-    });
+      return reply.send({ data: mutation });
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendUserWriteError(reply, error);
+      }
+
+      throw error;
+    }
   });
 
-  /** POST /users/batch/delete — 批量删除用户（软删除） */
   app.post("/users/batch/delete", {
     schema: {
       tags: ["users"],
@@ -498,6 +634,7 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
       response: {
         200: batchResultResponseJsonSchema,
         400: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -506,31 +643,50 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
 
     const auth = getRequestAuthContext(request);
     const { ids } = bodyParsed.data;
-    const results: { index: number; id: string; action: string }[] = [];
-    let deleted = 0;
-    let notFound = 0;
 
-    db.transaction((tx) => {
-      ids.forEach((id, index) => {
-        const [row] = tx
-          .select({ id: accountUsers.id, status: accountUsers.status })
-          .from(accountUsers)
-          .where(and(eq(accountUsers.id, id), eq(accountUsers.accountId, auth.accountId)))
-          .all();
+    try {
+      const mutation = await executeResourceWrite(() => {
+        const results: { index: number; id: string; action: string }[] = [];
+        let deleted = 0;
+        let notFound = 0;
 
-        if (!row || row.status === "deleted") {
-          results.push({ index, id, action: "not_found" });
-          notFound++;
-        } else {
-          tx.update(accountUsers).set({ status: "deleted", updatedAt: Date.now() }).where(eq(accountUsers.id, id)).run();
-          results.push({ index, id, action: "deleted" });
-          deleted++;
-        }
+        db.transaction((tx) => {
+          ids.forEach((id, index) => {
+            const row = tx
+              .select({ id: accountUsers.id, status: accountUsers.status, revision: accountUsers.revision })
+              .from(accountUsers)
+              .where(and(eq(accountUsers.id, id), eq(accountUsers.accountId, auth.accountId)))
+              .limit(1)
+              .get();
+
+            if (!row || row.status === "deleted") {
+              results.push({ index, id, action: "not_found" });
+              notFound += 1;
+              return;
+            }
+
+            tx.update(accountUsers)
+              .set({ status: "deleted", updatedAt: Date.now(), revision: row.revision + 1 })
+              .where(eq(accountUsers.id, id))
+              .run();
+
+            results.push({ index, id, action: "deleted" });
+            deleted += 1;
+          });
+        });
+
+        return { results, meta: { total: ids.length, deleted, not_found: notFound } };
       });
-    });
 
-    return reply.send({
-      data: { results, meta: { total: ids.length, deleted, not_found: notFound } },
-    });
+      return reply.send({
+        data: mutation,
+      });
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendUserWriteError(reply, error);
+      }
+
+      throw error;
+    }
   });
 }

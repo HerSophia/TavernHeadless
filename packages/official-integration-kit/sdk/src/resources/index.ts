@@ -15,6 +15,7 @@ export {
   type CharacterListItem,
   type CharacterRollbackVersion,
   type CharacterVersion,
+  type CharacterWriteVersion,
   type CharactersResource,
 } from "./characters.js";
 export { createExportsResource, type ExportChatFormat, type ExportsResource } from "./exports.js";

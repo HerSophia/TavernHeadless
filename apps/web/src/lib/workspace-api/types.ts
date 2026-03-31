@@ -74,6 +74,7 @@ export type WorkspaceCharacterAssetDetail = {
   latestVersionId: string | null;
   latestVersionNo: number | null;
   name: string;
+  revision: number;
   snapshot: WorkspaceCharacterAssetSnapshot | null;
   source: string;
   status: "active" | "deleted" | string;
@@ -83,6 +84,7 @@ export type WorkspaceCharacterAssetDetail = {
 export type WorkspaceCharacterVersionResult = {
   createdAt: number;
   id: string;
+  revision: number;
   snapshot: WorkspaceCharacterAssetSnapshot;
   versionNo: number;
 };

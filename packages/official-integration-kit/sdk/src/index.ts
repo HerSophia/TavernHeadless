@@ -37,6 +37,7 @@ export {
   type CharacterListItem,
   type CharacterRollbackVersion,
   type CharacterVersion,
+  type CharacterWriteVersion,
   type CharactersResource,
   type ExportChatFormat,
   type ExportsResource,

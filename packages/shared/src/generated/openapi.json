@@ -1226,6 +1226,10 @@
                           "name": {
                             "type": "string"
                           },
+                          "revision": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
                           "source": {
                             "type": "string"
                           },
@@ -1246,6 +1250,7 @@
                           "name",
                           "source",
                           "status",
+                          "revision",
                           "latest_version_no",
                           "deleted_at",
                           "created_at",
@@ -1359,6 +1364,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -1376,17 +1398,27 @@
                         "id": {
                           "type": "string"
                         },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "status": {
                           "enum": [
                             "deleted"
                           ],
                           "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
                         }
                       },
                       "required": [
                         "id",
                         "status",
-                        "deleted_at"
+                        "deleted_at",
+                        "updated_at",
+                        "revision"
                       ],
                       "type": "object"
                     }
@@ -1400,7 +1432,106 @@
             },
             "description": "Default Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1533,6 +1664,10 @@
                         "name": {
                           "type": "string"
                         },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "source": {
                           "type": "string"
                         },
@@ -1553,6 +1688,7 @@
                         "name",
                         "source",
                         "status",
+                        "revision",
                         "latest_version_no",
                         "deleted_at",
                         "created_at",
@@ -1625,6 +1761,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -1641,6 +1794,10 @@
                         "id": {
                           "type": "string"
                         },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "status": {
                           "enum": [
                             "active"
@@ -1656,7 +1813,8 @@
                         "id",
                         "status",
                         "deleted_at",
-                        "updated_at"
+                        "updated_at",
+                        "revision"
                       ],
                       "type": "object"
                     }
@@ -1670,7 +1828,106 @@
             },
             "description": "Default Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1950,6 +2207,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
                   "snapshot": {
                     "additionalProperties": true,
                     "properties": {
@@ -1997,6 +2258,10 @@
                         "id": {
                           "type": "string"
                         },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "snapshot": {},
                         "version_no": {
                           "minimum": 1,
@@ -2009,7 +2274,8 @@
                         "version_no",
                         "content_hash",
                         "snapshot",
-                        "created_at"
+                        "created_at",
+                        "revision"
                       ],
                       "type": "object"
                     }
@@ -2121,6 +2387,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Create character version",
@@ -2152,6 +2451,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "content": {
@@ -2175,6 +2491,10 @@
                         "id": {
                           "type": "string"
                         },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "rolled_back_from_version_id": {
                           "type": "string"
                         },
@@ -2191,6 +2511,7 @@
                         "content_hash",
                         "snapshot",
                         "created_at",
+                        "revision",
                         "rolled_back_from_version_id"
                       ],
                       "type": "object"
@@ -2272,6 +2593,39 @@
             "description": "Default Response"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -26024,6 +26378,7 @@
                       "created_at": 1735689600000,
                       "id": "usr_demo",
                       "name": "Alice",
+                      "revision": 0,
                       "snapshot": {
                         "description": "A calm strategist who keeps concise notes.",
                         "name": "Alice"
@@ -26051,6 +26406,7 @@
                           "created_at": 1735689600000,
                           "id": "usr_demo",
                           "name": "Alice",
+                          "revision": 0,
                           "snapshot": {
                             "description": "A calm strategist who keeps concise notes.",
                             "name": "Alice"
@@ -26068,6 +26424,10 @@
                           },
                           "name": {
                             "type": "string"
+                          },
+                          "revision": {
+                            "minimum": 0,
+                            "type": "integer"
                           },
                           "snapshot": {
                             "additionalProperties": true,
@@ -26091,6 +26451,7 @@
                           "name",
                           "status",
                           "snapshot",
+                          "revision",
                           "created_at",
                           "updated_at"
                         ],
@@ -26195,8 +26556,7 @@
                 "snapshot": {
                   "description": "A calm strategist who keeps concise notes.",
                   "name": "Alice"
-                },
-                "status": "active"
+                }
               },
               "schema": {
                 "additionalProperties": false,
@@ -26204,13 +26564,6 @@
                   "snapshot": {
                     "additionalProperties": true,
                     "type": "object"
-                  },
-                  "status": {
-                    "enum": [
-                      "active",
-                      "disabled"
-                    ],
-                    "type": "string"
                   }
                 },
                 "required": [
@@ -26231,6 +26584,7 @@
                     "created_at": 1735689600000,
                     "id": "usr_demo",
                     "name": "Alice",
+                    "revision": 0,
                     "snapshot": {
                       "description": "A calm strategist who keeps concise notes.",
                       "name": "Alice"
@@ -26248,6 +26602,7 @@
                         "created_at": 1735689600000,
                         "id": "usr_demo",
                         "name": "Alice",
+                        "revision": 0,
                         "snapshot": {
                           "description": "A calm strategist who keeps concise notes.",
                           "name": "Alice"
@@ -26265,6 +26620,10 @@
                         },
                         "name": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
                         },
                         "snapshot": {
                           "additionalProperties": true,
@@ -26288,6 +26647,7 @@
                         "name",
                         "status",
                         "snapshot",
+                        "revision",
                         "created_at",
                         "updated_at"
                       ],
@@ -26368,6 +26728,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Create user",
@@ -26389,6 +26782,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -26396,7 +26806,8 @@
                 "example": {
                   "data": {
                     "deleted": true,
-                    "id": "usr_demo"
+                    "id": "usr_demo",
+                    "revision": 1
                   }
                 },
                 "schema": {
@@ -26410,11 +26821,16 @@
                         },
                         "id": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
                         }
                       },
                       "required": [
                         "id",
-                        "deleted"
+                        "deleted",
+                        "revision"
                       ],
                       "type": "object"
                     }
@@ -26428,7 +26844,106 @@
             },
             "description": "Default Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -26488,6 +27003,7 @@
                     "created_at": 1735689600000,
                     "id": "usr_demo",
                     "name": "Alice",
+                    "revision": 0,
                     "snapshot": {
                       "description": "A calm strategist who keeps concise notes.",
                       "name": "Alice"
@@ -26505,6 +27021,7 @@
                         "created_at": 1735689600000,
                         "id": "usr_demo",
                         "name": "Alice",
+                        "revision": 0,
                         "snapshot": {
                           "description": "A calm strategist who keeps concise notes.",
                           "name": "Alice"
@@ -26522,6 +27039,10 @@
                         },
                         "name": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
                         },
                         "snapshot": {
                           "additionalProperties": true,
@@ -26545,6 +27066,7 @@
                         "name",
                         "status",
                         "snapshot",
+                        "revision",
                         "created_at",
                         "updated_at"
                       ],
@@ -26615,6 +27137,7 @@
           "content": {
             "application/json": {
               "example": {
+                "expected_revision": 3,
                 "snapshot": {
                   "description": "A calm strategist who keeps concise notes.",
                   "name": "Alice"
@@ -26625,6 +27148,10 @@
                 "additionalProperties": false,
                 "minProperties": 1,
                 "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
                   "snapshot": {
                     "additionalProperties": true,
                     "type": "object"
@@ -26652,6 +27179,7 @@
                     "created_at": 1735689600000,
                     "id": "usr_demo",
                     "name": "Alice",
+                    "revision": 0,
                     "snapshot": {
                       "description": "A calm strategist who keeps concise notes.",
                       "name": "Alice"
@@ -26669,6 +27197,7 @@
                         "created_at": 1735689600000,
                         "id": "usr_demo",
                         "name": "Alice",
+                        "revision": 0,
                         "snapshot": {
                           "description": "A calm strategist who keeps concise notes.",
                           "name": "Alice"
@@ -26686,6 +27215,10 @@
                         },
                         "name": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
                         },
                         "snapshot": {
                           "additionalProperties": true,
@@ -26709,6 +27242,7 @@
                         "name",
                         "status",
                         "snapshot",
+                        "revision",
                         "created_at",
                         "updated_at"
                       ],
@@ -26791,6 +27325,39 @@
             "description": "Default Response"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -26937,6 +27504,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Batch delete users",
@@ -27029,6 +27629,39 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {

@@ -67,6 +67,8 @@ describe("SessionToolRegistryService", () => {
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
       deletedAt: null,
+      revision: 0,
+      latestVersionNo: 0,
       createdAt: now,
       updatedAt: now,
     });

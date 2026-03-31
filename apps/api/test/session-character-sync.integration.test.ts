@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../src/app";
 import { createDatabase } from "../src/db/client";
-import { characterVersions, sessions } from "../src/db/schema";
+import { characters, characterVersions, sessions } from "../src/db/schema";
 
 const CHARACTER_CARD_V2 = {
   spec: "chara_card_v2",
@@ -339,6 +339,12 @@ async function appendCharacterVersion(
 ): Promise<string> {
   const connection = createDatabase(databasePath);
   try {
+    const [character] = await connection.db
+      .select({ latestVersionNo: characters.latestVersionNo, revision: characters.revision })
+      .from(characters)
+      .where(eq(characters.id, characterId))
+      .limit(1);
+
     const [latest] = await connection.db
       .select({ versionNo: characterVersions.versionNo })
       .from(characterVersions)
@@ -346,9 +352,10 @@ async function appendCharacterVersion(
       .orderBy(desc(characterVersions.versionNo))
       .limit(1);
 
-    const versionNo = Number(latest?.versionNo ?? 0) + 1;
+    const versionNo = Number(character?.latestVersionNo ?? latest?.versionNo ?? 0) + 1;
     const dataJson = JSON.stringify(snapshot);
     const versionId = `cv-${nanoid()}`;
+    const now = Date.now();
 
     await connection.db.insert(characterVersions).values({
       id: versionId,
@@ -356,8 +363,18 @@ async function appendCharacterVersion(
       versionNo,
       dataJson,
       contentHash: createHash("sha256").update(dataJson).digest("hex"),
-      createdAt: Date.now(),
+      createdAt: now,
     });
+
+    await connection.db
+      .update(characters)
+      .set({
+        name: snapshot.name,
+        latestVersionNo: versionNo,
+        revision: Number(character?.revision ?? 0) + 1,
+        updatedAt: now,
+      })
+      .where(eq(characters.id, characterId));
 
     return versionId;
   } finally {
