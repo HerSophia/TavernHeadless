@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { ZodError } from "zod";
 import { readFileSync } from "node:fs";
@@ -17,7 +18,8 @@ import {
   DrizzleToolExecutionRepository,
   DrizzleVariableRepository,
 } from "./adapters";
-import { memoryItems, memoryScopeStates } from "./db/schema.js";
+import { memoryItems, runtimeScopeStates } from "./db/schema.js";
+import { MEMORY_RUNTIME_SCOPE_TYPE, parseMemoryRuntimeScopeKey } from "./services/memory-runtime-job-definitions.js";
 import {
   ChatService,
   ChatServiceError,
@@ -59,6 +61,9 @@ import { ToolRegistry, BuiltinToolProvider } from "@tavern/core";
 import { ResourceToolProvider } from "./tools/index.js";
 import { MemoryWorker } from "./services/memory-worker.js";
 import { MemoryJobScheduler } from "./services/memory-job-scheduler.js";
+import { createDefaultMutationRuntimeComponents } from "./services/default-mutation-runtime.js";
+import { createMutationRuntimeJobBridge } from "./services/mutation-runtime-job-bridge.js";
+import { MutationWorker } from "./services/mutation-worker.js";
 
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
@@ -147,6 +152,14 @@ export type BuildAppOptions = {
   };
   /** 服务端默认生成超时（毫秒） */
   llmDefaultTimeoutMs?: number;
+  /** 聊天 transfer 产物目录 */
+  chatTransferArtifactDir?: string;
+  /** 聊天导入最大字节数 */
+  chatImportMaxBytes?: number;
+  /** 同步聊天导出消息阈值 */
+  chatExportSyncMaxMessages?: number;
+  /** 聊天导出产物 TTL（毫秒） */
+  chatExportArtifactTtlMs?: number;
   /**
    * 生成协调器实现。
    * 默认使用单实例内存协调器。
@@ -207,15 +220,19 @@ export async function listMemoryMaintenanceScopes(
       .groupBy(memoryItems.accountId, memoryItems.scope, memoryItems.scopeId),
     db
       .select({
-        accountId: memoryScopeStates.accountId,
-        scope: memoryScopeStates.scope,
-        scopeId: memoryScopeStates.scopeId,
+        accountId: runtimeScopeStates.accountId,
+        scopeKey: runtimeScopeStates.scopeKey,
       })
-      .from(memoryScopeStates),
+      .from(runtimeScopeStates)
+      .where(eq(runtimeScopeStates.scopeType, MEMORY_RUNTIME_SCOPE_TYPE)),
   ]);
 
   const uniqueScopes = new Map<string, MemoryMaintenanceScopeRef>();
-  for (const scopeRef of [...itemScopes, ...scopeStateScopes]) {
+  const parsedScopeStateScopes = scopeStateScopes.map((scopeRef) => ({
+    accountId: scopeRef.accountId,
+    ...parseMemoryRuntimeScopeKey(scopeRef.scopeKey),
+  }));
+  for (const scopeRef of [...itemScopes, ...parsedScopeStateScopes]) {
     const key = [scopeRef.accountId, scopeRef.scope, scopeRef.scopeId].join("\u0000");
     uniqueScopes.set(key, scopeRef);
   }
@@ -242,11 +259,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
   let memoryMaintenanceTimer: NodeJS.Timeout | undefined;
   let memoryWorker: MemoryWorker | undefined;
+  let mutationWorker: MutationWorker | undefined;
 
   app.addHook("onClose", async () => {
     if (memoryMaintenanceTimer) {
       clearInterval(memoryMaintenanceTimer);
       memoryMaintenanceTimer = undefined;
+    }
+    if (mutationWorker) {
+      await mutationWorker.stop();
+      mutationWorker = undefined;
     }
     if (memoryWorker) {
       await memoryWorker.stop();
@@ -417,6 +439,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let wsBridge: WsBridge | undefined;
   let baseToolRegistry: ToolRegistry | undefined;
   let sessionToolRegistryService: SessionToolRegistryService | undefined;
+  let mutationRuntimeComponents: ReturnType<typeof createDefaultMutationRuntimeComponents> | undefined;
 
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
@@ -455,12 +478,29 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   }
 
   if (options.orchestration && orchestrationContext) {
+    const mutationBridge = createMutationRuntimeJobBridge(database.db, {
+      eventBus: orchestrationContext.eventBus,
+    });
+    mutationRuntimeComponents = createDefaultMutationRuntimeComponents(database.db, {
+      eventBus: orchestrationContext.eventBus,
+      asyncBridge: mutationBridge,
+      masterKey: process.env.APP_SECRETS_MASTER_KEY,
+    });
+
+    mutationWorker = new MutationWorker(database.db, mutationRuntimeComponents.registry, {
+      eventBus: orchestrationContext.eventBus,
+      logger: app.log,
+    });
+    mutationWorker.start();
+
     baseToolRegistry = new ToolRegistry();
     baseToolRegistry.register(new BuiltinToolProvider({
       variableStore: orchestrationContext.variableStore,
       memoryStore: options.enableMemory ? orchestrationContext.memoryStore : undefined,
     }));
-    baseToolRegistry.register(new ResourceToolProvider(database.db));
+    baseToolRegistry.register(new ResourceToolProvider(database.db, {
+      mutationRuntime: mutationRuntimeComponents.runtime,
+    }));
 
     sessionToolRegistryService = new SessionToolRegistryService(database.db, {
       baseRegistry: baseToolRegistry,
@@ -477,6 +517,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         || options.enableMacroCompaction === true
         || options.memoryMaintenance !== undefined
       ),
+      eventBus: orchestrationContext?.eventBus,
+    },
+    chatTransferJobs: {
+      artifactDir: options.chatTransferArtifactDir,
+      importMaxBytes: options.chatImportMaxBytes,
+      exportSyncMaxMessages: options.chatExportSyncMaxMessages,
+      exportArtifactTtlMs: options.chatExportArtifactTtlMs,
+      eventBus: orchestrationContext?.eventBus,
     },
   });
 
@@ -500,6 +548,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       activeOrchestrationContext.eventBus,
       {
         enableAsyncMemoryIngest: options.enableMemory === true && options.enableAsyncMemoryIngest === true,
+        mutationRuntime: mutationRuntimeComponents?.runtime,
       },
     );
 
@@ -531,7 +580,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       const batchSize = maintenance.batchSize;
       const policy = maintenance.policy;
       const dryRun = maintenance.dryRun === true;
-      const memoryJobScheduler = new MemoryJobScheduler();
+      const memoryJobScheduler = new MemoryJobScheduler({
+        eventBus: activeOrchestrationContext.eventBus,
+      });
 
       const enqueueMaintenanceJobs = async () => {
         try {

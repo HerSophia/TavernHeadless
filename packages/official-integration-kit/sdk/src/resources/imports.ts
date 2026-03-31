@@ -1,10 +1,20 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
+import type { ChatTransferFormat } from "./chat-transfer-jobs.js";
 import { readNumber, readOptionalString, readRecord, readString } from "./utils.js";
 
 export type ImportedResource = {
   id: string;
   name: string;
   source: string;
+};
+
+type ImportChatJobFormat = Extract<ChatTransferFormat, "thchat" | "sillytavern_jsonl">;
+
+export type ImportChatJob = {
+  format: ImportChatJobFormat | null;
+  jobId: string;
+  jobKind: "import_chat";
+  status: "pending";
 };
 
 export type ImportedCharacter = {
@@ -31,6 +41,7 @@ export type ImportedChat = {
 export type ImportsResource = {
   character(options: { accountId?: AccountIdHint; createSession?: boolean; payload: Record<string, unknown>; title: string }): Promise<ImportedCharacter>;
   chat(options: { accountId?: AccountIdHint; characterId?: string; data: string; title?: string }): Promise<ImportedChat>;
+  chatJob(options: { accountId?: AccountIdHint; characterId?: string; data: string; title?: string }): Promise<ImportChatJob>;
   preset(options: { accountId?: AccountIdHint; data: Record<string, unknown>; name: string }): Promise<ImportedResource>;
   regex(options: { accountId?: AccountIdHint; data: string; name: string }): Promise<ImportedRegexProfile>;
   worldbook(options: { accountId?: AccountIdHint; data: Record<string, unknown>; name: string }): Promise<ImportedResource>;
@@ -89,6 +100,32 @@ export function createImportsResource(client: TransportClient): ImportsResource 
         skippedLines: readNumber(data?.skipped_lines),
         swipeCount: readNumber(data?.swipe_count),
         title: readString(data?.title, options.title ?? "Imported Chat"),
+      };
+    },
+    async chatJob(options): Promise<ImportChatJob> {
+      const response = await client.fetchJson<Record<string, unknown>>("/import/chat/jobs", {
+        body: {
+          character_id: options.characterId,
+          data: options.data,
+          title: options.title,
+        },
+        headers: buildAccountHeaders(options.accountId),
+        method: "POST",
+      });
+
+      const data = readRecord(readRecord(response.body)?.data);
+      const jobId = readOptionalString(data?.job_id);
+      const status = readOptionalString(data?.status);
+      const jobKind = readOptionalString(data?.job_kind);
+      if (!jobId || status !== "pending" || jobKind !== "import_chat") {
+        throw new Error("Chat import job creation returned an invalid payload");
+      }
+
+      return {
+        format: mapImportChatJobFormat(data?.format),
+        jobId,
+        jobKind,
+        status,
       };
     },
     async preset(options): Promise<ImportedResource> {
@@ -163,4 +200,8 @@ function mapImportedResource(
     name: readString(record?.name, fallbackName),
     source: readString(record?.source, fallbackSource),
   };
+}
+
+function mapImportChatJobFormat(value: unknown): ImportChatJobFormat | null {
+  return value === "thchat" || value === "sillytavern_jsonl" ? value : null;
 }

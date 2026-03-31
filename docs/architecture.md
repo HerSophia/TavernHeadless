@@ -404,6 +404,32 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 - 如果整理 JSON 解析失败，系统会发出 `memory.consolidation_json_parse_failed`，并降级为仅保留 `turnSummary`。
 - 如果事务内记忆持久化失败，系统会发出 `memory.persist_failed`，并回滚整个 commit。
 
+### Background Job Runtime 与高级开发者路由
+
+后台记忆作业、聊天导入导出作业，现已统一进入 `Background Job Runtime`。它负责 `runtime_job` / `runtime_scope_state` 持久化、lease、retry、dead letter、scope 串行和进度记录。
+
+内部实现上，Runtime 现在统一由 `RuntimeJobCatalog`、`RuntimeJobScheduler`、`RuntimeWorker`、`RuntimeRevisionGuard`、`RuntimeJobQueryService` 组成。路由层保留 `memory jobs / memory scopes / chat transfer jobs` 这一层业务投影，但底层查询、取消、重试已经改为复用通用 Runtime 管理服务。
+
+Runtime 还会发出统一的 `runtime.job_*` 生命周期事件，例如 `runtime.job_enqueued`、`runtime.job_started`、`runtime.job_progress_updated`、`runtime.job_succeeded`、`runtime.job_retry_scheduled`、`runtime.job_dead_lettered`、`runtime.job_cancelled`。这些事件用于统一观测，不改变现有业务事件（例如 `memory.consolidated`）的保留策略。
+
+需要特别说明的是：与这些后台作业对应的查询、重试、取消、文件下载路由，属于**高级开发者特性**。它们主要服务于开发调试、运维排障、自动化脚本和平台集成，不是普通聊天主链路的一部分。聊天主生成链、turn commit 同步真相边界，以及当前 `GenerationCoordinator`，都不属于这个 Runtime 的接入范围。
+
+### Mutation Runtime
+
+`Mutation Runtime` 现在已经先落在 service 层，用来统一变更 envelope、apply phase、durability、replay safety 和 conflict policy。它和 `Background Job Runtime` 是两层不同的能力：
+
+- `Mutation Runtime` 管变更语义与接入入口。
+- `Background Job Runtime` 管异步调度、lease、retry 和 durable job 执行。
+
+当前已经接入 `Mutation Runtime` 的写路径包括：
+
+- `TurnCommitService` / `VariableCommitService` 的 commit-phase 变量 flush 与 `page -> floor` promotion
+- `VariableService` 的 inline 变量 upsert / batch upsert / delete
+- `LlmProfileService`、`LlmInstanceService` 的配置写入
+- `ResourceToolProvider` 的资源类 tool 写入
+
+此外，`Mutation Runtime.enqueueAsync()` 已经可以桥接到现有 `runtime_job`，但这条能力当前仍是内部能力，没有新增公共 `/runtime/mutations` 路由，也没有改变现有变量、配置、资源写入默认同步生效的策略。
+
 ---
 
 ## 7. 一次完整回合的流程

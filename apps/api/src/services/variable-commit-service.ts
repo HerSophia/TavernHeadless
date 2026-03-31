@@ -1,50 +1,32 @@
-import { and, asc, eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
-import type { VariableEntry } from "@tavern/shared";
-import type { BufferedToolVariableMutation } from "@tavern/core";
+import type { BufferedToolVariableMutation, CoreEventBus } from "@tavern/core"
 
-import type { DbExecutor } from "../db/client.js";
-import { messagePages, variables } from "../db/schema.js";
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js"
+import type { AppDb, DbExecutor } from "../db/client.js"
+import { MutationApplierRegistry } from "./mutation-applier-registry.js"
+import { DefaultMutationBatch } from "./mutation-batch.js"
+import type { MutationBatch, MutationRuntime } from "./runtime-mutation-types.js"
+import {
+  VARIABLE_MUTATION_KINDS,
+  registerVariableMutationAppliers,
+  type VariableCommitInput,
+  type VariableCommitResult,
+  type VariablePromotePageToFloorMutationPayload,
+  type VariablePromotionPolicy,
+  type VariableSetMutationPayload,
+} from "./variable-mutation-applier.js"
 
-type VariableRow = typeof variables.$inferSelect;
+export type { VariableCommitInput, VariableCommitResult, VariablePromotionPolicy }
 
-export type VariablePromotionPolicy = "replace" | "ifAbsent";
-
-export interface VariableCommitInput {
-  pageId?: string;
-  floorId: string;
-  sessionId: string;
-  policy?: VariablePromotionPolicy;
-  committedAt?: number;
-}
-
-export interface VariableCommitResult {
-  pageId?: string;
-  floorId: string;
-  sessionId: string;
-  fromScope: "page";
-  toScope: "floor";
-  policy: VariablePromotionPolicy;
-  scannedCount: number;
-  promotedCount: number;
-  skippedCount: number;
-  promotedVariables: VariableEntry[];
-}
-
-function toVariableEntry(row: VariableRow): VariableEntry {
-  return {
-    id: row.id,
-    scope: row.scope,
-    scopeId: row.scopeId,
-    key: row.key,
-    value: JSON.parse(row.valueJson),
-    updatedAt: row.updatedAt,
-  };
+export interface VariableCommitServiceOptions {
+  db?: AppDb
+  mutationRuntime?: MutationRuntime
+  eventBus?: CoreEventBus
+  now?: () => number
 }
 
 function createEmptyResult(
   input: VariableCommitInput,
-  policy: VariablePromotionPolicy
+  policy: VariablePromotionPolicy,
 ): VariableCommitResult {
   return {
     pageId: input.pageId,
@@ -57,146 +39,149 @@ function createEmptyResult(
     promotedCount: 0,
     skippedCount: 0,
     promotedVariables: [],
-  };
+  }
 }
 
-function buildPromotedRow(args: {
-  sourceRow: VariableRow;
-  floorId: string;
-  committedAt: number;
-  existingId?: string;
-}): VariableRow {
-  return {
-    id: args.existingId ?? nanoid(),
-    accountId: args.sourceRow.accountId,
-    scope: "floor",
-    scopeId: args.floorId,
-    key: args.sourceRow.key,
-    valueJson: args.sourceRow.valueJson,
-    updatedAt: args.committedAt,
-  };
+function buildBufferedMutationEnvelopeId(mutation: BufferedToolVariableMutation): string {
+  return `variable-set:${mutation.runId}:${mutation.generationAttemptNo}:${mutation.scope}:${mutation.scopeId}:${mutation.key}`
 }
 
-function buildBufferedRow(args: {
-  mutation: BufferedToolVariableMutation;
-  committedAt: number;
-}): typeof variables.$inferInsert {
-  return {
-    id: nanoid(),
-    ...(args.mutation.accountId ? { accountId: args.mutation.accountId } : {}),
-    scope: args.mutation.scope,
-    scopeId: args.mutation.scopeId,
-    key: args.mutation.key,
-    valueJson: JSON.stringify(args.mutation.value),
-    updatedAt: args.committedAt,
-  };
+function buildPromotionEnvelopeId(input: VariableCommitInput): string {
+  return `variable-promote:${input.floorId}:${input.pageId ?? "none"}`
 }
 
 export class VariableCommitService {
+  private readonly mutationRuntime?: MutationRuntime
+  private readonly registry: MutationApplierRegistry
+  private readonly eventBus?: CoreEventBus
+  private readonly now: () => number
+  private readonly db?: AppDb
+
+  constructor(options: VariableCommitServiceOptions = {}) {
+    this.mutationRuntime = options.mutationRuntime
+    this.registry = new MutationApplierRegistry()
+    registerVariableMutationAppliers(this.registry)
+    this.eventBus = options.eventBus
+    this.now = options.now ?? Date.now
+    this.db = options.db
+  }
+
+  beginBatch(): MutationBatch {
+    if (this.mutationRuntime) {
+      return this.mutationRuntime.beginBatch()
+    }
+
+    if (!this.db) {
+      throw new Error("VariableCommitService.beginBatch requires an AppDb or mutationRuntime")
+    }
+
+    return new DefaultMutationBatch(this.db, this.registry, {
+      eventBus: this.eventBus,
+      now: this.now,
+    })
+  }
+
+  stageBufferedMutations(
+    batch: MutationBatch,
+    args: {
+      mutations: BufferedToolVariableMutation[] | undefined
+      committedAt: number
+      accountId?: string
+    },
+  ): void {
+    for (const mutation of args.mutations ?? []) {
+      const payload: VariableSetMutationPayload = {
+        items: [{
+          scope: mutation.scope,
+          scopeId: mutation.scopeId,
+          key: mutation.key,
+          valueJson: JSON.stringify(mutation.value),
+          updatedAt: args.committedAt,
+          ...(mutation.accountId ? { accountId: mutation.accountId } : {}),
+        }],
+        emitEvents: false,
+      }
+
+      batch.stage({
+        id: buildBufferedMutationEnvelopeId(mutation),
+        kind: VARIABLE_MUTATION_KINDS.set,
+        source: "tool",
+        accountId: mutation.accountId ?? args.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID,
+        scopeType: "variable",
+        scopeKey: `${mutation.scope}:${mutation.scopeId}`,
+        applyPhase: "commit",
+        durability: "transactional",
+        replaySafety: "safe",
+        conflictPolicy: "replace",
+        payload,
+        createdAt: args.committedAt,
+      })
+    }
+  }
+
+  stagePromotion(batch: MutationBatch, input: VariableCommitInput): void {
+    const payload: VariablePromotePageToFloorMutationPayload = {
+      accountId: input.accountId,
+      pageId: input.pageId,
+      floorId: input.floorId,
+      sessionId: input.sessionId,
+      policy: input.policy,
+      committedAt: input.committedAt,
+    }
+    const conflictPolicy = input.policy === "ifAbsent"
+      ? "if_absent"
+      : "replace"
+
+    batch.stage({
+      id: buildPromotionEnvelopeId(input),
+      kind: VARIABLE_MUTATION_KINDS.promotePageToFloor,
+      source: "system",
+      accountId: input.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionId: input.sessionId,
+      floorId: input.floorId,
+      pageId: input.pageId,
+      scopeType: "variable",
+      scopeKey: `floor:${input.floorId}`,
+      applyPhase: "commit",
+      durability: "transactional",
+      replaySafety: "safe",
+      conflictPolicy,
+      payload,
+      createdAt: input.committedAt ?? this.now(),
+    })
+  }
+
   flushBufferedMutations(
     mutations: BufferedToolVariableMutation[] | undefined,
     tx: DbExecutor,
     committedAt: number,
+    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID,
   ): void {
-    for (const mutation of mutations ?? []) {
-      const row = buildBufferedRow({ mutation, committedAt });
-      tx.insert(variables)
-        .values(row)
-        .onConflictDoUpdate({
-          target: [variables.accountId, variables.scope, variables.scopeId, variables.key],
-          set: { valueJson: row.valueJson, updatedAt: row.updatedAt },
-        })
-        .run();
-    }
+    const batch = this.createTransactionBatch(tx)
+    this.stageBufferedMutations(batch, {
+      mutations,
+      committedAt,
+      accountId,
+    })
+    batch.applyInTransaction(tx)
   }
 
   promoteAll(input: VariableCommitInput, tx: DbExecutor): VariableCommitResult {
-    const policy = input.policy ?? "replace";
-    if (!input.pageId) {
-      return createEmptyResult(input, policy);
+    const batch = this.createTransactionBatch(tx)
+    this.stagePromotion(batch, input)
+    const applied = batch.applyInTransaction(tx)
+    const result = applied.mutations[0]?.result as VariableCommitResult | undefined
+    return result ?? createEmptyResult(input, input.policy ?? "replace")
+  }
+
+  private createTransactionBatch(tx: DbExecutor): MutationBatch {
+    if (this.mutationRuntime) {
+      return this.mutationRuntime.beginBatch()
     }
 
-    const inputPage = tx
-      .select({ id: messagePages.id })
-      .from(messagePages)
-      .where(
-        and(
-          eq(messagePages.id, input.pageId),
-          eq(messagePages.floorId, input.floorId),
-          eq(messagePages.pageKind, "input")
-        )
-      )
-      .limit(1)
-      .all()[0];
-
-    if (!inputPage) {
-      throw new Error(
-        `Input page '${input.pageId}' was not found on floor '${input.floorId}'`
-      );
-    }
-
-    const sourceRows = tx
-      .select()
-      .from(variables)
-      .where(and(eq(variables.scope, "page"), eq(variables.scopeId, input.pageId)))
-      .orderBy(asc(variables.key), asc(variables.id))
-      .all();
-
-    if (sourceRows.length === 0) {
-      return createEmptyResult(input, policy);
-    }
-
-    const targetRows = tx
-      .select()
-      .from(variables)
-      .where(and(eq(variables.scope, "floor"), eq(variables.scopeId, input.floorId)))
-      .all();
-
-    const targetsByKey = new Map(targetRows.map((row) => [row.key, row]));
-    const promotedVariables: VariableEntry[] = [];
-    let skippedCount = 0;
-    const committedAt = input.committedAt ?? Date.now();
-
-    for (const sourceRow of sourceRows) {
-      const existingTarget = targetsByKey.get(sourceRow.key);
-      if (policy === "ifAbsent" && existingTarget) {
-        skippedCount += 1;
-        continue;
-      }
-
-      const promotedRow = buildPromotedRow({
-        sourceRow,
-        floorId: input.floorId,
-        committedAt,
-        existingId: existingTarget?.id,
-      });
-
-      tx.insert(variables)
-        .values(promotedRow)
-        .onConflictDoUpdate({
-          target: [variables.accountId, variables.scope, variables.scopeId, variables.key],
-          set: {
-            valueJson: promotedRow.valueJson,
-            updatedAt: promotedRow.updatedAt,
-          },
-        })
-        .run();
-
-      targetsByKey.set(sourceRow.key, promotedRow);
-      promotedVariables.push(toVariableEntry(promotedRow));
-    }
-
-    return {
-      pageId: input.pageId,
-      floorId: input.floorId,
-      sessionId: input.sessionId,
-      fromScope: "page",
-      toScope: "floor",
-      policy,
-      scannedCount: sourceRows.length,
-      promotedCount: promotedVariables.length,
-      skippedCount,
-      promotedVariables,
-    };
+    return new DefaultMutationBatch(tx as unknown as AppDb, this.registry, {
+      eventBus: this.eventBus,
+      now: this.now,
+    })
   }
 }

@@ -53,6 +53,51 @@ describe("sdk integration and operations resources", () => {
     expect(headers.get("content-type")).toBeNull();
   });
 
+  it("creates async chat export jobs and preserves request fields", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          data: {
+            job_id: "ctj-export-1",
+            status: "pending",
+            job_kind: "export_chat",
+            format: "st_jsonl",
+            requested_session_id: "session-1",
+          },
+        },
+        202,
+      ),
+    );
+
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const exportsResource = createExportsResource(transport);
+
+    await expect(
+      exportsResource.chatJob({
+        accountId: "acc-1",
+        format: "st_jsonl",
+        includeMemories: false,
+        includeVariables: false,
+        sessionId: "session 1",
+      }),
+    ).resolves.toEqual({
+      format: "st_jsonl",
+      jobId: "ctj-export-1",
+      jobKind: "export_chat",
+      requestedSessionId: "session-1",
+      status: "pending",
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe("http://localhost:3000/export/chat/session%201/jobs");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify({
+      format: "st_jsonl",
+      include_memories: false,
+      include_variables: false,
+    }));
+  });
+
   it("returns raw responses for preset, worldbook, regex, and character exports", async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()

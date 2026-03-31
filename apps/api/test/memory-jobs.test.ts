@@ -5,10 +5,18 @@ import { nanoid } from "nanoid";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../src/db/client.js";
-import { accounts, memoryEdges, memoryItems, memoryJobs, memoryScopeStates } from "../src/db/schema.js";
+import { accounts, memoryEdges, memoryItems, runtimeJobs, runtimeScopeStates } from "../src/db/schema.js";
 import { registerAuth } from "../src/plugins/auth.js";
 import { registerMemoryJobRoutes } from "../src/routes/memory-jobs.js";
 import { registerMemoryRoutes } from "../src/routes/memories.js";
+import {
+  MEMORY_RUNTIME_SCOPE_TYPE,
+  buildMemoryRuntimeScopeKey,
+  fromMemoryRuntimeJobType,
+  parseMemoryRuntimeScopeKey,
+  readMemoryRuntimeScopeMetadata,
+  toMemoryRuntimeJobType,
+} from "../src/services/memory-runtime-job-definitions.js";
 
 async function seedDefaultAccount(database: DatabaseConnection, now: number): Promise<void> {
   await database.db.insert(accounts).values({
@@ -19,6 +27,34 @@ async function seedDefaultAccount(database: DatabaseConnection, now: number): Pr
   }).onConflictDoNothing().run();
 }
 
+function toLegacyMemoryJob(row: typeof runtimeJobs.$inferSelect) {
+  const scopeRef = parseMemoryRuntimeScopeKey(row.scopeKey);
+  return {
+    ...row,
+    scope: scopeRef.scope,
+    scopeId: scopeRef.scopeId,
+    jobType: fromMemoryRuntimeJobType(row.jobType),
+  };
+}
+
+function toRuntimeScopeState(scope: "global" | "chat" | "floor", scopeId: string, now: number, lastProcessedFloorNo: number | null, lastCompactionAt: number | null) {
+  return {
+    accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+    scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+    scopeKey: buildMemoryRuntimeScopeKey(scope, scopeId),
+    revision: 0,
+    leaseOwner: null,
+    leaseUntil: null,
+    lastProcessedAt: now,
+    lastSuccessJobId: null,
+    metadataJson: JSON.stringify({
+      lastProcessedFloorNo,
+      lastCompactionAt,
+    }),
+    updatedAt: now,
+  } as const;
+}
+
 describe("memory admin routes", () => {
   let app: FastifyInstance;
   let database: DatabaseConnection;
@@ -27,6 +63,7 @@ describe("memory admin routes", () => {
     app = Fastify({ logger: false });
     database = createDatabase(":memory:");
     await registerAuth(app, { mode: "off" }, {
+      db: database.db,
       accountMode: "single",
       defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
     });
@@ -42,46 +79,70 @@ describe("memory admin routes", () => {
     await seedDefaultAccount(database, now);
     await registerMemoryJobRoutes(app, database, { enableBackgroundWorker: true });
 
-    await database.db.insert(memoryJobs).values([
+    await database.db.insert(runtimeJobs).values([
       {
         id: "job-dead",
+        jobType: toMemoryRuntimeJobType("maintenance"),
         accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-        scope: "chat",
-        scopeId: "session-1",
-        jobType: "maintenance",
-        status: "dead_letter",
+        scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+        scopeKey: buildMemoryRuntimeScopeKey("chat", "session-1"),
+        sessionId: null,
         floorId: null,
-        basedOnRevision: 3,
+        pageId: null,
+        status: "dead_letter",
+        phase: null,
         payloadJson: JSON.stringify({ scope: "chat", scopeId: "session-1" }),
+        stateJson: null,
+        resultJson: null,
         attemptCount: 5,
         maxAttempts: 5,
         availableAt: now,
+        startedAt: null,
+        finishedAt: now,
         leaseOwner: null,
         leaseUntil: null,
+        basedOnRevision: 3,
+        dedupeKey: null,
+        progressCurrent: 0,
+        progressTotal: null,
+        progressMessage: null,
         lastError: "boom",
+        lastErrorCode: null,
+        lastErrorClass: "Error",
         createdAt: now,
         updatedAt: now,
-        finishedAt: now,
       },
       {
         id: "job-pending",
+        jobType: toMemoryRuntimeJobType("rebuild_scope"),
         accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-        scope: "chat",
-        scopeId: "session-2",
-        jobType: "rebuild_scope",
-        status: "pending",
+        scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+        scopeKey: buildMemoryRuntimeScopeKey("chat", "session-2"),
+        sessionId: null,
         floorId: null,
-        basedOnRevision: null,
+        pageId: null,
+        status: "pending",
+        phase: null,
         payloadJson: JSON.stringify({ scope: "chat", scopeId: "session-2" }),
+        stateJson: null,
+        resultJson: null,
         attemptCount: 0,
         maxAttempts: 5,
         availableAt: now,
+        startedAt: null,
+        finishedAt: null,
         leaseOwner: null,
         leaseUntil: null,
+        basedOnRevision: null,
+        dedupeKey: null,
+        progressCurrent: 0,
+        progressTotal: null,
+        progressMessage: null,
         lastError: null,
+        lastErrorCode: null,
+        lastErrorClass: null,
         createdAt: now,
         updatedAt: now,
-        finishedAt: null,
       },
     ]);
 
@@ -108,7 +169,8 @@ describe("memory admin routes", () => {
     });
     expect(cancelResponse.statusCode, cancelResponse.body).toBe(200);
 
-    const [retried] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.id, "job-dead"));
+    const [retriedRow] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, "job-dead"));
+    const retried = toLegacyMemoryJob(retriedRow!);
     expect(retried).toMatchObject({
       status: "retry_waiting",
       attemptCount: 0,
@@ -117,7 +179,8 @@ describe("memory admin routes", () => {
       finishedAt: null,
     });
 
-    const [cancelled] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.id, "job-pending"));
+    const [cancelledRow] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, "job-pending"));
+    const cancelled = toLegacyMemoryJob(cancelledRow!);
     expect(cancelled).toMatchObject({
       status: "cancelled",
       leaseOwner: null,
@@ -244,17 +307,7 @@ describe("memory admin routes", () => {
       })),
     );
 
-    await database.db.insert(memoryScopeStates).values({
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      scope: "chat",
-      scopeId: sessionId,
-      revision: 0,
-      leaseOwner: null,
-      leaseUntil: null,
-      lastProcessedFloorNo: 7,
-      lastCompactionAt: null,
-      updatedAt: now,
-    });
+    await database.db.insert(runtimeScopeStates).values(toRuntimeScopeState("chat", sessionId, now, 7, null));
 
     const rebuildResponse = await app.inject({
       method: "POST",
@@ -275,10 +328,10 @@ describe("memory admin routes", () => {
     expect(compactPayload.data.source_micro_ids).toEqual(["scope-micro-1", "scope-micro-2", "scope-micro-3"]);
     expect(compactPayload.data.reason).toBe("forced");
 
-    const rebuildJobs = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "rebuild_scope"));
+    const rebuildJobs = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.jobType, toMemoryRuntimeJobType("rebuild_scope")));
     expect(rebuildJobs).toHaveLength(1);
 
-    const compactJobs = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "compact_macro"));
+    const compactJobs = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.jobType, toMemoryRuntimeJobType("compact_macro")));
     expect(compactJobs).toHaveLength(1);
     expect(JSON.parse(compactJobs[0]!.payloadJson)).toEqual(expect.objectContaining({
       force: true,
@@ -320,17 +373,7 @@ describe("memory admin routes", () => {
       })),
     );
 
-    await database.db.insert(memoryScopeStates).values({
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      scope: "floor",
-      scopeId: floorId,
-      revision: 0,
-      leaseOwner: null,
-      leaseUntil: null,
-      lastProcessedFloorNo: 7,
-      lastCompactionAt: null,
-      updatedAt: now,
-    });
+    await database.db.insert(runtimeScopeStates).values(toRuntimeScopeState("floor", floorId, now, 7, null));
 
     const rebuildResponse = await app.inject({
       method: "POST",
@@ -346,27 +389,29 @@ describe("memory admin routes", () => {
     });
     expect(compactResponse.statusCode, compactResponse.body).toBe(200);
 
-    const [rebuildJob] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "rebuild_scope"));
+    const [rebuildRow] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.jobType, toMemoryRuntimeJobType("rebuild_scope")));
+    const rebuildJob = toLegacyMemoryJob(rebuildRow!);
     expect(rebuildJob).toBeDefined();
-    expect(JSON.parse(rebuildJob!.payloadJson)).toEqual(expect.objectContaining({
+    expect(JSON.parse(rebuildRow!.payloadJson)).toEqual(expect.objectContaining({
       scope: "floor",
       scopeId: floorId,
       forceCompaction: true,
     }));
 
-    const [compactJob] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "compact_macro"));
+    const [compactRow] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.jobType, toMemoryRuntimeJobType("compact_macro")));
+    const compactJob = toLegacyMemoryJob(compactRow!);
     expect(compactJob).toBeDefined();
     expect(compactJob).toMatchObject({
       scope: "floor",
       scopeId: floorId,
       status: "pending",
     });
-    expect(JSON.parse(compactJob!.payloadJson)).toEqual(expect.objectContaining({
+    expect(JSON.parse(compactRow!.payloadJson)).toEqual(expect.objectContaining({
       scope: "floor",
       scopeId: floorId,
       sourceMicroIds: ["floor-micro-1", "floor-micro-2", "floor-micro-3"],
     }));
-    expect(JSON.parse(compactJob!.payloadJson)).not.toHaveProperty("sessionId");
+    expect(JSON.parse(compactRow!.payloadJson)).not.toHaveProperty("sessionId");
   });
 
   it("keeps rebuild and compaction endpoints generic for global scopes", async () => {
@@ -400,17 +445,7 @@ describe("memory admin routes", () => {
       })),
     );
 
-    await database.db.insert(memoryScopeStates).values({
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      scope: "global",
-      scopeId: DEFAULT_ADMIN_ACCOUNT_ID,
-      revision: 0,
-      leaseOwner: null,
-      leaseUntil: null,
-      lastProcessedFloorNo: 16,
-      lastCompactionAt: null,
-      updatedAt: now,
-    });
+    await database.db.insert(runtimeScopeStates).values(toRuntimeScopeState("global", DEFAULT_ADMIN_ACCOUNT_ID, now, 16, null));
 
     const rebuildResponse = await app.inject({
       method: "POST",
@@ -426,26 +461,27 @@ describe("memory admin routes", () => {
     });
     expect(compactResponse.statusCode, compactResponse.body).toBe(200);
 
-    const [rebuildJob] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "rebuild_scope"));
-    expect(rebuildJob).toBeDefined();
-    expect(JSON.parse(rebuildJob!.payloadJson)).toEqual(expect.objectContaining({
+    const [rebuildRow] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.jobType, toMemoryRuntimeJobType("rebuild_scope")));
+    expect(rebuildRow).toBeDefined();
+    expect(JSON.parse(rebuildRow!.payloadJson)).toEqual(expect.objectContaining({
       scope: "global",
       scopeId: DEFAULT_ADMIN_ACCOUNT_ID,
       forceCompaction: true,
     }));
 
-    const [compactJob] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "compact_macro"));
+    const [compactRow] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.jobType, toMemoryRuntimeJobType("compact_macro")));
+    const compactJob = toLegacyMemoryJob(compactRow!);
     expect(compactJob).toBeDefined();
     expect(compactJob).toMatchObject({
       scope: "global",
       scopeId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "pending",
     });
-    expect(JSON.parse(compactJob!.payloadJson)).toEqual(expect.objectContaining({
+    expect(JSON.parse(compactRow!.payloadJson)).toEqual(expect.objectContaining({
       scope: "global",
       scopeId: DEFAULT_ADMIN_ACCOUNT_ID,
       sourceMicroIds: ["global-micro-1", "global-micro-2", "global-micro-3"],
     }));
-    expect(JSON.parse(compactJob!.payloadJson)).not.toHaveProperty("sessionId");
+    expect(JSON.parse(compactRow!.payloadJson)).not.toHaveProperty("sessionId");
   });
 });

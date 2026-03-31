@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { accounts, memoryItems, memoryScopeStates } from "../src/db/schema";
+import { accounts, memoryItems, runtimeScopeStates } from "../src/db/schema";
 import { MemoryMaintenanceService } from "../src/services/memory-maintenance-service";
+import { MEMORY_RUNTIME_SCOPE_TYPE, buildMemoryRuntimeScopeKey } from "../src/services/memory-runtime-job-definitions.js";
 import { buildApp, listMemoryMaintenanceScopes } from "../src/app";
 
 function toContentJson(text: string): string {
@@ -208,27 +209,35 @@ describe("MemoryMaintenanceService", () => {
       updatedAt: now,
     });
 
-    await database.db.insert(memoryScopeStates).values([
+    await database.db.insert(runtimeScopeStates).values([
       {
         accountId: "maintenance-account",
-        scope: "chat",
-        scopeId: "session-1",
+        scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+        scopeKey: buildMemoryRuntimeScopeKey("chat", "session-1"),
         revision: 1,
         leaseOwner: null,
         leaseUntil: null,
-        lastProcessedFloorNo: 4,
-        lastCompactionAt: null,
+        lastProcessedAt: now,
+        lastSuccessJobId: null,
+        metadataJson: JSON.stringify({
+          lastProcessedFloorNo: 4,
+          lastCompactionAt: null,
+        }),
         updatedAt: now,
       },
       {
         accountId: "maintenance-account",
-        scope: "global",
-        scopeId: "maintenance-account",
+        scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+        scopeKey: buildMemoryRuntimeScopeKey("global", "maintenance-account"),
         revision: 2,
         leaseOwner: null,
         leaseUntil: null,
-        lastProcessedFloorNo: 8,
-        lastCompactionAt: now - 1_000,
+        lastProcessedAt: now,
+        lastSuccessJobId: null,
+        metadataJson: JSON.stringify({
+          lastProcessedFloorNo: 8,
+          lastCompactionAt: now - 1_000,
+        }),
         updatedAt: now,
       },
     ]);

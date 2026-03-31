@@ -16,8 +16,8 @@ import {
   accounts,
   floors,
   memoryEdges,
-  memoryJobs,
   memoryItems,
+  runtimeJobs,
   messagePages,
   messages,
   promptSnapshots,
@@ -28,6 +28,11 @@ import {
 } from "../../db/schema.js";
 import { ChatMessagePersistence } from "../chat-message-persistence.js";
 import { TurnCommitService } from "../turn-commit-service.js";
+import {
+  MEMORY_RUNTIME_SCOPE_TYPE,
+  buildMemoryRuntimeScopeKey,
+  toMemoryRuntimeJobType,
+} from "../memory-runtime-job-definitions.js";
 
 const DEFAULT_ACCOUNT_ID = "default-admin";
 
@@ -665,19 +670,20 @@ describe("TurnCommitService", () => {
     expect(result.finalState).toBe("committed");
     expect(await database.db.select().from(memoryItems)).toEqual([]);
 
-    const [job] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.floorId, floorId));
+    const [job] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.floorId, floorId));
     expect(job).toMatchObject({
       id: `memory-job:ingest_turn:${floorId}`,
+      jobType: toMemoryRuntimeJobType("ingest_turn"),
       accountId: DEFAULT_ACCOUNT_ID,
-      scope: "chat",
-      scopeId: sessionId,
-      jobType: "ingest_turn",
+      scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+      scopeKey: buildMemoryRuntimeScopeKey("chat", sessionId),
       status: "pending",
       floorId,
       basedOnRevision: null,
       attemptCount: 0,
       maxAttempts: 5,
       availableAt: committedAt,
+      progressCurrent: 0,
       leaseOwner: null,
       leaseUntil: null,
     });

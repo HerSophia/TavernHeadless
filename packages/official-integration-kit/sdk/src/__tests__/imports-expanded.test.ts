@@ -91,4 +91,43 @@ describe("sdk imports expanded resource", () => {
       title: "Imported Chat",
     }));
   });
+
+  it("creates async chat import jobs and preserves compatibility request fields", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          data: {
+            job_id: "ctj-import-1",
+            status: "pending",
+            job_kind: "import_chat",
+            format: "sillytavern_jsonl",
+          },
+        },
+        202,
+      ),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(
+      client.imports.chatJob({
+        characterId: "char-1",
+        data: "line-1\nline-2",
+        title: "Imported Chat",
+      }),
+    ).resolves.toEqual({
+      format: "sillytavern_jsonl",
+      jobId: "ctj-import-1",
+      jobKind: "import_chat",
+      status: "pending",
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("http://localhost:3000/import/chat/jobs");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify({
+      character_id: "char-1",
+      data: "line-1\nline-2",
+      title: "Imported Chat",
+    }));
+  });
 });

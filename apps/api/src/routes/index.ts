@@ -12,6 +12,7 @@ import { registerMessageRoutes } from "./messages";
 import { registerWorldbookEntryRoutes } from "./worldbook-entries";
 import { registerPresetEntryRoutes } from "./preset-entries";
 import { registerMessagePageRoutes } from "./pages";
+import { registerChatTransferJobRoutes, type ChatTransferJobRoutesOptions } from "./chat-transfer-jobs";
 import { registerLlmProfileRoutes } from "./llm-profiles";
 import { registerLlmInstanceRoutes } from "./llm-instances";
 import { registerSessionRoutes } from "./sessions";
@@ -27,6 +28,7 @@ export interface CrudRoutesOptions {
   variableEventBus?: CoreEventBus;
   sessionToolRegistryService?: SessionToolRegistryService;
   memoryJobs?: MemoryJobRoutesOptions;
+  chatTransferJobs?: ChatTransferJobRoutesOptions & { importMaxBytes?: number; exportSyncMaxMessages?: number; exportArtifactTtlMs?: number };
 }
 
 export async function registerCrudRoutes(
@@ -47,12 +49,13 @@ export async function registerCrudRoutes(
   await registerVariableRoutes(app, connection, { eventBus: options.variableEventBus });
   await registerMemoryRoutes(app, connection);
   await registerMemoryJobRoutes(app, connection, options.memoryJobs);
-  await registerImportRoutes(app, connection);
+  await registerImportRoutes(app, connection, options.chatTransferJobs);
   await registerLlmProfileRoutes(app, connection);
   await registerLlmInstanceRoutes(app, connection);
+  await registerChatTransferJobRoutes(app, connection, options.chatTransferJobs);
   await registerWorldbookEntryRoutes(app, connection);
   await registerPresetEntryRoutes(app, connection);
   await registerToolRoutes(app, connection);
   await registerMcpConfigRoutes(app, connection);
-  await registerExportRoutes(app, connection);
+  await registerExportRoutes(app, connection, options.chatTransferJobs);
 }

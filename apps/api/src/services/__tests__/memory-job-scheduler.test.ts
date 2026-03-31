@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { nanoid } from "nanoid";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
-import { accounts, floors, sessions, memoryJobs } from "../../db/schema.js";
+import { accounts, floors, runtimeJobs, sessions } from "../../db/schema.js";
 import { MemoryJobScheduler } from "../memory-job-scheduler.js";
+import {
+  MEMORY_RUNTIME_SCOPE_TYPE,
+  buildMemoryRuntimeScopeKey,
+  fromMemoryRuntimeJobType,
+  parseMemoryRuntimeScopeKey,
+} from "../memory-runtime-job-definitions.js";
 
 const DEFAULT_ACCOUNT_ID = "default-admin";
 
@@ -43,6 +49,16 @@ async function seedFloor(database: DatabaseConnection, sessionId: string, floorI
     createdAt: now,
     updatedAt: now,
   });
+}
+
+function toLegacyMemoryJob(row: typeof runtimeJobs.$inferSelect) {
+  const scopeRef = parseMemoryRuntimeScopeKey(row.scopeKey);
+  return {
+    ...row,
+    jobType: fromMemoryRuntimeJobType(row.jobType),
+    scope: scopeRef.scope,
+    scopeId: scopeRef.scopeId,
+  };
 }
 
 describe("MemoryJobScheduler", () => {
@@ -103,9 +119,12 @@ describe("MemoryJobScheduler", () => {
       created: false,
     });
 
-    const rows = await database.db.select().from(memoryJobs);
+    const rows = await database.db.select().from(runtimeJobs).where(and(
+      eq(runtimeJobs.scopeType, MEMORY_RUNTIME_SCOPE_TYPE),
+      eq(runtimeJobs.scopeKey, buildMemoryRuntimeScopeKey("chat", sessionId)),
+    ));
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
+    expect(toLegacyMemoryJob(rows[0]!)).toMatchObject({
       id: `memory-job:ingest_turn:${floorId}`,
       floorId,
       status: "pending",
@@ -162,7 +181,7 @@ describe("MemoryJobScheduler", () => {
       created: false,
     });
 
-    const rows = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "compact_macro"));
+    const rows = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.jobType, "memory.compact_macro"));
     expect(rows).toHaveLength(1);
     expect(JSON.parse(rows[0]!.payloadJson)).toEqual(expect.objectContaining({
       sourceMicroIds: ["micro-1", "micro-2", "micro-3"],

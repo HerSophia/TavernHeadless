@@ -1226,6 +1226,10 @@
                           "name": {
                             "type": "string"
                           },
+                          "revision": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
                           "source": {
                             "type": "string"
                           },
@@ -1246,6 +1250,7 @@
                           "name",
                           "source",
                           "status",
+                          "revision",
                           "latest_version_no",
                           "deleted_at",
                           "created_at",
@@ -1359,6 +1364,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -1376,17 +1398,27 @@
                         "id": {
                           "type": "string"
                         },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "status": {
                           "enum": [
                             "deleted"
                           ],
                           "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
                         }
                       },
                       "required": [
                         "id",
                         "status",
-                        "deleted_at"
+                        "deleted_at",
+                        "updated_at",
+                        "revision"
                       ],
                       "type": "object"
                     }
@@ -1400,7 +1432,106 @@
             },
             "description": "Default Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1533,6 +1664,10 @@
                         "name": {
                           "type": "string"
                         },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "source": {
                           "type": "string"
                         },
@@ -1553,6 +1688,7 @@
                         "name",
                         "source",
                         "status",
+                        "revision",
                         "latest_version_no",
                         "deleted_at",
                         "created_at",
@@ -1625,6 +1761,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -1641,6 +1794,10 @@
                         "id": {
                           "type": "string"
                         },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "status": {
                           "enum": [
                             "active"
@@ -1656,7 +1813,8 @@
                         "id",
                         "status",
                         "deleted_at",
-                        "updated_at"
+                        "updated_at",
+                        "revision"
                       ],
                       "type": "object"
                     }
@@ -1670,7 +1828,106 @@
             },
             "description": "Default Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1950,6 +2207,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
                   "snapshot": {
                     "additionalProperties": true,
                     "properties": {
@@ -1997,6 +2258,10 @@
                         "id": {
                           "type": "string"
                         },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "snapshot": {},
                         "version_no": {
                           "minimum": 1,
@@ -2009,7 +2274,8 @@
                         "version_no",
                         "content_hash",
                         "snapshot",
-                        "created_at"
+                        "created_at",
+                        "revision"
                       ],
                       "type": "object"
                     }
@@ -2121,6 +2387,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Create character version",
@@ -2152,6 +2451,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "content": {
@@ -2175,6 +2491,10 @@
                         "id": {
                           "type": "string"
                         },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "rolled_back_from_version_id": {
                           "type": "string"
                         },
@@ -2191,6 +2511,7 @@
                         "content_hash",
                         "snapshot",
                         "created_at",
+                        "revision",
                         "rolled_back_from_version_id"
                       ],
                       "type": "object"
@@ -2303,11 +2624,1314 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Rollback character to target version",
         "tags": [
           "characters"
+        ]
+      }
+    },
+    "/chat-transfer-jobs": {
+      "get": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 chat transfer 作业，主要面向开发、调试、运维和自动化工具，不属于普通终端用户的日常导入导出界面。",
+        "operationId": "listChatTransferJobs",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "job_kind",
+            "required": false,
+            "schema": {
+              "enum": [
+                "import_chat",
+                "export_chat"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "pending",
+                "leased",
+                "running",
+                "retry_waiting",
+                "succeeded",
+                "dead_letter",
+                "cancelled"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "enum": [
+                "thchat",
+                "sillytavern_jsonl",
+                "st_jsonl"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requested_session_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "result_session_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_to",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "available_from",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "available_to",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "enum": [
+                "created_at",
+                "updated_at",
+                "available_at"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "attempt_count": 1,
+                      "available_at": 1735686000000,
+                      "created_at": 1735686000000,
+                      "finished_at": 1735686005000,
+                      "format": "thchat",
+                      "id": "ctj_export_demo",
+                      "input_artifact_path": null,
+                      "job_kind": "export_chat",
+                      "last_error": null,
+                      "lease_owner": null,
+                      "lease_until": null,
+                      "max_attempts": 5,
+                      "normalized_artifact_path": null,
+                      "output_artifact_path": "data/chat-transfer-artifacts/ctj_export_demo.thchat",
+                      "output_expires_at": 1735689600000,
+                      "phase": "completed",
+                      "progress_current": 1,
+                      "progress_message": "artifact ready",
+                      "progress_total": 1,
+                      "request": {
+                        "format": "thchat",
+                        "includeMemories": true,
+                        "includeVariables": true
+                      },
+                      "requested_session_id": "sess_demo",
+                      "result": {
+                        "byteLength": 2048,
+                        "fileName": "demo-export.thchat",
+                        "format": "thchat"
+                      },
+                      "result_session_id": null,
+                      "status": "succeeded",
+                      "updated_at": 1735686005000
+                    }
+                  ],
+                  "meta": {
+                    "has_more": false,
+                    "limit": 20,
+                    "offset": 0,
+                    "sort_by": "created_at",
+                    "sort_order": "desc",
+                    "total": 1
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "attempt_count": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "available_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "created_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "finished_at": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "format": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "thchat",
+                                  "sillytavern_jsonl",
+                                  "st_jsonl"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "input_artifact_path": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "job_kind": {
+                            "enum": [
+                              "import_chat",
+                              "export_chat"
+                            ],
+                            "type": "string"
+                          },
+                          "last_error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lease_owner": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lease_until": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "max_attempts": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "normalized_artifact_path": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "output_artifact_path": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "output_expires_at": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "phase": {
+                            "enum": [
+                              "queued",
+                              "parsing",
+                              "normalizing",
+                              "publishing",
+                              "snapshotting",
+                              "rendering",
+                              "writing_artifact",
+                              "finalizing",
+                              "completed"
+                            ],
+                            "type": "string"
+                          },
+                          "progress_current": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "progress_message": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "progress_total": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "request": {},
+                          "requested_session_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "result": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": true,
+                                "type": "object"
+                              },
+                              {
+                                "type": "array"
+                              },
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "result_session_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "leased",
+                              "running",
+                              "retry_waiting",
+                              "succeeded",
+                              "dead_letter",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "job_kind",
+                          "status",
+                          "phase",
+                          "attempt_count",
+                          "max_attempts",
+                          "available_at",
+                          "created_at",
+                          "updated_at",
+                          "progress_current"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "has_more": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sort_by": {
+                          "type": "string"
+                        },
+                        "sort_order": {
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ],
+                          "type": "string"
+                        },
+                        "total": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "limit",
+                        "offset",
+                        "has_more",
+                        "sort_by",
+                        "sort_order"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List chat transfer jobs",
+        "tags": [
+          "chat-transfer-jobs"
+        ]
+      }
+    },
+    "/chat-transfer-jobs/{id}": {
+      "get": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 chat transfer 作业，主要面向开发、调试、运维和自动化工具，不属于普通终端用户的日常导入导出界面。",
+        "operationId": "getChatTransferJob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "attempt_count": 1,
+                    "available_at": 1735686000000,
+                    "created_at": 1735686000000,
+                    "finished_at": 1735686005000,
+                    "format": "thchat",
+                    "id": "ctj_export_demo",
+                    "input_artifact_path": null,
+                    "job_kind": "export_chat",
+                    "last_error": null,
+                    "lease_owner": null,
+                    "lease_until": null,
+                    "max_attempts": 5,
+                    "normalized_artifact_path": null,
+                    "output_artifact_path": "data/chat-transfer-artifacts/ctj_export_demo.thchat",
+                    "output_expires_at": 1735689600000,
+                    "phase": "completed",
+                    "progress_current": 1,
+                    "progress_message": "artifact ready",
+                    "progress_total": 1,
+                    "request": {
+                      "format": "thchat",
+                      "includeMemories": true,
+                      "includeVariables": true
+                    },
+                    "requested_session_id": "sess_demo",
+                    "result": {
+                      "byteLength": 2048,
+                      "fileName": "demo-export.thchat",
+                      "format": "thchat"
+                    },
+                    "result_session_id": null,
+                    "status": "succeeded",
+                    "updated_at": 1735686005000
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "attempt_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "available_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "finished_at": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "format": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "thchat",
+                                "sillytavern_jsonl",
+                                "st_jsonl"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "input_artifact_path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "job_kind": {
+                          "enum": [
+                            "import_chat",
+                            "export_chat"
+                          ],
+                          "type": "string"
+                        },
+                        "last_error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lease_owner": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lease_until": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "max_attempts": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "normalized_artifact_path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "output_artifact_path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "output_expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "phase": {
+                          "enum": [
+                            "queued",
+                            "parsing",
+                            "normalizing",
+                            "publishing",
+                            "snapshotting",
+                            "rendering",
+                            "writing_artifact",
+                            "finalizing",
+                            "completed"
+                          ],
+                          "type": "string"
+                        },
+                        "progress_current": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "progress_message": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "progress_total": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "request": {},
+                        "requested_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "result": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": true,
+                              "type": "object"
+                            },
+                            {
+                              "type": "array"
+                            },
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "result_session_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "leased",
+                            "running",
+                            "retry_waiting",
+                            "succeeded",
+                            "dead_letter",
+                            "cancelled"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "job_kind",
+                        "status",
+                        "phase",
+                        "attempt_count",
+                        "max_attempts",
+                        "available_at",
+                        "created_at",
+                        "updated_at",
+                        "progress_current"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get chat transfer job detail",
+        "tags": [
+          "chat-transfer-jobs"
+        ]
+      }
+    },
+    "/chat-transfer-jobs/{id}/cancel": {
+      "post": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 chat transfer 作业，主要面向开发、调试、运维和自动化工具，不属于普通终端用户的日常导入导出界面。",
+        "operationId": "cancelChatTransferJob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "job_id": "ctj_export_demo",
+                    "status": "cancelled"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "leased",
+                            "running",
+                            "retry_waiting",
+                            "succeeded",
+                            "dead_letter",
+                            "cancelled"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "status"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Cancel a pending chat transfer job",
+        "tags": [
+          "chat-transfer-jobs"
+        ]
+      }
+    },
+    "/chat-transfer-jobs/{id}/file": {
+      "get": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 chat transfer 作业，主要面向开发、调试、运维和自动化工具，不属于普通终端用户的日常导入导出界面。",
+        "operationId": "downloadChatTransferJobFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Download chat transfer job artifact file",
+        "tags": [
+          "chat-transfer-jobs"
+        ]
+      }
+    },
+    "/chat-transfer-jobs/{id}/retry": {
+      "post": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 chat transfer 作业，主要面向开发、调试、运维和自动化工具，不属于普通终端用户的日常导入导出界面。",
+        "operationId": "retryChatTransferJob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "job_id": "ctj_export_demo",
+                    "status": "cancelled"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "leased",
+                            "running",
+                            "retry_waiting",
+                            "succeeded",
+                            "dead_letter",
+                            "cancelled"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "status"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Retry a chat transfer job",
+        "tags": [
+          "chat-transfer-jobs"
         ]
       }
     },
@@ -2513,9 +4137,261 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Export chat session",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/export/chat/{id}/jobs": {
+      "post": {
+        "description": "高级开发特性。该接口会把聊天导出写入 Background Job Runtime，主要用于开发、调试、运维和自动化工具。普通小规模导出优先使用同步 `GET /export/chat/:id`。",
+        "operationId": "createExportChatJob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "format": "thchat",
+                "include_memories": true,
+                "include_variables": true
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "format": {
+                    "default": "thchat",
+                    "enum": [
+                      "thchat",
+                      "st_jsonl"
+                    ],
+                    "type": "string"
+                  },
+                  "include_memories": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "include_variables": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "format": "thchat",
+                    "job_id": "ctj_export_demo",
+                    "job_kind": "export_chat",
+                    "requested_session_id": "sess_demo",
+                    "status": "pending"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "format": {
+                          "enum": [
+                            "thchat",
+                            "st_jsonl"
+                          ],
+                          "type": "string"
+                        },
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "job_kind": {
+                          "enum": [
+                            "export_chat"
+                          ],
+                          "type": "string"
+                        },
+                        "requested_session_id": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "status",
+                        "job_kind",
+                        "format",
+                        "requested_session_id"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Create async chat export job",
         "tags": [
           "exports"
         ]
@@ -4405,6 +6281,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Import SillyTavern character card",
@@ -4563,6 +6472,215 @@
         ]
       }
     },
+    "/import/chat/jobs": {
+      "post": {
+        "description": "高级开发特性。该接口会把聊天导入写入 Background Job Runtime，主要用于开发、调试、运维和自动化工具。普通交互式导入优先使用同步 `POST /import/chat`。",
+        "operationId": "createImportChatJob",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "character_id": "char_abc123",
+                "data": "{\"chat_metadata\":{},\"user_name\":\"unused\",\"character_name\":\"unused\"}\n{\"name\":\"User\",\"is_user\":true,\"mes\":\"Hello\"}\n{\"name\":\"Alice\",\"is_user\":false,\"mes\":\"Hi there!\",\"swipes\":[\"Hi there!\",\"Hey!\"]}",
+                "title": "Imported Chat"
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "character_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "data": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "data"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "format": "sillytavern_jsonl",
+                    "job_id": "ctj_import_demo",
+                    "job_kind": "import_chat",
+                    "status": "pending"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "format": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "thchat",
+                                "sillytavern_jsonl"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "job_kind": {
+                          "enum": [
+                            "import_chat"
+                          ],
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "status",
+                        "job_kind"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Create async chat import job",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
     "/import/preset": {
       "post": {
         "operationId": "importPreset",
@@ -4641,6 +6759,39 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -4803,6 +6954,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Import SillyTavern regex scripts",
@@ -4895,6 +7079,39 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -7717,6 +9934,181 @@
           }
         },
         "summary": "Activate LLM profile",
+        "tags": [
+          "llm-profiles"
+        ]
+      }
+    },
+    "/llm-profiles/bindings/{slot}": {
+      "delete": {
+        "operationId": "unbindLlmProfile",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "global",
+              "enum": [
+                "global",
+                "session"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slot",
+            "required": true,
+            "schema": {
+              "enum": [
+                "*",
+                "narrator",
+                "director",
+                "verifier",
+                "memory"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "instance_slot": "director",
+                    "scope": "session",
+                    "scope_id": "sess_demo",
+                    "unbound": true
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "instance_slot": {
+                          "enum": [
+                            "*",
+                            "narrator",
+                            "director",
+                            "verifier",
+                            "memory"
+                          ],
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "global",
+                            "session"
+                          ],
+                          "type": "string"
+                        },
+                        "scope_id": {
+                          "type": "string"
+                        },
+                        "unbound": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "scope_id",
+                        "instance_slot",
+                        "unbound"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Unbind LLM profile from a scope slot",
         "tags": [
           "llm-profiles"
         ]
@@ -12487,6 +14879,7 @@
     },
     "/memory/jobs": {
       "get": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。",
         "parameters": [
           {
             "in": "query",
@@ -12867,6 +15260,7 @@
     },
     "/memory/jobs/{id}/cancel": {
       "post": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。",
         "parameters": [
           {
             "in": "path",
@@ -13026,6 +15420,7 @@
     },
     "/memory/jobs/{id}/retry": {
       "post": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。",
         "parameters": [
           {
             "in": "path",
@@ -13185,6 +15580,7 @@
     },
     "/memory/scopes": {
       "get": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。",
         "parameters": [
           {
             "in": "query",
@@ -13427,6 +15823,7 @@
     },
     "/memory/scopes/{scope}/{scopeId}/compact": {
       "post": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。",
         "parameters": [
           {
             "in": "path",
@@ -13619,6 +16016,7 @@
     },
     "/memory/scopes/{scope}/{scopeId}/rebuild": {
       "post": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。",
         "parameters": [
           {
             "in": "path",
@@ -16540,6 +18938,15 @@
         "operationId": "deleteImportedPreset",
         "parameters": [
           {
+            "in": "query",
+            "name": "expected_version",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
             "in": "path",
             "name": "id",
             "required": true,
@@ -16554,6 +18961,105 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -16998,6 +19504,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Update imported preset by id",
@@ -17358,6 +19897,10 @@
                   "enabled": {
                     "type": "boolean"
                   },
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "extra": {
                     "additionalProperties": true,
                     "type": "object"
@@ -17578,6 +20121,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Create preset prompt entry",
@@ -17590,6 +20166,15 @@
       "delete": {
         "operationId": "deletePresetEntry",
         "parameters": [
+          {
+            "in": "query",
+            "name": "expected_version",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
           {
             "in": "path",
             "name": "preset_id",
@@ -17635,6 +20220,39 @@
             },
             "description": "Default Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -17669,6 +20287,39 @@
             "description": "Default Response"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -17866,6 +20517,10 @@
                   },
                   "enabled": {
                     "type": "boolean"
+                  },
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
                   },
                   "extra": {
                     "additionalProperties": true,
@@ -18078,6 +20733,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Update preset prompt entry",
@@ -18105,6 +20793,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "identifiers": {
                     "items": {
                       "type": "string"
@@ -18148,6 +20840,39 @@
                   },
                   "required": [
                     "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
                   ],
                   "type": "object"
                 }
@@ -18220,6 +20945,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Batch delete preset prompt entries",
@@ -18247,6 +21005,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "fields": {
                     "additionalProperties": true,
                     "type": "object"
@@ -18400,6 +21162,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Batch update preset prompt entries",
@@ -18427,6 +21222,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "identifiers": {
                     "items": {
                       "type": "string"
@@ -18625,6 +21424,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Reorder preset prompt entries",
@@ -18723,6 +21555,15 @@
         "operationId": "deleteImportedRegexProfile",
         "parameters": [
           {
+            "in": "query",
+            "name": "expected_version",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
             "in": "path",
             "name": "id",
             "required": true,
@@ -18737,6 +21578,105 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -19101,6 +22041,39 @@
             "description": "Default Response"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -25349,6 +28322,7 @@
                       "created_at": 1735689600000,
                       "id": "usr_demo",
                       "name": "Alice",
+                      "revision": 0,
                       "snapshot": {
                         "description": "A calm strategist who keeps concise notes.",
                         "name": "Alice"
@@ -25376,6 +28350,7 @@
                           "created_at": 1735689600000,
                           "id": "usr_demo",
                           "name": "Alice",
+                          "revision": 0,
                           "snapshot": {
                             "description": "A calm strategist who keeps concise notes.",
                             "name": "Alice"
@@ -25393,6 +28368,10 @@
                           },
                           "name": {
                             "type": "string"
+                          },
+                          "revision": {
+                            "minimum": 0,
+                            "type": "integer"
                           },
                           "snapshot": {
                             "additionalProperties": true,
@@ -25416,6 +28395,7 @@
                           "name",
                           "status",
                           "snapshot",
+                          "revision",
                           "created_at",
                           "updated_at"
                         ],
@@ -25520,8 +28500,7 @@
                 "snapshot": {
                   "description": "A calm strategist who keeps concise notes.",
                   "name": "Alice"
-                },
-                "status": "active"
+                }
               },
               "schema": {
                 "additionalProperties": false,
@@ -25529,13 +28508,6 @@
                   "snapshot": {
                     "additionalProperties": true,
                     "type": "object"
-                  },
-                  "status": {
-                    "enum": [
-                      "active",
-                      "disabled"
-                    ],
-                    "type": "string"
                   }
                 },
                 "required": [
@@ -25556,6 +28528,7 @@
                     "created_at": 1735689600000,
                     "id": "usr_demo",
                     "name": "Alice",
+                    "revision": 0,
                     "snapshot": {
                       "description": "A calm strategist who keeps concise notes.",
                       "name": "Alice"
@@ -25573,6 +28546,7 @@
                         "created_at": 1735689600000,
                         "id": "usr_demo",
                         "name": "Alice",
+                        "revision": 0,
                         "snapshot": {
                           "description": "A calm strategist who keeps concise notes.",
                           "name": "Alice"
@@ -25590,6 +28564,10 @@
                         },
                         "name": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
                         },
                         "snapshot": {
                           "additionalProperties": true,
@@ -25613,6 +28591,7 @@
                         "name",
                         "status",
                         "snapshot",
+                        "revision",
                         "created_at",
                         "updated_at"
                       ],
@@ -25693,6 +28672,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Create user",
@@ -25714,6 +28726,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -25721,7 +28750,8 @@
                 "example": {
                   "data": {
                     "deleted": true,
-                    "id": "usr_demo"
+                    "id": "usr_demo",
+                    "revision": 1
                   }
                 },
                 "schema": {
@@ -25735,11 +28765,16 @@
                         },
                         "id": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
                         }
                       },
                       "required": [
                         "id",
-                        "deleted"
+                        "deleted",
+                        "revision"
                       ],
                       "type": "object"
                     }
@@ -25753,7 +28788,106 @@
             },
             "description": "Default Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -25813,6 +28947,7 @@
                     "created_at": 1735689600000,
                     "id": "usr_demo",
                     "name": "Alice",
+                    "revision": 0,
                     "snapshot": {
                       "description": "A calm strategist who keeps concise notes.",
                       "name": "Alice"
@@ -25830,6 +28965,7 @@
                         "created_at": 1735689600000,
                         "id": "usr_demo",
                         "name": "Alice",
+                        "revision": 0,
                         "snapshot": {
                           "description": "A calm strategist who keeps concise notes.",
                           "name": "Alice"
@@ -25847,6 +28983,10 @@
                         },
                         "name": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
                         },
                         "snapshot": {
                           "additionalProperties": true,
@@ -25870,6 +29010,7 @@
                         "name",
                         "status",
                         "snapshot",
+                        "revision",
                         "created_at",
                         "updated_at"
                       ],
@@ -25940,6 +29081,7 @@
           "content": {
             "application/json": {
               "example": {
+                "expected_revision": 3,
                 "snapshot": {
                   "description": "A calm strategist who keeps concise notes.",
                   "name": "Alice"
@@ -25950,6 +29092,10 @@
                 "additionalProperties": false,
                 "minProperties": 1,
                 "properties": {
+                  "expected_revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
                   "snapshot": {
                     "additionalProperties": true,
                     "type": "object"
@@ -25977,6 +29123,7 @@
                     "created_at": 1735689600000,
                     "id": "usr_demo",
                     "name": "Alice",
+                    "revision": 0,
                     "snapshot": {
                       "description": "A calm strategist who keeps concise notes.",
                       "name": "Alice"
@@ -25994,6 +29141,7 @@
                         "created_at": 1735689600000,
                         "id": "usr_demo",
                         "name": "Alice",
+                        "revision": 0,
                         "snapshot": {
                           "description": "A calm strategist who keeps concise notes.",
                           "name": "Alice"
@@ -26011,6 +29159,10 @@
                         },
                         "name": {
                           "type": "string"
+                        },
+                        "revision": {
+                          "minimum": 0,
+                          "type": "integer"
                         },
                         "snapshot": {
                           "additionalProperties": true,
@@ -26034,6 +29186,7 @@
                         "name",
                         "status",
                         "snapshot",
+                        "revision",
                         "created_at",
                         "updated_at"
                       ],
@@ -26116,6 +29269,39 @@
             "description": "Default Response"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -26262,6 +29448,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Batch delete users",
@@ -26354,6 +29573,39 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -28225,6 +31477,15 @@
         "operationId": "deleteImportedWorldbook",
         "parameters": [
           {
+            "in": "query",
+            "name": "expected_version",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
             "in": "path",
             "name": "id",
             "required": true,
@@ -28239,6 +31500,105 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -28603,6 +31963,39 @@
             "description": "Default Response"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -29102,6 +32495,10 @@
                   "disable": {
                     "type": "boolean"
                   },
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "keys": {
                     "items": {
                       "type": "string"
@@ -29464,6 +32861,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Create worldbook entry",
@@ -29476,6 +32906,15 @@
       "delete": {
         "operationId": "deleteWorldbookEntry",
         "parameters": [
+          {
+            "in": "query",
+            "name": "expected_version",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
           {
             "in": "path",
             "name": "worldbook_id",
@@ -29534,6 +32973,39 @@
             },
             "description": "Default Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -29568,6 +33040,39 @@
             "description": "Default Response"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
             "content": {
               "application/json": {
                 "schema": {
@@ -29893,7 +33398,6 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
-                "minProperties": 1,
                 "properties": {
                   "case_sensitive": {
                     "anyOf": [
@@ -29920,6 +33424,10 @@
                   },
                   "disable": {
                     "type": "boolean"
+                  },
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
                   },
                   "keys": {
                     "items": {
@@ -30279,6 +33787,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Update worldbook entry",
@@ -30313,6 +33854,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "ids": {
                     "items": {
                       "minLength": 1,
@@ -30529,6 +34074,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Batch delete worldbook entries",
@@ -30569,6 +34147,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "items": {
                     "items": {
                       "additionalProperties": false,
@@ -30978,6 +34560,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Batch reorder worldbook entries",
@@ -31015,6 +34630,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "expected_version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "fields": {
                     "additionalProperties": false,
                     "minProperties": 1,
@@ -31499,6 +35118,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Batch update worldbook entries",
@@ -31540,6 +35192,14 @@
     {
       "description": "SillyTavern resource import APIs",
       "name": "imports"
+    },
+    {
+      "description": "Resource export and file download APIs, including advanced async job entrypoints",
+      "name": "exports"
+    },
+    {
+      "description": "Advanced developer APIs for async chat import/export job observation and artifact download",
+      "name": "chat-transfer-jobs"
     },
     {
       "description": "Character lifecycle and versioning",

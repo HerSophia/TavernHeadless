@@ -191,6 +191,46 @@ describe('WsBridge', () => {
     });
   });
 
+  it('forwards runtime job events and respects session filters', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-1');
+    bridge.addClient(socket2, 'session-2');
+
+    await eventBus.emit('runtime.job_progress_updated', {
+      jobId: 'runtime-job-1',
+      jobType: 'chat_transfer.export_chat',
+      accountId: 'default-admin',
+      scopeType: 'chat_transfer',
+      scopeKey: 'session:session-1',
+      sessionId: 'session-1',
+      status: 'running',
+      phase: 'rendering',
+      attemptCount: 1,
+      maxAttempts: 5,
+      availableAt: 100,
+      startedAt: 120,
+      finishedAt: null,
+      workerId: 'worker-1',
+      basedOnRevision: null,
+      dedupeKey: null,
+      progressCurrent: 2,
+      progressTotal: 4,
+      progressMessage: 'rendering export artifact',
+      errorCode: null,
+      errorClass: null,
+      message: null,
+      durationMs: null,
+    });
+
+    const messages1 = parseSent(socket1);
+    const messages2 = parseSent(socket2);
+    expect(messages1).toHaveLength(1);
+    expect(messages1[0]!.event).toBe('runtime.job_progress_updated');
+    expect((messages1[0]!.data as any).jobId).toBe('runtime-job-1');
+    expect(messages2).toHaveLength(0);
+  });
+
   it('filters memory.created event by top-level sessionId', async () => {
     const socket1 = createMockSocket();
     const socket2 = createMockSocket();

@@ -18,15 +18,23 @@ import {
   floors,
   memoryEdges,
   memoryItems,
-  memoryJobs,
-  memoryScopeStates,
   messagePages,
   messages,
+  runtimeJobs,
+  runtimeScopeStates,
   sessions,
 } from "../../db/schema.js";
 import { MemoryJobScheduler } from "../memory-job-scheduler.js";
 import { MemoryWorker } from "../memory-worker.js";
 import { createUserInputDigest } from "../memory-job-utils.js";
+import {
+  MEMORY_RUNTIME_SCOPE_TYPE,
+  buildMemoryRuntimeScopeKey,
+  fromMemoryRuntimeJobType,
+  parseMemoryRuntimeScopeKey,
+  readMemoryRuntimeScopeMetadata,
+  toMemoryRuntimeJobType,
+} from "../memory-runtime-job-definitions.js";
 
 const DEFAULT_ACCOUNT_ID = "default-admin";
 
@@ -38,6 +46,48 @@ function createDeferred<T>() {
     reject = rej;
   });
   return { promise, resolve, reject };
+}
+
+function toLegacyMemoryJob(row: typeof runtimeJobs.$inferSelect) {
+  const scopeRef = parseMemoryRuntimeScopeKey(row.scopeKey);
+  return {
+    ...row,
+    scope: scopeRef.scope,
+    scopeId: scopeRef.scopeId,
+    jobType: fromMemoryRuntimeJobType(row.jobType),
+  };
+}
+
+function toLegacyMemoryScopeState(row: typeof runtimeScopeStates.$inferSelect) {
+  const scopeRef = parseMemoryRuntimeScopeKey(row.scopeKey);
+  const metadata = readMemoryRuntimeScopeMetadata(row.metadataJson);
+  return {
+    ...row,
+    scope: scopeRef.scope,
+    scopeId: scopeRef.scopeId,
+    lastProcessedFloorNo: metadata.lastProcessedFloorNo ?? null,
+    lastCompactionAt: metadata.lastCompactionAt ?? null,
+  };
+}
+
+async function getRuntimeMemoryScopeState(
+  database: DatabaseConnection,
+  scope: "global" | "chat" | "floor",
+  scopeId: string,
+) {
+  const [row] = await database.db.select().from(runtimeScopeStates).where(and(
+    eq(runtimeScopeStates.accountId, DEFAULT_ACCOUNT_ID),
+    eq(runtimeScopeStates.scopeType, MEMORY_RUNTIME_SCOPE_TYPE),
+    eq(runtimeScopeStates.scopeKey, buildMemoryRuntimeScopeKey(scope, scopeId)),
+  ));
+  return row ? toLegacyMemoryScopeState(row) : undefined;
+}
+
+async function getRuntimeMemoryJobs(database: DatabaseConnection, jobType?: "ingest_turn" | "compact_macro" | "maintenance" | "rebuild_scope") {
+  const rows = jobType === undefined
+    ? await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.scopeType, MEMORY_RUNTIME_SCOPE_TYPE))
+    : await database.db.select().from(runtimeJobs).where(and(eq(runtimeJobs.scopeType, MEMORY_RUNTIME_SCOPE_TYPE), eq(runtimeJobs.jobType, toMemoryRuntimeJobType(jobType))));
+  return rows.map(toLegacyMemoryJob);
 }
 
 function makeIngestOutput(overrides: Partial<MemoryIngestOutput> = {}): MemoryIngestOutput {
@@ -343,14 +393,7 @@ describe("MemoryWorker", () => {
     });
     expect(JSON.parse(factRow!.contentJson)).toBe("vault_key_owner: Bob still holds the vault key.");
 
-    const [scopeState] = await database.db
-      .select()
-      .from(memoryScopeStates)
-      .where(and(
-        eq(memoryScopeStates.accountId, DEFAULT_ACCOUNT_ID),
-        eq(memoryScopeStates.scope, "chat"),
-        eq(memoryScopeStates.scopeId, sessionId),
-      ));
+    const scopeState = await getRuntimeMemoryScopeState(database, "chat", sessionId);
     expect(scopeState).toMatchObject({
       accountId: DEFAULT_ACCOUNT_ID,
       scope: "chat",
@@ -361,7 +404,7 @@ describe("MemoryWorker", () => {
       lastProcessedFloorNo: 3,
     });
 
-    const [job] = await database.db.select().from(memoryJobs);
+    const [job] = await getRuntimeMemoryJobs(database);
     expect(job).toMatchObject({
       status: "succeeded",
       scope: "chat",
@@ -470,7 +513,7 @@ describe("MemoryWorker", () => {
 
     await expect(worker.processOneDueJob()).resolves.toBe(true);
 
-    const compactJobs = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "compact_macro"));
+    const compactJobs = await getRuntimeMemoryJobs(database, "compact_macro");
     expect(compactJobs).toHaveLength(1);
     expect(compactJobs[0]).toMatchObject({
       accountId: DEFAULT_ACCOUNT_ID,
@@ -756,15 +799,11 @@ describe("MemoryWorker", () => {
       expect.objectContaining({ fromId: createdMacroRow.id, toId: resolvedOpenLoopId, relation: "resolves" }),
     ]));
 
-    const [scopeState] = await database.db.select().from(memoryScopeStates).where(and(
-      eq(memoryScopeStates.accountId, DEFAULT_ACCOUNT_ID),
-      eq(memoryScopeStates.scope, "chat"),
-      eq(memoryScopeStates.scopeId, sessionId),
-    ));
+    const scopeState = await getRuntimeMemoryScopeState(database, "chat", sessionId);
     expect(scopeState?.revision).toBe(1);
     expect(scopeState?.lastCompactionAt).not.toBeNull();
 
-    const compactJob = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "compact_macro"));
+    const compactJob = await getRuntimeMemoryJobs(database, "compact_macro");
     expect(compactJob[0]).toMatchObject({
       status: "succeeded",
       attemptCount: 1,
@@ -1088,14 +1127,16 @@ describe("MemoryWorker", () => {
       assistantMessage,
     });
 
-    await database.db.insert(memoryJobs).values({
+    await database.db.insert(runtimeJobs).values({
       id: `memory-job:ingest_turn:${floorId}`,
+      jobType: toMemoryRuntimeJobType("ingest_turn"),
       accountId: DEFAULT_ACCOUNT_ID,
-      scope: "chat",
-      scopeId: sessionId,
-      jobType: "ingest_turn",
+      scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+      scopeKey: buildMemoryRuntimeScopeKey("chat", sessionId),
+      sessionId,
       status: "leased",
       floorId,
+      pageId: null,
       basedOnRevision: 0,
       payloadJson: JSON.stringify({
         accountId: DEFAULT_ACCOUNT_ID,
@@ -1111,23 +1152,34 @@ describe("MemoryWorker", () => {
       attemptCount: 0,
       maxAttempts: 5,
       availableAt: now,
+      startedAt: null,
+      finishedAt: null,
       leaseOwner: "stale-worker",
       leaseUntil: now - 1,
+      dedupeKey: null,
+      progressCurrent: 0,
+      progressTotal: null,
+      progressMessage: null,
       lastError: null,
+      lastErrorCode: null,
+      lastErrorClass: null,
       createdAt: now,
       updatedAt: now,
-      finishedAt: null,
     });
 
-    await database.db.insert(memoryScopeStates).values({
+    await database.db.insert(runtimeScopeStates).values({
       accountId: DEFAULT_ACCOUNT_ID,
-      scope: "chat",
-      scopeId: sessionId,
+      scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+      scopeKey: buildMemoryRuntimeScopeKey("chat", sessionId),
       revision: 0,
       leaseOwner: "stale-worker",
       leaseUntil: now - 1,
-      lastProcessedFloorNo: null,
-      lastCompactionAt: null,
+      lastProcessedAt: null,
+      lastSuccessJobId: null,
+      metadataJson: JSON.stringify({
+        lastProcessedFloorNo: null,
+        lastCompactionAt: null,
+      }),
       updatedAt: now,
     });
 
@@ -1152,7 +1204,7 @@ describe("MemoryWorker", () => {
 
     await expect(worker.processOneDueJob()).resolves.toBe(true);
 
-    const [job] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.floorId, floorId));
+    const [job] = (await getRuntimeMemoryJobs(database)).filter((entry) => entry.floorId === floorId);
     expect(job).toMatchObject({
       status: "succeeded",
       attemptCount: 1,
@@ -1223,7 +1275,7 @@ describe("MemoryWorker", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(process).toHaveBeenCalledOnce();
 
-    await database.db.update(memoryScopeStates)
+    await database.db.update(runtimeScopeStates)
       .set({
         revision: 1,
         leaseOwner: null,
@@ -1231,9 +1283,9 @@ describe("MemoryWorker", () => {
         updatedAt: now + 10,
       })
       .where(and(
-        eq(memoryScopeStates.accountId, DEFAULT_ACCOUNT_ID),
-        eq(memoryScopeStates.scope, "chat"),
-        eq(memoryScopeStates.scopeId, sessionId),
+        eq(runtimeScopeStates.accountId, DEFAULT_ACCOUNT_ID),
+        eq(runtimeScopeStates.scopeType, MEMORY_RUNTIME_SCOPE_TYPE),
+        eq(runtimeScopeStates.scopeKey, buildMemoryRuntimeScopeKey("chat", sessionId)),
       ))
       .run();
 
@@ -1244,7 +1296,7 @@ describe("MemoryWorker", () => {
 
     await expect(processing).resolves.toBe(true);
 
-    const [job] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.floorId, floorId));
+    const [job] = (await getRuntimeMemoryJobs(database)).filter((entry) => entry.floorId === floorId);
     expect(job).toMatchObject({
       status: "retry_waiting",
       attemptCount: 1,
@@ -1252,7 +1304,7 @@ describe("MemoryWorker", () => {
       leaseUntil: null,
     });
     expect(job!.availableAt).toBeGreaterThan(now);
-    expect(job!.lastError).toContain("Memory revision conflict");
+    expect(job!.lastError).toContain("revision conflict");
 
     const createdRows = await database.db
       .select()
@@ -1429,16 +1481,12 @@ describe("MemoryWorker", () => {
       }),
     ]);
 
-    const [scopeState] = await database.db.select().from(memoryScopeStates).where(and(
-      eq(memoryScopeStates.accountId, DEFAULT_ACCOUNT_ID),
-      eq(memoryScopeStates.scope, "chat"),
-      eq(memoryScopeStates.scopeId, sessionId),
-    ));
+    const scopeState = await getRuntimeMemoryScopeState(database, "chat", sessionId);
     expect(scopeState?.revision).toBe(1);
     expect(scopeState?.leaseOwner).toBeNull();
     expect(scopeState?.leaseUntil).toBeNull();
 
-    const [job] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "maintenance"));
+    const [job] = await getRuntimeMemoryJobs(database, "maintenance");
     expect(job).toBeDefined();
     expect(job).toMatchObject({
       status: "succeeded",
@@ -1519,13 +1567,13 @@ describe("MemoryWorker", () => {
 
     await expect(worker.processOneDueJob()).resolves.toBe(true);
 
-    const [rebuildJob] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "rebuild_scope"));
+    const [rebuildJob] = await getRuntimeMemoryJobs(database, "rebuild_scope");
     expect(rebuildJob).toMatchObject({
       status: "succeeded",
       attemptCount: 1,
     });
 
-    const [compactJob] = await database.db.select().from(memoryJobs).where(eq(memoryJobs.jobType, "compact_macro"));
+    const [compactJob] = await getRuntimeMemoryJobs(database, "compact_macro");
     expect(compactJob).toBeDefined();
     expect(compactJob).toMatchObject({
       status: "pending",

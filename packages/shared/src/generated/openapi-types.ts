@@ -208,6 +208,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat-transfer-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chat transfer jobs
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 chat transfer 作业，主要面向开发、调试、运维和自动化工具，不属于普通终端用户的日常导入导出界面。
+         */
+        get: operations["listChatTransferJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-transfer-jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get chat transfer job detail
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 chat transfer 作业，主要面向开发、调试、运维和自动化工具，不属于普通终端用户的日常导入导出界面。
+         */
+        get: operations["getChatTransferJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-transfer-jobs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a pending chat transfer job
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 chat transfer 作业，主要面向开发、调试、运维和自动化工具，不属于普通终端用户的日常导入导出界面。
+         */
+        post: operations["cancelChatTransferJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-transfer-jobs/{id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download chat transfer job artifact file
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 chat transfer 作业，主要面向开发、调试、运维和自动化工具，不属于普通终端用户的日常导入导出界面。
+         */
+        get: operations["downloadChatTransferJobFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-transfer-jobs/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a chat transfer job
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 chat transfer 作业，主要面向开发、调试、运维和自动化工具，不属于普通终端用户的日常导入导出界面。
+         */
+        post: operations["retryChatTransferJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/docs-en": {
         parameters: {
             query?: never;
@@ -305,6 +405,26 @@ export interface paths {
         get: operations["exportChat"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/export/chat/{id}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create async chat export job
+         * @description 高级开发特性。该接口会把聊天导出写入 Background Job Runtime，主要用于开发、调试、运维和自动化工具。普通小规模导出优先使用同步 `GET /export/chat/:id`。
+         */
+        post: operations["createExportChatJob"];
         delete?: never;
         options?: never;
         head?: never;
@@ -910,6 +1030,26 @@ export interface paths {
         put?: never;
         /** Import chat file (.thchat or .jsonl) */
         post: operations["importChat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/chat/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create async chat import job
+         * @description 高级开发特性。该接口会把聊天导入写入 Background Job Runtime，主要用于开发、调试、运维和自动化工具。普通交互式导入优先使用同步 `POST /import/chat`。
+         */
+        post: operations["createImportChatJob"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2638,7 +2778,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List memory jobs */
+        /**
+         * List memory jobs
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。
+         */
         get: {
             parameters: {
                 query?: {
@@ -2739,7 +2882,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancel a pending memory job */
+        /**
+         * Cancel a pending memory job
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。
+         */
         post: {
             parameters: {
                 query?: never;
@@ -2823,7 +2969,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Retry a memory job */
+        /**
+         * Retry a memory job
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。
+         */
         post: {
             parameters: {
                 query?: never;
@@ -2905,7 +3054,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List memory scope states */
+        /**
+         * List memory scope states
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。
+         */
         get: {
             parameters: {
                 query?: {
@@ -2988,7 +3140,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Enqueue a manual macro compaction job */
+        /**
+         * Enqueue a manual macro compaction job
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。
+         */
         post: {
             parameters: {
                 query?: never;
@@ -3080,7 +3235,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Enqueue a scope rebuild job */
+        /**
+         * Enqueue a scope rebuild job
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。
+         */
         post: {
             parameters: {
                 query?: never;
@@ -7129,6 +7287,463 @@ export interface operations {
             };
         };
     };
+    listChatTransferJobs: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+                job_kind?: "import_chat" | "export_chat";
+                status?: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                format?: "thchat" | "sillytavern_jsonl" | "st_jsonl";
+                requested_session_id?: string;
+                result_session_id?: string;
+                created_from?: number;
+                created_to?: number;
+                available_from?: number;
+                available_to?: number;
+                sort_by?: "created_at" | "updated_at" | "available_at";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "attempt_count": 1,
+                     *           "available_at": 1735686000000,
+                     *           "created_at": 1735686000000,
+                     *           "finished_at": 1735686005000,
+                     *           "format": "thchat",
+                     *           "id": "ctj_export_demo",
+                     *           "input_artifact_path": null,
+                     *           "job_kind": "export_chat",
+                     *           "last_error": null,
+                     *           "lease_owner": null,
+                     *           "lease_until": null,
+                     *           "max_attempts": 5,
+                     *           "normalized_artifact_path": null,
+                     *           "output_artifact_path": "data/chat-transfer-artifacts/ctj_export_demo.thchat",
+                     *           "output_expires_at": 1735689600000,
+                     *           "phase": "completed",
+                     *           "progress_current": 1,
+                     *           "progress_message": "artifact ready",
+                     *           "progress_total": 1,
+                     *           "request": {
+                     *             "format": "thchat",
+                     *             "includeMemories": true,
+                     *             "includeVariables": true
+                     *           },
+                     *           "requested_session_id": "sess_demo",
+                     *           "result": {
+                     *             "byteLength": 2048,
+                     *             "fileName": "demo-export.thchat",
+                     *             "format": "thchat"
+                     *           },
+                     *           "result_session_id": null,
+                     *           "status": "succeeded",
+                     *           "updated_at": 1735686005000
+                     *         }
+                     *       ],
+                     *       "meta": {
+                     *         "has_more": false,
+                     *         "limit": 20,
+                     *         "offset": 0,
+                     *         "sort_by": "created_at",
+                     *         "sort_order": "desc",
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            attempt_count: number;
+                            available_at: number;
+                            created_at: number;
+                            finished_at?: number | null;
+                            format?: ("thchat" | "sillytavern_jsonl" | "st_jsonl") | null;
+                            id: string;
+                            input_artifact_path?: string | null;
+                            /** @enum {string} */
+                            job_kind: "import_chat" | "export_chat";
+                            last_error?: string | null;
+                            lease_owner?: string | null;
+                            lease_until?: number | null;
+                            max_attempts: number;
+                            normalized_artifact_path?: string | null;
+                            output_artifact_path?: string | null;
+                            output_expires_at?: number | null;
+                            /** @enum {string} */
+                            phase: "queued" | "parsing" | "normalizing" | "publishing" | "snapshotting" | "rendering" | "writing_artifact" | "finalizing" | "completed";
+                            progress_current: number;
+                            progress_message?: string | null;
+                            progress_total?: number | null;
+                            request?: unknown;
+                            requested_session_id?: string | null;
+                            result?: {
+                                [key: string]: unknown;
+                            } | unknown[] | string | number | boolean | null;
+                            result_session_id?: string | null;
+                            /** @enum {string} */
+                            status: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                            updated_at: number;
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getChatTransferJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "attempt_count": 1,
+                     *         "available_at": 1735686000000,
+                     *         "created_at": 1735686000000,
+                     *         "finished_at": 1735686005000,
+                     *         "format": "thchat",
+                     *         "id": "ctj_export_demo",
+                     *         "input_artifact_path": null,
+                     *         "job_kind": "export_chat",
+                     *         "last_error": null,
+                     *         "lease_owner": null,
+                     *         "lease_until": null,
+                     *         "max_attempts": 5,
+                     *         "normalized_artifact_path": null,
+                     *         "output_artifact_path": "data/chat-transfer-artifacts/ctj_export_demo.thchat",
+                     *         "output_expires_at": 1735689600000,
+                     *         "phase": "completed",
+                     *         "progress_current": 1,
+                     *         "progress_message": "artifact ready",
+                     *         "progress_total": 1,
+                     *         "request": {
+                     *           "format": "thchat",
+                     *           "includeMemories": true,
+                     *           "includeVariables": true
+                     *         },
+                     *         "requested_session_id": "sess_demo",
+                     *         "result": {
+                     *           "byteLength": 2048,
+                     *           "fileName": "demo-export.thchat",
+                     *           "format": "thchat"
+                     *         },
+                     *         "result_session_id": null,
+                     *         "status": "succeeded",
+                     *         "updated_at": 1735686005000
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            attempt_count: number;
+                            available_at: number;
+                            created_at: number;
+                            finished_at?: number | null;
+                            format?: ("thchat" | "sillytavern_jsonl" | "st_jsonl") | null;
+                            id: string;
+                            input_artifact_path?: string | null;
+                            /** @enum {string} */
+                            job_kind: "import_chat" | "export_chat";
+                            last_error?: string | null;
+                            lease_owner?: string | null;
+                            lease_until?: number | null;
+                            max_attempts: number;
+                            normalized_artifact_path?: string | null;
+                            output_artifact_path?: string | null;
+                            output_expires_at?: number | null;
+                            /** @enum {string} */
+                            phase: "queued" | "parsing" | "normalizing" | "publishing" | "snapshotting" | "rendering" | "writing_artifact" | "finalizing" | "completed";
+                            progress_current: number;
+                            progress_message?: string | null;
+                            progress_total?: number | null;
+                            request?: unknown;
+                            requested_session_id?: string | null;
+                            result?: {
+                                [key: string]: unknown;
+                            } | unknown[] | string | number | boolean | null;
+                            result_session_id?: string | null;
+                            /** @enum {string} */
+                            status: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    cancelChatTransferJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "job_id": "ctj_export_demo",
+                     *         "status": "cancelled"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            job_id: string;
+                            /** @enum {string} */
+                            status: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    downloadChatTransferJobFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    retryChatTransferJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "job_id": "ctj_export_demo",
+                     *         "status": "cancelled"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            job_id: string;
+                            /** @enum {string} */
+                            status: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     exportCharacter: {
         parameters: {
             query?: {
@@ -7195,6 +7810,139 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createExportChatJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "format": "thchat",
+                 *       "include_memories": true,
+                 *       "include_variables": true
+                 *     }
+                 */
+                "application/json": {
+                    /**
+                     * @default thchat
+                     * @enum {string}
+                     */
+                    format?: "thchat" | "st_jsonl";
+                    /** @default true */
+                    include_memories?: boolean;
+                    /** @default true */
+                    include_variables?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "format": "thchat",
+                     *         "job_id": "ctj_export_demo",
+                     *         "job_kind": "export_chat",
+                     *         "requested_session_id": "sess_demo",
+                     *         "status": "pending"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            /** @enum {string} */
+                            format: "thchat" | "st_jsonl";
+                            job_id: string;
+                            /** @enum {string} */
+                            job_kind: "export_chat";
+                            requested_session_id: string;
+                            /** @enum {string} */
+                            status: "pending";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7518,6 +8266,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     importChat: {
@@ -7582,6 +8347,111 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createImportChatJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "character_id": "char_abc123",
+                 *       "data": "{\"chat_metadata\":{},\"user_name\":\"unused\",\"character_name\":\"unused\"}\n{\"name\":\"User\",\"is_user\":true,\"mes\":\"Hello\"}\n{\"name\":\"Alice\",\"is_user\":false,\"mes\":\"Hi there!\",\"swipes\":[\"Hi there!\",\"Hey!\"]}",
+                 *       "title": "Imported Chat"
+                 *     }
+                 */
+                "application/json": {
+                    character_id?: string;
+                    data: string;
+                    title?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "format": "sillytavern_jsonl",
+                     *         "job_id": "ctj_import_demo",
+                     *         "job_kind": "import_chat",
+                     *         "status": "pending"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            format?: ("thchat" | "sillytavern_jsonl") | null;
+                            job_id: string;
+                            /** @enum {string} */
+                            job_kind: "import_chat";
+                            /** @enum {string} */
+                            status: "pending";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7744,6 +8614,23 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12315,11 +13202,30 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     deleteImportedRegexProfile: {
         parameters: {
-            query?: never;
+            query?: {
+                expected_version?: number;
+            };
             header?: never;
             path: {
                 id: string;
@@ -12337,6 +13243,57 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

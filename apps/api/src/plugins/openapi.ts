@@ -61,6 +61,8 @@ export async function registerOpenApi(app: FastifyInstance, options: RegisterOpe
         { name: "variables", description: "Variable CRUD and upsert" },
         { name: "memories", description: "Memory and memory-edge CRUD" },
         { name: "imports", description: "SillyTavern resource import APIs" },
+        { name: "exports", description: "Resource export and file download APIs, including advanced async job entrypoints" },
+        { name: "chat-transfer-jobs", description: "Advanced developer APIs for async chat import/export job observation and artifact download" },
         { name: "characters", description: "Character lifecycle and versioning" },
         { name: "chat", description: "Chat respond and regenerate" },
         { name: "llm-profiles", description: "LLM profile vault and activation" },

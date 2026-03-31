@@ -1,14 +1,21 @@
 import { and, eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
 
 import type { AppDb } from "../db/client";
 import { llmInstanceConfigs } from "../db/schema";
 import {
   normalizeBindingParams,
   parseBindingParamsJson,
-  LlmParamsValidationError,
   type LlmBindingGenerationParams,
 } from "../lib/llm-params";
+import { createDefaultMutationRuntime } from "./default-mutation-runtime.js";
+import type { MutationRuntime } from "./runtime-mutation-types.js";
+import {
+  CONFIG_MUTATION_KINDS,
+  ConfigMutationError,
+  type DeleteLlmInstanceConfigMutationPayload,
+  type LlmInstanceConfigItemMutationResult,
+  type UpsertLlmInstanceConfigMutationPayload,
+} from "./config-mutation-applier.js";
 
 const GLOBAL_SCOPE_ID = "global";
 
@@ -64,10 +71,14 @@ export class LlmInstanceServiceError extends Error {
 export class LlmInstanceService {
   private db: AppDb;
   private now: () => number;
+  private readonly mutationRuntime: MutationRuntime;
 
-  constructor(db: AppDb, options?: { now?: () => number }) {
+  constructor(db: AppDb, options?: { now?: () => number; mutationRuntime?: MutationRuntime }) {
     this.db = db;
     this.now = options?.now ?? (() => Date.now());
+    this.mutationRuntime = options?.mutationRuntime ?? createDefaultMutationRuntime(db, {
+      now: this.now,
+    });
   }
 
   async listConfigs(
@@ -129,84 +140,29 @@ export class LlmInstanceService {
   ): Promise<LlmInstanceConfigItem> {
     validateSlot(slot);
 
-    const now = this.now();
-    const effectiveScopeId = scope === "global" ? GLOBAL_SCOPE_ID : scopeId;
-
-    // Normalize params
-    let normalizedParams: LlmBindingGenerationParams | undefined;
-    if (input.params !== undefined && input.params !== null) {
-      try {
-        normalizedParams = normalizeBindingParams(input.params, true);
-      } catch (e) {
-        if (e instanceof LlmParamsValidationError) {
-          throw new LlmInstanceServiceError("invalid_params", e.message);
-        }
-        throw e;
-      }
-    }
-
-    // Compute paramsJson: undefined = don't touch, null = clear, string = set
-    let paramsJson: string | null | undefined;
-    if (input.params === undefined) {
-      paramsJson = undefined;
-    } else if (input.params === null) {
-      paramsJson = null;
-    } else {
-      paramsJson = normalizedParams ? JSON.stringify(normalizedParams) : null;
-    }
-
-    // Build conflict update set (only includes fields that were provided)
-    const conflictSet: Partial<typeof llmInstanceConfigs.$inferInsert> = {
-      updatedAt: now,
-    };
-    if (input.presetId !== undefined) {
-      conflictSet.presetId = input.presetId;
-    }
-    if (input.enabled !== undefined) {
-      conflictSet.enabled = input.enabled ? 1 : 0;
-    }
-    if (paramsJson !== undefined) {
-      conflictSet.paramsJson = paramsJson;
-    }
-
-    await this.db
-      .insert(llmInstanceConfigs)
-      .values({
-        id: nanoid(),
+    try {
+      const result = await this.mutationRuntime.applyInline<
+        UpsertLlmInstanceConfigMutationPayload,
+        LlmInstanceConfigItemMutationResult
+      >({
+        id: `llm-instance-upsert:${accountId}:${scope}:${scopeId}:${slot}:${this.now()}`,
+        kind: CONFIG_MUTATION_KINDS.llmInstanceUpsert,
+        source: "api",
         accountId,
-        scope,
-        scopeId: effectiveScopeId,
-        instanceSlot: slot,
-        presetId: input.presetId ?? null,
-        enabled: input.enabled === false ? 0 : 1,
-        paramsJson: paramsJson ?? null,
-        createdAt: now,
-        updatedAt: now,
+        sessionId: scope === "session" ? scopeId : undefined,
+        scopeType: "config.llm_instance",
+        scopeKey: `${scope}:${scopeId}:${slot}`,
+        applyPhase: "inline",
+        durability: "transactional",
+        replaySafety: "confirm_on_replay",
+        payload: { scope, scopeId, slot, input },
+        createdAt: this.now(),
       })
-      .onConflictDoUpdate({
-        target: [
-          llmInstanceConfigs.accountId,
-          llmInstanceConfigs.scope,
-          llmInstanceConfigs.scopeId,
-          llmInstanceConfigs.instanceSlot,
-        ],
-        set: conflictSet,
-      });
 
-    // Read back the upserted row
-    const rows = await this.db
-      .select()
-      .from(llmInstanceConfigs)
-      .where(
-        and(
-          eq(llmInstanceConfigs.accountId, accountId),
-          eq(llmInstanceConfigs.scope, scope),
-          eq(llmInstanceConfigs.scopeId, effectiveScopeId),
-          eq(llmInstanceConfigs.instanceSlot, slot),
-        )
-      );
-
-    return toConfigItem(rows[0]!);
+      return result ?? (() => { throw new Error("LLM instance upsert returned an empty result"); })();
+    } catch (error) {
+      throw this.mapMutationError(error);
+    }
   }
 
   async deleteConfig(
@@ -217,30 +173,34 @@ export class LlmInstanceService {
   ): Promise<void> {
     validateSlot(slot);
 
-    const effectiveScopeId = scope === "global" ? GLOBAL_SCOPE_ID : scopeId;
-
-    const existing = await this.db
-      .select({ id: llmInstanceConfigs.id })
-      .from(llmInstanceConfigs)
-      .where(
-        and(
-          eq(llmInstanceConfigs.accountId, accountId),
-          eq(llmInstanceConfigs.scope, scope),
-          eq(llmInstanceConfigs.scopeId, effectiveScopeId),
-          eq(llmInstanceConfigs.instanceSlot, slot),
-        )
-      );
-
-    if (existing.length === 0) {
-      throw new LlmInstanceServiceError(
-        "config_not_found",
-        `No config found for slot=${slot} scope=${scope} scopeId=${effectiveScopeId}`
-      );
+    try {
+      await this.mutationRuntime.applyInline<DeleteLlmInstanceConfigMutationPayload, void>({
+        id: `llm-instance-delete:${accountId}:${scope}:${scopeId}:${slot}:${this.now()}`,
+        kind: CONFIG_MUTATION_KINDS.llmInstanceDelete,
+        source: "api",
+        accountId,
+        sessionId: scope === "session" ? scopeId : undefined,
+        scopeType: "config.llm_instance",
+        scopeKey: `${scope}:${scopeId}:${slot}`,
+        applyPhase: "inline",
+        durability: "transactional",
+        replaySafety: "confirm_on_replay",
+        payload: { scope, scopeId, slot },
+        createdAt: this.now(),
+      });
+    } catch (error) {
+      throw this.mapMutationError(error);
     }
+  }
 
-    await this.db
-      .delete(llmInstanceConfigs)
-      .where(eq(llmInstanceConfigs.id, existing[0]!.id));
+  private mapMutationError(error: unknown): LlmInstanceServiceError {
+    if (error instanceof LlmInstanceServiceError) {
+      return error
+    }
+    if (error instanceof ConfigMutationError) {
+      return new LlmInstanceServiceError(error.code as LlmInstanceServiceError["code"], error.message)
+    }
+    throw error
   }
 
   async resolveConfigs(

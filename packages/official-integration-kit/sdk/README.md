@@ -364,6 +364,41 @@ const response = await client.exports.chat({
 console.log(response.headers.get("content-disposition"));
 ```
 
+如果服务端要求异步导出，可以先创建作业，再轮询 `chatTransferJobs`：
+
+这组接口更适合平台接入、批处理和自动化脚本，不是普通聊天主流程的首选入口。
+
+```ts
+const importJob = await client.imports.chatJob({
+  accountId: "account-1",
+  data: rawJsonl,
+  characterId: "char-1",
+  title: "Imported Chat",
+});
+
+console.log(importJob.jobId, importJob.status, importJob.format);
+
+const exportJob = await client.exports.chatJob({
+  accountId: "account-1",
+  sessionId: "session-1",
+  format: "thchat",
+});
+
+const jobDetail = await client.chatTransferJobs.getDetail({
+  accountId: "account-1",
+  jobId: exportJob.jobId,
+});
+
+if (jobDetail.status === "succeeded") {
+  const fileResponse = await client.chatTransferJobs.downloadFile({
+    accountId: "account-1",
+    jobId: exportJob.jobId,
+  });
+
+  console.log(fileResponse.headers.get("content-disposition"));
+}
+```
+
 ### Tool Calling
 
 ```ts
@@ -483,7 +518,7 @@ try {
 | ---- | ---- |
 | 会话与内容结构 | `health`、`sessions`、`messages`、`floors`、`pages`、`branches` |
 | 角色、资料与配置 | `characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles` |
-| 导入、导出与模型 | `imports`、`exports`、`llmProfiles`、`llmInstances` |
+| 导入、导出与模型 | `imports`、`exports`、`chatTransferJobs`、`llmProfiles`、`llmInstances` |
 | 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes` |
 | 工具与运行集成 | `tools`、`mcp` |
 

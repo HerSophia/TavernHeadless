@@ -15,6 +15,7 @@
     "bench:history": "tsx scripts/benchmark-history.ts",
     "smoke": "tsx scripts/smoke-api.ts",
     "real-provider:regression": "tsx scripts/real-provider-regression.ts",
+    "jobs:chat-transfer": "tsx src/chat-transfer-worker.ts",
     "memory:maintenance": "tsx scripts/memory-maintenance.ts",
     "db:studio": "drizzle-kit studio --config drizzle.config.ts",
     "openapi:export": "tsx scripts/export-openapi.ts"
