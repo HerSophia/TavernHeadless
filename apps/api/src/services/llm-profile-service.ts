@@ -1,13 +1,24 @@
-import { and, count, desc, eq, inArray, ne, or } from "drizzle-orm";
-import { nanoid } from "nanoid";
+import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
 import type { DbExecutor } from "../db/client";
 import type { InstanceSlot, ProviderType } from "@tavern/core";
 
 import type { AppDb } from "../db/client";
 import { llmProfileBindings, llmProfiles, sessions } from "../db/schema";
-import { decryptSecret, encryptSecret, maskSecret } from "../lib/secrets";
+import { decryptSecret } from "../lib/secrets";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants";
-import { normalizeBindingParams, parseBindingParamsJson, LlmParamsValidationError, type LlmBindingGenerationParams } from "../lib/llm-params";
+import { normalizeBindingParams, parseBindingParamsJson, type LlmBindingGenerationParams } from "../lib/llm-params";
+import { createDefaultMutationRuntime } from "./default-mutation-runtime.js";
+import type { MutationRuntime } from "./runtime-mutation-types.js";
+import {
+  CONFIG_MUTATION_KINDS,
+  ConfigMutationError,
+  type ActivateLlmProfileMutationPayload,
+  type CreateLlmProfileMutationPayload,
+  type DeleteLlmProfileMutationPayload,
+  type LlmProfileListItemMutationResult,
+  type UnbindLlmProfileMutationPayload,
+  type UpdateLlmProfileMutationPayload,
+} from "./config-mutation-applier.js";
 export type { LlmBindingGenerationParams };
 
 const GLOBAL_SCOPE_ID = "global";
@@ -80,6 +91,7 @@ export class LlmProfileServiceError extends Error {
 type ServiceOptions = {
   masterKey?: string;
   now?: () => number;
+  mutationRuntime?: MutationRuntime;
 };
 
 /** Internal row shape returned by loadAllBindings */
@@ -100,11 +112,16 @@ export class LlmProfileService {
   private readonly db: AppDb;
   private readonly now: () => number;
   private readonly masterKey: string;
+  private readonly mutationRuntime: MutationRuntime;
 
   constructor(db: AppDb, options: ServiceOptions = {}) {
     this.db = db;
     this.now = options.now ?? Date.now;
     this.masterKey = options.masterKey ?? process.env.APP_SECRETS_MASTER_KEY ?? "";
+    this.mutationRuntime = options.mutationRuntime ?? createDefaultMutationRuntime(db, {
+      now: this.now,
+      masterKey: this.masterKey,
+    });
   }
 
   async createProfile(
@@ -112,46 +129,24 @@ export class LlmProfileService {
     accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
   ): Promise<LlmProfileListItem> {
     try {
-      return this.db.transaction((tx) => {
-        const existingByName = tx
-          .select()
-          .from(llmProfiles)
-          .where(and(eq(llmProfiles.presetName, input.presetName), eq(llmProfiles.accountId, accountId)))
-          .limit(1)
-          .get();
-        if (existingByName) {
-          throw new LlmProfileServiceError("profile_conflict", `Profile name already exists: ${input.presetName}`);
-        }
-
-        const now = this.now();
-        const id = nanoid();
-        const apiKeyEncrypted = this.encrypt(input.apiKey);
-
-        tx.insert(llmProfiles).values({
-          id,
-          presetName: input.presetName,
-          accountId,
-          provider: input.provider,
-          modelId: input.modelId,
-          baseUrl: input.baseUrl ?? null,
-          apiKeyName: input.apiKeyName ?? null,
-          apiKeyEncrypted,
-          apiKeyMasked: maskSecret(input.apiKey),
-          status: "active",
-          lastUsedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        }).run();
-
-        const profile = tx
-          .select()
-          .from(llmProfiles)
-          .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
-          .limit(1)
-          .get();
-
-        return requireProfile(profile ? this.toListItem(profile) : null, id);
+      const result = await this.mutationRuntime.applyInline<
+        CreateLlmProfileMutationPayload,
+        LlmProfileListItemMutationResult
+      >({
+        id: `llm-profile-create:${input.presetName}:${this.now()}`,
+        kind: CONFIG_MUTATION_KINDS.llmProfileCreate,
+        source: "api",
+        accountId,
+        scopeType: "config.llm_profile",
+        scopeKey: `account:${accountId}`,
+        applyPhase: "inline",
+        durability: "transactional",
+        replaySafety: "confirm_on_replay",
+        payload: input,
+        createdAt: this.now(),
       });
+
+      return requireProfile(result ?? null, "created-profile");
     } catch (error) {
       throw this.mapWriteError(error, input.presetName);
     }
@@ -174,128 +169,52 @@ export class LlmProfileService {
 
   async updateProfile(id: string, patch: UpdateLlmProfileInput, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID): Promise<LlmProfileListItem> {
     try {
-      return this.db.transaction((tx) => {
-        const current = tx
-          .select()
-          .from(llmProfiles)
-          .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
-          .limit(1)
-          .get();
-        if (!current) {
-          throw new LlmProfileServiceError("profile_not_found", `Profile not found: ${id}`);
-        }
-
-        if (current.status === "deleted") {
-          throw new LlmProfileServiceError("profile_inactive", `Profile already deleted: ${id}`);
-        }
-
-        if (patch.presetName && patch.presetName !== current.presetName) {
-          const existingByName = tx
-            .select()
-            .from(llmProfiles)
-            .where(and(eq(llmProfiles.presetName, patch.presetName), eq(llmProfiles.accountId, accountId)))
-            .limit(1)
-            .get();
-          if (existingByName && existingByName.id !== id) {
-            throw new LlmProfileServiceError("profile_conflict", `Profile name already exists: ${patch.presetName}`);
-          }
-        }
-
-        const update: Partial<typeof llmProfiles.$inferInsert> = {
-          updatedAt: this.now(),
-        };
-
-        if (patch.presetName !== undefined) {
-          update.presetName = patch.presetName;
-        }
-
-        if (patch.provider !== undefined) {
-          update.provider = patch.provider;
-        }
-
-        if (patch.modelId !== undefined) {
-          update.modelId = patch.modelId;
-        }
-
-        if (patch.baseUrl !== undefined) {
-          update.baseUrl = patch.baseUrl;
-        }
-
-        if (patch.apiKeyName !== undefined) {
-          update.apiKeyName = patch.apiKeyName;
-        }
-
-        if (patch.status !== undefined) {
-          update.status = patch.status;
-        }
-
-        if (patch.apiKey !== undefined) {
-          update.apiKeyEncrypted = this.encrypt(patch.apiKey);
-          update.apiKeyMasked = maskSecret(patch.apiKey);
-        }
-
-        tx.update(llmProfiles)
-          .set(update)
-          .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
-          .run();
-
-        const profile = tx
-          .select()
-          .from(llmProfiles)
-          .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
-          .limit(1)
-          .get();
-
-        return requireProfile(profile ? this.toListItem(profile) : null, id);
+      const result = await this.mutationRuntime.applyInline<
+        UpdateLlmProfileMutationPayload,
+        LlmProfileListItemMutationResult
+      >({
+        id: `llm-profile-update:${id}:${this.now()}`,
+        kind: CONFIG_MUTATION_KINDS.llmProfileUpdate,
+        source: "api",
+        accountId,
+        scopeType: "config.llm_profile",
+        scopeKey: `profile:${id}`,
+        applyPhase: "inline",
+        durability: "transactional",
+        replaySafety: "confirm_on_replay",
+        payload: { id, patch },
+        createdAt: this.now(),
       });
+
+      return requireProfile(result ?? null, id);
     } catch (error) {
       throw this.mapWriteError(error, patch.presetName);
     }
   }
 
   async deleteProfile(id: string, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID): Promise<LlmProfileListItem> {
-    return this.db.transaction((tx) => {
-      const profile = tx
-        .select()
-        .from(llmProfiles)
-        .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
-        .limit(1)
-        .get();
-      if (!profile) {
-        throw new LlmProfileServiceError("profile_not_found", `Profile not found: ${id}`);
-      }
+    try {
+      const result = await this.mutationRuntime.applyInline<
+        DeleteLlmProfileMutationPayload,
+        LlmProfileListItemMutationResult
+      >({
+        id: `llm-profile-delete:${id}:${this.now()}`,
+        kind: CONFIG_MUTATION_KINDS.llmProfileDelete,
+        source: "api",
+        accountId,
+        scopeType: "config.llm_profile",
+        scopeKey: `profile:${id}`,
+        applyPhase: "inline",
+        durability: "transactional",
+        replaySafety: "confirm_on_replay",
+        payload: { id },
+        createdAt: this.now(),
+      });
 
-      this.cleanupStaleSessionBindingsForProfile(tx, id, accountId);
-
-      const bindingCountRow = tx
-        .select({ total: count() })
-        .from(llmProfileBindings)
-        .where(and(eq(llmProfileBindings.profileId, id), eq(llmProfileBindings.accountId, accountId)))
-        .get();
-      const totalBindings = Number(bindingCountRow?.total ?? 0);
-
-      if (totalBindings > 0) {
-        throw new LlmProfileServiceError("profile_in_use", `Profile is currently bound and cannot be deleted: ${id}`);
-      }
-
-      const now = this.now();
-      tx.update(llmProfiles)
-        .set({
-          status: "deleted",
-          updatedAt: now,
-        })
-        .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
-        .run();
-
-      const updated = tx
-        .select()
-        .from(llmProfiles)
-        .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId)))
-        .limit(1)
-        .get();
-
-      return requireProfile(updated ? this.toListItem(updated) : null, id);
-    });
+      return requireProfile(result ?? null, id);
+    } catch (error) {
+      throw this.mapWriteError(error);
+    }
   }
 
   async activateProfile(
@@ -306,64 +225,32 @@ export class LlmProfileService {
     params?: LlmBindingGenerationParams | null,
     accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
   ): Promise<void> {
-    let normalizedParams: LlmBindingGenerationParams | undefined;
     try {
-      normalizedParams = normalizeBindingParams(params, true);
-    } catch (e) {
-      if (e instanceof LlmParamsValidationError) {
-        throw new LlmProfileServiceError("invalid_params", e.message);
-      }
-      throw e;
-    }
-
-    this.db.transaction((tx) => {
-      const profile = tx
-        .select()
-        .from(llmProfiles)
-        .where(and(eq(llmProfiles.id, profileId), eq(llmProfiles.accountId, accountId)))
-        .limit(1)
-        .get();
-      if (!profile) {
-        throw new LlmProfileServiceError("profile_not_found", `Profile not found: ${profileId}`);
-      }
-
-      if (profile.status !== "active") {
-        throw new LlmProfileServiceError("profile_inactive", `Profile is not active: ${profileId}`);
-      }
-
-      const now = this.now();
-      const bindingScopeId = scope === "global" ? GLOBAL_SCOPE_ID : scopeId;
-      if (scope === "session") {
-        this.ensureSessionScopeExists(tx, bindingScopeId, accountId);
-      }
-      const paramsJson = normalizedParams ? JSON.stringify(normalizedParams) : null;
-
-      const conflictSet: Partial<typeof llmProfileBindings.$inferInsert> = {
+      const payload: ActivateLlmProfileMutationPayload = {
+        scope,
+        scopeId,
         profileId,
-        updatedAt: now,
+        instanceSlot: instanceSlot as ActivateLlmProfileMutationPayload["instanceSlot"],
+        ...(params !== undefined ? { params } : {}),
       };
-      if (params !== undefined) {
-        conflictSet.paramsJson = paramsJson;
-      }
 
-      tx.insert(llmProfileBindings)
-        .values({
-          id: nanoid(),
-          scope,
-          accountId,
-          scopeId: bindingScopeId,
-          instanceSlot,
-          profileId,
-          paramsJson,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [llmProfileBindings.accountId, llmProfileBindings.scope, llmProfileBindings.scopeId, llmProfileBindings.instanceSlot],
-          set: conflictSet,
-        })
-        .run();
-    });
+      await this.mutationRuntime.applyInline<ActivateLlmProfileMutationPayload, void>({
+        id: `llm-profile-activate:${profileId}:${scope}:${scopeId}:${instanceSlot}:${this.now()}`,
+        kind: CONFIG_MUTATION_KINDS.llmProfileActivate,
+        source: "api",
+        accountId,
+        sessionId: scope === "session" ? scopeId : undefined,
+        scopeType: "config.llm_profile_binding",
+        scopeKey: `${scope}:${scopeId}:${instanceSlot}`,
+        applyPhase: "inline",
+        durability: "transactional",
+        replaySafety: "confirm_on_replay",
+        payload,
+        createdAt: this.now(),
+      });
+    } catch (error) {
+      throw this.mapWriteError(error);
+    }
   }
 
   async unbindProfile(
@@ -372,29 +259,28 @@ export class LlmProfileService {
     instanceSlot: string = '*',
     accountId: string = DEFAULT_ADMIN_ACCOUNT_ID,
   ): Promise<void> {
-    this.db.transaction((tx) => {
-      const bindingScopeId = scope === "global" ? GLOBAL_SCOPE_ID : scopeId;
-      if (scope === "session") {
-        this.ensureSessionScopeExists(tx, bindingScopeId, accountId);
-      }
-
-      const deleted = tx.delete(llmProfileBindings)
-        .where(and(
-          eq(llmProfileBindings.accountId, accountId),
-          eq(llmProfileBindings.scope, scope),
-          eq(llmProfileBindings.scopeId, bindingScopeId),
-          eq(llmProfileBindings.instanceSlot, instanceSlot),
-        ))
-        .returning({ id: llmProfileBindings.id })
-        .all();
-
-      if (deleted.length === 0) {
-        throw new LlmProfileServiceError(
-          "binding_not_found",
-          `Profile binding not found for scope=${scope} scopeId=${bindingScopeId} slot=${instanceSlot}`,
-        );
-      }
-    });
+    try {
+      await this.mutationRuntime.applyInline<UnbindLlmProfileMutationPayload, void>({
+        id: `llm-profile-unbind:${scope}:${scopeId}:${instanceSlot}:${this.now()}`,
+        kind: CONFIG_MUTATION_KINDS.llmProfileUnbind,
+        source: "api",
+        accountId,
+        sessionId: scope === "session" ? scopeId : undefined,
+        scopeType: "config.llm_profile_binding",
+        scopeKey: `${scope}:${scopeId}:${instanceSlot}`,
+        applyPhase: "inline",
+        durability: "transactional",
+        replaySafety: "confirm_on_replay",
+        payload: {
+          scope,
+          scopeId,
+          instanceSlot: instanceSlot as UnbindLlmProfileMutationPayload["instanceSlot"],
+        },
+        createdAt: this.now(),
+      });
+    } catch (error) {
+      throw this.mapWriteError(error);
+    }
   }
 
   async resolveActiveProfile(
@@ -617,6 +503,10 @@ export class LlmProfileService {
       return error;
     }
 
+    if (error instanceof ConfigMutationError) {
+      return new LlmProfileServiceError(error.code as LlmProfileServiceError["code"], error.message);
+    }
+
     const code = typeof error === "object" && error !== null ? (error as { code?: string }).code : undefined;
     if (typeof code === "string" && code.startsWith("SQLITE_CONSTRAINT")) {
       return new LlmProfileServiceError(
@@ -626,14 +516,6 @@ export class LlmProfileService {
     }
 
     throw error;
-  }
-
-  private encrypt(value: string): string {
-    if (!this.masterKey || this.masterKey.trim().length === 0) {
-      throw new LlmProfileServiceError("secret_unavailable", "APP_SECRETS_MASTER_KEY is required for profile encryption");
-    }
-
-    return encryptSecret(value, this.masterKey);
   }
 
   private decrypt(value: string): string {

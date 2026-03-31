@@ -325,6 +325,121 @@ export const memoryJobs = sqliteTable(
   })
 );
 
+export const chatTransferJobs = sqliteTable(
+  "chat_transfer_job",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    jobKind: text("job_kind", { enum: ["import_chat", "export_chat"] }).notNull(),
+    format: text("format", { enum: ["thchat", "sillytavern_jsonl", "st_jsonl"] }),
+    status: text("status", { enum: ["pending", "leased", "running", "retry_waiting", "succeeded", "dead_letter", "cancelled"] }).notNull().default("pending"),
+    phase: text("phase", { enum: ["queued", "parsing", "normalizing", "publishing", "snapshotting", "rendering", "writing_artifact", "finalizing", "completed"] }).notNull().default("queued"),
+    requestedSessionId: text("requested_session_id").references(() => sessions.id, { onDelete: "set null" }),
+    resultSessionId: text("result_session_id").references(() => sessions.id, { onDelete: "set null" }),
+    requestJson: text("request_json").notNull().default("{}"),
+    resultJson: text("result_json"),
+    inputArtifactPath: text("input_artifact_path"),
+    normalizedArtifactPath: text("normalized_artifact_path"),
+    outputArtifactPath: text("output_artifact_path"),
+    outputExpiresAt: integer("output_expires_at"),
+    progressCurrent: integer("progress_current").notNull().default(0),
+    progressTotal: integer("progress_total"),
+    progressMessage: text("progress_message"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    availableAt: integer("available_at").notNull(),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: integer("lease_until"),
+    lastError: text("last_error"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    finishedAt: integer("finished_at"),
+  },
+  (table) => ({
+    statusAvailableIdx: index("chat_transfer_job_status_available_idx").on(table.status, table.availableAt),
+    accountStatusAvailableIdx: index("chat_transfer_job_account_status_available_idx").on(
+      table.accountId,
+      table.status,
+      table.availableAt,
+    ),
+    accountJobKindCreatedIdx: index("chat_transfer_job_account_kind_created_idx").on(
+      table.accountId,
+      table.jobKind,
+      table.createdAt,
+    ),
+    accountRequestedSessionCreatedIdx: index("chat_transfer_job_account_requested_session_created_idx").on(table.accountId, table.requestedSessionId, table.createdAt),
+    outputExpiresIdx: index("chat_transfer_job_output_expires_idx").on(table.outputExpiresAt),
+  })
+);
+
+export const runtimeScopeStates = sqliteTable(
+  "runtime_scope_state",
+  {
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    scopeType: text("scope_type").notNull(),
+    scopeKey: text("scope_key").notNull(),
+    revision: integer("revision").notNull().default(0),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: integer("lease_until"),
+    lastProcessedAt: integer("last_processed_at"),
+    lastSuccessJobId: text("last_success_job_id"),
+    metadataJson: text("metadata_json").notNull().default("{}"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountScopeUnique: uniqueIndex("runtime_scope_state_account_scope_uq").on(
+      table.accountId,
+      table.scopeType,
+      table.scopeKey,
+    ),
+    leaseIdx: index("runtime_scope_state_lease_idx").on(table.leaseUntil),
+  })
+);
+
+export const runtimeJobs = sqliteTable(
+  "runtime_job",
+  {
+    id: text("id").primaryKey(),
+    jobType: text("job_type").notNull(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    scopeType: text("scope_type").notNull(),
+    scopeKey: text("scope_key").notNull(),
+    sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
+    floorId: text("floor_id").references(() => floors.id, { onDelete: "set null" }),
+    pageId: text("page_id").references(() => messagePages.id, { onDelete: "set null" }),
+    status: text("status", { enum: ["pending", "leased", "running", "retry_waiting", "succeeded", "dead_letter", "cancelled"] }).notNull().default("pending"),
+    phase: text("phase"),
+    payloadJson: text("payload_json").notNull().default("{}"),
+    stateJson: text("state_json"),
+    resultJson: text("result_json"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(5),
+    availableAt: integer("available_at").notNull(),
+    startedAt: integer("started_at"),
+    finishedAt: integer("finished_at"),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: integer("lease_until"),
+    basedOnRevision: integer("based_on_revision"),
+    dedupeKey: text("dedupe_key"),
+    progressCurrent: integer("progress_current").notNull().default(0),
+    progressTotal: integer("progress_total"),
+    progressMessage: text("progress_message"),
+    lastError: text("last_error"),
+    lastErrorCode: text("last_error_code"),
+    lastErrorClass: text("last_error_class"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    dueIdx: index("runtime_job_due_idx").on(table.status, table.availableAt),
+    scopeIdx: index("runtime_job_scope_idx").on(table.accountId, table.scopeType, table.scopeKey, table.createdAt),
+    sessionIdx: index("runtime_job_session_idx").on(table.accountId, table.sessionId, table.createdAt),
+    dedupeUnique: uniqueIndex("runtime_job_account_type_dedupe_uq").on(table.accountId, table.jobType, table.dedupeKey),
+  })
+);
+
+
+
 // ── 导入资源表 ────────────────────────────────────────
 
 export const presets = sqliteTable(

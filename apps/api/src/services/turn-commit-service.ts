@@ -36,6 +36,8 @@ import {
   VariableCommitService,
   type VariablePromotionPolicy,
 } from "./variable-commit-service.js";
+import { VARIABLE_MUTATION_KINDS } from "./variable-mutation-applier.js";
+import type { MutationRuntime } from "./runtime-mutation-types.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -77,6 +79,7 @@ export interface TurnCommitResult {
 export interface TurnCommitServiceOptions {
   enableAsyncMemoryIngest?: boolean;
   memoryJobScheduler?: MemoryJobScheduler;
+  mutationRuntime?: MutationRuntime;
 }
 
 class MemoryPersistError extends Error {
@@ -197,8 +200,23 @@ function toLegacyToolCallRecord(
   };
 }
 
+function createEmptyVariableCommitResult(input: TurnCommitInput): ReturnType<VariableCommitService["promoteAll"]> {
+  return {
+    pageId: input.variableCommit?.pageId,
+    floorId: input.floorId,
+    sessionId: input.sessionId,
+    fromScope: "page",
+    toScope: "floor",
+    policy: input.variableCommit?.policy ?? "replace",
+    scannedCount: 0,
+    promotedCount: 0,
+    skippedCount: 0,
+    promotedVariables: [],
+  };
+}
+
 export class TurnCommitService {
-  private readonly variableCommitService = new VariableCommitService();
+  private readonly variableCommitService: VariableCommitService;
   private readonly enableAsyncMemoryIngest: boolean;
   private readonly memoryJobScheduler: MemoryJobScheduler;
 
@@ -209,7 +227,14 @@ export class TurnCommitService {
     options: TurnCommitServiceOptions = {},
   ) {
     this.enableAsyncMemoryIngest = options.enableAsyncMemoryIngest === true;
-    this.memoryJobScheduler = options.memoryJobScheduler ?? new MemoryJobScheduler();
+    this.memoryJobScheduler = options.memoryJobScheduler ?? new MemoryJobScheduler({
+      eventBus: this.eventBus,
+    });
+    this.variableCommitService = new VariableCommitService({
+      db,
+      mutationRuntime: options.mutationRuntime,
+      eventBus: this.eventBus,
+    });
   }
 
   private loadUserInputDigest(tx: DbExecutor, floorId: string, accountId: string): string {
@@ -273,11 +298,27 @@ export class TurnCommitService {
       ?? input.execution.toolCalls
       ?? actualToolExecutionRecords.map((record, index) => toLegacyToolCallRecord(record, index + 1));
     const pendingEvents: PendingCoreEvent[] = [];
+    const variableMutationBatch = this.variableCommitService.beginBatch();
+
+    this.variableCommitService.stageBufferedMutations(variableMutationBatch, {
+      mutations: actualBufferedVariableMutations,
+      committedAt,
+      accountId: input.accountId,
+    });
+    this.variableCommitService.stagePromotion(variableMutationBatch, {
+      accountId: input.accountId,
+      pageId: input.variableCommit?.pageId,
+      floorId: input.floorId,
+      sessionId: input.sessionId,
+      policy: input.variableCommit?.policy,
+      committedAt,
+    });
 
     let transactionResult: {
       floor: FloorEntity;
       assistantMessage: { pageId: string; messageId: string };
       variableCommit: ReturnType<VariableCommitService["promoteAll"]>;
+      variableMutationApply: { runAfterCommit(): Promise<void> };
     };
     try {
       transactionResult = this.db.transaction((tx) => {
@@ -346,24 +387,14 @@ export class TurnCommitService {
             .run();
         }
 
-        if (actualBufferedVariableMutations.length > 0) {
-          this.variableCommitService.flushBufferedMutations(
-            actualBufferedVariableMutations,
-            tx,
-            committedAt,
-          );
-        }
-
-        const variableCommit = this.variableCommitService.promoteAll(
-          {
-            pageId: input.variableCommit?.pageId,
-            floorId: input.floorId,
-            sessionId: input.sessionId,
-            policy: input.variableCommit?.policy,
-            committedAt,
-          },
-          tx
-        );
+        const variableMutationApply = variableMutationBatch.applyInTransaction(tx, {
+          actor: { type: "system", id: "turn-commit-service" },
+          requestId: `turn-commit:${input.floorId}`,
+        });
+        const variableCommit = variableMutationApply.mutations.find(
+          (mutation) => mutation.envelope.kind === VARIABLE_MUTATION_KINDS.promotePageToFloor,
+        )?.result as ReturnType<VariableCommitService["promoteAll"]> | undefined
+          ?? createEmptyVariableCommitResult(input);
 
         const updateResult = tx
           .update(floors)
@@ -450,6 +481,7 @@ export class TurnCommitService {
           floor,
           assistantMessage,
           variableCommit,
+          variableMutationApply,
         };
       });
     } catch (error) {
@@ -471,6 +503,7 @@ export class TurnCommitService {
       throw error;
     }
 
+    await transactionResult.variableMutationApply.runAfterCommit();
     await this.emitPostCommitEvents(
       transactionResult.floor,
       transactionResult.variableCommit,

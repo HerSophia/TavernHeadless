@@ -105,6 +105,25 @@ export interface AppConfig {
     maxRetryDelayMs?: number;
     candidateScanLimit?: number;
   };
+  /** 是否启用聊天 transfer worker（供独立 worker 进程或可选内嵌模式使用） */
+  enableChatTransferWorker: boolean;
+  /** 可选：ChatTransferWorker 运行参数 */
+  chatTransferWorker?: {
+    pollIntervalMs?: number;
+    leaseTtlMs?: number;
+    maxConcurrentJobs?: number;
+    retryBaseDelayMs?: number;
+    maxRetryDelayMs?: number;
+    candidateScanLimit?: number;
+  };
+  /** 聊天 transfer 产物目录 */
+  chatTransferArtifactDir: string;
+  /** 聊天导入最大字节数 */
+  chatImportMaxBytes?: number;
+  /** 同步聊天导出消息阈值 */
+  chatExportSyncMaxMessages?: number;
+  /** 导出产物 TTL（毫秒） */
+  chatExportArtifactTtlMs?: number;
   /** 服务端默认生成超时（毫秒） */
   llmDefaultTimeoutMs: number;
   /** commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数 */
@@ -166,6 +185,19 @@ export function loadConfig(): AppConfig {
     process.env.MEMORY_WORKER_MAX_RETRY_DELAY_MS,
     process.env.MEMORY_WORKER_CANDIDATE_SCAN_LIMIT,
   );
+  const enableChatTransferWorker = process.env.ENABLE_CHAT_TRANSFER_WORKER === "true";
+  const chatTransferWorker = parseChatTransferWorkerConfig(
+    process.env.CHAT_TRANSFER_WORKER_POLL_INTERVAL_MS,
+    process.env.CHAT_TRANSFER_WORKER_LEASE_TTL_MS,
+    process.env.CHAT_TRANSFER_WORKER_MAX_CONCURRENT_JOBS,
+    process.env.CHAT_TRANSFER_WORKER_RETRY_BASE_DELAY_MS,
+    process.env.CHAT_TRANSFER_WORKER_MAX_RETRY_DELAY_MS,
+    process.env.CHAT_TRANSFER_WORKER_CANDIDATE_SCAN_LIMIT,
+  );
+  const chatTransferArtifactDir = parseOptionalNonEmpty(process.env.CHAT_TRANSFER_ARTIFACT_DIR) ?? "data/chat-transfer-artifacts";
+  const chatImportMaxBytes = parsePositiveInt(process.env.CHAT_IMPORT_MAX_BYTES);
+  const chatExportSyncMaxMessages = parsePositiveInt(process.env.CHAT_EXPORT_SYNC_MAX_MESSAGES);
+  const chatExportArtifactTtlMs = parsePositiveInt(process.env.CHAT_EXPORT_ARTIFACT_TTL_MS);
 
   const memoryMaintenance = parseMemoryMaintenanceConfig(
     process.env.ENABLE_MEMORY_MAINTENANCE,
@@ -212,6 +244,12 @@ export function loadConfig(): AppConfig {
       enableMacroCompaction,
       enableDualSummaryInjection,
       memoryWorker,
+      enableChatTransferWorker,
+      chatTransferWorker,
+      chatTransferArtifactDir,
+      chatImportMaxBytes,
+      chatExportSyncMaxMessages,
+      chatExportArtifactTtlMs,
       llmDefaultTimeoutMs,
       turnCommitMaxRetries,
       generationQueueMode,
@@ -278,6 +316,12 @@ export function loadConfig(): AppConfig {
     enableMacroCompaction,
     enableDualSummaryInjection,
     memoryWorker,
+    enableChatTransferWorker,
+    chatTransferWorker,
+    chatTransferArtifactDir,
+    chatImportMaxBytes,
+    chatExportSyncMaxMessages,
+    chatExportArtifactTtlMs,
     llmDefaultTimeoutMs,
     turnCommitMaxRetries,
     generationQueueMode,
@@ -431,6 +475,42 @@ function parseMemoryWorkerConfig(
   maxRetryDelayMsRaw: string | undefined,
   candidateScanLimitRaw: string | undefined,
 ): AppConfig["memoryWorker"] | undefined {
+  const pollIntervalMs = parsePositiveInt(pollIntervalMsRaw);
+  const leaseTtlMs = parsePositiveInt(leaseTtlMsRaw);
+  const maxConcurrentJobs = parsePositiveInt(maxConcurrentJobsRaw);
+  const retryBaseDelayMs = parsePositiveInt(retryBaseDelayMsRaw);
+  const maxRetryDelayMs = parsePositiveInt(maxRetryDelayMsRaw);
+  const candidateScanLimit = parsePositiveInt(candidateScanLimitRaw);
+
+  if (
+    pollIntervalMs === undefined
+    && leaseTtlMs === undefined
+    && maxConcurrentJobs === undefined
+    && retryBaseDelayMs === undefined
+    && maxRetryDelayMs === undefined
+    && candidateScanLimit === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
+    ...(leaseTtlMs !== undefined ? { leaseTtlMs } : {}),
+    ...(maxConcurrentJobs !== undefined ? { maxConcurrentJobs } : {}),
+    ...(retryBaseDelayMs !== undefined ? { retryBaseDelayMs } : {}),
+    ...(maxRetryDelayMs !== undefined ? { maxRetryDelayMs } : {}),
+    ...(candidateScanLimit !== undefined ? { candidateScanLimit } : {}),
+  };
+}
+
+function parseChatTransferWorkerConfig(
+  pollIntervalMsRaw: string | undefined,
+  leaseTtlMsRaw: string | undefined,
+  maxConcurrentJobsRaw: string | undefined,
+  retryBaseDelayMsRaw: string | undefined,
+  maxRetryDelayMsRaw: string | undefined,
+  candidateScanLimitRaw: string | undefined,
+): AppConfig["chatTransferWorker"] | undefined {
   const pollIntervalMs = parsePositiveInt(pollIntervalMsRaw);
   const leaseTtlMs = parsePositiveInt(leaseTtlMsRaw);
   const maxConcurrentJobs = parsePositiveInt(maxConcurrentJobsRaw);

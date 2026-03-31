@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, lte } from "drizzle-orm";
+import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
@@ -8,16 +8,33 @@ import {
 } from "@tavern/shared";
 import {
   MemoryCompactionPlanner,
+  type CoreEventBus,
   type MemoryItem,
 } from "@tavern/core";
 
 import type { DatabaseConnection } from "../db/client.js";
-import { memoryItems, memoryJobs, memoryScopeStates } from "../db/schema.js";
-import { parseJsonField, parseWithSchema, requireRow, sendError } from "../lib/http.js";
+import { memoryItems, runtimeJobs, runtimeScopeStates } from "../db/schema.js";
+import { parseJsonField, parseWithSchema, sendError } from "../lib/http.js";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { MemoryJobScheduler } from "../services/memory-job-scheduler.js";
+import {
+  RuntimeJobInvalidStateError,
+  RuntimeJobNotFoundError,
+  RuntimeJobQueryService,
+} from "../services/runtime-job-query-service.js";
+import {
+  MEMORY_RUNTIME_SCOPE_TYPE,
+  createMemoryRuntimeJobCatalog,
+  buildMemoryRuntimeScopeKey,
+  fromMemoryRuntimeJobType,
+  parseMemoryRuntimeScopeKey,
+  readMemoryRuntimeScopeMetadata,
+  toMemoryRuntimeJobType,
+} from "../services/memory-runtime-job-definitions.js";
+
+const ADVANCED_MEMORY_RUNTIME_DESCRIPTION = "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的 memory 作业与 scope 状态，主要面向开发、调试、运维和自动化工具，不属于普通聊天主流程接口。";
 
 const memoryScopeSchema = z.enum(MEMORY_SCOPES);
 const memoryJobTypeSchema = z.enum(MEMORY_JOB_TYPES);
@@ -225,12 +242,17 @@ function toMemoryItem(row: typeof memoryItems.$inferSelect): MemoryItem {
   };
 }
 
-function toMemoryJobResponse(row: typeof memoryJobs.$inferSelect) {
+function buildScopeIdEquals(column: typeof runtimeJobs.scopeKey | typeof runtimeScopeStates.scopeKey, scopeId: string) {
+  return sql`substr(${column}, instr(${column}, ':') + 1) = ${scopeId}`;
+}
+
+function toMemoryJobResponse(row: typeof runtimeJobs.$inferSelect) {
+  const scopeRef = parseMemoryRuntimeScopeKey(row.scopeKey);
   return {
     id: row.id,
-    scope: row.scope,
-    scope_id: row.scopeId,
-    job_type: row.jobType,
+    scope: scopeRef.scope,
+    scope_id: scopeRef.scopeId,
+    job_type: fromMemoryRuntimeJobType(row.jobType),
     status: row.status,
     floor_id: row.floorId,
     based_on_revision: row.basedOnRevision,
@@ -247,21 +269,24 @@ function toMemoryJobResponse(row: typeof memoryJobs.$inferSelect) {
   };
 }
 
-function toMemoryScopeStateResponse(row: typeof memoryScopeStates.$inferSelect) {
+function toMemoryScopeStateResponse(row: typeof runtimeScopeStates.$inferSelect) {
+  const scopeRef = parseMemoryRuntimeScopeKey(row.scopeKey);
+  const metadata = readMemoryRuntimeScopeMetadata(row.metadataJson);
   return {
-    scope: row.scope,
-    scope_id: row.scopeId,
+    scope: scopeRef.scope,
+    scope_id: scopeRef.scopeId,
     revision: row.revision,
     lease_owner: row.leaseOwner,
     lease_until: row.leaseUntil,
-    last_processed_floor_no: row.lastProcessedFloorNo,
-    last_compaction_at: row.lastCompactionAt,
+    last_processed_floor_no: metadata.lastProcessedFloorNo ?? null,
+    last_compaction_at: metadata.lastCompactionAt ?? null,
     updated_at: row.updatedAt,
   };
 }
 
 export interface MemoryJobRoutesOptions {
   enableBackgroundWorker?: boolean;
+  eventBus?: CoreEventBus;
 }
 
 export async function registerMemoryJobRoutes(
@@ -270,13 +295,18 @@ export async function registerMemoryJobRoutes(
   options: MemoryJobRoutesOptions = {},
 ): Promise<void> {
   const { db } = connection;
-  const scheduler = new MemoryJobScheduler();
+  const scheduler = new MemoryJobScheduler({ eventBus: options.eventBus });
+  const runtimeQueryService = new RuntimeJobQueryService(db, {
+    catalog: createMemoryRuntimeJobCatalog(),
+    eventBus: options.eventBus,
+  });
   const planner = new MemoryCompactionPlanner();
 
   app.get("/memory/jobs", {
     schema: {
       tags: ["memories"],
       summary: "List memory jobs",
+      description: ADVANCED_MEMORY_RUNTIME_DESCRIPTION,
       querystring: {
         type: "object",
         properties: {
@@ -308,46 +338,50 @@ export async function registerMemoryJobRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const filters = [eq(memoryJobs.accountId, auth.accountId)];
+    const filters = [
+      eq(runtimeJobs.accountId, auth.accountId),
+      eq(runtimeJobs.scopeType, MEMORY_RUNTIME_SCOPE_TYPE),
+    ];
 
-    if (parsedQuery.data.scope !== undefined) {
-      filters.push(eq(memoryJobs.scope, parsedQuery.data.scope));
-    }
-    if (parsedQuery.data.scope_id !== undefined) {
-      filters.push(eq(memoryJobs.scopeId, parsedQuery.data.scope_id));
+    if (parsedQuery.data.scope !== undefined && parsedQuery.data.scope_id !== undefined) {
+      filters.push(eq(runtimeJobs.scopeKey, buildMemoryRuntimeScopeKey(parsedQuery.data.scope, parsedQuery.data.scope_id)));
+    } else if (parsedQuery.data.scope !== undefined) {
+      filters.push(sql`${runtimeJobs.scopeKey} like ${`${parsedQuery.data.scope}:%`}`);
+    } else if (parsedQuery.data.scope_id !== undefined) {
+      filters.push(buildScopeIdEquals(runtimeJobs.scopeKey, parsedQuery.data.scope_id));
     }
     if (parsedQuery.data.job_type !== undefined) {
-      filters.push(eq(memoryJobs.jobType, parsedQuery.data.job_type));
+      filters.push(eq(runtimeJobs.jobType, toMemoryRuntimeJobType(parsedQuery.data.job_type)));
     }
     if (parsedQuery.data.status !== undefined) {
-      filters.push(eq(memoryJobs.status, parsedQuery.data.status));
+      filters.push(eq(runtimeJobs.status, parsedQuery.data.status));
     }
     if (parsedQuery.data.floor_id !== undefined) {
-      filters.push(eq(memoryJobs.floorId, parsedQuery.data.floor_id));
+      filters.push(eq(runtimeJobs.floorId, parsedQuery.data.floor_id));
     }
     if (parsedQuery.data.created_from !== undefined) {
-      filters.push(gte(memoryJobs.createdAt, parsedQuery.data.created_from));
+      filters.push(gte(runtimeJobs.createdAt, parsedQuery.data.created_from));
     }
     if (parsedQuery.data.created_to !== undefined) {
-      filters.push(lte(memoryJobs.createdAt, parsedQuery.data.created_to));
+      filters.push(lte(runtimeJobs.createdAt, parsedQuery.data.created_to));
     }
     if (parsedQuery.data.available_from !== undefined) {
-      filters.push(gte(memoryJobs.availableAt, parsedQuery.data.available_from));
+      filters.push(gte(runtimeJobs.availableAt, parsedQuery.data.available_from));
     }
     if (parsedQuery.data.available_to !== undefined) {
-      filters.push(lte(memoryJobs.availableAt, parsedQuery.data.available_to));
+      filters.push(lte(runtimeJobs.availableAt, parsedQuery.data.available_to));
     }
 
     const whereClause = and(...filters);
     const sortByColumn = parsedQuery.data.sort_by === "updated_at"
-      ? memoryJobs.updatedAt
+      ? runtimeJobs.updatedAt
       : parsedQuery.data.sort_by === "available_at"
-        ? memoryJobs.availableAt
-        : memoryJobs.createdAt;
+        ? runtimeJobs.availableAt
+        : runtimeJobs.createdAt;
 
     const rows = await db
       .select()
-      .from(memoryJobs)
+      .from(runtimeJobs)
       .where(whereClause)
       .orderBy(toOrderBy(sortByColumn, parsedQuery.data.sort_order))
       .limit(parsedQuery.data.limit)
@@ -355,7 +389,7 @@ export async function registerMemoryJobRoutes(
 
     const totalRows = await db
       .select({ total: count() })
-      .from(memoryJobs)
+      .from(runtimeJobs)
       .where(whereClause);
 
     return reply.send({
@@ -374,6 +408,7 @@ export async function registerMemoryJobRoutes(
     schema: {
       tags: ["memories"],
       summary: "Retry a memory job",
+      description: ADVANCED_MEMORY_RUNTIME_DESCRIPTION,
       params: idParamsJsonSchema,
       response: {
         200: enqueueJobResponseJsonSchema,
@@ -388,53 +423,38 @@ export async function registerMemoryJobRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const [existing] = await db.select().from(memoryJobs).where(and(
-      eq(memoryJobs.id, parsedParams.data.id),
-      eq(memoryJobs.accountId, auth.accountId),
-    ));
+    try {
+      const result = await runtimeQueryService.retry({
+        accountId: auth.accountId,
+        jobId: parsedParams.data.id,
+        scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+      });
+      const scopeRef = parseMemoryRuntimeScopeKey(result.job.scopeKey);
 
-    if (!existing) {
-      return sendError(reply, 404, "not_found", "Memory job not found");
+      return reply.send({
+        data: {
+          job_id: result.job.id,
+          created: true,
+          scope: scopeRef.scope,
+          scope_id: scopeRef.scopeId,
+        },
+      });
+    } catch (error) {
+      if (error instanceof RuntimeJobNotFoundError) {
+        return sendError(reply, 404, "not_found", "Memory job not found");
+      }
+      if (error instanceof RuntimeJobInvalidStateError) {
+        return sendError(reply, 409, "invalid_state", error.message);
+      }
+      throw error;
     }
-
-    if (existing.status !== "dead_letter" && existing.status !== "cancelled") {
-      return sendError(reply, 409, "invalid_state", "Only dead-letter or cancelled jobs can be retried");
-    }
-
-    const now = Date.now();
-    const updatedRows = await db.update(memoryJobs)
-      .set({
-        status: "retry_waiting",
-        basedOnRevision: null,
-        attemptCount: 0,
-        availableAt: now,
-        leaseOwner: null,
-        leaseUntil: null,
-        lastError: null,
-        finishedAt: null,
-        updatedAt: now,
-      })
-      .where(and(
-        eq(memoryJobs.id, parsedParams.data.id),
-        eq(memoryJobs.accountId, auth.accountId),
-      ))
-      .returning();
-
-    const updated = requireRow(updatedRows[0], "Failed to retry memory job");
-    return reply.send({
-      data: {
-        job_id: updated.id,
-        created: true,
-        scope: updated.scope,
-        scope_id: updated.scopeId,
-      },
-    });
   });
 
   app.post("/memory/jobs/:id/cancel", {
     schema: {
       tags: ["memories"],
       summary: "Cancel a pending memory job",
+      description: ADVANCED_MEMORY_RUNTIME_DESCRIPTION,
       params: idParamsJsonSchema,
       response: {
         200: enqueueJobResponseJsonSchema,
@@ -449,49 +469,38 @@ export async function registerMemoryJobRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const [existing] = await db.select().from(memoryJobs).where(and(
-      eq(memoryJobs.id, parsedParams.data.id),
-      eq(memoryJobs.accountId, auth.accountId),
-    ));
+    try {
+      const result = await runtimeQueryService.cancel({
+        accountId: auth.accountId,
+        jobId: parsedParams.data.id,
+        scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+      });
+      const scopeRef = parseMemoryRuntimeScopeKey(result.job.scopeKey);
 
-    if (!existing) {
-      return sendError(reply, 404, "not_found", "Memory job not found");
+      return reply.send({
+        data: {
+          job_id: result.job.id,
+          created: true,
+          scope: scopeRef.scope,
+          scope_id: scopeRef.scopeId,
+        },
+      });
+    } catch (error) {
+      if (error instanceof RuntimeJobNotFoundError) {
+        return sendError(reply, 404, "not_found", "Memory job not found");
+      }
+      if (error instanceof RuntimeJobInvalidStateError) {
+        return sendError(reply, 409, "invalid_state", error.message);
+      }
+      throw error;
     }
-
-    if (existing.status !== "pending" && existing.status !== "retry_waiting") {
-      return sendError(reply, 409, "invalid_state", "Only pending or retry_waiting jobs can be cancelled");
-    }
-
-    const now = Date.now();
-    const updatedRows = await db.update(memoryJobs)
-      .set({
-        status: "cancelled",
-        leaseOwner: null,
-        leaseUntil: null,
-        finishedAt: now,
-        updatedAt: now,
-      })
-      .where(and(
-        eq(memoryJobs.id, parsedParams.data.id),
-        eq(memoryJobs.accountId, auth.accountId),
-      ))
-      .returning();
-
-    const updated = requireRow(updatedRows[0], "Failed to cancel memory job");
-    return reply.send({
-      data: {
-        job_id: updated.id,
-        created: true,
-        scope: updated.scope,
-        scope_id: updated.scopeId,
-      },
-    });
   });
 
   app.get("/memory/scopes", {
     schema: {
       tags: ["memories"],
       summary: "List memory scope states",
+      description: ADVANCED_MEMORY_RUNTIME_DESCRIPTION,
       querystring: {
         type: "object",
         properties: {
@@ -516,27 +525,31 @@ export async function registerMemoryJobRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const filters = [eq(memoryScopeStates.accountId, auth.accountId)];
+    const filters = [
+      eq(runtimeScopeStates.accountId, auth.accountId),
+      eq(runtimeScopeStates.scopeType, MEMORY_RUNTIME_SCOPE_TYPE),
+    ];
 
-    if (parsedQuery.data.scope !== undefined) {
-      filters.push(eq(memoryScopeStates.scope, parsedQuery.data.scope));
-    }
-    if (parsedQuery.data.scope_id !== undefined) {
-      filters.push(eq(memoryScopeStates.scopeId, parsedQuery.data.scope_id));
+    if (parsedQuery.data.scope !== undefined && parsedQuery.data.scope_id !== undefined) {
+      filters.push(eq(runtimeScopeStates.scopeKey, buildMemoryRuntimeScopeKey(parsedQuery.data.scope, parsedQuery.data.scope_id)));
+    } else if (parsedQuery.data.scope !== undefined) {
+      filters.push(sql`${runtimeScopeStates.scopeKey} like ${`${parsedQuery.data.scope}:%`}`);
+    } else if (parsedQuery.data.scope_id !== undefined) {
+      filters.push(buildScopeIdEquals(runtimeScopeStates.scopeKey, parsedQuery.data.scope_id));
     }
 
     const whereClause = and(...filters);
     const sortByColumn = parsedQuery.data.sort_by === "revision"
-      ? memoryScopeStates.revision
+      ? runtimeScopeStates.revision
       : parsedQuery.data.sort_by === "last_compaction_at"
-        ? memoryScopeStates.lastCompactionAt
+        ? sql<number | null>`json_extract(${runtimeScopeStates.metadataJson}, '$.lastCompactionAt')`
         : parsedQuery.data.sort_by === "last_processed_floor_no"
-          ? memoryScopeStates.lastProcessedFloorNo
-          : memoryScopeStates.updatedAt;
+          ? sql<number | null>`json_extract(${runtimeScopeStates.metadataJson}, '$.lastProcessedFloorNo')`
+          : runtimeScopeStates.updatedAt;
 
     const rows = await db
       .select()
-      .from(memoryScopeStates)
+      .from(runtimeScopeStates)
       .where(whereClause)
       .orderBy(toOrderBy(sortByColumn, parsedQuery.data.sort_order))
       .limit(parsedQuery.data.limit)
@@ -544,7 +557,7 @@ export async function registerMemoryJobRoutes(
 
     const totalRows = await db
       .select({ total: count() })
-      .from(memoryScopeStates)
+      .from(runtimeScopeStates)
       .where(whereClause);
 
     return reply.send({
@@ -563,6 +576,7 @@ export async function registerMemoryJobRoutes(
     schema: {
       tags: ["memories"],
       summary: "Enqueue a scope rebuild job",
+      description: ADVANCED_MEMORY_RUNTIME_DESCRIPTION,
       params: {
         type: "object",
         required: ["scope", "scopeId"],
@@ -627,6 +641,7 @@ export async function registerMemoryJobRoutes(
     schema: {
       tags: ["memories"],
       summary: "Enqueue a manual macro compaction job",
+      description: ADVANCED_MEMORY_RUNTIME_DESCRIPTION,
       params: {
         type: "object",
         required: ["scope", "scopeId"],
@@ -682,19 +697,20 @@ export async function registerMemoryJobRoutes(
 
     const [scopeState] = await db
       .select()
-      .from(memoryScopeStates)
+      .from(runtimeScopeStates)
       .where(and(
-        eq(memoryScopeStates.accountId, auth.accountId),
-        eq(memoryScopeStates.scope, parsedParams.data.scope),
-        eq(memoryScopeStates.scopeId, parsedParams.data.scopeId),
+        eq(runtimeScopeStates.accountId, auth.accountId),
+        eq(runtimeScopeStates.scopeType, MEMORY_RUNTIME_SCOPE_TYPE),
+        eq(runtimeScopeStates.scopeKey, buildMemoryRuntimeScopeKey(parsedParams.data.scope, parsedParams.data.scopeId)),
       ));
 
     const activeSummaries = activeSummaryRows.map(toMemoryItem);
     const latestMacroSummary = activeSummaries.find((item) => item.summaryTier === "macro");
+    const metadata = scopeState ? readMemoryRuntimeScopeMetadata(scopeState.metadataJson) : {};
     const plan = planner.plan({
       activeSummaries,
       latestMacroSummary,
-      lastProcessedFloorNo: scopeState?.lastProcessedFloorNo ?? undefined,
+      lastProcessedFloorNo: metadata.lastProcessedFloorNo ?? undefined,
       force: parsedBody.data.force !== false,
     });
 

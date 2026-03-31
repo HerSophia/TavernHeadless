@@ -115,9 +115,17 @@ describe("createTavernClient", () => {
     expect(client.memoryScopes).toBeDefined();
     expect(typeof client.memoryScopes.compact).toBe("function");
 
+    expect(client.chatTransferJobs).toBeDefined();
+    expect(typeof client.chatTransferJobs.list).toBe("function");
+    expect(typeof client.chatTransferJobs.downloadFile).toBe("function");
+
     expect(client.exports).toBeDefined();
     expect(typeof client.exports.chat).toBe("function");
+    expect(typeof client.exports.chatJob).toBe("function");
     expect(typeof client.exports.character).toBe("function");
+
+    expect(client.imports).toBeDefined();
+    expect(typeof client.imports.chatJob).toBe("function");
 
     expect(client.tools).toBeDefined();
     expect(typeof client.tools.listBuiltin).toBe("function");

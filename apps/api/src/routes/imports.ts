@@ -31,6 +31,7 @@
 import type { FastifyInstance } from "fastify";
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import type { CoreEventBus } from "@tavern/core";
 import { createHash } from "node:crypto";
 import { SimpleTokenCounter } from "@tavern/core";
 import { z } from "zod";
@@ -67,13 +68,22 @@ import {
   characters,
   characterVersions,
 } from "../db/schema.js";
-import { memoryItems, memoryEdges, memoryScopeStates } from "../db/schema.js";
+import { memoryItems, memoryEdges, runtimeScopeStates } from "../db/schema.js";
 import { parseWithSchema, sendError, parseJsonField, stringifyJsonField } from "../lib/http.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { type JsonRecord, toPresetEditorDocument, toRawPresetFromEditor } from "../lib/preset-utils.js";
 import { executeWithSqliteBusyRetry, ResourceBusyError } from "../lib/retry.js";
 import { VariableService } from "../services/variable-service.js";
 import { VariableServiceError } from "../services/variable-service-errors.js";
+import { LocalChatTransferArtifactStore } from "../services/chat-transfer-artifacts.js";
+import { ChatTransferJobScheduler } from "../services/chat-transfer-job-scheduler.js";
+import { MEMORY_RUNTIME_SCOPE_TYPE, buildMemoryRuntimeScopeKey } from "../services/memory-runtime-job-definitions.js";
+import {
+  executeResourceWrite as executeResourceWriteOrThrow,
+  ResourceWriteRouteError,
+  withResourceWriteCas,
+  assertRevisionWriteApplied,
+} from "../services/resource-write.js";
 
 // ── Zod Schemas ───────────────────────────────────────
 
@@ -178,6 +188,7 @@ const resourceDeleteQuerySchema = z.object({
 
 
 const MAX_CHARACTER_IMPORT_BYTES = 200_000;
+const DEFAULT_CHAT_IMPORT_MAX_BYTES = 5_000_000;
 
 const resourceListItemExample = {
   id: "preset_story",
@@ -545,6 +556,15 @@ const importChatBodyExample = {
   title: "Imported Chat",
 };
 
+const createChatImportJobResponseExample = {
+  data: {
+    job_id: "ctj_import_demo",
+    status: "pending",
+    job_kind: "import_chat",
+    format: "sillytavern_jsonl",
+  },
+};
+
 const importChatResponseExample = {
   data: {
     session_id: "sess_abc123",
@@ -590,6 +610,31 @@ const importChatResponseJsonSchema = {
     },
   },
   examples: [importChatResponseExample],
+  additionalProperties: false,
+} as const;
+
+const createChatImportJobResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["job_id", "status", "job_kind"],
+      properties: {
+        job_id: { type: "string" },
+        status: { type: "string", enum: ["pending"] },
+        job_kind: { type: "string", enum: ["import_chat"] },
+        format: {
+          anyOf: [
+            { type: "string", enum: ["thchat", "sillytavern_jsonl"] },
+            { type: "null" },
+          ],
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [createChatImportJobResponseExample],
   additionalProperties: false,
 } as const;
 
@@ -764,11 +809,80 @@ async function executeResourceWrite<T>(
   }
 }
 
+export interface ImportRoutesOptions {
+  artifactDir?: string;
+  importMaxBytes?: number;
+  eventBus?: CoreEventBus;
+}
+
+function sendImportWriteError(reply: Parameters<typeof sendError>[0], error: ResourceWriteRouteError) {
+  return sendError(reply, error.statusCode, error.code, error.message, error.details);
+}
+
+function createRegexProfileConflictError() {
+  return new ResourceWriteRouteError(409, "regex_profile_conflict", "Regex profile has been modified by another operation");
+}
+
+function createRegexProfileNotFoundError() {
+  return new ResourceWriteRouteError(404, "regex_profile_not_found", "Regex profile not found");
+}
+
+function detectQueuedChatImportFormat(data: string): "thchat" | "sillytavern_jsonl" | undefined {
+  try {
+    const parsed = JSON.parse(data);
+    if (parsed && typeof parsed === "object" && (parsed as { spec?: unknown }).spec === TH_CHAT_SPEC) {
+      return "thchat";
+    }
+  } catch {
+    // ignore
+  }
+
+  return undefined;
+}
+
+async function resolveImportCharacterBinding(
+  db: DatabaseConnection["db"],
+  accountId: string,
+  requestedCharacterId?: string,
+): Promise<{ characterId: string | null; characterVersionId: string | null; characterSnapshotJson: string | null }> {
+  if (!requestedCharacterId) {
+    return {
+      characterId: null,
+      characterVersionId: null,
+      characterSnapshotJson: null,
+    };
+  }
+
+  const charRow = await db.select({
+    id: characters.id,
+  }).from(characters).where(
+    and(eq(characters.id, requestedCharacterId), eq(characters.accountId, accountId))
+  ).get();
+
+  if (!charRow) {
+    throw new Error(`Character ${requestedCharacterId} not found`);
+  }
+
+  const versionRow = await db.select({
+    id: characterVersions.id,
+    dataJson: characterVersions.dataJson,
+  }).from(characterVersions).where(
+    eq(characterVersions.characterId, charRow.id)
+  ).orderBy(asc(characterVersions.createdAt)).limit(1).get();
+
+  return {
+    characterId: charRow.id,
+    characterVersionId: versionRow?.id ?? null,
+    characterSnapshotJson: versionRow?.dataJson ?? null,
+  };
+}
+
 // ── Route Registration ────────────────────────────────
 
 export async function registerImportRoutes(
   app: FastifyInstance,
-  connection: DatabaseConnection
+  connection: DatabaseConnection,
+  options: ImportRoutesOptions = {},
 ): Promise<void> {
   const db = connection.db;
 
@@ -947,7 +1061,8 @@ export async function registerImportRoutes(
       body: importRegexBodyJsonSchema,
       response: {
         201: importRegexResponseJsonSchema,
-        400: errorResponseJsonSchema
+        400: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       }
     }
   }, async (request, reply) => {
@@ -969,21 +1084,33 @@ export async function registerImportRoutes(
     const auth = getRequestAuthContext(request);
     const id = nanoid();
     const name = parsed.data.name;
-    const now = Date.now();
 
-    await db.insert(regexProfiles).values({
-      id,
-      name,
-      source: "sillytavern",
-      accountId: auth.accountId,
-      dataJson: JSON.stringify(stScripts),
-      createdAt: now,
-      updatedAt: now,
-    });
+    try {
+      const created = await executeResourceWriteOrThrow(() => {
+        const now = Date.now();
+        db.insert(regexProfiles).values({
+          id,
+          name,
+          source: "sillytavern",
+          accountId: auth.accountId,
+          dataJson: JSON.stringify(stScripts),
+          createdAt: now,
+          updatedAt: now,
+        }).run();
 
-    return reply.code(201).send({
-      data: { id, name, source: "sillytavern", script_count: stScripts.length },
-    });
+        return { id, name, source: "sillytavern", script_count: stScripts.length };
+      });
+
+      return reply.code(201).send({
+        data: created,
+      });
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendImportWriteError(reply, error);
+      }
+
+      throw error;
+    }
   });
 
   /**
@@ -1001,7 +1128,8 @@ export async function registerImportRoutes(
       response: {
         201: importCharacterResponseJsonSchema,
         400: errorResponseJsonSchema,
-        413: errorResponseJsonSchema
+        413: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       }
     }
   }, async (request, reply) => {
@@ -1034,45 +1162,145 @@ export async function registerImportRoutes(
     const snapshot = toCharacterSnapshot(characterCard);
 
     if (!parsed.data.create_session) {
-      const characterBinding = createCharacterFromImport(db, {
+      try {
+        const characterBinding = await executeResourceWriteOrThrow(() => createCharacterFromImport(db, {
+          name: characterCard.name,
+          accountId: auth.accountId,
+          snapshot,
+          source: "sillytavern",
+          now: Date.now(),
+        }));
+
+        return reply.code(201).send({
+          data: {
+            create_session: false,
+            character: toCharacterResponse(characterCard),
+            character_id: characterBinding.characterId,
+            character_version_id: characterBinding.characterVersionId,
+          }
+        });
+      } catch (error) {
+        if (error instanceof ResourceWriteRouteError) {
+          return sendImportWriteError(reply, error);
+        }
+
+        throw error;
+      }
+    }
+
+    try {
+      const imported = await executeResourceWriteOrThrow(() => createCharacterWithSessionFromImport(db, {
         name: characterCard.name,
         accountId: auth.accountId,
         snapshot,
         source: "sillytavern",
-        now: Date.now()
-      });
+        title: parsed.data.title ?? characterCard.name,
+        now: Date.now(),
+      }));
 
       return reply.code(201).send({
         data: {
-          create_session: false,
+          create_session: true,
           character: toCharacterResponse(characterCard),
-          character_id: characterBinding.characterId,
-          character_version_id: characterBinding.characterVersionId,
+          session: imported.session
         }
       });
-    }
-
-    const imported = createCharacterWithSessionFromImport(db, {
-      name: characterCard.name,
-      accountId: auth.accountId,
-      snapshot,
-      source: "sillytavern",
-      title: parsed.data.title ?? characterCard.name,
-      now: Date.now()
-    });
-
-    return reply.code(201).send({
-      data: {
-        create_session: true,
-        character: toCharacterResponse(characterCard),
-        session: imported.session
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendImportWriteError(reply, error);
       }
-    });
+
+      throw error;
+    }
   });
 
   // ──────────────────────────────────────────────────────
   // POST /import/chat — 导入聊天记录（自动识别 .thchat / .jsonl）
   // ──────────────────────────────────────────────────────
+
+  app.post("/import/chat/jobs", {
+    schema: {
+      tags: ["imports"],
+      summary: "Create async chat import job",
+      description: "高级开发特性。该接口会把聊天导入写入 Background Job Runtime，主要用于开发、调试、运维和自动化工具。普通交互式导入优先使用同步 `POST /import/chat`。",
+      operationId: "createImportChatJob",
+      body: importChatBodyJsonSchema,
+      response: {
+        202: createChatImportJobResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        413: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsed = parseWithSchema(importChatSchema, request.body, reply);
+    if (!parsed.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const inputBytes = Buffer.byteLength(parsed.data.data, "utf-8");
+    const maxBytes = options.importMaxBytes ?? DEFAULT_CHAT_IMPORT_MAX_BYTES;
+    if (inputBytes > maxBytes) {
+      return sendError(
+        reply,
+        413,
+        "import_payload_too_large",
+        `Chat import payload exceeds ${maxBytes} bytes`,
+      );
+    }
+
+    let characterBinding;
+    try {
+      characterBinding = await resolveImportCharacterBinding(db, auth.accountId, parsed.data.character_id);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Character ")) {
+        return sendError(reply, 400, "character_not_found", error.message);
+      }
+      throw error;
+    }
+
+    const scheduler = new ChatTransferJobScheduler({
+      eventBus: options.eventBus,
+    });
+    const artifactStore = new LocalChatTransferArtifactStore(options.artifactDir ?? "data/chat-transfer-artifacts");
+    const createdAt = Date.now();
+    const jobId = scheduler.createJobId("import_chat");
+    const inputArtifactPath = artifactStore.buildJobArtifactPath(jobId, "input.txt");
+    const detectedFormat = detectQueuedChatImportFormat(parsed.data.data);
+
+    await artifactStore.writeText(inputArtifactPath, parsed.data.data);
+
+    try {
+      await executeResourceWriteOrThrow(() => db.transaction((tx) => scheduler.enqueueImportChat(tx, {
+        accountId: auth.accountId,
+        title: parsed.data.title,
+        characterId: characterBinding.characterId,
+        characterVersionId: characterBinding.characterVersionId,
+        characterSnapshotJson: characterBinding.characterSnapshotJson,
+        inputArtifactPath,
+        inputBytes,
+        detectedFormat,
+        createdAt,
+        jobId,
+      })));
+
+      return reply.code(202).send({
+        data: {
+          job_id: jobId,
+          status: "pending",
+          job_kind: "import_chat",
+          format: detectedFormat ?? null,
+        },
+      });
+    } catch (error) {
+      await artifactStore.delete(inputArtifactPath);
+      if (error instanceof ResourceWriteRouteError) {
+        return sendImportWriteError(reply, error);
+      }
+      throw error;
+    }
+  });
 
   /**
    * POST /import/chat
@@ -1140,35 +1368,14 @@ export async function registerImportRoutes(
       return sendError(reply, 400, "import_empty", "Chat file contains no messages");
     }
 
-    // 2. 如果提供了 character_id，查询角色快照
-    let characterId: string | null = null;
-    let characterVersionId: string | null = null;
-    let characterSnapshotJson: string | null = null;
-
-    if (parsed.data.character_id) {
-      const charRow = await db.select({
-        id: characters.id,
-        name: characters.name,
-      }).from(characters).where(
-        and(eq(characters.id, parsed.data.character_id), eq(characters.accountId, auth.accountId))
-      ).get();
-
-      if (!charRow) {
-        return sendError(reply, 400, "character_not_found", `Character ${parsed.data.character_id} not found`);
+    let characterBinding;
+    try {
+      characterBinding = await resolveImportCharacterBinding(db, auth.accountId, parsed.data.character_id);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Character ")) {
+        return sendError(reply, 400, "character_not_found", error.message);
       }
-
-      const versionRow = await db.select({
-        id: characterVersions.id,
-        dataJson: characterVersions.dataJson,
-      }).from(characterVersions).where(
-        eq(characterVersions.characterId, charRow.id)
-      ).orderBy(asc(characterVersions.createdAt)).limit(1).get();
-
-      characterId = charRow.id;
-      if (versionRow) {
-        characterVersionId = versionRow.id;
-        characterSnapshotJson = versionRow.dataJson;
-      }
+      throw error;
     }
 
     // 3. 消息分组
@@ -1185,9 +1392,9 @@ export async function registerImportRoutes(
       header: chatData.header,
       floorGroups,
       accountId: auth.accountId,
-      characterId,
-      characterVersionId,
-      characterSnapshotJson,
+      characterId: characterBinding.characterId,
+      characterVersionId: characterBinding.characterVersionId,
+      characterSnapshotJson: characterBinding.characterSnapshotJson,
       title,
       now,
     });
@@ -1856,7 +2063,8 @@ export async function registerImportRoutes(
         200: regexProfileUpdateResponseJsonSchema,
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
-        409: errorResponseJsonSchema
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       }
     }
   }, async (request, reply) => {
@@ -1866,16 +2074,6 @@ export async function registerImportRoutes(
     if (!bodyParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [row] = await db
-      .select()
-      .from(regexProfiles)
-      .where(and(eq(regexProfiles.id, paramsParsed.data.id), eq(regexProfiles.accountId, auth.accountId)));
-
-    if (!row) {
-      return sendError(reply, 404, "regex_profile_not_found", "Regex profile not found");
-    }
-
-    const nextVersion = row.version + 1;
     let stScripts;
     try {
       stScripts = parseRegexScripts(bodyParsed.data.data);
@@ -1888,30 +2086,53 @@ export async function registerImportRoutes(
       );
     }
 
-    const expectedVersionResult = resolveExpectedResourceVersion(bodyParsed.data, row, "regex_profile_conflict", "Regex profile");
-    if (!expectedVersionResult.ok) {
-      return sendError(reply, expectedVersionResult.statusCode, expectedVersionResult.code, expectedVersionResult.message);
+    try {
+      const updated = await withResourceWriteCas({
+        db,
+        expectedRevision: bodyParsed.data.expected_version,
+        load: (tx) => tx
+          .select()
+          .from(regexProfiles)
+          .where(and(eq(regexProfiles.id, paramsParsed.data.id), eq(regexProfiles.accountId, auth.accountId)))
+          .get(),
+        getRevision: (row) => row.version,
+        onMissing: createRegexProfileNotFoundError,
+        onRevisionConflict: createRegexProfileConflictError,
+        validateLoaded: (row) => {
+          if (
+            bodyParsed.data.expected_updated_at !== undefined
+            && bodyParsed.data.expected_updated_at !== row.updatedAt
+          ) {
+            throw createRegexProfileConflictError();
+          }
+        },
+        mutate: ({ tx, row }) => {
+          const now = Date.now();
+          const nextVersion = row.version + 1;
+          const updateResult = tx.update(regexProfiles).set({
+            name: bodyParsed.data.name,
+            dataJson: JSON.stringify(stScripts),
+            updatedAt: now,
+            version: nextVersion,
+          }).where(and(
+            eq(regexProfiles.id, row.id),
+            eq(regexProfiles.accountId, auth.accountId),
+            eq(regexProfiles.version, row.version)
+          )).run();
+
+          assertRevisionWriteApplied(updateResult.changes, createRegexProfileConflictError);
+          return toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion });
+        }
+      });
+
+      return reply.send({ data: updated });
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendImportWriteError(reply, error);
+      }
+
+      throw error;
     }
-
-    const now = Date.now();
-    const updateResult = db.update(regexProfiles).set({
-      name: bodyParsed.data.name,
-      dataJson: JSON.stringify(stScripts),
-      updatedAt: now,
-      version: nextVersion,
-    }).where(and(
-      eq(regexProfiles.id, row.id),
-      eq(regexProfiles.accountId, auth.accountId),
-      eq(regexProfiles.version, expectedVersionResult.expectedVersion)
-    )).run();
-
-    if (updateResult.changes === 0) {
-      return sendError(reply, 409, "regex_profile_conflict", "Regex profile has been modified by another operation");
-    }
-
-    return reply.send({
-      data: toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion })
-    });
   });
 
   /** DELETE /regex-profiles/:id — 删除正则配置 */
@@ -1921,19 +2142,52 @@ export async function registerImportRoutes(
       summary: "Delete imported regex profile",
       operationId: "deleteImportedRegexProfile",
       params: idParamsJsonSchema,
+      querystring: resourceDeleteQueryJsonSchema,
       response: {
         204: { type: "null" },
-        400: errorResponseJsonSchema
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       }
     }
   }, async (request, reply) => {
-    const parsed = parseWithSchema(idParamsSchema, request.params, reply);
-    if (!parsed.ok) return;
+    const paramsParsed = parseWithSchema(idParamsSchema, request.params, reply);
+    if (!paramsParsed.ok) return;
+    const queryParsed = parseWithSchema(resourceDeleteQuerySchema, request.query, reply);
+    if (!queryParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
-    await db
-      .delete(regexProfiles)
-      .where(and(eq(regexProfiles.id, parsed.data.id), eq(regexProfiles.accountId, auth.accountId)));
+    try {
+      if (queryParsed.data.expected_version === undefined) {
+        await executeResourceWriteOrThrow(() => db
+          .delete(regexProfiles)
+          .where(and(eq(regexProfiles.id, paramsParsed.data.id), eq(regexProfiles.accountId, auth.accountId))));
+      } else {
+        await withResourceWriteCas({
+          db,
+          expectedRevision: queryParsed.data.expected_version,
+          load: (tx) => tx
+            .select()
+            .from(regexProfiles)
+            .where(and(eq(regexProfiles.id, paramsParsed.data.id), eq(regexProfiles.accountId, auth.accountId)))
+            .get(),
+          getRevision: (row) => row.version,
+          onMissing: createRegexProfileNotFoundError,
+          onRevisionConflict: createRegexProfileConflictError,
+          mutate: ({ tx, row }) => {
+            const deleteResult = tx.delete(regexProfiles).where(and(eq(regexProfiles.id, row.id), eq(regexProfiles.accountId, auth.accountId), eq(regexProfiles.version, row.version))).run();
+            assertRevisionWriteApplied(deleteResult.changes, createRegexProfileConflictError);
+          }
+        });
+      }
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendImportWriteError(reply, error);
+      }
+
+      throw error;
+    }
 
     return reply.code(204).send();
   });
@@ -2460,14 +2714,11 @@ function buildImportedMemoryScopeStateRows(input: {
   idMap: Map<string, string>;
   now: number;
   sessionId: string;
-}): Array<typeof memoryScopeStates.$inferInsert> {
-  const makeScopeKey = (
-    scope: typeof memoryScopeStates.$inferInsert["scope"],
-    scopeId: string,
-  ): string => JSON.stringify([scope, scopeId]);
+}): Array<typeof runtimeScopeStates.$inferInsert> {
+  const makeScopeKey = (scope: "global" | "chat" | "floor", scopeId: string): string => JSON.stringify([scope, scopeId]);
 
   const scopeMeta = new Map<string, { revision: number; hasMacroSummary: boolean }>();
-  const scopeRows = new Map<string, typeof memoryScopeStates.$inferInsert>();
+  const scopeRows = new Map<string, typeof runtimeScopeStates.$inferInsert>();
   const chatLastProcessedFloorNo = input.data.floors.reduce<number | null>(
     (maxFloorNo, floor) => (maxFloorNo === null ? floor.floor_no : Math.max(maxFloorNo, floor.floor_no)),
     null,
@@ -2498,11 +2749,17 @@ function buildImportedMemoryScopeStateRows(input: {
     const chatMeta = scopeMeta.get(chatScopeKey);
     scopeRows.set(chatScopeKey, {
       accountId: input.accountId,
-      scope: "chat",
-      scopeId: input.sessionId,
+      scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+      scopeKey: buildMemoryRuntimeScopeKey("chat", input.sessionId),
       revision: chatMeta?.revision ?? 0,
-      lastProcessedFloorNo: chatLastProcessedFloorNo,
-      lastCompactionAt: chatMeta?.hasMacroSummary ? input.now : null,
+      leaseOwner: null,
+      leaseUntil: null,
+      lastProcessedAt: input.now,
+      lastSuccessJobId: null,
+      metadataJson: JSON.stringify({
+        lastProcessedFloorNo: chatLastProcessedFloorNo,
+        lastCompactionAt: chatMeta?.hasMacroSummary ? input.now : null,
+      }),
       updatedAt: input.now,
     });
   }
@@ -2514,11 +2771,17 @@ function buildImportedMemoryScopeStateRows(input: {
 
     scopeRows.set(scopeKey, {
       accountId: input.accountId,
-      scope: "floor",
-      scopeId,
+      scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+      scopeKey: buildMemoryRuntimeScopeKey("floor", scopeId),
       revision: floorMeta?.revision ?? 0,
-      lastProcessedFloorNo: floor.floor_no,
-      lastCompactionAt: floorMeta?.hasMacroSummary ? input.now : null,
+      leaseOwner: null,
+      leaseUntil: null,
+      lastProcessedAt: input.now,
+      lastSuccessJobId: null,
+      metadataJson: JSON.stringify({
+        lastProcessedFloorNo: floor.floor_no,
+        lastCompactionAt: floorMeta?.hasMacroSummary ? input.now : null,
+      }),
       updatedAt: input.now,
     });
   }
@@ -2528,14 +2791,20 @@ function buildImportedMemoryScopeStateRows(input: {
       continue;
     }
 
-    const [scope, scopeId] = JSON.parse(scopeKey) as [typeof memoryScopeStates.$inferInsert["scope"], string];
+    const [scope, scopeId] = JSON.parse(scopeKey) as ["global" | "chat" | "floor", string];
     scopeRows.set(scopeKey, {
       accountId: input.accountId,
-      scope,
-      scopeId,
+      scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+      scopeKey: buildMemoryRuntimeScopeKey(scope, scopeId),
       revision: meta.revision,
-      lastProcessedFloorNo: scope === "chat" ? chatLastProcessedFloorNo : null,
-      lastCompactionAt: meta.hasMacroSummary ? input.now : null,
+      leaseOwner: null,
+      leaseUntil: null,
+      lastProcessedAt: input.now,
+      lastSuccessJobId: null,
+      metadataJson: JSON.stringify({
+        lastProcessedFloorNo: scope === "chat" ? chatLastProcessedFloorNo : null,
+        lastCompactionAt: meta.hasMacroSummary ? input.now : null,
+      }),
       updatedAt: input.now,
     });
   }
@@ -2770,7 +3039,7 @@ function createSessionFromThChatImport(
       sessionId,
     });
     if (scopeStateRows.length > 0) {
-      tx.insert(memoryScopeStates).values(scopeStateRows).run();
+      tx.insert(runtimeScopeStates).values(scopeStateRows).run();
     }
 
     return {

@@ -11,6 +11,10 @@ outline: [2, 3]
 - `memory_job`：后台任务列表与 retry / cancel
 - `memory_scope_state`：scope 状态列表，以及手动 rebuild / compact
 
+> 说明：`memory_job` 与 `memory_scope_state` 相关接口属于高级开发者特性。
+> 它们主要用于后台作业观察、调试、运维和自动化集成，不是普通聊天页面的日常调用接口。
+> 正常聊天仍以 `Chat`、`Sessions`、`Floors` 等主链路资源为准。
+
 ---
 
 ## Memory Item 对象
@@ -388,7 +392,7 @@ DELETE /memory-edges/:id
 
 ## Memory Job（后台任务）
 
-`memory_job` 是 Memory V2 的异步任务队列表。公开 job 类型包括：
+`memory_job` 是 Memory V2 遗留队列模型的命名来源；当前公开路由已经投影到统一 `Background Job Runtime`。对外语义仍保持 Memory Job 风格，但它本质上是一组**高级开发者接口**。公开 job 类型包括：
 
 - `ingest_turn`
 - `compact_macro`

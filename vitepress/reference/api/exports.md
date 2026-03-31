@@ -18,6 +18,10 @@ outline: [2, 3]
 
 导入侧的对应接口见 [Imports（导入）](./imports)。
 
+> 说明：异步聊天导出相关的 job 路由属于高级开发者特性。
+> 它们主要用于长任务处理、自动化脚本、开发调试和运维排障。
+> 普通小规模导出优先使用同步 `GET /export/chat/:id`。
+
 ## 导出聊天会话
 
 ```http
@@ -109,6 +113,80 @@ curl -O http://localhost:3000/export/chat/sess_abc123
 # 导出为 ST 兼容格式，不含变量和记忆
 curl -O "http://localhost:3000/export/chat/sess_abc123?format=st_jsonl"
 ```
+
+## 异步聊天导出作业（高级开发特性）
+
+```http
+POST /export/chat/:id/jobs
+```
+
+这是一个面向平台接入、批处理和自动化脚本的高级开发特性，不属于普通聊天主流程接口。
+
+该接口会把聊天导出请求写入 `Background Job Runtime`，立即返回 job 句柄，后续由后台 worker 生成导出文件。
+
+适用场景：
+
+- 长会话或大体积会话导出
+- 平台侧批量导出
+- 自动化脚本
+- 需要轮询进度并在稍后下载文件的后台任务
+
+### 何时需要异步导出
+
+同步 `GET /export/chat/:id` 仍然保留。
+
+只有在部署方设置了 `CHAT_EXPORT_SYNC_MAX_MESSAGES`，并且当前会话消息数超过该阈值时，同步导出才会返回：
+
+- `409`
+- `code: "export_requires_async"`
+
+这时应改用异步导出作业。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+| ---- | ---- | ---- | ---- | ---- |
+| `format` | string | 否 | `thchat` | `thchat` 或 `st_jsonl` |
+| `include_variables` | boolean | 否 | `true` | 是否包含变量，仅 `thchat` 生效 |
+| `include_memories` | boolean | 否 | `true` | 是否包含记忆，仅 `thchat` 生效 |
+
+### 响应 `202`
+
+```json
+{
+  "data": {
+    "job_id": "chat-transfer-job:export_chat:abc123",
+    "status": "pending",
+    "job_kind": "export_chat",
+    "format": "thchat",
+    "requested_session_id": "sess_demo"
+  }
+}
+```
+
+### 后续流程
+
+1. 轮询 [Chat Transfer Jobs（聊天传输作业）](./chat-transfer-jobs) 中的 `GET /chat-transfer-jobs/:id`
+2. 当作业 `status === "succeeded"` 时，调用 `GET /chat-transfer-jobs/:id/file` 下载文件
+
+### 产物过期
+
+导出 artifact 受 `CHAT_EXPORT_ARTIFACT_TTL_MS` 控制。
+
+如果 `output_expires_at` 已过期，`GET /chat-transfer-jobs/:id/file` 会返回：
+
+- `410`
+- `code: "artifact_expired"`
+
+当前 v1 只在下载时强制过期检查，还没有后台文件垃圾回收。
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ---- | ---- | ---- |
+| `400` | `validation_error` | 请求体非法 |
+| `404` | `session_not_found` | 会话不存在 |
+| `503` | `resource_busy` | 入队写入遇到 SQLite 忙状态 |
 
 ## 导出预设
 

@@ -182,6 +182,57 @@ export interface MemoryConsolidationFailedEvent extends MemoryJobEventContext {
   error: Error;
 }
 
+// ── Runtime Job 事件 ─────────────────────────────────
+
+/** Background Job Runtime 生命周期事件的公共载荷 */
+export interface RuntimeJobEvent {
+  jobId: string;
+  jobType: string;
+  accountId: string;
+  scopeType: string;
+  scopeKey: string;
+  sessionId?: string;
+  floorId?: string;
+  pageId?: string;
+  status: string;
+  phase?: string | null;
+  attemptCount: number;
+  maxAttempts: number;
+  availableAt: number;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+  workerId?: string | null;
+  basedOnRevision?: number | null;
+  dedupeKey?: string | null;
+  progressCurrent: number;
+  progressTotal?: number | null;
+  progressMessage?: string | null;
+  errorCode?: string | null;
+  errorClass?: string | null;
+  message?: string | null;
+  durationMs?: number | null;
+}
+
+export type RuntimeJobEnqueuedEvent = RuntimeJobEvent;
+
+export type RuntimeJobLeasedEvent = RuntimeJobEvent;
+
+export type RuntimeJobStartedEvent = RuntimeJobEvent;
+
+export type RuntimeJobProgressUpdatedEvent = RuntimeJobEvent;
+
+export type RuntimeJobSucceededEvent = RuntimeJobEvent;
+
+export type RuntimeJobRetryScheduledEvent = RuntimeJobEvent & {
+  retryAt: number;
+};
+
+export type RuntimeJobDeadLetteredEvent = RuntimeJobEvent;
+
+export type RuntimeJobCancelledEvent = RuntimeJobEvent;
+
+export type RuntimeJobLeaseLostEvent = RuntimeJobEvent;
+
 // ── Tool 事件 ────────────────────────────────────────
 
 /** 工具调用开始事件 */
@@ -290,6 +341,15 @@ export interface CoreEventMap {
   'memory.consolidation_json_parse_failed': MemoryConsolidationJsonParseFailedEvent;
   'memory.consolidated': MemoryConsolidatedEvent;
   'memory.consolidation_failed': MemoryConsolidationFailedEvent;
+  'runtime.job_enqueued': RuntimeJobEnqueuedEvent;
+  'runtime.job_leased': RuntimeJobLeasedEvent;
+  'runtime.job_started': RuntimeJobStartedEvent;
+  'runtime.job_progress_updated': RuntimeJobProgressUpdatedEvent;
+  'runtime.job_succeeded': RuntimeJobSucceededEvent;
+  'runtime.job_retry_scheduled': RuntimeJobRetryScheduledEvent;
+  'runtime.job_dead_lettered': RuntimeJobDeadLetteredEvent;
+  'runtime.job_cancelled': RuntimeJobCancelledEvent;
+  'runtime.job_lease_lost': RuntimeJobLeaseLostEvent;
   'tool.call_started': ToolCallStartedEvent;
   'tool.call_completed': ToolCallCompletedEvent;
   'tool.call_failed': ToolCallFailedEvent;

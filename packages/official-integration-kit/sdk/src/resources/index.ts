@@ -18,10 +18,36 @@ export {
   type CharacterWriteVersion,
   type CharactersResource,
 } from "./characters.js";
-export { createExportsResource, type ExportChatFormat, type ExportsResource } from "./exports.js";
+export {
+  createChatTransferJobsResource,
+  type ChatTransferFormat,
+  type ChatTransferJobKind,
+  type ChatTransferJobMutationResult,
+  type ChatTransferJobPhase,
+  type ChatTransferJobRecord,
+  type ChatTransferJobsListMeta,
+  type ChatTransferJobsListOptions,
+  type ChatTransferJobsListResult,
+  type ChatTransferJobsResource,
+  type ChatTransferJobStatus,
+} from "./chat-transfer-jobs.js";
+export {
+  createExportsResource,
+  type ExportChatFormat,
+  type ExportChatJob,
+  type ExportsResource,
+} from "./exports.js";
 export { createFloorsResource, type FloorBranchResult, type FloorRecord, type FloorState, type FloorsResource } from "./floors.js";
 export { createHealthResource, type HealthResource, type HealthStatus } from "./health.js";
-export { createImportsResource, type ImportedCharacter, type ImportedChat, type ImportedRegexProfile, type ImportedResource, type ImportsResource } from "./imports.js";
+export {
+  createImportsResource,
+  type ImportedCharacter,
+  type ImportedChat,
+  type ImportChatJob,
+  type ImportedRegexProfile,
+  type ImportedResource,
+  type ImportsResource,
+} from "./imports.js";
 export {
   createLlmInstancesResource,
   type LlmInstanceConfig,

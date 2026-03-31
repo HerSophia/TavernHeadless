@@ -256,6 +256,35 @@ console.log(scopes.scopes[0]?.revision);
 
 `memoryJobs` 和 `memoryScopes` 对应后台任务与 scope 状态的管理接口。`memoryScopes.rebuild()`、`memoryScopes.compact()` 需要服务端已经启用 background worker。
 
+### 异步聊天导入导出作业
+
+这组接口更适合平台接入、批处理和自动化脚本，不是普通聊天主流程的首选入口。
+
+```ts
+const exportJob = await client.exports.chatJob({
+  sessionId: "session-1",
+  format: "thchat",
+});
+
+const job = await client.chatTransferJobs.getDetail({
+  jobId: exportJob.jobId,
+});
+
+if (job.status === "succeeded") {
+  const fileResponse = await client.chatTransferJobs.downloadFile({
+    jobId: exportJob.jobId,
+  });
+
+  console.log(fileResponse.headers.get("content-disposition"));
+}
+```
+
+异步聊天导入也可以用同样方式处理：
+
+- 用 `client.imports.chatJob(...)` 创建作业
+- 用 `client.chatTransferJobs.getDetail(...)` 轮询状态
+- 导入作业成功后，从 `result` 或 `resultSessionId` 读取结果
+
 ```ts
 // 解析当前上下文可见变量快照
 const snapshot = await client.variables.resolveContext({
@@ -356,7 +385,7 @@ try {
 | ---- | ---- |
 | 会话与内容结构 | `health`、`sessions`、`messages`、`floors`、`pages`、`branches` |
 | 角色、资料与配置 | `characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles` |
-| 导入、导出与模型 | `imports`、`exports`、`llmProfiles`、`llmInstances` |
+| 导入、导出与模型 | `imports`、`exports`、`chatTransferJobs`、`llmProfiles`、`llmInstances` |
 | 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes` |
 | 工具与运行集成 | `tools`、`mcp` |
 
@@ -389,6 +418,8 @@ try {
 ### 导出资源
 
 `exports` 资源直接返回原始 `Response`。导出本身是文件下载语义，调用方可能需要自己用 `text()`、`blob()` 或其他方式读取。
+
+如果服务端要求异步导出，则先调用 `exports.chatJob()`，再通过 `chatTransferJobs.getDetail()` 轮询状态，最后用 `chatTransferJobs.downloadFile()` 读取产物。
 
 ### Tools 资源
 

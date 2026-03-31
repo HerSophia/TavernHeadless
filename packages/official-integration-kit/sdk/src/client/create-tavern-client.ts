@@ -3,6 +3,7 @@ import type { ApiClient } from "@tavern/shared";
 import { createAccountsResource, type AccountsResource } from "../resources/accounts.js";
 import { createBranchesResource, type BranchesResource } from "../resources/branches.js";
 import { createCharactersResource, type CharactersResource } from "../resources/characters.js";
+import { createChatTransferJobsResource, type ChatTransferJobsResource } from "../resources/chat-transfer-jobs.js";
 import { createExportsResource, type ExportsResource } from "../resources/exports.js";
 import { createFloorsResource, type FloorsResource } from "../resources/floors.js";
 import { createHealthResource, type HealthResource } from "../resources/health.js";
@@ -31,6 +32,7 @@ export type TavernClient = ApiClient & {
   accounts: AccountsResource;
   branches: BranchesResource;
   characters: CharactersResource;
+  chatTransferJobs: ChatTransferJobsResource;
   exports: ExportsResource;
   floors: FloorsResource;
   health: HealthResource;
@@ -65,6 +67,7 @@ export function createTavernClient(options: TavernClientOptions): TavernClient {
     accounts: createAccountsResource(transport),
     branches: createBranchesResource(transport),
     characters: createCharactersResource(transport),
+    chatTransferJobs: createChatTransferJobsResource(transport),
     exports: createExportsResource(transport),
     floors: createFloorsResource(transport),
     health: createHealthResource(transport),

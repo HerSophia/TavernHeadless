@@ -10,7 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { nanoid } from 'nanoid';
-import { eq, and, like, desc, max } from 'drizzle-orm';
+import { eq, and, like, desc } from 'drizzle-orm';
 
 import type {
   ToolProviderType,
@@ -22,6 +22,7 @@ import type {
 } from '@tavern/core';
 
 import type { AppDb, DbExecutor } from '../db/client.js';
+import type { MutationRuntime, RuntimeMutationEnvelope } from '../services/runtime-mutation-types.js';
 import {
   characters,
   characterVersions,
@@ -37,8 +38,30 @@ import {
   assertRevisionWriteApplied,
   executeResourceWrite,
   withResourceWriteCas,
+  type ExecuteResourceWriteOptions,
 } from '../services/resource-write.js';
+import { createDefaultMutationRuntime } from '../services/default-mutation-runtime.js';
 import { parsePreset } from '@tavern/adapters-sillytavern';
+import {
+  RESOURCE_MUTATION_KINDS,
+  type CharacterMutationResult,
+  type CreateCharacterMutationPayload,
+  type CreatePresetEntryMutationPayload,
+  type CreateRegexProfileMutationPayload,
+  type CreateRegexProfileMutationResult,
+  type CreateRegexRuleMutationPayload,
+  type CreateWorldbookEntryMutationPayload,
+  type CreateWorldbookMutationPayload,
+  type CreateWorldbookEntryMutationResult,
+  type CreateWorldbookMutationResult,
+  type PresetEntryMutationResult,
+  type RegexRuleMutationResult,
+  type UpdateCharacterMutationPayload,
+  type UpdatePresetEntryMutationPayload,
+  type UpdateRegexRuleMutationPayload,
+  type UpdateWorldbookEntryMutationPayload,
+  type UpdateWorldbookEntryMutationResult,
+} from '../services/resource-mutation-applier.js';
 import {
   type JsonRecord,
   normalizeStoredPreset,
@@ -710,11 +733,65 @@ function createToolCharacterRevisionConflictError() {
 export class ResourceToolProvider implements ToolProvider {
   readonly id = 'resource';
   readonly type = 'builtin' as const;
+  private readonly mutationRuntime: MutationRuntime;
+  private readonly now: () => number;
 
-  constructor(private readonly db: AppDb) {}
+  constructor(
+    private readonly db: AppDb,
+    options: {
+      mutationRuntime?: MutationRuntime;
+      now?: () => number;
+    } = {},
+  ) {
+    this.now = options.now ?? Date.now;
+    this.mutationRuntime = options.mutationRuntime ?? createDefaultMutationRuntime(db, {
+      now: this.now,
+    });
+  }
 
   async listTools(): Promise<ToolDefinition[]> {
     return RESOURCE_TOOLS;
+  }
+
+  private createToolMutationEnvelope<TPayload>(
+    context: ToolExecutionContext,
+    args: {
+      id: string;
+      kind: string;
+      scopeType: string;
+      scopeKey: string;
+      replaySafety?: RuntimeMutationEnvelope<TPayload>["replaySafety"];
+      conflictPolicy?: RuntimeMutationEnvelope<TPayload>["conflictPolicy"];
+      payload: TPayload;
+    },
+  ): RuntimeMutationEnvelope<TPayload> {
+    return {
+      id: args.id,
+      kind: args.kind,
+      source: 'tool',
+      accountId: requireAccountId(context),
+      sessionId: context.sessionId,
+      floorId: context.floorId,
+      pageId: context.pageId,
+      scopeType: args.scopeType,
+      scopeKey: args.scopeKey,
+      applyPhase: 'inline',
+      durability: 'transactional',
+      replaySafety: args.replaySafety ?? 'never_auto_replay',
+      ...(args.conflictPolicy ? { conflictPolicy: args.conflictPolicy } : {}),
+      payload: args.payload,
+      createdAt: this.now(),
+    };
+  }
+
+  private async applyResourceMutation<TPayload, TResult>(
+    envelope: RuntimeMutationEnvelope<TPayload>,
+    options: ExecuteResourceWriteOptions = {},
+  ): Promise<TResult | undefined> {
+    return await executeResourceWrite(
+      async () => await this.mutationRuntime.applyInline<TPayload, TResult>(envelope),
+      options,
+    );
   }
 
   async executeTool(
@@ -812,52 +889,21 @@ export class ResourceToolProvider implements ToolProvider {
       exampleDialogue: typeof args.mes_example === 'string' ? args.mes_example : undefined,
     };
 
-    const characterId = nanoid();
-    const versionId = nanoid();
-    const snapshotJson = JSON.stringify(snapshot);
-    const contentHash = computeContentHash(snapshotJson);
-    const now = Date.now();
-
-    const created = await executeResourceWrite(() =>
-      this.db.transaction((tx) => {
-        tx.insert(characters)
-          .values({
-            id: characterId,
-            name: snapshot.name,
-            source: 'tool',
-            accountId,
-            status: 'active',
-            revision: 0,
-            latestVersionNo: 1,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .run();
-
-        tx.insert(characterVersions)
-          .values({
-            id: versionId,
-            characterId,
-            versionNo: 1,
-            dataJson: snapshotJson,
-            contentHash,
-            createdAt: now,
-          })
-          .run();
-
-        return {
-          characterId,
-          versionId,
-          name: snapshot.name,
-        };
+    const created = await this.applyResourceMutation<CreateCharacterMutationPayload, CharacterMutationResult>(
+      this.createToolMutationEnvelope(context, {
+        id: `resource-character-create:${nanoid()}`,
+        kind: RESOURCE_MUTATION_KINDS.characterCreate,
+        scopeType: 'resource.character',
+        scopeKey: `account:${accountId}`,
+        payload: { snapshot },
       }),
     );
 
     return {
       data: {
-        character_id: created.characterId,
-        version_id: created.versionId,
-        name: created.name,
+        character_id: created!.characterId,
+        version_id: created!.versionId,
+        name: created!.name,
       },
     };
   }
@@ -866,97 +912,40 @@ export class ResourceToolProvider implements ToolProvider {
     args: Record<string, unknown>,
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
-    const accountId = requireAccountId(context);
+    requireAccountId(context);
     const characterId = args.character_id as string | undefined;
     if (!characterId) {
       return { error: 'character_id is required' };
     }
 
-    const updated = await withResourceWriteCas({
-      db: this.db,
-      load: (tx) => loadOwnedCharacter(tx, characterId, accountId),
-      getRevision: (row) => row.revision,
-      onMissing: () => new ResourceWriteRouteError(404, 'not_found', `Character not found: ${characterId}`),
-      onRevisionConflict: createToolCharacterRevisionConflictError,
-      validateLoaded: (row) => {
-        if (row.status !== 'active') {
-          throw new ResourceWriteRouteError(404, 'not_found', `Character not found: ${characterId}`);
-        }
-      },
-      constraintMappings: [CHARACTER_VERSION_CONSTRAINT_MAPPING],
-      mutate: ({ tx, row }) => {
-        const latestVersion =
-          row.latestVersionNo > 0 ? loadCharacterVersionByNo(tx, row.id, row.latestVersionNo) : undefined;
-
-        if (!latestVersion) {
-          throw new Error(`No version found for character: ${characterId}`);
-        }
-
-        const oldSnapshot: CharacterSnapshot = JSON.parse(latestVersion.dataJson);
-        const newSnapshot: CharacterSnapshot = { ...oldSnapshot };
-
-        if (typeof args.name === 'string' && args.name.trim() !== '') {
-          newSnapshot.name = (args.name as string).trim();
-        }
-        if (typeof args.description === 'string') newSnapshot.description = args.description as string;
-        if (typeof args.personality === 'string') newSnapshot.personality = args.personality as string;
-        if (typeof args.scenario === 'string') newSnapshot.scenario = args.scenario as string;
-        if (typeof args.first_mes === 'string') newSnapshot.greeting = args.first_mes as string;
-        if (typeof args.mes_example === 'string') newSnapshot.exampleDialogue = args.mes_example as string;
-
-        const newVersionNo = row.latestVersionNo + 1;
-        const newVersionId = nanoid();
-        const snapshotJson = JSON.stringify(newSnapshot);
-        const contentHash = computeContentHash(snapshotJson);
-        const now = Date.now();
-        const updates: Partial<typeof characters.$inferInsert> = {
-          latestVersionNo: newVersionNo,
-          revision: row.revision + 1,
-          updatedAt: now,
-        };
-
-        if (newSnapshot.name !== oldSnapshot.name) {
-          updates.name = newSnapshot.name;
-        }
-
-        const updateResult = tx
-          .update(characters)
-          .set(updates)
-          .where(
-            and(
-              eq(characters.id, row.id),
-              eq(characters.accountId, accountId),
-              eq(characters.revision, row.revision),
-            ),
-          )
-          .run();
-
-        assertRevisionWriteApplied(updateResult.changes, createToolCharacterRevisionConflictError);
-
-        tx.insert(characterVersions)
-          .values({
-            id: newVersionId,
-            characterId: row.id,
-            versionNo: newVersionNo,
-            dataJson: snapshotJson,
-            contentHash,
-            createdAt: now,
-          })
-          .run();
-
-        return {
-          characterId: row.id,
-          versionId: newVersionId,
-          versionNo: newVersionNo,
-        };
-      },
-    });
+    const updated = await this.applyResourceMutation<UpdateCharacterMutationPayload, CharacterMutationResult>(
+      this.createToolMutationEnvelope(context, {
+        id: `resource-character-update:${characterId}:${this.now()}`,
+        kind: RESOURCE_MUTATION_KINDS.characterUpdate,
+        scopeType: 'resource.character',
+        scopeKey: `character:${characterId}`,
+        replaySafety: 'confirm_on_replay',
+        conflictPolicy: 'compare_and_swap',
+        payload: {
+          characterId,
+          patch: {
+            ...(typeof args.name === 'string' ? { name: args.name } : {}),
+            ...(typeof args.description === 'string' ? { description: args.description } : {}),
+            ...(typeof args.personality === 'string' ? { personality: args.personality } : {}),
+            ...(typeof args.scenario === 'string' ? { scenario: args.scenario } : {}),
+            ...(typeof args.first_mes === 'string' ? { greeting: args.first_mes } : {}),
+            ...(typeof args.mes_example === 'string' ? { exampleDialogue: args.mes_example } : {}),
+          },
+        },
+      }),
+      { constraintMappings: [CHARACTER_VERSION_CONSTRAINT_MAPPING] },
+    );
 
     return {
       data: {
-        character_id: updated.characterId,
-        version_id: updated.versionId,
-        version_no: updated.versionNo,
+        character_id: updated!.characterId,
+        version_id: updated!.versionId,
+        version_no: updated!.versionNo,
       },
     };
   }
@@ -1068,27 +1057,29 @@ export class ResourceToolProvider implements ToolProvider {
       return { error: 'name is required and must be a non-empty string' };
     }
 
-    const id = nanoid();
-    const now = Date.now();
+    const created = await this.applyResourceMutation<CreateWorldbookMutationPayload, CreateWorldbookMutationResult>(
+      this.createToolMutationEnvelope(context, {
+        id: `resource-worldbook-create:${nanoid()}`,
+        kind: RESOURCE_MUTATION_KINDS.worldbookCreate,
+        scopeType: 'resource.worldbook',
+        scopeKey: `account:${accountId}`,
+        payload: { name: name.trim() },
+      }),
+    );
 
-    await this.db.insert(worldbooks).values({
-      id,
-      name: name.trim(),
-      source: 'tool',
-      accountId,
-      dataJson: '{}',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    return { data: { id, name: name.trim() } };
+    return {
+      data: {
+        id: created!.id,
+        name: created!.name,
+      },
+    };
   }
 
   private async handleCreateWorldbookEntry(
     args: Record<string, unknown>,
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
-    const accountId = requireAccountId(context);
+    requireAccountId(context);
     const worldbookId = args.worldbook_id as string | undefined;
     if (!worldbookId) {
       return { error: 'worldbook_id is required' };
@@ -1103,67 +1094,38 @@ export class ResourceToolProvider implements ToolProvider {
       return { error: 'content is required and must be a string' };
     }
 
-    // 验证世界书归属
-    const [wb] = await this.db
-      .select()
-      .from(worldbooks)
-      .where(
-        and(
-          eq(worldbooks.id, worldbookId),
-          eq(worldbooks.accountId, accountId),
-        ),
-      )
-      .limit(1);
-
-    if (!wb) {
-      return { error: `Worldbook not found: ${worldbookId}` };
-    }
-
-    // 计算 next uid
-    const [maxRow] = await this.db
-      .select({ maxUid: max(worldbookEntries.uid) })
-      .from(worldbookEntries)
-      .where(eq(worldbookEntries.worldbookId, worldbookId));
-    const nextUid = (maxRow?.maxUid ?? -1) + 1;
-
-    const entryId = nanoid();
-    const now = Date.now();
-
-    await this.db.insert(worldbookEntries).values({
-      id: entryId,
-      worldbookId,
-      uid: nextUid,
-      comment: typeof args.comment === 'string' ? args.comment : '',
-      content,
-      keysJson: JSON.stringify(keys),
-      keysSecondaryJson: Array.isArray(args.keys_secondary)
-        ? JSON.stringify(args.keys_secondary)
-        : '[]',
-      selective: typeof args.selective === 'boolean' ? args.selective : true,
-      selectiveLogic: 0,
-      constant: typeof args.constant === 'boolean' ? args.constant : false,
-      position: typeof args.position === 'number' ? args.position : 0,
-      order: typeof args.order === 'number' ? args.order : 100,
-      depth: typeof args.depth === 'number' ? args.depth : 4,
-      role: 0,
-      disable: typeof args.disable === 'boolean' ? args.disable : false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // 更新世界书 updatedAt
-    await this.db
-      .update(worldbooks)
-      .set({ updatedAt: now })
-      .where(eq(worldbooks.id, worldbookId));
+    const created = await this.applyResourceMutation<
+      CreateWorldbookEntryMutationPayload,
+      CreateWorldbookEntryMutationResult
+    >(
+      this.createToolMutationEnvelope(context, {
+        id: `resource-worldbook-entry-create:${worldbookId}:${nanoid()}`,
+        kind: RESOURCE_MUTATION_KINDS.worldbookEntryCreate,
+        scopeType: 'resource.worldbook',
+        scopeKey: `worldbook:${worldbookId}`,
+        payload: {
+          worldbookId,
+          keys: keys as string[],
+          content,
+          ...(typeof args.comment === 'string' ? { comment: args.comment } : {}),
+          ...(Array.isArray(args.keys_secondary) ? { keysSecondary: args.keys_secondary as string[] } : {}),
+          ...(typeof args.selective === 'boolean' ? { selective: args.selective } : {}),
+          ...(typeof args.constant === 'boolean' ? { constant: args.constant } : {}),
+          ...(typeof args.position === 'number' ? { position: args.position } : {}),
+          ...(typeof args.order === 'number' ? { order: args.order } : {}),
+          ...(typeof args.depth === 'number' ? { depth: args.depth } : {}),
+          ...(typeof args.disable === 'boolean' ? { disable: args.disable } : {}),
+        },
+      }),
+    );
 
     return {
       data: {
-        id: entryId,
-        worldbook_id: worldbookId,
-        uid: nextUid,
-        keys,
-        comment: typeof args.comment === 'string' ? args.comment : '',
+        id: created!.id,
+        worldbook_id: created!.worldbookId,
+        uid: created!.uid,
+        keys: created!.keys,
+        comment: created!.comment,
       },
     };
   }
@@ -1172,82 +1134,49 @@ export class ResourceToolProvider implements ToolProvider {
     args: Record<string, unknown>,
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
-    const accountId = requireAccountId(context);
+    requireAccountId(context);
     const worldbookId = args.worldbook_id as string | undefined;
     const entryId = args.entry_id as string | undefined;
     if (!worldbookId) return { error: 'worldbook_id is required' };
     if (!entryId) return { error: 'entry_id is required' };
 
-    // 验证世界书归属
-    const [wb] = await this.db
-      .select()
-      .from(worldbooks)
-      .where(
-        and(
-          eq(worldbooks.id, worldbookId),
-          eq(worldbooks.accountId, accountId),
-        ),
-      )
-      .limit(1);
-    if (!wb) return { error: `Worldbook not found: ${worldbookId}` };
-
-    // 验证条目存在
-    const [entry] = await this.db
-      .select()
-      .from(worldbookEntries)
-      .where(
-        and(
-          eq(worldbookEntries.id, entryId),
-          eq(worldbookEntries.worldbookId, worldbookId),
-        ),
-      )
-      .limit(1);
-    if (!entry) return { error: `Entry not found: ${entryId}` };
-
-    // 构建更新对象
-    const updates: Record<string, unknown> = { updatedAt: Date.now() };
-    if (Array.isArray(args.keys)) updates.keysJson = JSON.stringify(args.keys);
-    if (typeof args.content === 'string') updates.content = args.content;
-    if (typeof args.comment === 'string') updates.comment = args.comment;
-    if (Array.isArray(args.keys_secondary))
-      updates.keysSecondaryJson = JSON.stringify(args.keys_secondary);
-    if (typeof args.selective === 'boolean') updates.selective = args.selective;
-    if (typeof args.constant === 'boolean') updates.constant = args.constant;
-    if (typeof args.position === 'number') updates.position = args.position;
-    if (typeof args.order === 'number') updates.order = args.order;
-    if (typeof args.depth === 'number') updates.depth = args.depth;
-    if (typeof args.disable === 'boolean') updates.disable = args.disable;
-
-    await this.db
-      .update(worldbookEntries)
-      .set(updates)
-      .where(eq(worldbookEntries.id, entryId));
-
-    // 更新世界书 updatedAt
-    await this.db
-      .update(worldbooks)
-      .set({ updatedAt: Date.now() })
-      .where(eq(worldbooks.id, worldbookId));
-
-    // 读回更新后的条目
-    const [updated] = await this.db
-      .select()
-      .from(worldbookEntries)
-      .where(eq(worldbookEntries.id, entryId))
-      .limit(1);
-
-    if (!updated) {
-      return { error: `Failed to read back updated entry: ${entryId}` };
-    }
+    const updated = await this.applyResourceMutation<
+      UpdateWorldbookEntryMutationPayload,
+      UpdateWorldbookEntryMutationResult
+    >(
+      this.createToolMutationEnvelope(context, {
+        id: `resource-worldbook-entry-update:${worldbookId}:${entryId}:${this.now()}`,
+        kind: RESOURCE_MUTATION_KINDS.worldbookEntryUpdate,
+        scopeType: 'resource.worldbook',
+        scopeKey: `worldbook:${worldbookId}`,
+        replaySafety: 'confirm_on_replay',
+        payload: {
+          worldbookId,
+          entryId,
+          updates: {
+            ...(Array.isArray(args.keys) ? { keys: args.keys as string[] } : {}),
+            ...(typeof args.content === 'string' ? { content: args.content } : {}),
+            ...(typeof args.comment === 'string' ? { comment: args.comment } : {}),
+            ...(Array.isArray(args.keys_secondary) ? { keysSecondary: args.keys_secondary as string[] } : {}),
+            ...(typeof args.selective === 'boolean' ? { selective: args.selective } : {}),
+            ...(typeof args.constant === 'boolean' ? { constant: args.constant } : {}),
+            ...(typeof args.position === 'number' ? { position: args.position } : {}),
+            ...(typeof args.order === 'number' ? { order: args.order } : {}),
+            ...(typeof args.depth === 'number' ? { depth: args.depth } : {}),
+            ...(typeof args.disable === 'boolean' ? { disable: args.disable } : {}),
+          },
+        },
+      }),
+    );
 
     return {
       data: {
-        id: updated.id,
-        worldbook_id: updated.worldbookId,
-        uid: updated.uid,
-        keys: JSON.parse(updated.keysJson),
-        content: updated.content,
-        comment: updated.comment,
+        id: updated!.id,
+        worldbook_id: updated!.worldbookId,
+        uid: updated!.uid,
+        keys: updated!.keys,
+        content: updated!.content,
+        comment: updated!.comment,
       },
     };
   }
@@ -1336,7 +1265,7 @@ export class ResourceToolProvider implements ToolProvider {
     args: Record<string, unknown>,
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
-    const accountId = requireAccountId(context);
+    requireAccountId(context);
     const profileId = args.profile_id as string | undefined;
     if (!profileId) return { error: 'profile_id is required' };
 
@@ -1349,62 +1278,32 @@ export class ResourceToolProvider implements ToolProvider {
       return { error: 'replace_string is required and must be a string' };
     }
 
-    // 查询配置文件
-    const [profile] = await this.db
-      .select()
-      .from(regexProfiles)
-      .where(
-        and(
-          eq(regexProfiles.id, profileId),
-          eq(regexProfiles.accountId, accountId),
-        ),
-      )
-      .limit(1);
-    if (!profile) return { error: `Regex profile not found: ${profileId}` };
-
-    // 解析现有规则
-    let scripts: RegexScript[];
-    try {
-      scripts = JSON.parse(profile.dataJson);
-      if (!Array.isArray(scripts)) scripts = [];
-    } catch {
-      scripts = [];
-    }
-
-    // 构造新规则
-    const newRule: RegexScript = {
-      id: nanoid(),
-      scriptName: typeof args.script_name === 'string' ? args.script_name : '',
-      findRegex,
-      replaceString: replaceString as string,
-      trimStrings: Array.isArray(args.trim_strings)
-        ? (args.trim_strings as string[])
-        : [],
-      placement: Array.isArray(args.placement)
-        ? (args.placement as number[])
-        : [2],
-      disabled: typeof args.disabled === 'boolean' ? args.disabled : false,
-      substituteRegex: 0,
-      minDepth: 0,
-      maxDepth: 0,
-    };
-
-    scripts.push(newRule);
-    const ruleIndex = scripts.length - 1;
-
-    await this.db
-      .update(regexProfiles)
-      .set({
-        dataJson: JSON.stringify(scripts),
-        updatedAt: Date.now(),
-      })
-      .where(eq(regexProfiles.id, profileId));
+    const created = await this.applyResourceMutation<
+      CreateRegexRuleMutationPayload,
+      RegexRuleMutationResult
+    >(
+      this.createToolMutationEnvelope(context, {
+        id: `resource-regex-rule-create:${profileId}:${nanoid()}`,
+        kind: RESOURCE_MUTATION_KINDS.regexRuleCreate,
+        scopeType: 'resource.regex_profile',
+        scopeKey: `profile:${profileId}`,
+        payload: {
+          profileId,
+          ...(typeof args.script_name === 'string' ? { scriptName: args.script_name } : {}),
+          findRegex,
+          replaceString,
+          ...(Array.isArray(args.trim_strings) ? { trimStrings: args.trim_strings as string[] } : {}),
+          ...(Array.isArray(args.placement) ? { placement: args.placement as number[] } : {}),
+          ...(typeof args.disabled === 'boolean' ? { disabled: args.disabled } : {}),
+        },
+      }),
+    );
 
     return {
       data: {
-        rule_index: ruleIndex,
-        script_name: newRule.scriptName,
-        find_regex: newRule.findRegex,
+        rule_index: created!.ruleIndex,
+        script_name: created!.scriptName,
+        find_regex: created!.findRegex,
       },
     };
   }
@@ -1413,7 +1312,7 @@ export class ResourceToolProvider implements ToolProvider {
     args: Record<string, unknown>,
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
-    const accountId = requireAccountId(context);
+    requireAccountId(context);
     const profileId = args.profile_id as string | undefined;
     if (!profileId) return { error: 'profile_id is required' };
 
@@ -1422,60 +1321,36 @@ export class ResourceToolProvider implements ToolProvider {
       return { error: 'rule_index is required and must be a non-negative integer' };
     }
 
-    // 查询配置文件
-    const [profile] = await this.db
-      .select()
-      .from(regexProfiles)
-      .where(
-        and(
-          eq(regexProfiles.id, profileId),
-          eq(regexProfiles.accountId, accountId),
-        ),
-      )
-      .limit(1);
-    if (!profile) return { error: `Regex profile not found: ${profileId}` };
-
-    let scripts: RegexScript[];
-    try {
-      scripts = JSON.parse(profile.dataJson);
-      if (!Array.isArray(scripts)) scripts = [];
-    } catch {
-      scripts = [];
-    }
-
-    if (ruleIndex >= scripts.length) {
-      return {
-        error: `rule_index ${ruleIndex} out of range (profile has ${scripts.length} rules)`,
-      };
-    }
-
-    // 合并更新
-    const rule = scripts[ruleIndex];
-    if (!rule) {
-      return {
-        error: `rule_index ${ruleIndex} out of range (profile has ${scripts.length} rules)`,
-      };
-    }
-    if (typeof args.script_name === 'string') rule!.scriptName = args.script_name;
-    if (typeof args.find_regex === 'string') rule!.findRegex = args.find_regex;
-    if (typeof args.replace_string === 'string') rule!.replaceString = args.replace_string;
-    if (Array.isArray(args.trim_strings)) rule!.trimStrings = args.trim_strings as string[];
-    if (Array.isArray(args.placement)) rule!.placement = args.placement as number[];
-    if (typeof args.disabled === 'boolean') rule!.disabled = args.disabled;
-
-    await this.db
-      .update(regexProfiles)
-      .set({
-        dataJson: JSON.stringify(scripts),
-        updatedAt: Date.now(),
-      })
-      .where(eq(regexProfiles.id, profileId));
+    const updated = await this.applyResourceMutation<
+      UpdateRegexRuleMutationPayload,
+      RegexRuleMutationResult
+    >(
+      this.createToolMutationEnvelope(context, {
+        id: `resource-regex-rule-update:${profileId}:${ruleIndex}:${this.now()}`,
+        kind: RESOURCE_MUTATION_KINDS.regexRuleUpdate,
+        scopeType: 'resource.regex_profile',
+        scopeKey: `profile:${profileId}`,
+        replaySafety: 'confirm_on_replay',
+        payload: {
+          profileId,
+          ruleIndex,
+          updates: {
+            ...(typeof args.script_name === 'string' ? { scriptName: args.script_name } : {}),
+            ...(typeof args.find_regex === 'string' ? { findRegex: args.find_regex } : {}),
+            ...(typeof args.replace_string === 'string' ? { replaceString: args.replace_string } : {}),
+            ...(Array.isArray(args.trim_strings) ? { trimStrings: args.trim_strings as string[] } : {}),
+            ...(Array.isArray(args.placement) ? { placement: args.placement as number[] } : {}),
+            ...(typeof args.disabled === 'boolean' ? { disabled: args.disabled } : {}),
+          },
+        },
+      }),
+    );
 
     return {
       data: {
-        rule_index: ruleIndex,
-        script_name: rule!.scriptName,
-        find_regex: rule!.findRegex,
+        rule_index: updated!.ruleIndex,
+        script_name: updated!.scriptName,
+        find_regex: updated!.findRegex,
       },
     };
   }
@@ -1902,64 +1777,64 @@ export class ResourceToolProvider implements ToolProvider {
     const name = args.name as string | undefined;
     if (!name) return { error: 'name is required' };
 
-    const id = nanoid();
-    const now = Date.now();
+    const created = await this.applyResourceMutation<
+      CreateRegexProfileMutationPayload,
+      CreateRegexProfileMutationResult
+    >(
+      this.createToolMutationEnvelope(context, {
+        id: `resource-regex-profile-create:${nanoid()}`,
+        kind: RESOURCE_MUTATION_KINDS.regexProfileCreate,
+        scopeType: 'resource.regex_profile',
+        scopeKey: `account:${accountId}`,
+        payload: { name },
+      }),
+    );
 
-    await this.db.insert(regexProfiles).values({
-      id,
-      name,
-      source: 'tool',
-      accountId,
-      dataJson: '[]',
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    return { data: { id, name, source: 'tool' } };
+    return {
+      data: {
+        id: created!.id,
+        name: created!.name,
+        source: created!.source,
+      },
+    };
   }
 
   private async handleCreatePresetEntry(
     args: Record<string, unknown>,
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
-    const accountId = requireAccountId(context);
+    requireAccountId(context);
     const presetId = args.preset_id as string | undefined;
     const identifier = args.identifier as string | undefined;
     if (!presetId) return { error: 'preset_id is required' };
     if (!identifier) return { error: 'identifier is required' };
 
-    const loaded = this.loadPresetRawForTool(presetId, accountId);
-    if (!loaded) return { error: `Preset not found: ${presetId}` };
-
-    const { raw } = loaded;
-
-    // Check for duplicate identifier
-    if (findPromptInRaw(raw, identifier)) {
-      return { error: `Entry with identifier '${identifier}' already exists` };
-    }
-
     const enabled = typeof args.enabled === 'boolean' ? args.enabled : true;
-    const promptData: Record<string, unknown> = {
-      identifier,
-      name: typeof args.name === 'string' ? args.name : '',
-      role: typeof args.role === 'string' ? args.role : 'system',
-      content: typeof args.content === 'string' ? args.content : '',
-      system_prompt: typeof args.system_prompt === 'boolean' ? args.system_prompt : false,
-      marker: typeof args.marker === 'boolean' ? args.marker : false,
-      injection_position: typeof args.injection_position === 'number' ? args.injection_position : 0,
-      enabled,
-    };
+    const entry = await this.applyResourceMutation<
+      CreatePresetEntryMutationPayload,
+      PresetEntryMutationResult
+    >(
+      this.createToolMutationEnvelope(context, {
+        id: `resource-preset-entry-create:${presetId}:${identifier}:${this.now()}`,
+        kind: RESOURCE_MUTATION_KINDS.presetEntryCreate,
+        scopeType: 'resource.preset',
+        scopeKey: `preset:${presetId}`,
+        payload: {
+          presetId,
+          identifier,
+          promptData: {
+            name: typeof args.name === 'string' ? args.name : '',
+            role: typeof args.role === 'string' ? args.role : 'system',
+            content: typeof args.content === 'string' ? args.content : '',
+            system_prompt: typeof args.system_prompt === 'boolean' ? args.system_prompt : false,
+            marker: typeof args.marker === 'boolean' ? args.marker : false,
+            injection_position: typeof args.injection_position === 'number' ? args.injection_position : 0,
+            enabled,
+          },
+        },
+      }),
+    );
 
-    addPromptToRaw(raw, promptData as JsonRecord, enabled);
-
-    const validationError = this.validatePresetRawForTool(raw);
-    if (validationError) {
-      return { error: `Preset validation failed: ${validationError}` };
-    }
-
-    this.savePresetRawForTool(presetId, accountId, raw, Date.now());
-
-    const entry = getEditorEntryFromRaw(raw, identifier);
     return {
       data: entry
         ? {
@@ -1980,20 +1855,11 @@ export class ResourceToolProvider implements ToolProvider {
     args: Record<string, unknown>,
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
-    const accountId = requireAccountId(context);
+    requireAccountId(context);
     const presetId = args.preset_id as string | undefined;
     const identifier = args.identifier as string | undefined;
     if (!presetId) return { error: 'preset_id is required' };
     if (!identifier) return { error: 'identifier is required' };
-
-    const loaded = this.loadPresetRawForTool(presetId, accountId);
-    if (!loaded) return { error: `Preset not found: ${presetId}` };
-
-    const { raw } = loaded;
-
-    if (!findPromptInRaw(raw, identifier)) {
-      return { error: `Entry not found: ${identifier}` };
-    }
 
     // Build fields object with only provided values
     const fields: Record<string, unknown> = {};
@@ -2009,16 +1875,17 @@ export class ResourceToolProvider implements ToolProvider {
       return { error: 'At least one field to update is required' };
     }
 
-    updatePromptFieldsInRaw(raw, identifier, fields as JsonRecord);
+    const entry = await this.applyResourceMutation<UpdatePresetEntryMutationPayload, PresetEntryMutationResult>(
+      this.createToolMutationEnvelope(context, {
+        id: `resource-preset-entry-update:${presetId}:${identifier}:${this.now()}`,
+        kind: RESOURCE_MUTATION_KINDS.presetEntryUpdate,
+        scopeType: 'resource.preset',
+        scopeKey: `preset:${presetId}`,
+        replaySafety: 'confirm_on_replay',
+        payload: { presetId, identifier, fields },
+      }),
+    );
 
-    const validationError = this.validatePresetRawForTool(raw);
-    if (validationError) {
-      return { error: `Preset validation failed: ${validationError}` };
-    }
-
-    this.savePresetRawForTool(presetId, accountId, raw, Date.now());
-
-    const entry = getEditorEntryFromRaw(raw, identifier);
     return {
       data: entry
         ? {

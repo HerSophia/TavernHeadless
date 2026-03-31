@@ -162,6 +162,20 @@
       "when": 1762200000000,
       "tag": "0022_characters_users_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1762300000000,
+      "tag": "0023_chat_transfer_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1762400000000,
+      "tag": "0024_background_job_runtime",
+      "breakpoints": true
     }
   ]
 }

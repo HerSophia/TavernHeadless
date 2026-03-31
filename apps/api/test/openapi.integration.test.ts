@@ -95,6 +95,13 @@ describe("OpenAPI integration", () => {
     expect(Object.keys(body.paths)).toContain("/llm-profiles");
     expect(Object.keys(body.paths)).toContain("/llm-profiles/models/discover");
     expect(Object.keys(body.paths)).toContain("/llm-profiles/models/test");
+    expect(Object.keys(body.paths)).toContain("/import/chat/jobs");
+    expect(Object.keys(body.paths)).toContain("/export/chat/{id}/jobs");
+    expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs");
+    expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs/{id}");
+    expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs/{id}/cancel");
+    expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs/{id}/retry");
+    expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs/{id}/file");
   });
 
   it("supports Chinese localization via lang query", async () => {
@@ -114,10 +121,24 @@ describe("OpenAPI integration", () => {
     const accountsTag = body.tags?.find((tag) => tag.name === "accounts");
     expect(accountsTag?.description).toBe("账号管理");
 
+    const exportsTag = body.tags?.find((tag) => tag.name === "exports");
+    expect(exportsTag?.description).toBe("资源导出与文件下载接口（含高级异步作业入口）");
+
+    const chatTransferJobsTag = body.tags?.find((tag) => tag.name === "chat-transfer-jobs");
+    expect(chatTransferJobsTag?.description).toBe("异步聊天导入导出作业观测与产物下载的高级开发接口");
+
     const usersPath = body.paths["/users"] as {
       post?: OpenApiOperation;
     };
     expect(usersPath.post?.summary).toBe("创建用户");
+
+    const importChatJobsPath = body.paths["/import/chat/jobs"] as {
+      post?: OpenApiOperation;
+    };
+    expect(importChatJobsPath.post?.summary).toBe("创建异步聊天导入作业");
+
+    const exportChatJobsPath = body.paths["/export/chat/{id}/jobs"] as { post?: OpenApiOperation };
+    expect(exportChatJobsPath.post?.summary).toBe("创建异步聊天导出作业");
 
     const llmDiscoverPath = body.paths["/llm-profiles/models/discover"] as { post?: OpenApiOperation };
     expect(llmDiscoverPath.post?.summary).toBe("发现 provider 模型列表");
@@ -319,6 +340,33 @@ describe("OpenAPI integration", () => {
     expect(llmInstancesSlotPath.get?.operationId).toBe("getLlmInstanceConfigs");
     expect(llmInstancesSlotPath.put?.operationId).toBe("upsertLlmInstanceConfig");
     expect(llmInstancesSlotPath.delete?.operationId).toBe("deleteLlmInstanceConfig");
+
+    const importChatJobsPath = body.paths["/import/chat/jobs"] as {
+      post?: OpenApiOperation;
+    };
+    expect(importChatJobsPath.post?.operationId).toBe("createImportChatJob");
+    expect(importChatJobsPath.post?.responses).toHaveProperty("202");
+
+    const exportChatJobsPath = body.paths["/export/chat/{id}/jobs"] as {
+      post?: OpenApiOperation;
+    };
+    expect(exportChatJobsPath.post?.operationId).toBe("createExportChatJob");
+    expect(exportChatJobsPath.post?.responses).toHaveProperty("202");
+
+    const chatTransferJobsPath = body.paths["/chat-transfer-jobs"] as { get?: OpenApiOperation };
+    expect(chatTransferJobsPath.get?.operationId).toBe("listChatTransferJobs");
+
+    const chatTransferJobByIdPath = body.paths["/chat-transfer-jobs/{id}"] as { get?: OpenApiOperation };
+    expect(chatTransferJobByIdPath.get?.operationId).toBe("getChatTransferJob");
+
+    const chatTransferJobCancelPath = body.paths["/chat-transfer-jobs/{id}/cancel"] as { post?: OpenApiOperation };
+    expect(chatTransferJobCancelPath.post?.operationId).toBe("cancelChatTransferJob");
+
+    const chatTransferJobRetryPath = body.paths["/chat-transfer-jobs/{id}/retry"] as { post?: OpenApiOperation };
+    expect(chatTransferJobRetryPath.post?.operationId).toBe("retryChatTransferJob");
+
+    const chatTransferJobFilePath = body.paths["/chat-transfer-jobs/{id}/file"] as { get?: OpenApiOperation };
+    expect(chatTransferJobFilePath.get?.operationId).toBe("downloadChatTransferJobFile");
   });
 
   it("includes request/response examples for beta-hardening CRUD routes", async () => {
@@ -429,6 +477,35 @@ describe("OpenAPI integration", () => {
     const importCharacterPath = body.paths["/import/character"] as { post?: OpenApiOperation };
     expect(getOpenApiSchemaExample(importCharacterPath.post?.requestBody)).toMatchObject({ title: "Luna Demo Session" });
     expect(getOpenApiResponseExample(importCharacterPath.post, "201")).toMatchObject({ data: { create_session: true } });
+
+    const importChatJobsPath = body.paths["/import/chat/jobs"] as { post?: OpenApiOperation };
+    expect(getOpenApiSchemaExample(importChatJobsPath.post?.requestBody)).toMatchObject({ title: "Imported Chat" });
+    expect(getOpenApiResponseExample(importChatJobsPath.post, "202")).toMatchObject({
+      data: { job_id: "ctj_import_demo", job_kind: "import_chat" },
+    });
+
+    const exportChatJobsPath = body.paths["/export/chat/{id}/jobs"] as { post?: OpenApiOperation };
+    expect(getOpenApiSchemaExample(exportChatJobsPath.post?.requestBody)).toMatchObject({ format: "thchat" });
+    expect(getOpenApiResponseExample(exportChatJobsPath.post, "202")).toMatchObject({
+      data: { job_id: "ctj_export_demo", job_kind: "export_chat", requested_session_id: "sess_demo" },
+    });
+
+    const chatTransferJobsPath = body.paths["/chat-transfer-jobs"] as { get?: OpenApiOperation };
+    expect(getOpenApiResponseExample(chatTransferJobsPath.get, "200")).toMatchObject({
+      data: [expect.objectContaining({ id: "ctj_export_demo", status: "succeeded" })],
+      meta: { sort_by: "created_at" },
+    });
+
+    const chatTransferJobByIdPath = body.paths["/chat-transfer-jobs/{id}"] as { get?: OpenApiOperation };
+    expect(getOpenApiResponseExample(chatTransferJobByIdPath.get, "200")).toMatchObject({
+      data: expect.objectContaining({ id: "ctj_export_demo", output_artifact_path: "data/chat-transfer-artifacts/ctj_export_demo.thchat" }),
+    });
+
+    const chatTransferJobCancelPath = body.paths["/chat-transfer-jobs/{id}/cancel"] as { post?: OpenApiOperation };
+    expect(getOpenApiResponseExample(chatTransferJobCancelPath.post, "200")).toMatchObject({ data: { job_id: "ctj_export_demo" } });
+
+    const chatTransferJobRetryPath = body.paths["/chat-transfer-jobs/{id}/retry"] as { post?: OpenApiOperation };
+    expect(getOpenApiResponseExample(chatTransferJobRetryPath.post, "200")).toMatchObject({ data: { job_id: "ctj_export_demo" } });
 
     const instancesListPath = body.paths["/llm-instances"] as { get?: OpenApiOperation };
     expect(getOpenApiResponseExample(instancesListPath.get, "200")).toMatchObject({ data: [{ id: "ic_demo123" }] });

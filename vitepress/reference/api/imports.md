@@ -15,6 +15,10 @@ outline: [2, 3]
 
 其中 `POST /import/preset` 和 `POST /import/worldbook` 现在也会遵循资源写入繁忙语义：当 SQLite 写入暂时繁忙且重试耗尽时，返回 `503 resource_busy`。
 
+> 说明：异步聊天导入相关的 job 路由属于高级开发者特性。
+> 它们主要用于长任务处理、自动化脚本、开发调试和运维排障。
+> 普通交互式导入优先使用同步 `POST /import/chat`。
+
 ## 导入 Preset
 
 ```http
@@ -373,3 +377,88 @@ POST /import/chat
 | `400` | `import_empty` | 聊天文件中没有可导入消息 |
 | `400` | `import_unsupported_version` | `.thchat` 的 `spec_version` 主版本号不受支持 |
 | `400` | `character_not_found` | 指定的 `character_id` 不存在或当前账号不可见 |
+
+## 异步聊天导入作业（高级开发特性）
+
+```http
+POST /import/chat/jobs
+```
+
+这是一个面向平台接入、批处理和自动化脚本的高级开发特性，不属于普通聊天主流程接口。
+
+该接口会把聊天导入请求写入 `Background Job Runtime`，立即返回 job 句柄，后续由后台 worker 执行。
+
+适用场景：
+
+- 大体积聊天文件
+- 平台侧批量导入
+- 自动化脚本
+- 需要轮询进度与结果的后台任务
+
+这个接口只负责：
+
+1. 校验请求体
+2. 解析可选的 `character_id` 绑定
+3. 把原始输入写入 artifact 存储
+4. 创建对应后台作业
+
+真正的解析、归一化和最终发布由独立 worker 完成。v1 的观测方式是轮询，不提供 WebSocket 进度推送。
+
+作业状态查询、取消、重试和导出产物下载见 [Chat Transfer Jobs（聊天传输作业）](./chat-transfer-jobs)。
+
+### 后续流程
+
+1. 调用 `POST /import/chat/jobs` 创建作业
+2. 通过 `GET /chat-transfer-jobs/:id` 轮询状态
+3. 当作业成功时，从详情响应读取 `result_session_id` 和 `result`
+
+### 请求体
+
+请求体与同步 `POST /import/chat` 保持兼容，仍然使用 JSON：
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `data` | string | **是** | 聊天文件文本内容（JSONL 或 JSON） |
+| `character_id` | string | 否 | 绑定角色 ID |
+| `title` | string | 否 | 自定义会话标题 |
+
+当前仍然没有 `multipart/form-data` 支持。
+
+### 响应 `202`
+
+```json
+{
+  "data": {
+    "job_id": "chat-transfer-job:import_chat:abc123",
+    "status": "pending",
+    "job_kind": "import_chat",
+    "format": "sillytavern_jsonl"
+  }
+}
+```
+
+`format` 是入队时的快速检测结果，可能为：
+
+- `thchat`
+- `sillytavern_jsonl`
+- `null`
+
+最终是否成功导入，以作业详情为准。
+
+### 大小限制
+
+- 服务端配置项：`CHAT_IMPORT_MAX_BYTES`
+- 路由默认回退值：`DEFAULT_CHAT_IMPORT_MAX_BYTES = 5_000_000`
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ---- | ---- | ---- |
+| `400` | `validation_error` / `character_not_found` | 请求体非法，或指定角色不存在 |
+| `413` | `import_payload_too_large` | 输入超过导入大小限制 |
+| `503` | `resource_busy` | 入队写入遇到 SQLite 忙状态 |
+
+### 处理说明
+
+- 输入成功入队后，后续解析失败不会再回到这个接口返回 `400`，而是体现在作业状态，例如 `dead_letter`
+- worker 会先读取原始 artifact，再构建归一化 manifest，最后以原子发布方式写入最终 session

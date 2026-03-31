@@ -8,7 +8,7 @@ outline: [2, 3]
 
 - ORM: Drizzle ORM
 - 迁移目录: `apps/api/drizzle/`
-- 当前最新迁移: `0016_consistency_boundary_foundations.sql`
+- 当前最新迁移: `0024_background_job_runtime.sql`
 
 ## account
 
@@ -194,6 +194,73 @@ outline: [2, 3]
 | `relation` | `TEXT` | `NOT NULL` | 关系（`supports \| contradicts \| updates`） |
 | `account_id` | `TEXT` | `NOT NULL`, FK → `account.id` | 所属账号 |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+
+## runtime_scope_state
+
+Background Job Runtime 的 scope 串行状态表。当前 `memory` 与 `chat transfer` 都通过它维护统一 scope lease 和 revision。
+
+> 说明：这是一组偏开发、调试、运维的高级后端能力，对应的 job / scope 查询与管理路由也属于高级开发者特性。
+>
+> 统一的查询、取消、重试能力由 `RuntimeJobQueryService` 提供；业务路由只是对这些表做 `memory`、`chat transfer` 的投影。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `account_id` | `TEXT` | `NOT NULL`, FK → `account.id` | 所属账号 |
+| `scope_type` | `TEXT` | `NOT NULL` | 运行时 scope 域，例如 `memory`、`chat_transfer` |
+| `scope_key` | `TEXT` | `NOT NULL` | 域内 scope 键，例如 `chat:sessionId`、`job:jobId` |
+| `revision` | `INTEGER` | `NOT NULL`, default `0` | scope revision |
+| `lease_owner` | `TEXT` | `NULL` | 当前 scope 租约持有者 |
+| `lease_until` | `INTEGER` | `NULL` | scope 租约到期时间 |
+| `last_processed_at` | `INTEGER` | `NULL` | 最近一次成功处理时间 |
+| `last_success_job_id` | `TEXT` | `NULL` | 最近一次成功作业 ID |
+| `metadata_json` | `TEXT` | `NOT NULL`, default `'{}'` | 域专用扩展元数据 |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：`runtime_scope_state_account_scope_uq(account_id, scope_type, scope_key)`（唯一）、`runtime_scope_state_lease_idx(lease_until)`
+
+## runtime_job
+
+Background Job Runtime 的统一作业表。第一批消费者是 `memory.*` 与 `chat_transfer.*`。旧的 `memory_job` / `chat_transfer_job` 会暂时保留，用于兼容窗口，但新运行时以本表为准。
+
+> 说明：该表对应的 HTTP 路由主要是高级开发者接口，用于作业观察、重试、取消和调试，不是普通用户日常聊天接口。
+>
+> Runtime 还会围绕本表发出统一 `runtime.job_*` 生命周期事件，用于日志、测试和运行时观测。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 作业 ID |
+| `job_type` | `TEXT` | `NOT NULL` | 作业类型，例如 `memory.ingest_turn`、`chat_transfer.export_chat` |
+| `account_id` | `TEXT` | `NOT NULL`, FK → `account.id` | 所属账号 |
+| `scope_type` | `TEXT` | `NOT NULL` | scope 域 |
+| `scope_key` | `TEXT` | `NOT NULL` | scope 键 |
+| `session_id` | `TEXT` | `NULL`, FK → `session.id` | 关联会话 ID（如果有） |
+| `floor_id` | `TEXT` | `NULL`, FK → `floor.id` | 关联楼层 ID（如果有） |
+| `page_id` | `TEXT` | `NULL`, FK → `message_page.id` | 关联消息页 ID（如果有） |
+| `status` | `TEXT` | `NOT NULL`, default `pending` | 生命周期状态：`pending / leased / running / retry_waiting / succeeded / dead_letter / cancelled` |
+| `phase` | `TEXT` | `NULL` | 业务阶段名 |
+| `payload_json` | `TEXT` | `NOT NULL`, default `'{}'` | 请求负载 JSON |
+| `state_json` | `TEXT` | `NULL` | 运行中状态 JSON |
+| `result_json` | `TEXT` | `NULL` | 最终结果 JSON |
+| `attempt_count` | `INTEGER` | `NOT NULL`, default `0` | 已尝试次数 |
+| `max_attempts` | `INTEGER` | `NOT NULL`, default `5` | 最大尝试次数 |
+| `available_at` | `INTEGER` | `NOT NULL` | 下次可被领取时间 |
+| `started_at` | `INTEGER` | `NULL` | 首次开始执行时间 |
+| `finished_at` | `INTEGER` | `NULL` | 终态完成时间 |
+| `lease_owner` | `TEXT` | `NULL` | 当前作业租约持有者 |
+| `lease_until` | `INTEGER` | `NULL` | 当前作业租约到期时间 |
+| `based_on_revision` | `INTEGER` | `NULL` | 领取时冻结的 scope revision |
+| `dedupe_key` | `TEXT` | `NULL` | 幂等去重键 |
+| `progress_current` | `INTEGER` | `NOT NULL`, default `0` | 当前进度值 |
+| `progress_total` | `INTEGER` | `NULL` | 总进度值 |
+| `progress_message` | `TEXT` | `NULL` | 进度说明 |
+| `last_error` | `TEXT` | `NULL` | 最近一次错误消息 |
+| `last_error_code` | `TEXT` | `NULL` | 最近一次错误码 |
+| `last_error_class` | `TEXT` | `NULL` | 最近一次错误分类 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：`runtime_job_due_idx(status, available_at)`、`runtime_job_scope_idx(account_id, scope_type, scope_key, created_at)`、`runtime_job_session_idx(account_id, session_id, created_at)`、`runtime_job_account_type_dedupe_uq(account_id, job_type, dedupe_key)`（唯一）
+
 
 ## prompt_snapshot
 

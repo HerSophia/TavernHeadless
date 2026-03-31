@@ -1,7 +1,15 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
-import { buildQueryString, compactObject } from "./utils.js";
+import { buildQueryString, compactObject, readOptionalString, readRecord } from "./utils.js";
 
 export type ExportChatFormat = "thchat" | "st_jsonl";
+
+export type ExportChatJob = {
+  format: ExportChatFormat;
+  jobId: string;
+  jobKind: "export_chat";
+  requestedSessionId: string;
+  status: "pending";
+};
 
 export type ExportsResource = {
   character(options: {
@@ -18,6 +26,14 @@ export type ExportsResource = {
     sessionId: string;
     signal?: AbortSignal;
   }): Promise<Response>;
+  chatJob(options: {
+    accountId?: AccountIdHint;
+    format?: ExportChatFormat;
+    includeMemories?: boolean;
+    includeVariables?: boolean;
+    sessionId: string;
+    signal?: AbortSignal;
+  }): Promise<ExportChatJob>;
   preset(options: {
     accountId?: AccountIdHint;
     presetId: string;
@@ -63,6 +79,39 @@ export function createExportsResource(client: TransportClient): ExportsResource 
         signal: options.signal,
       });
     },
+    async chatJob(options): Promise<ExportChatJob> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/export/chat/${encodeURIComponent(options.sessionId)}/jobs`,
+        {
+          body: compactObject({
+            format: options.format,
+            include_memories: options.includeMemories,
+            include_variables: options.includeVariables,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+          signal: options.signal,
+        },
+      );
+
+      const data = readRecord(readRecord(response.body)?.data);
+      const jobId = readOptionalString(data?.job_id);
+      const status = readOptionalString(data?.status);
+      const jobKind = readOptionalString(data?.job_kind);
+      const requestedSessionId = readOptionalString(data?.requested_session_id);
+      const format = mapExportChatFormat(data?.format);
+      if (!jobId || status !== "pending" || jobKind !== "export_chat" || !requestedSessionId || !format) {
+        throw new Error("Chat export job creation returned an invalid payload");
+      }
+
+      return {
+        format,
+        jobId,
+        jobKind,
+        requestedSessionId,
+        status,
+      };
+    },
     async preset(options): Promise<Response> {
       return client.fetchRaw(`/export/preset/${encodeURIComponent(options.presetId)}`, {
         headers: buildAccountHeaders(options.accountId),
@@ -89,4 +138,8 @@ export function createExportsResource(client: TransportClient): ExportsResource 
 
 function withQuery(pathname: string, query: string): string {
   return query ? `${pathname}?${query}` : pathname;
+}
+
+function mapExportChatFormat(value: unknown): ExportChatFormat | null {
+  return value === "thchat" || value === "st_jsonl" ? value : null;
 }

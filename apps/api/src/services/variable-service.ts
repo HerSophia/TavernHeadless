@@ -9,6 +9,9 @@ import { variables } from "../db/schema.js";
 import { DrizzleVariableRepository } from "../adapters/drizzle-variable-repository.js";
 import { DEFAULT_GLOBAL_SCOPE_ID, VariableHostService, type VariableTarget } from "./variable-host-service.js";
 import { VariableServiceError } from "./variable-service-errors.js";
+import { createDefaultMutationRuntime } from "./default-mutation-runtime.js";
+import type { MutationRuntime } from "./runtime-mutation-types.js";
+import { VARIABLE_MUTATION_KINDS, type VariableDeleteMutationPayload, type VariableSetMutationPayload, type VariableSetMutationResult } from "./variable-mutation-applier.js";
 
 export interface VariableRecord {
   id: string;
@@ -97,11 +100,13 @@ interface PreparedRestoredVariableWrite extends PreparedVariableWrite {
 interface VariableServiceOptions {
   eventBus?: CoreEventBus;
   now?: () => number;
+  mutationRuntime?: MutationRuntime;
 }
 
 export class VariableService {
   private readonly eventBus: CoreEventBus;
   private readonly now: () => number;
+  private readonly mutationRuntime?: MutationRuntime;
   private readonly hostService: VariableHostService;
   private readonly variableRepo: DrizzleVariableRepository;
   private readonly variableResolver: VariableResolver;
@@ -109,6 +114,13 @@ export class VariableService {
   constructor(private readonly db: AppDb | DbExecutor, options: VariableServiceOptions = {}) {
     this.eventBus = options.eventBus ?? createEventBus();
     this.now = options.now ?? Date.now;
+    this.mutationRuntime = options.mutationRuntime
+      ?? (hasTransaction(this.db)
+        ? createDefaultMutationRuntime(this.db, {
+          eventBus: this.eventBus,
+          now: this.now,
+        })
+        : undefined);
     this.hostService = new VariableHostService(db);
     this.variableRepo = new DrizzleVariableRepository(db);
     this.variableResolver = new VariableResolver(this.variableRepo);
@@ -140,81 +152,23 @@ export class VariableService {
 
     ensureNoDuplicateTargets(preparedItems);
 
-    const now = this.now();
-    const pendingEvents: Array<{ entry: VariableEntry; isNew: boolean; sessionId?: string }> = [];
+    const mutationRuntime = this.requireMutationRuntime();
+    const mutationResult = await mutationRuntime.applyInline<VariableSetMutationPayload, VariableSetMutationResult>(
+      this.createSetMutationEnvelope(input.accountId, preparedItems, this.now()),
+    );
 
-    const batchResult = this.requireTransactionalDb().transaction((tx) => {
-      let created = 0;
-      let updated = 0;
-
-      const results = preparedItems.map((item) => {
-        const insertedId = nanoid();
-        const row = tx
-          .insert(variables)
-          .values({
-            id: insertedId,
-            accountId: item.target.accountId,
-            scope: item.target.scope,
-            scopeId: item.target.scopeId,
-            key: item.key,
-            valueJson: item.valueJson,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: [variables.accountId, variables.scope, variables.scopeId, variables.key],
-            set: {
-              valueJson: item.valueJson,
-              updatedAt: now,
-            },
-          })
-          .returning()
-          .all()[0];
-
-        if (!row) {
-          throw new Error("Failed to upsert variable");
-        }
-
-        const action: VariableUpsertResult["action"] = row.id === insertedId ? "created" : "updated";
-        const entry = toVariableEntry(row);
-
-        if (action === "created") {
-          created += 1;
-        } else {
-          updated += 1;
-        }
-
-        pendingEvents.push({
-          entry,
-          isNew: action === "created",
-          sessionId: item.target.sessionId,
-        });
-
-        return {
-          index: item.index,
-          action,
-          variable: toVariableRecord(row),
-        };
-      });
-
-      return {
-        results,
-        meta: {
-          total: results.length,
-          created,
-          updated,
-        },
-      };
-    });
-
-    for (const event of pendingEvents) {
-      await this.eventBus.emit("variable.set", {
-        sessionId: event.sessionId,
-        entry: event.entry,
-        isNew: event.isNew,
-      });
+    if (!mutationResult) {
+      throw new Error("Variable upsert returned an empty mutation result");
     }
 
-    return batchResult;
+    return {
+      results: mutationResult.results.map((item) => ({
+        index: item.index,
+        action: item.action,
+        variable: toVariableRecordFromEntry(item.variable),
+      })),
+      meta: mutationResult.meta,
+    };
   }
 
   restoreMany(input: {
@@ -374,21 +328,10 @@ export class VariableService {
     const target = await this.hostService.resolveTarget(accountId, record.scope, record.scopeId);
     this.hostService.assertWritableTarget(target);
 
-    const deleted = await this.db
-      .delete(variables)
-      .where(and(eq(variables.id, id), eq(variables.accountId, accountId)))
-      .returning({ id: variables.id });
-
-    if (deleted.length === 0) {
-      throw new VariableServiceError("variable_not_found", `Variable '${id}' not found`);
-    }
-
-    await this.eventBus.emit("variable.deleted", {
-      sessionId: target.sessionId,
-      id: record.id,
-      scope: record.scope,
-      key: record.key,
-    });
+    const mutationRuntime = this.requireMutationRuntime();
+    await mutationRuntime.applyInline<VariableDeleteMutationPayload, { id: string; deleted: true }>(
+      this.createDeleteMutationEnvelope(accountId, toVariableRecord(record), target.sessionId),
+    );
   }
 
   async resolveSnapshot(input: {
@@ -451,6 +394,68 @@ export class VariableService {
     };
   }
 
+  private createSetMutationEnvelope(
+    accountId: string,
+    items: PreparedVariableWrite[],
+    updatedAt: number,
+  ) {
+    const first = items[0];
+    const sameScope = first !== undefined
+      && items.every((item) => item.target.scope === first.target.scope && item.target.scopeId === first.target.scopeId);
+
+    return {
+      id: `variable-set:${nanoid()}`,
+      kind: VARIABLE_MUTATION_KINDS.set,
+      source: "api" as const,
+      accountId,
+      sessionId: sameScope ? first?.target.sessionId : undefined,
+      scopeType: "variable",
+      scopeKey: sameScope && first
+        ? `${first.target.scope}:${first.target.scopeId}`
+        : `account:${accountId}`,
+      applyPhase: "inline" as const,
+      durability: "transactional" as const,
+      replaySafety: "safe" as const,
+      conflictPolicy: "replace" as const,
+      payload: {
+        items: items.map((item) => ({
+          index: item.index,
+          scope: item.target.scope,
+          scopeId: item.target.scopeId,
+          key: item.key,
+          valueJson: item.valueJson,
+          updatedAt,
+          sessionId: item.target.sessionId,
+        })),
+        emitEvents: true,
+      } satisfies VariableSetMutationPayload,
+      createdAt: updatedAt,
+    };
+  }
+
+  private createDeleteMutationEnvelope(accountId: string, record: VariableRecord, sessionId?: string) {
+    return {
+      id: `variable-delete:${record.id}`,
+      kind: VARIABLE_MUTATION_KINDS.delete,
+      source: "api" as const,
+      accountId,
+      sessionId,
+      scopeType: "variable",
+      scopeKey: `${record.scope}:${record.scopeId}`,
+      applyPhase: "inline" as const,
+      durability: "transactional" as const,
+      replaySafety: "safe" as const,
+      payload: {
+        id: record.id,
+        scope: record.scope,
+        key: record.key,
+        sessionId,
+        emitEvent: true,
+      } satisfies VariableDeleteMutationPayload,
+      createdAt: this.now(),
+    };
+  }
+
   private async buildLayers(context: {
     accountId?: string;
     sessionId?: string;
@@ -496,6 +501,14 @@ export class VariableService {
     }
 
     return this.db;
+  }
+
+  private requireMutationRuntime(): MutationRuntime {
+    if (!this.mutationRuntime) {
+      throw new Error("VariableService write operation requires mutationRuntime or AppDb transaction support");
+    }
+
+    return this.mutationRuntime;
   }
 
   private executeInTransactionIfAvailable<T>(action: (executor: AppDb | DbExecutor) => T): T {

@@ -2,6 +2,7 @@
  * Export Routes
  *
  * GET /export/chat/:id       — 导出会话（支持 thchat 原生格式和 st_jsonl 降级格式）
+ * POST /export/chat/:id/jobs — 创建异步会话导出作业
  * GET /export/preset/:id     — 导出预设（ST 格式 JSON）
  * GET /export/worldbook/:id  — 导出世界书（ST 格式 JSON）
  * GET /export/regex/:id      — 导出正则脚本（ST 格式 JSON 数组）
@@ -9,6 +10,7 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import type { CoreEventBus } from "@tavern/core";
 import { z } from "zod";
 import { and, eq, asc, desc } from "drizzle-orm";
 
@@ -20,6 +22,7 @@ import {
   regexProfiles,
   characters,
   characterVersions,
+  sessions,
 } from "../db/schema.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { parseWithSchema, parseJsonField, sendError } from "../lib/http.js";
@@ -28,10 +31,23 @@ import {
   serializeSessionToThChat,
   serializeSessionToStJsonl,
 } from "../services/chat-export.js";
+import { countSessionExportMessages } from "../services/chat-export-snapshot.js";
+import { ChatTransferJobScheduler } from "../services/chat-transfer-job-scheduler.js";
+import {
+  executeResourceWrite,
+  ResourceWriteRouteError,
+} from "../services/resource-write.js";
 import {
   snapshotToStCharacterCard,
   scriptsToStRegexArray,
 } from "@tavern/adapters-sillytavern";
+
+export interface ExportRoutesOptions {
+  artifactDir?: string;
+  exportSyncMaxMessages?: number;
+  exportArtifactTtlMs?: number;
+  eventBus?: CoreEventBus;
+}
 
 // ── Zod schemas ───────────────────────────────────────
 
@@ -43,13 +59,19 @@ const exportChatQuerySchema = z.object({
   format: z.enum(["thchat", "st_jsonl"]).default("thchat"),
   include_variables: z
     .string()
-    .transform((v) => v !== "false")
+    .transform((value) => value !== "false")
     .default("true"),
   include_memories: z
     .string()
-    .transform((v) => v !== "false")
+    .transform((value) => value !== "false")
     .default("true"),
 });
+
+const createExportChatJobBodySchema = z.object({
+  format: z.enum(["thchat", "st_jsonl"]).default("thchat"),
+  include_variables: z.boolean().optional().default(true),
+  include_memories: z.boolean().optional().default(true),
+}).default({});
 
 const exportIdParamsSchema = z.object({
   id: z.string().min(1),
@@ -58,6 +80,22 @@ const exportIdParamsSchema = z.object({
 const exportCharacterQuerySchema = z.object({
   version_id: z.string().min(1).optional(),
 });
+
+const createExportChatJobBodyExample = {
+  format: "thchat",
+  include_variables: true,
+  include_memories: true,
+};
+
+const createExportChatJobResponseExample = {
+  data: {
+    job_id: "ctj_export_demo",
+    status: "pending",
+    job_kind: "export_chat",
+    format: "thchat",
+    requested_session_id: "sess_demo",
+  },
+};
 
 // ── JSON Schema (Swagger) ────────────────────────────
 
@@ -68,6 +106,38 @@ const exportChatQueryJsonSchema = {
     include_variables: { type: "string" as const, enum: ["true", "false"], default: "true" },
     include_memories: { type: "string" as const, enum: ["true", "false"], default: "true" },
   },
+  additionalProperties: false,
+};
+
+const createExportChatJobBodyJsonSchema = {
+  type: "object" as const,
+  properties: {
+    format: { type: "string" as const, enum: ["thchat", "st_jsonl"], default: "thchat" },
+    include_variables: { type: "boolean" as const, default: true },
+    include_memories: { type: "boolean" as const, default: true },
+  },
+  additionalProperties: false,
+  examples: [createExportChatJobBodyExample],
+};
+
+const createExportChatJobResponseJsonSchema = {
+  type: "object" as const,
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object" as const,
+      required: ["job_id", "status", "job_kind", "format", "requested_session_id"],
+      properties: {
+        job_id: { type: "string" as const },
+        status: { type: "string" as const, enum: ["pending"] },
+        job_kind: { type: "string" as const, enum: ["export_chat"] },
+        format: { type: "string" as const, enum: ["thchat", "st_jsonl"] },
+        requested_session_id: { type: "string" as const },
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [createExportChatJobResponseExample],
   additionalProperties: false,
 };
 
@@ -102,13 +172,21 @@ function sendJsonFile(
     .send(data);
 }
 
+function sendExportWriteError(reply: Parameters<typeof sendError>[0], error: ResourceWriteRouteError) {
+  return sendError(reply, error.statusCode, error.code, error.message, error.details);
+}
+
 // ── 路由注册 ─────────────────────────────────────────
 
 export async function registerExportRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection,
+  options: ExportRoutesOptions = {},
 ): Promise<void> {
   const { db } = connection;
+  const scheduler = new ChatTransferJobScheduler({
+    eventBus: options.eventBus,
+  });
 
   // ────────────────────────────────────────────────────
   // GET /export/chat/:id
@@ -125,6 +203,7 @@ export async function registerExportRoutes(
       response: {
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -139,6 +218,18 @@ export async function registerExportRoutes(
     const auth = getRequestAuthContext(request);
 
     try {
+      if (options.exportSyncMaxMessages !== undefined) {
+        const messageCount = countSessionExportMessages(db, sessionId, { accountId: auth.accountId });
+        if (messageCount > options.exportSyncMaxMessages) {
+          return sendError(
+            reply,
+            409,
+            "export_requires_async",
+            `Synchronous export is limited to ${options.exportSyncMaxMessages} messages for this deployment`,
+          );
+        }
+      }
+
       if (format === "thchat") {
         const result = serializeSessionToThChat(db, sessionId, {
           accountId: auth.accountId,
@@ -153,10 +244,8 @@ export async function registerExportRoutes(
           .send(result);
       }
 
-      // format === "st_jsonl"
       const jsonl = serializeSessionToStJsonl(db, sessionId, { accountId: auth.accountId });
 
-      // 从 jsonl header 提取 character_name 作为文件名
       let filename = "export";
       try {
         const headerLine = jsonl.split("\n")[0];
@@ -166,7 +255,9 @@ export async function registerExportRoutes(
             headerObj.character_name ?? headerObj.th_session_title ?? "export",
           );
         }
-      } catch { /* ignore */ }
+      } catch {
+        // ignore
+      }
 
       return reply
         .header("Content-Type", "application/x-ndjson; charset=utf-8")
@@ -175,6 +266,78 @@ export async function registerExportRoutes(
     } catch (error) {
       if (error instanceof Error && error.message.startsWith("Session not found")) {
         return sendError(reply, 404, "session_not_found", error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/export/chat/:id/jobs", {
+    schema: {
+      tags: ["exports"],
+      summary: "Create async chat export job",
+      description: "高级开发特性。该接口会把聊天导出写入 Background Job Runtime，主要用于开发、调试、运维和自动化工具。普通小规模导出优先使用同步 `GET /export/chat/:id`。",
+      operationId: "createExportChatJob",
+      params: idParamsJsonSchema,
+      body: createExportChatJobBodyJsonSchema,
+      response: {
+        202: createExportChatJobResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(exportChatParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const parsedBody = parseWithSchema(createExportChatJobBodySchema, request.body ?? {}, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const session = await db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(and(eq(sessions.id, parsedParams.data.id), eq(sessions.accountId, auth.accountId)))
+      .get();
+
+    if (!session) {
+      return sendError(reply, 404, "session_not_found", `Session not found: ${parsedParams.data.id}`);
+    }
+
+    try {
+      const createdAt = Date.now();
+      const created = await executeResourceWrite(() => db.transaction((tx) => {
+        const result = scheduler.enqueueExportChat(tx, {
+          accountId: auth.accountId,
+          sessionId: parsedParams.data.id,
+          format: parsedBody.data.format,
+          includeVariables: parsedBody.data.include_variables,
+          includeMemories: parsedBody.data.include_memories,
+          createdAt,
+        });
+
+        return {
+          jobId: result.jobId,
+          format: parsedBody.data.format,
+        };
+      }));
+
+      return reply.code(202).send({
+        data: {
+          job_id: created.jobId,
+          status: "pending",
+          job_kind: "export_chat",
+          format: created.format,
+          requested_session_id: parsedParams.data.id,
+        },
+      });
+    } catch (error) {
+      if (error instanceof ResourceWriteRouteError) {
+        return sendExportWriteError(reply, error);
       }
       throw error;
     }
@@ -249,37 +412,36 @@ export async function registerExportRoutes(
 
     const globalSettings = parseJsonField(row.dataJson) as Record<string, unknown> | null;
 
-    // ST 世界书的 entries 是对象形式，key 为 uid
     const entriesObj: Record<string, unknown> = {};
-    entryRows.forEach((e, index) => {
-      const key = String(e.uid ?? index);
+    entryRows.forEach((entry, index) => {
+      const key = String(entry.uid ?? index);
       entriesObj[key] = {
-        uid: e.uid,
-        key: parseJsonField(e.keysJson),
-        keysecondary: parseJsonField(e.keysSecondaryJson),
-        secondary_keys: parseJsonField(e.keysSecondaryJson),
-        comment: e.comment,
-        content: e.content,
-        selective: e.selective,
-        selectiveLogic: e.selectiveLogic,
-        constant: e.constant,
-        position: e.position,
-        order: e.order,
-        depth: e.depth,
-        role: e.role,
-        disable: e.disable,
-        enabled: !e.disable,
-        scanDepth: e.scanDepth ?? null,
-        caseSensitive: e.caseSensitive ?? null,
-        matchWholeWords: e.matchWholeWords ?? null,
+        uid: entry.uid,
+        key: parseJsonField(entry.keysJson),
+        keysecondary: parseJsonField(entry.keysSecondaryJson),
+        secondary_keys: parseJsonField(entry.keysSecondaryJson),
+        comment: entry.comment,
+        content: entry.content,
+        selective: entry.selective,
+        selectiveLogic: entry.selectiveLogic,
+        constant: entry.constant,
+        position: entry.position,
+        order: entry.order,
+        depth: entry.depth,
+        role: entry.role,
+        disable: entry.disable,
+        enabled: !entry.disable,
+        scanDepth: entry.scanDepth ?? null,
+        caseSensitive: entry.caseSensitive ?? null,
+        matchWholeWords: entry.matchWholeWords ?? null,
         extensions: {
-          position: e.position,
-          selectiveLogic: e.selectiveLogic,
-          role: e.role,
-          depth: e.depth,
-          scan_depth: e.scanDepth ?? null,
-          case_sensitive: e.caseSensitive ?? null,
-          match_whole_words: e.matchWholeWords ?? null,
+          position: entry.position,
+          selectiveLogic: entry.selectiveLogic,
+          role: entry.role,
+          depth: entry.depth,
+          scan_depth: entry.scanDepth ?? null,
+          case_sensitive: entry.caseSensitive ?? null,
+          match_whole_words: entry.matchWholeWords ?? null,
         },
       };
     });
@@ -366,7 +528,6 @@ export async function registerExportRoutes(
 
     let version;
     if (parsedQuery.data.version_id) {
-      // 查指定版本
       const [row] = await db
         .select()
         .from(characterVersions)
@@ -376,7 +537,6 @@ export async function registerExportRoutes(
         ));
       version = row;
     } else {
-      // 查最新版本
       const [row] = await db
         .select()
         .from(characterVersions)

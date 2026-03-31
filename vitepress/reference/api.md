@@ -162,6 +162,7 @@ WebSocket 也遵循相同边界：
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
 | Exports | 资源导出（聊天、预设、世界书、正则、角色卡） | [Exports](./api/exports) |
+| Chat Transfer Jobs | 异步聊天导入导出作业观测、控制与产物下载 | [Chat Transfer Jobs](./api/chat-transfer-jobs) |
 | Presets | 预设管理、编辑器视图、条目级 CRUD | [Presets](./api/presets) |
 | Worldbooks | 世界书管理 | [Worldbooks](./api/worldbooks) |
 | Regex Profiles | 正则配置管理 | [Regex Profiles](./api/regex-profiles) |
@@ -170,6 +171,10 @@ WebSocket 也遵循相同边界：
 | Tools | 工具调用（定义/权限/调用记录） | [Tools](./api/tools) |
 | MCP Servers | MCP 服务器管理（配置/连接/工具查询） | [MCP Servers](./api/mcp) |
 | Accounts | 账号管理 | [Accounts](./api/accounts) |
+
+> 说明：`memory jobs / memory scopes / chat transfer jobs` 这一类后台作业观察与管理路由，属于高级开发者特性。
+> 它们主要服务于开发调试、运维排障、自动化脚本和平台集成，不属于普通聊天主流程接口。
+> 普通用户交互仍应优先使用同步聊天、同步导入、同步导出等主路径接口。
 
 ## 官方集成层
 
@@ -184,7 +189,7 @@ WebSocket 也遵循相同边界：
 
 - 会话与内容结构：`sessions`、`messages`、`floors`、`pages`、`branches`
 - 角色、资料与配置：`characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles`
-- 导入、导出与模型配置：`imports`、`exports`、`llmProfiles`、`llmInstances`
+- 导入、导出与模型配置：`imports`、`exports`、`chatTransferJobs`、`llmProfiles`、`llmInstances`
 - 账号、变量与记忆：`accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes`
 - 工具与运行集成：`tools`、`mcp`
 

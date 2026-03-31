@@ -207,4 +207,45 @@ describe("Regex profile update routes", () => {
     const body = putRes.json<{ error: { code: string } }>();
     expect(body.error.code).toBe("regex_validation_error");
   });
+
+  it("DELETE /regex-profiles/:id supports expected_version baseline and returns 409 for stale versions", async () => {
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/import/regex",
+      payload: { name: "Delete Regex", data: MINIMAL_REGEX_SCRIPTS },
+    });
+    expect(importRes.statusCode).toBe(201);
+    const profileId = importRes.json<ImportResponse>().data.id;
+
+    const detailRes = await app.inject({ method: "GET", url: `/regex-profiles/${profileId}` });
+    expect(detailRes.statusCode).toBe(200);
+    const detailBody = detailRes.json<DetailResponse>();
+
+    const updateRes = await app.inject({
+      method: "PUT",
+      url: `/regex-profiles/${profileId}`,
+      payload: {
+        name: "Delete Regex Updated",
+        expected_version: detailBody.data.version,
+        data: [
+          {
+            id: "regex-1",
+            scriptName: "Updated",
+            findRegex: "hello",
+            replaceString: "traveler",
+            placement: [1, 2],
+            disabled: false,
+          },
+        ],
+      },
+    });
+    expect(updateRes.statusCode).toBe(200);
+
+    const staleDeleteRes = await app.inject({
+      method: "DELETE",
+      url: `/regex-profiles/${profileId}?expected_version=${detailBody.data.version}`,
+    });
+    expect(staleDeleteRes.statusCode).toBe(409);
+    expect(staleDeleteRes.json<{ error: { code: string } }>().error.code).toBe("regex_profile_conflict");
+  });
 });
