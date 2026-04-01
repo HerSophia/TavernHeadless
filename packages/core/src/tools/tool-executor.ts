@@ -693,6 +693,7 @@ export class ToolExecutor {
         runId: input.openRecord.runId,
         sessionId: input.context.sessionId,
         ...(input.context.accountId ? { accountId: input.context.accountId } : {}),
+        ...(input.context.branchId ? { branchId: input.context.branchId } : {}),
         floorId: input.context.floorId,
         ...(input.context.pageId ? { pageId: input.context.pageId } : {}),
         callerSlot: input.context.callerSlot,

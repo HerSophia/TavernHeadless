@@ -1,7 +1,13 @@
 import { and, asc, count, desc, eq } from "drizzle-orm";
 import { createEventBus, type CoreEventBus, VariableResolver } from "@tavern/core";
 import { nanoid } from "nanoid";
-import type { VariableEntry, VariableScope } from "@tavern/shared";
+import {
+  buildBranchVariableScopeId,
+  parseBranchVariableScopeId,
+  type BranchVariableScopeRef,
+  type VariableEntry,
+  type VariableScope,
+} from "@tavern/shared";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { parseJsonField, stringifyJsonField } from "../lib/http.js";
@@ -11,12 +17,18 @@ import { DEFAULT_GLOBAL_SCOPE_ID, VariableHostService, type VariableTarget } fro
 import { VariableServiceError } from "./variable-service-errors.js";
 import { createDefaultMutationRuntime } from "./default-mutation-runtime.js";
 import type { MutationRuntime } from "./runtime-mutation-types.js";
-import { VARIABLE_MUTATION_KINDS, type VariableDeleteMutationPayload, type VariableSetMutationPayload, type VariableSetMutationResult } from "./variable-mutation-applier.js";
+import {
+  VARIABLE_MUTATION_KINDS,
+  type VariableDeleteMutationPayload,
+  type VariableSetMutationPayload,
+  type VariableSetMutationResult,
+} from "./variable-mutation-applier.js";
 
 export interface VariableRecord {
   id: string;
   scope: VariableScope;
   scopeId: string;
+  scopeRef?: BranchVariableScopeRef;
   key: string;
   value: unknown;
   updatedAt: number;
@@ -30,6 +42,8 @@ export interface VariableListOptions {
   sortOrder: "asc" | "desc";
   scope?: VariableScope;
   scopeId?: string;
+  sessionId?: string;
+  branchId?: string;
   key?: string;
 }
 
@@ -64,12 +78,14 @@ export interface ResolvedVariableRecord {
   value: unknown;
   sourceScope: VariableScope;
   sourceScopeId: string;
+  sourceScopeRef?: BranchVariableScopeRef;
   updatedAt: number;
 }
 
 export interface VariableLayerSnapshot {
   scope: VariableScope;
   scopeId: string;
+  scopeRef?: BranchVariableScopeRef;
   items: VariableRecord[];
 }
 
@@ -77,6 +93,7 @@ export interface ResolvedVariablesSnapshot {
   context: {
     accountId: string;
     sessionId?: string;
+    branchId?: string;
     floorId?: string;
     pageId?: string;
     globalScopeId: string;
@@ -95,7 +112,6 @@ interface PreparedVariableWrite {
 interface PreparedRestoredVariableWrite extends PreparedVariableWrite {
   updatedAt: number;
 }
-
 
 interface VariableServiceOptions {
   eventBus?: CoreEventBus;
@@ -228,7 +244,7 @@ export class VariableService {
     const targetRows = new Map<string, VariableRecord[]>();
 
     for (const target of input.targets) {
-      const normalizedScopeId = target.scope === "global" ? DEFAULT_GLOBAL_SCOPE_ID : target.scopeId;
+      const normalizedScopeId = normalizeStoredScopeId(target.scope, target.scopeId);
       const identity = buildScopeIdentity(target.scope, normalizedScopeId);
 
       if (targetRows.has(identity)) {
@@ -264,8 +280,8 @@ export class VariableService {
       filters.push(eq(variables.scope, input.scope));
     }
 
-    if (input.scopeId !== undefined) {
-      const normalizedScopeId = input.scope === "global" ? DEFAULT_GLOBAL_SCOPE_ID : input.scopeId;
+    const normalizedScopeId = resolveListScopeId(input);
+    if (normalizedScopeId !== undefined) {
       filters.push(eq(variables.scopeId, normalizedScopeId));
     }
 
@@ -330,19 +346,26 @@ export class VariableService {
 
     const mutationRuntime = this.requireMutationRuntime();
     await mutationRuntime.applyInline<VariableDeleteMutationPayload, { id: string; deleted: true }>(
-      this.createDeleteMutationEnvelope(accountId, toVariableRecord(record), target.sessionId),
+      this.createDeleteMutationEnvelope(
+        accountId,
+        toVariableRecord(record),
+        target.sessionId,
+        target.branchId,
+      ),
     );
   }
 
   async resolveSnapshot(input: {
     accountId: string;
     sessionId: string;
+    branchId?: string;
     floorId?: string;
     pageId?: string;
     includeLayers?: boolean;
   }): Promise<ResolvedVariablesSnapshot> {
     const context = await this.hostService.resolveContext(input.accountId, {
       sessionId: input.sessionId,
+      branchId: input.branchId,
       floorId: input.floorId,
       pageId: input.pageId,
       globalScopeId: DEFAULT_GLOBAL_SCOPE_ID,
@@ -354,6 +377,7 @@ export class VariableService {
         value: entry.value,
         sourceScope: entry.scope,
         sourceScopeId: entry.scopeId,
+        ...(toBranchScopeRef(entry.scope, entry.scopeId) ? { sourceScopeRef: toBranchScopeRef(entry.scope, entry.scopeId) } : {}),
         updatedAt: entry.updatedAt,
       }))
       .sort((left, right) => left.key.localeCompare(right.key));
@@ -362,6 +386,7 @@ export class VariableService {
       context: {
         accountId: input.accountId,
         sessionId: context.sessionId,
+        branchId: context.branchId,
         floorId: context.floorId,
         pageId: context.pageId,
         globalScopeId: context.globalScopeId ?? DEFAULT_GLOBAL_SCOPE_ID,
@@ -426,6 +451,7 @@ export class VariableService {
           valueJson: item.valueJson,
           updatedAt,
           sessionId: item.target.sessionId,
+          branchId: item.target.branchId,
         })),
         emitEvents: true,
       } satisfies VariableSetMutationPayload,
@@ -433,7 +459,12 @@ export class VariableService {
     };
   }
 
-  private createDeleteMutationEnvelope(accountId: string, record: VariableRecord, sessionId?: string) {
+  private createDeleteMutationEnvelope(
+    accountId: string,
+    record: VariableRecord,
+    sessionId?: string,
+    branchId?: string,
+  ) {
     return {
       id: `variable-delete:${record.id}`,
       kind: VARIABLE_MUTATION_KINDS.delete,
@@ -450,6 +481,7 @@ export class VariableService {
         scope: record.scope,
         key: record.key,
         sessionId,
+        branchId,
         emitEvent: true,
       } satisfies VariableDeleteMutationPayload,
       createdAt: this.now(),
@@ -459,6 +491,7 @@ export class VariableService {
   private async buildLayers(context: {
     accountId?: string;
     sessionId?: string;
+    branchId?: string;
     floorId?: string;
     pageId?: string;
     globalScopeId?: string;
@@ -469,10 +502,15 @@ export class VariableService {
       return {};
     }
 
+    const branchScopeId = context.sessionId && context.branchId
+      ? buildBranchVariableScopeId(context.sessionId, context.branchId)
+      : undefined;
+
     const layers: Partial<Record<VariableScope, VariableLayerSnapshot>> = {};
     const scopePairs: Array<{ scope: VariableScope; scopeId?: string }> = [
       { scope: "global", scopeId: context.globalScopeId ?? DEFAULT_GLOBAL_SCOPE_ID },
       { scope: "chat", scopeId: context.sessionId },
+      { scope: "branch", scopeId: branchScopeId },
       { scope: "floor", scopeId: context.floorId },
       { scope: "page", scopeId: context.pageId },
     ];
@@ -485,9 +523,11 @@ export class VariableService {
       const items = await this.variableRepo.findAllByScope(pair.scope, pair.scopeId, { accountId });
       items.sort((left, right) => left.key.localeCompare(right.key));
 
+      const scopeRef = toBranchScopeRef(pair.scope, pair.scopeId);
       layers[pair.scope] = {
         scope: pair.scope,
         scopeId: pair.scopeId,
+        ...(scopeRef ? { scopeRef } : {}),
         items: items.map(toVariableRecordFromEntry),
       };
     }
@@ -563,7 +603,7 @@ function prepareRestoredWrite(
     throw new VariableServiceError("invalid_variable_value", "Variable value cannot be undefined");
   }
 
-  const scopeId = item.scope === "global" ? DEFAULT_GLOBAL_SCOPE_ID : item.scopeId;
+  const scopeId = normalizeStoredScopeId(item.scope, item.scopeId);
 
   return {
     index,
@@ -575,10 +615,12 @@ function prepareRestoredWrite(
 }
 
 function toVariableRecord(row: typeof variables.$inferSelect): VariableRecord {
+  const scopeRef = toBranchScopeRef(row.scope, row.scopeId);
   return {
     id: row.id,
     scope: row.scope,
     scopeId: row.scopeId,
+    ...(scopeRef ? { scopeRef } : {}),
     key: row.key,
     value: parseJsonField(row.valueJson),
     updatedAt: row.updatedAt,
@@ -586,10 +628,12 @@ function toVariableRecord(row: typeof variables.$inferSelect): VariableRecord {
 }
 
 function toVariableRecordFromEntry(entry: VariableEntry): VariableRecord {
+  const scopeRef = toBranchScopeRef(entry.scope, entry.scopeId);
   return {
     id: entry.id,
     scope: entry.scope,
     scopeId: entry.scopeId,
+    ...(scopeRef ? { scopeRef } : {}),
     key: entry.key,
     value: entry.value,
     updatedAt: entry.updatedAt,
@@ -608,18 +652,89 @@ function toVariableEntry(row: typeof variables.$inferSelect): VariableEntry {
 }
 
 function createRestoredTarget(accountId: string, scope: VariableScope, scopeId: string): VariableTarget {
+  const branchScopeRef = scope === "branch" ? parseBranchVariableScopeId(scopeId) : null;
+
   return {
     accountId,
     scope,
     scopeId,
+    ...(branchScopeRef ? { sessionId: branchScopeRef.sessionId, branchId: branchScopeRef.branchId } : {}),
     context: {
       accountId,
       ...(scope === "chat" ? { sessionId: scopeId } : {}),
+      ...(branchScopeRef ? { sessionId: branchScopeRef.sessionId, branchId: branchScopeRef.branchId } : {}),
       ...(scope === "floor" ? { floorId: scopeId } : {}),
       ...(scope === "page" ? { pageId: scopeId } : {}),
       globalScopeId: DEFAULT_GLOBAL_SCOPE_ID,
     },
   };
+}
+
+function normalizeStoredScopeId(scope: VariableScope, scopeId: string): string {
+  if (scope === "global") {
+    return DEFAULT_GLOBAL_SCOPE_ID;
+  }
+
+  return scopeId;
+}
+
+function resolveListScopeId(input: VariableListOptions): string | undefined {
+  if (input.scope === "branch") {
+    if (input.branchId !== undefined && input.sessionId === undefined) {
+      throw new VariableServiceError(
+        "invalid_variable_context",
+        "branch_id requires session_id when listing branch variables"
+      );
+    }
+
+    if (input.scopeId !== undefined && input.sessionId !== undefined && input.branchId !== undefined) {
+      const normalizedBranchScopeId = buildBranchVariableScopeId(input.sessionId, input.branchId);
+      if (normalizedBranchScopeId !== input.scopeId) {
+        throw new VariableServiceError(
+          "invalid_variable_context",
+          "scope_id does not match the provided session_id + branch_id"
+        );
+      }
+    }
+
+    if (input.scopeId !== undefined) {
+      if (!parseBranchVariableScopeId(input.scopeId)) {
+        throw new VariableServiceError(
+          "invalid_variable_context",
+          `Invalid branch scope_id '${input.scopeId}'`
+        );
+      }
+
+      return input.scopeId;
+    }
+
+    if (input.sessionId !== undefined && input.branchId !== undefined) {
+      return buildBranchVariableScopeId(input.sessionId, input.branchId);
+    }
+
+    return undefined;
+  }
+
+  if (input.sessionId !== undefined || input.branchId !== undefined) {
+    throw new VariableServiceError(
+      "invalid_variable_context",
+      "session_id and branch_id are only supported when scope is 'branch'"
+    );
+  }
+
+  if (input.scopeId !== undefined) {
+    return input.scope === "global" ? DEFAULT_GLOBAL_SCOPE_ID : input.scopeId;
+  }
+
+  return undefined;
+}
+
+function toBranchScopeRef(scope: VariableScope, scopeId: string): BranchVariableScopeRef | undefined {
+  if (scope !== "branch") {
+    return undefined;
+  }
+
+  return parseBranchVariableScopeId(scopeId) ?? undefined;
 }
 
 function hasTransaction(db: AppDb | DbExecutor): db is AppDb {

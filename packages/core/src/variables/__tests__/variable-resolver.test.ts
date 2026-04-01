@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { VariableScope, VariableEntry } from '@tavern/shared';
+import { buildBranchVariableScopeId, type VariableScope, type VariableEntry } from '@tavern/shared';
 import type { VariableRepository, VariableRepositoryOptions } from '../../ports/index.js';
 import type { VariableContext } from '../../types.js';
 import { VariableResolver } from '../variable-resolver.js';
@@ -138,9 +138,12 @@ describe('VariableResolver', () => {
   const fullContext: VariableContext = {
     pageId: 'page-1',
     floorId: 'floor-1',
+    branchId: 'branch-1',
     sessionId: 'session-1',
     globalScopeId: 'global',
   };
+
+  const branchScopeId = buildBranchVariableScopeId('session-1', 'branch-1');
 
   beforeEach(() => {
     repo = new InMemoryVariableRepository();
@@ -169,6 +172,7 @@ describe('VariableResolver', () => {
     it('floor overrides chat and global', async () => {
       repo.add('global', 'global', 'mood', 'happy');
       repo.add('chat', 'session-1', 'mood', 'neutral');
+      repo.add('branch', branchScopeId, 'mood', 'tense');
       repo.add('floor', 'floor-1', 'mood', 'angry');
 
       const entry = await resolver.resolve('mood', fullContext);
@@ -176,8 +180,23 @@ describe('VariableResolver', () => {
       expect(entry!.scope).toBe('floor');
     });
 
+    it('branch overrides chat and global when page and floor are absent', async () => {
+      repo.add('global', 'global', 'mood', 'happy');
+      repo.add('chat', 'session-1', 'mood', 'neutral');
+      repo.add('branch', branchScopeId, 'mood', 'tense');
+
+      const entry = await resolver.resolve('mood', {
+        sessionId: 'session-1',
+        branchId: 'branch-1',
+      });
+
+      expect(entry).not.toBeNull();
+      expect(entry!.value).toBe('tense');
+      expect(entry!.scope).toBe('branch');
+    });
+
     it('skips scope when context has no scopeId', async () => {
-      repo.add('page', 'page-1', 'mood', 'sad');
+      repo.add('branch', branchScopeId, 'mood', 'tense');
       repo.add('global', 'global', 'mood', 'happy');
 
       const contextNoPage: VariableContext = {
@@ -252,7 +271,9 @@ describe('VariableResolver', () => {
     it('merges all scopes, lower scope overrides higher', async () => {
       repo.add('global', 'global', 'mood', 'happy');
       repo.add('global', 'global', 'lang', 'en');
+      repo.add('chat', 'session-1', 'topic', 'tavern');
       repo.add('chat', 'session-1', 'mood', 'neutral');
+      repo.add('branch', branchScopeId, 'topic', 'campfire');
       repo.add('page', 'page-1', 'mood', 'sad');
       repo.add('floor', 'floor-1', 'hp', 50);
 
@@ -260,9 +281,11 @@ describe('VariableResolver', () => {
 
       expect(all.get('mood')!.value).toBe('sad');
       expect(all.get('mood')!.scope).toBe('page');
+      expect(all.get('topic')!.value).toBe('campfire');
+      expect(all.get('topic')!.scope).toBe('branch');
       expect(all.get('lang')!.value).toBe('en');
       expect(all.get('hp')!.value).toBe(50);
-      expect(all.size).toBe(3);
+      expect(all.size).toBe(4);
     });
 
     it('skips scopes without context ids', async () => {

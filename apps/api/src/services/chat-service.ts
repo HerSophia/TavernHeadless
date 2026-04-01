@@ -26,6 +26,9 @@ import type {
   TurnExecutionResult,
   ExecutedToolCallRecord,
   TurnConfig,
+  TurnRunObserver,
+  FloorRunSnapshot,
+  FloorRunType,
   ChatMessage,
   GenerationParams,
   InstanceSlot,
@@ -77,6 +80,7 @@ import {
   GenerationGuardService,
 } from "./generation-guard-service.js";
 import { TurnCommitService } from "./turn-commit-service.js";
+import type { FloorRunService } from "./floor-run-service.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
@@ -242,6 +246,8 @@ export interface RespondRuntimeOptions {
    * 流式工具执行事件回调。
    */
   onTool?: (event: RespondRuntimeToolEvent) => void;
+  /** 流式楼层运行快照回调。 */
+  onRun?: (event: FloorRunSnapshot) => void;
   /**
    * 可选：中止信号（如客户端断连）。
    */
@@ -350,6 +356,7 @@ export interface ChatServiceOptions {
    * 可选：本轮生成成功后回调（例如更新 profile last_used_at）。
    */
   onTurnModelUsed?: OnTurnModelUsedFn;
+  floorRunService?: FloorRunService;
   /**
    * 可选：工具注册表实例。
    * 提供后可在生成时向 LLM 提供可用工具。
@@ -398,6 +405,7 @@ export class ChatService {
   private readonly onTurnModelUsed?: OnTurnModelUsedFn;
   private readonly toolRegistry?: ToolRegistry;
   private readonly sessionToolRegistryService?: SessionToolRegistryService;
+  private readonly floorRunService?: FloorRunService;
   private readonly resolveToolPermissions?: (sessionId: string, accountId: string) => Promise<ToolPermissions | null>;
   private readonly eventBus: CoreEventBus;
   private readonly floorStateMachine: FloorStateMachine;
@@ -427,6 +435,7 @@ export class ChatService {
     this.onTurnModelUsed = options.onTurnModelUsed;
     this.toolRegistry = options.toolRegistry;
     this.sessionToolRegistryService = options.sessionToolRegistryService;
+    this.floorRunService = options.floorRunService;
     this.resolveToolPermissions = options.resolveToolPermissions;
     this.eventBus = options.eventBus ?? createEventBus();
     this.floorStateMachine = new FloorStateMachine(new DrizzleFloorRepository(db), this.eventBus);
@@ -507,13 +516,17 @@ export class ChatService {
           now,
         });
 
+        await this.initializeFloorRun(sessionId, floorId, "respond", now);
         runtimeOptions.onStart?.({ floorId, floorNo: nextFloorNo, branchId });
         const unsubscribeRuntimeToolEvents = this.subscribeRuntimeToolEvents(floorId, runtimeOptions);
+        const unsubscribeFloorRunEvents = this.subscribeFloorRunEvents(floorId, runtimeOptions);
 
         try {
           // ── 5. 构建 TurnInput + 执行编排 ──
           const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
           const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+          await this.trackFloorRunPhase(floorId, "semantic_resolved");
+          await this.trackFloorRunPhase(floorId, "prechecked");
           const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
           const assembled = await assemblePrompt(
@@ -526,9 +539,10 @@ export class ChatService {
             memorySummary,
             {
               maxContextTokensOverride,
-              variableContext: { sessionId, floorId, pageId: userMessageRef.pageId },
+              variableContext: { sessionId, branchId, floorId, pageId: userMessageRef.pageId },
             }
           );
+          await this.trackFloorRunPhase(floorId, "prompt_assembled");
 
           const promptSnapshot = buildPromptSnapshotRecord({
             floorId,
@@ -561,6 +575,7 @@ export class ChatService {
 
           const turnInput: TurnInput = {
             sessionId,
+            branchId,
             floorId,
             pageId: userMessageRef.pageId,
             accountId,
@@ -575,6 +590,7 @@ export class ChatService {
             onChunk: runtimeOptions.onChunk,
             abortSignal: runtimeOptions.abortSignal ?? generationRuntime.abortSignal,
             toolRegistry: toolRuntime.toolRegistry,
+            runObserver: this.createTurnRunObserver(floorId),
             toolPermissions: toolRuntime.toolPermissions,
           };
 
@@ -602,8 +618,12 @@ export class ChatService {
             finalState: commit.finalState,
             branchId,
           };
+        } catch (error) {
+          await this.tryMarkRunFailed(floorId, error, "respond_failed");
+          throw error;
         } finally {
           unsubscribeRuntimeToolEvents();
+          unsubscribeFloorRunEvents();
         }
       }
     );
@@ -758,9 +778,13 @@ export class ChatService {
         },
       });
 
+      await this.initializeFloorRun(sessionId, newFloorId, "regenerate_page", now);
+      try {
       // ── 8. 构建 TurnInput + 执行编排 ──
       const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
       const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+      await this.trackFloorRunPhase(newFloorId, "semantic_resolved");
+      await this.trackFloorRunPhase(newFloorId, "prechecked");
       const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
       const assembled = await assemblePrompt(
@@ -773,9 +797,10 @@ export class ChatService {
         memorySummary,
         {
           maxContextTokensOverride,
-          variableContext: { sessionId, floorId: newFloorId, pageId: userMessageRef.pageId },
+          variableContext: { sessionId, branchId: targetFloor.branchId, floorId: newFloorId, pageId: userMessageRef.pageId },
         }
       );
+      await this.trackFloorRunPhase(newFloorId, "prompt_assembled");
 
       const promptSnapshot = buildPromptSnapshotRecord({
         floorId: newFloorId,
@@ -807,6 +832,7 @@ export class ChatService {
 
       const turnInput: TurnInput = {
         sessionId,
+        branchId: targetFloor.branchId,
         floorId: newFloorId,
         pageId: userMessageRef.pageId,
         accountId,
@@ -819,6 +845,7 @@ export class ChatService {
         modelOverrides: this.buildModelOverrides(resolvedTurnModels),
         abortSignal: generationRuntime.abortSignal,
         generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
+        runObserver: this.createTurnRunObserver(newFloorId),
         toolRegistry: toolRuntime.toolRegistry,
         toolPermissions: toolRuntime.toolPermissions,
       };
@@ -847,6 +874,10 @@ export class ChatService {
         totalUsage: commit.usage,
         finalState: commit.finalState,
       };
+      } catch (error) {
+        await this.tryMarkRunFailed(newFloorId, error, "regenerate_failed");
+        throw error;
+      }
     });
 
   }
@@ -921,6 +952,11 @@ export class ChatService {
             .run();
         });
 
+        await this.initializeFloorRun(targetFloor.sessionId, targetFloor.id, "retry_turn", now);
+        await this.trackFloorRunPhase(targetFloor.id, "semantic_resolved");
+        await this.trackFloorRunPhase(targetFloor.id, "prechecked");
+        try {
+
         const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
         const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
         const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
@@ -937,11 +973,13 @@ export class ChatService {
             maxContextTokensOverride,
             variableContext: {
               sessionId: targetFloor.sessionId,
+              branchId: targetFloor.branchId,
               floorId: targetFloor.id,
               pageId: userMessageRef.pageId,
             },
           }
         );
+        await this.trackFloorRunPhase(targetFloor.id, "prompt_assembled");
 
         const promptSnapshot = buildPromptSnapshotRecord({
           floorId: targetFloor.id,
@@ -973,6 +1011,7 @@ export class ChatService {
 
         const turnInput: TurnInput = {
           sessionId: targetFloor.sessionId,
+          branchId: targetFloor.branchId,
           floorId: targetFloor.id,
           pageId: userMessageRef.pageId,
           accountId,
@@ -985,6 +1024,7 @@ export class ChatService {
           modelOverrides: this.buildModelOverrides(resolvedTurnModels),
           generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
           abortSignal: generationRuntime.abortSignal,
+          runObserver: this.createTurnRunObserver(targetFloor.id),
           toolRegistry: toolRuntime.toolRegistry,
           toolPermissions: toolRuntime.toolPermissions,
         };
@@ -1013,6 +1053,10 @@ export class ChatService {
           totalUsage: commit.usage,
           finalState: commit.finalState,
         };
+        } catch (error) {
+          await this.tryMarkRunFailed(targetFloor.id, error, "retry_turn_failed");
+          throw error;
+        }
       }
     );
 
@@ -1081,6 +1125,7 @@ export class ChatService {
         request,
         accountId,
         abortSignal: generationRuntime.abortSignal,
+        runType: "edit_and_regenerate",
       });
 
       return {
@@ -1158,6 +1203,7 @@ export class ChatService {
       const replayBlockedError = findErrorByConstructor(error, ToolReplayBlockedError);
       if (replayBlockedError) {
         await this.markToolExecutionRunOutcome(toolExecutionRunId, "replay_blocked");
+        await this.tryMarkRunFailed(args.floorId, replayBlockedError, "tool_replay_blocked");
         await this.tryMarkFloorFailed(args.floorId, replayBlockedError);
         throw new ChatServiceError(
           "tool_replay_blocked",
@@ -1173,6 +1219,7 @@ export class ChatService {
       const unsupportedToolModeError = findErrorByConstructor(error, UnsupportedToolModeError);
       if (unsupportedToolModeError) {
         await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+        await this.tryMarkRunFailed(args.floorId, unsupportedToolModeError, "invalid_tool_mode");
         await this.tryMarkFloorFailed(args.floorId, unsupportedToolModeError);
         throw new ChatServiceError(
           "invalid_tool_mode",
@@ -1184,6 +1231,7 @@ export class ChatService {
       const timeoutError = findErrorByConstructor(error, LLMTimeoutError);
       if (timeoutError) {
         await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+        await this.tryMarkRunFailed(args.floorId, timeoutError, "generation_timeout");
         await this.tryMarkFloorFailed(args.floorId, timeoutError);
         throw new ChatServiceError(
           "generation_timeout",
@@ -1193,12 +1241,15 @@ export class ChatService {
       }
 
       await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+      await this.tryMarkRunFailed(args.floorId, error, args.orchestrationFailureCode);
       throw new ChatServiceError(
         args.orchestrationFailureCode,
         `${args.orchestrationFailureMessage}: ${error instanceof Error ? error.message : String(error)}`,
         error
       );
     }
+
+    await this.trackFloorRunPhase(args.floorId, "transaction_prepared");
 
     const commitInput = {
       accountId: args.accountId,
@@ -1253,6 +1304,7 @@ export class ChatService {
           attempts: Math.max(commitAttemptCount, 1),
           message: error instanceof Error ? error.message : String(error),
         });
+        await this.tryMarkRunFailed(args.floorId, error, "commit_busy");
         await this.tryMarkFloorFailed(args.floorId, error);
         throw new ChatServiceError(
           "commit_busy",
@@ -1262,14 +1314,17 @@ export class ChatService {
       }
 
       if (error instanceof FloorNotFoundError) {
+        await this.tryMarkRunFailed(args.floorId, error, "floor_not_found");
         throw new ChatServiceError("floor_not_found", `Floor '${args.floorId}' not found`, error);
       }
 
       if (error instanceof FloorStateConflictError) {
+        await this.tryMarkRunFailed(args.floorId, error, "commit_conflict");
         throw new ChatServiceError("commit_conflict", `${args.commitFailureMessage}: ${error.message}`, error);
       }
 
       if (!(error instanceof FloorStateConflictError) && !(error instanceof FloorNotFoundError)) {
+        await this.tryMarkRunFailed(args.floorId, error, "turn_commit_failed");
         await this.tryMarkFloorFailed(args.floorId, error);
       }
 
@@ -1303,6 +1358,86 @@ export class ChatService {
     } catch {
       // 执行日志本体已经先行落库；失败边界上的归宿更新保持 best-effort，
       // 避免覆盖原始业务错误。
+    }
+  }
+
+  private async initializeFloorRun(
+    sessionId: string,
+    floorId: string,
+    runType: FloorRunType,
+    startedAt = Date.now(),
+  ): Promise<void> {
+    try {
+      await this.floorRunService?.initializeRun({
+        sessionId,
+        floorId,
+        runType,
+        startedAt,
+      });
+    } catch {
+      // best-effort run tracking
+    }
+  }
+
+  private async trackFloorRunPhase(
+    floorId: string,
+    phase: "input_recorded" | "semantic_resolved" | "prechecked" | "prompt_assembled" | "page_generating" | "candidate_generated" | "verifier_checked" | "transaction_prepared" | "transaction_committed" | "post_commit_scheduled",
+    attemptNo?: number,
+  ): Promise<void> {
+    try {
+      await this.floorRunService?.advancePhase(floorId, phase, attemptNo !== undefined ? { attemptNo } : {});
+    } catch {
+      // best-effort run tracking
+    }
+  }
+
+  private async trackFloorRunPendingOutput(
+    floorId: string,
+    input: {
+      text: string;
+      state: "draft" | "streaming" | "generated" | "failed";
+      attemptNo: number;
+      force?: boolean;
+      error?: string;
+    },
+  ): Promise<void> {
+    try {
+      await this.floorRunService?.updatePendingOutput(floorId, input);
+    } catch {
+      // best-effort run tracking
+    }
+  }
+
+  private async trackFloorRunVerifier(
+    floorId: string,
+    input: {
+      status: "pending" | "passed" | "warned" | "blocked" | "skipped";
+      suggestion?: string;
+      issues?: Array<{ description: string; severity: "warning" | "error" }>;
+    },
+  ): Promise<void> {
+    try {
+      await this.floorRunService?.updateVerifier(floorId, input);
+    } catch {
+      // best-effort run tracking
+    }
+  }
+
+  private createTurnRunObserver(floorId: string): TurnRunObserver {
+    return {
+      onPhaseChange: ({ phase, attemptNo }) => this.trackFloorRunPhase(floorId, phase, attemptNo),
+      onPendingOutputUpdate: (input) => this.trackFloorRunPendingOutput(floorId, input),
+      onVerifierResult: (input) => this.trackFloorRunVerifier(floorId, input),
+    };
+  }
+
+  private async tryMarkRunFailed(floorId: string, error: unknown, code = "floor_run_failed"): Promise<void> {
+    const normalizedError = error instanceof Error ? error : new Error(String(error));
+
+    try {
+      await this.floorRunService?.markFailed(floorId, { code, message: normalizedError.message });
+    } catch {
+      // best-effort run tracking
     }
   }
 
@@ -1400,6 +1535,42 @@ export class ChatService {
     } catch {
       // 观测类事件不应反向影响主流程。
     }
+  }
+
+  private subscribeFloorRunEvents(floorId: string, runtimeOptions: RespondRuntimeOptions): () => void {
+    if (!runtimeOptions.onRun) {
+      return () => {};
+    }
+
+    const forward = (event: CoreEventMap["floor.run.updated"] | CoreEventMap["floor.run.completed"] | CoreEventMap["floor.run.failed"]) => {
+      if (event.floorId !== floorId) {
+        return;
+      }
+
+      runtimeOptions.onRun?.(event);
+    };
+
+    const handleUpdated = (event: CoreEventMap["floor.run.updated"]) => {
+      forward(event);
+    };
+
+    const handleCompleted = (event: CoreEventMap["floor.run.completed"]) => {
+      forward(event);
+    };
+
+    const handleFailed = (event: CoreEventMap["floor.run.failed"]) => {
+      forward(event);
+    };
+
+    this.eventBus.on("floor.run.updated", handleUpdated);
+    this.eventBus.on("floor.run.completed", handleCompleted);
+    this.eventBus.on("floor.run.failed", handleFailed);
+
+    return () => {
+      this.eventBus.off("floor.run.updated", handleUpdated);
+      this.eventBus.off("floor.run.completed", handleCompleted);
+      this.eventBus.off("floor.run.failed", handleFailed);
+    };
   }
 
   private subscribeRuntimeToolEvents(floorId: string, runtimeOptions: RespondRuntimeOptions): () => void {
@@ -1600,13 +1771,18 @@ export class ChatService {
     request: RetryFloorRequest;
     accountId: string;
     abortSignal?: AbortSignal;
+    runType: FloorRunType;
   }): Promise<RetryFloorResult> {
     const memorySummary = await this.retrieveMemorySummary(args.sessionId, args.accountId);
+    await this.initializeFloorRun(args.sessionId, args.floorId, args.runType);
+    try {
 
     const resolvedTurnModels = await this.resolveTurnModelsForSession(args.sessionId, args.accountId);
     this.assertNarratorSlotEnabled(resolvedTurnModels);
     const sessionInfo = this.buildSessionPromptInfo(args.session, resolvedTurnModels);
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+    await this.trackFloorRunPhase(args.floorId, "semantic_resolved");
+    await this.trackFloorRunPhase(args.floorId, "prechecked");
     const maxContextTokensOverride = this.resolveMaxContextTokensOverride(args.request.generationParams, narratorParams);
 
     const assembled = await assemblePrompt(
@@ -1621,11 +1797,13 @@ export class ChatService {
         maxContextTokensOverride,
         variableContext: {
           sessionId: args.sessionId,
+          branchId: args.branchId,
           floorId: args.floorId,
           pageId: args.userMessageRef.pageId,
         },
       }
     );
+    await this.trackFloorRunPhase(args.floorId, "prompt_assembled");
 
     const promptSnapshot = buildPromptSnapshotRecord({
       floorId: args.floorId,
@@ -1657,6 +1835,7 @@ export class ChatService {
 
     const turnInput: TurnInput = {
       sessionId: args.sessionId,
+      branchId: args.branchId,
       floorId: args.floorId,
       pageId: args.userMessageRef.pageId,
       accountId: args.accountId,
@@ -1670,6 +1849,7 @@ export class ChatService {
       modelOverrides: this.buildModelOverrides(resolvedTurnModels),
       generationParamsOverrides: this.buildGenerationParamsOverrides(resolvedTurnModels),
       toolRegistry: toolRuntime.toolRegistry,
+      runObserver: this.createTurnRunObserver(args.floorId),
       toolPermissions: toolRuntime.toolPermissions,
     };
 
@@ -1707,6 +1887,10 @@ export class ChatService {
       totalUsage: commit.usage,
       finalState: commit.finalState,
     };
+    } catch (error) {
+      await this.tryMarkRunFailed(args.floorId, error, "generate_for_floor_failed");
+      throw error;
+    }
   }
 
   private createDraftFloorWithUserMessage(args: {

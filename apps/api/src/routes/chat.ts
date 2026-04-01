@@ -291,6 +291,9 @@ export async function registerChatRoutes(
           replay_safety: tool.replaySafety,
         });
       },
+      onRun: (run) => {
+        writeSse(reply.raw, "run", mapRunToSnakeCase(run));
+      },
     };
 
     try {
@@ -579,6 +582,36 @@ function mapUsageToSnakeCase(usage: { promptTokens: number; completionTokens: nu
     prompt_tokens: usage.promptTokens,
     completion_tokens: usage.completionTokens,
     total_tokens: usage.totalTokens,
+  };
+}
+
+function mapRunToSnakeCase(run: {
+  floorId: string;
+  runId: string;
+  runType: string;
+  status: string;
+  phase: string;
+  publicPhase: string;
+  phaseSeq: number;
+  attemptNo: number;
+  startedAt: number;
+  updatedAt: number;
+  completedAt?: number | null;
+  pendingOutput?: { tempId: string; attemptNo: number; state: string; text: string; startedAt: number; updatedAt: number; error?: string } | null;
+  verifier?: { status: string; suggestion?: string; issues?: Array<{ description: string; severity: string }> } | null;
+  error?: { code: string; message: string } | null;
+}) {
+  return {
+    floor_id: run.floorId, run_id: run.runId, run_type: run.runType, status: run.status, phase: run.phase,
+    public_phase: run.publicPhase, phase_seq: run.phaseSeq, attempt_no: run.attemptNo, started_at: run.startedAt,
+    updated_at: run.updatedAt, completed_at: run.completedAt ?? null,
+    pending_output: run.pendingOutput ? {
+      temp_id: run.pendingOutput.tempId, attempt_no: run.pendingOutput.attemptNo, state: run.pendingOutput.state,
+      text: run.pendingOutput.text, started_at: run.pendingOutput.startedAt, updated_at: run.pendingOutput.updatedAt,
+      error: run.pendingOutput.error ?? null,
+    } : null,
+    verifier: run.verifier ? { status: run.verifier.status, suggestion: run.verifier.suggestion ?? null, issues: run.verifier.issues ?? null } : null,
+    error: run.error ? { code: run.error.code, message: run.error.message } : null,
   };
 }
 

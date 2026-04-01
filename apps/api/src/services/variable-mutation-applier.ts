@@ -54,6 +54,7 @@ export interface VariableSetMutationItem {
   valueJson: string
   updatedAt: number
   sessionId?: string
+  branchId?: string
 }
 
 export interface VariableSetMutationPayload {
@@ -66,6 +67,7 @@ export interface VariableSetMutationResultItem {
   action: "created" | "updated"
   variable: VariableEntry
   sessionId?: string
+  branchId?: string
 }
 
 export interface VariableSetMutationResult {
@@ -83,6 +85,7 @@ export interface VariableDeleteMutationPayload {
   scope: VariableScope
   key: string
   sessionId?: string
+  branchId?: string
   emitEvent?: boolean
 }
 
@@ -217,6 +220,7 @@ export class VariableMutationApplier implements RuntimeMutationApplier<unknown, 
         action,
         variable: toVariableEntry(row),
         sessionId: item.sessionId,
+        branchId: item.branchId,
       } satisfies VariableSetMutationResultItem
     })
 
@@ -232,7 +236,8 @@ export class VariableMutationApplier implements RuntimeMutationApplier<unknown, 
       afterCommit: request.envelope.payload.emitEvents && request.context.eventBus
         ? results.map((item) => async () => {
           await request.context.eventBus!.emit("variable.set", {
-            sessionId: item.sessionId,
+            ...(item.sessionId ? { sessionId: item.sessionId } : {}),
+            ...(item.branchId ? { branchId: item.branchId } : {}),
             entry: item.variable,
             isNew: item.action === "created",
           })
@@ -266,7 +271,8 @@ export class VariableMutationApplier implements RuntimeMutationApplier<unknown, 
       afterCommit: request.envelope.payload.emitEvent && request.context.eventBus
         ? [async () => {
           await request.context.eventBus!.emit("variable.deleted", {
-            sessionId: request.envelope.payload.sessionId,
+            ...(request.envelope.payload.sessionId ? { sessionId: request.envelope.payload.sessionId } : {}),
+            ...(request.envelope.payload.branchId ? { branchId: request.envelope.payload.branchId } : {}),
             id: request.envelope.payload.id,
             scope: request.envelope.payload.scope,
             key: request.envelope.payload.key,

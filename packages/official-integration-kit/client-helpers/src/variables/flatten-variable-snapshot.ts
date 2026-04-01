@@ -4,8 +4,9 @@ import type { ResolvedVariableRecord, VariableScope } from "@tavern/sdk";
 const SCOPE_PRIORITY: Record<VariableScope, number> = {
   page: 0,
   floor: 1,
-  chat: 2,
-  global: 3,
+  branch: 2,
+  chat: 3,
+  global: 4,
 };
 
 export function flattenVariableSnapshot(snapshot: VariableSnapshotLike): VariableInspectorRow[] {
@@ -32,6 +33,7 @@ export function flattenVariableSnapshot(snapshot: VariableSnapshotLike): Variabl
       preview: formatVariablePreview(item.value),
       sourceScope: item.sourceScope,
       sourceScopeId: item.sourceScopeId,
+      ...(item.sourceScopeRef ? { sourceScopeRef: item.sourceScopeRef } : {}),
       updatedAt: item.updatedAt,
       value: item.value,
     };
@@ -92,7 +94,7 @@ export function formatVariablePreview(value: unknown): string {
 
 function buildLayerIndex(snapshot: Exclude<VariableSnapshotLike, null | undefined>): Map<string, VariableInspectorLayerValue[]> {
   const result = new Map<string, VariableInspectorLayerValue[]>();
-  const scopes: VariableScope[] = ["page", "floor", "chat", "global"];
+  const scopes: VariableScope[] = ["page", "floor", "branch", "chat", "global"];
 
   for (const scope of scopes) {
     const layer = snapshot.layers?.[scope];
@@ -107,6 +109,7 @@ function buildLayerIndex(snapshot: Exclude<VariableSnapshotLike, null | undefine
         preview: formatVariablePreview(item.value),
         scope: layer.scope,
         scopeId: layer.scopeId,
+        ...(layer.scopeRef ? { scopeRef: layer.scopeRef } : {}),
         updatedAt: item.updatedAt,
         value: item.value,
       });
@@ -123,6 +126,7 @@ function createWinningLayer(item: ResolvedVariableRecord): VariableInspectorLaye
     preview: formatVariablePreview(item.value),
     scope: item.sourceScope,
     scopeId: item.sourceScopeId,
+    ...(item.sourceScopeRef ? { scopeRef: item.sourceScopeRef } : {}),
     updatedAt: item.updatedAt,
     value: item.value,
   };

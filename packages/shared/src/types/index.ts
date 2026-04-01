@@ -1,8 +1,13 @@
 export { FLOOR_STATES } from './floor.js';
 export type { FloorState } from './floor.js';
 
-export { SCOPE_PRIORITY } from './variable.js';
-export type { VariableScope, VariableEntry } from './variable.js';
+export {
+  SCOPE_PRIORITY,
+  buildBranchVariableScopeId,
+  parseBranchVariableScopeId,
+  isBranchVariableScopeId,
+} from './variable.js';
+export type { VariableScope, VariableEntry, BranchVariableScopeRef } from './variable.js';
 
 export { CoreEvents } from './events.js';
 

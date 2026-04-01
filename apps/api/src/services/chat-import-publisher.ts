@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { eq, and } from "drizzle-orm";
 import { SimpleTokenCounter } from "@tavern/core";
+import { buildBranchVariableScopeId } from "@tavern/shared";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import {
@@ -437,13 +438,17 @@ function publishThChatManifest(
 }
 
 function resolveThChatImportScopeId(input: {
-  scope: "chat" | "floor" | "page";
+  scope: "chat" | "floor" | "branch" | "page";
   scopeIdRef: string | null;
   sessionId: string;
   idMap: Record<string, string>;
 }): string {
   if (input.scope === "chat") {
     return input.sessionId;
+  }
+
+  if (input.scope === "branch") {
+    return buildBranchVariableScopeId(input.sessionId, input.scopeIdRef ?? "main");
   }
 
   if (!input.scopeIdRef) {

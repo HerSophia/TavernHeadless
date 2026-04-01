@@ -5628,6 +5628,566 @@
         ]
       }
     },
+    "/floors/{id}/result": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assistant_message_id": {
+                          "type": "string"
+                        },
+                        "committed_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "floor_id": {
+                          "type": "string"
+                        },
+                        "generated_text": {
+                          "type": "string"
+                        },
+                        "output_page_id": {
+                          "type": "string"
+                        },
+                        "summaries": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "usage": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "completion_tokens": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "prompt_tokens": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "total_tokens": {
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "prompt_tokens",
+                            "completion_tokens",
+                            "total_tokens"
+                          ],
+                          "type": "object"
+                        },
+                        "verifier": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "issues": {
+                                  "anyOf": [
+                                    {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "description": {
+                                            "type": "string"
+                                          },
+                                          "severity": {
+                                            "enum": [
+                                              "warning",
+                                              "error"
+                                            ],
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "description",
+                                          "severity"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "status": {
+                                  "enum": [
+                                    "pending",
+                                    "passed",
+                                    "warned",
+                                    "blocked",
+                                    "skipped"
+                                  ],
+                                  "type": "string"
+                                },
+                                "suggestion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "status"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "floor_id",
+                        "output_page_id",
+                        "assistant_message_id",
+                        "generated_text",
+                        "summaries",
+                        "usage",
+                        "verifier",
+                        "committed_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get committed floor result snapshot",
+        "tags": [
+          "floors"
+        ]
+      }
+    },
+    "/floors/{id}/run": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "floor_id": {
+                          "type": "string"
+                        },
+                        "run": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "attempt_no": {
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                "completed_at": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "error": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "code": {
+                                          "type": "string"
+                                        },
+                                        "message": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "code",
+                                        "message"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "pending_output": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "attempt_no": {
+                                          "minimum": 1,
+                                          "type": "integer"
+                                        },
+                                        "error": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "started_at": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "state": {
+                                          "enum": [
+                                            "draft",
+                                            "streaming",
+                                            "generated",
+                                            "failed"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "temp_id": {
+                                          "type": "string"
+                                        },
+                                        "text": {
+                                          "type": "string"
+                                        },
+                                        "updated_at": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "temp_id",
+                                        "attempt_no",
+                                        "state",
+                                        "text",
+                                        "started_at",
+                                        "updated_at"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "phase": {
+                                  "enum": [
+                                    "input_recorded",
+                                    "semantic_resolved",
+                                    "prechecked",
+                                    "prompt_assembled",
+                                    "page_generating",
+                                    "candidate_generated",
+                                    "verifier_checked",
+                                    "transaction_prepared",
+                                    "transaction_committed",
+                                    "post_commit_scheduled"
+                                  ],
+                                  "type": "string"
+                                },
+                                "phase_seq": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "public_phase": {
+                                  "enum": [
+                                    "preparing",
+                                    "generating",
+                                    "verifying",
+                                    "committing",
+                                    "post_processing"
+                                  ],
+                                  "type": "string"
+                                },
+                                "run_id": {
+                                  "type": "string"
+                                },
+                                "run_type": {
+                                  "enum": [
+                                    "respond",
+                                    "regenerate_page",
+                                    "retry_turn",
+                                    "edit_and_regenerate"
+                                  ],
+                                  "type": "string"
+                                },
+                                "started_at": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "status": {
+                                  "enum": [
+                                    "running",
+                                    "completed",
+                                    "failed",
+                                    "cancelled"
+                                  ],
+                                  "type": "string"
+                                },
+                                "updated_at": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "verifier": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "issues": {
+                                          "anyOf": [
+                                            {
+                                              "items": {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "description": {
+                                                    "type": "string"
+                                                  },
+                                                  "severity": {
+                                                    "enum": [
+                                                      "warning",
+                                                      "error"
+                                                    ],
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "description",
+                                                  "severity"
+                                                ],
+                                                "type": "object"
+                                              },
+                                              "type": "array"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "status": {
+                                          "enum": [
+                                            "pending",
+                                            "passed",
+                                            "warned",
+                                            "blocked",
+                                            "skipped"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "suggestion": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "status"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "run_id",
+                                "run_type",
+                                "status",
+                                "phase",
+                                "public_phase",
+                                "phase_seq",
+                                "attempt_no",
+                                "started_at",
+                                "updated_at"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "state": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "floor_id",
+                        "state",
+                        "run"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get floor run snapshot",
+        "tags": [
+          "floors"
+        ]
+      }
+    },
     "/floors/{id}/tool-executions": {
       "get": {
         "operationId": "queryFloorToolExecutionRecords",
@@ -24199,6 +24759,170 @@
         ]
       }
     },
+    "/sessions/{id}/active-run": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "active_run": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "active_run_id": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "active_run_type": {
+                                  "anyOf": [
+                                    {
+                                      "enum": [
+                                        "respond",
+                                        "regenerate_page",
+                                        "retry_turn",
+                                        "edit_and_regenerate"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "branch_id": {
+                                  "type": "string"
+                                },
+                                "busy": {
+                                  "type": "boolean"
+                                },
+                                "latest_floor_id": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "public_phase": {
+                                  "anyOf": [
+                                    {
+                                      "enum": [
+                                        "preparing",
+                                        "generating",
+                                        "verifying",
+                                        "committing",
+                                        "post_processing"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "updated_at": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "branch_id",
+                                "busy",
+                                "updated_at"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "session_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "session_id",
+                        "active_run"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get session active run summary",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/sessions/{id}/branches": {
       "get": {
         "parameters": [
@@ -29767,6 +30491,7 @@
                 "global",
                 "chat",
                 "floor",
+                "branch",
                 "page"
               ],
               "type": "string"
@@ -29775,6 +30500,24 @@
           {
             "in": "query",
             "name": "scope_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "branch_id",
             "required": false,
             "schema": {
               "minLength": 1,
@@ -29806,6 +30549,18 @@
                       "value": {
                         "score": 20
                       }
+                    },
+                    {
+                      "id": "var_branch_route",
+                      "key": "route",
+                      "scope": "branch",
+                      "scope_id": "branch:session-a:alt-1",
+                      "scope_ref": {
+                        "branch_id": "alt-1",
+                        "session_id": "session-a"
+                      },
+                      "updated_at": 1735689720100,
+                      "value": "campfire"
                     }
                   ],
                   "meta": {
@@ -29814,7 +30569,7 @@
                     "offset": 0,
                     "sort_by": "updated_at",
                     "sort_order": "desc",
-                    "total": 1
+                    "total": 2
                   }
                 },
                 "schema": {
@@ -29845,12 +30600,29 @@
                               "global",
                               "chat",
                               "floor",
+                              "branch",
                               "page"
                             ],
                             "type": "string"
                           },
                           "scope_id": {
                             "type": "string"
+                          },
+                          "scope_ref": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "branch_id": {
+                                "type": "string"
+                              },
+                              "session_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "session_id",
+                              "branch_id"
+                            ],
+                            "type": "object"
                           },
                           "updated_at": {
                             "minimum": 0,
@@ -29964,17 +30736,34 @@
         "requestBody": {
           "content": {
             "application/json": {
-              "example": {
-                "key": "mood",
-                "scope": "chat",
-                "scope_id": "session-a",
-                "value": {
-                  "score": 20
+              "examples": {
+                "example1": {
+                  "value": {
+                    "key": "mood",
+                    "scope": "chat",
+                    "scope_id": "session-a",
+                    "value": {
+                      "score": 20
+                    }
+                  }
+                },
+                "example2": {
+                  "value": {
+                    "branch_id": "alt-1",
+                    "key": "route",
+                    "scope": "branch",
+                    "session_id": "session-a",
+                    "value": "campfire"
+                  }
                 }
               },
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "branch_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
                   "key": {
                     "minLength": 1,
                     "type": "string"
@@ -29984,6 +30773,7 @@
                       "global",
                       "chat",
                       "floor",
+                      "branch",
                       "page"
                     ],
                     "type": "string"
@@ -29992,11 +30782,14 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "session_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
                   "value": {}
                 },
                 "required": [
                   "scope",
-                  "scope_id",
                   "key",
                   "value"
                 ],
@@ -30049,12 +30842,29 @@
                             "global",
                             "chat",
                             "floor",
+                            "branch",
                             "page"
                           ],
                           "type": "string"
                         },
                         "scope_id": {
                           "type": "string"
+                        },
+                        "scope_ref": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "branch_id": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "session_id",
+                            "branch_id"
+                          ],
+                          "type": "object"
                         },
                         "updated_at": {
                           "minimum": 0,
@@ -30124,12 +30934,29 @@
                             "global",
                             "chat",
                             "floor",
+                            "branch",
                             "page"
                           ],
                           "type": "string"
                         },
                         "scope_id": {
                           "type": "string"
+                        },
+                        "scope_ref": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "branch_id": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "session_id",
+                            "branch_id"
+                          ],
+                          "type": "object"
                         },
                         "updated_at": {
                           "minimum": 0,
@@ -30444,12 +31271,29 @@
                             "global",
                             "chat",
                             "floor",
+                            "branch",
                             "page"
                           ],
                           "type": "string"
                         },
                         "scope_id": {
                           "type": "string"
+                        },
+                        "scope_ref": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "branch_id": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "session_id",
+                            "branch_id"
+                          ],
+                          "type": "object"
                         },
                         "updated_at": {
                           "minimum": 0,
@@ -30538,6 +31382,13 @@
                     "scope": "chat",
                     "scope_id": "session-a",
                     "value": "campfire"
+                  },
+                  {
+                    "branch_id": "alt-1",
+                    "key": "route",
+                    "scope": "branch",
+                    "session_id": "session-a",
+                    "value": "campfire"
                   }
                 ]
               },
@@ -30556,6 +31407,10 @@
                         }
                       },
                       "properties": {
+                        "branch_id": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
                         "key": {
                           "minLength": 1,
                           "type": "string"
@@ -30565,6 +31420,7 @@
                             "global",
                             "chat",
                             "floor",
+                            "branch",
                             "page"
                           ],
                           "type": "string"
@@ -30573,11 +31429,14 @@
                           "minLength": 1,
                           "type": "string"
                         },
+                        "session_id": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
                         "value": {}
                       },
                       "required": [
                         "scope",
-                        "scope_id",
                         "key",
                         "value"
                       ],
@@ -30604,8 +31463,8 @@
                 "example": {
                   "data": {
                     "meta": {
-                      "created": 1,
-                      "total": 2,
+                      "created": 2,
+                      "total": 3,
                       "updated": 1
                     },
                     "results": [
@@ -30634,6 +31493,22 @@
                           "value": "campfire"
                         },
                         "index": 1
+                      },
+                      {
+                        "action": "created",
+                        "data": {
+                          "id": "var_branch_route",
+                          "key": "route",
+                          "scope": "branch",
+                          "scope_id": "branch:session-a:alt-1",
+                          "scope_ref": {
+                            "branch_id": "alt-1",
+                            "session_id": "session-a"
+                          },
+                          "updated_at": 1735689720100,
+                          "value": "campfire"
+                        },
+                        "index": 2
                       }
                     ]
                   }
@@ -30702,12 +31577,29 @@
                                       "global",
                                       "chat",
                                       "floor",
+                                      "branch",
                                       "page"
                                     ],
                                     "type": "string"
                                   },
                                   "scope_id": {
                                     "type": "string"
+                                  },
+                                  "scope_ref": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "branch_id": {
+                                        "type": "string"
+                                      },
+                                      "session_id": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "session_id",
+                                      "branch_id"
+                                    ],
+                                    "type": "object"
                                   },
                                   "updated_at": {
                                     "minimum": 0,
@@ -30877,6 +31769,15 @@
           },
           {
             "in": "query",
+            "name": "branch_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "floor_id",
             "required": false,
             "schema": {
@@ -30911,12 +31812,35 @@
                   "data": {
                     "context": {
                       "account_id": "default-admin",
+                      "branch_id": "alt-1",
                       "floor_id": "floor-a",
                       "global_scope_id": "global",
                       "page_id": "page-a",
                       "session_id": "session-a"
                     },
                     "layers": {
+                      "branch": {
+                        "items": [
+                          {
+                            "id": "var_branch_route",
+                            "key": "route",
+                            "scope": "branch",
+                            "scope_id": "branch:session-a:alt-1",
+                            "scope_ref": {
+                              "branch_id": "alt-1",
+                              "session_id": "session-a"
+                            },
+                            "updated_at": 1735689720100,
+                            "value": "campfire"
+                          }
+                        ],
+                        "scope": "branch",
+                        "scope_id": "branch:session-a:alt-1",
+                        "scope_ref": {
+                          "branch_id": "alt-1",
+                          "session_id": "session-a"
+                        }
+                      },
                       "chat": {
                         "items": [
                           {
@@ -30955,6 +31879,17 @@
                         "source_scope_id": "floor-a",
                         "updated_at": 1735689720000,
                         "value": "tense"
+                      },
+                      {
+                        "key": "route",
+                        "source_scope": "branch",
+                        "source_scope_id": "branch:session-a:alt-1",
+                        "source_scope_ref": {
+                          "branch_id": "alt-1",
+                          "session_id": "session-a"
+                        },
+                        "updated_at": 1735689720100,
+                        "value": "campfire"
                       }
                     ]
                   }
@@ -30969,6 +31904,9 @@
                           "additionalProperties": false,
                           "properties": {
                             "account_id": {
+                              "type": "string"
+                            },
+                            "branch_id": {
                               "type": "string"
                             },
                             "floor_id": {
@@ -30994,6 +31932,113 @@
                         "layers": {
                           "additionalProperties": false,
                           "properties": {
+                            "branch": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "example": {
+                                      "id": "var_mood",
+                                      "key": "mood",
+                                      "scope": "chat",
+                                      "scope_id": "session-a",
+                                      "updated_at": 1735689720000,
+                                      "value": {
+                                        "score": 20
+                                      }
+                                    },
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "key": {
+                                        "type": "string"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "global",
+                                          "chat",
+                                          "floor",
+                                          "branch",
+                                          "page"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "scope_id": {
+                                        "type": "string"
+                                      },
+                                      "scope_ref": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "branch_id": {
+                                            "type": "string"
+                                          },
+                                          "session_id": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "session_id",
+                                          "branch_id"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "updated_at": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "value": {}
+                                    },
+                                    "required": [
+                                      "id",
+                                      "scope",
+                                      "scope_id",
+                                      "key",
+                                      "value",
+                                      "updated_at"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "scope": {
+                                  "enum": [
+                                    "global",
+                                    "chat",
+                                    "floor",
+                                    "branch",
+                                    "page"
+                                  ],
+                                  "type": "string"
+                                },
+                                "scope_id": {
+                                  "type": "string"
+                                },
+                                "scope_ref": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "branch_id": {
+                                      "type": "string"
+                                    },
+                                    "session_id": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "session_id",
+                                    "branch_id"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "scope_id",
+                                "items"
+                              ],
+                              "type": "object"
+                            },
                             "chat": {
                               "additionalProperties": false,
                               "properties": {
@@ -31022,12 +32067,29 @@
                                           "global",
                                           "chat",
                                           "floor",
+                                          "branch",
                                           "page"
                                         ],
                                         "type": "string"
                                       },
                                       "scope_id": {
                                         "type": "string"
+                                      },
+                                      "scope_ref": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "branch_id": {
+                                            "type": "string"
+                                          },
+                                          "session_id": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "session_id",
+                                          "branch_id"
+                                        ],
+                                        "type": "object"
                                       },
                                       "updated_at": {
                                         "minimum": 0,
@@ -31052,12 +32114,29 @@
                                     "global",
                                     "chat",
                                     "floor",
+                                    "branch",
                                     "page"
                                   ],
                                   "type": "string"
                                 },
                                 "scope_id": {
                                   "type": "string"
+                                },
+                                "scope_ref": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "branch_id": {
+                                      "type": "string"
+                                    },
+                                    "session_id": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "session_id",
+                                    "branch_id"
+                                  ],
+                                  "type": "object"
                                 }
                               },
                               "required": [
@@ -31095,12 +32174,29 @@
                                           "global",
                                           "chat",
                                           "floor",
+                                          "branch",
                                           "page"
                                         ],
                                         "type": "string"
                                       },
                                       "scope_id": {
                                         "type": "string"
+                                      },
+                                      "scope_ref": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "branch_id": {
+                                            "type": "string"
+                                          },
+                                          "session_id": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "session_id",
+                                          "branch_id"
+                                        ],
+                                        "type": "object"
                                       },
                                       "updated_at": {
                                         "minimum": 0,
@@ -31125,12 +32221,29 @@
                                     "global",
                                     "chat",
                                     "floor",
+                                    "branch",
                                     "page"
                                   ],
                                   "type": "string"
                                 },
                                 "scope_id": {
                                   "type": "string"
+                                },
+                                "scope_ref": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "branch_id": {
+                                      "type": "string"
+                                    },
+                                    "session_id": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "session_id",
+                                    "branch_id"
+                                  ],
+                                  "type": "object"
                                 }
                               },
                               "required": [
@@ -31168,12 +32281,29 @@
                                           "global",
                                           "chat",
                                           "floor",
+                                          "branch",
                                           "page"
                                         ],
                                         "type": "string"
                                       },
                                       "scope_id": {
                                         "type": "string"
+                                      },
+                                      "scope_ref": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "branch_id": {
+                                            "type": "string"
+                                          },
+                                          "session_id": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "session_id",
+                                          "branch_id"
+                                        ],
+                                        "type": "object"
                                       },
                                       "updated_at": {
                                         "minimum": 0,
@@ -31198,12 +32328,29 @@
                                     "global",
                                     "chat",
                                     "floor",
+                                    "branch",
                                     "page"
                                   ],
                                   "type": "string"
                                 },
                                 "scope_id": {
                                   "type": "string"
+                                },
+                                "scope_ref": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "branch_id": {
+                                      "type": "string"
+                                    },
+                                    "session_id": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "session_id",
+                                    "branch_id"
+                                  ],
+                                  "type": "object"
                                 }
                               },
                               "required": [
@@ -31241,12 +32388,29 @@
                                           "global",
                                           "chat",
                                           "floor",
+                                          "branch",
                                           "page"
                                         ],
                                         "type": "string"
                                       },
                                       "scope_id": {
                                         "type": "string"
+                                      },
+                                      "scope_ref": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "branch_id": {
+                                            "type": "string"
+                                          },
+                                          "session_id": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "session_id",
+                                          "branch_id"
+                                        ],
+                                        "type": "object"
                                       },
                                       "updated_at": {
                                         "minimum": 0,
@@ -31271,12 +32435,29 @@
                                     "global",
                                     "chat",
                                     "floor",
+                                    "branch",
                                     "page"
                                   ],
                                   "type": "string"
                                 },
                                 "scope_id": {
                                   "type": "string"
+                                },
+                                "scope_ref": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "branch_id": {
+                                      "type": "string"
+                                    },
+                                    "session_id": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "session_id",
+                                    "branch_id"
+                                  ],
+                                  "type": "object"
                                 }
                               },
                               "required": [
@@ -31301,12 +32482,29 @@
                                   "global",
                                   "chat",
                                   "floor",
+                                  "branch",
                                   "page"
                                 ],
                                 "type": "string"
                               },
                               "source_scope_id": {
                                 "type": "string"
+                              },
+                              "source_scope_ref": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "branch_id": {
+                                    "type": "string"
+                                  },
+                                  "session_id": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "session_id",
+                                  "branch_id"
+                                ],
+                                "type": "object"
                               },
                               "updated_at": {
                                 "minimum": 0,

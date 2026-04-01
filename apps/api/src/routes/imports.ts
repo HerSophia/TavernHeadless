@@ -38,6 +38,7 @@ import { z } from "zod";
 
 import {
   TH_CHAT_SPEC,
+  buildBranchVariableScopeId,
   thChatFileSchema,
   type ThChatFile,
 } from "@tavern/shared";
@@ -2692,13 +2693,17 @@ async function handleThChatImport(
 }
 
 function resolveThChatImportScopeId(input: {
-  scope: "chat" | "floor" | "page";
+  scope: "chat" | "floor" | "branch" | "page";
   scopeIdRef: string | null;
   sessionId: string;
   idMap: Map<string, string>;
 }): string {
   if (input.scope === "chat") {
     return input.sessionId;
+  }
+
+  if (input.scope === "branch") {
+    return buildBranchVariableScopeId(input.sessionId, input.scopeIdRef ?? "main");
   }
 
   if (!input.scopeIdRef) {

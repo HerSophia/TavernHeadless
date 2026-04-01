@@ -414,10 +414,8 @@ describe("apps/api integration", () => {
 
     expect(response.statusCode).toBe(400);
     const body = response.json<ErrorResponse>();
-    expect(body.error.code).toBe("validation_error");
-    expect(body.error.details).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: "items.1", message: expect.stringContaining("Duplicate variable target") }),
-    ]));
+    expect(body.error.code).toBe("duplicate_variable_target");
+    expect(body.error.message).toContain("Duplicate variable target");
   });
 
   it("covers memories and memory-edges CRUD", async () => {

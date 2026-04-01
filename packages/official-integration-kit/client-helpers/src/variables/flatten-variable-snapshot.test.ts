@@ -20,12 +20,21 @@ describe("flattenVariableSnapshot", () => {
     const snapshot: ResolvedVariablesSnapshot = {
       context: {
         accountId: "acc-1",
+        branchId: "alt-1",
         floorId: "floor-1",
         globalScopeId: "global",
         pageId: "page-1",
         sessionId: "session-1",
       },
       resolved: [
+        {
+          key: "topic",
+          sourceScope: "branch",
+          sourceScopeId: "branch:session-1:alt-1",
+          sourceScopeRef: { sessionId: "session-1", branchId: "alt-1" },
+          updatedAt: 175,
+          value: "campfire",
+        },
         {
           key: "mood",
           sourceScope: "floor",
@@ -85,6 +94,22 @@ describe("flattenVariableSnapshot", () => {
           scope: "chat",
           scopeId: "session-1",
         },
+        branch: {
+          items: [
+            {
+              id: "var-topic-branch",
+              key: "topic",
+              scope: "branch",
+              scopeId: "branch:session-1:alt-1",
+              scopeRef: { sessionId: "session-1", branchId: "alt-1" },
+              updatedAt: 175,
+              value: "campfire",
+            },
+          ],
+          scope: "branch",
+          scopeId: "branch:session-1:alt-1",
+          scopeRef: { sessionId: "session-1", branchId: "alt-1" },
+        },
         floor: {
           items: [
             {
@@ -118,7 +143,7 @@ describe("flattenVariableSnapshot", () => {
 
     const rows = sortVariableInspectorRows(flattenVariableSnapshot(snapshot));
 
-    expect(rows.map((row) => row.key)).toEqual(["hp", "mood", "theme"]);
+    expect(rows.map((row) => row.key)).toEqual(["hp", "mood", "theme", "topic"]);
     expect(rows[1]).toMatchObject({
       key: "mood",
       preview: '"grim"',
@@ -129,6 +154,15 @@ describe("flattenVariableSnapshot", () => {
       ["floor", true, '"grim"'],
       ["chat", false, '"wary"'],
       ["global", false, '"calm"'],
+    ]);
+    expect(rows[3]).toMatchObject({
+      key: "topic",
+      sourceScope: "branch",
+      sourceScopeId: "branch:session-1:alt-1",
+      sourceScopeRef: { sessionId: "session-1", branchId: "alt-1" },
+    });
+    expect(rows[3]?.layers.map((layer) => [layer.scope, layer.scopeRef?.branchId ?? null, layer.isWinning])).toEqual([
+      ["branch", "alt-1", true],
     ]);
   });
 

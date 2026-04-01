@@ -118,6 +118,33 @@ export const floors = sqliteTable(
   })
 );
 
+export const floorRunStates = sqliteTable(
+  "floor_run_state",
+  {
+    floorId: text("floor_id").primaryKey().references(() => floors.id, { onDelete: "cascade" }),
+    runId: text("run_id").notNull(),
+    runType: text("run_type", { enum: ["respond", "regenerate_page", "retry_turn", "edit_and_regenerate"] }).notNull(),
+    status: text("status", { enum: ["running", "completed", "failed", "cancelled"] }).notNull(),
+    phase: text("phase", { enum: ["input_recorded", "semantic_resolved", "prechecked", "prompt_assembled", "page_generating", "candidate_generated", "verifier_checked", "transaction_prepared", "transaction_committed", "post_commit_scheduled"] }).notNull(),
+    publicPhase: text("public_phase", { enum: ["preparing", "generating", "verifying", "committing", "post_processing"] }).notNull(),
+    phaseSeq: integer("phase_seq").notNull().default(0),
+    attemptNo: integer("attempt_no").notNull().default(1),
+    pendingOutputJson: text("pending_output_json"),
+    verifierJson: text("verifier_json"),
+    errorJson: text("error_json"),
+    startedAt: integer("started_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    completedAt: integer("completed_at"),
+  },
+  (table) => ({
+    statusUpdatedIdx: index("floor_run_state_status_updated_idx").on(
+      table.status,
+      table.updatedAt,
+    ),
+    runIdIdx: index("floor_run_state_run_id_idx").on(table.runId),
+  })
+);
+
 export const messagePages = sqliteTable(
   "message_page",
   {
@@ -172,7 +199,7 @@ export const variables = sqliteTable(
   {
     id: text("id").primaryKey(),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
-    scope: text("scope", { enum: ["global", "chat", "floor", "page"] }).notNull(),
+    scope: text("scope", { enum: ["global", "chat", "floor", "branch", "page"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     key: text("key").notNull(),
     valueJson: text("value_json").notNull(),
@@ -550,6 +577,25 @@ export const promptSnapshots = sqliteTable(
   (table) => ({
     sessionCreatedIdx: index("prompt_snapshot_session_created_idx").on(table.sessionId, table.createdAt),
     digestIdx: index("prompt_snapshot_digest_idx").on(table.promptDigest),
+  })
+);
+
+export const floorResultSnapshots = sqliteTable(
+  "floor_result_snapshot",
+  {
+    floorId: text("floor_id").primaryKey().references(() => floors.id, { onDelete: "cascade" }),
+    outputPageId: text("output_page_id").notNull().references(() => messagePages.id, { onDelete: "cascade" }),
+    assistantMessageId: text("assistant_message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    generatedText: text("generated_text").notNull(),
+    summariesJson: text("summaries_json").notNull().default("[]"),
+    usageJson: text("usage_json").notNull().default("{}"),
+    verifierJson: text("verifier_json"),
+    committedAt: integer("committed_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    committedAtIdx: index("floor_result_snapshot_committed_at_idx").on(table.committedAt),
+    outputPageIdx: index("floor_result_snapshot_output_page_idx").on(table.outputPageId),
   })
 );
 

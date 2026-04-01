@@ -1,4 +1,5 @@
 import type { CoreEventBus } from "@tavern/core";
+import { buildBranchVariableScopeId, parseBranchVariableScopeId, type BranchVariableScopeRef } from "@tavern/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 
@@ -17,7 +18,7 @@ import {
 import { VariableServiceError } from "../services/variable-service-errors.js";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 
-const variableScopeSchema = z.enum(["global", "chat", "floor", "page"]);
+const variableScopeSchema = z.enum(["global", "chat", "floor", "branch", "page"]);
 
 const variableParamsSchema = z.object({
   id: z.string().min(1),
@@ -26,41 +27,53 @@ const variableParamsSchema = z.object({
 const listVariablesQuerySchema = listQuerySchemaBase.extend({
   scope: variableScopeSchema.optional(),
   scope_id: z.string().min(1).optional(),
+  session_id: z.string().min(1).optional(),
+  branch_id: z.string().min(1).optional(),
   key: z.string().min(1).optional(),
   sort_by: z.enum(["updated_at", "key"]).default("updated_at"),
+}).superRefine((value, ctx) => {
+  if (value.scope !== "branch" && (value.session_id !== undefined || value.branch_id !== undefined)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["scope"],
+      message: "session_id and branch_id are only supported when scope is 'branch'",
+    });
+  }
+
+  if (value.scope === "branch" && value.branch_id !== undefined && value.session_id === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["session_id"],
+      message: "branch_id requires session_id when scope is 'branch'",
+    });
+  }
 });
 
 const upsertVariableSchema = z.object({
   scope: variableScopeSchema,
-  scope_id: z.string().min(1),
+  scope_id: z.string().min(1).optional(),
+  session_id: z.string().min(1).optional(),
+  branch_id: z.string().min(1).optional(),
   key: z.string().min(1),
   value: z.unknown(),
+}).superRefine((value, ctx) => {
+  try {
+    normalizeVariableWriteScopeId(value);
+  } catch (error) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 });
 
 const batchUpsertVariablesSchema = z.object({
   items: z.array(upsertVariableSchema).min(1).max(100),
-}).superRefine((value, ctx) => {
-  const seen = new Map<string, number>();
-
-  value.items.forEach((item, index) => {
-    const identity = buildVariableIdentity(item);
-    const firstIndex = seen.get(identity);
-
-    if (firstIndex !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["items", index],
-        message: `Duplicate variable target also appears at items.${firstIndex}`,
-      });
-      return;
-    }
-
-    seen.set(identity, index);
-  });
 });
 
 const resolveVariablesQuerySchema = z.object({
   session_id: z.string().min(1),
+  branch_id: z.string().min(1).optional(),
   floor_id: z.string().min(1).optional(),
   page_id: z.string().min(1).optional(),
   include_layers: z.coerce.boolean().optional().default(false),
@@ -73,6 +86,14 @@ const upsertVariableBodyExample = {
   value: { score: 20 },
 } as const;
 
+const branchUpsertVariableBodyExample = {
+  scope: "branch",
+  session_id: "session-a",
+  branch_id: "alt-1",
+  key: "route",
+  value: "campfire",
+} as const;
+
 const variableExample = {
   id: "var_mood",
   scope: "chat",
@@ -82,14 +103,27 @@ const variableExample = {
   updated_at: 1735689720000,
 } as const;
 
+const branchVariableExample = {
+  id: "var_branch_route",
+  scope: "branch",
+  scope_id: buildBranchVariableScopeId("session-a", "alt-1"),
+  scope_ref: {
+    session_id: "session-a",
+    branch_id: "alt-1",
+  },
+  key: "route",
+  value: "campfire",
+  updated_at: 1735689720100,
+} as const;
+
 const variableResponseExample = {
   data: variableExample,
 } as const;
 
 const variableListResponseExample = {
-  data: [variableExample],
+  data: [variableExample, branchVariableExample],
   meta: {
-    total: 1,
+    total: 2,
     limit: 10,
     offset: 0,
     has_more: false,
@@ -111,6 +145,7 @@ const batchUpsertVariablesBodyExample = {
       key: "topic",
       value: "campfire",
     },
+    branchUpsertVariableBodyExample,
   ],
 } as const;
 
@@ -134,10 +169,15 @@ const batchUpsertVariablesResponseExample = {
           updated_at: 1735689720000,
         },
       },
+      {
+        index: 2,
+        action: "created",
+        data: branchVariableExample,
+      },
     ],
     meta: {
-      total: 2,
-      created: 1,
+      total: 3,
+      created: 2,
       updated: 1,
     },
   },
@@ -148,6 +188,7 @@ const resolveVariablesResponseExample = {
     context: {
       account_id: "default-admin",
       session_id: "session-a",
+      branch_id: "alt-1",
       floor_id: "floor-a",
       page_id: "page-a",
       global_scope_id: "global",
@@ -159,6 +200,17 @@ const resolveVariablesResponseExample = {
         source_scope: "floor",
         source_scope_id: "floor-a",
         updated_at: 1735689720000,
+      },
+      {
+        key: "route",
+        value: "campfire",
+        source_scope: "branch",
+        source_scope_id: buildBranchVariableScopeId("session-a", "alt-1"),
+        source_scope_ref: {
+          session_id: "session-a",
+          branch_id: "alt-1",
+        },
+        updated_at: 1735689720100,
       },
     ],
     layers: {
@@ -176,6 +228,15 @@ const resolveVariablesResponseExample = {
           },
         ],
       },
+      branch: {
+        scope: "branch",
+        scope_id: buildBranchVariableScopeId("session-a", "alt-1"),
+        scope_ref: {
+          session_id: "session-a",
+          branch_id: "alt-1",
+        },
+        items: [branchVariableExample],
+      },
       chat: {
         scope: "chat",
         scope_id: "session-a",
@@ -185,6 +246,16 @@ const resolveVariablesResponseExample = {
   },
 } as const;
 
+const branchScopeRefJsonSchema = {
+  type: "object",
+  required: ["session_id", "branch_id"],
+  properties: {
+    session_id: { type: "string" },
+    branch_id: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
 const listVariablesQueryJsonSchema = {
   type: "object",
   properties: {
@@ -192,8 +263,10 @@ const listVariablesQueryJsonSchema = {
     offset: { type: "integer", minimum: 0 },
     sort_order: { type: "string", enum: ["asc", "desc"] },
     sort_by: { type: "string", enum: ["updated_at", "key"] },
-    scope: { type: "string", enum: ["global", "chat", "floor", "page"] },
+    scope: { type: "string", enum: ["global", "chat", "floor", "branch", "page"] },
     scope_id: { type: "string", minLength: 1 },
+    session_id: { type: "string", minLength: 1 },
+    branch_id: { type: "string", minLength: 1 },
     key: { type: "string", minLength: 1 },
   },
   additionalProperties: false,
@@ -204,6 +277,7 @@ const resolveVariablesQueryJsonSchema = {
   required: ["session_id"],
   properties: {
     session_id: { type: "string", minLength: 1 },
+    branch_id: { type: "string", minLength: 1 },
     floor_id: { type: "string", minLength: 1 },
     page_id: { type: "string", minLength: 1 },
     include_layers: { type: "boolean", default: false },
@@ -213,14 +287,16 @@ const resolveVariablesQueryJsonSchema = {
 
 const upsertVariableBodyJsonSchema = {
   type: "object",
-  required: ["scope", "scope_id", "key", "value"],
+  required: ["scope", "key", "value"],
   properties: {
-    scope: { type: "string", enum: ["global", "chat", "floor", "page"] },
+    scope: { type: "string", enum: ["global", "chat", "floor", "branch", "page"] },
     scope_id: { type: "string", minLength: 1 },
+    session_id: { type: "string", minLength: 1 },
+    branch_id: { type: "string", minLength: 1 },
     key: { type: "string", minLength: 1 },
     value: {},
   },
-  examples: [upsertVariableBodyExample],
+  examples: [upsertVariableBodyExample, branchUpsertVariableBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -244,13 +320,14 @@ const variableJsonSchema = {
   required: ["id", "scope", "scope_id", "key", "value", "updated_at"],
   properties: {
     id: { type: "string" },
-    scope: { type: "string", enum: ["global", "chat", "floor", "page"] },
+    scope: { type: "string", enum: ["global", "chat", "floor", "branch", "page"] },
     scope_id: { type: "string" },
+    scope_ref: branchScopeRefJsonSchema,
     key: { type: "string" },
     value: {},
     updated_at: { type: "integer", minimum: 0 },
   },
-  examples: [variableExample],
+  examples: [variableExample, branchVariableExample],
   additionalProperties: false,
 } as const;
 
@@ -260,8 +337,9 @@ const resolvedVariableJsonSchema = {
   properties: {
     key: { type: "string" },
     value: {},
-    source_scope: { type: "string", enum: ["global", "chat", "floor", "page"] },
+    source_scope: { type: "string", enum: ["global", "chat", "floor", "branch", "page"] },
     source_scope_id: { type: "string" },
+    source_scope_ref: branchScopeRefJsonSchema,
     updated_at: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
@@ -271,8 +349,9 @@ const variableLayerJsonSchema = {
   type: "object",
   required: ["scope", "scope_id", "items"],
   properties: {
-    scope: { type: "string", enum: ["global", "chat", "floor", "page"] },
+    scope: { type: "string", enum: ["global", "chat", "floor", "branch", "page"] },
     scope_id: { type: "string" },
+    scope_ref: branchScopeRefJsonSchema,
     items: { type: "array", items: variableJsonSchema },
   },
   additionalProperties: false,
@@ -298,6 +377,7 @@ const resolvedContextJsonSchema = {
   properties: {
     account_id: { type: "string" },
     session_id: { type: "string" },
+    branch_id: { type: "string" },
     floor_id: { type: "string" },
     page_id: { type: "string" },
     global_scope_id: { type: "string" },
@@ -387,6 +467,7 @@ const resolvedVariablesResponseJsonSchema = {
           properties: {
             global: variableLayerJsonSchema,
             chat: variableLayerJsonSchema,
+            branch: variableLayerJsonSchema,
             floor: variableLayerJsonSchema,
             page: variableLayerJsonSchema,
           },
@@ -415,8 +496,83 @@ const deleteResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
-function buildVariableIdentity(input: Pick<z.infer<typeof upsertVariableSchema>, "scope" | "scope_id" | "key">) {
-  return `${input.scope}\u0000${input.scope_id}\u0000${input.key}`;
+type VariableWritePayload = z.infer<typeof upsertVariableSchema>;
+
+function normalizeVariableWriteScopeId(input: Pick<VariableWritePayload, "scope" | "scope_id" | "session_id" | "branch_id">): string {
+  if (input.scope === "branch") {
+    if (input.branch_id !== undefined && input.session_id === undefined) {
+      throw new VariableServiceError(
+        "invalid_variable_context",
+        "branch_id requires session_id when scope is 'branch'"
+      );
+    }
+
+    if (input.session_id !== undefined && input.branch_id === undefined) {
+      throw new VariableServiceError(
+        "invalid_variable_context",
+        "session_id requires branch_id when scope is 'branch'"
+      );
+    }
+
+    if (input.scope_id !== undefined && input.session_id !== undefined && input.branch_id !== undefined) {
+      const normalizedScopeId = buildBranchVariableScopeId(input.session_id, input.branch_id);
+      if (normalizedScopeId !== input.scope_id) {
+        throw new VariableServiceError(
+          "invalid_variable_context",
+          "scope_id does not match the provided session_id + branch_id"
+        );
+      }
+
+      return normalizedScopeId;
+    }
+
+    if (input.scope_id !== undefined) {
+      if (!parseBranchVariableScopeId(input.scope_id)) {
+        throw new VariableServiceError(
+          "invalid_variable_context",
+          `Invalid branch scope_id '${input.scope_id}'`
+        );
+      }
+
+      return input.scope_id;
+    }
+
+    if (input.session_id !== undefined && input.branch_id !== undefined) {
+      return buildBranchVariableScopeId(input.session_id, input.branch_id);
+    }
+
+    throw new VariableServiceError(
+      "invalid_variable_context",
+      "branch scope requires either scope_id or session_id + branch_id"
+    );
+  }
+
+  if (input.session_id !== undefined || input.branch_id !== undefined) {
+    throw new VariableServiceError(
+      "invalid_variable_context",
+      "session_id and branch_id are only supported when scope is 'branch'"
+    );
+  }
+
+  if (input.scope_id === undefined) {
+    throw new VariableServiceError(
+      "invalid_variable_context",
+      `scope_id is required when scope is '${input.scope}'`
+    );
+  }
+
+  return input.scope === "global" ? "global" : input.scope_id;
+}
+
+function toScopeRefResponse(scopeRef: BranchVariableScopeRef | undefined) {
+  if (!scopeRef) {
+    return undefined;
+  }
+
+  return {
+    session_id: scopeRef.sessionId,
+    branch_id: scopeRef.branchId,
+  };
 }
 
 function toVariableResponse(record: VariableRecord) {
@@ -424,6 +580,7 @@ function toVariableResponse(record: VariableRecord) {
     id: record.id,
     scope: record.scope,
     scope_id: record.scopeId,
+    ...(record.scopeRef ? { scope_ref: toScopeRefResponse(record.scopeRef) } : {}),
     key: record.key,
     value: record.value,
     updated_at: record.updatedAt,
@@ -436,6 +593,7 @@ function toResolvedVariableResponse(record: ResolvedVariableRecord) {
     value: record.value,
     source_scope: record.sourceScope,
     source_scope_id: record.sourceScopeId,
+    ...(record.sourceScopeRef ? { source_scope_ref: toScopeRefResponse(record.sourceScopeRef) } : {}),
     updated_at: record.updatedAt,
   };
 }
@@ -444,6 +602,7 @@ function toVariableLayerResponse(layer: VariableLayerSnapshot) {
   return {
     scope: layer.scope,
     scope_id: layer.scopeId,
+    ...(layer.scopeRef ? { scope_ref: toScopeRefResponse(layer.scopeRef) } : {}),
     items: layer.items.map(toVariableResponse),
   };
 }
@@ -459,6 +618,7 @@ function toResolvedSnapshotResponse(snapshot: ResolvedVariablesSnapshot) {
     context: {
       account_id: snapshot.context.accountId,
       session_id: snapshot.context.sessionId,
+      ...(snapshot.context.branchId ? { branch_id: snapshot.context.branchId } : {}),
       floor_id: snapshot.context.floorId,
       page_id: snapshot.context.pageId,
       global_scope_id: snapshot.context.globalScopeId,
@@ -504,7 +664,7 @@ export async function registerVariableRoutes(
       const result = await service.upsert({
         accountId: auth.accountId,
         scope: parsedBody.data.scope,
-        scopeId: parsedBody.data.scope_id,
+        scopeId: normalizeVariableWriteScopeId(parsedBody.data),
         key: parsedBody.data.key,
         value: parsedBody.data.value,
       });
@@ -542,7 +702,7 @@ export async function registerVariableRoutes(
         items: parsedBody.data.items.map((item) => ({
           accountId: auth.accountId,
           scope: item.scope,
-          scopeId: item.scope_id,
+          scopeId: normalizeVariableWriteScopeId(item),
           key: item.key,
           value: item.value,
         })),
@@ -581,28 +741,34 @@ export async function registerVariableRoutes(
       return;
     }
 
-    const auth = getRequestAuthContext(request);
-    const result = await service.list({
-      accountId: auth.accountId,
-      limit: parsedQuery.data.limit,
-      offset: parsedQuery.data.offset,
-      sortBy: parsedQuery.data.sort_by,
-      sortOrder: parsedQuery.data.sort_order,
-      scope: parsedQuery.data.scope,
-      scopeId: parsedQuery.data.scope_id,
-      key: parsedQuery.data.key,
-    });
-
-    return reply.send({
-      data: result.items.map(toVariableResponse),
-      meta: buildListMeta({
-        total: result.total,
+    try {
+      const auth = getRequestAuthContext(request);
+      const result = await service.list({
+        accountId: auth.accountId,
         limit: parsedQuery.data.limit,
         offset: parsedQuery.data.offset,
         sortBy: parsedQuery.data.sort_by,
         sortOrder: parsedQuery.data.sort_order,
-      }),
-    });
+        scope: parsedQuery.data.scope,
+        scopeId: parsedQuery.data.scope_id,
+        sessionId: parsedQuery.data.session_id,
+        branchId: parsedQuery.data.branch_id,
+        key: parsedQuery.data.key,
+      });
+
+      return reply.send({
+        data: result.items.map(toVariableResponse),
+        meta: buildListMeta({
+          total: result.total,
+          limit: parsedQuery.data.limit,
+          offset: parsedQuery.data.offset,
+          sortBy: parsedQuery.data.sort_by,
+          sortOrder: parsedQuery.data.sort_order,
+        }),
+      });
+    } catch (error) {
+      return sendServiceError(reply, error);
+    }
   });
 
   app.get("/variables/resolve", {
@@ -629,6 +795,7 @@ export async function registerVariableRoutes(
       const snapshot = await service.resolveSnapshot({
         accountId: auth.accountId,
         sessionId: parsedQuery.data.session_id,
+        branchId: parsedQuery.data.branch_id,
         floorId: parsedQuery.data.floor_id,
         pageId: parsedQuery.data.page_id,
         includeLayers: parsedQuery.data.include_layers,

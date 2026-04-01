@@ -291,6 +291,72 @@ describe("sdk state resources", () => {
     expect(requestUrl.searchParams.get("offset")).toBe("1");
   });
 
+  it("supports branch variable writes and branch-scoped list filters", async () => {
+    const branchPayload = {
+      id: "var-branch-1",
+      key: "route",
+      scope: "branch",
+      scope_id: "branch:session-1:alt-1",
+      scope_ref: {
+        session_id: "session-1",
+        branch_id: "alt-1",
+      },
+      updated_at: 210,
+      value: "campfire",
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ data: branchPayload }, 201))
+      .mockResolvedValueOnce(jsonResponse({ data: [branchPayload] }));
+
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const variables = createVariablesResource(transport);
+
+    await expect(
+      variables.upsert({
+        key: "route",
+        scope: "branch",
+        sessionId: "session-1",
+        branchId: "alt-1",
+        value: "campfire",
+      }),
+    ).resolves.toEqual({
+      id: "var-branch-1",
+      key: "route",
+      scope: "branch",
+      scopeId: "branch:session-1:alt-1",
+      scopeRef: { sessionId: "session-1", branchId: "alt-1" },
+      updatedAt: 210,
+      value: "campfire",
+    });
+
+    await expect(variables.list({ scope: "branch", sessionId: "session-1", branchId: "alt-1" })).resolves.toEqual([
+      {
+        id: "var-branch-1",
+        key: "route",
+        scope: "branch",
+        scopeId: "branch:session-1:alt-1",
+        scopeRef: { sessionId: "session-1", branchId: "alt-1" },
+        updatedAt: 210,
+        value: "campfire",
+      },
+    ]);
+
+    const [, upsertInit] = fetchImpl.mock.calls[0]!;
+    const [listUrl] = fetchImpl.mock.calls[1]!;
+    expect(upsertInit?.body).toBe(JSON.stringify({
+      key: "route",
+      scope: "branch",
+      session_id: "session-1",
+      branch_id: "alt-1",
+      value: "campfire",
+    }));
+    const listRequestUrl = new URL(listUrl as string);
+    expect(listRequestUrl.searchParams.get("scope")).toBe("branch");
+    expect(listRequestUrl.searchParams.get("session_id")).toBe("session-1");
+    expect(listRequestUrl.searchParams.get("branch_id")).toBe("alt-1");
+  });
+
   it("resolves variable snapshots and keeps default list sorting aligned", async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
@@ -300,11 +366,20 @@ describe("sdk state resources", () => {
             context: {
               account_id: "acc-1",
               session_id: "session-1",
+              branch_id: "alt-1",
               floor_id: "floor-1",
               page_id: "page-1",
               global_scope_id: "global",
             },
             resolved: [
+              {
+                key: "route",
+                value: "campfire",
+                source_scope: "branch",
+                source_scope_id: "branch:session-1:alt-1",
+                source_scope_ref: { session_id: "session-1", branch_id: "alt-1" },
+                updated_at: 250,
+              },
               {
                 key: "hp",
                 value: 95,
@@ -335,6 +410,25 @@ describe("sdk state resources", () => {
                   },
                 ],
               },
+              branch: {
+                scope: "branch",
+                scope_id: "branch:session-1:alt-1",
+                scope_ref: {
+                  session_id: "session-1",
+                  branch_id: "alt-1",
+                },
+                items: [
+                  {
+                    id: "var-branch-route",
+                    key: "route",
+                    scope: "branch",
+                    scope_id: "branch:session-1:alt-1",
+                    scope_ref: { session_id: "session-1", branch_id: "alt-1" },
+                    updated_at: 250,
+                    value: "campfire",
+                  },
+                ],
+              },
               floor: {
                 scope: "floor",
                 scope_id: "floor-1",
@@ -362,6 +456,7 @@ describe("sdk state resources", () => {
       variables.resolveContext({
         accountId: "acc-1",
         floorId: "floor-1",
+        branchId: "alt-1",
         includeLayers: true,
         pageId: "page-1",
         sessionId: "session-1",
@@ -369,12 +464,29 @@ describe("sdk state resources", () => {
     ).resolves.toEqual({
       context: {
         accountId: "acc-1",
+        branchId: "alt-1",
         floorId: "floor-1",
         globalScopeId: "global",
         pageId: "page-1",
         sessionId: "session-1",
       },
       layers: {
+        branch: {
+          items: [
+            {
+              id: "var-branch-route",
+              key: "route",
+              scope: "branch",
+              scopeId: "branch:session-1:alt-1",
+              scopeRef: { sessionId: "session-1", branchId: "alt-1" },
+              updatedAt: 250,
+              value: "campfire",
+            },
+          ],
+          scope: "branch",
+          scopeId: "branch:session-1:alt-1",
+          scopeRef: { sessionId: "session-1", branchId: "alt-1" },
+        },
         floor: {
           items: [
             {
@@ -406,6 +518,14 @@ describe("sdk state resources", () => {
       },
       resolved: [
         {
+          key: "route",
+          sourceScope: "branch",
+          sourceScopeId: "branch:session-1:alt-1",
+          sourceScopeRef: { sessionId: "session-1", branchId: "alt-1" },
+          updatedAt: 250,
+          value: "campfire",
+        },
+        {
           key: "hp",
           sourceScope: "page",
           sourceScopeId: "page-1",
@@ -428,6 +548,7 @@ describe("sdk state resources", () => {
     const resolveRequestUrl = new URL(resolveUrl as string);
     expect(resolveRequestUrl.pathname).toBe("/variables/resolve");
     expect(resolveRequestUrl.searchParams.get("session_id")).toBe("session-1");
+    expect(resolveRequestUrl.searchParams.get("branch_id")).toBe("alt-1");
     expect(resolveRequestUrl.searchParams.get("floor_id")).toBe("floor-1");
     expect(resolveRequestUrl.searchParams.get("page_id")).toBe("page-1");
     expect(resolveRequestUrl.searchParams.get("include_layers")).toBe("true");

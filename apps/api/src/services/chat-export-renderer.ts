@@ -71,7 +71,9 @@ export function renderExportSnapshotToThChat(
 
   const exportVariables: ThChatVariable[] | undefined = snapshot.variables?.map((row) => ({
     scope: row.scope,
-    scope_id_ref: row.scope === "chat" && row.scopeId === snapshot.sessionId ? null : row.scopeId,
+    scope_id_ref: row.scope === "chat" && row.scopeId === snapshot.sessionId
+      ? null
+      : row.scope === "branch" ? row.scopeRef?.branchId ?? row.scopeId : row.scopeId,
     key: row.key,
     value: row.value,
     updated_at: row.updatedAt,

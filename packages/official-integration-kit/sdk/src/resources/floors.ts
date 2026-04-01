@@ -7,6 +7,7 @@ import {
   compactObject,
   readArray,
   readBoolean,
+  readNullableNumber,
   readNullableString,
   readNumber,
   readOptionalString,
@@ -27,6 +28,59 @@ export type FloorRecord = {
   tokenIn: number;
   tokenOut: number;
   updatedAt: number;
+};
+
+export type FloorRunType = "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate";
+
+export type FloorRunStatus = "running" | "completed" | "failed" | "cancelled";
+
+export type FloorRunPhase =
+  | "input_recorded"
+  | "semantic_resolved"
+  | "prechecked"
+  | "prompt_assembled"
+  | "page_generating"
+  | "candidate_generated"
+  | "verifier_checked"
+  | "transaction_prepared"
+  | "transaction_committed"
+  | "post_commit_scheduled";
+
+export type FloorRunPublicPhase = "preparing" | "generating" | "verifying" | "committing" | "post_processing";
+
+export type FloorRunPendingOutput = {
+  attemptNo: number;
+  error?: string | null;
+  startedAt: number;
+  state: "draft" | "streaming" | "generated" | "failed";
+  tempId: string;
+  text: string;
+  updatedAt: number;
+};
+
+export type FloorRunVerifierIssue = {
+  description: string;
+  severity: "warning" | "error";
+};
+
+export type FloorRunVerifierSnapshot = {
+  issues?: FloorRunVerifierIssue[] | null;
+  status: "pending" | "passed" | "warned" | "blocked" | "skipped";
+  suggestion?: string | null;
+};
+
+export type FloorCommittedResultSnapshot = {
+  assistantMessageId: string;
+  committedAt: number;
+  floorId: string;
+  generatedText: string;
+  inputTokens: number;
+  outputPageId: string;
+  outputTokens: number;
+  summaries: string[];
+  totalTokens: number;
+  totalUsage: ReturnType<typeof toApiUsage>;
+  verifier?: FloorRunVerifierSnapshot | null;
 };
 
 export type FloorBranchResult = {
@@ -63,6 +117,28 @@ export type FloorsGetDetailOptions = {
   floorId: string;
 };
 
+export type FloorRunSnapshot = {
+  attemptNo: number;
+  completedAt?: number | null;
+  error?: { code: string; message: string } | null;
+  pendingOutput?: FloorRunPendingOutput | null;
+  phase: FloorRunPhase;
+  phaseSeq: number;
+  publicPhase: FloorRunPublicPhase;
+  runId: string;
+  runType: FloorRunType;
+  startedAt: number;
+  status: FloorRunStatus;
+  updatedAt: number;
+  verifier?: FloorRunVerifierSnapshot | null;
+};
+
+export type FloorRunRecord = { floorId: string; state: FloorState; run: FloorRunSnapshot | null; };
+
+export type FloorsGetRunOptions = FloorsGetDetailOptions;
+
+export type FloorsGetResultOptions = FloorsGetDetailOptions;
+
 export type FloorsUpdateOptions = {
   accountId?: AccountIdHint;
   branchId?: string;
@@ -97,6 +173,8 @@ export type FloorsResource = {
   branch(options: FloorsBranchOptions): Promise<FloorBranchResult>;
   create(options: FloorsCreateOptions): Promise<FloorRecord>;
   getDetail(options: FloorsGetDetailOptions): Promise<FloorRecord>;
+  getRun(options: FloorsGetRunOptions): Promise<FloorRunRecord>;
+  getResult(options: FloorsGetResultOptions): Promise<FloorCommittedResultSnapshot>;
   list(options?: FloorsListOptions): Promise<FloorRecord[]>;
   remove(options: FloorsRemoveOptions): Promise<boolean>;
   retry(options: FloorsRetryOptions): Promise<RegenerateResult>;
@@ -153,6 +231,32 @@ export function createFloorsResource(client: TransportClient): FloorsResource {
       const payload = mapFloorRecord(readRecord(response.body)?.data);
       if (!payload) {
         throw new Error("Floor detail payload is missing");
+      }
+
+      return payload;
+    },
+    async getRun(options): Promise<FloorRunRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(`/floors/${encodeURIComponent(options.floorId)}/run`, {
+        headers: buildAccountHeaders(options.accountId),
+        method: "GET",
+      });
+
+      const payload = mapFloorRunRecord(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Floor run payload is missing");
+      }
+
+      return payload;
+    },
+    async getResult(options): Promise<FloorCommittedResultSnapshot> {
+      const response = await client.fetchJson<Record<string, unknown>>(`/floors/${encodeURIComponent(options.floorId)}/result`, {
+        headers: buildAccountHeaders(options.accountId),
+        method: "GET",
+      });
+
+      const payload = mapFloorCommittedResultSnapshot(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Floor committed result payload is missing");
       }
 
       return payload;
@@ -259,6 +363,82 @@ function mapFloorRecord(value: unknown): FloorRecord | null {
     tokenIn: readNumber(record.token_in),
     tokenOut: readNumber(record.token_out),
     updatedAt: readNumber(record.updated_at),
+  };
+}
+
+function mapFloorRunRecord(value: unknown): FloorRunRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    floorId: readString(record.floor_id),
+    state: readString(record.state) as FloorState,
+    run: mapFloorRunSnapshot(record.run),
+  };
+}
+
+function mapFloorRunSnapshot(value: unknown): FloorRunSnapshot | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const pendingOutputRecord = readRecord(record.pending_output);
+  const verifierRecord = readRecord(record.verifier);
+  const errorRecord = readRecord(record.error);
+
+  return {
+    attemptNo: readNumber(record.attempt_no),
+    completedAt: readNullableNumber(record.completed_at),
+    error: errorRecord
+      ? { code: readString(errorRecord.code), message: readString(errorRecord.message) }
+      : null,
+    pendingOutput: pendingOutputRecord
+      ? {
+          attemptNo: readNumber(pendingOutputRecord.attempt_no),
+          error: readNullableString(pendingOutputRecord.error),
+          startedAt: readNumber(pendingOutputRecord.started_at),
+          state: readString(pendingOutputRecord.state) as FloorRunPendingOutput["state"],
+          tempId: readString(pendingOutputRecord.temp_id),
+          text: readString(pendingOutputRecord.text),
+          updatedAt: readNumber(pendingOutputRecord.updated_at),
+        }
+      : null,
+    phase: readString(record.phase) as FloorRunPhase,
+    phaseSeq: readNumber(record.phase_seq),
+    publicPhase: readString(record.public_phase) as FloorRunPublicPhase,
+    runId: readString(record.run_id),
+    runType: readString(record.run_type) as FloorRunType,
+    startedAt: readNumber(record.started_at),
+    status: readString(record.status) as FloorRunStatus,
+    updatedAt: readNumber(record.updated_at),
+    verifier: verifierRecord ? { issues: readArray(verifierRecord.issues).map((item) => readRecord(item)).filter((item): item is Record<string, unknown> => item !== null).map((item) => ({ description: readString(item.description), severity: readString(item.severity) as FloorRunVerifierIssue["severity"] })), status: readString(verifierRecord.status) as FloorRunVerifierSnapshot["status"], suggestion: readNullableString(verifierRecord.suggestion) } : null,
+  };
+}
+
+function mapFloorCommittedResultSnapshot(value: unknown): FloorCommittedResultSnapshot | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const totalUsage = toApiUsage(record.usage);
+  const verifierRecord = readRecord(record.verifier);
+
+  return {
+    assistantMessageId: readString(record.assistant_message_id),
+    committedAt: readNumber(record.committed_at),
+    floorId: readString(record.floor_id),
+    generatedText: readString(record.generated_text),
+    inputTokens: resolveInputTokens(totalUsage),
+    outputPageId: readString(record.output_page_id),
+    outputTokens: resolveOutputTokens(totalUsage),
+    summaries: mapStringArray(record.summaries),
+    totalTokens: resolveTotalTokens(totalUsage),
+    totalUsage,
+    verifier: verifierRecord ? { issues: readArray(verifierRecord.issues).map((item) => readRecord(item)).filter((item): item is Record<string, unknown> => item !== null).map((item) => ({ description: readString(item.description), severity: readString(item.severity) as FloorRunVerifierIssue["severity"] })), status: readString(verifierRecord.status) as FloorRunVerifierSnapshot["status"], suggestion: readNullableString(verifierRecord.suggestion) } : null,
   };
 }
 

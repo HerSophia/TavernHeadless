@@ -28,9 +28,87 @@ export interface FloorFailedEvent {
   error: Error;
 }
 
+export type FloorRunType = 'respond' | 'regenerate_page' | 'retry_turn' | 'edit_and_regenerate';
+
+export type FloorRunStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+
+export type FloorRunPhase =
+  | 'input_recorded'
+  | 'semantic_resolved'
+  | 'prechecked'
+  | 'prompt_assembled'
+  | 'page_generating'
+  | 'candidate_generated'
+  | 'verifier_checked'
+  | 'transaction_prepared'
+  | 'transaction_committed'
+  | 'post_commit_scheduled';
+
+export type FloorRunPublicPhase =
+  | 'preparing'
+  | 'generating'
+  | 'verifying'
+  | 'committing'
+  | 'post_processing';
+
+export type FloorRunPendingOutputState = 'draft' | 'streaming' | 'generated' | 'failed';
+
+export type FloorRunVerifierStatus = 'pending' | 'passed' | 'warned' | 'blocked' | 'skipped';
+
+export interface FloorRunVerifierIssue {
+  description: string;
+  severity: 'warning' | 'error';
+}
+
+export interface FloorRunVerifierSnapshot {
+  status: FloorRunVerifierStatus;
+  suggestion?: string;
+  issues?: FloorRunVerifierIssue[];
+}
+
+export interface FloorRunPendingOutput {
+  tempId: string;
+  attemptNo: number;
+  state: FloorRunPendingOutputState;
+  text: string;
+  startedAt: number;
+  updatedAt: number;
+  error?: string;
+}
+
+export interface FloorRunError {
+  code: string;
+  message: string;
+}
+
+export interface FloorRunSnapshot {
+  sessionId: string;
+  floorId: string;
+  runId: string;
+  runType: FloorRunType;
+  status: FloorRunStatus;
+  phase: FloorRunPhase;
+  publicPhase: FloorRunPublicPhase;
+  phaseSeq: number;
+  attemptNo: number;
+  startedAt: number;
+  updatedAt: number;
+  completedAt?: number | null;
+  pendingOutput?: FloorRunPendingOutput | null;
+  verifier?: FloorRunVerifierSnapshot | null;
+  error?: FloorRunError | null;
+}
+
+export type FloorRunUpdatedEvent = FloorRunSnapshot;
+
+export type FloorRunCompletedEvent = FloorRunSnapshot;
+
+export type FloorRunFailedEvent = FloorRunSnapshot;
+
 /** 变量写入事件 */
 export interface VariableSetEvent {
   sessionId?: string;
+  branchId?: string;
   entry: VariableEntry;
   isNew: boolean;
 }
@@ -38,6 +116,7 @@ export interface VariableSetEvent {
 /** 变量提升事件 */
 export interface VariablePromotedEvent {
   sessionId?: string;
+  branchId?: string;
   key: string;
   fromScope: VariableScope;
   toScope: VariableScope;
@@ -47,6 +126,7 @@ export interface VariablePromotedEvent {
 /** 变量删除事件 */
 export interface VariableDeletedEvent {
   sessionId?: string;
+  branchId?: string;
   id: string;
   scope: VariableScope;
   key: string;
@@ -361,6 +441,9 @@ export interface CoreEventMap {
   'floor.stateChanged': FloorStateChangedEvent;
   'floor.committed': FloorCommittedEvent;
   'floor.failed': FloorFailedEvent;
+  'floor.run.updated': FloorRunUpdatedEvent;
+  'floor.run.completed': FloorRunCompletedEvent;
+  'floor.run.failed': FloorRunFailedEvent;
   'variable.set': VariableSetEvent;
   'variable.promoted': VariablePromotedEvent;
   'variable.deleted': VariableDeletedEvent;

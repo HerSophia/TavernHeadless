@@ -167,12 +167,36 @@ describe('WsBridge', () => {
     expect(messages[0]!.event).toBe('floor.committed');
   });
 
+  it('forwards floor.run.updated event', async () => {
+    const socket = createMockSocket();
+    bridge.addClient(socket, 'session-1');
+
+    await eventBus.emit('floor.run.updated', {
+      sessionId: 'session-1',
+      floorId: 'floor-1',
+      runId: 'run-1',
+      runType: 'respond',
+      status: 'running',
+      phase: 'page_generating',
+      publicPhase: 'generating',
+      phaseSeq: 3,
+      attemptNo: 1,
+      startedAt: 100,
+      updatedAt: 120,
+    });
+
+    const messages = parseSent(socket);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.event).toBe('floor.run.updated');
+  });
+
   it('forwards variable.promoted event', async () => {
     const socket = createMockSocket();
     bridge.addClient(socket);
 
     await eventBus.emit('variable.promoted', {
       sessionId: 'session-1',
+      branchId: 'main',
       key: 'mood',
       fromScope: 'page',
       toScope: 'floor',
@@ -184,6 +208,7 @@ describe('WsBridge', () => {
     expect(messages[0]!.event).toBe('variable.promoted');
     expect(messages[0]!.data).toEqual({
       sessionId: 'session-1',
+      branchId: 'main',
       key: 'mood',
       fromScope: 'page',
       toScope: 'floor',

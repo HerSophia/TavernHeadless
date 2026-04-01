@@ -15,7 +15,7 @@ outline: [2, 3]
 | `floor_no` | integer | 楼层序号（从 0 开始） |
 | `branch_id` | string | 所属分支 ID |
 | `parent_floor_id` | string \| null | 父楼层 ID |
-| `state` | string | 状态：`pending` / `generating` / `committed` / `failed` / `cancelled` |
+| `state` | string | 状态：`draft` / `generating` / `committed` / `failed` |
 | `token_in` | integer | 输入 token 数 |
 | `token_out` | integer | 输出 token 数 |
 | `created_at` | integer | 创建时间（毫秒时间戳） |
@@ -71,6 +71,44 @@ GET /floors/:id
 ### 响应 `200`
 
 返回 `{ "data": Floor }` 。
+
+## 获取楼层运行快照
+
+```http
+GET /floors/:id/run
+```
+
+返回当前楼层最近一次业务运行的快照。
+
+这组字段不等于 `Floor.state`。它主要表达：
+
+- `run_id` / `run_type`
+- `status`
+- `phase` / `public_phase`
+- `attempt_no`
+- `pending_output`
+- `verifier`
+
+## 获取 committed floor 结果快照
+
+```http
+GET /floors/:id/result
+```
+
+返回已经提交完成的结构化结果快照。
+
+主要字段包括：
+
+- `floor_id`
+- `output_page_id`
+- `assistant_message_id`
+- `generated_text`
+- `summaries`
+- `usage`
+- `verifier`
+- `committed_at`
+
+如果楼层还不是 `committed`，接口返回 `409 invalid_state`。
 
 ## 更新楼层
 

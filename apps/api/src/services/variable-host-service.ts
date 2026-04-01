@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { VariableContext } from "@tavern/core";
-import type { VariableScope } from "@tavern/shared";
+import { buildBranchVariableScopeId, parseBranchVariableScopeId, type VariableScope } from "@tavern/shared";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { floors, messagePages, sessions } from "../db/schema.js";
@@ -15,6 +15,7 @@ export interface VariableTarget {
   scope: VariableScope;
   scopeId: string;
   sessionId?: string;
+  branchId?: string;
   floorId?: string;
   pageId?: string;
   floorState?: FloorState;
@@ -23,6 +24,7 @@ export interface VariableTarget {
 
 export interface ResolveVariableContextInput {
   sessionId?: string;
+  branchId?: string;
   floorId?: string;
   pageId?: string;
   globalScopeId?: string;
@@ -37,6 +39,8 @@ export class VariableHostService {
         return this.createGlobalTarget(accountId);
       case "chat":
         return this.resolveChatTarget(accountId, scopeId);
+      case "branch":
+        return this.resolveBranchTarget(accountId, scopeId);
       case "floor":
         return this.resolveFloorTarget(accountId, scopeId);
       case "page":
@@ -50,6 +54,7 @@ export class VariableHostService {
     const globalScopeId = normalizeGlobalScopeId(input.globalScopeId);
 
     let sessionId = input.sessionId;
+    let branchId = input.branchId;
     let floorId = input.floorId;
     let pageId = input.pageId;
 
@@ -70,7 +75,15 @@ export class VariableHostService {
         );
       }
 
+      if (branchId && pageTarget.branchId !== branchId) {
+        throw new VariableServiceError(
+          "invalid_variable_context",
+          `Page '${pageId}' does not belong to branch '${branchId}'`
+        );
+      }
+
       sessionId = pageTarget.sessionId;
+      branchId = pageTarget.branchId;
       floorId = pageTarget.floorId;
       pageId = pageTarget.pageId;
     }
@@ -85,8 +98,29 @@ export class VariableHostService {
         );
       }
 
+      if (branchId && floorTarget.branchId !== branchId) {
+        throw new VariableServiceError(
+          "invalid_variable_context",
+          `Floor '${floorId}' does not belong to branch '${branchId}'`
+        );
+      }
+
       sessionId = floorTarget.sessionId;
+      branchId = floorTarget.branchId;
       floorId = floorTarget.floorId;
+    }
+
+    if (branchId) {
+      if (!sessionId) {
+        throw new VariableServiceError(
+          "invalid_variable_context",
+          `Branch '${branchId}' requires session_id to resolve variable context`
+        );
+      }
+
+      const branchTarget = await this.resolveBranchTargetByParts(accountId, sessionId, branchId);
+      sessionId = branchTarget.sessionId;
+      branchId = branchTarget.branchId;
     }
 
     if (sessionId) {
@@ -97,6 +131,7 @@ export class VariableHostService {
     return {
       accountId,
       sessionId,
+      branchId,
       floorId,
       pageId,
       globalScopeId,
@@ -152,12 +187,68 @@ export class VariableHostService {
     };
   }
 
+  private async resolveBranchTarget(accountId: string, scopeId: string): Promise<VariableTarget> {
+    const parsed = parseBranchVariableScopeId(scopeId);
+
+    if (!parsed) {
+      throw new VariableServiceError("invalid_variable_context", `Invalid branch scope_id '${scopeId}'`);
+    }
+
+    return this.resolveBranchTargetByParts(accountId, parsed.sessionId, parsed.branchId);
+  }
+
+  private async resolveBranchTargetByParts(
+    accountId: string,
+    sessionId: string,
+    branchId: string,
+  ): Promise<VariableTarget> {
+    const row = await this.db
+      .select({
+        sessionId: sessions.id,
+        branchId: floors.branchId,
+      })
+      .from(floors)
+      .innerJoin(sessions, eq(floors.sessionId, sessions.id))
+      .where(
+        and(
+          eq(sessions.id, sessionId),
+          eq(sessions.accountId, accountId),
+          eq(floors.branchId, branchId),
+        ),
+      )
+      .limit(1);
+
+    const branch = row[0];
+
+    if (!branch) {
+      throw new VariableServiceError(
+        "variable_host_not_found",
+        `Branch '${branchId}' not found in session '${sessionId}'`
+      );
+    }
+
+    return {
+      accountId,
+      scope: "branch",
+      scopeId: buildBranchVariableScopeId(branch.sessionId, branch.branchId),
+      sessionId: branch.sessionId,
+      branchId: branch.branchId,
+      context: {
+        accountId,
+        sessionId: branch.sessionId,
+        branchId: branch.branchId,
+        globalScopeId: DEFAULT_GLOBAL_SCOPE_ID,
+      },
+    };
+  }
+
   private async resolveFloorTarget(accountId: string, floorId: string): Promise<VariableTarget> {
     const row = await this.db
       .select({
         floorId: floors.id,
         floorState: floors.state,
         sessionId: sessions.id,
+        branchId: floors.branchId,
       })
       .from(floors)
       .innerJoin(sessions, eq(floors.sessionId, sessions.id))
@@ -175,11 +266,13 @@ export class VariableHostService {
       scope: "floor",
       scopeId: floor.floorId,
       sessionId: floor.sessionId,
+      branchId: floor.branchId,
       floorId: floor.floorId,
       floorState: floor.floorState,
       context: {
         accountId,
         sessionId: floor.sessionId,
+        branchId: floor.branchId,
         floorId: floor.floorId,
         globalScopeId: DEFAULT_GLOBAL_SCOPE_ID,
       },
@@ -193,6 +286,7 @@ export class VariableHostService {
         floorId: floors.id,
         floorState: floors.state,
         sessionId: sessions.id,
+        branchId: floors.branchId,
       })
       .from(messagePages)
       .innerJoin(floors, eq(messagePages.floorId, floors.id))
@@ -211,12 +305,14 @@ export class VariableHostService {
       scope: "page",
       scopeId: page.pageId,
       sessionId: page.sessionId,
+      branchId: page.branchId,
       floorId: page.floorId,
       pageId: page.pageId,
       floorState: page.floorState,
       context: {
         accountId,
         sessionId: page.sessionId,
+        branchId: page.branchId,
         floorId: page.floorId,
         pageId: page.pageId,
         globalScopeId: DEFAULT_GLOBAL_SCOPE_ID,

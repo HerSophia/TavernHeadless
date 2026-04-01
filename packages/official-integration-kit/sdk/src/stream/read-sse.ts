@@ -7,6 +7,7 @@ import type {
   TavernRespondDonePayload,
   TavernRespondErrorPayload,
   TavernRespondStartPayload,
+  TavernRespondRunPayload,
   TavernRespondStreamEvent,
   TavernRespondSummaryPayload,
   TavernRespondToolPayload,
@@ -60,6 +61,11 @@ export async function readSseStream(
     if (event.type === "start") {
       startPayload = event.payload;
       callbacks.onStart?.(event.payload);
+      return;
+    }
+
+    if (event.type === "run") {
+      callbacks.onRun?.(event.payload);
       return;
     }
 
@@ -156,6 +162,43 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
     };
 
     return { payload: startPayload, type: "start" };
+  }
+
+  if (eventName === "run") {
+    const payload = parsed as Record<string, unknown> | null;
+    const floorId = readOptionalString(payload?.floor_id);
+    const runId = readOptionalString(payload?.run_id);
+    const runType = readRunType(payload?.run_type);
+    const status = readRunStatus(payload?.status);
+    const phase = readRunPhase(payload?.phase);
+    const publicPhase = readRunPublicPhase(payload?.public_phase);
+    const phaseSeq = readOptionalNumber(payload?.phase_seq);
+    const attemptNo = readOptionalNumber(payload?.attempt_no);
+    const startedAt = readOptionalNumber(payload?.started_at);
+    const updatedAt = readOptionalNumber(payload?.updated_at);
+
+    if (!floorId || !runId || !runType || !status || !phase || !publicPhase || phaseSeq === undefined || attemptNo === undefined || startedAt === undefined || updatedAt === undefined) {
+      return null;
+    }
+
+    const runPayload: TavernRespondRunPayload = {
+      attemptNo,
+      completedAt: readOptionalNumber(payload?.completed_at) ?? null,
+      error: readRunErrorPayload(payload?.error),
+      floorId,
+      pendingOutput: readRunPendingOutputPayload(payload?.pending_output),
+      phase,
+      phaseSeq,
+      publicPhase,
+      runId,
+      runType,
+      startedAt,
+      status,
+      updatedAt,
+      verifier: readRunVerifierPayload(payload?.verifier),
+    };
+
+    return { payload: runPayload, type: "run" };
   }
 
   if (eventName === "chunk") {
@@ -305,4 +348,88 @@ function readToolProviderType(value: unknown): TavernRespondToolProviderType | u
 
 function readToolSideEffectLevel(value: unknown): TavernRespondToolSideEffectLevel | undefined {
   return value === "none" || value === "sandbox" || value === "irreversible" ? value : undefined;
+}
+
+function readRunType(value: unknown): TavernRespondRunPayload["runType"] | undefined {
+  return value === "respond" || value === "regenerate_page" || value === "retry_turn" || value === "edit_and_regenerate"
+    ? value
+    : undefined;
+}
+
+function readRunStatus(value: unknown): TavernRespondRunPayload["status"] | undefined {
+  return value === "running" || value === "completed" || value === "failed" || value === "cancelled"
+    ? value
+    : undefined;
+}
+
+function readRunPhase(value: unknown): TavernRespondRunPayload["phase"] | undefined {
+  switch (value) {
+    case "input_recorded":
+    case "semantic_resolved":
+    case "prechecked":
+    case "prompt_assembled":
+    case "page_generating":
+    case "candidate_generated":
+    case "verifier_checked":
+    case "transaction_prepared":
+    case "transaction_committed":
+    case "post_commit_scheduled":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function readRunPublicPhase(value: unknown): TavernRespondRunPayload["publicPhase"] | undefined {
+  return value === "preparing" || value === "generating" || value === "verifying" || value === "committing" || value === "post_processing"
+    ? value
+    : undefined;
+}
+
+function readRunPendingOutputPayload(value: unknown): TavernRespondRunPayload["pendingOutput"] {
+  const payload = value as Record<string, unknown> | null;
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const attemptNo = readOptionalNumber(payload.attempt_no);
+  const startedAt = readOptionalNumber(payload.started_at);
+  const updatedAt = readOptionalNumber(payload.updated_at);
+  const tempId = readOptionalString(payload.temp_id);
+  const text = readString(payload.text);
+  const state = payload.state === "draft" || payload.state === "streaming" || payload.state === "generated" || payload.state === "failed" ? payload.state : undefined;
+  if (attemptNo === undefined || startedAt === undefined || updatedAt === undefined || !tempId || !state) {
+    return null;
+  }
+  return { attemptNo, error: readOptionalString(payload.error) ?? null, startedAt, state, tempId, text, updatedAt };
+}
+
+function readRunVerifierPayload(value: unknown): TavernRespondRunPayload["verifier"] {
+  const payload = value as Record<string, unknown> | null;
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const status = payload.status === "pending" || payload.status === "passed" || payload.status === "warned" || payload.status === "blocked" || payload.status === "skipped" ? payload.status : undefined;
+  if (!status) {
+    return null;
+  }
+
+  const issues = Array.isArray(payload.issues)
+    ? payload.issues.map((item) => item as Record<string, unknown>).filter((item) => typeof item?.description === "string" && (item?.severity === "warning" || item?.severity === "error")).map((item) => ({ description: readString(item.description), severity: item.severity as "warning" | "error" }))
+    : [];
+  return {
+    issues,
+    status,
+    suggestion: readOptionalString(payload.suggestion) ?? null,
+  };
+}
+
+function readRunErrorPayload(value: unknown): TavernRespondRunPayload["error"] {
+  const payload = value as Record<string, unknown> | null;
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const code = readOptionalString(payload.code);
+  const message = readOptionalString(payload.message);
+  return code && message ? { code, message } : null;
 }

@@ -1,4 +1,5 @@
 import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { buildBranchVariableScopeId, type BranchVariableScopeRef } from "@tavern/shared";
 
 import type { AppDb } from "../db/client.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js";
@@ -59,10 +60,11 @@ export interface ExportSnapshotFloor {
 }
 
 export interface ExportSnapshotVariable {
-  scope: "chat" | "floor" | "page";
+  scope: "chat" | "floor" | "branch" | "page";
   scopeId: string;
   key: string;
   value: unknown;
+  scopeRef?: BranchVariableScopeRef;
   updatedAt: number;
 }
 
@@ -261,19 +263,26 @@ export function captureSessionExportSnapshot(
 
     let snapshotVariables: ExportSnapshotVariable[] | undefined;
     if (includeVariables) {
+      const branchTargets = Array.from(new Set(floorRows.map((row) => row.branchId))).map((branchId) => ({
+        scope: "branch" as const,
+        scopeId: buildBranchVariableScopeId(sessionId, branchId),
+      }));
+
       const variableService = new VariableService(tx);
       const rows = variableService.listByTargets({
         accountId,
         targets: [
           { scope: "chat", scopeId: sessionId },
+          ...branchTargets,
           ...floorIds.map((floorId) => ({ scope: "floor" as const, scopeId: floorId })),
           ...pageIds.map((pageId) => ({ scope: "page" as const, scopeId: pageId })),
         ],
       });
 
       snapshotVariables = rows.map((row) => ({
-        scope: row.scope as "chat" | "floor" | "page",
+        scope: row.scope as "chat" | "floor" | "branch" | "page",
         scopeId: row.scopeId,
+        ...(row.scopeRef ? { scopeRef: row.scopeRef } : {}),
         key: row.key,
         value: row.value,
         updatedAt: row.updatedAt,

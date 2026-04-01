@@ -32,7 +32,7 @@ outline: [2, 3]
 /**
  * 按优先级从多个作用域中解析变量值。
  *
- * 查找顺序：page → floor → chat → global。
+ * 查找顺序：page → floor → branch → chat → global。
  *
  * @param key - 变量名
  * @param context - 当前作用域上下文

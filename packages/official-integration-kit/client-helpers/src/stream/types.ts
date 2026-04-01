@@ -1,4 +1,4 @@
-import type { RespondResult, TavernRespondToolPayload } from "@tavern/sdk";
+import type { RespondResult, TavernRespondRunPayload, TavernRespondToolPayload } from "@tavern/sdk";
 
 export type RespondStreamWarning = {
   code: string;
@@ -17,6 +17,7 @@ export type RespondStreamState = {
   };
   floorId?: string;
   floorNo?: number;
+  run?: TavernRespondRunPayload | null;
   result: RespondResult | null;
   status: "idle" | "streaming" | "done" | "error";
   summaries: string[];

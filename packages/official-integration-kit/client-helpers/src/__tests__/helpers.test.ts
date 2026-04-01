@@ -4,6 +4,7 @@ import { TavernApiError } from "@tavern/sdk";
 
 import * as clientHelpers from "../index.js";
 import { mapApiErrorToUiState } from "../errors/map-api-error-to-ui-state.js";
+import { getDisplayPage } from "../selectors/get-display-page.js";
 import { getActivePage } from "../selectors/get-active-page.js";
 import { groupToolEventsByExecution } from "../stream/group-tool-events-by-execution.js";
 import { createInitialRespondStreamState, reduceRespondStream } from "../stream/reduce-respond-stream.js";
@@ -18,6 +19,7 @@ describe("client-helpers public exports", () => {
       buildTimelineMessages: expect.any(Function),
       createInitialRespondStreamState: expect.any(Function),
       getActivePage: expect.any(Function),
+      getDisplayPage: expect.any(Function),
       mapApiErrorToUiState: expect.any(Function),
       flattenVariableSnapshot: expect.any(Function),
       formatVariablePreview: expect.any(Function),
@@ -101,6 +103,29 @@ describe("getActivePage", () => {
     expect(getActivePage({ pages: [] })).toBeNull();
     expect(getActivePage({ pages: null })).toBeNull();
     expect(getActivePage({ pages: [undefined] as unknown as Array<{ id: string }> })).toBeNull();
+  });
+});
+
+describe("getDisplayPage", () => {
+  it("prefers pending output over active page", () => {
+    const pending = { text: "draft" };
+    const activePage = { id: "page-1" };
+
+    expect(getDisplayPage({ pendingOutput: pending, activePage })).toBe(pending);
+  });
+
+  it("falls back to active page when pending output is absent", () => {
+    const activePage = { id: "page-1" };
+    expect(getDisplayPage({ activePage })).toBe(activePage);
+  });
+
+  it("falls back to first page when active page is missing", () => {
+    const page = { id: "page-2" };
+    expect(getDisplayPage({ pages: [page] })).toBe(page);
+  });
+
+  it("returns null when nothing is available", () => {
+    expect(getDisplayPage({})).toBeNull();
   });
 });
 
@@ -323,6 +348,36 @@ describe("reduceRespondStream", () => {
       },
       status: "error",
     });
+  });
+
+  it("stores run snapshots and prefers pending output text during streaming", () => {
+    const state = reduceRespondStream(createInitialRespondStreamState(), {
+      payload: {
+        attemptNo: 1,
+        floorId: "floor-1",
+        pendingOutput: {
+          attemptNo: 1,
+          startedAt: 100,
+          state: "streaming",
+          tempId: "temp-1",
+          text: "partial",
+          updatedAt: 120,
+        },
+        phase: "page_generating",
+        phaseSeq: 3,
+        publicPhase: "generating",
+        runId: "run-1",
+        runType: "respond",
+        startedAt: 90,
+        status: "running",
+        updatedAt: 120,
+      },
+      type: "run",
+    });
+
+    expect(state.run?.runId).toBe("run-1");
+    expect(state.content).toBe("partial");
+    expect(state.status).toBe("streaming");
   });
 
   it("accumulates tool events active tools and warnings", () => {

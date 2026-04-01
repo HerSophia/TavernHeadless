@@ -1,5 +1,6 @@
 import {
   SCOPE_PRIORITY,
+  buildBranchVariableScopeId,
   type VariableScope,
   type VariableEntry,
 } from '@tavern/shared';
@@ -12,7 +13,7 @@ import { VariableResolver } from './variable-resolver.js';
 /** scope → VariableContext 中对应字段的映射 */
 type ScopeContextKey = 'pageId' | 'floorId' | 'sessionId' | 'globalScopeId';
 
-const SCOPE_TO_CONTEXT_KEY: Record<VariableScope, ScopeContextKey> = {
+const SCOPE_TO_CONTEXT_KEY: Partial<Record<VariableScope, ScopeContextKey>> = {
   page: 'pageId',
   floor: 'floorId',
   chat: 'sessionId',
@@ -25,7 +26,16 @@ const DEFAULT_GLOBAL_SCOPE_ID = 'global';
  * 获取 context 中某个 scope 对应的 scopeId
  */
 function getScopeId(scope: VariableScope, context: VariableContext): string | undefined {
+  if (scope === 'branch') {
+    if (!context.sessionId || !context.branchId) {
+      return undefined;
+    }
+
+    return buildBranchVariableScopeId(context.sessionId, context.branchId);
+  }
+
   const key = SCOPE_TO_CONTEXT_KEY[scope];
+  if (!key) return undefined;
   const value = context[key];
   if (value !== undefined) return value;
   if (scope === 'global') return DEFAULT_GLOBAL_SCOPE_ID;
@@ -41,6 +51,16 @@ function requireScopeId(scope: VariableScope, context: VariableContext): string 
     throw new MissingScopeIdError(scope);
   }
   return id;
+}
+
+function getEventContext(context?: Pick<VariableContext, 'sessionId' | 'branchId'>): {
+  sessionId?: string;
+  branchId?: string;
+} {
+  return {
+    ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
+    ...(context?.branchId ? { branchId: context.branchId } : {}),
+  };
 }
 
 function getRepositoryOptions(accountId?: string): VariableRepositoryOptions | undefined {
@@ -70,7 +90,7 @@ function getToolMutationState(context: VariableContext): {
 
 /**
  * 找到 context 中最低可用的 scope（优先级最高的）
- * 按 SCOPE_PRIORITY 顺序：page → floor → chat → global
+ * 按 SCOPE_PRIORITY 顺序：page → floor → branch → chat → global
  */
 function findLowestAvailableScope(context: VariableContext): VariableScope {
   for (const scope of SCOPE_PRIORITY) {
@@ -130,6 +150,7 @@ export class VariableStore {
       });
 
       await this.eventBus.emit('variable.set', {
+        ...getEventContext(context),
         entry,
         isNew: existing === null,
       });
@@ -141,6 +162,7 @@ export class VariableStore {
     const entry = await this.variableRepo.upsert(targetScope, scopeId, key, value, repoOptions);
 
     await this.eventBus.emit('variable.set', {
+      ...getEventContext(context),
       entry,
       isNew: existing === null,
     });
@@ -182,6 +204,7 @@ export class VariableStore {
     const promoted = await this.variableRepo.upsert(toScope, toScopeId, key, source.value, repoOptions);
 
     await this.eventBus.emit('variable.promoted', {
+      ...getEventContext(context),
       key,
       fromScope,
       toScope,
@@ -193,14 +216,15 @@ export class VariableStore {
 
   /**
    * 批量提升：将某个 scope 下的所有变量提升到目标 scope
-   * 典型用途：楼层 commit 时将 page 变量提升到 floor/chat
+   * 典型用途：楼层 commit 时将 page 变量提升到 floor/branch/chat
    */
   async promoteAll(
     fromScope: VariableScope,
     fromScopeId: string,
     toScope: VariableScope,
     toScopeId: string,
-    accountId?: string
+    accountId?: string,
+    eventContext?: Pick<VariableContext, 'sessionId' | 'branchId'>
   ): Promise<VariableEntry[]> {
     // 验证方向
     const fromIndex = SCOPE_PRIORITY.indexOf(fromScope);
@@ -219,6 +243,7 @@ export class VariableStore {
       promoted.push(result);
 
       await this.eventBus.emit('variable.promoted', {
+        ...getEventContext(eventContext),
         key: entry.key,
         fromScope,
         toScope,
@@ -232,10 +257,21 @@ export class VariableStore {
   /**
    * 删除变量
    */
-  async delete(id: string, scope: VariableScope, key: string, accountId?: string): Promise<void> {
+  async delete(
+    id: string,
+    scope: VariableScope,
+    key: string,
+    accountId?: string,
+    eventContext?: Pick<VariableContext, 'sessionId' | 'branchId'>
+  ): Promise<void> {
     const deleted = await this.variableRepo.deleteById(id, getRepositoryOptions(accountId));
     if (deleted) {
-      await this.eventBus.emit('variable.deleted', { id, scope, key });
+      await this.eventBus.emit('variable.deleted', {
+        ...getEventContext(eventContext),
+        id,
+        scope,
+        key,
+      });
     }
   }
 

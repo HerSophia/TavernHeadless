@@ -414,14 +414,18 @@ describe("OpenAPI integration", () => {
     };
     expect(getOpenApiSchemaExample(variablesPath.put?.requestBody)).toMatchObject({ key: "mood" });
     expect(getOpenApiResponseExample(variablesPath.put, "201")).toMatchObject({ data: { id: "var_mood" } });
-    expect(getOpenApiResponseExample(variablesPath.get, "200")).toMatchObject({ data: [{ id: "var_mood" }] });
+    expect(getOpenApiResponseExample(variablesPath.get, "200")).toMatchObject({ data: expect.any(Array) });
+    const variablesListExample = getOpenApiResponseExample(variablesPath.get, "200") as { data?: unknown };
+    expect(variablesListExample.data).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "var_mood" }),
+    ]));
 
     const variablesBatchPath = body.paths["/variables/batch"] as { put?: OpenApiOperation };
     expect(getOpenApiSchemaExample(variablesBatchPath.put?.requestBody)).toEqual(expect.objectContaining({
       items: expect.arrayContaining([expect.objectContaining({ key: "mood" })])
     }));
     expect(getOpenApiResponseExample(variablesBatchPath.put, "200")).toEqual(expect.objectContaining({
-      data: expect.objectContaining({ meta: { total: 2, created: 1, updated: 1 } })
+      data: expect.objectContaining({ meta: { total: 3, created: 2, updated: 1 } })
     }));
 
     const memoriesBatchStatusPath = body.paths["/memories/batch/status"] as { patch?: OpenApiOperation };

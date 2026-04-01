@@ -37,7 +37,24 @@ export {
   type ExportChatJob,
   type ExportsResource,
 } from "./exports.js";
-export { createFloorsResource, type FloorBranchResult, type FloorRecord, type FloorState, type FloorsResource } from "./floors.js";
+export {
+  createFloorsResource,
+  type FloorBranchResult,
+  type FloorCommittedResultSnapshot,
+  type FloorRecord,
+  type FloorRunPendingOutput,
+  type FloorRunRecord,
+  type FloorRunSnapshot,
+  type FloorsGetResultOptions,
+  type FloorRunType,
+  type FloorRunStatus,
+  type FloorRunPhase,
+  type FloorRunPublicPhase,
+  type FloorRunVerifierIssue,
+  type FloorRunVerifierSnapshot,
+  type FloorState,
+  type FloorsResource,
+} from "./floors.js";
 export { createHealthResource, type HealthResource, type HealthStatus } from "./health.js";
 export {
   createImportsResource,
@@ -186,6 +203,8 @@ export {
   type SessionBranchDiff,
   type SessionBranchSummary,
   type SessionDetail,
+  type SessionActiveRunRecord,
+  type SessionActiveRunSummary,
   type SessionRegenerateResult,
   type SessionRecord,
   type SessionRuntimeToolAvailability,
@@ -226,13 +245,14 @@ export {
 export { createUsersResource, type UserDetail, type UserRecord, type UsersResource } from "./users.js";
 export {
   createVariablesResource,
+  type BranchVariableScopeRef,
   type ResolvedVariableRecord,
   type ResolvedVariablesSnapshot,
   type VariableRecord,
   type VariableLayerSnapshot,
   type VariablesResource,
-  type VariablesUpsertManyResult,
   type VariableScope,
+  type VariablesUpsertManyResult,
 } from "./variables.js";
 export {
   createWorldbookEntriesResource,

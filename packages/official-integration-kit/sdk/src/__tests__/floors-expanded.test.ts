@@ -117,6 +117,92 @@ describe("sdk floors expanded resource", () => {
     }));
   });
 
+  it("reads floor run snapshot", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          floor_id: "floor-1",
+          state: "generating",
+          run: {
+            run_id: "run-1",
+            run_type: "respond",
+            status: "running",
+            phase: "page_generating",
+            public_phase: "generating",
+            phase_seq: 4,
+            attempt_no: 1,
+            started_at: 100,
+            updated_at: 120,
+            completed_at: null,
+            pending_output: {
+              temp_id: "temp-1",
+              attempt_no: 1,
+              state: "streaming",
+              text: "Hello",
+              started_at: 101,
+              updated_at: 120,
+              error: null,
+            },
+            verifier: { status: "pending", suggestion: null, issues: null },
+            error: null,
+          },
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.floors.getRun({ floorId: "floor-1" })).resolves.toEqual({
+      floorId: "floor-1",
+      state: "generating",
+      run: {
+        attemptNo: 1, completedAt: null, error: null,
+        pendingOutput: { attemptNo: 1, error: null, startedAt: 101, state: "streaming", tempId: "temp-1", text: "Hello", updatedAt: 120 },
+        phase: "page_generating", phaseSeq: 4, publicPhase: "generating", runId: "run-1", runType: "respond", startedAt: 100, status: "running",
+        updatedAt: 120, verifier: { issues: [], status: "pending", suggestion: null },
+      },
+    });
+  });
+
+  it("reads committed floor result snapshot", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          floor_id: "floor-1",
+          output_page_id: "page-2",
+          assistant_message_id: "msg-2",
+          generated_text: "Committed reply",
+          summaries: ["s1", "s2"],
+          usage: {
+            prompt_tokens: 12,
+            completion_tokens: 34,
+            total_tokens: 46,
+          },
+          verifier: {
+            status: "warned",
+            suggestion: "tighten wording",
+            issues: [{ description: "minor inconsistency", severity: "warning" }],
+          },
+          committed_at: 200,
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.floors.getResult({ floorId: "floor-1" })).resolves.toEqual({
+      assistantMessageId: "msg-2",
+      committedAt: 200,
+      floorId: "floor-1",
+      generatedText: "Committed reply",
+      inputTokens: 12,
+      outputPageId: "page-2",
+      outputTokens: 34,
+      summaries: ["s1", "s2"],
+      totalTokens: 46,
+      totalUsage: { promptTokens: 12, completionTokens: 34, totalTokens: 46 },
+      verifier: { issues: [{ description: "minor inconsistency", severity: "warning" }], status: "warned", suggestion: "tighten wording" },
+    });
+  });
+
   it("lists floors with filters and defaults", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({

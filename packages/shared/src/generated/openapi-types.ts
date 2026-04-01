@@ -945,6 +945,202 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/floors/{id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get committed floor result snapshot */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                assistant_message_id: string;
+                                committed_at: number;
+                                floor_id: string;
+                                generated_text: string;
+                                output_page_id: string;
+                                summaries: string[];
+                                usage: {
+                                    completion_tokens: number;
+                                    prompt_tokens: number;
+                                    total_tokens: number;
+                                };
+                                verifier: {
+                                    issues?: {
+                                        description: string;
+                                        /** @enum {string} */
+                                        severity: "warning" | "error";
+                                    }[] | null;
+                                    /** @enum {string} */
+                                    status: "pending" | "passed" | "warned" | "blocked" | "skipped";
+                                    suggestion?: string | null;
+                                } | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/floors/{id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get floor run snapshot */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                floor_id: string;
+                                run: {
+                                    attempt_no: number;
+                                    completed_at?: number | null;
+                                    error?: {
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    pending_output?: {
+                                        attempt_no: number;
+                                        error?: string | null;
+                                        started_at: number;
+                                        /** @enum {string} */
+                                        state: "draft" | "streaming" | "generated" | "failed";
+                                        temp_id: string;
+                                        text: string;
+                                        updated_at: number;
+                                    } | null;
+                                    /** @enum {string} */
+                                    phase: "input_recorded" | "semantic_resolved" | "prechecked" | "prompt_assembled" | "page_generating" | "candidate_generated" | "verifier_checked" | "transaction_prepared" | "transaction_committed" | "post_commit_scheduled";
+                                    phase_seq: number;
+                                    /** @enum {string} */
+                                    public_phase: "preparing" | "generating" | "verifying" | "committing" | "post_processing";
+                                    run_id: string;
+                                    /** @enum {string} */
+                                    run_type: "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate";
+                                    started_at: number;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed" | "cancelled";
+                                    updated_at: number;
+                                    verifier?: {
+                                        issues?: {
+                                            description: string;
+                                            /** @enum {string} */
+                                            severity: "warning" | "error";
+                                        }[] | null;
+                                        /** @enum {string} */
+                                        status: "pending" | "passed" | "warned" | "blocked" | "skipped";
+                                        suggestion?: string | null;
+                                    } | null;
+                                } | null;
+                                state: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/floors/{id}/tool-executions": {
         parameters: {
             query?: never;
@@ -4532,6 +4728,74 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/sessions/{id}/active-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get session active run summary */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                active_run: {
+                                    active_run_id?: string | null;
+                                    active_run_type?: ("respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate") | null;
+                                    branch_id: string;
+                                    busy: boolean;
+                                    latest_floor_id?: string | null;
+                                    public_phase?: ("preparing" | "generating" | "verifying" | "committing" | "post_processing") | null;
+                                    updated_at: number;
+                                } | null;
+                                session_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/sessions/{id}/branches": {
@@ -14515,8 +14779,10 @@ export interface operations {
                 offset?: number;
                 sort_order?: "asc" | "desc";
                 sort_by?: "updated_at" | "key";
-                scope?: "global" | "chat" | "floor" | "page";
+                scope?: "global" | "chat" | "floor" | "branch" | "page";
                 scope_id?: string;
+                session_id?: string;
+                branch_id?: string;
                 key?: string;
             };
             header?: never;
@@ -14543,6 +14809,18 @@ export interface operations {
                      *           "value": {
                      *             "score": 20
                      *           }
+                     *         },
+                     *         {
+                     *           "id": "var_branch_route",
+                     *           "key": "route",
+                     *           "scope": "branch",
+                     *           "scope_id": "branch:session-a:alt-1",
+                     *           "scope_ref": {
+                     *             "branch_id": "alt-1",
+                     *             "session_id": "session-a"
+                     *           },
+                     *           "updated_at": 1735689720100,
+                     *           "value": "campfire"
                      *         }
                      *       ],
                      *       "meta": {
@@ -14551,7 +14829,7 @@ export interface operations {
                      *         "offset": 0,
                      *         "sort_by": "updated_at",
                      *         "sort_order": "desc",
-                     *         "total": 1
+                     *         "total": 2
                      *       }
                      *     }
                      */
@@ -14560,8 +14838,12 @@ export interface operations {
                             id: string;
                             key: string;
                             /** @enum {string} */
-                            scope: "global" | "chat" | "floor" | "page";
+                            scope: "global" | "chat" | "floor" | "branch" | "page";
                             scope_id: string;
+                            scope_ref?: {
+                                branch_id: string;
+                                session_id: string;
+                            };
                             updated_at: number;
                             value: unknown;
                         }[];
@@ -14605,21 +14887,13 @@ export interface operations {
         };
         requestBody: {
             content: {
-                /**
-                 * @example {
-                 *       "key": "mood",
-                 *       "scope": "chat",
-                 *       "scope_id": "session-a",
-                 *       "value": {
-                 *         "score": 20
-                 *       }
-                 *     }
-                 */
                 "application/json": {
+                    branch_id?: string;
                     key: string;
                     /** @enum {string} */
-                    scope: "global" | "chat" | "floor" | "page";
-                    scope_id: string;
+                    scope: "global" | "chat" | "floor" | "branch" | "page";
+                    scope_id?: string;
+                    session_id?: string;
                     value: unknown;
                 };
             };
@@ -14662,8 +14936,12 @@ export interface operations {
                             id: string;
                             key: string;
                             /** @enum {string} */
-                            scope: "global" | "chat" | "floor" | "page";
+                            scope: "global" | "chat" | "floor" | "branch" | "page";
                             scope_id: string;
+                            scope_ref?: {
+                                branch_id: string;
+                                session_id: string;
+                            };
                             updated_at: number;
                             value: unknown;
                         };
@@ -14707,8 +14985,12 @@ export interface operations {
                             id: string;
                             key: string;
                             /** @enum {string} */
-                            scope: "global" | "chat" | "floor" | "page";
+                            scope: "global" | "chat" | "floor" | "branch" | "page";
                             scope_id: string;
+                            scope_ref?: {
+                                branch_id: string;
+                                session_id: string;
+                            };
                             updated_at: number;
                             value: unknown;
                         };
@@ -14816,8 +15098,12 @@ export interface operations {
                             id: string;
                             key: string;
                             /** @enum {string} */
-                            scope: "global" | "chat" | "floor" | "page";
+                            scope: "global" | "chat" | "floor" | "branch" | "page";
                             scope_id: string;
+                            scope_ref?: {
+                                branch_id: string;
+                                session_id: string;
+                            };
                             updated_at: number;
                             value: unknown;
                         };
@@ -14937,16 +15223,25 @@ export interface operations {
                  *           "scope": "chat",
                  *           "scope_id": "session-a",
                  *           "value": "campfire"
+                 *         },
+                 *         {
+                 *           "branch_id": "alt-1",
+                 *           "key": "route",
+                 *           "scope": "branch",
+                 *           "session_id": "session-a",
+                 *           "value": "campfire"
                  *         }
                  *       ]
                  *     }
                  */
                 "application/json": {
                     items: {
+                        branch_id?: string;
                         key: string;
                         /** @enum {string} */
-                        scope: "global" | "chat" | "floor" | "page";
-                        scope_id: string;
+                        scope: "global" | "chat" | "floor" | "branch" | "page";
+                        scope_id?: string;
+                        session_id?: string;
                         value: unknown;
                     }[];
                 };
@@ -14963,8 +15258,8 @@ export interface operations {
                      * @example {
                      *       "data": {
                      *         "meta": {
-                     *           "created": 1,
-                     *           "total": 2,
+                     *           "created": 2,
+                     *           "total": 3,
                      *           "updated": 1
                      *         },
                      *         "results": [
@@ -14993,6 +15288,22 @@ export interface operations {
                      *               "value": "campfire"
                      *             },
                      *             "index": 1
+                     *           },
+                     *           {
+                     *             "action": "created",
+                     *             "data": {
+                     *               "id": "var_branch_route",
+                     *               "key": "route",
+                     *               "scope": "branch",
+                     *               "scope_id": "branch:session-a:alt-1",
+                     *               "scope_ref": {
+                     *                 "branch_id": "alt-1",
+                     *                 "session_id": "session-a"
+                     *               },
+                     *               "updated_at": 1735689720100,
+                     *               "value": "campfire"
+                     *             },
+                     *             "index": 2
                      *           }
                      *         ]
                      *       }
@@ -15024,8 +15335,12 @@ export interface operations {
                                     id: string;
                                     key: string;
                                     /** @enum {string} */
-                                    scope: "global" | "chat" | "floor" | "page";
+                                    scope: "global" | "chat" | "floor" | "branch" | "page";
                                     scope_id: string;
+                                    scope_ref?: {
+                                        branch_id: string;
+                                        session_id: string;
+                                    };
                                     updated_at: number;
                                     value: unknown;
                                 };
@@ -15092,6 +15407,7 @@ export interface operations {
         parameters: {
             query: {
                 session_id: string;
+                branch_id?: string;
                 floor_id?: string;
                 page_id?: string;
                 include_layers?: boolean;
@@ -15113,12 +15429,35 @@ export interface operations {
                      *       "data": {
                      *         "context": {
                      *           "account_id": "default-admin",
+                     *           "branch_id": "alt-1",
                      *           "floor_id": "floor-a",
                      *           "global_scope_id": "global",
                      *           "page_id": "page-a",
                      *           "session_id": "session-a"
                      *         },
                      *         "layers": {
+                     *           "branch": {
+                     *             "items": [
+                     *               {
+                     *                 "id": "var_branch_route",
+                     *                 "key": "route",
+                     *                 "scope": "branch",
+                     *                 "scope_id": "branch:session-a:alt-1",
+                     *                 "scope_ref": {
+                     *                   "branch_id": "alt-1",
+                     *                   "session_id": "session-a"
+                     *                 },
+                     *                 "updated_at": 1735689720100,
+                     *                 "value": "campfire"
+                     *               }
+                     *             ],
+                     *             "scope": "branch",
+                     *             "scope_id": "branch:session-a:alt-1",
+                     *             "scope_ref": {
+                     *               "branch_id": "alt-1",
+                     *               "session_id": "session-a"
+                     *             }
+                     *           },
                      *           "chat": {
                      *             "items": [
                      *               {
@@ -15157,6 +15496,17 @@ export interface operations {
                      *             "source_scope_id": "floor-a",
                      *             "updated_at": 1735689720000,
                      *             "value": "tense"
+                     *           },
+                     *           {
+                     *             "key": "route",
+                     *             "source_scope": "branch",
+                     *             "source_scope_id": "branch:session-a:alt-1",
+                     *             "source_scope_ref": {
+                     *               "branch_id": "alt-1",
+                     *               "session_id": "session-a"
+                     *             },
+                     *             "updated_at": 1735689720100,
+                     *             "value": "campfire"
                      *           }
                      *         ]
                      *       }
@@ -15166,74 +15516,133 @@ export interface operations {
                         data: {
                             context: {
                                 account_id: string;
+                                branch_id?: string;
                                 floor_id?: string;
                                 global_scope_id: string;
                                 page_id?: string;
                                 session_id: string;
                             };
                             layers?: {
+                                branch?: {
+                                    items: {
+                                        id: string;
+                                        key: string;
+                                        /** @enum {string} */
+                                        scope: "global" | "chat" | "floor" | "branch" | "page";
+                                        scope_id: string;
+                                        scope_ref?: {
+                                            branch_id: string;
+                                            session_id: string;
+                                        };
+                                        updated_at: number;
+                                        value: unknown;
+                                    }[];
+                                    /** @enum {string} */
+                                    scope: "global" | "chat" | "floor" | "branch" | "page";
+                                    scope_id: string;
+                                    scope_ref?: {
+                                        branch_id: string;
+                                        session_id: string;
+                                    };
+                                };
                                 chat?: {
                                     items: {
                                         id: string;
                                         key: string;
                                         /** @enum {string} */
-                                        scope: "global" | "chat" | "floor" | "page";
+                                        scope: "global" | "chat" | "floor" | "branch" | "page";
                                         scope_id: string;
+                                        scope_ref?: {
+                                            branch_id: string;
+                                            session_id: string;
+                                        };
                                         updated_at: number;
                                         value: unknown;
                                     }[];
                                     /** @enum {string} */
-                                    scope: "global" | "chat" | "floor" | "page";
+                                    scope: "global" | "chat" | "floor" | "branch" | "page";
                                     scope_id: string;
+                                    scope_ref?: {
+                                        branch_id: string;
+                                        session_id: string;
+                                    };
                                 };
                                 floor?: {
                                     items: {
                                         id: string;
                                         key: string;
                                         /** @enum {string} */
-                                        scope: "global" | "chat" | "floor" | "page";
+                                        scope: "global" | "chat" | "floor" | "branch" | "page";
                                         scope_id: string;
+                                        scope_ref?: {
+                                            branch_id: string;
+                                            session_id: string;
+                                        };
                                         updated_at: number;
                                         value: unknown;
                                     }[];
                                     /** @enum {string} */
-                                    scope: "global" | "chat" | "floor" | "page";
+                                    scope: "global" | "chat" | "floor" | "branch" | "page";
                                     scope_id: string;
+                                    scope_ref?: {
+                                        branch_id: string;
+                                        session_id: string;
+                                    };
                                 };
                                 global?: {
                                     items: {
                                         id: string;
                                         key: string;
                                         /** @enum {string} */
-                                        scope: "global" | "chat" | "floor" | "page";
+                                        scope: "global" | "chat" | "floor" | "branch" | "page";
                                         scope_id: string;
+                                        scope_ref?: {
+                                            branch_id: string;
+                                            session_id: string;
+                                        };
                                         updated_at: number;
                                         value: unknown;
                                     }[];
                                     /** @enum {string} */
-                                    scope: "global" | "chat" | "floor" | "page";
+                                    scope: "global" | "chat" | "floor" | "branch" | "page";
                                     scope_id: string;
+                                    scope_ref?: {
+                                        branch_id: string;
+                                        session_id: string;
+                                    };
                                 };
                                 page?: {
                                     items: {
                                         id: string;
                                         key: string;
                                         /** @enum {string} */
-                                        scope: "global" | "chat" | "floor" | "page";
+                                        scope: "global" | "chat" | "floor" | "branch" | "page";
                                         scope_id: string;
+                                        scope_ref?: {
+                                            branch_id: string;
+                                            session_id: string;
+                                        };
                                         updated_at: number;
                                         value: unknown;
                                     }[];
                                     /** @enum {string} */
-                                    scope: "global" | "chat" | "floor" | "page";
+                                    scope: "global" | "chat" | "floor" | "branch" | "page";
                                     scope_id: string;
+                                    scope_ref?: {
+                                        branch_id: string;
+                                        session_id: string;
+                                    };
                                 };
                             };
                             resolved: {
                                 key: string;
                                 /** @enum {string} */
-                                source_scope: "global" | "chat" | "floor" | "page";
+                                source_scope: "global" | "chat" | "floor" | "branch" | "page";
                                 source_scope_id: string;
+                                source_scope_ref?: {
+                                    branch_id: string;
+                                    session_id: string;
+                                };
                                 updated_at: number;
                                 value: unknown;
                             }[];

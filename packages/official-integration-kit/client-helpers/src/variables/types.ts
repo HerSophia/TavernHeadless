@@ -1,4 +1,4 @@
-import type { ResolvedVariablesSnapshot, VariableScope } from "@tavern/sdk";
+import type { BranchVariableScopeRef, ResolvedVariablesSnapshot, VariableScope } from "@tavern/sdk";
 
 export type VariableSnapshotLike = Pick<ResolvedVariablesSnapshot, "layers" | "resolved"> | null | undefined;
 
@@ -7,6 +7,7 @@ export type VariableInspectorLayerValue = {
   preview: string;
   scope: VariableScope;
   scopeId: string;
+  scopeRef?: BranchVariableScopeRef;
   updatedAt: number;
   value: unknown;
 };
@@ -17,6 +18,7 @@ export type VariableInspectorRow = {
   preview: string;
   sourceScope: VariableScope;
   sourceScopeId: string;
+  sourceScopeRef?: BranchVariableScopeRef;
   updatedAt: number;
   value: unknown;
 };

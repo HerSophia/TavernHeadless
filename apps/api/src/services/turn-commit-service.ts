@@ -18,6 +18,7 @@ import {
 import type { AppDb, DbExecutor } from "../db/client.js";
 import {
   floors,
+  floorResultSnapshots,
   messagePages,
   messages,
   promptSnapshots,
@@ -40,10 +41,12 @@ import {
 import { VARIABLE_MUTATION_KINDS } from "./variable-mutation-applier.js";
 import type { MutationRuntime } from "./runtime-mutation-types.js";
 import type { ToolRuntimeJobBridge } from "./tool-runtime-job-bridge.js";
+import type { FloorRunService } from "./floor-run-service.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
 type PromptSnapshotInsert = typeof promptSnapshots.$inferInsert;
+type FloorResultSnapshotInsert = typeof floorResultSnapshots.$inferInsert;
 type ToolExecutionInsert = typeof toolExecutionRecords.$inferInsert;
 
 interface MemoryCommitInput {
@@ -83,6 +86,7 @@ export interface TurnCommitServiceOptions {
   enableAsyncMemoryIngest?: boolean;
   memoryJobScheduler?: MemoryJobScheduler;
   mutationRuntime?: MutationRuntime;
+  floorRunService?: FloorRunService;
   toolRuntimeJobBridge?: ToolRuntimeJobBridge;
 }
 
@@ -148,6 +152,37 @@ function toPromptSnapshotInsert(record: PromptSnapshotRecord): PromptSnapshotIns
     promptDigest: record.promptDigest,
     tokenEstimate: record.tokenEstimate,
     createdAt: record.createdAt,
+  };
+}
+
+function toFloorResultSnapshotInsert(input: {
+  floorId: string;
+  outputPageId: string;
+  assistantMessageId: string;
+  generatedText: string;
+  summaries: string[];
+  usage: TokenUsage;
+  verifierResult?: TurnExecutionResult["verifierResult"];
+  committedAt: number;
+}): FloorResultSnapshotInsert {
+  const verifier = input.verifierResult
+    ? {
+        status: input.verifierResult.output.passed ? "passed" : "warned",
+        suggestion: input.verifierResult.output.suggestion,
+        issues: input.verifierResult.output.issues,
+      }
+    : null;
+
+  return {
+    floorId: input.floorId,
+    outputPageId: input.outputPageId,
+    assistantMessageId: input.assistantMessageId,
+    generatedText: input.generatedText,
+    summariesJson: JSON.stringify(input.summaries),
+    usageJson: JSON.stringify(input.usage),
+    verifierJson: verifier ? JSON.stringify(verifier) : null,
+    committedAt: input.committedAt,
+    updatedAt: input.committedAt,
   };
 }
 
@@ -225,6 +260,7 @@ export class TurnCommitService {
   private readonly variableCommitService: VariableCommitService;
   private readonly enableAsyncMemoryIngest: boolean;
   private readonly memoryJobScheduler: MemoryJobScheduler;
+  private readonly floorRunService?: FloorRunService;
   private readonly toolRuntimeJobBridge?: ToolRuntimeJobBridge;
 
   constructor(
@@ -242,6 +278,7 @@ export class TurnCommitService {
       mutationRuntime: options.mutationRuntime,
       eventBus: this.eventBus,
     });
+    this.floorRunService = options.floorRunService;
     this.toolRuntimeJobBridge = options.toolRuntimeJobBridge;
   }
 
@@ -447,6 +484,41 @@ export class TurnCommitService {
           throw new FloorStateConflictError(input.floorId, "generating", currentRow.state);
         }
 
+        tx
+          .insert(floorResultSnapshots)
+          .values(
+            toFloorResultSnapshotInsert({
+              floorId: input.floorId,
+              outputPageId: assistantMessage.pageId,
+              assistantMessageId: assistantMessage.messageId,
+              generatedText: input.execution.generatedText,
+              summaries: input.execution.summaries,
+              usage,
+              verifierResult: input.execution.verifierResult,
+              committedAt,
+            })
+          )
+          .onConflictDoUpdate({
+            target: floorResultSnapshots.floorId,
+            set: {
+              outputPageId: assistantMessage.pageId,
+              assistantMessageId: assistantMessage.messageId,
+              generatedText: input.execution.generatedText,
+              summariesJson: JSON.stringify(input.execution.summaries),
+              usageJson: JSON.stringify(usage),
+              verifierJson: input.execution.verifierResult
+                ? JSON.stringify({
+                    status: input.execution.verifierResult.output.passed ? "passed" : "warned",
+                    suggestion: input.execution.verifierResult.output.suggestion,
+                    issues: input.execution.verifierResult.output.issues,
+                  })
+                : null,
+              committedAt,
+              updatedAt: committedAt,
+            },
+          })
+          .run();
+
         if (actualToolExecutionRunIds.length > 0) {
           tx
             .update(toolExecutionRecords)
@@ -528,12 +600,30 @@ export class TurnCommitService {
       throw error;
     }
 
+    try {
+      await this.floorRunService?.advancePhase(input.floorId, "transaction_committed");
+    } catch {
+      // best-effort
+    }
+
     await transactionResult.variableMutationApply.runAfterCommit();
     await this.emitPostCommitEvents(
       transactionResult.floor,
       transactionResult.variableCommit,
       pendingEvents
     );
+
+    try {
+      await this.floorRunService?.advancePhase(input.floorId, "post_commit_scheduled");
+    } catch {
+      // best-effort
+    }
+
+    try {
+      await this.floorRunService?.markCompleted(input.floorId);
+    } catch {
+      // best-effort
+    }
 
     return {
       floorId: input.floorId,
@@ -574,6 +664,7 @@ export class TurnCommitService {
       try {
         await this.eventBus.emit("variable.promoted", {
           sessionId: floor.sessionId,
+          branchId: floor.branchId,
           key: variable.key,
           fromScope: variableCommit.fromScope,
           toScope: variableCommit.toScope,

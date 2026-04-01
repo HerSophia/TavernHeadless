@@ -58,7 +58,7 @@ export type ThChatFloor = z.infer<typeof thChatFloorSchema>;
 // ── Variable ──────────────────────────────────────────
 
 export const thChatVariableSchema = z.object({
-  scope: z.enum(['chat', 'floor', 'page']),
+  scope: z.enum(['chat', 'floor', 'branch', 'page']),
   scope_id_ref: z.string().nullable(),
   key: z.string(),
   value: z.unknown(),

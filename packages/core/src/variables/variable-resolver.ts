@@ -1,11 +1,11 @@
-import { SCOPE_PRIORITY, type VariableScope, type VariableEntry } from '@tavern/shared';
+import { SCOPE_PRIORITY, buildBranchVariableScopeId, type VariableScope, type VariableEntry } from '@tavern/shared';
 import type { VariableContext } from '../types.js';
 import type { VariableRepository, VariableRepositoryOptions } from '../ports/index.js';
 
 /** scope → VariableContext 中对应字段的映射 */
 type ScopeContextKey = 'pageId' | 'floorId' | 'sessionId' | 'globalScopeId';
 
-const SCOPE_TO_CONTEXT_KEY: Record<VariableScope, ScopeContextKey> = {
+const SCOPE_TO_CONTEXT_KEY: Partial<Record<VariableScope, ScopeContextKey>> = {
   page: 'pageId',
   floor: 'floorId',
   chat: 'sessionId',
@@ -20,7 +20,16 @@ const DEFAULT_GLOBAL_SCOPE_ID = 'global';
  * global 如果未设置则使用默认值 'global'
  */
 function getScopeId(scope: VariableScope, context: VariableContext): string | undefined {
+  if (scope === 'branch') {
+    if (!context.sessionId || !context.branchId) {
+      return undefined;
+    }
+
+    return buildBranchVariableScopeId(context.sessionId, context.branchId);
+  }
+
   const key = SCOPE_TO_CONTEXT_KEY[scope];
+  if (!key) return undefined;
   const value = context[key];
   if (value !== undefined) return value;
   if (scope === 'global') return DEFAULT_GLOBAL_SCOPE_ID;
@@ -55,7 +64,7 @@ function getToolMutationState(context: VariableContext): {
 /**
  * 变量级联读取器
  *
- * 按优先级 page → floor → chat → global 逐级查找变量。
+ * 按优先级 page → floor → branch → chat → global 逐级查找变量。
  * 找到即返回，跳过 context 中未提供 scopeId 的层级。
  */
 export class VariableResolver {
@@ -128,7 +137,7 @@ export class VariableResolver {
     const repoOptions = getRepositoryOptions(context);
     const toolMutationState = getToolMutationState(context);
 
-    // 反向遍历：global → chat → floor → page，后写入的覆盖先写入的
+    // 反向遍历：global → chat → branch → floor → page，后写入的覆盖先写入的
     const reversedScopes = [...SCOPE_PRIORITY].reverse();
 
     for (const scope of reversedScopes) {

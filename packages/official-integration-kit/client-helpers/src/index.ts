@@ -1,5 +1,6 @@
 export { mapApiErrorToUiState, type UiStateError } from "./errors/map-api-error-to-ui-state.js";
 export { getActivePage } from "./selectors/get-active-page.js";
+export { getDisplayPage } from "./selectors/get-display-page.js";
 export {
   createInitialRespondStreamState,
   reduceRespondStream,

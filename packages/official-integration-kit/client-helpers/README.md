@@ -44,6 +44,7 @@ TavernHeadless 官方接入的语义层。
 | `createInitialRespondStreamState` | 创建流式生成的初始状态 |
 | `reduceRespondStream` | 根据 SSE 事件累积流式状态 |
 | `groupToolEventsByExecution` | 把同一次工具执行的流式事件整理成历史组 |
+| `getDisplayPage` | 优先使用运行中的候选输出，否则回退到 active page |
 | `getActivePage` | 从楼层中选出当前活动页 |
 | `flattenVariableSnapshot` | 把 resolved variable snapshot 整理成 inspector 可用行 |
 | `sortVariableInspectorRows` | 对变量 inspector 行做稳定排序 |
@@ -125,6 +126,7 @@ for (const event of events) {
 
 同一条流里如果还有 `tool` 事件，reducer 也会一起累积：
 
+- `run`：当前楼层运行快照
 - `activeTools`：当前仍在执行中的工具
 - `toolEvents`：完整的工具事件历史
 - `warnings`：根据 `replaySafety` 推导出的重放警告
@@ -143,6 +145,7 @@ for (const event of events) {
 | `error` | 错误信息（仅 error 状态） |
 | `activeTools` | 当前仍在执行中的工具事件索引 |
 | `toolEvents` | 已收到的全部工具事件 |
+| `run` | 最近一次收到的楼层运行快照 |
 | `warnings` | 由工具重放安全信息推导出的警告 |
 | `result` | 最终结果（仅 done 状态，保留 `generatedText` / `summaries` / `finalState`） |
 
@@ -168,6 +171,25 @@ console.log(catalogSummary.conflictCount);
 
 ### 选择 active page
 
+如果界面同时需要处理：
+
+- 已提交的 `activePage`
+- 运行中的 `pendingOutput`
+
+可以直接使用 `getDisplayPage`：
+
+```ts
+import { getDisplayPage } from "@tavern/client-helpers";
+
+const display = getDisplayPage({
+  pendingOutput: floorRun.run?.pendingOutput,
+  activePage: floor.activePage,
+  pages: floor.pages,
+});
+```
+
+只需要真实持久化页时，再继续使用 `getActivePage`。
+
 一个楼层可以有多个页面（分支）。`getActivePage` 帮你从楼层数据中取出当前活动页：
 
 ```ts
@@ -190,6 +212,7 @@ import { flattenVariableSnapshot, sortVariableInspectorRows } from "@tavern/clie
 
 const snapshot = await client.variables.resolveContext({
   sessionId: "session-1",
+  branchId: "alt-1",
   floorId: "floor-1",
   pageId: "page-1",
   includeLayers: true,
@@ -211,8 +234,9 @@ console.log(rows[0]?.layers);
 | `preview` | 适合界面展示的预览字符串 |
 | `sourceScope` | 当前胜出值来自哪个 scope |
 | `sourceScopeId` | 当前胜出值来自哪个 scope_id |
+| `sourceScopeRef` | 如果来自 `branch`，这里会给出 `{ sessionId, branchId }` |
 | `updatedAt` | 当前胜出值的更新时间 |
-| `layers` | 可选的各层值快照，已按 `page → floor → chat → global` 排序 |
+| `layers` | 可选的各层值快照，已按 `page → floor → branch → chat → global` 排序 |
 
 ### 错误映射
 

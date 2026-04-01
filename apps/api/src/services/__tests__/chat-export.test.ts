@@ -5,7 +5,7 @@ import { createDatabase, type AppDb } from '../../db/client.js';
 import { accounts, sessions, floors, messagePages, memoryEdges, memoryItems, messages, variables } from '../../db/schema.js';
 import { DEFAULT_ADMIN_ACCOUNT_ID } from '../../accounts/constants.js';
 import { stringifyJsonField } from '../../lib/http.js';
-import { TH_CHAT_SPEC, TH_CHAT_SPEC_VERSION } from '@tavern/shared';
+import { TH_CHAT_SPEC, TH_CHAT_SPEC_VERSION, buildBranchVariableScopeId } from '@tavern/shared';
 import {
   serializeSessionToThChat,
   serializeSessionToStJsonl,
@@ -219,6 +219,7 @@ describe('serializeSessionToThChat', () => {
 
   it('filters exported variables by account', () => {
     const { sessionId } = seedMinimalSession(db);
+    const branchScopeId = buildBranchVariableScopeId(sessionId, 'main');
 
     db.insert(accounts).values({
       id: 'account-b',
@@ -239,6 +240,15 @@ describe('serializeSessionToThChat', () => {
       },
       {
         id: nanoid(),
+        accountId: ACCOUNT_ID,
+        scope: 'branch',
+        scopeId: branchScopeId,
+        key: 'branch_var',
+        valueJson: JSON.stringify('campfire'),
+        updatedAt: NOW,
+      },
+      {
+        id: nanoid(),
         accountId: 'account-b',
         scope: 'chat',
         scopeId: sessionId,
@@ -249,7 +259,16 @@ describe('serializeSessionToThChat', () => {
     ]).run();
 
     const result = serializeSessionToThChat(db, sessionId, { accountId: ACCOUNT_ID, includeVariables: true });
-    expect(result.data.variables).toEqual([{ scope: 'chat', scope_id_ref: null, key: 'local_var', value: 42, updated_at: NOW }]);
+    expect(result.data.variables).toEqual([
+      { scope: 'chat', scope_id_ref: null, key: 'local_var', value: 42, updated_at: NOW },
+      {
+        scope: 'branch',
+        scope_id_ref: 'main',
+        key: 'branch_var',
+        value: 'campfire',
+        updated_at: NOW,
+      },
+    ]);
   });
 
   it('exports memory v2 metadata and extended relations in thchat format', () => {

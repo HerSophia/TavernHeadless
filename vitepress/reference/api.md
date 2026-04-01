@@ -158,7 +158,7 @@ WebSocket 也遵循相同边界：
 | Messages | 消息管理、批量操作 | [Messages](./api/messages) |
 | Characters | 角色卡管理、版本控制 | [Characters](./api/characters) |
 | Users | 用户卡管理 | [Users](./api/users) |
-| Variables | 四级变量系统 | [Variables](./api/variables) |
+| Variables | 五级变量系统 | [Variables](./api/variables) |
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
 | Exports | 资源导出（聊天、预设、世界书、正则、角色卡） | [Exports](./api/exports) |

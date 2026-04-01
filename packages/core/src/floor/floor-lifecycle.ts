@@ -55,7 +55,8 @@ export class FloorLifecycle {
         context.pageId,
         'floor',
         context.floorId,
-        context.accountId
+        context.accountId,
+        { sessionId: context.sessionId, branchId: context.branchId }
       );
     }
 
