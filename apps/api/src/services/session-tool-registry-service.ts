@@ -19,6 +19,7 @@ import { parseJsonField } from "../lib/http.js";
 import { McpToolProvider } from "../mcp/mcp-tool-provider.js";
 import type { McpConnectionManager } from "../mcp/mcp-connection-manager.js";
 import { McpService } from "./mcp-service.js";
+import type { ToolRuntimePolicy } from "./tool-runtime-policy.js";
 
 const INSTANCE_SLOTS = new Set<InstanceSlot>([
   "narrator",
@@ -85,6 +86,7 @@ export class SessionToolRegistryServiceError extends Error {
 export interface SessionToolRegistryServiceOptions {
   baseRegistry: ToolRegistry;
   mcpManager?: McpConnectionManager;
+  toolRuntimePolicy?: ToolRuntimePolicy;
 }
 
 interface RuntimeToolCandidate {
@@ -503,7 +505,9 @@ export class SessionToolRegistryService {
     const mcpCandidatesByName = new Map<string, RuntimeToolCandidate[]>();
 
     for (const config of configs) {
-      const provider = new McpToolProvider(config, this.options.mcpManager);
+      const provider = new McpToolProvider(config, this.options.mcpManager, {
+        toolRuntimePolicy: this.options.toolRuntimePolicy,
+      });
       const tools = await provider.listTools();
       const candidates = tools.map<RuntimeToolCandidate>((tool) => ({
         name: tool.name,

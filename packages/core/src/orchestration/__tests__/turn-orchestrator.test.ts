@@ -833,6 +833,57 @@ describe('TurnOrchestrator — Tool Integration', () => {
     expect(JSON.parse(result.toolExecutionRecords![0]!.resultJson)).toEqual({ result: 42 });
   });
 
+  it('returns pendingToolJobs when a tool is configured for deferred async delivery', async () => {
+    const deferredTool: ToolDefinition = {
+      name: 'mcp_create_issue',
+      description: 'Create an issue and return a deferred receipt.',
+      parameters: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] },
+      sideEffectLevel: 'irreversible',
+      allowedSlots: [],
+      source: 'mcp',
+      asyncCapability: 'deferred_ok',
+      defaultDeliveryMode: 'async_job',
+      resultVisibility: 'deferred_receipt',
+    };
+
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (runInput) => {
+          await runInput.tools?.mcp_create_issue?.execute({ title: 'Need help' });
+          return makeGenOutput();
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const executeTool = vi.fn(async () => ({ data: { shouldNot: 'run-inline' } }));
+    const registry = new ToolRegistry();
+    registry.register({
+      id: 'mcp:test-server',
+      type: 'mcp',
+      listTools: vi.fn().mockResolvedValue([deferredTool]),
+      executeTool,
+    });
+
+    const result = await orchestrator.executeTurn(makeInput({
+      accountId: 'account-1',
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions({ allowIrreversible: true }),
+      pageId: 'input-page-1',
+    }));
+
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result.toolExecutionRecords).toEqual([
+      expect.objectContaining({ toolName: 'mcp_create_issue', status: 'queued', deliveryMode: 'async_job' }),
+    ]);
+    expect(result.pendingToolJobs).toEqual([
+      expect.objectContaining({
+        envelope: expect.objectContaining({ toolName: 'mcp_create_issue', providerType: 'mcp', deliveryMode: 'async_job' }),
+      }),
+    ]);
+  });
+
   it('blocks verifier retry when the attempt executed a non-replay-safe tool', async () => {
     const unsafeTool: ToolDefinition = {
       name: 'create_character',

@@ -3,6 +3,7 @@ import type { ToolExecutionContext } from '@tavern/core';
 import { McpToolProvider } from '../mcp-tool-provider.js';
 import { McpConnectionManager } from '../mcp-connection-manager.js';
 import type { McpServerConfig, McpConnectionState } from '../types.js';
+import { ToolRuntimePolicy } from '../../services/tool-runtime-policy.js';
 
 // ── Mock McpConnection ────────────────────────────
 
@@ -125,6 +126,32 @@ describe('McpToolProvider', () => {
       const tools = await provider.listTools();
 
       expect(tools).toHaveLength(0);
+    });
+
+    it('按 runtime policy 为显式允许的 MCP 工具标注 deferred async metadata', async () => {
+      const config = makeConfig({ id: 'mcp-1' });
+      const mockConn = createMockConnection({
+        tools: [
+          { name: 'github_create_issue', description: 'Create an issue' },
+        ],
+      });
+
+      vi.spyOn(manager, 'getConnection').mockResolvedValue(mockConn as any);
+
+      const provider = new McpToolProvider(config, manager, {
+        toolRuntimePolicy: new ToolRuntimePolicy({
+          enableDeferredIrreversibleTools: true,
+          deferredMcpTools: ['mcp-1/github_create_issue'],
+        }),
+      });
+      const [tool] = await provider.listTools();
+
+      expect(tool).toMatchObject({
+        asyncCapability: 'deferred_ok',
+        defaultDeliveryMode: 'async_job',
+        resultVisibility: 'deferred_receipt',
+      });
+      expect(tool?.description).toContain('acceptance receipt');
     });
   });
 

@@ -15,7 +15,7 @@ export type ToolDefinitionSource = "preset" | "character" | "custom";
 export type ToolHandlerType = "script" | "prompt" | "delegate";
 export type ToolCallRecordStatus = "success" | "error" | "denied";
 
-export type ToolExecutionStatus = ToolCallRecordStatus | "running" | "timeout" | "uncertain" | "blocked";
+export type ToolExecutionStatus = ToolCallRecordStatus | "running" | "queued" | "timeout" | "uncertain" | "blocked";
 export type ToolExecutionLifecycleState = "opened" | "finished";
 export type ToolExecutionCommitOutcome = "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
 export type ToolExecutionProviderType = "builtin" | "preset" | "mcp" | "unknown";

@@ -166,6 +166,44 @@ describe("DrizzleToolExecutionRepository", () => {
     });
   });
 
+  it("persists queued deferred executions through open()", async () => {
+    await insertFloor("floor-1", 1);
+
+    const queued: ToolExecutionOpenRecord = {
+      id: "queued-1",
+      runId: "run-queued",
+      floorId: "floor-1",
+      callerSlot: "narrator",
+      providerId: "mcp:test-server",
+      providerType: "mcp",
+      toolName: "mcp_create_issue",
+      argsJson: JSON.stringify({ title: "Need help" }),
+      sideEffectLevel: "irreversible",
+      status: "queued",
+      deliveryMode: "async_job",
+      resultJson: JSON.stringify({ accepted: true, status: "queued" }),
+      startedAt: 20_000,
+      createdAt: 20_000,
+      attemptNo: 1,
+    };
+
+    await repo.open(queued);
+
+    const [record] = await repo.findByRunId("run-queued");
+    expect(record).toMatchObject({
+      id: "queued-1",
+      runId: "run-queued",
+      providerId: "mcp:test-server",
+      providerType: "mcp",
+      toolName: "mcp_create_issue",
+      status: "queued",
+      lifecycleState: "opened",
+      deliveryMode: "async_job",
+      resultJson: JSON.stringify({ accepted: true, status: "queued" }),
+      finishedAt: undefined,
+    });
+  });
+
   it("finds records by run id", async () => {
     await insertFloor("floor-1", 1);
     await insertFloor("floor-2", 2);

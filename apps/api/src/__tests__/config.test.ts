@@ -88,16 +88,22 @@ describe("loadConfig", () => {
     expect(config.enableAsyncMemoryIngest).toBe(false);
     expect(config.enableMacroCompaction).toBe(false);
     expect(config.enableDualSummaryInjection).toBe(false);
+    expect(config.enableDeferredIrreversibleTools).toBe(false);
+    expect(config.deferredIrreversibleMcpTools).toEqual([]);
   });
 
   it("reads Memory V2 feature flags", () => {
     vi.stubEnv("ENABLE_ASYNC_MEMORY_INGEST", "true");
     vi.stubEnv("ENABLE_MACRO_COMPACTION", "true");
     vi.stubEnv("ENABLE_DUAL_SUMMARY_INJECTION", "true");
+    vi.stubEnv("ENABLE_DEFERRED_IRREVERSIBLE_TOOLS", "true");
+    vi.stubEnv("DEFERRED_IRREVERSIBLE_MCP_TOOLS", "mcp-1/github_create_issue,mcp-2/files_write");
     const config = loadConfig();
     expect(config.enableAsyncMemoryIngest).toBe(true);
     expect(config.enableMacroCompaction).toBe(true);
     expect(config.enableDualSummaryInjection).toBe(true);
+    expect(config.enableDeferredIrreversibleTools).toBe(true);
+    expect(config.deferredIrreversibleMcpTools).toEqual(["mcp-1/github_create_issue", "mcp-2/files_write"]);
   });
 
   it("reads MemoryWorker tuning envs", () => {

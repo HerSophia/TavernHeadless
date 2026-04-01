@@ -3,9 +3,16 @@
 // 类型
 export type {
   ToolSideEffectLevel,
+  ToolExecutionDeliveryMode,
+  ToolAsyncCapability,
+  ToolResultVisibility,
   ToolParameterProperty,
   ToolParameterSchema,
   ToolDefinition,
+  ToolAsyncReceipt,
+  RuntimeToolEnvelope,
+  PendingToolJobRequest,
+  RuntimeToolDispatchResult,
   ToolCallResult,
   ToolCallStatus,
   ToolExecutionStatus,

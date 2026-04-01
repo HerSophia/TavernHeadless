@@ -23,6 +23,8 @@
  * - ENABLE_ASYNC_MEMORY_INGEST: 是否启用异步记忆入队主路径（默认 false）
  * - ENABLE_MACRO_COMPACTION: 是否启用 macro summary 压缩能力（默认 false）
  * - ENABLE_DUAL_SUMMARY_INJECTION: 是否启用 micro/macro 双层摘要注入预算（默认 false）
+ * - ENABLE_DEFERRED_IRREVERSIBLE_TOOLS: 是否启用 deferred irreversible tool runtime 入口（默认 false）
+ * - DEFERRED_IRREVERSIBLE_MCP_TOOLS: 允许 deferred 执行的 MCP 工具白名单，格式为 `serverId/toolName`，逗号分隔
  * - MEMORY_INJECTION_DECAY_HALF_LIFE_DAYS: 可选，启用记忆注入衰减排序的半衰期（天）
  * - MEMORY_INJECTION_DECAY_MIN_FACTOR: 可选，衰减因子下限（0-1，默认 0.05）
  * - MEMORY_INJECTION_DECAY_BY: 可选，衰减使用的时间字段（updatedAt | createdAt，默认 updatedAt）
@@ -96,6 +98,10 @@ export interface AppConfig {
   enableMacroCompaction: boolean;
   /** 是否启用 micro/macro 双层摘要注入 */
   enableDualSummaryInjection: boolean;
+  /** 是否启用 deferred irreversible tool runtime 入口 */
+  enableDeferredIrreversibleTools: boolean;
+  /** 允许 deferred 执行的 MCP 工具白名单 */
+  deferredIrreversibleMcpTools: string[];
   /** 可选：MemoryWorker 运行参数 */
   memoryWorker?: {
     pollIntervalMs?: number;
@@ -165,6 +171,8 @@ export function loadConfig(): AppConfig {
   const enableAsyncMemoryIngest = process.env.ENABLE_ASYNC_MEMORY_INGEST === "true";
   const enableMacroCompaction = process.env.ENABLE_MACRO_COMPACTION === "true";
   const enableDualSummaryInjection = process.env.ENABLE_DUAL_SUMMARY_INJECTION === "true";
+  const enableDeferredIrreversibleTools = process.env.ENABLE_DEFERRED_IRREVERSIBLE_TOOLS === "true";
+  const deferredIrreversibleMcpTools = parseDelimitedStrings(process.env.DEFERRED_IRREVERSIBLE_MCP_TOOLS);
   const llmDefaultTimeoutMs = parsePositiveInt(process.env.LLM_DEFAULT_TIMEOUT_MS) ?? 60_000;
   const turnCommitMaxRetries = parseNonNegativeInt(process.env.TURN_COMMIT_MAX_RETRIES) ?? 2;
   const turnCommitRetryBaseDelayMs = parsePositiveInt(process.env.TURN_COMMIT_RETRY_BASE_DELAY_MS) ?? 100;
@@ -243,6 +251,8 @@ export function loadConfig(): AppConfig {
       enableAsyncMemoryIngest,
       enableMacroCompaction,
       enableDualSummaryInjection,
+      enableDeferredIrreversibleTools,
+      deferredIrreversibleMcpTools,
       memoryWorker,
       enableChatTransferWorker,
       chatTransferWorker,
@@ -315,6 +325,8 @@ export function loadConfig(): AppConfig {
     enableAsyncMemoryIngest,
     enableMacroCompaction,
     enableDualSummaryInjection,
+    enableDeferredIrreversibleTools,
+    deferredIrreversibleMcpTools,
     memoryWorker,
     enableChatTransferWorker,
     chatTransferWorker,
@@ -604,6 +616,19 @@ function parseApiKeyAccountMap(raw: string | undefined): Record<string, string> 
   }
 
   return Object.keys(map).length > 0 ? map : undefined;
+}
+
+function parseDelimitedStrings(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return Array.from(new Set(
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0),
+  ));
 }
 
 function parseOptionalNonEmpty(value: string | undefined): string | undefined {

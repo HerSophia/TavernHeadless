@@ -8,13 +8,18 @@ import type { InstanceSlot } from '../llm/types.js';
 import type {
   ExecutedToolCallRecord,
   BufferedToolVariableMutation,
+  PendingToolJobRequest,
   ToolCallResult,
   ToolDefinition,
   ToolDenyReason,
+  ToolExecutionDeliveryMode,
   ToolExecutionContext,
   ToolExecutionOpenRecord,
   ToolExecutionProviderType,
   ToolExecutionStatus,
+  ToolResultVisibility,
+  ToolAsyncReceipt,
+  ToolAsyncCapability,
   ToolPermissions,
   ToolSideEffectLevel,
 } from './types.js';
@@ -28,7 +33,7 @@ export interface LLMToolEntry {
   execute: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
-type FinalToolExecutionStatus = Exclude<ToolExecutionStatus, 'running'>;
+type FinalToolExecutionStatus = Exclude<ToolExecutionStatus, 'running' | 'queued'>;
 
 const FINAL_TOOL_EXECUTION_STATUSES = new Set<FinalToolExecutionStatus>([
   'success',
@@ -83,6 +88,44 @@ function safeJsonStringify(value: unknown): string {
 
 function isFinalToolExecutionStatus(value: unknown): value is FinalToolExecutionStatus {
   return typeof value === 'string' && FINAL_TOOL_EXECUTION_STATUSES.has(value as FinalToolExecutionStatus);
+}
+
+function resolveAsyncCapability(tool: ToolDefinition): ToolAsyncCapability {
+  return tool.asyncCapability ?? 'inline_only';
+}
+
+function resolveDeliveryMode(tool: ToolDefinition): ToolExecutionDeliveryMode {
+  return tool.defaultDeliveryMode ?? 'inline';
+}
+
+function resolveResultVisibility(tool: ToolDefinition): ToolResultVisibility {
+  return tool.resultVisibility ?? 'immediate';
+}
+
+function shouldDispatchDeferred(tool: ToolDefinition): boolean {
+  return tool.sideEffectLevel === 'irreversible'
+    && resolveAsyncCapability(tool) === 'deferred_ok'
+    && resolveDeliveryMode(tool) === 'async_job'
+    && resolveResultVisibility(tool) === 'deferred_receipt';
+}
+
+function buildPlannedToolRuntimeJobId(executionId: string): string {
+  return `tool-job:${executionId}`;
+}
+
+function buildDeferredReceipt(args: {
+  executionId: string;
+  jobId: string;
+  toolName: string;
+}): ToolAsyncReceipt {
+  return {
+    accepted: true,
+    delivery_mode: 'async_job',
+    execution_id: args.executionId,
+    job_id: args.jobId,
+    status: 'queued',
+    message: `Tool '${args.toolName}' was accepted for deferred execution. This turn only receives an acceptance receipt; the final provider result is not available inline.`,
+  };
 }
 
 function inferErrorStatus(
@@ -140,6 +183,9 @@ export class ToolExecutor {
 
   /** 当前回合的工具变量缓冲区 */
   private mutationBuffer: ToolMutationBuffer;
+
+  /** 当前回合已受理、但尚未 durable enqueue 的异步工具请求 */
+  private pendingToolJobs: PendingToolJobRequest[] = [];
 
   constructor(
     private registry: ToolRegistry,
@@ -203,10 +249,52 @@ export class ToolExecutor {
       return this.deny(toolName, args, context, 'max_calls_exceeded', providerId, providerType, sideEffectLevel);
     }
 
+    const deferredDispatch = shouldDispatchDeferred(toolDef);
+
     let providerExecutionStarted = false;
     let openedExecution: ToolExecutionOpenRecord | undefined;
 
     try {
+      if (deferredDispatch) {
+        const executionId = randomUUID();
+        const jobId = buildPlannedToolRuntimeJobId(executionId);
+        const receipt = buildDeferredReceipt({ executionId, jobId, toolName });
+        const receiptJson = safeJsonStringify(receipt);
+
+        openedExecution = await this.openExecutionAttempt({
+          context,
+          recordId: executionId,
+          providerId,
+          providerType,
+          toolName,
+          args,
+          sideEffectLevel,
+          status: 'queued',
+          deliveryMode: 'async_job',
+          resultJson: receiptJson,
+        });
+
+        this.bufferPendingToolJob({
+          openRecord: openedExecution,
+          context,
+          providerId,
+          providerType,
+          toolName,
+          args,
+          sideEffectLevel: sideEffectLevel ?? 'irreversible',
+          jobId,
+          receipt,
+        });
+
+        this.recordQueuedExecution(openedExecution, receipt);
+        this.finalizeTurnCallSlot(true);
+
+        return {
+          data: receipt,
+          executionStatus: 'queued',
+        };
+      }
+
       openedExecution = await this.openExecutionAttempt({
         context,
         providerId,
@@ -404,6 +492,7 @@ export class ToolExecutor {
     this.executionAttemptCount = 0;
     this.generationAttemptNo = 0;
     this.runId = runId ?? randomUUID();
+    this.pendingToolJobs = [];
     this.mutationBuffer = new ToolMutationBuffer(this.runId);
   }
 
@@ -453,6 +542,11 @@ export class ToolExecutor {
     }
 
     return this.mutationBuffer.snapshot(generationAttemptNo);
+  }
+
+  /** 读取当前回合已受理、但尚未 durable enqueue 的异步工具请求。 */
+  getPendingToolJobs(): PendingToolJobRequest[] {
+    return this.pendingToolJobs.map((job) => ({ ...job, envelope: { ...job.envelope }, receipt: { ...job.receipt } }));
   }
 
   // ── 内部方法 ────────────────────────────────────────
@@ -579,18 +673,97 @@ export class ToolExecutor {
     return { error: errorMessage, denied: reason };
   }
 
-  private async openExecutionAttempt(input: {
+  private bufferPendingToolJob(input: {
+    openRecord: ToolExecutionOpenRecord;
     context: ToolExecutionContext;
     providerId: string;
     providerType: ToolExecutionProviderType;
     toolName: string;
     args: Record<string, unknown>;
+    sideEffectLevel: ToolSideEffectLevel;
+    jobId: string;
+    receipt: ToolAsyncReceipt;
+  }): PendingToolJobRequest {
+    const pendingJob: PendingToolJobRequest = {
+      executionId: input.openRecord.id,
+      runId: input.openRecord.runId,
+      jobId: input.jobId,
+      envelope: {
+        executionId: input.openRecord.id,
+        runId: input.openRecord.runId,
+        sessionId: input.context.sessionId,
+        ...(input.context.accountId ? { accountId: input.context.accountId } : {}),
+        floorId: input.context.floorId,
+        ...(input.context.pageId ? { pageId: input.context.pageId } : {}),
+        callerSlot: input.context.callerSlot,
+        providerId: input.providerId,
+        providerType: input.providerType,
+        toolName: input.toolName,
+        args: { ...input.args },
+        sideEffectLevel: input.sideEffectLevel,
+        deliveryMode: 'async_job',
+        asyncCapability: 'deferred_ok',
+        resultVisibility: 'deferred_receipt',
+        acceptedAt: input.openRecord.startedAt,
+      },
+      receipt: { ...input.receipt },
+    };
+
+    this.pendingToolJobs.push(pendingJob);
+    return pendingJob;
+  }
+
+  private recordQueuedExecution(
+    openRecord: ToolExecutionOpenRecord,
+    receipt: ToolAsyncReceipt,
+  ): ExecutedToolCallRecord {
+    const queuedRecord: ExecutedToolCallRecord = {
+      id: openRecord.id,
+      deliveryMode: 'async_job',
+      runId: openRecord.runId,
+      floorId: openRecord.floorId,
+      ...(openRecord.pageId ? { pageId: openRecord.pageId } : {}),
+      callerSlot: openRecord.callerSlot,
+      providerId: openRecord.providerId,
+      providerType: openRecord.providerType,
+      toolName: openRecord.toolName,
+      argsJson: openRecord.argsJson,
+      resultJson: openRecord.resultJson ?? safeJsonStringify(receipt),
+      status: 'queued',
+      lifecycleState: 'opened',
+      commitOutcome: 'pending',
+      ...(openRecord.sideEffectLevel ? { sideEffectLevel: openRecord.sideEffectLevel } : {}),
+      durationMs: 0,
+      startedAt: openRecord.startedAt,
+      attemptNo: openRecord.attemptNo,
+      createdAt: openRecord.createdAt,
+    };
+
+    this.executionRecords.push(queuedRecord);
+    return queuedRecord;
+  }
+
+  private async openExecutionAttempt(input: {
+    context: ToolExecutionContext;
+    recordId?: string;
+    providerId: string;
+    providerType: ToolExecutionProviderType;
+    toolName: string;
+    args: Record<string, unknown>;
     sideEffectLevel?: ToolSideEffectLevel;
+    status?: Extract<ToolExecutionStatus, 'running' | 'queued'>;
+    deliveryMode?: ToolExecutionDeliveryMode;
+    resultJson?: string;
+    runtimeJobId?: string;
   }): Promise<ToolExecutionOpenRecord> {
     const startedAt = Date.now();
     const record: ToolExecutionOpenRecord = {
-      id: randomUUID(),
+      id: input.recordId ?? randomUUID(),
       runId: this.runId,
+      status: input.status ?? 'running',
+      deliveryMode: input.deliveryMode ?? 'inline',
+      ...(input.resultJson !== undefined ? { resultJson: input.resultJson } : {}),
+      ...(input.runtimeJobId ? { runtimeJobId: input.runtimeJobId } : {}),
       floorId: input.context.floorId,
       ...(input.context.pageId ? { pageId: input.context.pageId } : {}),
       callerSlot: input.context.callerSlot,
@@ -623,6 +796,7 @@ export class ToolExecutor {
   ): Promise<ExecutedToolCallRecord> {
     const completedRecord: ExecutedToolCallRecord = {
       id: openRecord.id,
+      deliveryMode: openRecord.deliveryMode ?? 'inline',
       runId: openRecord.runId,
       floorId: openRecord.floorId,
       ...(openRecord.pageId ? { pageId: openRecord.pageId } : {}),
@@ -640,6 +814,7 @@ export class ToolExecutor {
       durationMs: normalizeDurationMs(input.durationMs),
       startedAt: openRecord.startedAt,
       finishedAt: input.finishedAt,
+      ...(openRecord.runtimeJobId ? { runtimeJobId: openRecord.runtimeJobId } : {}),
       attemptNo: openRecord.attemptNo,
       ...(openRecord.replayParentExecutionId
         ? { replayParentExecutionId: openRecord.replayParentExecutionId }

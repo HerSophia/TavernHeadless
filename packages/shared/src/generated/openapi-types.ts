@@ -8058,7 +8058,7 @@ export interface operations {
                 run_id?: string;
                 caller_slot?: "narrator" | "director" | "verifier" | "memory";
                 tool_name?: string;
-                status?: "running" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+                status?: "running" | "queued" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
                 lifecycle_state?: "opened" | "finished";
                 commit_outcome?: "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
                 provider_type?: "builtin" | "preset" | "mcp" | "unknown";
@@ -8107,7 +8107,7 @@ export interface operations {
                             side_effect_level: ("none" | "sandbox" | "irreversible") | null;
                             started_at: number;
                             /** @enum {string} */
-                            status: "running" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+                            status: "running" | "queued" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
                             tool_name: string;
                         }[];
                         meta: {
@@ -13749,7 +13749,7 @@ export interface operations {
                 run_id?: string;
                 caller_slot?: "narrator" | "director" | "verifier" | "memory";
                 tool_name?: string;
-                status?: "running" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+                status?: "running" | "queued" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
                 lifecycle_state?: "opened" | "finished";
                 commit_outcome?: "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
                 provider_type?: "builtin" | "preset" | "mcp" | "unknown";
@@ -13796,7 +13796,7 @@ export interface operations {
                             side_effect_level: ("none" | "sandbox" | "irreversible") | null;
                             started_at: number;
                             /** @enum {string} */
-                            status: "running" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+                            status: "running" | "queued" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
                             tool_name: string;
                         }[];
                         meta: {

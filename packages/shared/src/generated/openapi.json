@@ -5689,6 +5689,7 @@
             "schema": {
               "enum": [
                 "running",
+                "queued",
                 "success",
                 "error",
                 "denied",
@@ -5929,6 +5930,7 @@
                           "status": {
                             "enum": [
                               "running",
+                              "queued",
                               "success",
                               "error",
                               "denied",
@@ -26391,6 +26393,7 @@
             "schema": {
               "enum": [
                 "running",
+                "queued",
                 "success",
                 "error",
                 "denied",
@@ -26622,6 +26625,7 @@
                           "status": {
                             "enum": [
                               "running",
+                              "queued",
                               "success",
                               "error",
                               "denied",

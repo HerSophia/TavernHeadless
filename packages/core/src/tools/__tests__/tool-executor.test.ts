@@ -147,6 +147,84 @@ describe('ToolExecutor', () => {
       });
     });
 
+    it('returns a deferred receipt and buffers pending async jobs for approved irreversible tools', async () => {
+      const repository: ToolExecutionRepository = {
+        insertMany: vi.fn(async () => undefined),
+        open: vi.fn(async () => undefined),
+        finish: vi.fn(async () => undefined),
+        markRunCommitOutcome: vi.fn(async () => 0),
+        findByFloorId: vi.fn(async () => []),
+        findByRunId: vi.fn(async () => []),
+      };
+      const deferredTool = makeTool({
+        name: 'deferred_tool',
+        sideEffectLevel: 'irreversible',
+        asyncCapability: 'deferred_ok',
+        defaultDeliveryMode: 'async_job',
+        resultVisibility: 'deferred_receipt',
+      });
+      const executeFn = vi.fn(async () => ({ data: 'should-not-run-inline' }));
+      registry.register(makeProvider({ tools: [deferredTool], executeFn }));
+      const deferredExecutor = new ToolExecutor(registry, eventBus, repository, 'run-deferred');
+
+      const result = await deferredExecutor.execute(
+        'deferred_tool',
+        { target: 'world' },
+        makeContext({
+          accountId: 'account-1',
+          variableContext: {
+            accountId: 'account-1',
+            sessionId: 'sess-1',
+            floorId: 'floor-1',
+            pageId: 'page-1',
+          },
+        }),
+        makePermissions({ allowIrreversible: true }),
+      );
+
+      expect(executeFn).not.toHaveBeenCalled();
+      expect(result.executionStatus).toBe('queued');
+      expect(result.data).toMatchObject({
+        accepted: true,
+        delivery_mode: 'async_job',
+        execution_id: expect.any(String),
+        job_id: expect.any(String),
+        status: 'queued',
+      });
+      expect(repository.open).toHaveBeenCalledOnce();
+      expect(repository.open).toHaveBeenCalledWith(expect.objectContaining({
+        runId: 'run-deferred',
+        toolName: 'deferred_tool',
+        status: 'queued',
+        deliveryMode: 'async_job',
+      }));
+      expect(repository.finish).not.toHaveBeenCalled();
+
+      const [record] = deferredExecutor.getExecutionRecords();
+      expect(record).toMatchObject({
+        runId: 'run-deferred',
+        toolName: 'deferred_tool',
+        status: 'queued',
+        lifecycleState: 'opened',
+        commitOutcome: 'pending',
+        deliveryMode: 'async_job',
+      });
+
+      const [pendingJob] = deferredExecutor.getPendingToolJobs();
+      expect(pendingJob).toMatchObject({
+        runId: 'run-deferred',
+        executionId: record!.id,
+        jobId: expect.any(String),
+        envelope: expect.objectContaining({
+          providerId: 'test-provider',
+          providerType: 'builtin',
+          toolName: 'deferred_tool',
+          deliveryMode: 'async_job',
+          resultVisibility: 'deferred_receipt',
+        }),
+      });
+    });
+
     it('keeps pageId undefined when the context has no real page binding', async () => {
       const tool = makeTool({ name: 'my_tool' });
       registry.register(makeProvider({ tools: [tool] }));

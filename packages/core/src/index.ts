@@ -229,6 +229,13 @@ export {
 // ── Tools ─────────────────────────────────────────────
 export type {
   ToolSideEffectLevel,
+  ToolExecutionDeliveryMode,
+  ToolAsyncCapability,
+  ToolResultVisibility,
+  ToolAsyncReceipt,
+  RuntimeToolEnvelope,
+  PendingToolJobRequest,
+  RuntimeToolDispatchResult,
   ToolParameterProperty,
   ToolParameterSchema,
   ToolDefinition,

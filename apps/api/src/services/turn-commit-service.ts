@@ -4,6 +4,7 @@ import type {
   ExecutedToolCallRecord,
   FloorEntity,
   MemoryConsolidationOutput,
+  PendingToolJobRequest,
   PromptSnapshotRecord,
   TokenUsage,
   ToolCallRecord,
@@ -38,6 +39,7 @@ import {
 } from "./variable-commit-service.js";
 import { VARIABLE_MUTATION_KINDS } from "./variable-mutation-applier.js";
 import type { MutationRuntime } from "./runtime-mutation-types.js";
+import type { ToolRuntimeJobBridge } from "./tool-runtime-job-bridge.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -64,6 +66,7 @@ export interface TurnCommitInput {
   promptSnapshot?: PromptSnapshotRecord;
   toolCalls?: ToolCallRecord[];
   toolExecutionRecords?: ExecutedToolCallRecord[];
+  pendingToolJobs?: PendingToolJobRequest[];
   variableCommit?: VariableCommitOptions;
   memoryCommit?: MemoryCommitInput;
 }
@@ -80,6 +83,7 @@ export interface TurnCommitServiceOptions {
   enableAsyncMemoryIngest?: boolean;
   memoryJobScheduler?: MemoryJobScheduler;
   mutationRuntime?: MutationRuntime;
+  toolRuntimeJobBridge?: ToolRuntimeJobBridge;
 }
 
 class MemoryPersistError extends Error {
@@ -152,6 +156,8 @@ function toToolExecutionInsert(record: ExecutedToolCallRecord): ToolExecutionIns
     id: record.id,
     runId: record.runId,
     floorId: record.floorId,
+    deliveryMode: record.deliveryMode ?? "inline",
+    runtimeJobId: record.runtimeJobId ?? null,
     pageId: record.pageId ?? null,
     callerSlot: record.callerSlot,
     providerId: record.providerId,
@@ -178,7 +184,7 @@ function toLegacyToolCallRecord(
   seq: number
 ): ToolCallRecord {
   let status: ToolCallRecord["status"];
-  if (record.status === "success") {
+  if (record.status === "success" || record.status === "queued") {
     status = "success";
   } else if (record.status === "denied" || record.status === "blocked") {
     status = "denied";
@@ -219,6 +225,7 @@ export class TurnCommitService {
   private readonly variableCommitService: VariableCommitService;
   private readonly enableAsyncMemoryIngest: boolean;
   private readonly memoryJobScheduler: MemoryJobScheduler;
+  private readonly toolRuntimeJobBridge?: ToolRuntimeJobBridge;
 
   constructor(
     private readonly db: AppDb,
@@ -235,6 +242,7 @@ export class TurnCommitService {
       mutationRuntime: options.mutationRuntime,
       eventBus: this.eventBus,
     });
+    this.toolRuntimeJobBridge = options.toolRuntimeJobBridge;
   }
 
   private loadUserInputDigest(tx: DbExecutor, floorId: string, accountId: string): string {
@@ -293,6 +301,8 @@ export class TurnCommitService {
       new Set(actualToolExecutionRecords.map((record) => record.runId)));
     const actualBufferedVariableMutations =
       input.execution.bufferedVariableMutations ?? [];
+    const pendingToolJobs =
+      input.pendingToolJobs ?? input.execution.pendingToolJobs ?? [];
     const legacyToolCalls =
       input.toolCalls
       ?? input.execution.toolCalls
@@ -385,6 +395,21 @@ export class TurnCommitService {
             .values(actualToolExecutionRecords.map(toToolExecutionInsert))
             .onConflictDoNothing()
             .run();
+        }
+
+        if (pendingToolJobs.length > 0) {
+          if (!this.toolRuntimeJobBridge) {
+            throw new Error("Tool runtime job bridge is not configured for deferred tool jobs");
+          }
+
+          for (const request of pendingToolJobs) {
+            const enqueued = this.toolRuntimeJobBridge.enqueue(tx, request);
+            tx
+              .update(toolExecutionRecords)
+              .set({ runtimeJobId: enqueued.jobId })
+              .where(eq(toolExecutionRecords.id, request.executionId))
+              .run();
+          }
         }
 
         const variableMutationApply = variableMutationBatch.applyInTransaction(tx, {
