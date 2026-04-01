@@ -1,5 +1,5 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
-import { compactObject, readArray, readNumber, readRecord, readString } from "./utils.js";
+import { buildQueryString, compactObject, readArray, readNumber, readRecord, readString } from "./utils.js";
 
 export type RegexProfileListItem = {
   createdAt: number;
@@ -14,13 +14,27 @@ export type RegexProfileDetail = RegexProfileListItem & {
   data: unknown;
 };
 
+export type RegexProfileRuleInput = {
+  id?: string;
+  scriptName?: string;
+  findRegex: string;
+  replaceString?: string;
+  trimStrings?: string[];
+  placement?: number[];
+  disabled?: boolean;
+  substituteRegex?: number;
+  minDepth?: number;
+  maxDepth?: number;
+  [key: string]: unknown;
+};
+
 export type RegexProfilesResource = {
   getDetail(options: { accountId?: AccountIdHint; profileId: string }): Promise<RegexProfileDetail>;
   list(options?: { accountId?: AccountIdHint }): Promise<RegexProfileListItem[]>;
-  remove(options: { accountId?: AccountIdHint; profileId: string }): Promise<boolean>;
+  remove(options: { accountId?: AccountIdHint; expectedVersion?: number; profileId: string }): Promise<boolean>;
   update(options: {
     accountId?: AccountIdHint;
-    data: string;
+    data: RegexProfileRuleInput[];
     expectedVersion?: number;
     expectedUpdatedAt?: number;
     name: string;
@@ -62,7 +76,11 @@ export function createRegexProfilesResource(client: TransportClient): RegexProfi
         .filter((item): item is RegexProfileListItem => item !== null);
     },
     async remove(options): Promise<boolean> {
-      const response = await client.fetchJson<unknown>(`/regex-profiles/${encodeURIComponent(options.profileId)}`, {
+      const query = buildQueryString({
+        expected_version: options.expectedVersion,
+      });
+      const pathname = query ? `/regex-profiles/${encodeURIComponent(options.profileId)}?${query}` : `/regex-profiles/${encodeURIComponent(options.profileId)}`;
+      const response = await client.fetchJson<unknown>(pathname, {
         headers: buildAccountHeaders(options.accountId),
         method: "DELETE",
       });

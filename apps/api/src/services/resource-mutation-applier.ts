@@ -685,11 +685,14 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
 
     scripts.push(newRule)
     const ruleIndex = scripts.length - 1
+    const now = request.context.now()
+    const nextVersion = profile.version + 1
 
     request.context.tx.update(regexProfiles)
       .set({
         dataJson: JSON.stringify(scripts),
-        updatedAt: request.context.now(),
+        updatedAt: now,
+        version: nextVersion,
       })
       .where(eq(regexProfiles.id, request.envelope.payload.profileId))
       .run()
@@ -749,11 +752,14 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
     if (request.envelope.payload.updates.trimStrings !== undefined) rule.trimStrings = request.envelope.payload.updates.trimStrings
     if (request.envelope.payload.updates.placement !== undefined) rule.placement = request.envelope.payload.updates.placement
     if (request.envelope.payload.updates.disabled !== undefined) rule.disabled = request.envelope.payload.updates.disabled
+    const now = request.context.now()
+    const nextVersion = profile.version + 1
 
     request.context.tx.update(regexProfiles)
       .set({
         dataJson: JSON.stringify(scripts),
-        updatedAt: request.context.now(),
+        updatedAt: now,
+        version: nextVersion,
       })
       .where(eq(regexProfiles.id, request.envelope.payload.profileId))
       .run()

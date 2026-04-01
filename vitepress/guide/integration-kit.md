@@ -409,7 +409,7 @@ try {
 
 ### 资源乐观锁与版本快照
 
-`presets`、`worldbooks`、`regexProfiles` 的列表、详情和更新响应都会返回 `version`。更新时应优先回填 `expectedVersion`，避免静默覆盖。
+`presets`、`worldbooks`、`regexProfiles` 的列表、详情和更新响应都会返回 `version`。更新时应优先回填 `expectedVersion`，避免静默覆盖。`regexProfiles.update()` 的 `data` 应直接传规则对象数组；删除主资源时也可以传 `expectedVersion`。
 
 `respondDryRun()` 返回的 `promptSnapshot` 也会带 `presetVersion`、`worldbookVersion`、`regexProfileVersion`，用于说明本轮真正冻结使用的资源版本。
 

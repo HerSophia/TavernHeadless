@@ -5,7 +5,7 @@ import { SimpleTokenCounter } from "@tavern/core";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
-import { floors, messagePages, presets, sessions, variables } from "../../db/schema.js";
+import { floors, messagePages, presets, regexProfiles, sessions, variables, worldbookEntries, worldbooks } from "../../db/schema.js";
 import { assemblePrompt, type SessionPromptInfo } from "../prompt-assembler.js";
 
 const SAMPLE_PRESET_DATA = {
@@ -45,6 +45,66 @@ const SAMPLE_PRESET_DATA = {
   stream_openai: true,
 };
 
+const SAMPLE_COMPAT_WORLDINFO_PRESET_DATA = {
+  ...SAMPLE_PRESET_DATA,
+  prompts: [
+    { identifier: "main", name: "Main Prompt", role: "system", content: "Stay in character.", enabled: true },
+    { identifier: "worldInfoBefore", name: "World Info Before", marker: true, enabled: true },
+    { identifier: "chatHistory", name: "Chat History", marker: true, enabled: true },
+    { identifier: "jailbreak", name: "Jailbreak", role: "system", content: "Be creative.", enabled: true },
+  ],
+  prompt_order: [
+    {
+      character_id: 100000,
+      order: [
+        { identifier: "main", enabled: true },
+        { identifier: "worldInfoBefore", enabled: true },
+        { identifier: "chatHistory", enabled: true },
+        { identifier: "jailbreak", enabled: true },
+      ],
+    },
+  ],
+};
+
+const SAMPLE_WORLD_INFO_REGEX_DATA = [
+  {
+    id: "regex-world-info",
+    scriptName: "World Info Rule",
+    findRegex: "/OOC/g",
+    replaceString: "IC",
+    trimStrings: [],
+    placement: [5],
+    disabled: false,
+    substituteRegex: 0,
+    minDepth: 0,
+    maxDepth: 0,
+  },
+  {
+    id: "regex-user-input",
+    scriptName: "User Input Rule",
+    findRegex: "/hello/g",
+    replaceString: "greetings",
+    trimStrings: [],
+    placement: [1],
+    disabled: false,
+    substituteRegex: 0,
+    minDepth: 0,
+    maxDepth: 0,
+  },
+  {
+    id: "regex-ai-output",
+    scriptName: "AI Output Rule",
+    findRegex: "/hero/g",
+    replaceString: "knight",
+    trimStrings: [],
+    placement: [2],
+    disabled: false,
+    substituteRegex: 0,
+    minDepth: 0,
+    maxDepth: 0,
+  },
+];
+
 describe("assemblePrompt", () => {
   let database: DatabaseConnection;
 
@@ -55,6 +115,76 @@ describe("assemblePrompt", () => {
   afterEach(() => {
     database.close();
   });
+
+  async function seedWorldInfoRegexScenario(args: {
+    presetData: Record<string, unknown>;
+    promptMode: SessionPromptInfo["promptMode"];
+  }): Promise<SessionPromptInfo> {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+    const regexProfileId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "World Info Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(args.presetData),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Worldbook A",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 7,
+      comment: "Sword Lore",
+      content: "Ancient OOC lore",
+      keysJson: JSON.stringify(["sword"]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: false,
+      selectiveLogic: 0,
+      constant: false,
+      position: 0,
+      order: 100,
+      depth: 4,
+      role: 0,
+      disable: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(regexProfiles).values({
+      id: regexProfileId,
+      name: "Regex A",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_WORLD_INFO_REGEX_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return {
+      presetId,
+      worldbookProfileId: worldbookId,
+      regexProfileId,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: args.promptMode,
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+  }
 
   it("injects resolved persisted variables into prompt templates and preserves reserved aliases", async () => {
     const now = Date.now();
@@ -195,5 +325,49 @@ describe("assemblePrompt", () => {
       user: "Traveler",
     });
     expect(assembled.debug?.reservedVariableCollisions).toEqual(["char", "user"]);
+  });
+
+  it("applies WORLD_INFO regex rules to injected worldbook content in native mode and preserves user/ai regex behavior", async () => {
+    const sessionInfo = await seedWorldInfoRegexScenario({
+      presetData: SAMPLE_PRESET_DATA,
+      promptMode: "native",
+    });
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "hello sword",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages.some((message) => message.content.includes("Ancient IC lore"))).toBe(true);
+    expect(assembled.messages.some((message) => message.content.includes("Ancient OOC lore"))).toBe(false);
+    expect(assembled.preProcess).toBeDefined();
+    expect(assembled.preProcess?.([{ role: "user", content: "hello sword" }])).toEqual([
+      { role: "user", content: "greetings sword" },
+    ]);
+    expect(assembled.postProcess).toBeDefined();
+    expect(assembled.postProcess?.("hero arrives")).toBe("knight arrives");
+  });
+
+  it("applies WORLD_INFO regex rules to injected worldbook content in compat mode", async () => {
+    const sessionInfo = await seedWorldInfoRegexScenario({
+      presetData: SAMPLE_COMPAT_WORLDINFO_PRESET_DATA,
+      promptMode: "compat_strict",
+    });
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "hello sword",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages.some((message) => message.content.includes("Ancient IC lore"))).toBe(true);
+    expect(assembled.messages.some((message) => message.content.includes("Ancient OOC lore"))).toBe(false);
   });
 });

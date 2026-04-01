@@ -96,6 +96,8 @@ PUT /regex-profiles/:id
 | `expected_version` | integer | 否 | 推荐的乐观锁字段；期望的 `version` 值 |
 | `expected_updated_at` | integer | 否 | 兼容字段；仅用于已有主资源 `PUT` 调用方 |
 
+`data` 中每条规则的 `placement` 可使用 `1`（`user_input`）、`2`（`ai_output`）、`5`（`world_info`）。其中 `5` 会作用于注入 prompt 的 worldbook 文本。
+
 ### 请求示例
 
 ```json
@@ -144,6 +146,25 @@ PUT /regex-profiles/:id
 DELETE /regex-profiles/:id
 ```
 
+删除时推荐通过 query string 传入 `expected_version`，例如：
+
+```http
+DELETE /regex-profiles/:id?expected_version=3
+```
+
+### 查询参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `expected_version` | integer | 否 | 推荐的乐观锁字段；提供后按 `version` 基线删除，不匹配时返回 `409` |
+
 ### 响应 `204`
 
 无响应体。
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `regex_profile_not_found` | 正则配置不存在 |
+| `409` | `regex_profile_conflict` | 删除时提供的 `expected_version` 过期 |

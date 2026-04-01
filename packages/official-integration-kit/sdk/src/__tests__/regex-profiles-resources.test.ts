@@ -83,7 +83,13 @@ describe("sdk regex profile resources", () => {
 
     await expect(
       regexProfiles.update({
-        data: '[{"scriptName":"rule-2"}]',
+        data: [
+          {
+            findRegex: "/rule/g",
+            replaceString: "rule-2",
+            scriptName: "rule-2",
+          },
+        ],
         expectedVersion: 2,
         expectedUpdatedAt: 11,
         name: "Regex B",
@@ -98,14 +104,21 @@ describe("sdk regex profile resources", () => {
       updatedAt: 12,
     });
 
-    await expect(regexProfiles.remove({ profileId: "regex-1" })).resolves.toBe(true);
+    await expect(regexProfiles.remove({ expectedVersion: 3, profileId: "regex-1" })).resolves.toBe(true);
 
     const [, updateInit] = fetchImpl.mock.calls[2]!;
     expect(updateInit?.body).toBe(JSON.stringify({
-      data: '[{"scriptName":"rule-2"}]',
+      data: [
+        {
+          findRegex: "/rule/g",
+          replaceString: "rule-2",
+          scriptName: "rule-2",
+        },
+      ],
       expected_version: 2,
       expected_updated_at: 11,
       name: "Regex B",
     }));
+    expect(String(fetchImpl.mock.calls[3]![0])).toBe("http://localhost:3000/regex-profiles/regex-1?expected_version=3");
   });
 });

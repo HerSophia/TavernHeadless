@@ -599,11 +599,13 @@ describe('ResourceToolProvider', () => {
 
   describe('regex tools', () => {
     let profileId: string;
+    let currentTime: number;
 
     beforeEach(async () => {
       // Manually insert a regex profile (normally done via import)
       profileId = nanoid();
       const now = Date.now();
+      currentTime = now + 100;
       await db.insert(regexProfiles).values({
         id: profileId,
         name: 'Test Profile',
@@ -613,6 +615,7 @@ describe('ResourceToolProvider', () => {
         createdAt: now,
         updatedAt: now,
       });
+      provider = new ResourceToolProvider(db, { now: () => currentTime });
     });
 
     describe('create_regex_rule', () => {
@@ -637,8 +640,10 @@ describe('ResourceToolProvider', () => {
         const [profile] = await db.select().from(regexProfiles).limit(1);
         const scripts = JSON.parse(profile!.dataJson);
         expect(scripts).toHaveLength(1);
+        expect(profile!.version).toBe(2);
         expect(scripts[0].findRegex).toBe('\\*+');
         expect(scripts[0].placement).toEqual([2]); // default AI output
+        expect(profile!.updatedAt).toBe(currentTime);
       });
 
       it('increments rule_index for subsequent rules', async () => {
@@ -653,7 +658,10 @@ describe('ResourceToolProvider', () => {
           makeContext(),
         );
         const data = result.data as Record<string, unknown>;
+        const [profile] = await db.select().from(regexProfiles).limit(1);
+
         expect(data.rule_index).toBe(1);
+        expect(profile!.version).toBe(3);
       });
 
       it('returns error for nonexistent profile', async () => {
@@ -685,6 +693,7 @@ describe('ResourceToolProvider', () => {
       });
 
       it('updates an existing rule', async () => {
+        currentTime += 100;
         const result = await provider.executeTool(
           'update_regex_rule',
           { profile_id: profileId, rule_index: 0, find_regex: 'updated', script_name: 'Updated Rule' },
@@ -698,8 +707,11 @@ describe('ResourceToolProvider', () => {
 
         // Verify preserved fields
         const [profile] = await db.select().from(regexProfiles).limit(1);
+
         const scripts = JSON.parse(profile!.dataJson);
         expect(scripts[0].replaceString).toBe('new'); // unchanged
+        expect(profile!.version).toBe(3);
+        expect(profile!.updatedAt).toBe(currentTime);
       });
 
       it('returns error for out-of-range index', async () => {
