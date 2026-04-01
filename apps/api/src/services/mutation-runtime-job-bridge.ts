@@ -2,6 +2,7 @@ import type { CoreEventBus } from "@tavern/core"
 
 import type { AppDb } from "../db/client.js"
 import { RuntimeJobScheduler } from "./runtime-job-scheduler.js"
+import { emitRuntimeMutationEvent } from "./runtime-mutation-events.js"
 import { createMutationRuntimeJobCatalog, MUTATION_RUNTIME_JOB_TYPES } from "./mutation-runtime-job-definitions.js"
 import type { MutationAsyncBridge, MutationAsyncEnqueueOptions, RuntimeMutationEnvelope } from "./runtime-mutation-types.js"
 
@@ -12,6 +13,7 @@ export interface MutationRuntimeJobBridgeOptions {
 
 export class MutationRuntimeJobBridge implements MutationAsyncBridge {
   private readonly scheduler: RuntimeJobScheduler
+  private readonly eventBus?: CoreEventBus
 
   constructor(
     private readonly db: AppDb,
@@ -21,13 +23,14 @@ export class MutationRuntimeJobBridge implements MutationAsyncBridge {
       options.catalog ?? createMutationRuntimeJobCatalog(),
       { eventBus: options.eventBus },
     )
+    this.eventBus = options.eventBus
   }
 
   async enqueue<TPayload>(
     envelope: RuntimeMutationEnvelope<TPayload>,
     options: MutationAsyncEnqueueOptions<TPayload> = {},
   ) {
-    return this.db.transaction((tx) => this.scheduler.enqueue(tx, {
+    const result = this.db.transaction((tx) => this.scheduler.enqueue(tx, {
       jobType: options.jobType ?? MUTATION_RUNTIME_JOB_TYPES.apply,
       accountId: envelope.accountId,
       scopeType: envelope.scopeType,
@@ -48,6 +51,13 @@ export class MutationRuntimeJobBridge implements MutationAsyncBridge {
       result: options.result,
       dedupeKey: options.dedupeKey ?? envelope.idempotencyKey ?? null,
     }))
+
+    void emitRuntimeMutationEvent(this.eventBus, "runtime.mutation_created", envelope, {
+      relatedJobId: result.jobId,
+      observedAt: Date.now(),
+    })
+
+    return result
   }
 }
 

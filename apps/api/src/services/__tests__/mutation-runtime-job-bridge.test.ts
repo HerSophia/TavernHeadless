@@ -1,3 +1,4 @@
+import { createEventBus } from "@tavern/core"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js"
@@ -7,6 +8,11 @@ import { MUTATION_RUNTIME_JOB_TYPES } from "../mutation-runtime-job-definitions.
 import type { RuntimeMutationEnvelope } from "../runtime-mutation-types.js"
 
 const DEFAULT_ACCOUNT_ID = "default-admin"
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
 
 describe("MutationRuntimeJobBridge", () => {
   let database: DatabaseConnection
@@ -34,7 +40,13 @@ describe("MutationRuntimeJobBridge", () => {
   })
 
   it("enqueues async mutation envelopes into runtime_job", async () => {
-    const bridge = createMutationRuntimeJobBridge(database.db)
+    const eventBus = createEventBus()
+    const createdEvents: string[] = []
+    eventBus.on("runtime.mutation_created", (event) => {
+      createdEvents.push(event.mutationId)
+    })
+
+    const bridge = createMutationRuntimeJobBridge(database.db, { eventBus })
     const envelope: RuntimeMutationEnvelope<{ value: string }> = {
       id: "mutation:async:bridge",
       kind: "test.async",
@@ -79,5 +91,8 @@ describe("MutationRuntimeJobBridge", () => {
     expect(JSON.parse(row!.payloadJson)).toEqual({
       envelope,
     })
+
+    await flushMicrotasks()
+    expect(createdEvents).toEqual(["mutation:async:bridge"])
   })
 })

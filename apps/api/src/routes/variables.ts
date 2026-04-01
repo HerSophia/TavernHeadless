@@ -15,6 +15,7 @@ import {
   type ResolvedVariablesSnapshot,
 } from "../services/variable-service.js";
 import { VariableServiceError } from "../services/variable-service-errors.js";
+import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 
 const variableScopeSchema = z.enum(["global", "chat", "floor", "page"]);
 
@@ -470,10 +471,11 @@ function toResolvedSnapshotResponse(snapshot: ResolvedVariablesSnapshot) {
 export async function registerVariableRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection,
-  options: { eventBus?: CoreEventBus } = {}
+  options: { eventBus?: CoreEventBus; mutationRuntime?: MutationRuntime } = {}
 ): Promise<void> {
   const service = new VariableService(connection.db, {
     eventBus: options.eventBus,
+    mutationRuntime: options.mutationRuntime,
   });
 
   app.put("/variables", {

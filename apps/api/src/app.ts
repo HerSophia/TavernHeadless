@@ -64,6 +64,8 @@ import { MemoryJobScheduler } from "./services/memory-job-scheduler.js";
 import { createDefaultMutationRuntimeComponents } from "./services/default-mutation-runtime.js";
 import { createMutationRuntimeJobBridge } from "./services/mutation-runtime-job-bridge.js";
 import { MutationWorker } from "./services/mutation-worker.js";
+import { createDefaultToolRuntimeComponents } from "./services/default-tool-runtime.js";
+import { ToolWorker } from "./services/tool-worker.js";
 
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
@@ -141,6 +143,10 @@ export type BuildAppOptions = {
   enableMacroCompaction?: boolean;
   /** 是否启用 micro/macro 双层摘要注入（Phase 4 切换开关） */
   enableDualSummaryInjection?: boolean;
+  /** 是否启用 deferred irreversible tool runtime 入口（Phase 1 切换开关） */
+  enableDeferredIrreversibleTools?: boolean;
+  /** 允许 deferred 执行的 MCP 工具白名单，格式为 serverId/toolName */
+  deferredIrreversibleMcpTools?: string[];
   /** 可选：MemoryWorker 运行参数 */
   memoryWorker?: {
     pollIntervalMs?: number;
@@ -260,6 +266,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let memoryMaintenanceTimer: NodeJS.Timeout | undefined;
   let memoryWorker: MemoryWorker | undefined;
   let mutationWorker: MutationWorker | undefined;
+  let toolWorker: ToolWorker | undefined;
 
   app.addHook("onClose", async () => {
     if (memoryMaintenanceTimer) {
@@ -273,6 +280,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     if (memoryWorker) {
       await memoryWorker.stop();
       memoryWorker = undefined;
+    }
+    if (toolWorker) {
+      await toolWorker.stop();
+      toolWorker = undefined;
     }
     database.close();
   });
@@ -440,6 +451,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let baseToolRegistry: ToolRegistry | undefined;
   let sessionToolRegistryService: SessionToolRegistryService | undefined;
   let mutationRuntimeComponents: ReturnType<typeof createDefaultMutationRuntimeComponents> | undefined;
+  let toolRuntimeComponents: ReturnType<typeof createDefaultToolRuntimeComponents> | undefined;
 
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
@@ -493,6 +505,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     });
     mutationWorker.start();
 
+    toolRuntimeComponents = createDefaultToolRuntimeComponents(database.db, {
+      eventBus: orchestrationContext.eventBus,
+      mcpManager,
+      enableDeferredIrreversibleTools: options.enableDeferredIrreversibleTools,
+      deferredMcpTools: options.deferredIrreversibleMcpTools,
+      logger: app.log,
+    });
+
+    toolWorker = toolRuntimeComponents.worker;
+    toolWorker?.start();
+
     baseToolRegistry = new ToolRegistry();
     baseToolRegistry.register(new BuiltinToolProvider({
       variableStore: orchestrationContext.variableStore,
@@ -505,12 +528,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     sessionToolRegistryService = new SessionToolRegistryService(database.db, {
       baseRegistry: baseToolRegistry,
       mcpManager,
+      toolRuntimePolicy: toolRuntimeComponents.policy,
     });
   }
 
   await registerCrudRoutes(app, database, {
     variableEventBus: orchestrationContext?.eventBus,
     sessionToolRegistryService,
+    mutationRuntime: mutationRuntimeComponents?.runtime,
     memoryJobs: {
       enableBackgroundWorker: options.enableMemory === true && options.orchestration !== undefined && (
         options.enableAsyncMemoryIngest === true
@@ -549,6 +574,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       {
         enableAsyncMemoryIngest: options.enableMemory === true && options.enableAsyncMemoryIngest === true,
         mutationRuntime: mutationRuntimeComponents?.runtime,
+        toolRuntimeJobBridge: toolRuntimeComponents?.bridge,
       },
     );
 

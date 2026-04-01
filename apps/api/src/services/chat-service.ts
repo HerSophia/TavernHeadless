@@ -1210,6 +1210,7 @@ export class ChatService {
       },
       promptSnapshot: args.promptSnapshot,
       toolExecutionRecords: execution.toolExecutionRecords,
+      pendingToolJobs: execution.pendingToolJobs,
       memoryCommit: args.persistMemory
         ? {
             enableConsolidation: args.memoryConsolidationRequested,

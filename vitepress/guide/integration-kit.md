@@ -164,6 +164,42 @@ console.log(preview.promptSnapshot.promptDigest);
 
 如果有持久化变量试图占用保留别名，`preview.assembly.reservedVariableCollisions` 会返回被系统别名覆盖的键。目前保留别名是 `char` 和 `user`。
 
+### 运行时工具目录与执行审计
+
+```ts
+const catalog = await client.sessions.getRuntimeToolCatalog({
+  sessionId: "session-1",
+});
+
+for (const tool of catalog.tools) {
+  console.log(tool.name, tool.asyncCapability, tool.defaultDeliveryMode, tool.resultVisibility);
+}
+
+const executions = await client.tools.listExecutions({
+  sessionId: "session-1",
+  status: "queued",
+});
+
+for (const record of executions.records) {
+  console.log(record.toolName, record.deliveryMode, record.runtimeJobId);
+}
+```
+
+运行时工具目录现在会直接暴露：
+
+- `asyncCapability`
+- `defaultDeliveryMode`
+- `resultVisibility`
+
+这三个字段可以帮助接入方判断某个工具是否只支持同步调用，还是会返回 deferred receipt。
+
+工具执行审计记录现在也会直接暴露：
+
+- `deliveryMode`
+- `runtimeJobId`
+
+如果某次执行走了 `async_job`，可以用 `runtimeJobId` 把工具审计记录和后台 job 状态对应起来。
+
 ### 资源更新的版本并发控制
 
 `@tavern/sdk` 读取 preset、worldbook、regex profile 时，会把后端返回的 `version` 一并保留下来。

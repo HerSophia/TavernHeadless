@@ -15,10 +15,11 @@ export type ToolDefinitionSource = "preset" | "character" | "custom";
 export type ToolHandlerType = "script" | "prompt" | "delegate";
 export type ToolCallRecordStatus = "success" | "error" | "denied";
 
-export type ToolExecutionStatus = ToolCallRecordStatus | "running" | "timeout" | "uncertain" | "blocked";
+export type ToolExecutionStatus = ToolCallRecordStatus | "running" | "queued" | "timeout" | "uncertain" | "blocked";
 export type ToolExecutionLifecycleState = "opened" | "finished";
 export type ToolExecutionCommitOutcome = "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
 export type ToolExecutionProviderType = "builtin" | "preset" | "mcp" | "unknown";
+export type ToolExecutionDeliveryMode = "inline" | "async_job";
 
 export type BuiltinToolRecord = {
   allowedSlots: string[];
@@ -70,6 +71,7 @@ export type ToolExecutionRecord = {
   createdAt: number;
   durationMs: number;
   errorMessage: string | null;
+  deliveryMode: ToolExecutionDeliveryMode;
   finishedAt: number | null;
   floorId: string;
   id: string;
@@ -83,6 +85,7 @@ export type ToolExecutionRecord = {
   sideEffectLevel: ToolSideEffectLevel | null;
   startedAt: number;
   status: ToolExecutionStatus;
+  runtimeJobId: string | null;
   toolName: string;
 };
 
@@ -442,6 +445,7 @@ function mapToolExecutionRecord(value: unknown): ToolExecutionRecord | null {
     commitOutcome: readString(record.commit_outcome, "pending") as ToolExecutionCommitOutcome,
     createdAt: readNumber(record.created_at),
     durationMs: readNumber(record.duration_ms),
+    deliveryMode: readString(record.delivery_mode, "inline") as ToolExecutionRecord["deliveryMode"],
     errorMessage: readNullableString(record.error_message),
     finishedAt: typeof record.finished_at === "number" ? record.finished_at : null,
     floorId: readString(record.floor_id),
@@ -456,6 +460,7 @@ function mapToolExecutionRecord(value: unknown): ToolExecutionRecord | null {
     sideEffectLevel: readNullableString(record.side_effect_level) as ToolExecutionRecord["sideEffectLevel"],
     startedAt: readNumber(record.started_at),
     status: readString(record.status, "running") as ToolExecutionStatus,
+    runtimeJobId: readNullableString(record.runtime_job_id),
     toolName: readString(record.tool_name),
   };
 }

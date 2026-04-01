@@ -5689,6 +5689,7 @@
             "schema": {
               "enum": [
                 "running",
+                "queued",
                 "success",
                 "error",
                 "denied",
@@ -5833,6 +5834,13 @@
                             "minimum": 0,
                             "type": "integer"
                           },
+                          "delivery_mode": {
+                            "enum": [
+                              "inline",
+                              "async_job"
+                            ],
+                            "type": "string"
+                          },
                           "duration_ms": {
                             "minimum": 0,
                             "type": "integer"
@@ -5907,6 +5915,16 @@
                           "run_id": {
                             "type": "string"
                           },
+                          "runtime_job_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "side_effect_level": {
                             "anyOf": [
                               {
@@ -5929,6 +5947,7 @@
                           "status": {
                             "enum": [
                               "running",
+                              "queued",
                               "success",
                               "error",
                               "denied",
@@ -5961,7 +5980,9 @@
                           "duration_ms",
                           "started_at",
                           "finished_at",
+                          "delivery_mode",
                           "attempt_no",
+                          "runtime_job_id",
                           "replay_parent_execution_id",
                           "created_at"
                         ],
@@ -25891,6 +25912,13 @@
                                 },
                                 "type": "array"
                               },
+                              "async_capability": {
+                                "enum": [
+                                  "inline_only",
+                                  "deferred_ok"
+                                ],
+                                "type": "string"
+                              },
                               "availability": {
                                 "enum": [
                                   "available",
@@ -25908,6 +25936,13 @@
                                     "type": "null"
                                   }
                                 ]
+                              },
+                              "default_delivery_mode": {
+                                "enum": [
+                                  "inline",
+                                  "async_job"
+                                ],
+                                "type": "string"
                               },
                               "name": {
                                 "type": "string"
@@ -25929,6 +25964,13 @@
                                   "confirm_on_replay",
                                   "never_auto_replay",
                                   "uncertain"
+                                ],
+                                "type": "string"
+                              },
+                              "result_visibility": {
+                                "enum": [
+                                  "immediate",
+                                  "deferred_receipt"
                                 ],
                                 "type": "string"
                               },
@@ -25960,7 +26002,10 @@
                               "side_effect_level",
                               "allowed_slots",
                               "availability",
-                              "replay_safety"
+                              "replay_safety",
+                              "async_capability",
+                              "default_delivery_mode",
+                              "result_visibility"
                             ],
                             "type": "object"
                           },
@@ -26391,6 +26436,7 @@
             "schema": {
               "enum": [
                 "running",
+                "queued",
                 "success",
                 "error",
                 "denied",
@@ -26526,6 +26572,13 @@
                             "minimum": 0,
                             "type": "integer"
                           },
+                          "delivery_mode": {
+                            "enum": [
+                              "inline",
+                              "async_job"
+                            ],
+                            "type": "string"
+                          },
                           "duration_ms": {
                             "minimum": 0,
                             "type": "integer"
@@ -26600,6 +26653,16 @@
                           "run_id": {
                             "type": "string"
                           },
+                          "runtime_job_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "side_effect_level": {
                             "anyOf": [
                               {
@@ -26622,6 +26685,7 @@
                           "status": {
                             "enum": [
                               "running",
+                              "queued",
                               "success",
                               "error",
                               "denied",
@@ -26654,7 +26718,9 @@
                           "duration_ms",
                           "started_at",
                           "finished_at",
+                          "delivery_mode",
                           "attempt_no",
+                          "runtime_job_id",
                           "replay_parent_execution_id",
                           "created_at"
                         ],

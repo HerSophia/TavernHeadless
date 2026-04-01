@@ -14,6 +14,7 @@ import {
   SessionToolRegistryService,
   SessionToolRegistryServiceError,
 } from "../session-tool-registry-service.js";
+import { ToolRuntimePolicy } from "../tool-runtime-policy.js";
 
 function makeTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
   return {
@@ -159,6 +160,42 @@ describe("SessionToolRegistryService", () => {
         expect.objectContaining({ name: "mcp_lookup", source: "mcp", availability: "available" }),
       ]),
     );
+  });
+
+  it("propagates deferred MCP delivery metadata into the session runtime registry", async () => {
+    await insertSession();
+    await insertMcpConfig();
+
+    const service = new SessionToolRegistryService(db, {
+      baseRegistry,
+      mcpManager: createMockMcpManager([
+        makeTool({ name: "github_create_issue" }),
+      ]),
+      toolRuntimePolicy: new ToolRuntimePolicy({
+        enableDeferredIrreversibleTools: true,
+        deferredMcpTools: ["mcp-1/github_create_issue"],
+      }),
+    });
+
+    const runtime = await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
+    const tool = (await runtime.registry.listAll()).find((entry) => entry.name === "github_create_issue");
+    const catalogEntry = runtime.catalog.tools.find((entry) => entry.name === "github_create_issue");
+
+    expect(tool).toMatchObject({
+      asyncCapability: "deferred_ok",
+      defaultDeliveryMode: "async_job",
+      resultVisibility: "deferred_receipt",
+    });
+    expect(tool?.description).toContain("acceptance receipt");
+    expect(catalogEntry).toMatchObject({
+      name: "github_create_issue",
+      source: "mcp",
+      asyncCapability: "deferred_ok",
+      defaultDeliveryMode: "async_job",
+      resultVisibility: "deferred_receipt",
+      availability: "available",
+      replaySafety: "never_auto_replay",
+    });
   });
 
   it("throws tool_catalog_conflict when a definition-backed tool uses a reserved base name", async () => {

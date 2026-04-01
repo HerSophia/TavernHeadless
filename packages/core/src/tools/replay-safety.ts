@@ -38,6 +38,14 @@ export function resolveToolProviderCompensationMode(input: {
 export function evaluateToolReplaySafety(input: ToolReplaySafetyInput): ToolReplaySafetyEvaluation {
   const providerCompensationMode = resolveToolProviderCompensationMode(input);
 
+  if (input.status === 'queued') {
+    return {
+      replaySafety: 'uncertain',
+      providerCompensationMode,
+      reason: 'deferred_execution_queued',
+    };
+  }
+
   if (input.lifecycleState === 'opened' || input.status === 'running') {
     return {
       replaySafety: 'uncertain',

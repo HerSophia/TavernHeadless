@@ -19,6 +19,7 @@ import { parseJsonField } from "../lib/http.js";
 import { McpToolProvider } from "../mcp/mcp-tool-provider.js";
 import type { McpConnectionManager } from "../mcp/mcp-connection-manager.js";
 import { McpService } from "./mcp-service.js";
+import type { ToolRuntimePolicy } from "./tool-runtime-policy.js";
 
 const INSTANCE_SLOTS = new Set<InstanceSlot>([
   "narrator",
@@ -47,6 +48,9 @@ export interface SessionRuntimeToolCatalogEntry {
   availability: "available" | "unavailable" | "conflict";
   availabilityReason?: string;
   replaySafety: SessionRuntimeToolReplaySafety;
+  asyncCapability: "inline_only" | "deferred_ok";
+  defaultDeliveryMode: "inline" | "async_job";
+  resultVisibility: "immediate" | "deferred_receipt";
 }
 
 export interface SessionRuntimeToolCatalogConflict {
@@ -85,6 +89,7 @@ export class SessionToolRegistryServiceError extends Error {
 export interface SessionToolRegistryServiceOptions {
   baseRegistry: ToolRegistry;
   mcpManager?: McpConnectionManager;
+  toolRuntimePolicy?: ToolRuntimePolicy;
 }
 
 interface RuntimeToolCandidate {
@@ -94,6 +99,9 @@ interface RuntimeToolCandidate {
   source: SessionRuntimeToolSource;
   sideEffectLevel: ToolSideEffectLevel;
   allowedSlots: InstanceSlot[];
+  asyncCapability: "inline_only" | "deferred_ok";
+  defaultDeliveryMode: "inline" | "async_job";
+  resultVisibility: "immediate" | "deferred_receipt";
 }
 
 interface DefinitionProviderDescriptor {
@@ -198,6 +206,9 @@ function buildCatalogEntry(candidate: RuntimeToolCandidate, availability: Sessio
     allowedSlots: [...candidate.allowedSlots],
     availability,
     ...(availabilityReason ? { availabilityReason } : {}),
+    asyncCapability: candidate.asyncCapability,
+    defaultDeliveryMode: candidate.defaultDeliveryMode,
+    resultVisibility: candidate.resultVisibility,
     replaySafety,
   };
 }
@@ -296,6 +307,9 @@ export class SessionToolRegistryService {
         source: descriptor.source,
         sideEffectLevel: tool.sideEffectLevel,
         allowedSlots: [...tool.allowedSlots],
+        asyncCapability: "inline_only",
+        defaultDeliveryMode: "inline",
+        resultVisibility: "immediate",
       })),
     );
 
@@ -410,6 +424,9 @@ export class SessionToolRegistryService {
           source,
           sideEffectLevel: tool.sideEffectLevel,
           allowedSlots: [...tool.allowedSlots],
+          asyncCapability: tool.asyncCapability ?? "inline_only",
+          defaultDeliveryMode: tool.defaultDeliveryMode ?? "inline",
+          resultVisibility: tool.resultVisibility ?? "immediate",
         };
 
         snapshot.tools.push(buildCatalogEntry(candidate, "available"));
@@ -503,7 +520,9 @@ export class SessionToolRegistryService {
     const mcpCandidatesByName = new Map<string, RuntimeToolCandidate[]>();
 
     for (const config of configs) {
-      const provider = new McpToolProvider(config, this.options.mcpManager);
+      const provider = new McpToolProvider(config, this.options.mcpManager, {
+        toolRuntimePolicy: this.options.toolRuntimePolicy,
+      });
       const tools = await provider.listTools();
       const candidates = tools.map<RuntimeToolCandidate>((tool) => ({
         name: tool.name,
@@ -512,6 +531,9 @@ export class SessionToolRegistryService {
         source: "mcp",
         sideEffectLevel: tool.sideEffectLevel,
         allowedSlots: [...tool.allowedSlots],
+        asyncCapability: tool.asyncCapability ?? "inline_only",
+        defaultDeliveryMode: tool.defaultDeliveryMode ?? "inline",
+        resultVisibility: tool.resultVisibility ?? "immediate",
       }));
 
       providerToolCandidates.set(provider.id, {

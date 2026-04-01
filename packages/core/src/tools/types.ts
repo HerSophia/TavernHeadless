@@ -15,6 +15,64 @@ import type { VariableContext } from '../types.js';
  */
 export type ToolSideEffectLevel = 'none' | 'sandbox' | 'irreversible';
 
+/**
+ * 工具结果的交付模式。
+ *
+ * - `'inline'` — 在当前生成流程内同步执行，并把最终 provider 结果返回给模型。
+ * - `'async_job'` — 在当前生成流程内只返回受理回执；真实执行由 runtime_job 异步完成。
+ */
+export type ToolExecutionDeliveryMode = 'inline' | 'async_job';
+
+/**
+ * 工具是否允许进入异步 deferred 路径。
+ *
+ * Phase 1 默认所有工具都保持 `'inline_only'`。
+ */
+export type ToolAsyncCapability = 'inline_only' | 'deferred_ok';
+
+/**
+ * 当前 turn 中模型可见的结果形态。
+ *
+ * - `'immediate'` — 模型直接看到最终 provider 结果。
+ * - `'deferred_receipt'` — 模型只看到受理回执，最终结果需后续查询。
+ */
+export type ToolResultVisibility = 'immediate' | 'deferred_receipt';
+
+/** Phase 1 deferred 工具返回给模型的受理回执。 */
+export interface ToolAsyncReceipt {
+  accepted: true;
+  delivery_mode: 'async_job';
+  execution_id: string;
+  job_id: string;
+  status: 'queued';
+  message: string;
+}
+
+/**
+ * 提交到 API 层 Tool Runtime 的统一 envelope。
+ *
+ * Core 只负责缓冲与透传；真正的 durable enqueue 与异步处理由 API 层完成。
+ */
+export interface RuntimeToolEnvelope<TArgs = Record<string, unknown>, TProviderPayload = unknown> {
+  executionId: string;
+  runId: string;
+  sessionId: string;
+  accountId?: string;
+  floorId: string;
+  pageId?: string;
+  callerSlot: InstanceSlot;
+  providerId: string;
+  providerType: ToolExecutionProviderType;
+  toolName: string;
+  args: TArgs;
+  sideEffectLevel: ToolSideEffectLevel;
+  deliveryMode: ToolExecutionDeliveryMode;
+  asyncCapability: ToolAsyncCapability;
+  resultVisibility: ToolResultVisibility;
+  providerPayload?: TProviderPayload;
+  acceptedAt: number;
+}
+
 // ── Parameter Schema ──────────────────────────────────
 
 /** 工具参数 schema 中单个属性的描述 */
@@ -50,6 +108,12 @@ export interface ToolDefinition {
   sideEffectLevel: ToolSideEffectLevel;
   /** 允许使用此工具的实例槽位（空数组 = 所有槽位均可使用） */
   allowedSlots: InstanceSlot[];
+  /** 是否允许进入 deferred async path（默认 inline_only） */
+  asyncCapability?: ToolAsyncCapability;
+  /** 默认交付模式（默认 inline） */
+  defaultDeliveryMode?: ToolExecutionDeliveryMode;
+  /** 当前 turn 中模型可见的结果形态（默认 immediate） */
+  resultVisibility?: ToolResultVisibility;
   /** 工具来源标识 */
   source: 'builtin' | 'preset' | 'mcp';
 }
@@ -83,6 +147,7 @@ export type ToolCallStatus = 'success' | 'error' | 'denied';
 export type ToolExecutionStatus =
   | ToolCallStatus
   | 'running'
+  | 'queued'
   | 'timeout'
   | 'uncertain'
   | 'blocked';
@@ -147,6 +212,8 @@ export interface ToolCallRecord {
  */
 export interface ExecutedToolCallRecord {
   id: string;
+  deliveryMode?: ToolExecutionDeliveryMode;
+  runtimeJobId?: string;
   runId: string;
   floorId: string;
   pageId?: string;
@@ -173,6 +240,10 @@ export interface ExecutedToolCallRecord {
 export interface ToolExecutionOpenRecord {
   id: string;
   runId: string;
+  status?: Extract<ToolExecutionStatus, 'running' | 'queued'>;
+  deliveryMode?: ToolExecutionDeliveryMode;
+  resultJson?: string;
+  runtimeJobId?: string;
   floorId: string;
   pageId?: string;
   callerSlot: InstanceSlot;
@@ -190,7 +261,7 @@ export interface ToolExecutionOpenRecord {
 /** 结束一条真实执行日志时可更新的字段 */
 export interface ToolExecutionFinishPatch {
   resultJson: string;
-  status: Exclude<ToolExecutionStatus, 'running'>;
+  status: Exclude<ToolExecutionStatus, 'running' | 'queued'>;
   lifecycleState?: ToolExecutionLifecycleState;
   errorMessage?: string;
   durationMs: number;
@@ -212,6 +283,31 @@ export interface BufferedToolVariableMutation {
   accountId?: string;
   bufferedAt: number;
 }
+
+/**
+ * 当前 turn 中已经受理、但尚未 durable enqueue 的异步工具请求。
+ *
+ * 这些请求只保存在 turn-local buffer 中，直到 floor commit 成功时才会进入 runtime_job。
+ */
+export interface PendingToolJobRequest<
+  TArgs = Record<string, unknown>,
+  TProviderPayload = unknown,
+> {
+  executionId: string;
+  runId: string;
+  jobId: string;
+  envelope: RuntimeToolEnvelope<TArgs, TProviderPayload>;
+  receipt: ToolAsyncReceipt;
+}
+
+export type RuntimeToolDispatchResult =
+  | { deliveryMode: 'inline'; result: ToolCallResult }
+  | {
+      deliveryMode: 'async_job';
+      result: ToolCallResult;
+      receipt: ToolAsyncReceipt;
+      pendingJob: PendingToolJobRequest;
+    };
 
 // ── Execution Context ─────────────────────────────────
 

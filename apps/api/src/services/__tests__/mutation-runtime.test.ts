@@ -1,3 +1,4 @@
+import { createEventBus } from "@tavern/core"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js"
@@ -15,6 +16,11 @@ import type {
 } from "../runtime-mutation-types.js"
 
 const DEFAULT_ACCOUNT_ID = "default-admin"
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
 
 type InlineVariablePayload = {
   scopeId: string
@@ -162,6 +168,82 @@ describe("DefaultMutationRuntime", () => {
       updatedAt: 1_736_210_000_500,
     })
     expect(JSON.parse(rows[0]!.valueJson)).toBe("focused")
+  })
+
+  it("emits runtime mutation created and applied events for inline mutations", async () => {
+    const eventBus = createEventBus()
+    const createdHandler = vi.fn()
+    const appliedHandler = vi.fn()
+    eventBus.on("runtime.mutation_created", createdHandler)
+    eventBus.on("runtime.mutation_applied", appliedHandler)
+
+    const runtime = new DefaultMutationRuntime(database.db, {
+      registry,
+      eventBus,
+      now: () => 1_736_210_000_600,
+    })
+
+    await runtime.applyInline(
+      createInlineEnvelope({ scopeId: "session-a", key: "emotion", value: "calm" }),
+      { actor: { type: "api", id: "runtime-test" }, requestId: "req-inline-events" },
+    )
+    await flushMicrotasks()
+
+    expect(createdHandler).toHaveBeenCalledWith(expect.objectContaining({
+      mutationId: "mutation:emotion",
+      kind: "test.variable_set",
+      actorType: "api",
+      actorId: "runtime-test",
+      requestId: "req-inline-events",
+      applyPhase: "inline",
+    }))
+    expect(appliedHandler).toHaveBeenCalledWith(expect.objectContaining({
+      mutationId: "mutation:emotion",
+      outcome: "applied",
+      actorType: "api",
+      actorId: "runtime-test",
+      requestId: "req-inline-events",
+    }))
+  })
+
+  it("emits runtime mutation failed for inline and async enqueue failures", async () => {
+    const eventBus = createEventBus()
+    const failedHandler = vi.fn()
+    eventBus.on("runtime.mutation_failed", failedHandler)
+
+    const asyncBridge: MutationAsyncBridge = {
+      enqueue: vi.fn(async () => {
+        throw new Error("queue unavailable")
+      }),
+    }
+    const runtime = new DefaultMutationRuntime(database.db, {
+      registry,
+      eventBus,
+      asyncBridge,
+    })
+
+    await expect(runtime.applyInline(
+      createInlineEnvelope({ scopeId: "session-a", key: "anger", value: "high" }),
+      () => {
+        throw new Error("inline boom")
+      },
+      { requestId: "req-inline-fail" },
+    )).rejects.toThrow("inline boom")
+
+    await expect(runtime.enqueueAsync(createAsyncEnvelope())).rejects.toThrow("queue unavailable")
+    await flushMicrotasks()
+
+    expect(failedHandler).toHaveBeenCalledWith(expect.objectContaining({
+      mutationId: "mutation:anger",
+      outcome: "failed",
+      requestId: "req-inline-fail",
+      errorMessage: "inline boom",
+    }))
+    expect(failedHandler).toHaveBeenCalledWith(expect.objectContaining({
+      mutationId: "mutation:async",
+      outcome: "failed",
+      errorMessage: "queue unavailable",
+    }))
   })
 
   it("rejects invalid inline phases and requires an explicit async bridge", async () => {

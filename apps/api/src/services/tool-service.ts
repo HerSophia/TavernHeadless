@@ -100,8 +100,10 @@ export interface ToolExecutionRecordResponse {
   side_effect_level: string | null;
   error_message: string | null;
   duration_ms: number;
+  delivery_mode: "inline" | "async_job";
   started_at: number;
   finished_at: number | null;
+  runtime_job_id: string | null;
   attempt_no: number;
   replay_parent_execution_id: string | null;
   created_at: number;
@@ -290,10 +292,12 @@ export class ToolService {
         commit_outcome: record.commitOutcome ?? "pending",
         side_effect_level: record.sideEffectLevel ?? null,
         error_message: record.errorMessage ?? null,
+        delivery_mode: record.deliveryMode ?? "inline",
         duration_ms: record.durationMs,
         started_at: record.startedAt ?? record.createdAt,
         finished_at: record.finishedAt ?? null,
         attempt_no: record.attemptNo ?? 1,
+        runtime_job_id: record.runtimeJobId ?? null,
         replay_parent_execution_id: record.replayParentExecutionId ?? null,
         created_at: record.createdAt,
       })),

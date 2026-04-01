@@ -33,6 +33,7 @@ import {
   buildMemoryRuntimeScopeKey,
   toMemoryRuntimeJobType,
 } from "../memory-runtime-job-definitions.js";
+import { createToolRuntimeJobBridge } from "../tool-runtime-job-bridge.js";
 
 const DEFAULT_ACCOUNT_ID = "default-admin";
 
@@ -699,6 +700,207 @@ describe("TurnCommitService", () => {
       summaries: execution.summaries,
       enableConsolidation: true,
     }));
+  });
+
+  it("enqueues deferred tool.execute jobs inside the commit transaction and links runtime_job_id", async () => {
+    const toolBridge = createToolRuntimeJobBridge(database.db, { eventBus });
+    const deferredService = new TurnCommitService(
+      database.db,
+      new ChatMessagePersistence(database.db, new SimpleTokenCounter()),
+      eventBus,
+      { toolRuntimeJobBridge: toolBridge },
+    );
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_735_689_775_000;
+    const committedAt = now + 1_000;
+    const executionId = nanoid();
+    const runId = nanoid();
+    const jobId = `tool-job:${executionId}`;
+    const receipt = {
+      accepted: true as const,
+      delivery_mode: "async_job" as const,
+      execution_id: executionId,
+      job_id: jobId,
+      status: "queued" as const,
+      message: "Deferred tool accepted.",
+    };
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Assistant reply with deferred tool receipt.",
+      rawText: "Assistant reply with deferred tool receipt.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 7,
+        completionTokens: 9,
+        totalTokens: 16,
+      },
+      toolExecutionRecords: [
+        {
+          id: executionId,
+          runId,
+          deliveryMode: "async_job",
+          floorId,
+          callerSlot: "narrator",
+          providerId: "mcp:mcp-1",
+          providerType: "mcp",
+          toolName: "github_create_issue",
+          argsJson: JSON.stringify({ title: "Need help" }),
+          resultJson: JSON.stringify(receipt),
+          status: "queued",
+          lifecycleState: "opened",
+          commitOutcome: "pending",
+          sideEffectLevel: "irreversible",
+          durationMs: 0,
+          startedAt: committedAt,
+          attemptNo: 1,
+          createdAt: committedAt,
+        },
+      ],
+      pendingToolJobs: [
+        {
+          executionId,
+          runId,
+          jobId,
+          envelope: {
+            executionId,
+            runId,
+            sessionId,
+            accountId: DEFAULT_ACCOUNT_ID,
+            floorId,
+            callerSlot: "narrator",
+            providerId: "mcp:mcp-1",
+            providerType: "mcp",
+            toolName: "github_create_issue",
+            args: { title: "Need help" },
+            sideEffectLevel: "irreversible",
+            deliveryMode: "async_job",
+            asyncCapability: "deferred_ok",
+            resultVisibility: "deferred_receipt",
+            acceptedAt: committedAt,
+          },
+          receipt,
+        },
+      ],
+    };
+
+    await deferredService.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+    });
+
+    const [job] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, jobId));
+    expect(job).toMatchObject({
+      id: jobId,
+      jobType: "tool.execute",
+      accountId: DEFAULT_ACCOUNT_ID,
+      scopeType: "tool_execution",
+      scopeKey: `session:${sessionId}`,
+      sessionId,
+      floorId,
+      status: "pending",
+    });
+
+    const [toolExecutionRow] = await database.db.select().from(toolExecutionRecords).where(eq(toolExecutionRecords.id, executionId));
+    expect(toolExecutionRow).toMatchObject({
+      id: executionId,
+      status: "queued",
+      lifecycleState: "opened",
+      deliveryMode: "async_job",
+      runtimeJobId: jobId,
+      commitOutcome: "committed",
+    });
+  });
+
+  it("does not durable enqueue deferred tool jobs when the floor commit rolls back", async () => {
+    const toolBridge = createToolRuntimeJobBridge(database.db, { eventBus });
+    const deferredService = new TurnCommitService(
+      database.db,
+      new ChatMessagePersistence(database.db, new SimpleTokenCounter()),
+      eventBus,
+      { toolRuntimeJobBridge: toolBridge },
+    );
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_735_689_779_000;
+    const executionId = nanoid();
+    const runId = nanoid();
+    const jobId = `tool-job:${executionId}`;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "draft", now });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Should roll back deferred tool queueing.",
+      rawText: "Should roll back deferred tool queueing.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 5,
+        completionTokens: 6,
+        totalTokens: 11,
+      },
+      toolExecutionRecords: [
+        {
+          id: executionId,
+          runId,
+          deliveryMode: "async_job",
+          floorId,
+          callerSlot: "narrator",
+          providerId: "mcp:mcp-1",
+          providerType: "mcp",
+          toolName: "github_create_issue",
+          argsJson: JSON.stringify({ title: "Need help" }),
+          resultJson: JSON.stringify({ accepted: true, status: "queued" }),
+          status: "queued",
+          lifecycleState: "opened",
+          commitOutcome: "pending",
+          sideEffectLevel: "irreversible",
+          durationMs: 0,
+          startedAt: now,
+          attemptNo: 1,
+          createdAt: now,
+        },
+      ],
+      pendingToolJobs: [
+        {
+          executionId,
+          runId,
+          jobId,
+          envelope: {
+            executionId,
+            runId,
+            sessionId,
+            accountId: DEFAULT_ACCOUNT_ID,
+            floorId,
+            callerSlot: "narrator",
+            providerId: "mcp:mcp-1",
+            providerType: "mcp",
+            toolName: "github_create_issue",
+            args: { title: "Need help" },
+            sideEffectLevel: "irreversible",
+            deliveryMode: "async_job",
+            asyncCapability: "deferred_ok",
+            resultVisibility: "deferred_receipt",
+            acceptedAt: now,
+          },
+          receipt: { accepted: true, delivery_mode: "async_job", execution_id: executionId, job_id: jobId, status: "queued", message: "Deferred tool accepted." },
+        },
+      ],
+    };
+
+    await expect(deferredService.commit({ accountId: DEFAULT_ACCOUNT_ID, floorId, sessionId, execution })).rejects.toThrow(FloorStateConflictError);
+    expect(await database.db.select().from(runtimeJobs)).toEqual([]);
+    expect(await database.db.select().from(toolExecutionRecords)).toEqual([]);
   });
 
 

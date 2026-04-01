@@ -653,9 +653,11 @@ export const toolExecutionRecords = sqliteTable(
     providerType: text("provider_type", { enum: ["builtin", "preset", "mcp", "unknown"] }).notNull().default("unknown"),
     argsJson: text("args_json").notNull().default("{}"),
     resultJson: text("result_json").notNull().default("{}"),
-    status: text("status", { enum: ["running", "success", "error", "denied", "timeout", "uncertain", "blocked"] }).notNull().default("running"),
+    status: text("status", { enum: ["running", "queued", "success", "error", "denied", "timeout", "uncertain", "blocked"] }).notNull().default("running"),
     lifecycleState: text("lifecycle_state", { enum: ["opened", "finished"] }).notNull().default("finished"),
     commitOutcome: text("commit_outcome", { enum: ["pending", "committed", "discarded", "replay_blocked", "uncertain"] }).notNull().default("pending"),
+    deliveryMode: text("delivery_mode", { enum: ["inline", "async_job"] }).notNull().default("inline"),
+    runtimeJobId: text("runtime_job_id"),
     sideEffectLevel: text("side_effect_level", { enum: ["none", "sandbox", "irreversible"] }),
     errorMessage: text("error_message"),
     durationMs: integer("duration_ms").notNull().default(0),
@@ -669,6 +671,7 @@ export const toolExecutionRecords = sqliteTable(
     floorCreatedIdx: index("tool_execution_record_floor_created_idx").on(table.floorId, table.startedAt),
     runIdx: index("tool_execution_record_run_idx").on(table.runId, table.startedAt),
     pageCreatedIdx: index("tool_execution_record_page_created_idx").on(table.pageId, table.startedAt),
+    runtimeJobIdx: index("tool_execution_record_runtime_job_idx").on(table.runtimeJobId),
     toolNameIdx: index("tool_execution_record_tool_name_idx").on(table.toolName),
   })
 );

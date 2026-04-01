@@ -4,6 +4,7 @@ import type {
   ExecutedToolCallRecord,
   InstanceSlot,
   ToolExecutionCommitOutcome,
+  ToolExecutionDeliveryMode,
   ToolExecutionFinishPatch,
   ToolExecutionLifecycleState,
   ToolExecutionOpenRecord,
@@ -40,6 +41,7 @@ function toRecord(row: ToolExecutionRow): ExecutedToolCallRecord {
   return {
     id: row.id,
     runId: row.runId,
+    deliveryMode: (row.deliveryMode ?? "inline") as ToolExecutionDeliveryMode,
     floorId: row.floorId,
     pageId: row.pageId ?? undefined,
     callerSlot: row.callerSlot as InstanceSlot,
@@ -58,6 +60,7 @@ function toRecord(row: ToolExecutionRow): ExecutedToolCallRecord {
     finishedAt: row.finishedAt ?? undefined,
     attemptNo: row.attemptNo,
     replayParentExecutionId: row.replayParentExecutionId ?? undefined,
+    runtimeJobId: row.runtimeJobId ?? undefined,
     createdAt: row.createdAt,
   };
 }
@@ -68,6 +71,7 @@ function toFinishedRow(record: ExecutedToolCallRecord): typeof toolExecutionReco
     runId: record.runId,
     floorId: record.floorId,
     pageId: record.pageId ?? null,
+    deliveryMode: record.deliveryMode ?? "inline",
     callerSlot: record.callerSlot,
     providerId: record.providerId,
     providerType: record.providerType ?? "unknown",
@@ -85,6 +89,7 @@ function toFinishedRow(record: ExecutedToolCallRecord): typeof toolExecutionReco
     attemptNo: record.attemptNo ?? 1,
     replayParentExecutionId: record.replayParentExecutionId ?? null,
     createdAt: record.createdAt,
+    runtimeJobId: record.runtimeJobId ?? null,
   };
 }
 
@@ -94,15 +99,17 @@ function toOpenRow(record: ToolExecutionOpenRecord): typeof toolExecutionRecords
     runId: record.runId,
     floorId: record.floorId,
     pageId: record.pageId ?? null,
+    deliveryMode: record.deliveryMode ?? "inline",
     callerSlot: record.callerSlot,
     providerId: record.providerId,
     providerType: record.providerType,
     toolName: record.toolName,
     argsJson: record.argsJson,
-    resultJson: "null",
-    status: "running",
+    resultJson: record.resultJson ?? "null",
+    status: record.status ?? "running",
     lifecycleState: "opened",
     commitOutcome: "pending",
+    runtimeJobId: record.runtimeJobId ?? null,
     sideEffectLevel: record.sideEffectLevel ?? null,
     errorMessage: null,
     durationMs: 0,

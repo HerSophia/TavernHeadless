@@ -3,6 +3,7 @@ import type { CoreEventBus } from "@tavern/core"
 import type { AppDb } from "../db/client.js"
 import { MutationApplierRegistry } from "./mutation-applier-registry.js"
 import { applyMutationWithHandler } from "./mutation-batch.js"
+import { emitRuntimeMutationEvent, toRuntimeMutationErrorFields } from "./runtime-mutation-events.js"
 import { createMutationRuntimeJobCatalog, MUTATION_RUNTIME_JOB_TYPES, type MutationApplyJobPayload } from "./mutation-runtime-job-definitions.js"
 import { RuntimeJobProcessorRegistry } from "./runtime-job-processor-registry.js"
 import type {
@@ -32,18 +33,34 @@ class MutationApplyJobProcessor implements RuntimeJobProcessor<MutationApplyJobP
   commit(context: RuntimeJobCommitContext<MutationApplyJobPayload, MutationApplyJobPayload>) {
     const envelope = context.prepared.envelope as import("./runtime-mutation-types.js").RuntimeMutationEnvelope<unknown>
     const applier = this.deps.registry.get(envelope.kind)
-    const applied = applyMutationWithHandler({
-      db: context.db,
-      tx: context.tx,
-      envelope,
-      handler: (request) => applier.apply(request),
-      contextInput: {
-        actor: { type: "worker", id: context.workerId },
-        requestId: context.job.id,
-      },
-      eventBus: this.deps.eventBus,
-      now: this.now,
-    })
+
+    const applied = (() => {
+      try {
+        return applyMutationWithHandler({
+          db: context.db,
+          tx: context.tx,
+          envelope,
+          handler: (request) => applier.apply(request),
+          contextInput: {
+            actor: { type: "worker", id: context.workerId },
+            requestId: context.job.id,
+          },
+          eventBus: this.deps.eventBus,
+          now: this.now,
+        })
+      } catch (error) {
+        const errorFields = toRuntimeMutationErrorFields(error)
+        void emitRuntimeMutationEvent(this.deps.eventBus, "runtime.mutation_failed", envelope, {
+          actor: { type: "worker", id: context.workerId },
+          requestId: context.job.id,
+          relatedJobId: context.job.id,
+          outcome: "failed",
+          observedAt: this.now(),
+          ...errorFields,
+        })
+        throw error
+      }
+    })()
 
     return {
       phase: "applied",
@@ -53,11 +70,27 @@ class MutationApplyJobProcessor implements RuntimeJobProcessor<MutationApplyJobP
       progressMessage: "mutation applied",
       scopeMutation: "changed" as const,
       lastProcessedAt: context.completedAt,
-      afterCommit: applied.afterCommit.length > 0
+      afterCommit: applied.afterCommit.length > 0 || this.deps.eventBus
         ? async () => {
           for (const hook of applied.afterCommit) {
             await hook()
           }
+
+          await emitRuntimeMutationEvent(
+            this.deps.eventBus,
+            applied.mutation.outcome === "skipped"
+              ? "runtime.mutation_skipped"
+              : "runtime.mutation_applied",
+            applied.mutation.envelope,
+            {
+              actor: { type: "worker", id: context.workerId },
+              requestId: context.job.id,
+              relatedJobId: context.job.id,
+              outcome: applied.mutation.outcome,
+              skipReason: applied.mutation.skipReason ?? null,
+              observedAt: this.now(),
+            },
+          )
         }
         : undefined,
     }

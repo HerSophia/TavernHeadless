@@ -23,6 +23,7 @@ import {
   type LlmInstanceConfigItem,
   type ResolvedInstanceSlot,
 } from "../services/llm-instance-service";
+import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 
 // ── Zod schemas for runtime validation ──
 
@@ -74,11 +75,16 @@ const deleteQuerySchema = z.object({
 
 // ── Route registration ──
 
+export interface RegisterLlmInstanceRoutesOptions {
+  mutationRuntime?: MutationRuntime;
+}
+
 export async function registerLlmInstanceRoutes(
   app: FastifyInstance,
-  connection: DatabaseConnection
+  connection: DatabaseConnection,
+  options: RegisterLlmInstanceRoutesOptions = {},
 ): Promise<void> {
-  const service = new LlmInstanceService(connection.db);
+  const service = new LlmInstanceService(connection.db, { mutationRuntime: options.mutationRuntime });
 
   // GET /llm-instances
   app.get("/llm-instances", {

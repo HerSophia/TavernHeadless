@@ -307,6 +307,7 @@ export class TurnOrchestrator {
 
       const toolExecutionRecords = toolExecutor?.getExecutionRecords();
       const bufferedVariableMutations = toolExecutor?.getBufferedVariableMutations();
+      const pendingToolJobs = toolExecutor?.getPendingToolJobs();
 
       return {
         floorId: input.floorId,
@@ -324,6 +325,9 @@ export class TurnOrchestrator {
           : {}),
         ...(bufferedVariableMutations && bufferedVariableMutations.length > 0
           ? { bufferedVariableMutations }
+          : {}),
+        ...(pendingToolJobs && pendingToolJobs.length > 0
+          ? { pendingToolJobs }
           : {}),
       };
     } catch (error) {

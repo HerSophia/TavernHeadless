@@ -10,11 +10,26 @@ import type {
   ToolDefinition,
   ToolCallResult,
   ToolExecutionContext,
+  ToolExecutionStatus,
   ToolProviderType,
 } from '@tavern/core';
 
 import type { McpServerConfig } from './types.js';
 import type { McpConnectionManager } from './mcp-connection-manager.js';
+import type { ToolRuntimePolicy } from '../services/tool-runtime-policy.js';
+
+function inferExecutionStatus(error: string): Exclude<ToolExecutionStatus, 'running' | 'queued'> {
+  const normalized = error.toLowerCase();
+  if (normalized.includes('execution outcome is uncertain')) {
+    return 'uncertain';
+  }
+
+  if (normalized.includes('timeout')) {
+    return 'timeout';
+  }
+
+  return 'error';
+}
 
 export class McpToolProvider implements ToolProvider {
   readonly id: string;
@@ -23,6 +38,9 @@ export class McpToolProvider implements ToolProvider {
   constructor(
     private config: McpServerConfig,
     private connectionManager: McpConnectionManager,
+    private readonly options: {
+      toolRuntimePolicy?: ToolRuntimePolicy;
+    } = {},
   ) {
     this.id = `mcp:${config.id}`;
   }
@@ -38,7 +56,9 @@ export class McpToolProvider implements ToolProvider {
         return [];
       }
 
-      return connection.getTools();
+      return connection
+        .getTools()
+        .map((tool) => this.options.toolRuntimePolicy?.annotateMcpTool(this.config.id, tool) ?? { ...tool });
     } catch {
       return [];
     }
@@ -57,7 +77,11 @@ export class McpToolProvider implements ToolProvider {
     try {
       const connection = await this.connectionManager.getConnection(this.config.id);
       if (!connection || connection.state !== 'connected') {
-        return { error: `MCP server "${this.config.name}" is not connected` };
+        const error = `MCP server "${this.config.name}" is not connected`;
+        return {
+          error,
+          executionStatus: inferExecutionStatus(error),
+        };
       }
 
       // 去除 toolPrefix 还原 MCP 原始工具名
@@ -66,12 +90,19 @@ export class McpToolProvider implements ToolProvider {
       const result = await connection.callTool(rawName, args);
 
       if (result.error) {
-        return { error: result.error };
+        return {
+          error: result.error,
+          executionStatus: inferExecutionStatus(result.error),
+        };
       }
 
       return { data: result.data };
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      const error = err instanceof Error ? err.message : String(err);
+      return {
+        error,
+        executionStatus: inferExecutionStatus(error),
+      };
     }
   }
 

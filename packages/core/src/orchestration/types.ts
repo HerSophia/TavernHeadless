@@ -5,6 +5,7 @@ import type { MemoryInjectionOptions, MemoryInjectionResult, MemoryItem } from '
 import type {
   BufferedToolVariableMutation,
   ExecutedToolCallRecord,
+  PendingToolJobRequest,
   ToolPermissions,
   ToolCallRecord,
 } from '../tools/types.js';
@@ -148,6 +149,8 @@ export interface TurnExecutionResult {
   toolExecutionRecords?: ExecutedToolCallRecord[];
   /** 本回合工具产生但尚未持久化的变量写入 */
   bufferedVariableMutations?: BufferedToolVariableMutation[];
+  /** 本回合已受理、但尚未 durable enqueue 的异步工具请求 */
+  pendingToolJobs?: PendingToolJobRequest[];
   /**
    * 旧的摘要式工具调用记录。
    *

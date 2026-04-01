@@ -438,4 +438,103 @@ describe("RuntimeWorker", () => {
     });
     expect(JSON.parse(job!.resultJson ?? "null")).toEqual({ value: "EXPIRED" });
   });
+
+  it("marks expired running jobs uncertain without replay when the job definition requests conservative recovery", async () => {
+    const now = 1_736_000_150_000;
+    await database.db.insert(accounts).values({
+      id: DEFAULT_ACCOUNT_ID,
+      name: DEFAULT_ACCOUNT_ID,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoNothing().run();
+
+    const prepareSpy = vi.fn(async () => ({ prepared: "should-not-run" }));
+    const recoverSpy = vi.fn(() => ({
+      phase: "uncertain",
+      result: {
+        recovery: true,
+        reason: "expired_running_lease",
+      },
+      progressCurrent: 1,
+      progressTotal: 1,
+      progressMessage: "recovered as uncertain",
+      scopeMutation: "changed" as const,
+      lastProcessedAt: now,
+    }));
+
+    processors.register("test.conservative_job", {
+      prepare: prepareSpy,
+      commit() {
+        throw new Error("unreachable");
+      },
+      recoverExpiredRunning: recoverSpy,
+    });
+    catalog.register({
+      jobType: "test.conservative_job",
+      payloadSchema: z.object({ value: z.string().min(1) }),
+      initialPhase: "queued",
+      expiredRunningPolicy: "mark_uncertain",
+    });
+
+    await database.db.insert(runtimeScopeStates).values({
+      accountId: DEFAULT_ACCOUNT_ID,
+      scopeType: "test",
+      scopeKey: "scope:uncertain",
+      revision: 0,
+      leaseOwner: "worker-old",
+      leaseUntil: now - 1,
+      lastProcessedAt: null,
+      lastSuccessJobId: null,
+      metadataJson: "{}",
+      updatedAt: now - 1,
+    });
+
+    await database.db.insert(runtimeJobs).values({
+      id: "job-uncertain",
+      jobType: "test.conservative_job",
+      accountId: DEFAULT_ACCOUNT_ID,
+      scopeType: "test",
+      scopeKey: "scope:uncertain",
+      sessionId: null,
+      floorId: null,
+      pageId: null,
+      status: "running",
+      phase: "executing",
+      payloadJson: JSON.stringify({ value: "risk" }),
+      stateJson: JSON.stringify({ step: "executing" }),
+      resultJson: null,
+      attemptCount: 1,
+      maxAttempts: 5,
+      availableAt: now - 10,
+      startedAt: now - 50,
+      finishedAt: null,
+      leaseOwner: "worker-old",
+      leaseUntil: now - 1,
+      basedOnRevision: 0,
+      dedupeKey: null,
+      progressCurrent: 0,
+      progressTotal: 1,
+      progressMessage: "executing",
+      lastError: null,
+      lastErrorCode: null,
+      lastErrorClass: null,
+      createdAt: now - 50,
+      updatedAt: now - 1,
+    });
+
+    const worker = new RuntimeWorker(database.db, catalog, processors, {
+      workerId: "runtime-worker-uncertain",
+      pollIntervalMs: 60_000,
+      jobTypes: ["test.conservative_job"],
+    });
+
+    await expect(worker.processOneDueJob()).resolves.toBe(true);
+
+    expect(prepareSpy).not.toHaveBeenCalled();
+    expect(recoverSpy).toHaveBeenCalledTimes(1);
+
+    const [job] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, "job-uncertain"));
+    expect(job).toMatchObject({ status: "succeeded", phase: "uncertain" });
+    expect(JSON.parse(job!.resultJson ?? "null")).toEqual({ recovery: true, reason: "expired_running_lease" });
+  });
 });

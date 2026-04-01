@@ -33,6 +33,9 @@ export interface MutationActor {
   id?: string
 }
 
+export const MUTATION_OUTCOMES = ["applied", "skipped"] as const
+export type RuntimeMutationOutcome = (typeof MUTATION_OUTCOMES)[number]
+
 export interface RuntimeMutationEnvelope<TPayload = unknown> {
   id: string
   kind: string
@@ -75,6 +78,8 @@ export interface RuntimeMutationApplyRequest<TPayload = unknown> {
 export interface RuntimeMutationApplyResult<TResult = unknown> {
   result?: TResult
   afterCommit?: MutationAfterCommitHook[]
+  outcome?: RuntimeMutationOutcome
+  skipReason?: string
 }
 
 export interface RuntimeMutationApplier<TPayload = unknown, TResult = unknown> {
@@ -88,6 +93,8 @@ export type MutationApplyHandler<TPayload = unknown, TResult = unknown> = (
 export interface AppliedRuntimeMutation<TResult = unknown> {
   envelope: RuntimeMutationEnvelope
   result?: TResult
+  outcome: RuntimeMutationOutcome
+  skipReason?: string
 }
 
 export interface MutationBatchApplyResult {

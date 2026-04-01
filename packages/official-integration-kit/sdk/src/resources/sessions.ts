@@ -183,15 +183,21 @@ export type SessionRuntimeToolSource = "builtin" | "resource" | "custom" | "pres
 export type SessionRuntimeToolAvailability = "available" | "unavailable" | "conflict";
 export type SessionRuntimeToolReplaySafety = "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
 export type SessionRuntimeToolSlot = "narrator" | "director" | "verifier" | "memory";
+export type SessionRuntimeToolAsyncCapability = "inline_only" | "deferred_ok";
+export type SessionRuntimeToolDeliveryMode = "inline" | "async_job";
+export type SessionRuntimeToolResultVisibility = "immediate" | "deferred_receipt";
 
 export type SessionRuntimeToolCatalogEntry = {
   allowedSlots: SessionRuntimeToolSlot[];
+  asyncCapability: SessionRuntimeToolAsyncCapability;
   availability: SessionRuntimeToolAvailability;
   availabilityReason: string | null;
+  defaultDeliveryMode: SessionRuntimeToolDeliveryMode;
   name: string;
   providerId: string;
   providerType: SessionRuntimeToolProviderType;
   replaySafety: SessionRuntimeToolReplaySafety;
+  resultVisibility: SessionRuntimeToolResultVisibility;
   sideEffectLevel: "none" | "sandbox" | "irreversible";
   source: SessionRuntimeToolSource;
 };
@@ -1188,12 +1194,15 @@ function mapRuntimeToolCatalogEntry(value: unknown): SessionRuntimeToolCatalogEn
 
   return {
     allowedSlots: mapStringArray(record.allowed_slots) as SessionRuntimeToolCatalogEntry["allowedSlots"],
+    asyncCapability: readString(record.async_capability, "inline_only") as SessionRuntimeToolCatalogEntry["asyncCapability"],
     availability: readString(record.availability, "unavailable") as SessionRuntimeToolCatalogEntry["availability"],
     availabilityReason: readNullableString(record.availability_reason),
+    defaultDeliveryMode: readString(record.default_delivery_mode, "inline") as SessionRuntimeToolCatalogEntry["defaultDeliveryMode"],
     name: readString(record.name),
     providerId: readString(record.provider_id),
     providerType: readString(record.provider_type, "builtin") as SessionRuntimeToolCatalogEntry["providerType"],
     replaySafety: readString(record.replay_safety, "uncertain") as SessionRuntimeToolCatalogEntry["replaySafety"],
+    resultVisibility: readString(record.result_visibility, "immediate") as SessionRuntimeToolCatalogEntry["resultVisibility"],
     sideEffectLevel: readString(record.side_effect_level, "none") as SessionRuntimeToolCatalogEntry["sideEffectLevel"],
     source: readString(record.source, "builtin") as SessionRuntimeToolCatalogEntry["source"],
   };

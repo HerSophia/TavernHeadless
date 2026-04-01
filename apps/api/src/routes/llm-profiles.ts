@@ -38,6 +38,7 @@ import {
   type LlmBindingGenerationParams,
   type LlmProfileListItem,
 } from "../services/llm-profile-service";
+import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 
 const providerSchema = z.enum(["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"]);
 const profileStatusSchema = z.enum(["active", "disabled", "deleted"]);
@@ -137,8 +138,16 @@ const testModelSchema = z.object({
 });
 
 
-export async function registerLlmProfileRoutes(app: FastifyInstance, connection: DatabaseConnection): Promise<void> {
-  const service = new LlmProfileService(connection.db);
+export interface RegisterLlmProfileRoutesOptions {
+  mutationRuntime?: MutationRuntime;
+}
+
+export async function registerLlmProfileRoutes(
+  app: FastifyInstance,
+  connection: DatabaseConnection,
+  options: RegisterLlmProfileRoutesOptions = {},
+): Promise<void> {
+  const service = new LlmProfileService(connection.db, { mutationRuntime: options.mutationRuntime });
 
   app.post(
     "/llm-profiles",

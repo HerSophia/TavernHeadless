@@ -23,6 +23,8 @@ const { app } = await buildApp({
   enableAsyncMemoryIngest: config.enableAsyncMemoryIngest,
   enableMacroCompaction: config.enableMacroCompaction,
   enableDualSummaryInjection: config.enableDualSummaryInjection,
+  enableDeferredIrreversibleTools: config.enableDeferredIrreversibleTools,
+  deferredIrreversibleMcpTools: config.deferredIrreversibleMcpTools,
   memoryWorker: config.memoryWorker,
   llmDefaultTimeoutMs: config.llmDefaultTimeoutMs,
   chatTransferArtifactDir: config.chatTransferArtifactDir,

@@ -15,6 +15,8 @@ export const RUNTIME_JOB_STATUSES = [
 
 export type RuntimeJobStatus = (typeof RUNTIME_JOB_STATUSES)[number];
 
+export type RuntimeExpiredRunningPolicy = "replay" | "mark_uncertain";
+
 export type RuntimeScopeMutation = "none" | "changed";
 
 export interface RuntimeScopeRef {
@@ -31,6 +33,7 @@ export interface RuntimeJobDefinition<TPayload = unknown> {
   payloadSchema: ZodTypeAny;
   defaultMaxAttempts?: number;
   initialPhase?: string | null;
+  expiredRunningPolicy?: RuntimeExpiredRunningPolicy;
   createJobId?: (input: {
     jobType: string;
     payload: TPayload;
@@ -98,6 +101,17 @@ export interface RuntimeJobCommitContext<TPayload, TPrepared> {
   readState<T = unknown>(): T | null;
 }
 
+export interface RuntimeJobExpiredRunningContext<TPayload> {
+  tx: DbExecutor;
+  db: AppDb;
+  job: RuntimeJobRecord;
+  payload: TPayload;
+  scopeRef: RuntimeScopeRef;
+  scopeState: RuntimeScopeStateRecord;
+  workerId: string;
+  recoveredAt: number;
+}
+
 export interface RuntimeJobCommitResult<TResult = unknown> {
   phase?: string | null;
   state?: unknown;
@@ -120,4 +134,7 @@ export interface RuntimeJobProcessor<
 > {
   prepare(context: RuntimeJobPrepareContext<TPayload>): Promise<TPrepared>;
   commit(context: RuntimeJobCommitContext<TPayload, TPrepared>): RuntimeJobCommitResult<TResult>;
+  recoverExpiredRunning?(
+    context: RuntimeJobExpiredRunningContext<TPayload>,
+  ): RuntimeJobCommitResult<TResult>;
 }

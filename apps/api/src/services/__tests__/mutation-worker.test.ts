@@ -1,3 +1,5 @@
+
+import { createEventBus } from "@tavern/core"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js"
@@ -9,6 +11,11 @@ import { VARIABLE_MUTATION_KINDS, type VariableSetMutationPayload } from "../var
 import type { RuntimeMutationEnvelope } from "../runtime-mutation-types.js"
 
 const DEFAULT_ACCOUNT_ID = "default-admin"
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+}
 
 describe("MutationWorker", () => {
   let database: DatabaseConnection
@@ -36,8 +43,18 @@ describe("MutationWorker", () => {
   })
 
   it("applies queued async mutations through RuntimeWorker", async () => {
-    const bridge = createMutationRuntimeJobBridge(database.db)
-    const worker = new MutationWorker(database.db, createDefaultMutationApplierRegistry())
+    const eventBus = createEventBus()
+    const createdEvents: string[] = []
+    const appliedEvents: string[] = []
+    eventBus.on("runtime.mutation_created", (event) => {
+      createdEvents.push(event.mutationId)
+    })
+    eventBus.on("runtime.mutation_applied", (event) => {
+      appliedEvents.push(event.mutationId)
+    })
+
+    const bridge = createMutationRuntimeJobBridge(database.db, { eventBus })
+    const worker = new MutationWorker(database.db, createDefaultMutationApplierRegistry(), { eventBus })
 
     const envelope: RuntimeMutationEnvelope<VariableSetMutationPayload> = {
       id: "mutation:async:variable-set",
@@ -66,6 +83,8 @@ describe("MutationWorker", () => {
     }
 
     await bridge.enqueue(envelope)
+    await flushMicrotasks()
+    expect(createdEvents).toEqual(["mutation:async:variable-set"])
 
     const processed = await worker.processOneDueJob()
     expect(processed).toBe(true)
@@ -95,5 +114,8 @@ describe("MutationWorker", () => {
       progressTotal: 1,
       progressMessage: "mutation applied",
     })
+
+    await flushMicrotasks()
+    expect(appliedEvents).toEqual(["mutation:async:variable-set"])
   })
 })

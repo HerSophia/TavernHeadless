@@ -59,6 +59,7 @@ export interface RuntimeWorkerOptions {
 type LeasedRuntimeJob = {
   job: RuntimeJobRecord;
   scopeRef: RuntimeScopeRef;
+  leasedFromStatus: RuntimeJobStatus;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -330,6 +331,7 @@ export class RuntimeWorker {
         finishedAt: null,
       },
       scopeRef,
+      leasedFromStatus: candidate.status,
     };
   }
 
@@ -338,23 +340,40 @@ export class RuntimeWorker {
     const scopeRef = leased.scopeRef;
 
     try {
-      job = await this.markRunning(job, scopeRef);
-      const payload = this.catalog.parsePayload(job.jobType, job.payloadJson);
+      const definition = this.catalog.get(job.jobType);
       const processor = this.processors.get(job.jobType);
+      const shouldRecoverExpiredRunning = leased.leasedFromStatus === "running"
+        && definition.expiredRunningPolicy === "mark_uncertain";
 
-      const updateProgress = async (update: RuntimeJobProgressUpdate) => {
-        job = await this.updateRunningJob(job, scopeRef, update);
-      };
+      if (shouldRecoverExpiredRunning && !processor.recoverExpiredRunning) {
+        throw new RuntimeJobFatalError(
+          `Runtime job processor '${job.jobType}' does not implement recoverExpiredRunning() for conservative expired running recovery`,
+        );
+      }
 
-      const prepared = await processor.prepare({
-        db: this.db,
-        job,
-        payload,
-        workerId: this.workerId,
-        leaseTtlMs: this.leaseTtlMs,
-        readState: <T>() => parseJobJson<T>(job.stateJson),
-        updateProgress,
-      });
+      let payload: unknown;
+      let prepared: unknown;
+
+      if (shouldRecoverExpiredRunning) {
+        payload = this.catalog.parsePayload(job.jobType, job.payloadJson);
+      } else {
+        job = await this.markRunning(job, scopeRef);
+        payload = this.catalog.parsePayload(job.jobType, job.payloadJson);
+
+        const updateProgress = async (update: RuntimeJobProgressUpdate) => {
+          job = await this.updateRunningJob(job, scopeRef, update);
+        };
+
+        prepared = await processor.prepare({
+          db: this.db,
+          job,
+          payload,
+          workerId: this.workerId,
+          leaseTtlMs: this.leaseTtlMs,
+          readState: <T>() => parseJobJson<T>(job.stateJson),
+          updateProgress,
+        });
+      }
 
       const completedAt = Date.now();
       const expectedRevision = job.basedOnRevision ?? 0;
@@ -365,18 +384,29 @@ export class RuntimeWorker {
         const scopeState = this.scopeStates.ensure(tx, scopeRef, completedAt);
         this.revisionGuard.assertExpected(revisionSnapshot, scopeState.revision);
 
-        const commitResult = processor.commit({
-          tx,
-          db: this.db,
-          job,
-          payload,
-          prepared,
-          scopeRef,
-          scopeState,
-          workerId: this.workerId,
-          completedAt,
-          readState: <T>() => parseJobJson<T>(job.stateJson),
-        });
+        const commitResult = shouldRecoverExpiredRunning
+          ? processor.recoverExpiredRunning!({
+              tx,
+              db: this.db,
+              job,
+              payload,
+              scopeRef,
+              scopeState,
+              workerId: this.workerId,
+              recoveredAt: completedAt,
+            })
+          : processor.commit({
+              tx,
+              db: this.db,
+              job,
+              payload,
+              prepared,
+              scopeRef,
+              scopeState,
+              workerId: this.workerId,
+              completedAt,
+              readState: <T>() => parseJobJson<T>(job.stateJson),
+            });
 
         afterCommit = commitResult.afterCommit;
         this.scopeStates.finalizeSuccess(tx, {
@@ -536,7 +566,7 @@ export class RuntimeWorker {
       })
       .where(and(
         eq(runtimeJobs.id, job.id),
-        eq(runtimeJobs.status, "running"),
+        eq(runtimeJobs.status, job.status),
         eq(runtimeJobs.leaseOwner, this.workerId),
       ))
       .run();

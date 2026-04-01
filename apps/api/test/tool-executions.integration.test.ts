@@ -186,6 +186,51 @@ describe("Tool execution journal routes", () => {
     ]);
   });
 
+  it("returns queued execution journal rows when deferred tool jobs are pending", async () => {
+    const { sessionId, floorId } = await seedExecutionRows();
+    const now = Date.now() + 100;
+
+    await seedConnection.db.insert(toolExecutionRecords).values({
+      id: "exec-queued",
+      runId: "run-queued",
+      floorId,
+      pageId: null,
+      callerSlot: "narrator",
+      providerId: "mcp:github",
+      providerType: "mcp",
+      toolName: "github_create_issue",
+      argsJson: JSON.stringify({ title: "Need help" }),
+      resultJson: JSON.stringify({ accepted: true, status: "queued" }),
+      status: "queued",
+      lifecycleState: "opened",
+      commitOutcome: "committed",
+      deliveryMode: "async_job",
+      runtimeJobId: "tool-job:exec-queued",
+      sideEffectLevel: "irreversible",
+      errorMessage: null,
+      durationMs: 0,
+      startedAt: now,
+      finishedAt: null,
+      attemptNo: 1,
+      replayParentExecutionId: null,
+      createdAt: now,
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/tool-executions?session_id=${sessionId}&status=queued`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<ListResponse>();
+    expect(body.meta.total).toBe(1);
+    expect(body.data[0]).toEqual(expect.objectContaining({
+      id: "exec-queued",
+      status: "queued",
+      lifecycle_state: "opened",
+    }));
+  });
+
   it("returns floor-scoped execution journal rows from /floors/:id/tool-executions", async () => {
     const { floorId } = await seedExecutionRows();
 

@@ -38,7 +38,7 @@ const toolSourceSchema = z.enum(["preset", "character", "custom"]);
 const handlerTypeSchema = z.enum(["script", "prompt", "delegate"]);
 const instanceSlotSchema = z.enum(["narrator", "director", "verifier", "memory"]);
 const callRecordStatusSchema = z.enum(["success", "error", "denied"]);
-const toolExecutionStatusSchema = z.enum(["running", "success", "error", "denied", "timeout", "uncertain", "blocked"]);
+const toolExecutionStatusSchema = z.enum(["running", "queued", "success", "error", "denied", "timeout", "uncertain", "blocked"]);
 const toolExecutionLifecycleStateSchema = z.enum(["opened", "finished"]);
 const toolExecutionCommitOutcomeSchema = z.enum(["pending", "committed", "discarded", "replay_blocked", "uncertain"]);
 const toolExecutionProviderTypeSchema = z.enum(["builtin", "preset", "mcp", "unknown"]);
@@ -267,7 +267,9 @@ const toolExecutionJsonSchema = {
     "duration_ms",
     "started_at",
     "finished_at",
+    "delivery_mode",
     "attempt_no",
+    "runtime_job_id",
     "replay_parent_execution_id",
     "created_at",
   ],
@@ -282,15 +284,17 @@ const toolExecutionJsonSchema = {
     tool_name: { type: "string" },
     args: {},
     result: {},
-    status: { type: "string", enum: ["running", "success", "error", "denied", "timeout", "uncertain", "blocked"] },
+    status: { type: "string", enum: ["running", "queued", "success", "error", "denied", "timeout", "uncertain", "blocked"] },
     lifecycle_state: { type: "string", enum: ["opened", "finished"] },
     commit_outcome: { type: "string", enum: ["pending", "committed", "discarded", "replay_blocked", "uncertain"] },
     side_effect_level: { anyOf: [{ type: "string", enum: ["none", "sandbox", "irreversible"] }, { type: "null" }] },
     error_message: { anyOf: [{ type: "string" }, { type: "null" }] },
     duration_ms: { type: "integer", minimum: 0 },
+    delivery_mode: { type: "string", enum: ["inline", "async_job"] },
     started_at: { type: "integer", minimum: 0 },
     finished_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
     attempt_no: { type: "integer", minimum: 1 },
+    runtime_job_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     replay_parent_execution_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     created_at: { type: "integer", minimum: 0 },
   },
@@ -305,7 +309,7 @@ const toolExecutionsQueryJsonSchema = {
     run_id: { type: "string", minLength: 1 },
     caller_slot: { type: "string", enum: ["narrator", "director", "verifier", "memory"] },
     tool_name: { type: "string", minLength: 1 },
-    status: { type: "string", enum: ["running", "success", "error", "denied", "timeout", "uncertain", "blocked"] },
+    status: { type: "string", enum: ["running", "queued", "success", "error", "denied", "timeout", "uncertain", "blocked"] },
     lifecycle_state: { type: "string", enum: ["opened", "finished"] },
     commit_outcome: { type: "string", enum: ["pending", "committed", "discarded", "replay_blocked", "uncertain"] },
     provider_type: { type: "string", enum: ["builtin", "preset", "mcp", "unknown"] },
