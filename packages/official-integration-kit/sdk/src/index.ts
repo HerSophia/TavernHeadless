@@ -149,6 +149,7 @@ export {
   type PresetsResource,
   type RegexProfileDetail,
   type RegexProfileListItem,
+  type RegexProfileRuleInput,
   type RegexProfilesResource,
   type RegenerateResult,
   type RespondDryRunAssembly,

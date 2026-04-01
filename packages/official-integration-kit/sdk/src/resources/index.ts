@@ -170,6 +170,7 @@ export {
   createRegexProfilesResource,
   type RegexProfileDetail,
   type RegexProfileListItem,
+  type RegexProfileRuleInput,
   type RegexProfilesResource,
 } from "./regex-profiles.js";
 export {

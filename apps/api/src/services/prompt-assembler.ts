@@ -275,6 +275,9 @@ export async function assemblePrompt(
       })),
     { role: "user", content: userMessage },
   ];
+  const enabledRegexScripts = (promptSnapshot.regexProfile?.scripts ?? []).filter(
+    (script) => !script.disabled
+  );
 
   // ── 3. 编排 ──
   let messages: ChatMessage[];
@@ -298,6 +301,7 @@ export async function assemblePrompt(
         caseSensitive: worldbookData.caseSensitive,
         matchWholeWords: worldbookData.matchWholeWords,
       });
+      worldBookResults = applyWorldInfoRegexRules(worldBookResults, enabledRegexScripts);
     }
 
     promptSnapshot.worldbookActivatedEntryUids = collectActivatedEntryUids(worldBookResults);
@@ -348,10 +352,6 @@ export async function assemblePrompt(
   }
 
   // ── 5. 正则处理函数 ──
-  const enabledRegexScripts = (promptSnapshot.regexProfile?.scripts ?? []).filter(
-    (script) => !script.disabled
-  );
-
   promptSnapshot.regexPreRuleNames = collectRegexRuleNames(
     enabledRegexScripts,
     REGEX_PLACEMENT.USER_INPUT
@@ -608,6 +608,39 @@ function buildNativeSystemPrompt(
   }
 
   return parts.join("\n\n");
+}
+
+function applyWorldInfoRegexRules(
+  worldBookResults: TriggerResult | undefined,
+  scripts: LoadedPromptRegexProfile["scripts"] | undefined
+): TriggerResult | undefined {
+  if (!worldBookResults || !scripts || scripts.length === 0) {
+    return worldBookResults;
+  }
+
+  const worldInfoScripts = scripts.filter((script) => script.placement.includes(REGEX_PLACEMENT.WORLD_INFO));
+  if (worldInfoScripts.length === 0) {
+    return worldBookResults;
+  }
+
+  const transformContent = (content: string) => applyRegexScripts(content, worldInfoScripts, REGEX_PLACEMENT.WORLD_INFO);
+  const transformedContentByUid = new Map(
+    worldBookResults.activated.map((entry) => [entry.uid, transformContent(entry.content)] as const)
+  );
+  const applyEntryContent = <T extends { uid: number; content: string }>(entry: T): T => ({
+    ...entry,
+    content: transformedContentByUid.get(entry.uid) ?? transformContent(entry.content),
+  });
+
+  return {
+    activated: worldBookResults.activated.map(applyEntryContent),
+    before: worldBookResults.before.map(applyEntryContent),
+    after: worldBookResults.after.map(applyEntryContent),
+    atDepth: worldBookResults.atDepth.map((depthEntry) => ({
+      ...depthEntry,
+      entry: applyEntryContent(depthEntry.entry),
+    })),
+  };
 }
 
 function toNativeWorldbookEntries(

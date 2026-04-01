@@ -211,6 +211,21 @@ await client.presets.update({
 });
 ```
 
+对于 `regexProfiles.update()`，`data` 应直接传规则对象数组，不要传 JSON 字符串：
+
+```ts
+const regexProfile = await client.regexProfiles.getDetail({ profileId: "regex-1" });
+
+await client.regexProfiles.update({
+  profileId: regexProfile.id,
+  name: regexProfile.name,
+  data: [
+    { scriptName: "trim_whitespace", findRegex: "/\\s+$/g", replaceString: "", placement: [2] },
+  ],
+  expectedVersion: regexProfile.version,
+});
+```
+
 兼容旧调用方时，现有主资源 `PUT` 路由也仍然可以继续传 `expectedUpdatedAt`，但新的接入应优先使用 `expectedVersion`。
 
 删除主资源时，`remove(...)` 现在也支持 `expectedVersion`，SDK 会自动把它编码到 query string：
@@ -224,6 +239,11 @@ await client.presets.remove({
 await client.worldbooks.remove({
   worldbookId: "worldbook-1",
   expectedVersion: 7,
+});
+
+await client.regexProfiles.remove({
+  profileId: "regex-1",
+  expectedVersion: 3,
 });
 ```
 
