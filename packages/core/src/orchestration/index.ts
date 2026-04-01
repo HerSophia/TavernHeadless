@@ -28,6 +28,7 @@ export type {
   TurnInput,
   TurnExecutionResult,
   TurnOutput,
+  TurnRunObserver,
   VerifierFailStrategy,
   ToolMode,
 } from './types.js';

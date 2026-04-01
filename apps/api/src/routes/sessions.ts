@@ -11,6 +11,7 @@ import { ensureOptionalObjectBody, parseJsonField, parseWithSchema, requireRow, 
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
 import { getLatestOwnedActiveCharacterVersion, getOwnedActiveCharacterVersionById } from "../services/resource-ownership";
+import { FloorRunService } from "../services/floor-run-service";
 
 const sessionStatusSchema = z.enum(["active", "archived"]);
 const promptModeSchema = z.enum(["compat_strict", "compat_plus", "native"]);
@@ -563,6 +564,35 @@ const timelineResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const sessionActiveRunSummaryJsonSchema = {
+  type: "object",
+  required: ["branch_id", "busy", "updated_at"],
+  properties: {
+    branch_id: { type: "string" },
+    latest_floor_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    active_run_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    active_run_type: { anyOf: [{ type: "string", enum: ["respond", "regenerate_page", "retry_turn", "edit_and_regenerate"] }, { type: "null" }] },
+    busy: { type: "boolean" },
+    public_phase: { anyOf: [{ type: "string", enum: ["preparing", "generating", "verifying", "committing", "post_processing"] }, { type: "null" }] },
+    updated_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const sessionActiveRunResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["session_id", "active_run"],
+      properties: { session_id: { type: "string" }, active_run: { anyOf: [sessionActiveRunSummaryJsonSchema, { type: "null" }] } },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
 type CharacterBindingData = {
   characterId: string | null;
   characterVersionId: string | null;
@@ -651,6 +681,22 @@ function toSessionResponse(row: typeof sessions.$inferSelect) {
     metadata: parseJsonField(row.metadataJson),
     created_at: row.createdAt,
     updated_at: row.updatedAt
+  };
+}
+
+function toSessionActiveRunResponse(summary: Awaited<ReturnType<FloorRunService["getActiveRunSummary"]>>) {
+  if (!summary) {
+    return null;
+  }
+
+  return {
+    branch_id: summary.branchId,
+    latest_floor_id: summary.latestFloorId ?? null,
+    active_run_id: summary.activeRunId ?? null,
+    active_run_type: summary.activeRunType ?? null,
+    busy: summary.busy,
+    public_phase: summary.publicPhase ?? null,
+    updated_at: summary.updatedAt,
   };
 }
 
@@ -912,6 +958,7 @@ export async function registerSessionRoutes(
   connection: DatabaseConnection
 ): Promise<void> {
   const { db } = connection;
+  const floorRunService = new FloorRunService(db);
 
   app.post("/sessions", {
     schema: {
@@ -1109,6 +1156,34 @@ export async function registerSessionRoutes(
     }
 
     return reply.send({ data: toSessionResponse(row) });
+  });
+
+  app.get("/sessions/:id/active-run", {
+    schema: {
+      tags: ["sessions"],
+      summary: "Get session active run summary",
+      params: idParamsJsonSchema,
+      response: {
+        200: sessionActiveRunResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionParamsSchema, request.params, reply);
+
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const [row] = await db.select({ id: sessions.id }).from(sessions).where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId));
+
+    if (!row) {
+      return sendError(reply, 404, "not_found", "Session not found");
+    }
+
+    const activeRun = await floorRunService.getActiveRunSummary(row.id);
+    return reply.send({ data: { session_id: row.id, active_run: toSessionActiveRunResponse(activeRun) } });
   });
 
   app.patch("/sessions/:id", {

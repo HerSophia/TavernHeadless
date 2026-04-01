@@ -498,9 +498,11 @@ describe("ChatService", () => {
     const service = new ChatService(database.db, blockingOrchestrator, new SimpleTokenCounter());
 
     const firstPromise = service.respond(sessionId, { message: "First message" });
-    for (let i = 0; i < 50 && !enteredGeneration; i += 1) {
-      await Promise.resolve();
+    for (let i = 0; i < 200 && !enteredGeneration; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
+
+    expect(enteredGeneration).toBe(true);
 
     await expect(service.respond(sessionId, { message: "Second message" })).rejects.toMatchObject({
       code: "generation_conflict",

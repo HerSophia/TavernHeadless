@@ -9,15 +9,21 @@ import {
   readString,
 } from "./utils.js";
 
-export type VariableScope = "global" | "chat" | "floor" | "page";
+export type VariableScope = "global" | "chat" | "floor" | "branch" | "page";
 
-const VARIABLE_SCOPES: VariableScope[] = ["global", "chat", "floor", "page"];
+export type BranchVariableScopeRef = {
+  sessionId: string;
+  branchId: string;
+};
+
+const VARIABLE_SCOPES: VariableScope[] = ["global", "chat", "floor", "branch", "page"];
 
 export type VariableRecord = {
   id: string;
   key: string;
   scope: VariableScope;
   scopeId: string;
+  scopeRef?: BranchVariableScopeRef;
   updatedAt: number;
   value: unknown;
 };
@@ -26,6 +32,7 @@ export type ResolvedVariableRecord = {
   key: string;
   sourceScope: VariableScope;
   sourceScopeId: string;
+  sourceScopeRef?: BranchVariableScopeRef;
   updatedAt: number;
   value: unknown;
 };
@@ -34,11 +41,13 @@ export type VariableLayerSnapshot = {
   items: VariableRecord[];
   scope: VariableScope;
   scopeId: string;
+  scopeRef?: BranchVariableScopeRef;
 };
 
 export type ResolvedVariablesSnapshot = {
   context: {
     accountId: string;
+    branchId?: string;
     floorId?: string;
     globalScopeId: string;
     pageId?: string;
@@ -70,11 +79,14 @@ export type VariablesResource = {
     offset?: number;
     scope?: VariableScope;
     scopeId?: string;
+    sessionId?: string;
+    branchId?: string;
     sortBy?: "key" | "updated_at";
     sortOrder?: "asc" | "desc";
   }): Promise<VariableRecord[]>;
   resolveContext(options: {
     accountId?: AccountIdHint;
+    branchId?: string;
     floorId?: string;
     includeLayers?: boolean;
     pageId?: string;
@@ -85,7 +97,9 @@ export type VariablesResource = {
     accountId?: AccountIdHint;
     key: string;
     scope: VariableScope;
-    scopeId: string;
+    scopeId?: string;
+    sessionId?: string;
+    branchId?: string;
     value: unknown;
   }): Promise<VariableRecord>;
   upsertMany(options: {
@@ -93,7 +107,9 @@ export type VariablesResource = {
     items: Array<{
       key: string;
       scope: VariableScope;
-      scopeId: string;
+      scopeId?: string;
+      sessionId?: string;
+      branchId?: string;
       value: unknown;
     }>;
   }): Promise<VariablesUpsertManyResult>;
@@ -121,6 +137,8 @@ export function createVariablesResource(client: TransportClient): VariablesResou
         offset: options.offset ?? 0,
         scope: options.scope,
         scope_id: options.scopeId,
+        session_id: options.sessionId,
+        branch_id: options.branchId,
         sort_by: options.sortBy ?? "updated_at",
         sort_order: options.sortOrder ?? "desc",
       });
@@ -136,6 +154,7 @@ export function createVariablesResource(client: TransportClient): VariablesResou
     },
     async resolveContext(options): Promise<ResolvedVariablesSnapshot> {
       const query = buildQueryString({
+        branch_id: options.branchId,
         floor_id: options.floorId,
         include_layers: options.includeLayers ?? false,
         page_id: options.pageId,
@@ -164,12 +183,7 @@ export function createVariablesResource(client: TransportClient): VariablesResou
     },
     async upsert(options): Promise<VariableRecord> {
       const response = await client.fetchJson<Record<string, unknown>>("/variables", {
-        body: {
-          key: options.key,
-          scope: options.scope,
-          scope_id: options.scopeId,
-          value: options.value,
-        },
+        body: buildVariableWriteBody(options),
         headers: buildAccountHeaders(options.accountId),
         method: "PUT",
       });
@@ -184,12 +198,7 @@ export function createVariablesResource(client: TransportClient): VariablesResou
     async upsertMany(options): Promise<VariablesUpsertManyResult> {
       const response = await client.fetchJson<Record<string, unknown>>("/variables/batch", {
         body: {
-          items: options.items.map((item) => ({
-            key: item.key,
-            scope: item.scope,
-            scope_id: item.scopeId,
-            value: item.value,
-          })),
+          items: options.items.map((item) => buildVariableWriteBody(item)),
         },
         headers: buildAccountHeaders(options.accountId),
         method: "PUT",
@@ -200,17 +209,39 @@ export function createVariablesResource(client: TransportClient): VariablesResou
   };
 }
 
+function buildVariableWriteBody(input: {
+  key: string;
+  scope: VariableScope;
+  scopeId?: string;
+  sessionId?: string;
+  branchId?: string;
+  value: unknown;
+}) {
+  return {
+    key: input.key,
+    scope: input.scope,
+    ...(input.scopeId !== undefined ? { scope_id: input.scopeId } : {}),
+    ...(input.sessionId !== undefined ? { session_id: input.sessionId } : {}),
+    ...(input.branchId !== undefined ? { branch_id: input.branchId } : {}),
+    value: input.value,
+  };
+}
+
 function mapVariableRecord(value: unknown): VariableRecord | null {
   const record = readRecord(value);
   if (!record) {
     return null;
   }
 
+  const scope = readString(record.scope, "global") as VariableScope;
+  const scopeRef = mapBranchScopeRef(record.scope_ref);
+
   return {
     id: readString(record.id),
     key: readString(record.key),
-    scope: readString(record.scope, "global") as VariableScope,
+    scope,
     scopeId: readString(record.scope_id),
+    ...(scopeRef ? { scopeRef } : {}),
     updatedAt: readNumber(record.updated_at),
     value: record.value,
   };
@@ -230,6 +261,7 @@ function mapResolvedVariablesSnapshot(value: unknown): ResolvedVariablesSnapshot
   return {
     context: {
       accountId: readString(context.account_id),
+      branchId: readOptionalString(context.branch_id),
       floorId: readOptionalString(context.floor_id),
       globalScopeId: readString(context.global_scope_id, "global"),
       pageId: readOptionalString(context.page_id),
@@ -248,10 +280,13 @@ function mapResolvedVariableRecord(value: unknown): ResolvedVariableRecord | nul
     return null;
   }
 
+  const sourceScopeRef = mapBranchScopeRef(record.source_scope_ref);
+
   return {
     key: readString(record.key),
     sourceScope: readString(record.source_scope, "global") as VariableScope,
     sourceScopeId: readString(record.source_scope_id),
+    ...(sourceScopeRef ? { sourceScopeRef } : {}),
     updatedAt: readNumber(record.updated_at),
     value: record.value,
   };
@@ -281,11 +316,29 @@ function mapVariableLayerSnapshot(scope: VariableScope, value: unknown): Variabl
     return null;
   }
 
+  const scopeRef = mapBranchScopeRef(record.scope_ref);
+
   return {
     items: readArray(record.items).map(mapVariableRecord).filter((item): item is VariableRecord => item !== null),
     scope: readString(record.scope, scope) as VariableScope,
     scopeId: readString(record.scope_id),
+    ...(scopeRef ? { scopeRef } : {}),
   };
+}
+
+function mapBranchScopeRef(value: unknown): BranchVariableScopeRef | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const sessionId = readOptionalString(record.session_id);
+  const branchId = readOptionalString(record.branch_id);
+  if (!sessionId || !branchId) {
+    return undefined;
+  }
+
+  return { sessionId, branchId };
 }
 
 function mapUpsertManyResult(payload: Record<string, unknown> | null): VariablesUpsertManyResult {

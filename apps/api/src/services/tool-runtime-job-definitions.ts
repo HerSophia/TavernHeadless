@@ -18,6 +18,7 @@ export const runtimeToolEnvelopeSchema = z.object({
   runId: z.string().min(1),
   sessionId: z.string().min(1),
   accountId: z.string().min(1).optional(),
+  branchId: z.string().min(1).optional(),
   floorId: z.string().min(1),
   pageId: z.string().min(1).optional(),
   callerSlot: z.enum(TOOL_CALLER_SLOTS),

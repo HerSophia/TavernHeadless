@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { nanoid } from "nanoid";
 
 import { SimpleTokenCounter } from "@tavern/core";
+import { buildBranchVariableScopeId } from "@tavern/shared";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
@@ -248,6 +249,15 @@ describe("assemblePrompt", () => {
       {
         id: nanoid(),
         accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "mood",
+        valueJson: JSON.stringify("stormy"),
+        updatedAt: now + 1,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
         scope: "chat",
         scopeId: sessionId,
         key: "mood",
@@ -312,14 +322,14 @@ describe("assemblePrompt", () => {
       undefined,
       {
         includeDebug: true,
-        variableContext: { sessionId, floorId, pageId },
+        variableContext: { sessionId, branchId: "main", floorId, pageId },
       }
     );
 
     const systemMessage = assembled.messages.find((message) => message.role === "system");
-    expect(systemMessage?.content).toContain("Mood tense, score 7, char Knight, user Traveler.");
+    expect(systemMessage?.content).toContain("Mood stormy, score 7, char Knight, user Traveler.");
     expect(assembled.promptSnapshot.variables).toMatchObject({
-      mood: "tense",
+      mood: "stormy",
       score: 7,
       char: "Knight",
       user: "Traveler",

@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { buildBranchVariableScopeId } from "@tavern/shared";
+
 import { buildApp } from "../src/app";
 
 const TH_CHAT_SPEC = "tavern_headless_chat";
@@ -242,6 +244,7 @@ describe("Import chat routes", () => {
     file.data.variables = [
       { scope: "chat", scope_id_ref: null, key: "chat-key", value: { mood: "calm" }, updated_at: 1700000000100 },
       { scope: "floor", scope_id_ref: "floor_001", key: "floor-key", value: 7, updated_at: 1700000000200 },
+      { scope: "branch", scope_id_ref: "main", key: "branch-key", value: "campfire", updated_at: 1700000000250 },
       { scope: "page", scope_id_ref: "page_001", key: "page-key", value: ["a", "b"], updated_at: 1700000000300 },
     ];
     file.data.memories = {
@@ -309,7 +312,7 @@ describe("Import chat routes", () => {
     expect(importBody.data.floor_count).toBe(1);
     expect(importBody.data.page_count).toBe(1);
     expect(importBody.data.message_count).toBe(1);
-    expect(importBody.data.variable_count).toBe(3);
+    expect(importBody.data.variable_count).toBe(4);
     expect(importBody.data.memory_item_count).toBe(2);
     expect(importBody.data.memory_edge_count).toBe(1);
     expect(importBody.data.skipped_lines).toBe(0);
@@ -357,6 +360,22 @@ describe("Import chat routes", () => {
     expect(pageVarsRes.statusCode).toBe(200);
     const pageVarsBody = pageVarsRes.json<ListResponse<{ key: string }>>();
     expect(pageVarsBody.data).toEqual([expect.objectContaining({ key: "page-key" })]);
+
+    const branchVarsRes = await app.inject({
+      method: "GET",
+      url: `/variables?scope=branch&session_id=${sessionId}&branch_id=main&limit=10&offset=0&sort_by=updated_at&sort_order=asc`,
+    });
+    expect(branchVarsRes.statusCode).toBe(200);
+    const branchVarsBody = branchVarsRes.json<ListResponse<{
+      key: string;
+      scope_id: string;
+      scope_ref?: { session_id: string; branch_id: string };
+    }>>();
+    expect(branchVarsBody.data).toEqual([expect.objectContaining({
+      key: "branch-key",
+      scope_id: buildBranchVariableScopeId(sessionId, "main"),
+      scope_ref: { session_id: sessionId, branch_id: "main" },
+    })]);
 
     const chatMemoriesRes = await app.inject({
       method: "GET",

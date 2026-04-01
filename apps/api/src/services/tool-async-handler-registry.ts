@@ -40,12 +40,14 @@ function toToolExecutionContext(envelope: RuntimeToolEnvelope): ToolExecutionCon
   return {
     sessionId: envelope.sessionId,
     ...(envelope.accountId ? { accountId: envelope.accountId } : {}),
+    ...(envelope.branchId ? { branchId: envelope.branchId } : {}),
     floorId: envelope.floorId,
     ...(envelope.pageId ? { pageId: envelope.pageId } : {}),
     callerSlot: envelope.callerSlot,
     variableContext: {
       sessionId: envelope.sessionId,
       ...(envelope.accountId ? { accountId: envelope.accountId } : {}),
+      ...(envelope.branchId ? { branchId: envelope.branchId } : {}),
       floorId: envelope.floorId,
       ...(envelope.pageId ? { pageId: envelope.pageId } : {}),
     },

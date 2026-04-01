@@ -129,6 +129,25 @@ GET /sessions/:id
 
 返回完整的 Session 对象（结构同创建时的响应）。
 
+## 获取会话当前活跃运行
+
+```http
+GET /sessions/:id/active-run
+```
+
+返回当前会话最近一条仍在运行中的业务运行摘要。
+
+主要字段包括：
+
+- `active_run_id`
+- `active_run_type`
+- `branch_id`
+- `busy`
+- `public_phase`
+- `latest_floor_id`
+
+如果当前没有活跃运行，`active_run` 返回 `null`。
+
 ### 错误
 
 | 状态码 | 说明 |

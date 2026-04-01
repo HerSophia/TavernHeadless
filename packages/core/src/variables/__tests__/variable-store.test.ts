@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { VariableScope, VariableEntry } from '@tavern/shared';
+import { buildBranchVariableScopeId, type VariableScope, type VariableEntry } from '@tavern/shared';
 import type { VariableRepository, VariableRepositoryOptions } from '../../ports/index.js';
 import type { VariableContext } from '../../types.js';
 import { createEventBus, type CoreEventBus } from '../../events/index.js';
@@ -143,9 +143,12 @@ describe('VariableStore', () => {
   const fullContext: VariableContext = {
     pageId: 'page-1',
     floorId: 'floor-1',
+    branchId: 'branch-1',
     sessionId: 'session-1',
     globalScopeId: 'global',
   };
+
+  const branchScopeId = buildBranchVariableScopeId('session-1', 'branch-1');
 
   beforeEach(() => {
     repo = new InMemoryVariableRepository();
@@ -179,6 +182,16 @@ describe('VariableStore', () => {
       expect(entry.scope).toBe('chat');
     });
 
+    it('falls back to branch when no pageId and no floorId but branchId is available', async () => {
+      const ctx: VariableContext = {
+        sessionId: 'session-1',
+        branchId: 'branch-1',
+      };
+      const entry = await store.set('mood', 'tense', ctx);
+      expect(entry.scope).toBe('branch');
+      expect(entry.scopeId).toBe(branchScopeId);
+    });
+
     it('falls back to global when only global available', async () => {
       const ctx: VariableContext = {};
       const entry = await store.set('mood', 'zen', ctx);
@@ -189,6 +202,12 @@ describe('VariableStore', () => {
       const entry = await store.set('hp', 100, fullContext, 'chat');
       expect(entry.scope).toBe('chat');
       expect(entry.scopeId).toBe('session-1');
+    });
+
+    it('writes to explicit branch scope', async () => {
+      const entry = await store.set('route', 'alt', fullContext, 'branch');
+      expect(entry.scope).toBe('branch');
+      expect(entry.scopeId).toBe(branchScopeId);
     });
 
     it('isolates writes by accountId', async () => {
@@ -216,7 +235,11 @@ describe('VariableStore', () => {
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ isNew: true })
+        expect.objectContaining({
+          sessionId: 'session-1',
+          branchId: 'branch-1',
+          isNew: true,
+        })
       );
     });
 
@@ -230,7 +253,11 @@ describe('VariableStore', () => {
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ isNew: false })
+        expect.objectContaining({
+          sessionId: 'session-1',
+          branchId: 'branch-1',
+          isNew: false,
+        })
       );
     });
 
@@ -301,6 +328,16 @@ describe('VariableStore', () => {
       expect(promoted.value).toBe(5);
     });
 
+    it('promotes floor → branch', async () => {
+      repo.seed('floor', 'floor-1', 'route', 'alt');
+
+      const promoted = await store.promote('route', 'floor', 'branch', fullContext);
+
+      expect(promoted.scope).toBe('branch');
+      expect(promoted.scopeId).toBe(branchScopeId);
+      expect(promoted.value).toBe('alt');
+    });
+
     it('throws InvalidScopePromotionError for chat → page', async () => {
       repo.seed('chat', 'session-1', 'mood', 'calm');
 
@@ -333,6 +370,8 @@ describe('VariableStore', () => {
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        branchId: 'branch-1',
         key: 'mood',
         fromScope: 'page',
         toScope: 'floor',
@@ -393,9 +432,18 @@ describe('VariableStore', () => {
       const handler = vi.fn();
       bus.on('variable.promoted', handler);
 
-      await store.promoteAll('page', 'page-1', 'floor', 'floor-1');
+      await store.promoteAll(
+        'page',
+        'page-1',
+        'floor',
+        'floor-1',
+        undefined,
+        { sessionId: 'session-1', branchId: 'branch-1' }
+      );
 
       expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler).toHaveBeenNthCalledWith(1, expect.objectContaining({ sessionId: 'session-1', branchId: 'branch-1' }));
+      expect(handler).toHaveBeenNthCalledWith(2, expect.objectContaining({ sessionId: 'session-1', branchId: 'branch-1' }));
     });
   });
 
@@ -406,10 +454,12 @@ describe('VariableStore', () => {
       const handler = vi.fn();
       bus.on('variable.deleted', handler);
 
-      await store.delete(entry.id, 'page', 'mood');
+      await store.delete(entry.id, 'page', 'mood', undefined, fullContext);
 
       expect(handler).toHaveBeenCalledOnce();
       expect(handler).toHaveBeenCalledWith({
+        sessionId: 'session-1',
+        branchId: 'branch-1',
         id: entry.id,
         scope: 'page',
         key: 'mood',

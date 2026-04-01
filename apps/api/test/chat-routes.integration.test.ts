@@ -327,6 +327,19 @@ describe("chat routes", () => {
     const chatService = createChatService({
       respond: vi.fn(async (_sessionId, _request, runtimeOptions) => {
         runtimeOptions.onStart?.({ branchId: "main", floorId: "floor-1", floorNo: 1 });
+        runtimeOptions.onRun?.({
+          sessionId: "s1",
+          floorId: "floor-1",
+          runId: "run-1",
+          runType: "respond",
+          status: "running",
+          phase: "page_generating",
+          publicPhase: "generating",
+          phaseSeq: 2,
+          attemptNo: 1,
+          startedAt: 100,
+          updatedAt: 110,
+        });
         runtimeOptions.onTool?.({
           executionId: "exec-1",
           toolName: "set_variable",
@@ -363,6 +376,8 @@ describe("chat routes", () => {
 
     const response = await app.inject({ method: "POST", url: "/sessions/s1/respond/stream", payload: { message: "hello" } });
     expect(response.statusCode).toBe(200);
+    expect(response.body).toContain("event: run");
+    expect(response.body).toContain('"phase":"page_generating"');
     expect(response.body).toContain("event: tool");
     expect(response.body).toContain('"execution_id":"exec-1"');
     expect(response.body).toContain('"phase":"success"');

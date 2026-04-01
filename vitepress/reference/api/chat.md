@@ -81,6 +81,9 @@ POST /sessions/:id/respond/stream
 event: start
 data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main"}
 
+event: run
+data: {"floor_id":"floor_12","run_id":"run_12","run_type":"respond","status":"running","phase":"page_generating","public_phase":"generating","phase_seq":5,"attempt_no":1,"started_at":1735689720000,"updated_at":1735689720300,"completed_at":null,"pending_output":{"temp_id":"temp_12","attempt_no":1,"state":"streaming","text":"The firelight wavers...","started_at":1735689720100,"updated_at":1735689720300,"error":null},"verifier":null,"error":null}
+
 event: chunk
 data: {"chunk":"The firelight wavers..."}
 
@@ -101,6 +104,8 @@ data: {"code":"generation_timeout","message":"Turn orchestration failed: LLM req
 一旦 SSE 连接已经建立，运行期错误会通过 `error` 事件返回，不再切换 HTTP 状态码。`code` 可能为 `generation_conflict`、`generation_queue_timeout`、`generation_timeout`、`commit_busy`、`commit_conflict` 等值。资源写入路径上的 `resource_busy` 不会通过这里复用。
 
 客户端断开连接时，服务端会自动中止生成。
+
+如果客户端需要恢复当前候选输出，应读取 `run` 事件里的 `pending_output.text`，不要只依赖本地累积的 `chunk`。
 
 ## Prompt Dry-run
 

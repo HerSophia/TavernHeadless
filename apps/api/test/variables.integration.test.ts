@@ -1,15 +1,23 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { buildBranchVariableScopeId } from "@tavern/shared";
+
 import { buildApp } from "../src/app";
 
 type ItemResponse<T> = { data: T };
 type ErrorResponse = { error: { code: string; message: string } };
 
+type BranchScopeRefDto = {
+  session_id: string;
+  branch_id: string;
+};
+
 type VariableDto = {
   id: string;
-  scope: "global" | "chat" | "floor" | "page";
+  scope: "global" | "chat" | "floor" | "branch" | "page";
   scope_id: string;
+  scope_ref?: BranchScopeRefDto;
   key: string;
   value: unknown;
   updated_at: number;
@@ -85,7 +93,7 @@ async function createPage(
 
 async function upsertVar(
   app: FastifyInstance,
-  args: { scope: string; scopeId: string; key: string; value: unknown },
+  args: { scope: string; scopeId?: string; sessionId?: string; branchId?: string; key: string; value: unknown },
   headers?: Record<string, string>
 ): Promise<VariableDto> {
   const response = await app.inject({
@@ -94,7 +102,9 @@ async function upsertVar(
     headers,
     payload: {
       scope: args.scope,
-      scope_id: args.scopeId,
+      ...(args.scopeId ? { scope_id: args.scopeId } : {}),
+      ...(args.sessionId ? { session_id: args.sessionId } : {}),
+      ...(args.branchId ? { branch_id: args.branchId } : {}),
       key: args.key,
       value: args.value,
     },
@@ -122,6 +132,7 @@ describe("variables routes", () => {
       const sessionId = await createSession(app);
       const floorId = await createFloor(app, { sessionId, floorNo: 0, branchId: "main" });
       const pageId = await createPage(app, { floorId, pageNo: 0, pageKind: "input" });
+      const mainBranchScopeId = buildBranchVariableScopeId(sessionId, "main");
 
       const created = await upsertVar(app, { scope: "global", scopeId: "ignored-global", key: "theme", value: "night" });
       expect(created.scope).toBe("global");
@@ -132,16 +143,25 @@ describe("variables routes", () => {
       expect(updatedChat.id).toBe(firstChat.id);
       expect(updatedChat.value).toBe("tense");
 
+      const branchVar = await upsertVar(app, {
+        scope: "branch",
+        sessionId,
+        branchId: "main",
+        key: "topic",
+        value: "campfire",
+      });
+      expect(branchVar.scope_ref).toEqual({ session_id: sessionId, branch_id: "main" });
+
       await upsertVar(app, { scope: "floor", scopeId: floorId, key: "location", value: "tavern" });
       await upsertVar(app, { scope: "page", scopeId: pageId, key: "mood", value: "excited" });
 
       const listRes = await app.inject({ method: "GET", url: "/variables?sort_by=key&sort_order=asc" });
       expect(listRes.statusCode).toBe(200);
-      expect(listRes.json<{ data: VariableDto[] }>().data).toHaveLength(4);
+      expect(listRes.json<{ data: VariableDto[] }>().data).toHaveLength(5);
 
       const resolveRes = await app.inject({
         method: "GET",
-        url: `/variables/resolve?session_id=${sessionId}&floor_id=${floorId}&page_id=${pageId}&include_layers=true`,
+        url: `/variables/resolve?session_id=${sessionId}&branch_id=main&floor_id=${floorId}&page_id=${pageId}&include_layers=true`,
       });
       expect(resolveRes.statusCode).toBe(200);
       expect(resolveRes.json()).toEqual({
@@ -149,6 +169,7 @@ describe("variables routes", () => {
           context: {
             account_id: "default-admin",
             session_id: sessionId,
+            branch_id: "main",
             floor_id: floorId,
             page_id: pageId,
             global_scope_id: "global",
@@ -175,6 +196,14 @@ describe("variables routes", () => {
               source_scope_id: "global",
               updated_at: expect.any(Number),
             },
+            {
+              key: "topic",
+              value: "campfire",
+              source_scope: "branch",
+              source_scope_id: mainBranchScopeId,
+              source_scope_ref: { session_id: sessionId, branch_id: "main" },
+              updated_at: expect.any(Number),
+            },
           ],
           layers: {
             global: {
@@ -187,6 +216,22 @@ describe("variables routes", () => {
                   scope_id: "global",
                   key: "theme",
                   value: "night",
+                  updated_at: expect.any(Number),
+                },
+              ],
+            },
+            branch: {
+              scope: "branch",
+              scope_id: mainBranchScopeId,
+              scope_ref: { session_id: sessionId, branch_id: "main" },
+              items: [
+                {
+                  id: branchVar.id,
+                  scope: "branch",
+                  scope_id: mainBranchScopeId,
+                  scope_ref: { session_id: sessionId, branch_id: "main" },
+                  key: "topic",
+                  value: "campfire",
                   updated_at: expect.any(Number),
                 },
               ],
@@ -256,13 +301,20 @@ describe("variables routes", () => {
       });
       expect(invalidRes.statusCode).toBe(400);
 
+      const invalidBranchRes = await app.inject({
+        method: "PUT",
+        url: "/variables",
+        payload: { scope: "branch", branch_id: "main", key: "topic", value: "campfire" },
+      });
+      expect(invalidBranchRes.statusCode).toBe(400);
+
       const duplicateBatchRes = await app.inject({
         method: "PUT",
         url: "/variables/batch",
         payload: {
           items: [
-            { scope: "global", scope_id: "g1", key: "dup", value: 1 },
-            { scope: "global", scope_id: "g2", key: "dup", value: 2 },
+            { scope: "global", scope_id: "global", key: "dup", value: 1 },
+            { scope: "global", scope_id: "global", key: "dup", value: 2 },
           ],
         },
       });
@@ -329,6 +381,14 @@ describe("variables routes", () => {
       });
       expect(pageRes.statusCode).toBe(409);
       expect(pageRes.json<ErrorResponse>().error.code).toBe("variable_target_locked");
+
+      const branchRes = await app.inject({
+        method: "PUT",
+        url: "/variables",
+        payload: { scope: "branch", session_id: sessionId, branch_id: "alt-1", key: "route", value: "campfire" },
+      });
+      expect(branchRes.statusCode).toBe(404);
+      expect(branchRes.json<ErrorResponse>().error.code).toBe("variable_host_not_found");
     });
 
     it("returns 404 for missing variable detail and delete targets", async () => {

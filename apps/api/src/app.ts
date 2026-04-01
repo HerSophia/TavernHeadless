@@ -33,10 +33,8 @@ import {
 import {
   TurnCommitService,
 } from "./services/turn-commit-service.js";
-import {
-  MemoryMaintenanceService,
-  type MemoryMaintenancePolicy,
-} from "./services/memory-maintenance-service";
+import { FloorRunService } from "./services/floor-run-service.js";
+import { MemoryMaintenanceService, type MemoryMaintenancePolicy } from "./services/memory-maintenance-service";
 import {
   createOrchestrationContext,
   type OrchestrationConfig,
@@ -452,6 +450,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let sessionToolRegistryService: SessionToolRegistryService | undefined;
   let mutationRuntimeComponents: ReturnType<typeof createDefaultMutationRuntimeComponents> | undefined;
   let toolRuntimeComponents: ReturnType<typeof createDefaultToolRuntimeComponents> | undefined;
+  let floorRunService: FloorRunService | undefined;
 
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
@@ -466,6 +465,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       variableRepo,
       toolExecutionRepo,
     );
+
+    floorRunService = new FloorRunService(database.db, orchestrationContext.eventBus);
   }
 
   // ── 可选：MCP 工具集成 ──
@@ -573,6 +574,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       activeOrchestrationContext.eventBus,
       {
         enableAsyncMemoryIngest: options.enableMemory === true && options.enableAsyncMemoryIngest === true,
+        floorRunService,
         mutationRuntime: mutationRuntimeComponents?.runtime,
         toolRuntimeJobBridge: toolRuntimeComponents?.bridge,
       },
@@ -654,6 +656,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         enableMemoryConsolidationByDefault: options.enableMemoryConsolidation,
         enableAsyncMemoryIngest: options.enableAsyncMemoryIngest,
         enableDualSummaryInjection: options.enableDualSummaryInjection,
+        floorRunService,
         turnCommitService,
         resolveTurnModels: async (sessionId, accountId = DEFAULT_ADMIN_ACCOUNT_ID) => {
           try {

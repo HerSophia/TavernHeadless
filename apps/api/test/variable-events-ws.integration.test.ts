@@ -7,6 +7,7 @@ import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { SimpleTokenCounter, type TurnExecutionResult } from "@tavern/core";
+import { buildBranchVariableScopeId } from "@tavern/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebSocket } from "ws";
 
@@ -184,6 +185,98 @@ describe("variable events shared event bus and websocket integration", () => {
     });
   });
 
+  it("includes branchId in route-driven branch variable events", async () => {
+    expect(buildResult.orchestrationContext).toBeDefined();
+    expect(buildResult.wsBridge).toBeDefined();
+
+    const now = 1_735_689_890_000;
+    const sessionId = await createSession(buildResult.app);
+    const branchId = "alt-1";
+
+    await directDatabase.db.insert(floors).values({
+      id: nanoid(),
+      sessionId,
+      floorNo: 0,
+      branchId,
+      state: "draft",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionSocket = createMockSocket();
+    const foreignSocket = createMockSocket();
+    buildResult.wsBridge!.addClient(sessionSocket, sessionId);
+    buildResult.wsBridge!.addClient(foreignSocket, "another-session");
+
+    const setHandler = vi.fn();
+    const deletedHandler = vi.fn();
+    buildResult.orchestrationContext!.eventBus.on("variable.set", setHandler);
+    buildResult.orchestrationContext!.eventBus.on("variable.deleted", deletedHandler);
+
+    const createResponse = await buildResult.app.inject({
+      method: "PUT",
+      url: "/variables",
+      payload: {
+        scope: "branch",
+        session_id: sessionId,
+        branch_id: branchId,
+        key: "route",
+        value: "campfire",
+      },
+    });
+
+    expect(createResponse.statusCode, createResponse.body).toBe(201);
+    const created = createResponse.json<{
+      data: { id: string; scope: string; scope_id: string; key: string; value: unknown };
+    }>().data;
+
+    expect(setHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId,
+        branchId,
+        entry: expect.objectContaining({
+          id: created.id,
+          scope: "branch",
+          scopeId: buildBranchVariableScopeId(sessionId, branchId),
+          key: "route",
+          value: "campfire",
+        }),
+        isNew: true,
+      }),
+    );
+
+    const deleteResponse = await buildResult.app.inject({
+      method: "DELETE",
+      url: `/variables/${created.id}`,
+    });
+
+    expect(deleteResponse.statusCode, deleteResponse.body).toBe(200);
+    expect(deletedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId,
+        branchId,
+        id: created.id,
+        scope: "branch",
+        key: "route",
+      }),
+    );
+
+    const messages = parseSent(sessionSocket);
+    const foreignMessages = parseSent(foreignSocket);
+    expect(messages.map((message) => message.event)).toEqual(["variable.set", "variable.deleted"]);
+    expect(foreignMessages).toHaveLength(0);
+    expect(messages[0]!.data).toEqual(expect.objectContaining({ sessionId, branchId }));
+    expect(messages[1]!.data).toEqual({
+      sessionId,
+      branchId,
+      id: created.id,
+      scope: "branch",
+      key: "route",
+    });
+  });
+
   it("forwards commit-path variable.promoted through the shared runtime event bus", async () => {
     expect(buildResult.orchestrationContext).toBeDefined();
     expect(buildResult.wsBridge).toBeDefined();
@@ -199,6 +292,7 @@ describe("variable events shared event bus and websocket integration", () => {
     const now = 1_735_689_900_000;
     const committedAt = now + 1_000;
     const sessionId = "session-under-test";
+    const branchId = "alt-1";
     const floorId = nanoid();
     const pageId = nanoid();
 
@@ -215,7 +309,7 @@ describe("variable events shared event bus and websocket integration", () => {
       id: floorId,
       sessionId,
       floorNo: 0,
-      branchId: "main",
+      branchId,
       state: "generating",
       tokenIn: 0,
       tokenOut: 0,
@@ -278,6 +372,7 @@ describe("variable events shared event bus and websocket integration", () => {
     expect(promotedHandler).toHaveBeenCalledOnce();
     expect(promotedHandler).toHaveBeenCalledWith({
       sessionId,
+      branchId,
       key: "mood",
       fromScope: "page",
       toScope: "floor",
@@ -306,6 +401,7 @@ describe("variable events shared event bus and websocket integration", () => {
     expect(foreignMessages).toHaveLength(0);
     expect(promotedMessages[0]!.data).toEqual({
       sessionId,
+      branchId,
       key: "mood",
       fromScope: "page",
       toScope: "floor",

@@ -13,6 +13,12 @@ import type { ToolRegistry } from '../tools/tool-registry.js';
 import type { DirectorInput, DirectorResult } from './director.js';
 import type { VerifierInput, VerifierResult } from './verifier.js';
 import type { ConsolidationResult } from '../memory/memory-consolidator.js';
+import type {
+  FloorRunPendingOutputState,
+  FloorRunPhase,
+  FloorRunVerifierIssue,
+  FloorRunVerifierStatus,
+} from '../events/event-types.js';
 
 // ── Turn Config ───────────────────────────────────────
 
@@ -42,12 +48,33 @@ export interface TurnConfig {
 
 // ── Turn Input ────────────────────────────────────────
 
+export interface TurnRunObserver {
+  onPhaseChange?(input: {
+    phase: FloorRunPhase;
+    attemptNo?: number;
+  }): Promise<void> | void;
+  onPendingOutputUpdate?(input: {
+    text: string;
+    state: FloorRunPendingOutputState;
+    attemptNo: number;
+    force?: boolean;
+    error?: string;
+  }): Promise<void> | void;
+  onVerifierResult?(input: {
+    status: FloorRunVerifierStatus;
+    suggestion?: string;
+    issues?: FloorRunVerifierIssue[];
+  }): Promise<void> | void;
+}
+
 /** 回合输入 */
 export interface TurnInput {
   /** 会话 ID */
   sessionId: string;
   /** 楼层 ID（已创建好的 draft 楼层） */
   floorId: string;
+  /** 当前分支 ID（可选，用于变量 branch scope 与工具上下文透传） */
+  branchId?: string;
   /**
    * 当前工具执行的页上下文 ID（可选）。
    *
@@ -110,6 +137,8 @@ export interface TurnInput {
   onChunk?: (chunk: string) => void;
   /** 可选：中止信号（用于客户端断连等场景） */
   abortSignal?: AbortSignal;
+  /** 可选：回合运行阶段观察器（由上层接入运行快照、候选输出等） */
+  runObserver?: TurnRunObserver;
 }
 
 // ── Turn Execution Result ─────────────────────────────

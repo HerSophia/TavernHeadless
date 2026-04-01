@@ -72,7 +72,7 @@ CREATE TABLE `variable` (
   `key` text NOT NULL,
   `value_json` text NOT NULL,
   `updated_at` integer NOT NULL,
-  CHECK(`scope` IN ('global', 'chat', 'floor', 'page'))
+  CHECK(`scope` IN ('global', 'chat', 'floor', 'branch', 'page'))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `variable_scope_scope_id_key_uq` ON `variable` (`scope`,`scope_id`,`key`);

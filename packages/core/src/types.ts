@@ -10,6 +10,8 @@ export interface VariableContext {
   pageId?: string;
   /** 当前楼层 ID（floor scope） */
   floorId?: string;
+  /** 当前分支 ID（branch scope，需要与 sessionId 共同确定宿主） */
+  branchId?: string;
   /** 当前会话 ID（chat scope） */
   sessionId?: string;
   /** 当前账户 ID（用于多账户变量隔离） */

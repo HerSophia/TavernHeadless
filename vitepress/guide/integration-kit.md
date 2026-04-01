@@ -441,13 +441,44 @@ try {
 | `buildTimelineMessages` | 楼层数据 → 时间线消息列表 |
 | `createInitialRespondStreamState` | 流式状态初始值 |
 | `reduceRespondStream` | SSE 事件 → 流式状态累积 |
+| `getDisplayPage` | 优先使用运行中的候选输出，否则回退到 active page |
 | `groupToolEventsByExecution` | 工具流式事件 → 执行历史分组 |
-| `getActivePage` | 从楼层取当前活动页 |
+| `getActivePage` | 从楼层取真实持久化 active page |
 | `flattenVariableSnapshot` | resolved variable snapshot → inspector 行 |
 | `sortVariableInspectorRows` | 变量 inspector 行稳定排序 |
 | `formatVariablePreview` | 变量值 → 展示预览字符串 |
 | `mapApiErrorToUiState` | API 错误 → 界面错误状态 |
 | `summarizeRuntimeToolCatalog` | 会话级运行时工具目录 → 摘要 |
+
+## 楼层运行快照与候选输出
+
+如果接入方需要区分：
+
+- 已提交的 `activePage`
+- 运行中的候选输出 `pendingOutput`
+
+可以直接结合两组官方能力：
+
+- `client.floors.getRun()` / `client.sessions.getActiveRun()`
+- `getDisplayPage()` / `reduceRespondStream()`
+
+这样前端就不需要自己重复写 `pendingOutput ?? activePage` 的分支判断。
+
+## committed 结果快照
+
+当界面需要读取已经提交完成的结构化结果时，可以直接使用：
+
+```ts
+const committedResult = await client.floors.getResult({
+  floorId: "floor-1",
+});
+
+console.log(committedResult.generatedText);
+console.log(committedResult.outputPageId);
+console.log(committedResult.assistantMessageId);
+```
+
+这条接口的目标，是避免接入方长期从 `timeline.activePage`、消息页和其他零散返回体反向拼接最终结果。
 
 ## 导出、Tools、MCP 的处理原则
 

@@ -202,13 +202,13 @@
 | ---- | ---- | ----------- | ---- |
 | `id` | `TEXT` | PK | 变量记录 ID |
 | `scope` | `TEXT` | `NOT NULL` | 变量作用域 |
-| `scope_id` | `TEXT` | `NOT NULL` | 作用域实体 ID |
+| `scope_id` | `TEXT` | `NOT NULL` | 作用域实体 ID（`branch` 时为内部规范化宿主 ID） |
 | `key` | `TEXT` | `NOT NULL` | 变量名 |
 | `value_json` | `TEXT` | `NOT NULL` | 变量值 JSON |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
 
 枚举约束：
-- `scope`: `global | chat | floor | page`
+- `scope`: `global | chat | floor | branch | page`
 
 索引：
 - 唯一索引 `variable_scope_scope_id_key_uq(scope, scope_id, key)`

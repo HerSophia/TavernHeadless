@@ -26,6 +26,19 @@ export function reduceRespondStream(
     };
   }
 
+  if (event.type === "run") {
+    return {
+      ...state,
+      content: event.payload.pendingOutput?.text ?? state.content,
+      floorId: event.payload.floorId,
+      run: event.payload,
+      status:
+        state.status === "idle" && event.payload.status === "running"
+          ? "streaming"
+          : state.status,
+    };
+  }
+
   if (event.type === "summary") {
     return {
       ...state,
@@ -93,6 +106,7 @@ export function createInitialRespondStreamState(): RespondStreamState {
   return {
     activeTools: {},
     content: "",
+    run: null,
     result: null,
     status: "idle",
     summaries: [],

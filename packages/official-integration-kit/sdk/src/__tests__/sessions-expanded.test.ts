@@ -81,6 +81,39 @@ describe("sdk sessions expanded resource", () => {
     });
   });
 
+  it("reads session active run summary", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          session_id: "session-1",
+          active_run: {
+            branch_id: "main",
+            latest_floor_id: "floor-9",
+            active_run_id: "run-9",
+            active_run_type: "retry_turn",
+            busy: true,
+            public_phase: "post_processing",
+            updated_at: 200,
+          },
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.sessions.getActiveRun({ accountId: "acc-1", sessionId: "session-1" })).resolves.toEqual({
+      sessionId: "session-1",
+      activeRun: {
+        activeRunId: "run-9",
+        activeRunType: "retry_turn",
+        branchId: "main",
+        busy: true,
+        latestFloorId: "floor-9",
+        publicPhase: "post_processing",
+        updatedAt: 200,
+      },
+    });
+  });
+
   it("supports dry-run request options and maps the returned payload", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({

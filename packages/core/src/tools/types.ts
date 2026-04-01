@@ -58,6 +58,7 @@ export interface RuntimeToolEnvelope<TArgs = Record<string, unknown>, TProviderP
   runId: string;
   sessionId: string;
   accountId?: string;
+  branchId?: string;
   floorId: string;
   pageId?: string;
   callerSlot: InstanceSlot;
@@ -317,6 +318,8 @@ export interface ToolExecutionContext {
   sessionId: string;
   /** 当前账户 ID（资源类工具需要，用于多账户隔离） */
   accountId?: string;
+  /** 当前分支 ID（可选） */
+  branchId?: string;
   /** 当前楼层 ID */
   floorId: string;
   /**

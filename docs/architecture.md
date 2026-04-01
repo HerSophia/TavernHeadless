@@ -107,12 +107,13 @@ Session
 
 变量是用来存储叙事状态的容器。比如「角色当前的心情」「某个物品是否被拿走了」「好感度数值」等等。
 
-### 四个层级
+### 五个层级
 
 | 层级               | 作用域       | 典型用途                   | 生命周期           |
 | ------------------ | ------------ | -------------------------- | ------------------ |
 | **全局（global）** | 整个项目     | 世界观设定、全局开关       | 永久               |
 | **会话（chat）**   | 一次聊天     | 好感度、已触发事件         | 会话期间           |
+| **分支（branch）** | 一条分支     | 分支内持续状态、分支走向   | 分支存在期间       |
 | **楼层（floor）**  | 一个回合     | 本回合判定结果、临时标记   | 楼层提交后冻结     |
 | **页（page）**     | 一次生成尝试 | 生成中间状态、工具调用暂存 | 生成完成后决定去留 |
 
@@ -121,21 +122,21 @@ Session
 **读取时**，按从小到大的顺序查找，找到就停：
 
 ```text
-page → floor → chat → global
+page → floor → branch → chat → global
 ```
 
-比如读取变量 `mood`：先看当前页有没有，没有就看楼层，再看会话，最后看全局。
+比如读取变量 `mood`：先看当前页有没有，没有就看楼层，再看分支，再看会话，最后看全局。
 
 **写入时**，默认写到 `page`（最小范围）。这是一种保护机制——页级变量就像沙箱，不会意外改到全局状态。
 
-**提升**：如果确实需要把变量保存到更高层级，需要显式提升。比如一次回合结束后，把 `page.mood` 提升到 `chat.mood`。这个过程由编排器控制，不会默默发生。
+**提升**：如果确实需要把变量保存到更高层级，需要显式提升。比如一次回合结束后，把 `page.mood` 提升到 `branch.mood` 或 `chat.mood`。这个过程由编排器控制，不会默默发生。
 
 变量系统现在还补齐了两条重要约束：
 
 - 所有持久化变量都按 `account_id` 隔离
 - `floor` / `page` 宿主进入 `committed` 后，不再允许继续写入或删除该层变量
 
-API 侧提供 `GET /variables/resolve`，用于解析当前 `session / floor / page` 上下文里真正可见的胜出变量快照。
+API 侧提供 `GET /variables/resolve`，用于解析当前 `session / branch / floor / page` 上下文里真正可见的胜出变量快照。
 
 官方接入层中：
 
@@ -144,7 +145,7 @@ API 侧提供 `GET /variables/resolve`，用于解析当前 `session / floor / p
 
 ### 为什么要有「页」这一层？
 
-主要解决重新生成时的隔离问题。假设 AI 生成了一个回复并且写了 `mood = happy`，你觉得不好点了重试，新的生成写了 `mood = sad`。如果没有页级变量，两次生成会互相覆盖。有了页级变量，每次生成都在自己的沙箱里，只有你选定的那个版本才会被提升到楼层或会话。
+主要解决重新生成时的隔离问题。假设 AI 生成了一个回复并且写了 `mood = happy`，你觉得不好点了重试，新的生成写了 `mood = sad`。如果没有页级变量，两次生成会互相覆盖。有了页级变量，每次生成都在自己的沙箱里，只有你选定的那个版本才会被提升到楼层、分支或会话。
 
 ---
 
@@ -202,7 +203,7 @@ API 侧提供 `GET /variables/resolve`，用于解析当前 `session / floor / p
 - 正则前处理和后处理命中的规则名
 - `prompt_mode`、`prompt_digest`、`token_estimate`
 
-提示词组装时，现在会把当前可见的持久化 `global / chat / floor / page` 变量一起注入模板变量表。
+提示词组装时，现在会把当前可见的持久化 `global / chat / branch / floor / page` 变量一起注入模板变量表。
 
 其中 `char` 和 `user` 仍然保留为系统别名。如果持久化变量与这两个键冲突，系统别名优先，dry-run 会把冲突写到 `assembly.reserved_variable_collisions`。
 
@@ -430,6 +431,19 @@ Runtime 还会发出统一的 `runtime.job_*` 生命周期事件，例如 `runti
 
 此外，`Mutation Runtime.enqueueAsync()` 已经可以桥接到现有 `runtime_job`，但这条能力当前仍是内部能力，没有新增公共 `/runtime/mutations` 路由，也没有改变现有变量、配置、资源写入默认同步生效的策略。
 
+### Runtime / Run / Execution 命名边界
+
+仓库内的这三个词，现在按下面的边界使用：
+
+- `Runtime`：平台层运行时能力，例如 `Background Job Runtime`、`Mutation Runtime`、`runtime_job`、`runtime_scope_state`，以及现有 `/sessions/:id/tools/runtime` 工具目录快照。
+- `Run`：聊天主链路中的一次业务运行快照，例如楼层生成进度、会话当前激活运行、`runId`、`runType`、`attemptNo`。
+- `Execution`：运行内部的子级执行记录，例如工具执行与 `tool_execution_record`。
+
+这个边界的目的，是避免把平台 Runtime、工具目录快照和 turn 进度快照混成一个概念。
+
+因此，后续如果新增聊天主链路的进度接口、事件或表结构，应优先使用 `run` 命名，例如 `/floors/:id/run`、`floor.run.updated`、`floor_run_state`，而不是新的 `/floors/:id/runtime` 或 `floor.runtime.*`。
+
+
 ---
 
 ## 7. 一次完整回合的流程
@@ -605,8 +619,8 @@ CREATE TABLE message (
 ```sql
 CREATE TABLE variable (
   id          TEXT PRIMARY KEY,
-  scope       TEXT NOT NULL,          -- global / chat / floor / page
-  scope_id    TEXT NOT NULL,          -- 对应的 session_id / floor_id / page_id
+  scope       TEXT NOT NULL,          -- global / chat / branch / floor / page
+  scope_id    TEXT NOT NULL,          -- 对应的 session_id / branch 宿主 / floor_id / page_id
   key         TEXT NOT NULL,
   value_json  TEXT NOT NULL,
   updated_at  INTEGER NOT NULL,

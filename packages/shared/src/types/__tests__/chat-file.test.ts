@@ -114,6 +114,7 @@ describe('thChatFileSchema', () => {
     const file = makeMinimalFile();
     (file.data as Record<string, unknown>).variables = [
       { scope: 'chat', scope_id_ref: null, key: 'test', value: 42, updated_at: 1700000000000 },
+      { scope: 'branch', scope_id_ref: 'alt-1', key: 'route', value: 'branch-only', updated_at: 1700000000001 },
     ];
     const result = thChatFileSchema.safeParse(file);
     expect(result.success).toBe(true);

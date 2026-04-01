@@ -262,6 +262,8 @@ describe("sdk core resources", () => {
     const stream = [
       "event: start\n",
       'data: {"branch_id":"branch-1","floor_id":"floor-1","floor_no":2}\n\n',
+      "event: run\n",
+      'data: {"floor_id":"floor-1","run_id":"run-1","run_type":"respond","status":"running","phase":"page_generating","public_phase":"generating","phase_seq":3,"attempt_no":1,"started_at":100,"updated_at":120,"completed_at":null,"pending_output":{"temp_id":"temp-1","attempt_no":1,"state":"streaming","text":"Hello","started_at":100,"updated_at":120,"error":null},"verifier":null,"error":null}\n\n',
       "event: chunk\n",
       'data: {"chunk":"Hello"}\n\n',
       "event: tool\n",
@@ -285,12 +287,14 @@ describe("sdk core resources", () => {
     const chunks: string[] = [];
     const summaries: string[][] = [];
     const starts: Array<{ branchId?: string; floorId?: string; floorNo?: number }> = [];
+    const runs: Array<Record<string, unknown>> = [];
     const tools: Array<Record<string, unknown>> = [];
 
     const result = await client.sessions.respondStream({
       message: "hello",
       onChunk: (payload) => chunks.push(payload.chunk),
       onEvent: (event) => events.push(event.type),
+      onRun: (payload) => runs.push(payload as Record<string, unknown>),
       onStart: (payload) => starts.push(payload),
       onSummary: (payload) => summaries.push(payload.summaries),
       onTool: (payload) => tools.push(payload as Record<string, unknown>),
@@ -306,9 +310,10 @@ describe("sdk core resources", () => {
       },
     ]);
     expect(chunks).toEqual(["Hello"]);
+    expect(runs).toEqual([{ attemptNo: 1, completedAt: null, error: null, floorId: "floor-1", pendingOutput: { attemptNo: 1, error: null, startedAt: 100, state: "streaming", tempId: "temp-1", text: "Hello", updatedAt: 120 }, phase: "page_generating", phaseSeq: 3, publicPhase: "generating", runId: "run-1", runType: "respond", startedAt: 100, status: "running", updatedAt: 120, verifier: null }]);
     expect(summaries).toEqual([["sum-1"]]);
     expect(tools).toEqual([{ executionId: "exec-1", phase: "start", providerId: "builtin", providerType: "builtin", replaySafety: "uncertain", sideEffectLevel: "sandbox", toolName: "set_variable" }, { durationMs: 7, executionId: "exec-1", phase: "success", providerId: "builtin", providerType: "builtin", replaySafety: "safe", sideEffectLevel: "sandbox", toolName: "set_variable" }]);
-    expect(events).toEqual(["start", "chunk", "tool", "summary", "tool", "done"]);
+    expect(events).toEqual(["start", "run", "chunk", "tool", "summary", "tool", "done"]);
     expect(result).toEqual({
       branchId: "branch-1",
       finalState: "committed",

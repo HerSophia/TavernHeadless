@@ -153,8 +153,8 @@ outline: [2, 3]
 | 列名 | 类型 | 约束/默认值 | 说明 |
 | ---- | ---- | ----------- | ---- |
 | `id` | `TEXT` | PK | 变量记录 ID |
-| `scope` | `TEXT` | `NOT NULL` | 作用域（`global \| chat \| floor \| page`） |
-| `scope_id` | `TEXT` | `NOT NULL` | 作用域实体 ID |
+| `scope` | `TEXT` | `NOT NULL` | 作用域（`global \| chat \| floor \| branch \| page`） |
+| `scope_id` | `TEXT` | `NOT NULL` | 作用域实体 ID（`branch` 时为内部规范化宿主 ID） |
 | `key` | `TEXT` | `NOT NULL` | 变量名 |
 | `value_json` | `TEXT` | `NOT NULL` | 变量值 JSON |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |

@@ -130,6 +130,7 @@ export interface PromptAssemblySnapshot extends PromptSnapshotPreview {
 
 export interface PromptVariableContextInput {
   sessionId: string;
+  branchId?: string;
   floorId?: string;
   pageId?: string;
 }
@@ -536,6 +537,7 @@ async function resolvePromptVariables(args: {
     const snapshot = await variableService.resolveSnapshot({
       accountId: args.accountId,
       sessionId: args.context.sessionId,
+      branchId: args.context.branchId,
       floorId: args.context.floorId,
       pageId: args.context.pageId,
     });

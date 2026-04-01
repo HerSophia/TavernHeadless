@@ -90,6 +90,16 @@ apps/web  ──→  packages/shared
 
 `@tavern/shared` 仍然是内部包，不是公开接入面的组成部分。
 
+### 概念命名边界
+
+- `Runtime` 只用于平台层运行时能力及其既有公开面，例如 `Background Job Runtime`、`Mutation Runtime`、`runtime_job`、`runtime_scope_state`、`/sessions/:id/tools/runtime`。
+- `Run` 用于聊天主链路中的一次业务运行快照，例如 `floor run`、`active run`、`runId`、`runType`、`attemptNo`。
+- `Execution` 用于运行中的子级执行记录，例如 `tool execution`、`tool_execution_record`。
+
+后续如果新增聊天主链路的进度接口、事件或表结构，应优先使用 `run` 命名，而不是新的 `runtime` 命名。
+
+例如：`/floors/:id/run`、`floor.run.updated`、`floor_run_state`。
+
 ## 官方集成层协作规则
 
 ### 两个官方包的职责

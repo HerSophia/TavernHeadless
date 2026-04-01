@@ -1,14 +1,17 @@
 import { and, count, eq, inArray } from "drizzle-orm";
+import { buildBranchVariableScopeId } from "@tavern/shared";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
-import { floors } from "../db/schema";
+import { floors, variables } from "../db/schema";
 import { ensureOptionalObjectBody, parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
+import { FloorResultService } from "../services/floor-result-service";
+import { FloorRunService } from "../services/floor-run-service";
 import { getOwnedFloorById, getOwnedSessionIds } from "../services/resource-ownership";
 
 const floorStateSchema = z.enum(["draft", "generating", "committed", "failed"]);
@@ -115,6 +118,69 @@ const floorJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const floorRunIssueJsonSchema = {
+  type: "object",
+  required: ["description", "severity"],
+  properties: {
+    description: { type: "string" },
+    severity: { type: "string", enum: ["warning", "error"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const floorRunJsonSchema = {
+  type: "object",
+  required: ["run_id", "run_type", "status", "phase", "public_phase", "phase_seq", "attempt_no", "started_at", "updated_at"],
+  properties: {
+    run_id: { type: "string" },
+    run_type: { type: "string", enum: ["respond", "regenerate_page", "retry_turn", "edit_and_regenerate"] },
+    status: { type: "string", enum: ["running", "completed", "failed", "cancelled"] },
+    phase: { type: "string", enum: ["input_recorded", "semantic_resolved", "prechecked", "prompt_assembled", "page_generating", "candidate_generated", "verifier_checked", "transaction_prepared", "transaction_committed", "post_commit_scheduled"] },
+    public_phase: { type: "string", enum: ["preparing", "generating", "verifying", "committing", "post_processing"] },
+    phase_seq: { type: "integer", minimum: 0 },
+    attempt_no: { type: "integer", minimum: 1 },
+    started_at: { type: "integer", minimum: 0 },
+    updated_at: { type: "integer", minimum: 0 },
+    completed_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
+    pending_output: {
+      anyOf: [
+        {
+          type: "object",
+          required: ["temp_id", "attempt_no", "state", "text", "started_at", "updated_at"],
+          properties: {
+            temp_id: { type: "string" },
+            attempt_no: { type: "integer", minimum: 1 },
+            state: { type: "string", enum: ["draft", "streaming", "generated", "failed"] },
+            text: { type: "string" },
+            started_at: { type: "integer", minimum: 0 },
+            updated_at: { type: "integer", minimum: 0 },
+            error: { anyOf: [{ type: "string" }, { type: "null" }] },
+          },
+          additionalProperties: false,
+        },
+        { type: "null" },
+      ],
+    },
+    verifier: {
+      anyOf: [
+        {
+          type: "object",
+          required: ["status"],
+          properties: {
+            status: { type: "string", enum: ["pending", "passed", "warned", "blocked", "skipped"] },
+            suggestion: { anyOf: [{ type: "string" }, { type: "null" }] },
+            issues: { anyOf: [{ type: "array", items: floorRunIssueJsonSchema }, { type: "null" }] },
+          },
+          additionalProperties: false,
+        },
+        { type: "null" },
+      ],
+    },
+    error: { anyOf: [{ type: "object", required: ["code", "message"], properties: { code: { type: "string" }, message: { type: "string" } }, additionalProperties: false }, { type: "null" }] },
+  },
+  additionalProperties: false,
+} as const;
+
 
 const listMetaJsonSchema = {
   type: "object",
@@ -134,6 +200,52 @@ const floorResponseJsonSchema = {
   type: "object",
   required: ["data"],
   properties: { data: floorJsonSchema },
+  additionalProperties: false,
+} as const;
+
+const floorRunResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["floor_id", "state", "run"],
+      properties: { floor_id: { type: "string" }, state: { type: "string" }, run: { anyOf: [floorRunJsonSchema, { type: "null" }] } },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const floorResultResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["floor_id", "output_page_id", "assistant_message_id", "generated_text", "summaries", "usage", "verifier", "committed_at"],
+      properties: {
+        floor_id: { type: "string" },
+        output_page_id: { type: "string" },
+        assistant_message_id: { type: "string" },
+        generated_text: { type: "string" },
+        summaries: { type: "array", items: { type: "string" } },
+        usage: {
+          type: "object",
+          required: ["prompt_tokens", "completion_tokens", "total_tokens"],
+          properties: {
+            prompt_tokens: { type: "integer", minimum: 0 },
+            completion_tokens: { type: "integer", minimum: 0 },
+            total_tokens: { type: "integer", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+        verifier: floorRunJsonSchema.properties.verifier,
+        committed_at: { type: "integer", minimum: 0 },
+      },
+      additionalProperties: false,
+    },
+  },
   additionalProperties: false,
 } as const;
 
@@ -176,11 +288,74 @@ function toFloorResponse(row: typeof floors.$inferSelect) {
   };
 }
 
+function toFloorRunResponse(run: Awaited<ReturnType<FloorRunService["getSnapshot"]>>) {
+  if (!run) {
+    return null;
+  }
+
+  return {
+    run_id: run.runId,
+    run_type: run.runType,
+    status: run.status,
+    phase: run.phase,
+    public_phase: run.publicPhase,
+    phase_seq: run.phaseSeq,
+    attempt_no: run.attemptNo,
+    started_at: run.startedAt,
+    updated_at: run.updatedAt,
+    completed_at: run.completedAt ?? null,
+    pending_output: run.pendingOutput
+      ? {
+          temp_id: run.pendingOutput.tempId,
+          attempt_no: run.pendingOutput.attemptNo,
+          state: run.pendingOutput.state,
+          text: run.pendingOutput.text,
+          started_at: run.pendingOutput.startedAt,
+          updated_at: run.pendingOutput.updatedAt,
+          error: run.pendingOutput.error ?? null,
+        }
+      : null,
+    verifier: run.verifier
+      ? {
+          status: run.verifier.status,
+          suggestion: run.verifier.suggestion ?? null,
+          issues: run.verifier.issues ?? null,
+        }
+      : null,
+    error: run.error ? { code: run.error.code, message: run.error.message } : null,
+  };
+}
+
+function toFloorResultResponse(result: Awaited<ReturnType<FloorResultService["findByFloorId"]>>) {
+  if (!result) {
+    return null;
+  }
+
+  return {
+    floor_id: result.floorId,
+    output_page_id: result.outputPageId,
+    assistant_message_id: result.assistantMessageId,
+    generated_text: result.generatedText,
+    summaries: result.summaries,
+    usage: {
+      prompt_tokens: result.usage.promptTokens,
+      completion_tokens: result.usage.completionTokens,
+      total_tokens: result.usage.totalTokens,
+    },
+    verifier: result.verifier
+      ? { status: result.verifier.status, suggestion: result.verifier.suggestion ?? null, issues: result.verifier.issues ?? null }
+      : null,
+    committed_at: result.committedAt,
+  };
+}
+
 export async function registerFloorRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection
 ): Promise<void> {
   const { db } = connection;
+  const floorRunService = new FloorRunService(db);
+  const floorResultService = new FloorResultService(db);
 
   app.post("/floors", {
     schema: {
@@ -359,6 +534,71 @@ export async function registerFloorRoutes(
 
 
     return reply.send({ data: toFloorResponse(row) });
+  });
+
+  app.get("/floors/:id/run", {
+    schema: {
+      tags: ["floors"],
+      summary: "Get floor run snapshot",
+      params: idParamsJsonSchema,
+      response: {
+        200: floorRunResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(floorParamsSchema, request.params, reply);
+
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const row = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+
+    if (!row) {
+      return sendError(reply, 404, "not_found", "Floor not found");
+    }
+
+    const run = await floorRunService.getSnapshot(row.id);
+    return reply.send({ data: { floor_id: row.id, state: row.state, run: toFloorRunResponse(run) } });
+  });
+
+  app.get("/floors/:id/result", {
+    schema: {
+      tags: ["floors"],
+      summary: "Get committed floor result snapshot",
+      params: idParamsJsonSchema,
+      response: {
+        200: floorResultResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(floorParamsSchema, request.params, reply);
+
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const row = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+
+    if (!row) {
+      return sendError(reply, 404, "not_found", "Floor not found");
+    }
+
+    if (row.state !== "committed") {
+      return sendError(reply, 409, "invalid_state", `Floor '${row.id}' is not committed`);
+    }
+
+    const result = await floorResultService.findByFloorId(row.id);
+    if (!result) {
+      return sendError(reply, 404, "not_found", "Committed floor result snapshot not found");
+    }
+
+    return reply.send({ data: toFloorResultResponse(result) });
   });
 
   app.patch("/floors/:id", {
@@ -651,10 +891,26 @@ export async function registerFloorRoutes(
       return sendError(reply, 500, "internal_error", "Failed to resolve branch session");
     }
 
-    const deletedRows = await db
-      .delete(floors)
-      .where(and(eq(floors.branchId, branchId), eq(floors.sessionId, targetSessionId)))
-      .returning({ id: floors.id });
+    const branchScopeId = buildBranchVariableScopeId(targetSessionId, branchId);
+
+    const deletedRows = await db.transaction((tx) => {
+      tx
+        .delete(variables)
+        .where(
+          and(
+            eq(variables.accountId, auth.accountId),
+            eq(variables.scope, "branch"),
+            eq(variables.scopeId, branchScopeId),
+          )
+        )
+        .run();
+
+      return tx
+        .delete(floors)
+        .where(and(eq(floors.branchId, branchId), eq(floors.sessionId, targetSessionId)))
+        .returning({ id: floors.id })
+        .all();
+    });
 
     return reply.send({
       data: {

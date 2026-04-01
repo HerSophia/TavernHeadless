@@ -371,6 +371,13 @@ refactor(web): migrate workspace api callers to sdk resources
 - 新增资源包装时，尽量延续既有命名：`list`、`getDetail`、`create`、`update`、`remove`
 - 动作型接口保持后端原词，不强行抽象
 
+### 概念命名边界
+
+- `Runtime` 只用于平台层运行时能力及其既有公开面，例如 `Background Job Runtime`、`Mutation Runtime`、`runtime_job`、`runtime_scope_state`、`/sessions/:id/tools/runtime`。
+- `Run` 用于聊天主链路中的一次业务运行快照，例如 `floor run`、`active run`、`runId`、`runType`、`attemptNo`。
+- `Execution` 用于运行中的子级执行记录，例如 `tool execution`、`tool_execution_record`。
+- 新增命名不得把这三层概念混用。尤其不要用 `runtime` 命名 turn 进度快照、楼层进度接口或其持久化表。
+
 ### 命名风格
 
 - 文件名：`kebab-case`
@@ -380,6 +387,14 @@ refactor(web): migrate workspace api callers to sdk resources
 - 数据库表与列：`snake_case`
 - API 协议字段：以后端为准，通常是 `snake_case`
 - SDK 对外返回字段：遵循当前资源文件的映射风格
+
+后续如果新增聊天主链路的运行进度接口、事件或表结构，应优先使用：
+
+- `run`
+- `floor_run_*`
+- `floor.run.*`
+
+而不是新的 `runtime` 命名。
 
 ### 导入顺序
 

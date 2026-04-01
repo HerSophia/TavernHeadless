@@ -14,6 +14,7 @@ import {
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import {
   accounts,
+  floorResultSnapshots,
   floors,
   memoryEdges,
   memoryItems,
@@ -401,6 +402,22 @@ describe("TurnCommitService", () => {
     expect(snapshotRow?.worldbookActivatedEntryUidsJson).toBe(JSON.stringify([101, 202]));
     expect(snapshotRow?.regexPreRuleNamesJson).toBe(JSON.stringify(["trim-input"]));
     expect(snapshotRow?.regexPostRuleNamesJson).toBe(JSON.stringify(["strip-ooc"]));
+
+    const [resultSnapshotRow] = await database.db
+      .select()
+      .from(floorResultSnapshots)
+      .where(eq(floorResultSnapshots.floorId, floorId));
+    expect(resultSnapshotRow).toMatchObject({
+      floorId,
+      outputPageId: result.outputPageId,
+      assistantMessageId: result.assistantMessageId,
+      generatedText: execution.generatedText,
+      committedAt,
+      updatedAt: committedAt,
+    });
+    expect(resultSnapshotRow?.summariesJson).toBe(JSON.stringify(execution.summaries));
+    expect(resultSnapshotRow?.usageJson).toBe(JSON.stringify(execution.totalUsage));
+    expect(resultSnapshotRow?.verifierJson).toBeNull();
 
     const [executedToolCall] = await database.db
       .select()
@@ -1134,6 +1151,7 @@ describe("TurnCommitService", () => {
       1,
       expect.objectContaining({
         sessionId,
+        branchId: "main",
         key: "hp",
         fromScope: "page",
         toScope: "floor",
@@ -1144,6 +1162,7 @@ describe("TurnCommitService", () => {
       2,
       expect.objectContaining({
         sessionId,
+        branchId: "main",
         key: "mood",
         fromScope: "page",
         toScope: "floor",

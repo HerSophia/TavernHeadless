@@ -346,6 +346,50 @@ export class TurnOrchestrator {
 
   // ── 内部步骤 ────────────────────────────────────────
 
+  private async notifyRunPhaseChange(
+    input: TurnInput,
+    phase: 'input_recorded' | 'semantic_resolved' | 'prechecked' | 'prompt_assembled' | 'page_generating' | 'candidate_generated' | 'verifier_checked' | 'transaction_prepared' | 'transaction_committed' | 'post_commit_scheduled',
+    attemptNo?: number,
+  ): Promise<void> {
+    try {
+      await input.runObserver?.onPhaseChange?.({ phase, attemptNo });
+    } catch {
+      // best-effort observer hook
+    }
+  }
+
+  private async notifyPendingOutputUpdate(
+    input: TurnInput,
+    payload: {
+      text: string;
+      state: 'draft' | 'streaming' | 'generated' | 'failed';
+      attemptNo: number;
+      force?: boolean;
+      error?: string;
+    },
+  ): Promise<void> {
+    try {
+      await input.runObserver?.onPendingOutputUpdate?.(payload);
+    } catch {
+      // best-effort observer hook
+    }
+  }
+
+  private async notifyVerifierResult(
+    input: TurnInput,
+    payload: {
+      status: 'pending' | 'passed' | 'warned' | 'blocked' | 'skipped';
+      suggestion?: string;
+      issues?: Array<{ description: string; severity: 'warning' | 'error' }>;
+    },
+  ): Promise<void> {
+    try {
+      await input.runObserver?.onVerifierResult?.(payload);
+    } catch {
+      // best-effort observer hook
+    }
+  }
+
   private async transitionOrFail(
     floorId: string,
     target: FloorState,
@@ -401,15 +445,20 @@ export class TurnOrchestrator {
 
   private async runGeneration(
     input: TurnInput,
+    attemptNo = 1,
     narratorLLMTools?: Record<string, LLMToolEntry>,
   ): Promise<GenerationOutput> {
     try {
+      await this.notifyRunPhaseChange(input, 'page_generating', attemptNo);
+      await this.notifyPendingOutputUpdate(input, { text: '', state: 'draft', attemptNo, force: true });
+
       // 发出 generation.started 事件
       await this.deps.eventBus.emit('generation.started', {
         floorId: input.floorId,
       });
 
       let accumulatedLength = 0;
+      let accumulatedText = '';
       const result = await this.deps.generationPipeline.run(
         {
           messages: input.messages,
@@ -425,12 +474,14 @@ export class TurnOrchestrator {
         {
           onChunk: (chunk) => {
             accumulatedLength += chunk.length;
+            accumulatedText += chunk;
             // 转发到 EventBus（fire-and-forget）
             void this.deps.eventBus.emit('generation.chunk', {
               floorId: input.floorId,
               chunk,
               accumulatedLength,
             });
+            void this.notifyPendingOutputUpdate(input, { text: accumulatedText, state: 'streaming', attemptNo });
             // 转发到调用方回调
             input.onChunk?.(chunk);
           },
@@ -446,16 +497,27 @@ export class TurnOrchestrator {
         summaries: result.summaries,
       });
 
+      await this.notifyPendingOutputUpdate(input, {
+        text: result.text,
+        state: 'generated',
+        attemptNo,
+        force: true,
+      });
+
       return result;
     } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+
       // 发出 generation.failed 事件
       await this.deps.eventBus.emit('generation.failed', {
         floorId: input.floorId,
-        error: error instanceof Error ? error : new Error(String(error)),
+        error: normalizedError,
       });
 
+      await this.notifyPendingOutputUpdate(input, { text: '', state: 'failed', attemptNo, force: true, error: normalizedError.message });
+
       throw new TurnError(
-        `Generation failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Generation failed: ${normalizedError.message}`,
         'generation',
         error,
       );
@@ -506,14 +568,28 @@ export class TurnOrchestrator {
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       lastGenerationAttemptNo = toolExecutor?.beginGenerationAttempt();
+      const runAttemptNo = attempt + 1;
       const attemptExecutionStart = toolExecutor?.getExecutionRecordCount() ?? 0;
-      lastGeneration = await this.runGeneration(input, narratorLLMTools);
+      lastGeneration = await this.runGeneration(input, runAttemptNo, narratorLLMTools);
+      await this.notifyRunPhaseChange(input, 'candidate_generated', runAttemptNo);
 
       if (!cfg.enableVerifier || !input.verifierInput) {
+        await this.notifyVerifierResult(input, { status: 'skipped' });
+        await this.notifyRunPhaseChange(input, 'verifier_checked', runAttemptNo);
         return { generation: lastGeneration };
       }
 
       lastVerifierResult = await this.runVerifier(input, lastGeneration.text);
+      await this.notifyVerifierResult(input, {
+        status: lastVerifierResult.output.passed
+          ? 'passed'
+          : cfg.verifierFailStrategy === 'warn'
+            ? 'warned'
+            : 'blocked',
+        suggestion: lastVerifierResult.output.suggestion,
+        issues: lastVerifierResult.output.issues,
+      });
+      await this.notifyRunPhaseChange(input, 'verifier_checked', runAttemptNo);
 
       if (lastVerifierResult.output.passed) {
         return { generation: lastGeneration, verifierResult: lastVerifierResult };
@@ -659,12 +735,14 @@ export class TurnOrchestrator {
     return {
       sessionId: input.sessionId,
       accountId: input.accountId,
+      branchId: input.branchId,
       floorId: input.floorId,
       pageId: input.pageId,
       callerSlot: slot,
       variableContext: {
         sessionId: input.sessionId,
         accountId: input.accountId,
+        branchId: input.branchId,
         floorId: input.floorId,
         pageId: input.pageId,
       },

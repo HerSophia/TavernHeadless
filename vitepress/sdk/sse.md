@@ -20,6 +20,7 @@ const response = await client.fetchRaw("/sessions/s1/respond/stream", {
 
 const done = await readSseStream(response, {
   onStart(payload) { console.log(payload.floorId); },
+  onRun(payload) { console.log(payload.phase, payload.pendingOutput?.text); },
   onChunk(payload) { process.stdout.write(payload.chunk); },
   onSummary(payload) { console.log(payload.summaries); },
 });
@@ -56,6 +57,7 @@ function readSseStream(
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `onStart` | `(payload: TavernRespondStartPayload) => void` | 收到 `start` 事件时触发 |
+| `onRun` | `(payload: TavernRespondRunPayload) => void` | 收到 `run` 事件时触发 |
 | `onChunk` | `(payload: TavernRespondChunkPayload) => void` | 收到 `chunk` 事件时触发 |
 | `onSummary` | `(payload: TavernRespondSummaryPayload) => void` | 收到 `summary` 事件时触发 |
 | `onError` | `(payload: TavernRespondErrorPayload) => void` | 收到 `error` 事件时触发 |
@@ -68,13 +70,14 @@ function readSseStream(
 SSE 事件按以下顺序推送：
 
 ```text
-start → chunk → chunk → ... → summary? → done
-                                         ↘ error
+start → run? → chunk → chunk → ... → summary? → done
+                                                ↘ error
 ```
 
 | 阶段 | 事件 | 说明 |
 | ---- | ---- | ---- |
 | 开始 | `start` | 流开始，返回新楼层的基本信息 |
+| 运行快照 | `run` | 返回当前楼层运行阶段、attemptNo 和候选输出快照 |
 | 生成中 | `chunk` | 文本片段，出现零到多次 |
 | 摘要 | `summary` | 记忆摘要，仅在启用记忆整理时出现 |
 | 正常结束 | `done` | 流正常结束，返回完整结果与最终提交状态 |
@@ -108,6 +111,29 @@ start → chunk → chunk → ... → summary? → done
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
+| `phase` | string | 当前细阶段，例如 `page_generating` |
+| `publicPhase` | string | 对外展示阶段，例如 `generating` |
+| `attemptNo` | number | 当前生成尝试号 |
+| `pendingOutput` | object \| null | 当前候选输出快照 |
+
+### TavernRespondRunPayload
+
+`run` 事件表示一次楼层运行的当前快照。它至少包含：
+
+- `floorId`
+- `runId`
+- `runType`
+- `status`
+- `phase` / `publicPhase`
+- `attemptNo`
+- `pendingOutput`
+
+如果前端需要恢复候选输出，应优先使用 `pendingOutput.text`，而不是只依赖本地拼接 chunk。
+
+### TavernRespondErrorPayload
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
 | `code` | `string?` | 错误码 |
 | `message` | `string?` | 错误信息 |
 
@@ -132,6 +158,7 @@ start → chunk → chunk → ... → summary? → done
 ```ts
 type TavernRespondStreamEvent =
   | { type: "start"; payload: TavernRespondStartPayload }
+  | { type: "run"; payload: TavernRespondRunPayload }
   | { type: "chunk"; payload: TavernRespondChunkPayload }
   | { type: "summary"; payload: TavernRespondSummaryPayload }
   | { type: "error"; payload: TavernRespondErrorPayload }

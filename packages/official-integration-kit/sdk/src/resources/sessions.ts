@@ -124,6 +124,21 @@ export type SessionTimeline = {
   sessionId?: string;
 };
 
+export type SessionActiveRunSummary = {
+  activeRunId?: string;
+  activeRunType?: "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate";
+  branchId: string;
+  busy: boolean;
+  latestFloorId?: string;
+  publicPhase?: "preparing" | "generating" | "verifying" | "committing" | "post_processing";
+  updatedAt: number;
+};
+
+export type SessionActiveRunRecord = {
+  activeRun: SessionActiveRunSummary | null;
+  sessionId: string;
+};
+
 export type RespondFinalState = "draft" | "generating" | "committed" | "failed";
 
 export type RespondResult = {
@@ -396,6 +411,11 @@ export type SessionsGetRuntimeToolCatalogOptions = {
   sessionId: string;
 };
 
+export type SessionsGetActiveRunOptions = {
+  accountId?: AccountIdHint;
+  sessionId: string;
+};
+
 export type SessionsPutToolPermissionsOptions = SessionsToolPermissionsOptions & {
   permissions: SessionToolPermissions;
 };
@@ -409,6 +429,7 @@ export type SessionsResource = {
   batchUpdateStatus(options: SessionsBatchUpdateStatusOptions): Promise<SessionsBatchUpdateStatusResult>;
   create(options?: SessionsCreateOptions): Promise<SessionRecord | null>;
   diffBranches(options: SessionsDiffBranchesOptions): Promise<SessionBranchDiff>;
+  getActiveRun(options: SessionsGetActiveRunOptions): Promise<SessionActiveRunRecord>;
   getDetail(options: SessionsGetDetailOptions): Promise<SessionDetail>;
   getRuntimeToolCatalog(options: SessionsGetRuntimeToolCatalogOptions): Promise<SessionRuntimeToolCatalog>;
   getToolPermissions(options: SessionsToolPermissionsOptions): Promise<SessionToolPermissions>;
@@ -490,6 +511,18 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
           .map(mapBranchFloorSummary)
           .filter((item): item is SessionBranchFloorSummary => item !== null),
       };
+    },
+    async getActiveRun(options): Promise<SessionActiveRunRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(`/sessions/${encodeURIComponent(options.sessionId)}/active-run`, {
+        headers: buildAccountHeaders(options.accountId),
+        method: "GET",
+      });
+
+      const payload = mapSessionActiveRunPayload(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Session active run payload is missing");
+      }
+      return payload;
     },
     async getDetail(options): Promise<SessionDetail> {
       const response = await client.fetchJson<Record<string, unknown>>(`/sessions/${encodeURIComponent(options.sessionId)}`, {
@@ -636,6 +669,7 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
         onChunk: (payload) => options.onChunk?.(payload),
         onError: (payload) => options.onError?.(payload),
         onEvent: (event) => options.onEvent?.(event),
+        onRun: (payload) => options.onRun?.(payload),
         onStart: (payload) => options.onStart?.(payload),
         onSummary: (payload) => options.onSummary?.(payload),
         onTool: (payload) => options.onTool?.(payload),
@@ -1125,6 +1159,29 @@ function mapTimelinePage(value: Record<string, unknown>): TimelinePage {
     pageKind: readString(value.page_kind),
     pageNo: readNumber(value.page_no),
     version: readNumber(value.version),
+  };
+}
+
+function mapSessionActiveRunPayload(value: unknown): SessionActiveRunRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const activeRun = readRecord(record.active_run);
+  return {
+    sessionId: readString(record.session_id),
+    activeRun: activeRun
+      ? {
+          activeRunId: readOptionalString(activeRun.active_run_id),
+          activeRunType: readOptionalString(activeRun.active_run_type) as SessionActiveRunSummary["activeRunType"],
+          branchId: readString(activeRun.branch_id),
+          busy: readBoolean(activeRun.busy),
+          latestFloorId: readOptionalString(activeRun.latest_floor_id),
+          publicPhase: readOptionalString(activeRun.public_phase) as SessionActiveRunSummary["publicPhase"],
+          updatedAt: readNumber(activeRun.updated_at),
+        }
+      : null,
   };
 }
 

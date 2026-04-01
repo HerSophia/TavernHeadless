@@ -46,7 +46,7 @@ describe("buildApp orchestration variable wiring", () => {
     expect(
       wiringState.builtinProviderDeps.some((deps) => deps?.variableStore !== undefined),
     ).toBe(false);
-  }, 10000);
+  });
 
   it("injects variableStore into runtime BuiltinToolProvider when orchestration is enabled", async () => {
     const { buildApp } = await import("../src/app");

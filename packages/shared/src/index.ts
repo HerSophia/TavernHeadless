@@ -1,6 +1,9 @@
 export {
   FLOOR_STATES,
   SCOPE_PRIORITY,
+  buildBranchVariableScopeId,
+  parseBranchVariableScopeId,
+  isBranchVariableScopeId,
   CoreEvents,
   MEMORY_SCOPES,
   MEMORY_TYPES,
@@ -30,6 +33,7 @@ export type {
   FloorState,
   VariableScope,
   VariableEntry,
+  BranchVariableScopeRef,
   MemoryScope,
   MemoryType,
   MemorySummaryTier,

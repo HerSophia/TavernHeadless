@@ -104,12 +104,25 @@ describe("POST /sessions/:id/respond/stream", () => {
 
         const runtime = runtimeOptions as {
           onStart?: (context: { floorId: string; floorNo: number; branchId: string }) => void;
+          onRun?: (payload: Record<string, unknown>) => void;
           onChunk?: (chunk: string) => void;
           abortSignal?: AbortSignal;
         };
 
         expect(runtime.abortSignal).toBeInstanceOf(AbortSignal);
         runtime.onStart?.({ floorId: result.floorId, floorNo: result.floorNo, branchId: result.branchId });
+        runtime.onRun?.({
+          floorId: result.floorId,
+          runId: "run-1",
+          runType: "respond",
+          status: "running",
+          phase: "page_generating",
+          publicPhase: "generating",
+          phaseSeq: 2,
+          attemptNo: 1,
+          startedAt: 100,
+          updatedAt: 110,
+        });
         runtime.onChunk?.("Hello ");
         runtime.onChunk?.("world");
         return result;
@@ -146,6 +159,8 @@ describe("POST /sessions/:id/respond/stream", () => {
     expect(body).toContain("event: start");
     expect(body).toContain('"floor_id":"floor-1"');
     expect(body).toContain('"branch_id":"main"');
+    expect(body).toContain("event: run");
+    expect(body).toContain('"run_id":"run-1"');
     expect(body).toContain("event: chunk");
     expect(body).toContain('"chunk":"Hello "');
     expect(body).toContain('"chunk":"world"');

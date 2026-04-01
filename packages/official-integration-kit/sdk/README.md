@@ -148,6 +148,9 @@ const result = await client.sessions.respondStream({
   onChunk(payload) {
     process.stdout.write(payload.chunk);
   },
+  onRun(payload) {
+    console.log(payload.phase, payload.pendingOutput?.text);
+  },
   onSummary(payload) {
     console.log(payload.summaries);
   },
@@ -159,6 +162,35 @@ console.log(result.finalState);
 ```
 
 `respondStream()` 内部已经处理好 SSE 解析，你只管写回调就行。
+
+除了 `start`、`chunk`、`summary`、`tool`、`done`、`error` 这些事件，流里现在还会带 `run` 事件。它表示当前楼层这一轮生成的运行快照，例如：
+
+- 当前阶段 `phase`
+- 当前展示阶段 `publicPhase`
+- 当前尝试号 `attemptNo`
+- 候选输出 `pendingOutput`
+
+这组字段适合前端在流式过程中恢复候选输出，而不是只靠本地拼接 chunk。
+
+### 查询楼层运行快照
+
+```ts
+const floorRun = await client.floors.getRun({ floorId: "floor-1" });
+const activeRun = await client.sessions.getActiveRun({ sessionId: "session-1" });
+
+console.log(floorRun.run?.phase);
+console.log(activeRun.activeRun?.publicPhase);
+
+const committedResult = await client.floors.getResult({ floorId: "floor-1" });
+
+console.log(committedResult.generatedText);
+console.log(committedResult.summaries);
+console.log(committedResult.outputPageId);
+console.log(committedResult.assistantMessageId);
+console.log(committedResult.totalTokens);
+```
+
+`getRun()` 用于读取运行中的业务进度快照。`getResult()` 用于读取已经 committed 的结构化结果快照。前者解决运行过程恢复，后者解决最终结果读取。
 
 ### 生成前 dry-run 与 `promptSnapshot`
 
@@ -291,19 +323,33 @@ await client.variables.upsert({
   value: { score: 20 },
 });
 
+// 写入 branch 变量
+await client.variables.upsert({
+  accountId: "account-1",
+  key: "route",
+  scope: "branch",
+  sessionId: "session-1",
+  branchId: "alt-1",
+  value: "campfire",
+});
+
 // 解析当前上下文可见变量快照
 const snapshot = await client.variables.resolveContext({
   accountId: "account-1",
   sessionId: "session-1",
+  branchId: "alt-1",
   floorId: "floor-1",
   pageId: "page-1",
   includeLayers: true,
 });
 
 console.log(snapshot.context.globalScopeId); // "global"
+console.log(snapshot.context.branchId); // "alt-1"
 console.log(snapshot.resolved[0]?.key);
 console.log(snapshot.resolved[0]?.sourceScope);
+console.log(snapshot.resolved[0]?.sourceScopeRef);
 console.log(snapshot.layers?.page?.items.length ?? 0);
+console.log(snapshot.layers?.branch?.scopeRef);
 
 // 读取记忆
 const memories = await client.memories.list({
@@ -349,7 +395,7 @@ console.log(scopes.scopes[0]?.revision);
 
 `memoryJobs` 和 `memoryScopes` 分别对应后台任务观测面与 scope 状态观测面。`memoryScopes.rebuild()`、`memoryScopes.compact()` 需要服务端已经启用 background worker。
 
-`variables.resolveContext()` 对应后端的 `GET /variables/resolve`，会返回当前 `global/chat/floor/page` 可见变量的最终胜出结果，并可选附带各层原始快照。
+`variables.resolveContext()` 对应后端的 `GET /variables/resolve`，会返回当前 `global/chat/branch/floor/page` 可见变量的最终胜出结果，并可选附带各层原始快照。
 
 ### 页面、分支和条目
 
