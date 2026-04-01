@@ -1,3 +1,4 @@
+import { createEventBus } from "@tavern/core"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js"
@@ -100,8 +101,18 @@ describe("DefaultMutationBatch", () => {
   })
 
   it("stages commit mutations in order and applies them inside one transaction", async () => {
+    const eventBus = createEventBus()
+    const createdEvents: string[] = []
+    const appliedEvents: string[] = []
+    eventBus.on("runtime.mutation_created", (event) => {
+      createdEvents.push(event.mutationId)
+    })
+    eventBus.on("runtime.mutation_applied", (event) => {
+      appliedEvents.push(event.mutationId)
+    })
     const batch = new DefaultMutationBatch(database.db, registry, {
       now: () => 1_736_200_000_500,
+      eventBus,
     })
 
     batch.stage(createCommitEnvelope({
@@ -114,6 +125,9 @@ describe("DefaultMutationBatch", () => {
       scopeKey: "chat:session-a",
       payload: { scopeId: "session-a", key: "hp", value: 42 },
     }))
+
+    await Promise.resolve()
+    await Promise.resolve()
 
     expect(batch.list().map((envelope) => envelope.id)).toEqual(["mutation-1", "mutation-2"])
 
@@ -134,6 +148,7 @@ describe("DefaultMutationBatch", () => {
       }),
     ])
     expect(afterCommitCalls).toEqual([])
+    expect(createdEvents).toEqual(["mutation-1", "mutation-2"])
 
     const rowsBeforeAfterCommit = await database.db
       .select()
@@ -145,6 +160,10 @@ describe("DefaultMutationBatch", () => {
     await result.runAfterCommit()
 
     expect(afterCommitCalls).toEqual(["mutation-1:mood", "mutation-2:hp"])
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(appliedEvents).toEqual(["mutation-1", "mutation-2"])
   })
 
   it("rejects invalid phases, missing appliers, and reusing an applied batch", () => {

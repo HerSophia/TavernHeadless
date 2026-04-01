@@ -8090,6 +8090,8 @@ export interface operations {
                             /** @enum {string} */
                             commit_outcome: "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
                             created_at: number;
+                            /** @enum {string} */
+                            delivery_mode: "inline" | "async_job";
                             duration_ms: number;
                             error_message: string | null;
                             finished_at: number | null;
@@ -8104,6 +8106,7 @@ export interface operations {
                             replay_parent_execution_id: string | null;
                             result: unknown;
                             run_id: string;
+                            runtime_job_id: string | null;
                             side_effect_level: ("none" | "sandbox" | "irreversible") | null;
                             started_at: number;
                             /** @enum {string} */
@@ -13561,14 +13564,20 @@ export interface operations {
                             tools: {
                                 allowed_slots: string[];
                                 /** @enum {string} */
+                                async_capability: "inline_only" | "deferred_ok";
+                                /** @enum {string} */
                                 availability: "available" | "unavailable" | "conflict";
                                 availability_reason?: string | null;
+                                /** @enum {string} */
+                                default_delivery_mode: "inline" | "async_job";
                                 name: string;
                                 provider_id: string;
                                 /** @enum {string} */
                                 provider_type: "builtin" | "preset" | "mcp";
                                 /** @enum {string} */
                                 replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                result_visibility: "immediate" | "deferred_receipt";
                                 /** @enum {string} */
                                 side_effect_level: "none" | "sandbox" | "irreversible";
                                 /** @enum {string} */
@@ -13779,6 +13788,8 @@ export interface operations {
                             /** @enum {string} */
                             commit_outcome: "pending" | "committed" | "discarded" | "replay_blocked" | "uncertain";
                             created_at: number;
+                            /** @enum {string} */
+                            delivery_mode: "inline" | "async_job";
                             duration_ms: number;
                             error_message: string | null;
                             finished_at: number | null;
@@ -13793,6 +13804,7 @@ export interface operations {
                             replay_parent_execution_id: string | null;
                             result: unknown;
                             run_id: string;
+                            runtime_job_id: string | null;
                             side_effect_level: ("none" | "sandbox" | "irreversible") | null;
                             started_at: number;
                             /** @enum {string} */

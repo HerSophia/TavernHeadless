@@ -2,6 +2,7 @@ import type { CoreEventBus } from "@tavern/core"
 
 import type { AppDb, DbExecutor } from "../db/client.js"
 import { MutationApplierRegistry } from "./mutation-applier-registry.js"
+import { emitRuntimeMutationEvent, toRuntimeMutationErrorFields } from "./runtime-mutation-events.js"
 import {
   RuntimeMutationBatchAlreadyAppliedError,
   RuntimeMutationBatchApplyError,
@@ -15,6 +16,7 @@ import type {
   MutationBatch,
   MutationBatchApplyResult,
   RuntimeMutationApplyResult,
+  RuntimeMutationOutcome,
   RuntimeMutationEnvelope,
 } from "./runtime-mutation-types.js"
 
@@ -62,11 +64,17 @@ export function createMutationApplyContext(args: {
 
 function normalizeMutationApplyResult<TResult>(
   result: RuntimeMutationApplyResult<TResult>,
-): Required<Pick<RuntimeMutationApplyResult<TResult>, "afterCommit">> &
-  Pick<RuntimeMutationApplyResult<TResult>, "result"> {
+): {
+  result?: TResult
+  afterCommit: Array<() => Promise<void> | void>
+  outcome: RuntimeMutationOutcome
+  skipReason?: string
+} {
   return {
     result: result.result,
     afterCommit: [...(result.afterCommit ?? [])],
+    outcome: result.outcome ?? "applied",
+    skipReason: result.skipReason,
   }
 }
 
@@ -103,6 +111,8 @@ export function applyMutationWithHandler<TPayload, TResult>(args: {
 }): {
   mutation: AppliedRuntimeMutation<TResult>
   afterCommit: Array<() => Promise<void> | void>
+  outcome: RuntimeMutationOutcome
+  skipReason?: string
 } {
   const context = createMutationApplyContext({
     db: args.db,
@@ -124,8 +134,12 @@ export function applyMutationWithHandler<TPayload, TResult>(args: {
     mutation: {
       envelope: { ...args.envelope },
       result: normalized.result,
+      outcome: normalized.outcome,
+      skipReason: normalized.skipReason,
     },
     afterCommit: normalized.afterCommit,
+    outcome: normalized.outcome,
+    skipReason: normalized.skipReason,
   }
 }
 
@@ -151,6 +165,10 @@ export class DefaultMutationBatch implements MutationBatch {
 
     assertMutationPhase(envelope, ["commit"], "stage runtime mutation batch")
     this.staged.push({ ...envelope })
+
+    void emitRuntimeMutationEvent(this.eventBus, "runtime.mutation_created", envelope, {
+      observedAt: this.now(),
+    })
   }
 
   list(): RuntimeMutationEnvelope[] {
@@ -182,7 +200,33 @@ export class DefaultMutationBatch implements MutationBatch {
 
         appliedMutations.push(applied.mutation)
         afterCommit.push(...applied.afterCommit)
+        if (this.eventBus) {
+          afterCommit.push(async () => {
+            await emitRuntimeMutationEvent(
+              this.eventBus,
+              applied.mutation.outcome === "skipped"
+                ? "runtime.mutation_skipped"
+                : "runtime.mutation_applied",
+              applied.mutation.envelope,
+              {
+                actor: context?.actor,
+                requestId: context?.requestId,
+                outcome: applied.mutation.outcome,
+                skipReason: applied.mutation.skipReason ?? null,
+                observedAt: this.now(),
+              },
+            )
+          })
+        }
       } catch (error) {
+        const errorFields = toRuntimeMutationErrorFields(error)
+        void emitRuntimeMutationEvent(this.eventBus, "runtime.mutation_failed", envelope, {
+          actor: context?.actor,
+          requestId: context?.requestId,
+          outcome: "failed",
+          observedAt: this.now(),
+          ...errorFields,
+        })
         if (error instanceof Error) {
           throw error
         }

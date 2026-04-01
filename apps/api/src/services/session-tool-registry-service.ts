@@ -48,6 +48,9 @@ export interface SessionRuntimeToolCatalogEntry {
   availability: "available" | "unavailable" | "conflict";
   availabilityReason?: string;
   replaySafety: SessionRuntimeToolReplaySafety;
+  asyncCapability: "inline_only" | "deferred_ok";
+  defaultDeliveryMode: "inline" | "async_job";
+  resultVisibility: "immediate" | "deferred_receipt";
 }
 
 export interface SessionRuntimeToolCatalogConflict {
@@ -96,6 +99,9 @@ interface RuntimeToolCandidate {
   source: SessionRuntimeToolSource;
   sideEffectLevel: ToolSideEffectLevel;
   allowedSlots: InstanceSlot[];
+  asyncCapability: "inline_only" | "deferred_ok";
+  defaultDeliveryMode: "inline" | "async_job";
+  resultVisibility: "immediate" | "deferred_receipt";
 }
 
 interface DefinitionProviderDescriptor {
@@ -200,6 +206,9 @@ function buildCatalogEntry(candidate: RuntimeToolCandidate, availability: Sessio
     allowedSlots: [...candidate.allowedSlots],
     availability,
     ...(availabilityReason ? { availabilityReason } : {}),
+    asyncCapability: candidate.asyncCapability,
+    defaultDeliveryMode: candidate.defaultDeliveryMode,
+    resultVisibility: candidate.resultVisibility,
     replaySafety,
   };
 }
@@ -298,6 +307,9 @@ export class SessionToolRegistryService {
         source: descriptor.source,
         sideEffectLevel: tool.sideEffectLevel,
         allowedSlots: [...tool.allowedSlots],
+        asyncCapability: "inline_only",
+        defaultDeliveryMode: "inline",
+        resultVisibility: "immediate",
       })),
     );
 
@@ -412,6 +424,9 @@ export class SessionToolRegistryService {
           source,
           sideEffectLevel: tool.sideEffectLevel,
           allowedSlots: [...tool.allowedSlots],
+          asyncCapability: tool.asyncCapability ?? "inline_only",
+          defaultDeliveryMode: tool.defaultDeliveryMode ?? "inline",
+          resultVisibility: tool.resultVisibility ?? "immediate",
         };
 
         snapshot.tools.push(buildCatalogEntry(candidate, "available"));
@@ -516,6 +531,9 @@ export class SessionToolRegistryService {
         source: "mcp",
         sideEffectLevel: tool.sideEffectLevel,
         allowedSlots: [...tool.allowedSlots],
+        asyncCapability: tool.asyncCapability ?? "inline_only",
+        defaultDeliveryMode: tool.defaultDeliveryMode ?? "inline",
+        resultVisibility: tool.resultVisibility ?? "immediate",
       }));
 
       providerToolCandidates.set(provider.id, {

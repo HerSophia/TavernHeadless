@@ -535,6 +535,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   await registerCrudRoutes(app, database, {
     variableEventBus: orchestrationContext?.eventBus,
     sessionToolRegistryService,
+    mutationRuntime: mutationRuntimeComponents?.runtime,
     memoryJobs: {
       enableBackgroundWorker: options.enableMemory === true && options.orchestration !== undefined && (
         options.enableAsyncMemoryIngest === true

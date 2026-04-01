@@ -1,19 +1,22 @@
-import type { CoreEventBus } from "@tavern/core";
 import { nanoid } from "nanoid";
+import type { CoreEventBus } from "@tavern/core";
 
 import type { AppDb } from "../db/client.js";
-import { createChatTransferRuntimeJobCatalog } from "./chat-transfer-runtime-job-definitions.js";
-import { createChatTransferRuntimeJobProcessorRegistry } from "./chat-transfer-runtime-job-processor.js";
 import { RuntimeWorker } from "./runtime-worker.js";
+import { createChatTransferRuntimeJobCatalog } from "./chat-transfer-runtime-job-definitions.js";
+import {
+  createChatTransferRuntimeJobProcessorRegistry,
+} from "./chat-transfer-runtime-job-processor.js";
 
 export interface ChatTransferWorkerLogger {
-  info?: (meta: Record<string, unknown>, message: string) => void;
-  warn?: (meta: Record<string, unknown>, message: string) => void;
-  error?: (meta: Record<string, unknown>, message: string) => void;
+  info?(obj: unknown, message?: string): void;
+  warn?(obj: unknown, message?: string): void;
+  error?(obj: unknown, message?: string): void;
 }
 
 export interface ChatTransferWorkerOptions {
   artifactDir: string;
+  exportArtifactTtlMs?: number;
   workerId?: string;
   pollIntervalMs?: number;
   leaseTtlMs?: number;
@@ -21,7 +24,6 @@ export interface ChatTransferWorkerOptions {
   retryBaseDelayMs?: number;
   maxRetryDelayMs?: number;
   candidateScanLimit?: number;
-  exportArtifactTtlMs?: number;
   logger?: ChatTransferWorkerLogger;
   eventBus?: CoreEventBus;
 }

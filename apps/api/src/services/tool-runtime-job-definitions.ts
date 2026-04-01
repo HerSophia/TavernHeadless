@@ -47,6 +47,7 @@ export function createToolRuntimeJobCatalog(): RuntimeJobCatalog {
     payloadSchema: toolExecuteJobPayloadSchema,
     defaultMaxAttempts: 3,
     initialPhase: "queued",
+    expiredRunningPolicy: "mark_uncertain",
     createJobId({ payload, requestedId }) {
       return requestedId && requestedId.trim().length > 0
         ? requestedId

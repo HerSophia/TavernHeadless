@@ -509,10 +509,12 @@ describe("sdk integration and operations resources", () => {
       commit_outcome: "committed",
       side_effect_level: "sandbox",
       error_message: null,
+      delivery_mode: "inline",
       duration_ms: 7,
       started_at: 400,
       finished_at: 407,
       attempt_no: 1,
+      runtime_job_id: null,
       replay_parent_execution_id: null,
       created_at: 400,
     };
@@ -542,6 +544,7 @@ describe("sdk integration and operations resources", () => {
         finishedAt: 407,
         floorId: "floor-1",
         id: "exec-1",
+        deliveryMode: "inline",
         lifecycleState: "finished",
         pageId: null,
         providerId: "builtin",
@@ -552,6 +555,7 @@ describe("sdk integration and operations resources", () => {
         sideEffectLevel: "sandbox",
         startedAt: 400,
         status: "success",
+        runtimeJobId: null,
         toolName: "set_variable",
       }],
     });

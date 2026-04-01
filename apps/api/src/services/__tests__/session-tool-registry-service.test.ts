@@ -190,6 +190,9 @@ describe("SessionToolRegistryService", () => {
     expect(catalogEntry).toMatchObject({
       name: "github_create_issue",
       source: "mcp",
+      asyncCapability: "deferred_ok",
+      defaultDeliveryMode: "async_job",
+      resultVisibility: "deferred_receipt",
       availability: "available",
       replaySafety: "never_auto_replay",
     });

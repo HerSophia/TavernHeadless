@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 
 import type { DatabaseConnection } from "../db/client";
 import type { SessionToolRegistryService } from "../services/session-tool-registry-service.js";
+import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 import { registerCharacterRoutes } from "./characters";
 import { registerFloorRoutes } from "./floors";
 import { registerImportRoutes } from "./imports";
@@ -29,6 +30,7 @@ export interface CrudRoutesOptions {
   sessionToolRegistryService?: SessionToolRegistryService;
   memoryJobs?: MemoryJobRoutesOptions;
   chatTransferJobs?: ChatTransferJobRoutesOptions & { importMaxBytes?: number; exportSyncMaxMessages?: number; exportArtifactTtlMs?: number };
+  mutationRuntime?: MutationRuntime;
 }
 
 export async function registerCrudRoutes(
@@ -46,12 +48,15 @@ export async function registerCrudRoutes(
   await registerUserRoutes(app, connection);
   await registerMessagePageRoutes(app, connection);
   await registerMessageRoutes(app, connection);
-  await registerVariableRoutes(app, connection, { eventBus: options.variableEventBus });
+  await registerVariableRoutes(app, connection, {
+    eventBus: options.variableEventBus,
+    mutationRuntime: options.mutationRuntime,
+  });
   await registerMemoryRoutes(app, connection);
   await registerMemoryJobRoutes(app, connection, options.memoryJobs);
   await registerImportRoutes(app, connection, options.chatTransferJobs);
-  await registerLlmProfileRoutes(app, connection);
-  await registerLlmInstanceRoutes(app, connection);
+  await registerLlmProfileRoutes(app, connection, { mutationRuntime: options.mutationRuntime });
+  await registerLlmInstanceRoutes(app, connection, { mutationRuntime: options.mutationRuntime });
   await registerChatTransferJobRoutes(app, connection, options.chatTransferJobs);
   await registerWorldbookEntryRoutes(app, connection);
   await registerPresetEntryRoutes(app, connection);

@@ -233,6 +233,45 @@ export type RuntimeJobCancelledEvent = RuntimeJobEvent;
 
 export type RuntimeJobLeaseLostEvent = RuntimeJobEvent;
 
+// ── Runtime Mutation 事件 ─────────────────────────────
+
+export type RuntimeMutationApplyPhase = 'inline' | 'commit' | 'async';
+export type RuntimeMutationDurability = 'ephemeral' | 'transactional' | 'durable_job';
+export type RuntimeMutationReplaySafety = 'safe' | 'confirm_on_replay' | 'never_auto_replay' | 'uncertain';
+export type RuntimeMutationSource = 'api' | 'tool' | 'system' | 'worker' | 'maintenance';
+export type RuntimeMutationEventOutcome = 'applied' | 'skipped' | 'failed';
+
+export interface RuntimeMutationEvent {
+  mutationId: string;
+  kind: string;
+  source: RuntimeMutationSource;
+  accountId: string;
+  sessionId?: string;
+  floorId?: string;
+  pageId?: string;
+  scopeType: string;
+  scopeKey: string;
+  applyPhase: RuntimeMutationApplyPhase;
+  durability: RuntimeMutationDurability;
+  replaySafety: RuntimeMutationReplaySafety;
+  actorType?: string;
+  actorId?: string;
+  requestId?: string;
+  relatedJobId?: string;
+  outcome?: RuntimeMutationEventOutcome;
+  skipReason?: string;
+  errorCode?: string | null;
+  errorClass?: string | null;
+  errorMessage?: string | null;
+  createdAt: number;
+  observedAt: number;
+}
+
+export type RuntimeMutationCreatedEvent = RuntimeMutationEvent;
+export type RuntimeMutationAppliedEvent = RuntimeMutationEvent;
+export type RuntimeMutationSkippedEvent = RuntimeMutationEvent;
+export type RuntimeMutationFailedEvent = RuntimeMutationEvent;
+
 // ── Tool 事件 ────────────────────────────────────────
 
 /** 工具调用开始事件 */
@@ -350,6 +389,10 @@ export interface CoreEventMap {
   'runtime.job_dead_lettered': RuntimeJobDeadLetteredEvent;
   'runtime.job_cancelled': RuntimeJobCancelledEvent;
   'runtime.job_lease_lost': RuntimeJobLeaseLostEvent;
+  'runtime.mutation_created': RuntimeMutationCreatedEvent;
+  'runtime.mutation_applied': RuntimeMutationAppliedEvent;
+  'runtime.mutation_skipped': RuntimeMutationSkippedEvent;
+  'runtime.mutation_failed': RuntimeMutationFailedEvent;
   'tool.call_started': ToolCallStartedEvent;
   'tool.call_completed': ToolCallCompletedEvent;
   'tool.call_failed': ToolCallFailedEvent;

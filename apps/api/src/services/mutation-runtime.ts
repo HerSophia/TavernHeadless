@@ -8,6 +8,7 @@ import {
   assertMutationPhase,
   createMutationBatchApplyResult,
 } from "./mutation-batch.js"
+import { emitRuntimeMutationEvent, toRuntimeMutationErrorFields } from "./runtime-mutation-events.js"
 import {
   RuntimeMutationAsyncBridgeUnavailableError,
   RuntimeMutationBatchApplyError,
@@ -81,30 +82,70 @@ export class DefaultMutationRuntime implements MutationRuntime {
     const args = normalizeInlineArgs(handlerOrContext, context)
     const handler = args.handler ?? ((request) => this.registry.get<TPayload, TResult>(envelope.kind).apply(request))
 
-    const applied = this.db.transaction((tx) => {
-      try {
-        return applyMutationWithHandler({
-          db: this.db,
-          tx,
-          envelope,
-          handler,
-          contextInput: args.context,
-          eventBus: this.eventBus,
-          now: this.now,
-        })
-      } catch (error) {
-        if (error instanceof Error) {
-          throw error
-        }
-
-        throw new RuntimeMutationBatchApplyError(
-          { id: envelope.id, kind: envelope.kind },
-          { cause: error },
-        )
-      }
+    void emitRuntimeMutationEvent(this.eventBus, "runtime.mutation_created", envelope, {
+      actor: args.context?.actor,
+      requestId: args.context?.requestId,
+      observedAt: this.now(),
     })
 
-    const result = createMutationBatchApplyResult([applied.mutation], applied.afterCommit)
+    const applied = (() => {
+      try {
+        return this.db.transaction((tx) => {
+          try {
+            return applyMutationWithHandler({
+              db: this.db,
+              tx,
+              envelope,
+              handler,
+              contextInput: args.context,
+              eventBus: this.eventBus,
+              now: this.now,
+            })
+          } catch (error) {
+            if (error instanceof Error) {
+              throw error
+            }
+
+            throw new RuntimeMutationBatchApplyError(
+              { id: envelope.id, kind: envelope.kind },
+              { cause: error },
+            )
+          }
+        })
+      } catch (error) {
+        const errorFields = toRuntimeMutationErrorFields(error)
+        void emitRuntimeMutationEvent(this.eventBus, "runtime.mutation_failed", envelope, {
+          actor: args.context?.actor,
+          requestId: args.context?.requestId,
+          outcome: "failed",
+          observedAt: this.now(),
+          ...errorFields,
+        })
+        throw error
+      }
+    })()
+
+    const afterCommitHooks = [...applied.afterCommit]
+    if (this.eventBus) {
+      afterCommitHooks.push(async () => {
+        await emitRuntimeMutationEvent(
+          this.eventBus,
+          applied.mutation.outcome === "skipped"
+            ? "runtime.mutation_skipped"
+            : "runtime.mutation_applied",
+          applied.mutation.envelope,
+          {
+            actor: args.context?.actor,
+            requestId: args.context?.requestId,
+            outcome: applied.mutation.outcome,
+            skipReason: applied.mutation.skipReason ?? null,
+            observedAt: this.now(),
+          },
+        )
+      })
+    }
+
+    const result = createMutationBatchApplyResult([applied.mutation], afterCommitHooks)
     await result.runAfterCommit()
     return applied.mutation.result as TResult | undefined
   }
@@ -116,10 +157,27 @@ export class DefaultMutationRuntime implements MutationRuntime {
     assertMutationPhase(envelope, ["async"], "enqueue async runtime mutation")
 
     if (!this.asyncBridge) {
-      throw new RuntimeMutationAsyncBridgeUnavailableError(envelope.kind)
+      const error = new RuntimeMutationAsyncBridgeUnavailableError(envelope.kind)
+      const errorFields = toRuntimeMutationErrorFields(error)
+      void emitRuntimeMutationEvent(this.eventBus, "runtime.mutation_failed", envelope, {
+        outcome: "failed",
+        observedAt: this.now(),
+        ...errorFields,
+      })
+      throw error
     }
 
-    return this.asyncBridge.enqueue(envelope, options)
+    try {
+      return await this.asyncBridge.enqueue(envelope, options)
+    } catch (error) {
+      const errorFields = toRuntimeMutationErrorFields(error)
+      void emitRuntimeMutationEvent(this.eventBus, "runtime.mutation_failed", envelope, {
+        outcome: "failed",
+        observedAt: this.now(),
+        ...errorFields,
+      })
+      throw error
+    }
   }
 }
 

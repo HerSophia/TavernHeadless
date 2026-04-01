@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
-import { accounts, floors, runtimeJobs, sessions, toolExecutionRecords } from "../../db/schema.js";
+import { accounts, floors, runtimeJobs, runtimeScopeStates, sessions, toolExecutionRecords } from "../../db/schema.js";
 import { ToolAsyncHandlerRegistry } from "../tool-async-handler-registry.js";
 import { createToolRuntimeJobBridge } from "../tool-runtime-job-bridge.js";
 import { ToolWorker } from "../tool-worker.js";
@@ -242,5 +242,121 @@ describe("ToolWorker", () => {
       runtimeJobId: jobId,
     });
     expect(execution?.errorMessage).toContain("execution outcome is uncertain");
+  });
+
+  it("marks expired running deferred tool jobs as uncertain without replaying the handler", async () => {
+    const { now, sessionId, floorId } = await seedTurnScope();
+    const executionId = nanoid();
+    const runId = nanoid();
+    const jobId = `tool-job:${executionId}`;
+
+    await database.db.insert(runtimeScopeStates).values({
+      accountId: DEFAULT_ACCOUNT_ID,
+      scopeType: "tool_execution",
+      scopeKey: `session:${sessionId}`,
+      revision: 0,
+      leaseOwner: "tool-worker-old",
+      leaseUntil: now - 1,
+      lastProcessedAt: null,
+      lastSuccessJobId: null,
+      metadataJson: "{}",
+      updatedAt: now - 1,
+    });
+
+    await database.db.insert(toolExecutionRecords).values({
+      id: executionId,
+      runId,
+      floorId,
+      pageId: null,
+      callerSlot: "narrator",
+      providerId: "mcp:mcp-1",
+      providerType: "mcp",
+      toolName: "github_create_issue",
+      argsJson: JSON.stringify({ title: "Need help" }),
+      resultJson: JSON.stringify({ accepted: true, status: "running" }),
+      status: "running",
+      lifecycleState: "opened",
+      commitOutcome: "committed",
+      deliveryMode: "async_job",
+      runtimeJobId: jobId,
+      sideEffectLevel: "irreversible",
+      errorMessage: null,
+      durationMs: 0,
+      startedAt: now - 200,
+      finishedAt: null,
+      attemptNo: 1,
+      replayParentExecutionId: null,
+      createdAt: now - 200,
+    });
+
+    await database.db.insert(runtimeJobs).values({
+      id: jobId,
+      jobType: "tool.execute",
+      accountId: DEFAULT_ACCOUNT_ID,
+      scopeType: "tool_execution",
+      scopeKey: `session:${sessionId}`,
+      sessionId,
+      floorId,
+      pageId: null,
+      status: "running",
+      phase: "executing",
+      payloadJson: JSON.stringify({
+        envelope: {
+          executionId,
+          runId,
+          sessionId,
+          accountId: DEFAULT_ACCOUNT_ID,
+          floorId,
+          callerSlot: "narrator",
+          providerId: "mcp:mcp-1",
+          providerType: "mcp",
+          toolName: "github_create_issue",
+          args: { title: "Need help" },
+          sideEffectLevel: "irreversible",
+          deliveryMode: "async_job",
+          asyncCapability: "deferred_ok",
+          resultVisibility: "deferred_receipt",
+          acceptedAt: now - 300,
+        },
+      }),
+      stateJson: JSON.stringify({ executionId }),
+      resultJson: null,
+      attemptCount: 1,
+      maxAttempts: 3,
+      availableAt: now - 300,
+      startedAt: now - 250,
+      finishedAt: null,
+      leaseOwner: "tool-worker-old",
+      leaseUntil: now - 1,
+      basedOnRevision: 0,
+      dedupeKey: `tool-execution:${executionId}`,
+      progressCurrent: 0,
+      progressTotal: 1,
+      progressMessage: "executing",
+      lastError: null,
+      lastErrorCode: null,
+      lastErrorClass: null,
+      createdAt: now - 300,
+      updatedAt: now - 1,
+    });
+
+    const executeSpy = vi.fn(async () => ({ data: { issue_number: 42 } }));
+
+    const handlers = new ToolAsyncHandlerRegistry();
+    handlers.register({ providerType: "mcp", execute: executeSpy });
+
+    const worker = new ToolWorker(database.db, handlers, { pollIntervalMs: 60_000 });
+    await expect(worker.processOneDueJob()).resolves.toBe(true);
+
+    expect(executeSpy).not.toHaveBeenCalled();
+
+    const [job] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, jobId));
+    expect(job).toMatchObject({ id: jobId, status: "succeeded", phase: "uncertain" });
+    expect(JSON.parse(job!.resultJson ?? "null")).toEqual(expect.objectContaining({ status: "uncertain", recoveryRequired: true, reason: "expired_running_lease" }));
+
+    const [execution] = await database.db.select().from(toolExecutionRecords).where(eq(toolExecutionRecords.id, executionId));
+    expect(execution).toMatchObject({ id: executionId, status: "uncertain", lifecycleState: "finished", runtimeJobId: jobId });
+    expect(execution?.errorMessage).toContain("automatic replay blocked");
+    expect(JSON.parse(execution!.resultJson)).toEqual(expect.objectContaining({ recoveryRequired: true, reason: "expired_running_lease" }));
   });
 });
