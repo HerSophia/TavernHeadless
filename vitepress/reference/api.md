@@ -68,7 +68,7 @@ WebSocket 也遵循相同边界：
   "data": [ ],
   "meta": {
     "total": 42,
-    "limit": 20,
+    "limit": 50,
     "offset": 0,
     "has_more": true,
     "sort_by": "created_at",
@@ -77,12 +77,14 @@ WebSocket 也遵循相同边界：
 }
 ```
 
+除非某一页另有说明，HTTP JSON 的线缆字段使用 `snake_case`。官方 SDK 在少数高层接口中会提供 `camelCase` 映射，但原始 REST 响应、OpenAPI 和本文档都以 `snake_case` 为准。
+
 ### 错误响应
 
 ```json
 {
   "error": {
-    "code": "NOT_FOUND",
+    "code": "not_found",
     "message": "Session not found"
   }
 }
@@ -112,16 +114,18 @@ WebSocket 也遵循相同边界：
 
 ## 分页
 
-所有列表接口支持以下查询参数：
+大多数复用通用分页基类的列表接口支持以下查询参数：
 
 | 参数 | 类型 | 默认值 | 说明 |
 | ---- | ---- | ------ | ---- |
-| `limit` | integer | `20` | 每页条数，最大 `100` |
+| `limit` | integer | `50` | 每页条数，最大 `100` |
 | `offset` | integer | `0` | 偏移量 |
 | `sort_order` | string | `desc` | 排序方向，`asc` 或 `desc` |
 | `sort_by` | string | 因资源而异 | 排序字段，详见各资源文档 |
 
 响应的 `meta` 字段中，`has_more` 指示后续是否还有更多数据。
+
+如果某个列表端点没有复用这套通用分页基类，或默认值与这里不同，会在对应资源页单独写明。
 
 ## 时间戳
 
@@ -168,7 +172,7 @@ WebSocket 也遵循相同边界：
 | Regex Profiles | 正则配置管理 | [Regex Profiles](./api/regex-profiles) |
 | LLM Profiles | LLM 配置管理、模型发现与测试 | [LLM Profiles](./api/llm-profiles) |
 | LLM Instances | LLM 实例配置 | [LLM Instances](./api/llm-instances) |
-| Tools | 工具调用（定义/权限/调用记录） | [Tools](./api/tools) |
+| Tools | 工具定义、execution journal、调用记录与会话权限 | [Tools](./api/tools) |
 | MCP Servers | MCP 服务器管理（配置/连接/工具查询） | [MCP Servers](./api/mcp) |
 | Accounts | 账号管理 | [Accounts](./api/accounts) |
 

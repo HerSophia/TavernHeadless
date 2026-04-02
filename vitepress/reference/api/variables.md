@@ -129,6 +129,54 @@ PUT /variables/batch
 这意味着两个 `branch` 条目即使一个使用 `scope_id`，另一个使用 `session_id + branch_id`，只要最终目标相同，也会被视为重复。
 :::
 
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "results": [
+      {
+        "index": 0,
+        "action": "created",
+        "data": {
+          "id": "var_001",
+          "scope": "branch",
+          "scope_id": "branch:session-a:alt-1",
+          "scope_ref": {
+            "session_id": "session-a",
+            "branch_id": "alt-1"
+          },
+          "key": "route",
+          "value": "campfire",
+          "updated_at": 1735689600000
+        }
+      },
+      {
+        "index": 1,
+        "action": "updated",
+        "data": {
+          "id": "var_002",
+          "scope": "chat",
+          "scope_id": "sess_001",
+          "key": "mood",
+          "value": "tense",
+          "updated_at": 1735689605000
+        }
+      }
+    ],
+    "meta": { "total": 2, "created": 1, "updated": 1 }
+  }
+}
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| ------ | ---- |
+| `400` | 请求体校验失败、items 为空或超过 100 条、同批次目标重复 |
+| `404` | 某个变量宿主不存在，或当前账号不可访问 |
+| `409` | 某个目标已锁定，例如写入已 `committed` 的 `floor` 或 `page` |
+
 ## 查询变量
 
 ```http
@@ -144,7 +192,7 @@ GET /variables
 | `session_id` | string | - | `scope=branch` 时可与 `branch_id` 一起过滤 |
 | `branch_id` | string | - | `scope=branch` 时可与 `session_id` 一起过滤 |
 | `key` | string | - | 按键名过滤 |
-| `limit` | integer | `100` | 返回条数上限 |
+| `limit` | integer | `50` | 返回条数上限 |
 | `offset` | integer | `0` | 偏移量 |
 | `sort_by` | string | `updated_at` | `updated_at` / `key` |
 | `sort_order` | string | `desc` | `asc` / `desc` |

@@ -6194,24 +6194,6 @@
         "parameters": [
           {
             "in": "query",
-            "name": "session_id",
-            "required": false,
-            "schema": {
-              "minLength": 1,
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "floor_id",
-            "required": false,
-            "schema": {
-              "minLength": 1,
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "run_id",
             "required": false,
             "schema": {
@@ -7978,6 +7960,7 @@
             }
           },
           {
+            "description": "Required when scope=session.",
             "in": "query",
             "name": "session_id",
             "required": false,
@@ -7987,6 +7970,7 @@
             }
           },
           {
+            "description": "Allowed values: *, narrator, director, verifier, memory.",
             "in": "path",
             "name": "slot",
             "required": true,
@@ -8136,6 +8120,7 @@
             }
           },
           {
+            "description": "Allowed values: *, narrator, director, verifier, memory.",
             "in": "path",
             "name": "slot",
             "required": true,
@@ -8349,6 +8334,7 @@
         "operationId": "upsertLlmInstanceConfig",
         "parameters": [
           {
+            "description": "Allowed values: *, narrator, director, verifier, memory.",
             "in": "path",
             "name": "slot",
             "required": true,
@@ -8370,102 +8356,202 @@
                 "scope": "global"
               },
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "enabled": {
-                    "default": true,
-                    "type": "boolean"
-                  },
-                  "params": {
-                    "anyOf": [
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "frequency_penalty": {
-                            "maximum": 2,
-                            "minimum": -2,
-                            "type": "number"
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "params": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "frequency_penalty": {
+                                "maximum": 2,
+                                "minimum": -2,
+                                "type": "number"
+                              },
+                              "max_context_tokens": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "max_output_tokens": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "max_retries": {
+                                "maximum": 10,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "presence_penalty": {
+                                "maximum": 2,
+                                "minimum": -2,
+                                "type": "number"
+                              },
+                              "reasoning_effort": {
+                                "enum": [
+                                  "low",
+                                  "medium",
+                                  "high"
+                                ],
+                                "type": "string"
+                              },
+                              "stream": {
+                                "type": "boolean"
+                              },
+                              "temperature": {
+                                "maximum": 2,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "timeout_ms": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "top_k": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "top_p": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              }
+                            },
+                            "type": "object"
                           },
-                          "max_context_tokens": {
-                            "minimum": 1,
-                            "type": "integer"
-                          },
-                          "max_output_tokens": {
-                            "minimum": 1,
-                            "type": "integer"
-                          },
-                          "max_retries": {
-                            "maximum": 10,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "presence_penalty": {
-                            "maximum": 2,
-                            "minimum": -2,
-                            "type": "number"
-                          },
-                          "reasoning_effort": {
-                            "enum": [
-                              "low",
-                              "medium",
-                              "high"
-                            ],
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "preset_id": {
+                        "anyOf": [
+                          {
+                            "minLength": 1,
                             "type": "string"
                           },
-                          "stream": {
-                            "type": "boolean"
-                          },
-                          "temperature": {
-                            "maximum": 2,
-                            "minimum": 0,
-                            "type": "number"
-                          },
-                          "timeout_ms": {
-                            "minimum": 1,
-                            "type": "integer"
-                          },
-                          "top_k": {
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "top_p": {
-                            "maximum": 1,
-                            "minimum": 0,
-                            "type": "number"
+                          {
+                            "type": "null"
                           }
-                        },
-                        "type": "object"
+                        ]
                       },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "preset_id": {
-                    "anyOf": [
-                      {
-                        "minLength": 1,
+                      "scope": {
+                        "enum": [
+                          "global"
+                        ],
                         "type": "string"
                       },
-                      {
-                        "type": "null"
+                      "session_id": {
+                        "minLength": 1,
+                        "type": "string"
                       }
-                    ]
+                    },
+                    "type": "object"
                   },
-                  "scope": {
-                    "default": "global",
-                    "enum": [
-                      "global",
-                      "session"
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "params": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "frequency_penalty": {
+                                "maximum": 2,
+                                "minimum": -2,
+                                "type": "number"
+                              },
+                              "max_context_tokens": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "max_output_tokens": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "max_retries": {
+                                "maximum": 10,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "presence_penalty": {
+                                "maximum": 2,
+                                "minimum": -2,
+                                "type": "number"
+                              },
+                              "reasoning_effort": {
+                                "enum": [
+                                  "low",
+                                  "medium",
+                                  "high"
+                                ],
+                                "type": "string"
+                              },
+                              "stream": {
+                                "type": "boolean"
+                              },
+                              "temperature": {
+                                "maximum": 2,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "timeout_ms": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "top_k": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "top_p": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "preset_id": {
+                        "anyOf": [
+                          {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "scope": {
+                        "enum": [
+                          "session"
+                        ],
+                        "type": "string"
+                      },
+                      "session_id": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "scope",
+                      "session_id"
                     ],
-                    "type": "string"
-                  },
-                  "session_id": {
-                    "minLength": 1,
-                    "type": "string"
+                    "type": "object"
                   }
-                },
-                "type": "object"
+                ]
               }
             }
           },
@@ -9820,6 +9906,7 @@
               },
               "schema": {
                 "additionalProperties": false,
+                "minProperties": 1,
                 "properties": {
                   "api_key": {
                     "maxLength": 2048,
@@ -10187,98 +10274,194 @@
                 "session_id": "sess_demo"
               },
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "instance_slot": {
-                    "default": "*",
-                    "enum": [
-                      "*",
-                      "narrator",
-                      "director",
-                      "verifier",
-                      "memory"
-                    ],
-                    "type": "string"
-                  },
-                  "params": {
-                    "anyOf": [
-                      {
-                        "additionalProperties": false,
-                        "properties": {
-                          "frequency_penalty": {
-                            "maximum": 2,
-                            "minimum": -2,
-                            "type": "number"
-                          },
-                          "max_context_tokens": {
-                            "minimum": 1,
-                            "type": "integer"
-                          },
-                          "max_output_tokens": {
-                            "minimum": 1,
-                            "type": "integer"
-                          },
-                          "max_retries": {
-                            "maximum": 10,
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "presence_penalty": {
-                            "maximum": 2,
-                            "minimum": -2,
-                            "type": "number"
-                          },
-                          "reasoning_effort": {
-                            "enum": [
-                              "low",
-                              "medium",
-                              "high"
-                            ],
-                            "type": "string"
-                          },
-                          "stream": {
-                            "type": "boolean"
-                          },
-                          "temperature": {
-                            "maximum": 2,
-                            "minimum": 0,
-                            "type": "number"
-                          },
-                          "timeout_ms": {
-                            "minimum": 1,
-                            "type": "integer"
-                          },
-                          "top_k": {
-                            "minimum": 0,
-                            "type": "integer"
-                          },
-                          "top_p": {
-                            "maximum": 1,
-                            "minimum": 0,
-                            "type": "number"
-                          }
-                        },
-                        "type": "object"
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "instance_slot": {
+                        "enum": [
+                          "*",
+                          "narrator",
+                          "director",
+                          "verifier",
+                          "memory"
+                        ],
+                        "type": "string"
                       },
-                      {
-                        "type": "null"
+                      "params": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "frequency_penalty": {
+                                "maximum": 2,
+                                "minimum": -2,
+                                "type": "number"
+                              },
+                              "max_context_tokens": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "max_output_tokens": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "max_retries": {
+                                "maximum": 10,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "presence_penalty": {
+                                "maximum": 2,
+                                "minimum": -2,
+                                "type": "number"
+                              },
+                              "reasoning_effort": {
+                                "enum": [
+                                  "low",
+                                  "medium",
+                                  "high"
+                                ],
+                                "type": "string"
+                              },
+                              "stream": {
+                                "type": "boolean"
+                              },
+                              "temperature": {
+                                "maximum": 2,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "timeout_ms": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "top_k": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "top_p": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "scope": {
+                        "enum": [
+                          "global"
+                        ],
+                        "type": "string"
+                      },
+                      "session_id": {
+                        "minLength": 1,
+                        "type": "string"
                       }
-                    ]
+                    },
+                    "type": "object"
                   },
-                  "scope": {
-                    "default": "global",
-                    "enum": [
-                      "global",
-                      "session"
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "instance_slot": {
+                        "enum": [
+                          "*",
+                          "narrator",
+                          "director",
+                          "verifier",
+                          "memory"
+                        ],
+                        "type": "string"
+                      },
+                      "params": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "frequency_penalty": {
+                                "maximum": 2,
+                                "minimum": -2,
+                                "type": "number"
+                              },
+                              "max_context_tokens": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "max_output_tokens": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "max_retries": {
+                                "maximum": 10,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "presence_penalty": {
+                                "maximum": 2,
+                                "minimum": -2,
+                                "type": "number"
+                              },
+                              "reasoning_effort": {
+                                "enum": [
+                                  "low",
+                                  "medium",
+                                  "high"
+                                ],
+                                "type": "string"
+                              },
+                              "stream": {
+                                "type": "boolean"
+                              },
+                              "temperature": {
+                                "maximum": 2,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "timeout_ms": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "top_k": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "top_p": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "scope": {
+                        "enum": [
+                          "session"
+                        ],
+                        "type": "string"
+                      },
+                      "session_id": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "scope",
+                      "session_id"
                     ],
-                    "type": "string"
-                  },
-                  "session_id": {
-                    "minLength": 1,
-                    "type": "string"
+                    "type": "object"
                   }
-                },
-                "type": "object"
+                ]
               }
             }
           },
@@ -10527,11 +10710,9 @@
           {
             "in": "query",
             "name": "scope",
-            "required": false,
+            "required": true,
             "schema": {
-              "default": "global",
               "enum": [
-                "global",
                 "session"
               ],
               "type": "string"
@@ -10540,7 +10721,7 @@
           {
             "in": "query",
             "name": "session_id",
-            "required": false,
+            "required": true,
             "schema": {
               "minLength": 1,
               "type": "string"
@@ -11303,6 +11484,39 @@
             },
             "description": "Default Response"
           },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -11345,6 +11559,60 @@
     },
     "/mcp/servers": {
       "get": {
+        "operationId": "listMcpServers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "enum": [
+                "created_at",
+                "name"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -11353,6 +11621,7 @@
                   "properties": {
                     "data": {
                       "items": {
+                        "additionalProperties": false,
                         "properties": {
                           "call_timeout_ms": {
                             "type": "integer"
@@ -11364,13 +11633,32 @@
                             "type": "integer"
                           },
                           "default_side_effect_level": {
+                            "enum": [
+                              "none",
+                              "sandbox",
+                              "irreversible"
+                            ],
                             "type": "string"
                           },
                           "enabled": {
                             "type": "boolean"
                           },
                           "http": {
-                            "nullable": true,
+                            "additionalProperties": false,
+                            "properties": {
+                              "headers_masked": {
+                                "additionalProperties": {
+                                  "type": "string"
+                                },
+                                "type": "object"
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "url"
+                            ],
                             "type": "object"
                           },
                           "id": {
@@ -11380,7 +11668,30 @@
                             "type": "string"
                           },
                           "stdio": {
-                            "nullable": true,
+                            "additionalProperties": false,
+                            "properties": {
+                              "args": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "cwd": {
+                                "type": "string"
+                              },
+                              "env_masked": {
+                                "additionalProperties": {
+                                  "type": "string"
+                                },
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "command"
+                            ],
                             "type": "object"
                           },
                           "tool_prefix": {
@@ -11401,6 +11712,19 @@
                             "type": "integer"
                           }
                         },
+                        "required": [
+                          "id",
+                          "name",
+                          "transport",
+                          "tool_prefix",
+                          "enabled",
+                          "connect_timeout_ms",
+                          "call_timeout_ms",
+                          "tool_refresh_interval_ms",
+                          "default_side_effect_level",
+                          "created_at",
+                          "updated_at"
+                        ],
                         "type": "object"
                       },
                       "type": "array"
@@ -11456,6 +11780,113 @@
         ]
       },
       "post": {
+        "operationId": "createMcpServer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "call_timeout_ms": {
+                    "maximum": 600000,
+                    "minimum": 1000,
+                    "type": "integer"
+                  },
+                  "connect_timeout_ms": {
+                    "maximum": 300000,
+                    "minimum": 1000,
+                    "type": "integer"
+                  },
+                  "default_side_effect_level": {
+                    "enum": [
+                      "none",
+                      "sandbox",
+                      "irreversible"
+                    ],
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "http": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "headers": {
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "url": {
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "stdio": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "args": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "command": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "cwd": {
+                        "type": "string"
+                      },
+                      "env": {
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "command"
+                    ],
+                    "type": "object"
+                  },
+                  "tool_prefix": {
+                    "maxLength": 50,
+                    "type": "string"
+                  },
+                  "tool_refresh_interval_ms": {
+                    "maximum": 3600000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "transport": {
+                    "enum": [
+                      "stdio",
+                      "http"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "transport"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "201": {
             "content": {
@@ -11463,6 +11894,7 @@
                 "schema": {
                   "properties": {
                     "data": {
+                      "additionalProperties": false,
                       "properties": {
                         "call_timeout_ms": {
                           "type": "integer"
@@ -11474,13 +11906,32 @@
                           "type": "integer"
                         },
                         "default_side_effect_level": {
+                          "enum": [
+                            "none",
+                            "sandbox",
+                            "irreversible"
+                          ],
                           "type": "string"
                         },
                         "enabled": {
                           "type": "boolean"
                         },
                         "http": {
-                          "nullable": true,
+                          "additionalProperties": false,
+                          "properties": {
+                            "headers_masked": {
+                              "additionalProperties": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            },
+                            "url": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "url"
+                          ],
                           "type": "object"
                         },
                         "id": {
@@ -11490,7 +11941,30 @@
                           "type": "string"
                         },
                         "stdio": {
-                          "nullable": true,
+                          "additionalProperties": false,
+                          "properties": {
+                            "args": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "cwd": {
+                              "type": "string"
+                            },
+                            "env_masked": {
+                              "additionalProperties": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "command"
+                          ],
                           "type": "object"
                         },
                         "tool_prefix": {
@@ -11511,6 +11985,19 @@
                           "type": "integer"
                         }
                       },
+                      "required": [
+                        "id",
+                        "name",
+                        "transport",
+                        "tool_prefix",
+                        "enabled",
+                        "connect_timeout_ms",
+                        "call_timeout_ms",
+                        "tool_refresh_interval_ms",
+                        "default_side_effect_level",
+                        "created_at",
+                        "updated_at"
+                      ],
                       "type": "object"
                     }
                   },
@@ -11585,6 +12072,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Create MCP server config",
@@ -11595,6 +12115,7 @@
     },
     "/mcp/servers/{id}": {
       "delete": {
+        "operationId": "deleteMcpServer",
         "parameters": [
           {
             "in": "path",
@@ -11685,6 +12206,7 @@
                 "schema": {
                   "properties": {
                     "data": {
+                      "additionalProperties": false,
                       "properties": {
                         "call_timeout_ms": {
                           "type": "integer"
@@ -11696,13 +12218,32 @@
                           "type": "integer"
                         },
                         "default_side_effect_level": {
+                          "enum": [
+                            "none",
+                            "sandbox",
+                            "irreversible"
+                          ],
                           "type": "string"
                         },
                         "enabled": {
                           "type": "boolean"
                         },
                         "http": {
-                          "nullable": true,
+                          "additionalProperties": false,
+                          "properties": {
+                            "headers_masked": {
+                              "additionalProperties": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            },
+                            "url": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "url"
+                          ],
                           "type": "object"
                         },
                         "id": {
@@ -11712,7 +12253,30 @@
                           "type": "string"
                         },
                         "stdio": {
-                          "nullable": true,
+                          "additionalProperties": false,
+                          "properties": {
+                            "args": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "cwd": {
+                              "type": "string"
+                            },
+                            "env_masked": {
+                              "additionalProperties": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "command"
+                          ],
                           "type": "object"
                         },
                         "tool_prefix": {
@@ -11733,6 +12297,19 @@
                           "type": "integer"
                         }
                       },
+                      "required": [
+                        "id",
+                        "name",
+                        "transport",
+                        "tool_prefix",
+                        "enabled",
+                        "connect_timeout_ms",
+                        "call_timeout_ms",
+                        "tool_refresh_interval_ms",
+                        "default_side_effect_level",
+                        "created_at",
+                        "updated_at"
+                      ],
                       "type": "object"
                     }
                   },
@@ -11782,6 +12359,7 @@
         ]
       },
       "patch": {
+        "operationId": "updateMcpServer",
         "parameters": [
           {
             "in": "path",
@@ -11793,6 +12371,113 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "call_timeout_ms": {
+                    "maximum": 600000,
+                    "minimum": 1000,
+                    "type": "integer"
+                  },
+                  "connect_timeout_ms": {
+                    "maximum": 300000,
+                    "minimum": 1000,
+                    "type": "integer"
+                  },
+                  "default_side_effect_level": {
+                    "enum": [
+                      "none",
+                      "sandbox",
+                      "irreversible"
+                    ],
+                    "type": "string"
+                  },
+                  "http": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "headers": {
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      "url": {
+                        "format": "uri",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "name": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "stdio": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "args": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "command": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "cwd": {
+                        "type": "string"
+                      },
+                      "env": {
+                        "additionalProperties": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "command"
+                    ],
+                    "type": "object"
+                  },
+                  "tool_prefix": {
+                    "anyOf": [
+                      {
+                        "maxLength": 50,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tool_refresh_interval_ms": {
+                    "maximum": 3600000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "transport": {
+                    "enum": [
+                      "stdio",
+                      "http"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -11800,6 +12485,7 @@
                 "schema": {
                   "properties": {
                     "data": {
+                      "additionalProperties": false,
                       "properties": {
                         "call_timeout_ms": {
                           "type": "integer"
@@ -11811,13 +12497,32 @@
                           "type": "integer"
                         },
                         "default_side_effect_level": {
+                          "enum": [
+                            "none",
+                            "sandbox",
+                            "irreversible"
+                          ],
                           "type": "string"
                         },
                         "enabled": {
                           "type": "boolean"
                         },
                         "http": {
-                          "nullable": true,
+                          "additionalProperties": false,
+                          "properties": {
+                            "headers_masked": {
+                              "additionalProperties": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            },
+                            "url": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "url"
+                          ],
                           "type": "object"
                         },
                         "id": {
@@ -11827,7 +12532,30 @@
                           "type": "string"
                         },
                         "stdio": {
-                          "nullable": true,
+                          "additionalProperties": false,
+                          "properties": {
+                            "args": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "cwd": {
+                              "type": "string"
+                            },
+                            "env_masked": {
+                              "additionalProperties": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "command"
+                          ],
                           "type": "object"
                         },
                         "tool_prefix": {
@@ -11848,6 +12576,19 @@
                           "type": "integer"
                         }
                       },
+                      "required": [
+                        "id",
+                        "name",
+                        "transport",
+                        "tool_prefix",
+                        "enabled",
+                        "connect_timeout_ms",
+                        "call_timeout_ms",
+                        "tool_refresh_interval_ms",
+                        "default_side_effect_level",
+                        "created_at",
+                        "updated_at"
+                      ],
                       "type": "object"
                     }
                   },
@@ -11955,6 +12696,72 @@
               }
             },
             "description": "Default Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Update MCP server config",
@@ -11963,8 +12770,8 @@
         ]
       }
     },
-    "/mcp/servers/{id}/toggle": {
-      "patch": {
+    "/mcp/servers/{id}/connect": {
+      "post": {
         "parameters": [
           {
             "in": "path",
@@ -11984,51 +12791,224 @@
                   "properties": {
                     "data": {
                       "properties": {
-                        "call_timeout_ms": {
+                        "connected_at": {
+                          "nullable": true,
                           "type": "integer"
                         },
-                        "connect_timeout_ms": {
-                          "type": "integer"
-                        },
-                        "created_at": {
-                          "type": "integer"
-                        },
-                        "default_side_effect_level": {
+                        "error": {
+                          "nullable": true,
                           "type": "string"
                         },
-                        "enabled": {
+                        "last_timeout_at": {
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "reconnect_required": {
                           "type": "boolean"
                         },
-                        "http": {
-                          "nullable": true,
-                          "type": "object"
-                        },
-                        "id": {
+                        "server_id": {
                           "type": "string"
                         },
-                        "name": {
+                        "server_name": {
                           "type": "string"
                         },
-                        "stdio": {
-                          "nullable": true,
-                          "type": "object"
-                        },
-                        "tool_prefix": {
-                          "nullable": true,
-                          "type": "string"
-                        },
-                        "tool_refresh_interval_ms": {
-                          "type": "integer"
-                        },
-                        "transport": {
+                        "state": {
                           "enum": [
-                            "stdio",
-                            "http"
+                            "disconnected",
+                            "connecting",
+                            "connected",
+                            "reconnect_required",
+                            "error"
                           ],
                           "type": "string"
                         },
-                        "updated_at": {
+                        "tool_count": {
                           "type": "integer"
+                        },
+                        "tools_refreshed_at": {
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "transport": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Connect/reconnect to MCP server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{id}/disconnect": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "connected_at": {
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "error": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "last_timeout_at": {
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "reconnect_required": {
+                          "type": "boolean"
+                        },
+                        "server_id": {
+                          "type": "string"
+                        },
+                        "server_name": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "enum": [
+                            "disconnected",
+                            "connecting",
+                            "connected",
+                            "reconnect_required",
+                            "error"
+                          ],
+                          "type": "string"
+                        },
+                        "tool_count": {
+                          "type": "integer"
+                        },
+                        "tools_refreshed_at": {
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "transport": {
+                          "type": "string"
                         }
                       },
                       "type": "object"
@@ -12074,7 +13054,688 @@
             "description": "Default Response"
           }
         },
+        "summary": "Disconnect MCP server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{id}/status": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "connected_at": {
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "error": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "last_timeout_at": {
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "reconnect_required": {
+                          "type": "boolean"
+                        },
+                        "server_id": {
+                          "type": "string"
+                        },
+                        "server_name": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "enum": [
+                            "disconnected",
+                            "connecting",
+                            "connected",
+                            "reconnect_required",
+                            "error"
+                          ],
+                          "type": "string"
+                        },
+                        "tool_count": {
+                          "type": "integer"
+                        },
+                        "tools_refreshed_at": {
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "transport": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get MCP server connection status",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{id}/test": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "duration_ms": {
+                          "type": "integer"
+                        },
+                        "error": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "success": {
+                          "type": "boolean"
+                        },
+                        "tool_count": {
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Test MCP server connection",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{id}/toggle": {
+      "patch": {
+        "operationId": "toggleMcpServer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "call_timeout_ms": {
+                          "type": "integer"
+                        },
+                        "connect_timeout_ms": {
+                          "type": "integer"
+                        },
+                        "created_at": {
+                          "type": "integer"
+                        },
+                        "default_side_effect_level": {
+                          "enum": [
+                            "none",
+                            "sandbox",
+                            "irreversible"
+                          ],
+                          "type": "string"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "http": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "headers_masked": {
+                              "additionalProperties": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            },
+                            "url": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "url"
+                          ],
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "stdio": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "args": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "cwd": {
+                              "type": "string"
+                            },
+                            "env_masked": {
+                              "additionalProperties": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "command"
+                          ],
+                          "type": "object"
+                        },
+                        "tool_prefix": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "tool_refresh_interval_ms": {
+                          "type": "integer"
+                        },
+                        "transport": {
+                          "enum": [
+                            "stdio",
+                            "http"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "transport",
+                        "tool_prefix",
+                        "enabled",
+                        "connect_timeout_ms",
+                        "call_timeout_ms",
+                        "tool_refresh_interval_ms",
+                        "default_side_effect_level",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
         "summary": "Enable/disable MCP server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/servers/{id}/tools": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "parameters": {
+                            "type": "object"
+                          },
+                          "side_effect_level": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List tools from MCP server",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/mcp/statuses": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "properties": {
+                          "connected_at": {
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "error": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "last_timeout_at": {
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "reconnect_required": {
+                            "type": "boolean"
+                          },
+                          "server_id": {
+                            "type": "string"
+                          },
+                          "server_name": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "enum": [
+                              "disconnected",
+                              "connecting",
+                              "connected",
+                              "reconnect_required",
+                              "error"
+                            ],
+                            "type": "string"
+                          },
+                          "tool_count": {
+                            "type": "integer"
+                          },
+                          "tools_refreshed_at": {
+                            "nullable": true,
+                            "type": "integer"
+                          },
+                          "transport": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get all MCP server connection statuses",
         "tags": [
           "mcp"
         ]

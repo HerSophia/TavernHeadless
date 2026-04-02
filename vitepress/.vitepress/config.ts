@@ -100,7 +100,6 @@ export default defineConfig({
             { text: 'Memories（记忆）', link: '/reference/api/memories' },
             { text: 'Imports（导入）', link: '/reference/api/imports' },
             { text: 'Exports（导出）', link: '/reference/api/exports' },
-            { text: 'Chat Transfer Jobs（聊天传输作业）', link: '/reference/api/chat-transfer-jobs' },
             { text: 'Presets（预设）', link: '/reference/api/presets' },
             { text: 'Worldbooks（世界书）', link: '/reference/api/worldbooks' },
             { text: 'Regex Profiles（正则配置）', link: '/reference/api/regex-profiles' },
@@ -109,6 +108,13 @@ export default defineConfig({
             { text: 'Tools（工具调用）', link: '/reference/api/tools' },
             { text: 'MCP Servers（MCP 服务器）', link: '/reference/api/mcp' },
             { text: 'Accounts（账号）', link: '/reference/api/accounts' },
+          ],
+        },
+        {
+          text: '高级 API 资源',
+          items: [
+            { text: 'Chat Transfer Jobs（聊天传输作业）', link: '/reference/api/chat-transfer-jobs' },
+            { text: 'Memory Jobs（记忆后台作业）', link: '/reference/api/memory-jobs' },
           ],
         },
       ],

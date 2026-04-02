@@ -166,6 +166,86 @@ const mcpStatusResponseSchema = {
   },
 };
 
+// ── Config route JSON schemas for OpenAPI ──
+
+const listServersQueryJsonSchema = {
+  type: 'object',
+  properties: {
+    enabled: { type: 'boolean' },
+    sort_by: { type: 'string', enum: ['created_at', 'name'] },
+    sort_order: { type: 'string', enum: ['asc', 'desc'] },
+    limit: { type: 'integer', minimum: 1, maximum: 100 },
+    offset: { type: 'integer', minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const stdioConfigBodySchema = {
+  type: 'object',
+  required: ['command'],
+  properties: {
+    command: { type: 'string', minLength: 1 },
+    args: { type: 'array', items: { type: 'string' } },
+    env: { type: 'object', additionalProperties: { type: 'string' } },
+    cwd: { type: 'string' },
+  },
+  additionalProperties: false,
+};
+
+const httpConfigBodySchema = {
+  type: 'object',
+  required: ['url'],
+  properties: {
+    url: { type: 'string', format: 'uri' },
+    headers: { type: 'object', additionalProperties: { type: 'string' } },
+  },
+  additionalProperties: false,
+};
+
+const createServerBodyJsonSchema = {
+  type: 'object',
+  required: ['name', 'transport'],
+  properties: {
+    name: { type: 'string', minLength: 1, maxLength: 200 },
+    transport: { type: 'string', enum: ['stdio', 'http'] },
+    stdio: stdioConfigBodySchema,
+    http: httpConfigBodySchema,
+    tool_prefix: { type: 'string', maxLength: 50 },
+    enabled: { type: 'boolean' },
+    connect_timeout_ms: { type: 'integer', minimum: 1000, maximum: 300000 },
+    call_timeout_ms: { type: 'integer', minimum: 1000, maximum: 600000 },
+    tool_refresh_interval_ms: { type: 'integer', minimum: 0, maximum: 3600000 },
+    default_side_effect_level: { type: 'string', enum: ['none', 'sandbox', 'irreversible'] },
+  },
+  additionalProperties: false,
+} as const;
+
+const updateServerBodyJsonSchema = {
+  type: 'object',
+  minProperties: 1,
+  properties: {
+    name: { type: 'string', minLength: 1, maxLength: 200 },
+    transport: { type: 'string', enum: ['stdio', 'http'] },
+    stdio: stdioConfigBodySchema,
+    http: httpConfigBodySchema,
+    tool_prefix: { anyOf: [{ type: 'string', maxLength: 50 }, { type: 'null' }] },
+    connect_timeout_ms: { type: 'integer', minimum: 1000, maximum: 300000 },
+    call_timeout_ms: { type: 'integer', minimum: 1000, maximum: 600000 },
+    tool_refresh_interval_ms: { type: 'integer', minimum: 0, maximum: 3600000 },
+    default_side_effect_level: { type: 'string', enum: ['none', 'sandbox', 'irreversible'] },
+  },
+  additionalProperties: false,
+} as const;
+
+const toggleServerBodyJsonSchema = {
+  type: 'object',
+  required: ['enabled'],
+  properties: {
+    enabled: { type: 'boolean' },
+  },
+  additionalProperties: false,
+} as const;
+
 // ══════════════════════════════════════════════════
 // 配置 CRUD 路由
 // ══════════════════════════════════════════════════
@@ -181,6 +261,8 @@ export async function registerMcpConfigRoutes(
     schema: {
       tags: ['mcp'],
       summary: 'List MCP server configs',
+      operationId: 'listMcpServers',
+      querystring: listServersQueryJsonSchema,
       response: {
         200: {
           type: 'object',
@@ -239,6 +321,8 @@ export async function registerMcpConfigRoutes(
     schema: {
       tags: ['mcp'],
       summary: 'Create MCP server config',
+      operationId: 'createMcpServer',
+      body: createServerBodyJsonSchema,
       response: {
         201: { type: 'object', properties: { data: mcpServerResponseSchema } },
         400: errorResponseJsonSchema,
@@ -264,6 +348,8 @@ export async function registerMcpConfigRoutes(
     schema: {
       tags: ['mcp'],
       summary: 'Update MCP server config',
+      operationId: 'updateMcpServer',
+      body: updateServerBodyJsonSchema,
       params: idParamsJsonSchema,
       response: {
         200: { type: 'object', properties: { data: mcpServerResponseSchema } },
@@ -294,6 +380,7 @@ export async function registerMcpConfigRoutes(
     schema: {
       tags: ['mcp'],
       summary: 'Delete MCP server config',
+      operationId: 'deleteMcpServer',
       params: idParamsJsonSchema,
       response: {
         200: { type: 'object', properties: { data: { type: 'object', properties: { deleted: { type: 'boolean' } } } } },
@@ -313,6 +400,8 @@ export async function registerMcpConfigRoutes(
     schema: {
       tags: ['mcp'],
       summary: 'Enable/disable MCP server',
+      operationId: 'toggleMcpServer',
+      body: toggleServerBodyJsonSchema,
       params: idParamsJsonSchema,
       response: {
         200: { type: 'object', properties: { data: mcpServerResponseSchema } },

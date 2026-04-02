@@ -321,6 +321,24 @@ const toolExecutionsQueryJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const floorToolExecutionsQueryJsonSchema = {
+  type: "object",
+  properties: {
+    run_id: { type: "string", minLength: 1 },
+    caller_slot: { type: "string", enum: ["narrator", "director", "verifier", "memory"] },
+    tool_name: { type: "string", minLength: 1 },
+    status: { type: "string", enum: ["running", "queued", "success", "error", "denied", "timeout", "uncertain", "blocked"] },
+    lifecycle_state: { type: "string", enum: ["opened", "finished"] },
+    commit_outcome: { type: "string", enum: ["pending", "committed", "discarded", "replay_blocked", "uncertain"] },
+    provider_type: { type: "string", enum: ["builtin", "preset", "mcp", "unknown"] },
+    limit: { type: "integer", minimum: 1, maximum: 100 },
+    offset: { type: "integer", minimum: 0 },
+    sort_order: { type: "string", enum: ["asc", "desc"] },
+    sort_by: { type: "string", enum: ["created_at", "started_at", "finished_at"] },
+  },
+  additionalProperties: false,
+} as const;
+
 const toolExecutionListResponseJsonSchema = {
   type: "object",
   required: ["data", "meta"],
@@ -696,7 +714,7 @@ export async function registerToolRoutes(
       summary: "Query tool execution journal for a floor",
       operationId: "queryFloorToolExecutionRecords",
       params: idParamsJsonSchema,
-      querystring: toolExecutionsQueryJsonSchema,
+      querystring: floorToolExecutionsQueryJsonSchema,
       response: {
         200: toolExecutionListResponseJsonSchema,
         400: errorResponseJsonSchema,

@@ -32,7 +32,10 @@ GET /characters
 | ---- | ---- | ---- |
 | `status` | string | 按状态过滤：`active` / `deleted` |
 | `keyword` | string | 按名称模糊搜索 |
-| `sort_by` | string | `created_at`（默认）/ `updated_at` / `name` |
+| `sort_by` | string | `updated_at`（默认）/ `created_at` / `name` |
+| `sort_order` | string | `asc` / `desc` |
+| `limit` | integer | 每页条数，默认 `50` |
+| `offset` | integer | 偏移量，默认 `0` |
 
 ## 获取角色详情
 
@@ -79,6 +82,9 @@ GET /characters/:id/versions
 | 参数 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `sort_by` | string | `version_no`（默认）/ `created_at` |
+| `sort_order` | string | `asc` / `desc` |
+| `limit` | integer | 每页条数，默认 `50` |
+| `offset` | integer | 偏移量，默认 `0` |
 
 ## 创建版本
 
@@ -110,6 +116,14 @@ POST /characters/:id/versions
 
 返回新创建的 CharacterVersion 对象，并额外包含最新 `revision`。
 
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 角色不存在 |
+| `409` | `character_deleted` / `character_revision_conflict` / `character_conflict` | 角色已删除、`expected_revision` 过期，或版本写入发生竞争冲突 |
+| `503` | `resource_busy` | SQLite `busy / locked` 重试耗尽 |
+
 ## 版本回滚
 
 ```http
@@ -129,6 +143,14 @@ POST /characters/:id/versions/:versionId/rollback
 ### 响应 `201`
 
 返回新创建的版本，额外包含 `rolled_back_from_version_id` 和最新 `revision` 字段。
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 角色或目标版本不存在 |
+| `409` | `character_deleted` / `character_revision_conflict` / `character_conflict` | 角色已删除、`expected_revision` 过期，或回滚写入发生竞争冲突 |
+| `503` | `resource_busy` | SQLite `busy / locked` 重试耗尽 |
 
 ## 软删除角色
 

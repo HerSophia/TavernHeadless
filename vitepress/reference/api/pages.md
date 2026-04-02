@@ -4,7 +4,7 @@ outline: [2, 3]
 
 # Pages（消息页）
 
-消息页是楼层内的版本容器。每次重新生成会在同一楼层下创建新的消息页，只有一个页处于激活（active）状态。
+消息页是楼层内的版本容器。每次重新生成通常会在同一楼层下创建新的消息页。`PATCH /pages/:id/activate` 会把同楼层的其他 active page 取消激活，但 `POST /pages`、`PATCH /pages/:id` 和数据库层目前都没有全局唯一 active page 约束。
 
 ## Page 对象
 
@@ -13,7 +13,7 @@ outline: [2, 3]
 | `id` | string | 消息页 ID |
 | `floor_id` | string | 所属楼层 ID |
 | `page_no` | integer | 页序号 |
-| `page_kind` | string | 类型：`generation` / `user_edit` / `system` |
+| `page_kind` | string | 类型：`input` / `output` / `mixed` |
 | `is_active` | boolean | 是否为当前激活页 |
 | `version` | integer | 版本号 |
 | `checksum` | string \| null | 内容校验和 |
@@ -31,8 +31,8 @@ POST /pages
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `floor_id` | string | **是** | 所属楼层 ID |
-| `page_no` | integer | 否 | 页序号 |
-| `page_kind` | string | 否 | 类型 |
+| `page_no` | integer | **是** | 页序号 |
+| `page_kind` | string | **是** | 类型：`input` / `output` / `mixed` |
 | `is_active` | boolean | 否 | 是否激活 |
 | `version` | integer | 否 | 版本号 |
 | `checksum` | string | 否 | 校验和 |
@@ -40,6 +40,14 @@ POST /pages
 ### 响应 `201`
 
 返回 `{ "data": Page }` 。
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败 |
+| `404` | `not_found` | 所属 floor 不存在 |
+| `409` | `conflict` | 页唯一性等约束冲突 |
 
 ## 列出消息页
 
@@ -54,7 +62,10 @@ GET /pages
 | `floor_id` | string | 按楼层过滤 |
 | `page_kind` | string | 按类型过滤 |
 | `is_active` | boolean | 按激活状态过滤 |
-| `sort_by` | string | `page_no`（默认）/ `created_at` / `updated_at` / `version` |
+| `sort_by` | string | `created_at`（默认）/ `updated_at` / `page_no` / `version` |
+| `sort_order` | string | `asc` / `desc` |
+| `limit` | integer | 每页条数，默认 `50` |
+| `offset` | integer | 偏移量，默认 `0` |
 
 ### 响应 `200`
 
@@ -84,7 +95,7 @@ DELETE /pages/:id
 PATCH /pages/:id/activate
 ```
 
-将指定消息页设为当前激活页。同一楼层下的其他页会自动取消激活。
+将指定消息页设为当前激活页。这个端点会在同一楼层内取消其他 active page，但这只是 activate 路径上的行为，不代表系统在所有写路径上都强制保证“同楼层只能有一个 active page”。
 
 ### 响应 `200`
 

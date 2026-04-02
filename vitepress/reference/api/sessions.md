@@ -46,7 +46,7 @@ POST /sessions
     "character_binding": {
       "character_id": "char_001",
       "character_version_id": "cv_001",
-      "sync_policy": "snapshot",
+      "sync_policy": "pin",
       "snapshot_summary": {
         "name": "Luna",
         "has_greeting": true
@@ -76,9 +76,9 @@ POST /sessions
 
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
-| `400` | `VALIDATION_ERROR` | 请求体校验失败 |
-| `404` | `CHARACTER_NOT_FOUND` | 指定角色不存在 |
-| `409` | `CONFLICT` | 冲突 |
+| `400` | `validation_error` / `character_version_mismatch` / `invalid_character_snapshot` / `invalid_user_snapshot` | 请求体校验失败，或绑定快照不合法 |
+| `404` | `character_not_found` / `user_not_found` | 指定角色、角色版本或用户不存在 |
+| `409` | `user_not_active` | 用户存在但当前不可绑定 |
 
 ## 列出会话
 
@@ -160,7 +160,7 @@ GET /sessions/:id/active-run
 PATCH /sessions/:id
 ```
 
-至少提供一个字段。可更新的字段与创建时一致（除 `id`）。更新角色绑定或用户绑定时，会同步更新已有楼层的元数据。
+至少提供一个字段。可更新的字段与创建时一致（除 `id`）。当前实现中，**只有用户绑定变化**会同步更新已有楼层的用户绑定元数据；角色绑定更新只会修改 session 自身字段。
 
 ### 响应 `200`
 
@@ -168,11 +168,11 @@ PATCH /sessions/:id
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体为空或校验失败 |
-| `404` | 会话不存在 |
-| `409` | 冲突 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `character_version_mismatch` / `invalid_character_snapshot` / `invalid_user_snapshot` | 请求体为空、请求体校验失败，或绑定快照不合法 |
+| `404` | `not_found` / `character_not_found` / `user_not_found` | 会话、角色、角色版本或用户不存在 |
+| `409` | `user_not_active` | 用户存在但当前不可绑定 |
 
 ## 删除会话
 
@@ -243,7 +243,7 @@ GET /sessions/:id/timeline
         "active_page": {
           "id": "page_001",
           "page_no": 0,
-          "page_kind": "generation",
+          "page_kind": "output",
           "version": 1,
           "messages": [
             {
@@ -251,7 +251,7 @@ GET /sessions/:id/timeline
               "seq": 0,
               "role": "assistant",
               "content": "*Luna sits by the campfire...*",
-              "content_format": "plain"
+              "content_format": "text"
             }
           ]
         },
@@ -259,7 +259,7 @@ GET /sessions/:id/timeline
       }
     ]
   },
-  "meta": { "total": 1, "limit": 50, "offset": 0, "sort_by": "floor_no", "sort_order": "asc" }
+  "meta": { "total": 1, "limit": 50, "offset": 0, "has_more": false, "sort_by": "floor_no", "sort_order": "asc" }
 }
 ```
 
@@ -273,9 +273,10 @@ GET /sessions/:id/branches
 
 | 参数 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `sort_by` | string | `updated_at`（默认）/ `floor_count` |
-| `limit` | integer | 每页条数 |
-| `offset` | integer | 偏移量 |
+| `sort_by` | string | `updated_at`（默认）/ `branch_id` / `floor_count` / `latest_floor_no` |
+| `sort_order` | string | `asc` / `desc` |
+| `limit` | integer | 每页条数，默认 `50` |
+| `offset` | integer | 偏移量，默认 `0` |
 
 ### 响应 `200`
 
@@ -291,7 +292,7 @@ GET /sessions/:id/branches
       "updated_at": 1735689660000
     }
   ],
-  "meta": { "total": 2, "limit": 20, "offset": 0, "sort_by": "updated_at", "sort_order": "desc" }
+  "meta": { "total": 2, "limit": 50, "offset": 0, "has_more": false, "sort_by": "updated_at", "sort_order": "desc" }
 }
 ```
 
@@ -307,7 +308,7 @@ GET /sessions/:id/branches/diff
 
 | 参数 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
-| `base_branch_id` | string | 是 | 基准分支 ID |
+| `base_branch_id` | string | 否 | 基准分支 ID，默认 `main` |
 | `target_branch_id` | string | 是 | 目标分支 ID |
 
 ### 响应 `200`

@@ -1486,136 +1486,10 @@ export interface paths {
             cookie?: never;
         };
         /** List MCP server configs */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            data?: {
-                                call_timeout_ms?: number;
-                                connect_timeout_ms?: number;
-                                created_at?: number;
-                                default_side_effect_level?: string;
-                                enabled?: boolean;
-                                http?: Record<string, never> | null;
-                                id?: string;
-                                name?: string;
-                                stdio?: Record<string, never> | null;
-                                tool_prefix?: string | null;
-                                tool_refresh_interval_ms?: number;
-                                /** @enum {string} */
-                                transport?: "stdio" | "http";
-                                updated_at?: number;
-                            }[];
-                            meta?: {
-                                [key: string]: unknown;
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                details?: unknown;
-                                message: string;
-                            } & {
-                                [key: string]: unknown;
-                            };
-                        };
-                    };
-                };
-            };
-        };
+        get: operations["listMcpServers"];
         put?: never;
         /** Create MCP server config */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            data?: {
-                                call_timeout_ms?: number;
-                                connect_timeout_ms?: number;
-                                created_at?: number;
-                                default_side_effect_level?: string;
-                                enabled?: boolean;
-                                http?: Record<string, never> | null;
-                                id?: string;
-                                name?: string;
-                                stdio?: Record<string, never> | null;
-                                tool_prefix?: string | null;
-                                tool_refresh_interval_ms?: number;
-                                /** @enum {string} */
-                                transport?: "stdio" | "http";
-                                updated_at?: number;
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                details?: unknown;
-                                message: string;
-                            } & {
-                                [key: string]: unknown;
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                details?: unknown;
-                                message: string;
-                            } & {
-                                [key: string]: unknown;
-                            };
-                        };
-                    };
-                };
-            };
-        };
+        post: operations["createMcpServer"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1649,20 +1523,33 @@ export interface paths {
                     content: {
                         "application/json": {
                             data?: {
-                                call_timeout_ms?: number;
-                                connect_timeout_ms?: number;
-                                created_at?: number;
-                                default_side_effect_level?: string;
-                                enabled?: boolean;
-                                http?: Record<string, never> | null;
-                                id?: string;
-                                name?: string;
-                                stdio?: Record<string, never> | null;
-                                tool_prefix?: string | null;
-                                tool_refresh_interval_ms?: number;
+                                call_timeout_ms: number;
+                                connect_timeout_ms: number;
+                                created_at: number;
                                 /** @enum {string} */
-                                transport?: "stdio" | "http";
-                                updated_at?: number;
+                                default_side_effect_level: "none" | "sandbox" | "irreversible";
+                                enabled: boolean;
+                                http?: {
+                                    headers_masked?: {
+                                        [key: string]: string;
+                                    };
+                                    url: string;
+                                };
+                                id: string;
+                                name: string;
+                                stdio?: {
+                                    args?: string[];
+                                    command: string;
+                                    cwd?: string;
+                                    env_masked?: {
+                                        [key: string]: string;
+                                    };
+                                };
+                                tool_prefix: string | null;
+                                tool_refresh_interval_ms: number;
+                                /** @enum {string} */
+                                transport: "stdio" | "http";
+                                updated_at: number;
                             };
                         };
                     };
@@ -1689,53 +1576,24 @@ export interface paths {
         put?: never;
         post?: never;
         /** Delete MCP server config */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            data?: {
-                                deleted?: boolean;
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                details?: unknown;
-                                message: string;
-                            } & {
-                                [key: string]: unknown;
-                            };
-                        };
-                    };
-                };
-            };
-        };
+        delete: operations["deleteMcpServer"];
         options?: never;
         head?: never;
         /** Update MCP server config */
-        patch: {
+        patch: operations["updateMcpServer"];
+        trace?: never;
+    };
+    "/mcp/servers/{id}/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect/reconnect to MCP server */
+        post: {
             parameters: {
                 query?: never;
                 header?: never;
@@ -1754,37 +1612,17 @@ export interface paths {
                     content: {
                         "application/json": {
                             data?: {
-                                call_timeout_ms?: number;
-                                connect_timeout_ms?: number;
-                                created_at?: number;
-                                default_side_effect_level?: string;
-                                enabled?: boolean;
-                                http?: Record<string, never> | null;
-                                id?: string;
-                                name?: string;
-                                stdio?: Record<string, never> | null;
-                                tool_prefix?: string | null;
-                                tool_refresh_interval_ms?: number;
+                                connected_at?: number | null;
+                                error?: string | null;
+                                last_timeout_at?: number | null;
+                                reconnect_required?: boolean;
+                                server_id?: string;
+                                server_name?: string;
                                 /** @enum {string} */
-                                transport?: "stdio" | "http";
-                                updated_at?: number;
-                            };
-                        };
-                    };
-                };
-                /** @description Default Response */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                details?: unknown;
-                                message: string;
-                            } & {
-                                [key: string]: unknown;
+                                state?: "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
+                                tool_count?: number;
+                                tools_refreshed_at?: number | null;
+                                transport?: string;
                             };
                         };
                     };
@@ -1807,7 +1645,24 @@ export interface paths {
                     };
                 };
                 /** @description Default Response */
-                409: {
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -1825,6 +1680,244 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/servers/{id}/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disconnect MCP server */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                connected_at?: number | null;
+                                error?: string | null;
+                                last_timeout_at?: number | null;
+                                reconnect_required?: boolean;
+                                server_id?: string;
+                                server_name?: string;
+                                /** @enum {string} */
+                                state?: "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
+                                tool_count?: number;
+                                tools_refreshed_at?: number | null;
+                                transport?: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/servers/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get MCP server connection status */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                connected_at?: number | null;
+                                error?: string | null;
+                                last_timeout_at?: number | null;
+                                reconnect_required?: boolean;
+                                server_id?: string;
+                                server_name?: string;
+                                /** @enum {string} */
+                                state?: "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
+                                tool_count?: number;
+                                tools_refreshed_at?: number | null;
+                                transport?: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/servers/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test MCP server connection */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                duration_ms?: number;
+                                error?: string | null;
+                                success?: boolean;
+                                tool_count?: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/mcp/servers/{id}/toggle": {
@@ -1841,7 +1934,18 @@ export interface paths {
         options?: never;
         head?: never;
         /** Enable/disable MCP server */
-        patch: {
+        patch: operations["toggleMcpServer"];
+        trace?: never;
+    };
+    "/mcp/servers/{id}/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List tools from MCP server */
+        get: {
             parameters: {
                 query?: never;
                 header?: never;
@@ -1860,21 +1964,12 @@ export interface paths {
                     content: {
                         "application/json": {
                             data?: {
-                                call_timeout_ms?: number;
-                                connect_timeout_ms?: number;
-                                created_at?: number;
-                                default_side_effect_level?: string;
-                                enabled?: boolean;
-                                http?: Record<string, never> | null;
-                                id?: string;
+                                description?: string;
                                 name?: string;
-                                stdio?: Record<string, never> | null;
-                                tool_prefix?: string | null;
-                                tool_refresh_interval_ms?: number;
-                                /** @enum {string} */
-                                transport?: "stdio" | "http";
-                                updated_at?: number;
-                            };
+                                parameters?: Record<string, never>;
+                                side_effect_level?: string;
+                                source?: string;
+                            }[];
                         };
                     };
                 };
@@ -1895,8 +1990,98 @@ export interface paths {
                         };
                     };
                 };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
             };
         };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp/statuses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get all MCP server connection statuses */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                connected_at?: number | null;
+                                error?: string | null;
+                                last_timeout_at?: number | null;
+                                reconnect_required?: boolean;
+                                server_id?: string;
+                                server_name?: string;
+                                /** @enum {string} */
+                                state?: "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
+                                tool_count?: number;
+                                tools_refreshed_at?: number | null;
+                                transport?: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/memories": {
@@ -8317,8 +8502,6 @@ export interface operations {
     queryFloorToolExecutionRecords: {
         parameters: {
             query?: {
-                session_id?: string;
-                floor_id?: string;
                 run_id?: string;
                 caller_slot?: "narrator" | "director" | "verifier" | "memory";
                 tool_name?: string;
@@ -9103,6 +9286,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Allowed values: *, narrator, director, verifier, memory. */
                 slot: string;
             };
             cookie?: never;
@@ -9189,6 +9373,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Allowed values: *, narrator, director, verifier, memory. */
                 slot: string;
             };
             cookie?: never;
@@ -9207,7 +9392,6 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
-                    /** @default true */
                     enabled?: boolean;
                     params?: {
                         frequency_penalty?: number;
@@ -9224,12 +9408,29 @@ export interface operations {
                         top_p?: number;
                     } | null;
                     preset_id?: string | null;
-                    /**
-                     * @default global
-                     * @enum {string}
-                     */
-                    scope?: "global" | "session";
+                    /** @enum {string} */
+                    scope?: "global";
                     session_id?: string;
+                } | {
+                    enabled?: boolean;
+                    params?: {
+                        frequency_penalty?: number;
+                        max_context_tokens?: number;
+                        max_output_tokens?: number;
+                        max_retries?: number;
+                        presence_penalty?: number;
+                        /** @enum {string} */
+                        reasoning_effort?: "low" | "medium" | "high";
+                        stream?: boolean;
+                        temperature?: number;
+                        timeout_ms?: number;
+                        top_k?: number;
+                        top_p?: number;
+                    } | null;
+                    preset_id?: string | null;
+                    /** @enum {string} */
+                    scope: "session";
+                    session_id: string;
                 };
             };
         };
@@ -9311,10 +9512,12 @@ export interface operations {
         parameters: {
             query?: {
                 scope?: "global" | "session";
+                /** @description Required when scope=session. */
                 session_id?: string;
             };
             header?: never;
             path: {
+                /** @description Allowed values: *, narrator, director, verifier, memory. */
                 slot: string;
             };
             cookie?: never;
@@ -10058,10 +10261,7 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
-                    /**
-                     * @default *
-                     * @enum {string}
-                     */
+                    /** @enum {string} */
                     instance_slot?: "*" | "narrator" | "director" | "verifier" | "memory";
                     params?: {
                         frequency_penalty?: number;
@@ -10077,12 +10277,29 @@ export interface operations {
                         top_k?: number;
                         top_p?: number;
                     } | null;
-                    /**
-                     * @default global
-                     * @enum {string}
-                     */
-                    scope?: "global" | "session";
+                    /** @enum {string} */
+                    scope?: "global";
                     session_id?: string;
+                } | {
+                    /** @enum {string} */
+                    instance_slot?: "*" | "narrator" | "director" | "verifier" | "memory";
+                    params?: {
+                        frequency_penalty?: number;
+                        max_context_tokens?: number;
+                        max_output_tokens?: number;
+                        max_retries?: number;
+                        presence_penalty?: number;
+                        /** @enum {string} */
+                        reasoning_effort?: "low" | "medium" | "high";
+                        stream?: boolean;
+                        temperature?: number;
+                        timeout_ms?: number;
+                        top_k?: number;
+                        top_p?: number;
+                    } | null;
+                    /** @enum {string} */
+                    scope: "session";
+                    session_id: string;
                 };
             };
         };
@@ -10191,9 +10408,9 @@ export interface operations {
     };
     unbindLlmProfile: {
         parameters: {
-            query?: {
-                scope?: "global" | "session";
-                session_id?: string;
+            query: {
+                scope: "session";
+                session_id: string;
             };
             header?: never;
             path: {
@@ -10535,7 +10752,515 @@ export interface operations {
                 };
             };
             /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listMcpServers: {
+        parameters: {
+            query?: {
+                enabled?: boolean;
+                sort_by?: "created_at" | "name";
+                sort_order?: "asc" | "desc";
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            call_timeout_ms: number;
+                            connect_timeout_ms: number;
+                            created_at: number;
+                            /** @enum {string} */
+                            default_side_effect_level: "none" | "sandbox" | "irreversible";
+                            enabled: boolean;
+                            http?: {
+                                headers_masked?: {
+                                    [key: string]: string;
+                                };
+                                url: string;
+                            };
+                            id: string;
+                            name: string;
+                            stdio?: {
+                                args?: string[];
+                                command: string;
+                                cwd?: string;
+                                env_masked?: {
+                                    [key: string]: string;
+                                };
+                            };
+                            tool_prefix: string | null;
+                            tool_refresh_interval_ms: number;
+                            /** @enum {string} */
+                            transport: "stdio" | "http";
+                            updated_at: number;
+                        }[];
+                        meta?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    call_timeout_ms?: number;
+                    connect_timeout_ms?: number;
+                    /** @enum {string} */
+                    default_side_effect_level?: "none" | "sandbox" | "irreversible";
+                    enabled?: boolean;
+                    http?: {
+                        headers?: {
+                            [key: string]: string;
+                        };
+                        /** Format: uri */
+                        url: string;
+                    };
+                    name: string;
+                    stdio?: {
+                        args?: string[];
+                        command: string;
+                        cwd?: string;
+                        env?: {
+                            [key: string]: string;
+                        };
+                    };
+                    tool_prefix?: string;
+                    tool_refresh_interval_ms?: number;
+                    /** @enum {string} */
+                    transport: "stdio" | "http";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            call_timeout_ms: number;
+                            connect_timeout_ms: number;
+                            created_at: number;
+                            /** @enum {string} */
+                            default_side_effect_level: "none" | "sandbox" | "irreversible";
+                            enabled: boolean;
+                            http?: {
+                                headers_masked?: {
+                                    [key: string]: string;
+                                };
+                                url: string;
+                            };
+                            id: string;
+                            name: string;
+                            stdio?: {
+                                args?: string[];
+                                command: string;
+                                cwd?: string;
+                                env_masked?: {
+                                    [key: string]: string;
+                                };
+                            };
+                            tool_prefix: string | null;
+                            tool_refresh_interval_ms: number;
+                            /** @enum {string} */
+                            transport: "stdio" | "http";
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deleteMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            deleted?: boolean;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    updateMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    call_timeout_ms?: number;
+                    connect_timeout_ms?: number;
+                    /** @enum {string} */
+                    default_side_effect_level?: "none" | "sandbox" | "irreversible";
+                    http?: {
+                        headers?: {
+                            [key: string]: string;
+                        };
+                        /** Format: uri */
+                        url: string;
+                    };
+                    name?: string;
+                    stdio?: {
+                        args?: string[];
+                        command: string;
+                        cwd?: string;
+                        env?: {
+                            [key: string]: string;
+                        };
+                    };
+                    tool_prefix?: string | null;
+                    tool_refresh_interval_ms?: number;
+                    /** @enum {string} */
+                    transport?: "stdio" | "http";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            call_timeout_ms: number;
+                            connect_timeout_ms: number;
+                            created_at: number;
+                            /** @enum {string} */
+                            default_side_effect_level: "none" | "sandbox" | "irreversible";
+                            enabled: boolean;
+                            http?: {
+                                headers_masked?: {
+                                    [key: string]: string;
+                                };
+                                url: string;
+                            };
+                            id: string;
+                            name: string;
+                            stdio?: {
+                                args?: string[];
+                                command: string;
+                                cwd?: string;
+                                env_masked?: {
+                                    [key: string]: string;
+                                };
+                            };
+                            tool_prefix: string | null;
+                            tool_refresh_interval_ms: number;
+                            /** @enum {string} */
+                            transport: "stdio" | "http";
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    toggleMcpServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    enabled: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data?: {
+                            call_timeout_ms: number;
+                            connect_timeout_ms: number;
+                            created_at: number;
+                            /** @enum {string} */
+                            default_side_effect_level: "none" | "sandbox" | "irreversible";
+                            enabled: boolean;
+                            http?: {
+                                headers_masked?: {
+                                    [key: string]: string;
+                                };
+                                url: string;
+                            };
+                            id: string;
+                            name: string;
+                            stdio?: {
+                                args?: string[];
+                                command: string;
+                                cwd?: string;
+                                env_masked?: {
+                                    [key: string]: string;
+                                };
+                            };
+                            tool_prefix: string | null;
+                            tool_refresh_interval_ms: number;
+                            /** @enum {string} */
+                            transport: "stdio" | "http";
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

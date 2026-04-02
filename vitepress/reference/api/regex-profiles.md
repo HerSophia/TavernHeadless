@@ -49,9 +49,16 @@ GET /regex-profiles/:id
     "source": "sillytavern",
     "data": [
       {
+        "id": "trim_whitespace",
         "scriptName": "trim_whitespace",
-        "find": "\\s+$",
-        "replace": ""
+        "findRegex": "/\\s+$/g",
+        "replaceString": "",
+        "trimStrings": [],
+        "placement": [2],
+        "disabled": false,
+        "substituteRegex": 0,
+        "minDepth": 0,
+        "maxDepth": 0
       }
     ],
     "created_at": 1735689600000,
@@ -63,9 +70,9 @@ GET /regex-profiles/:id
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `404` | 正则配置不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 正则配置不存在 |
 
 ## 更新 Regex Profile
 
@@ -136,9 +143,10 @@ PUT /regex-profiles/:id
 
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
-| `400` | `validation_error` | 请求体校验失败、正则脚本解析出错，或未提供 `expected_version` / `expected_updated_at` |
+| `400` | `validation_error` / `regex_validation_error` | 请求体校验失败、正则脚本解析出错，或未提供 `expected_version` / `expected_updated_at` |
 | `404` | `regex_profile_not_found` | 正则配置不存在 |
 | `409` | `regex_profile_conflict` | 版本基线过期，或兼容字段 `expected_updated_at` 不匹配 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 删除 Regex Profile
 
@@ -168,3 +176,4 @@ DELETE /regex-profiles/:id?expected_version=3
 | ------ | ---- | ---- |
 | `404` | `regex_profile_not_found` | 正则配置不存在 |
 | `409` | `regex_profile_conflict` | 删除时提供的 `expected_version` 过期 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |

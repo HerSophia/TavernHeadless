@@ -32,8 +32,8 @@ POST /floors
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `session_id` | string | **是** | 所属会话 ID |
-| `floor_no` | integer | 否 | 楼层序号 |
-| `branch_id` | string | 否 | 分支 ID |
+| `floor_no` | integer | **是** | 楼层序号 |
+| `branch_id` | string | 否 | 分支 ID，默认 `main` |
 | `parent_floor_id` | string | 否 | 父楼层 ID |
 | `state` | string | 否 | 初始状态 |
 | `token_in` | integer | 否 | 输入 token 数 |
@@ -56,7 +56,10 @@ GET /floors
 | `session_id` | string | 按会话过滤 |
 | `branch_id` | string | 按分支过滤 |
 | `state` | string | 按状态过滤 |
-| `sort_by` | string | `floor_no`（默认）/ `created_at` / `updated_at` |
+| `sort_by` | string | `created_at`（默认）/ `updated_at` / `floor_no` |
+| `sort_order` | string | `asc` / `desc` |
+| `limit` | integer | 每页条数，默认 `50` |
+| `offset` | integer | 偏移量，默认 `0` |
 
 ### 响应 `200`
 
@@ -140,7 +143,9 @@ DELETE /floors/:id
 POST /floors/:id/branch
 ```
 
-以指定楼层为分叉点，创建一个新分支。
+为指定楼层准备一个可用的分支描述对象。
+
+当前实现会校验 source floor 是否存在且处于 `committed` 状态，并检查目标 `branch_id` 是否冲突；如果校验通过，返回一个 branch 描述对象。这个过程**不会立即写入新的 floor 或持久化 branch 记录**。
 
 ### 请求体
 
@@ -169,11 +174,17 @@ DELETE /branches/:id
 
 删除指定分支下的所有楼层。
 
+补充语义：
+
+- `main` 分支不可删除，服务端返回 `409 protected_branch`
+- 如果同名 `branch_id` 同时存在于多个 session，不传 `session_id` 会返回 `409 ambiguous_branch`
+- 删除分支前，服务端会先清理该 branch 对应的 branch-scope 变量
+
 ### 查询参数
 
 | 参数 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `session_id` | string | 限定会话范围（可选，用于安全校验） |
+| `session_id` | string | 限定会话范围；当同名 branch 存在于多个会话时会变成必填 |
 
 ### 响应 `200`
 

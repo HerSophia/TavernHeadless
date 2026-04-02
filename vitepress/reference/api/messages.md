@@ -15,7 +15,7 @@ outline: [2, 3]
 | `seq` | integer | 消息在页内的序号 |
 | `role` | string | 角色：`system` / `user` / `assistant` / `narrator` |
 | `content` | string | 消息内容 |
-| `content_format` | string | 内容格式：`plain` / `markdown` |
+| `content_format` | string | 内容格式：`text` / `markdown` / `json` |
 | `token_count` | integer | token 数量 |
 | `is_hidden` | boolean | 是否隐藏（不参与 Prompt 组装） |
 | `source` | string \| null | 来源标记 |
@@ -35,7 +35,7 @@ POST /messages
 | `seq` | integer | **是** | 序号 |
 | `role` | string | **是** | 角色 |
 | `content` | string | **是** | 内容 |
-| `content_format` | string | 否 | 内容格式（默认 `plain`） |
+| `content_format` | string | 否 | 内容格式（默认 `text`） |
 | `token_count` | integer | 否 | token 数 |
 | `is_hidden` | boolean | 否 | 是否隐藏（默认 `false`） |
 | `source` | string | 否 | 来源标记 |
@@ -46,9 +46,10 @@ POST /messages
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败 |
+| `404` | `not_found` | 所属消息页不存在，或当前账号不可访问 |
 
 ## 列出消息
 
@@ -63,7 +64,10 @@ GET /messages
 | `page_id` | string | 按消息页过滤 |
 | `role` | string | 按角色过滤：`system` / `user` / `assistant` / `narrator` |
 | `is_hidden` | boolean | 按隐藏状态过滤 |
-| `sort_by` | string | `seq`（默认）/ `created_at` |
+| `sort_by` | string | `created_at`（默认）/ `seq` |
+| `sort_order` | string | `asc` / `desc` |
+| `limit` | integer | 每页条数，默认 `50` |
+| `offset` | integer | 偏移量，默认 `0` |
 
 ### 响应 `200`
 
@@ -164,7 +168,7 @@ PATCH /messages/batch/visibility
           "seq": 1,
           "role": "assistant",
           "content": "The moon is bright tonight.",
-          "content_format": "plain",
+          "content_format": "text",
           "token_count": 6,
           "is_hidden": true,
           "source": null,

@@ -99,9 +99,9 @@ GET /llm-instances/:slot
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 无效的槽位值 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `invalid_slot` | 路径参数或查询参数校验失败，或 `slot` 不属于实例槽位枚举 |
 
 ## 创建或更新实例配置
 
@@ -126,6 +126,13 @@ PUT /llm-instances/:slot
 | `preset_id` | string \| null | 否 | 关联预设 ID |
 | `enabled` | boolean | 否 | 是否启用（默认 `true`） |
 | `params` | object \| null | 否 | 生成参数覆盖 |
+
+字段省略语义：
+
+- 省略 `enabled`：会按请求 schema 默认值 `true` 处理；对于已存在配置，这等价于把它重新写成 `enabled=true`
+- 省略 `preset_id`：如果目标配置已存在，则保留原有 `preset_id`；首次创建时写入 `null`
+- 省略 `params`：如果目标配置已存在，则保留原有 `params`
+- 显式传 `params: null`：清空原有 `params` 覆盖
 
 运行时语义说明：
 
@@ -182,9 +189,9 @@ PUT /llm-instances/:slot
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 无效的槽位、缺少 session_id、参数校验失败 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `invalid_slot` / `invalid_params` | 请求体或路径参数校验失败（包括 `scope=session` 但缺少 `session_id`）、`slot` 非法，或 `params` 归一化失败 |
 
 ## 删除实例配置
 
@@ -219,10 +226,10 @@ DELETE /llm-instances/:slot
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 无效的槽位或缺少 session_id |
-| `404` | 配置不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `invalid_slot` / `missing_session_id` | 路径参数或查询参数校验失败、`slot` 非法，或 `scope=session` 但缺少 `session_id` |
+| `404` | `config_not_found` | 目标配置不存在 |
 
 ## 解析实例配置
 

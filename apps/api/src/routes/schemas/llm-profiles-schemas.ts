@@ -205,6 +205,7 @@ export const createBodyJsonSchema = {
 
 export const updateBodyJsonSchema = {
   type: "object",
+  minProperties: 1,
   properties: {
     preset_name: { type: "string", minLength: 1, maxLength: 120 },
     provider: { type: "string", enum: ["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"] },
@@ -232,25 +233,43 @@ export const generationParamsJsonSchemaProperties = {
   reasoning_effort: { type: "string", enum: ["low", "medium", "high"] },
 } as const;
 
-export const activateBodyJsonSchema = {
+const nullableGenerationParamsJsonSchema = {
+  anyOf: [
+    {
+      type: "object",
+      properties: generationParamsJsonSchemaProperties,
+      additionalProperties: false,
+    },
+    { type: "null" },
+  ],
+} as const;
+
+const activateBodyGlobalJsonSchema = {
   type: "object",
   properties: {
-    scope: { type: "string", enum: ["global", "session"], default: "global" },
+    scope: { type: "string", enum: ["global"] },
     session_id: { type: "string", minLength: 1 },
-    params: {
-      anyOf: [
-        {
-          type: "object",
-          properties: generationParamsJsonSchemaProperties,
-          additionalProperties: false,
-        },
-        { type: "null" },
-      ],
-    },
-    instance_slot: { type: "string", enum: ["*", "narrator", "director", "verifier", "memory"], default: "*" },
+    params: nullableGenerationParamsJsonSchema,
+    instance_slot: { type: "string", enum: ["*", "narrator", "director", "verifier", "memory"] },
   },
-  examples: [activateBodyExample],
   additionalProperties: false,
+} as const;
+
+const activateBodySessionJsonSchema = {
+  type: "object",
+  required: ["scope", "session_id"],
+  properties: {
+    scope: { type: "string", enum: ["session"] },
+    session_id: { type: "string", minLength: 1 },
+    params: nullableGenerationParamsJsonSchema,
+    instance_slot: { type: "string", enum: ["*", "narrator", "director", "verifier", "memory"] },
+  },
+  additionalProperties: false,
+} as const;
+
+export const activateBodyJsonSchema = {
+  oneOf: [activateBodyGlobalJsonSchema, activateBodySessionJsonSchema],
+  examples: [activateBodyExample],
 } as const;
 
 export const bindingSlotParamsJsonSchema = {
@@ -262,13 +281,27 @@ export const bindingSlotParamsJsonSchema = {
   additionalProperties: false,
 } as const;
 
-export const unbindQueryJsonSchema = {
+const unbindGlobalQueryVariantJsonSchema = {
   type: "object",
   properties: {
-    scope: { type: "string", enum: ["global", "session"], default: "global" },
+    scope: { type: "string", enum: ["global"] },
     session_id: { type: "string", minLength: 1 },
   },
   additionalProperties: false,
+} as const;
+
+const unbindSessionQueryVariantJsonSchema = {
+  type: "object",
+  required: ["scope", "session_id"],
+  properties: {
+    scope: { type: "string", enum: ["session"] },
+    session_id: { type: "string", minLength: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
+export const unbindQueryJsonSchema = {
+  oneOf: [unbindGlobalQueryVariantJsonSchema, unbindSessionQueryVariantJsonSchema],
 } as const;
 
 export const discoverModelsBodyJsonSchema = {

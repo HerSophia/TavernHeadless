@@ -6,26 +6,26 @@ outline: [2, 3]
 
 ## 这是什么？
 
-TavernHeadless 是一个 Headless 的 AI 角色扮演系统。你可以把它理解为「没有默认聊天 UI 的 SillyTavern 引擎层」：
+TavernHeadless 是一个没有内置界面的 AI 角色扮演后端引擎。你可以把它理解为「SillyTavern 的引擎层」——核心能力都在后端，前端可以自由替换：
 
-- 以 API 和事件系统为核心，而不是页面驱动。
-- 以工程化方式管理角色、会话、分支和记忆。
-- 支持接入任意前端（Web、桌面端、自动化脚本），也可以完全不用前端。
+- 所有功能通过 HTTP 接口和事件系统提供，而不是页面驱动。
+- 角色、会话、分支、记忆等数据用工程化方式管理。
+- 可以接入任意前端（网页、桌面客户端、自动化脚本），也可以完全不用前端。
 
 ## 当前状态
 
-后端 `apps/api` 已完成 Beta 准入（`v0.2.0-beta.2`），14 项准入标准全部达成，真实 LLM provider 回归测试通过。项目整体仍处于 Alpha 阶段。
+后端已进入 Beta（`v0.2.0-beta.2`），核心链路完整可用，真实大模型回归测试通过。项目整体仍处于 Alpha 阶段。
 
 已完成的部分：
 
 - 会话管理、分支治理、重试、编辑再生成、时间线查询。
 - SillyTavern 生态导入：预设、世界书、正则、角色卡。
-- SSE 流式输出、Prompt dry-run 调试、OpenAPI 文档、Typed SDK。
-- 官方集成层两包：`@tavern/sdk`、`@tavern/client-helpers`，并已覆盖会话、内容结构、变量、记忆、导出、Tools、MCP 等主要接入域。
+- 流式输出（SSE）、提示词调试（dry-run）、接口文档（OpenAPI）、类型化 SDK。
+- 官方集成层两个包：`@tavern/sdk` 和 `@tavern/client-helpers`，覆盖会话、内容结构、变量、记忆、导出、工具调用、MCP 等主要功能。
 - 三种认证模式（`off` / `api_key` / `jwt`）、多账号隔离、LLM 密钥加密存储。
-- 记忆系统（摘要提取、衰减排序、自动维护）、变量系统（四级级联）。
-- LLM Profile Vault、Instance Slot 多模型配置、模型发现与连通性测试。
-- batch 接口与状态类接口（variables / memories / messages / sessions / users 等）。
+- 记忆系统（摘要提取、衰减排序、自动维护）、变量系统（五级级联）。
+- LLM 多模型配置（Profile + 实例槽位）、模型发现与连通性测试。
+- 批量操作接口（变量、记忆、消息、会话、用户等）。
 
 当前重点：部署文档完善、正式发布准备。
 
@@ -112,21 +112,29 @@ draft → generating → committed
 
 ### 变量系统
 
-变量用来存储叙事状态，比如好感度、是否触发过某事件、某物品的位置等。
+变量用来存储叙事状态，比如好感度、是否触发过某事件、某物品的位置等。系统把变量分成五个层级，每一层解决不同的隔离问题。
 
-变量分为五个层级，读取时按从小到大查找，写入时默认写到最小范围（page）作为沙箱保护：
+读取时按从小到大的顺序查找，找到就停；写入时默认写到最小范围（page），起沙箱保护作用：
 
 ```text
 page → floor → branch → chat → global
 ```
 
-楼层提交时，页级变量可以按策略提升到更高层级。这样重新生成时不同版本之间互不干扰，同一会话里的不同分支也不会互相污染。
+**为什么需要五层？**
+
+- **page（页级）**：每次生成尝试的沙箱。假设 AI 写了 `mood = happy`，你不满意点了重试，新一次生成写了 `mood = sad`。没有页级隔离，两次生成会互相覆盖。有了 page，每次生成各自独立，只有你选定的版本才会提升到更高层。
+- **floor（楼层级）**：一个回合的结果。楼层提交后冻结，后续回合不再修改。
+- **branch（分支级）**：RP 中经常从某个楼层开始分叉，走出不同的故事线。如果没有分支级变量，两条分支共用同一份会话级状态——一条分支里"角色 A 受伤了"，另一条里"角色 A 安然无恙"，变量互相冲突。有了 branch，每条故事线有自己的状态空间，互不干扰。
+- **chat（会话级）**：整次聊天共享的状态，比如好感度、已解锁的剧情标记。
+- **global（全局级）**：跨会话的世界观设定或全局开关。
+
+楼层提交时，页级变量按策略提升到更高层级。提升到哪一层由系统编排器控制，不会自动发生。
 
 ### 提示词编排
 
-提示词系统负责把预设、世界书、变量、聊天记录、记忆等拼成一份完整的提示词，发给 LLM。
+提示词系统负责把预设、世界书、变量、聊天记录、记忆等拼成一份完整的提示词，发给大模型。
 
-不管走哪种模式，最终都会编译成一个统一的中间格式（Prompt IR），再交给 LLM。这意味着兼容模式和原生模式共享同一个渲染器。
+不管走哪种模式，最终都会编译成一个统一的中间格式，再交给大模型。兼容模式和原生模式共享同一个渲染器。
 
 原生模式的流水线由以下节点组成：
 
@@ -140,49 +148,53 @@ page → floor → branch → chat → global
 | `token_budget` | 按 token 预算裁剪历史 |
 | `pack_messages` | 最终拼装成 LLM 要求的 messages 数组 |
 
-### LLM 调度
+### LLM 配置：预设、实例与 Profile
 
-系统把 LLM 在逻辑上分成四个实例（Instance Slot），各自可以使用不同的模型和配置：
+在角色扮演场景中，"用哪个大模型、怎么调用它"涉及三层配置：
+
+| 概念 | 解决什么问题 | 举例 |
+| ---- | ---- | ---- |
+| **预设** | 提示词怎么拼、生成参数怎么设 | 温度 0.9、top_p 0.95、酒馆格式模板 |
+| **实例槽位** | 谁来调用大模型、负责什么 | 叙述者写故事，记忆员整理记忆 |
+| **LLM Profile（凭证配置）** | 调用哪个大模型、用什么密钥 | OpenAI gpt-4o + 对应 API Key |
+
+三者的关系：会话绑定一个预设（决定提示词怎么拼）→ 每个实例槽位绑定一个 Profile（决定调用哪个大模型）→ 实例还可以用自己的预设覆盖会话级别的预设。
+
+系统定义了四个实例槽位：
 
 | 实例 | 职责 | 何时使用 |
 | ---- | ---- | ---- |
-| **Narrator** | 生成 RP 文本 | 每个回合 |
-| **Memory** | 整理摘要、提取事实 | 回合结束后 |
-| **Director** | 规划剧情走向 | 可选 |
-| **Verifier** | 检查内容一致性 | 可选 |
+| **叙述者（Narrator）** | 生成角色扮演文本 | 每个回合 |
+| **记忆员（Memory）** | 整理摘要、提取事实 | 回合结束后 |
+| **导演（Director）** | 规划剧情走向 | 可选 |
+| **校验员（Verifier）** | 检查内容一致性 | 可选 |
 
-一次回合中，实例按 Director → Memory 检索 → Narrator 生成 → Verifier 检查 → Memory 整理 的顺序执行。
+一次回合中，实例按 导演 → 记忆检索 → 叙述者生成 → 校验员检查 → 记忆整理 的顺序执行。叙述者被禁用时请求会返回错误；导演、校验员、记忆员被禁用时对应子流程跳过。
 
-这些实例配置现在会直接影响真实执行：
-
-- narrator 被实例配置显式禁用时，请求会返回明确错误，不再偷偷回退到环境变量 narrator。
-- director / verifier / memory 被禁用时，对应子流程会在该 turn 中跳过。
-- narrator 的 `preset_id` 可以覆盖 `session.presetId`。
-- `params` 采用浅层 merge，同名键覆盖。
-- 动态 Profile 会在 turn 启动时冻结为独立 provider handle，运行中的 turn 不会被中途 Profile 更新污染。
-
-每个实例通过 **LLM Profile** 绑定凭证配置（provider / model / apiKey 等）。Profile 支持按 scope（global / session）和 slot 粒度绑定，解析时按五级优先级回退。不配置 Profile 时使用环境变量作为默认值。
+Profile 支持按作用域（全局或会话）和槽位粒度绑定。你可以让叙述者用高质量模型，记忆员用便宜模型，也可以按会话单独切换。不配置 Profile 时使用环境变量作为默认值。每次回合启动时，当前的 Profile 配置会被冻结成快照，运行中不会被后续修改影响。
 
 ### 记忆系统
 
-记忆系统解决聊天变长后上下文窗口装不下的问题。
+聊天越来越长之后，大模型的上下文窗口装不下所有内容。记忆系统把重要信息提炼出来，在需要时注入提示词，让大模型能"记住"之前发生过的事。
 
-记忆的来源有两个：
+记忆有两个来源：
 
-1. **LLM 摘要**：从 AI 回复中自动提取 `<summary>` 等标签的内容。
-2. **Memory 实例整理**：回合同步提交完成后，异步 `memory_job` worker 读取近期内容，输出结构化的记忆操作（新增 / 更新 / 弃用事实）。
+1. **从 AI 回复中提取**：很多预设会引导 AI 在回复末尾写摘要标签（如 `<summary>角色 A 和角色 B 达成了协议</summary>`）。系统自动识别并提取这些内容。
+2. **后台整理**：回合提交后，系统在后台启动作业，读取最近的对话内容，输出结构化的记忆操作——新增事实、更新事实、标记过时事实。
 
-每条记忆有类型（fact / summary / open_loop）、所属层级、来源追溯、重要度评分和状态。`type: "summary"` 进一步区分 `summary_tier: "micro" | "macro"`。生命周期状态使用 `lifecycle_status: "active" | "compacted" | "deprecated"`，同时保留兼容字段 `status: "active" | "deprecated"`。
+每条记忆有类型和层级：
 
-记忆之间还可以有关系（`supports`、`contradicts`、`updates`、`derived_from`、`compacts`、`resolves`）。系统也提供 `memory_job` 与 `memory_scope_state` 两个管理面，用于异步摄取、宏摘要压缩、维护任务和手动回填。
+- **类型**：事实（fact）、摘要（summary）、开放剧情线（open_loop）。摘要进一步分为短摘要（micro，覆盖一两个回合）和长摘要（macro，由多条短摘要压缩而来）。
+- **层级**：全局、会话或楼层，决定可见范围。
+- **状态**：活跃（active）、已压缩（compacted）、已弃用（deprecated）。已弃用的记忆不再注入提示词。
 
-组装提示词时，编排器按 token 预算和重要度选取记忆条目，打包注入到提示词中。
+记忆之间可以有六种关系：支持、矛盾、更新、派生、压缩、消解。
 
-系统还提供自动维护任务：按半衰期衰减排序、自动弃用过期摘要、清理已弃用条目。宏摘要压缩默认由 active micro 数量、micro token 总量和楼层跨度阈值触发，也可以通过后台任务手动触发。
+组装提示词时，编排器按 token 预算和重要度选取记忆条目注入。系统也在后台自动维护：按半衰期衰减排序、弃用过期摘要、当短摘要积累到一定数量时触发长摘要压缩。这些维护任务不阻塞对话。
 
 ### 事件系统
 
-系统内部使用事件总线（基于 emittery）来解耦各模块。主要事件包括：
+系统内部通过事件总线来解耦各模块。当某件事发生时（比如楼层创建、生成完成、变量变更），系统会广播一个事件，其他模块可以监听并做出反应。主要事件包括：
 
 - 楼层生命周期：`floor.created` / `floor.committed` / `floor.failed`
 - 生成过程：`generation.started` / `generation.chunk` / `generation.completed` / `generation.failed`
@@ -195,80 +207,78 @@ page → floor → branch → chat → global
 
 ## 项目模块
 
-项目采用 pnpm monorepo 结构，分为以下几个包：
+项目使用 pnpm 多包仓库结构，分为以下几个包：
 
 ### `packages/core`
 
-核心引擎。包含所有与具体框架无关的领域逻辑：
+核心引擎。包含所有与具体框架无关的业务逻辑：
 
-- **楼层状态机**（FloorStateMachine）：管理楼层状态流转和变量提升。
-- **变量系统**（VariableResolver / VariableStore）：四级级联读取和沙箱写入。
-- **提示词基础设施**（TemplateEngine / TokenBudget / MessageBuilder）：模板渲染、token 预算裁剪、消息拼装。
-- **原生流水线**（assembleNativePrompt + 7 种节点）：可组合的提示词编排流水线。
-- **LLM 接入层**（ProviderRegistry / LLMService）：基于 Vercel AI SDK 的多 provider 调度。
-- **生成流水线**（GenerationPipeline）：前处理 → LLM 调用 → 摘要提取 → 后处理。
-- **记忆系统**（MemoryStore / MemoryConsolidator）：记忆存储、整理和注入。
-- **编排器**（TurnOrchestrator / Director / Verifier）：回合级串联调度。
-- **Port 接口**（FloorRepository / VariableRepository / MemoryRepository）：数据库操作的抽象接口，由 API 层实现。
+- **楼层状态机**：管理楼层从创建到提交的状态流转，以及变量提升。
+- **变量系统**：五级级联读取和沙箱写入。
+- **提示词基础设施**：模板渲染、token 预算裁剪、消息拼装。
+- **原生编排流水线**：由 7 种节点组成的可组合提示词编排流水线。
+- **LLM 接入层**：基于 Vercel AI SDK，支持多个模型提供商的调度。
+- **生成流水线**：前处理 → 大模型调用 → 摘要提取 → 后处理。
+- **记忆系统**：记忆存储、整理和注入。
+- **回合编排器**：按 导演 → 记忆检索 → 叙述者 → 校验员 → 记忆整理 的顺序串联调度。
+- **数据库抽象接口**：定义了楼层、变量、记忆等数据操作的接口，由 API 层负责实现。
 
-core 只依赖 shared，不依赖任何 API 或框架代码。
+核心引擎只依赖 `shared`，不依赖任何 API 或框架代码。
 
 ### `packages/adapters-sillytavern`
 
 SillyTavern 兼容适配层。负责：
 
-- **解析器**：把酒馆格式的预设（STPreset）、世界书（STWorldBook）、正则（STRegexScript）、角色卡（STCharacterCard）解析为内部格式。全部基于 Zod schema 做运行时校验。
-- **世界书引擎**：处理关键词触发、正则触发、selective 逻辑、scanDepth、constant 等世界书机制。
-- **正则引擎**：执行查找替换、捕获组、placement 等正则脚本规则。
-- **编排器**：`assembleCompat`（compat_strict 模式）和 `assembleCompatPlus`（compat_plus 模式），按酒馆的方式拼接提示词。
+- **解析器**：把酒馆格式的预设、世界书、正则脚本、角色卡解析为内部格式。全部基于 Zod 做运行时校验。
+- **世界书引擎**：处理关键词触发、正则触发、选择性逻辑、扫描深度、常驻条目等世界书机制。
+- **正则引擎**：执行查找替换、捕获组、放置位置等正则脚本规则。
+- **兼容编排器**：按酒馆的方式拼接提示词，分严格兼容和增强兼容两种模式。
 
 ### `packages/shared`
 
-公共类型和工具。包含全项目共享的常量定义和类型：
+项目内部共享的类型和工具包：
 
-- 楼层状态（FloorState）、变量作用域（VariableScope）、记忆类型（MemoryType / MemoryScope / MemoryStatus / MemoryRelation）等枚举常量。
-- 事件名称常量（CoreEvents）。
-- 自动生成的 OpenAPI 类型和类型化 API 客户端（createApiClient）。
+- 楼层状态、变量作用域、记忆类型等枚举常量。
+- 事件名称常量。
+- 自动生成的 OpenAPI 类型和类型化 API 客户端。
 
 ### `packages/official-integration-kit/sdk`
 
-官方接入基础层。负责：
+官方 SDK。面向需要接入 TavernHeadless 的开发者，提供：
 
-- 类型安全 API Client。
-- 默认请求头和基础 transport。
-- SSE 事件流读取与错误归一化。
-- 面向接入方的第一方资源调用入口。
-- 当前已覆盖会话、页面、分支、角色、预设、世界书、正则、账号、变量、记忆条目 / 边 / 作业 / scope 状态、导出、Tools、MCP、LLM 配置等主要域。
-- 保留底层 `request/get/post/put/patch/delete` 能力，供需要精确访问底层协议的接入方使用。
+- 类型安全的 HTTP 客户端，自动处理请求头和错误格式。
+- SSE 事件流读取，支持流式生成场景。
+- 覆盖会话、角色、预设、世界书、正则、变量、记忆、导出、工具调用、MCP、LLM 配置等主要功能的资源方法。
+- 保留底层 HTTP 方法，供需要直接操作接口的开发者使用。
 
 ### `packages/official-integration-kit/client-helpers`
 
-官方接入语义层。负责：
+官方客户端辅助层。提供与框架无关的高层工具：
 
-- usage 归一化。
-- timeline 构建。
-- 流式状态 reducer。
-- active page 选择和错误映射。
+- token 用量统计的格式归一化。
+- 时间线构建（把楼层和消息页组装成完整的对话时间线）。
+- 流式生成的状态管理。
+- 当前生效页选择和错误映射。
 
 这两个包是当前唯一官方公开接入面。
 
-`packages/shared` 仍然是内部包，不作为公开接入承诺的一部分。
+`shared` 是内部包，不对外公开。
 
-当引擎内部实现、后端路由、SSE 事件或 OpenAPI 契约变化并影响接入语义时，应同步检查这两个官方包和对应文档，而不是只在某一个前端里做局部补丁。
+当后端接口、事件结构或接口文档发生变化时，应同步检查这两个官方包和对应文档。
 
 ### `apps/api`
 
-Fastify 后端服务。负责：
+后端服务，基于 Fastify 框架。负责：
 
-- **数据库层**：SQLite + Drizzle ORM，16 张表，14 个有序 migration，启动时自动迁移。
-- **路由层**：14 个 CRUD 路由模块 + 6 个聊天端点，Zod 运行时校验，snake_case API 协议。
-- **服务层**：ChatService（聊天业务）、PromptAssembler（提示词组装）、LlmProfileService（Profile 管理）、LlmInstanceService（Instance 配置）、MemoryMaintenanceService（记忆维护）等。
-- **插件**：认证（auth）、CORS、OpenAPI / Swagger、中英文文档、请求日志。
-- **运维脚本**：性能基准测试、OpenAPI 导出、记忆维护 CLI、真实 provider 回归测试、API 冒烟测试。
+- **数据库层**：SQLite + Drizzle ORM，启动时自动迁移。
+- **路由层**：14 个资源路由模块 + 6 个聊天端点，接口字段使用 `snake_case` 风格。
+- **服务层**：聊天业务、提示词组装、Profile 管理、实例配置、记忆维护等。
+- **插件**：认证、跨域、接口文档（Swagger）、请求日志。
+- **运维脚本**：性能测试、接口文档导出、记忆维护命令行、回归测试、冒烟测试。
 
 ### `apps/web`
 
-管理前端（可选）。Vue 3 + Pinia + TailwindCSS，提供 Narrative Workspace 工作流界面。当前处于 P0/P1 阶段，解耦约 95%。
+管理前端（可选）。基于 Vue 3 + Pinia + TailwindCSS，提供可视化管理界面。
 
 ---
 
@@ -308,7 +318,7 @@ apps/web  ──→  packages/shared
                     └──→  client-helpers
 ```
 
-依赖方向永远是 **apps → packages**，不能反过来。`core` 不知道 `api` 的存在，`api` 通过实现 `core` 定义的 Port 接口来对接数据库。
+依赖方向永远是 **apps → packages**，不能反过来。核心引擎不知道后端服务的存在，后端通过实现核心引擎定义的数据库抽象接口来对接。
 
 ## 下一步
 
