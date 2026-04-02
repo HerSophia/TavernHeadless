@@ -12,6 +12,7 @@ import type { McpServerConfig, McpConnectionStatus } from './types.js';
 export class McpConnectionManager {
   private connections = new Map<string, McpConnection>();
   private connectPromises = new Map<string, Promise<void>>();
+  private unavailableStatuses = new Map<string, McpConnectionStatus>();
 
   constructor(
     private logger?: McpLogger,
@@ -30,6 +31,7 @@ export class McpConnectionManager {
     for (const config of configs) {
       const connection = new McpConnection(config, this.logger);
       this.connections.set(config.id, connection);
+      this.unavailableStatuses.delete(config.id);
 
       if (config.transport === 'stdio') {
         startupConnectJobs.push({
@@ -87,6 +89,7 @@ export class McpConnectionManager {
 
     const connection = new McpConnection(config, this.logger);
     this.connections.set(config.id, connection);
+    this.unavailableStatuses.delete(config.id);
 
     this.connectPromises.delete(config.id);
 
@@ -104,6 +107,7 @@ export class McpConnectionManager {
 
     await connection.disconnect();
     this.connections.delete(serverId);
+    this.unavailableStatuses.delete(serverId);
     this.connectPromises.delete(serverId);
   }
 
@@ -126,7 +130,10 @@ export class McpConnectionManager {
    * 获取所有连接的状态。
    */
   getStatuses(): McpConnectionStatus[] {
-    return Array.from(this.connections.values()).map((c) => this.toStatus(c));
+    return [
+      ...Array.from(this.unavailableStatuses.values()),
+      ...Array.from(this.connections.values()).map((c) => this.toStatus(c)),
+    ];
   }
 
   /**
@@ -134,8 +141,11 @@ export class McpConnectionManager {
    */
   getStatus(serverId: string): McpConnectionStatus | null {
     const connection = this.connections.get(serverId);
-    if (!connection) return null;
-    return this.toStatus(connection);
+    if (connection) {
+      return this.toStatus(connection);
+    }
+
+    return this.unavailableStatuses.get(serverId) ?? null;
   }
 
   /**
@@ -143,6 +153,27 @@ export class McpConnectionManager {
    */
   hasServer(serverId: string): boolean {
     return this.connections.has(serverId);
+  }
+
+  /**
+   * 记录一个无法初始化的服务器状态。
+   * 该状态不会阻断其它服务器启动，也不会被当作可连接实例。
+   */
+  registerUnavailableServer(
+    config: Pick<McpServerConfig, 'id' | 'name' | 'transport'>,
+    error: string,
+  ): void {
+    this.connections.delete(config.id);
+    this.connectPromises.delete(config.id);
+    this.unavailableStatuses.set(config.id, {
+      serverId: config.id,
+      serverName: config.name,
+      transport: config.transport,
+      state: 'error',
+      toolCount: 0,
+      error,
+      reconnectRequired: false,
+    });
   }
 
   // ── 关闭 ───────────────────────────────────────
@@ -157,6 +188,7 @@ export class McpConnectionManager {
 
     await Promise.all(disconnectPromises);
     this.connections.clear();
+    this.unavailableStatuses.clear();
     this.connectPromises.clear();
 
     this.logger?.info('MCP connection manager shut down');

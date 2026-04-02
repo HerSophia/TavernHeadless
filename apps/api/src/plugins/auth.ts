@@ -33,7 +33,7 @@ declare module "fastify" {
   }
 }
 
-const PUBLIC_PATHS = new Set(["/health", "/openapi.json", "/docs-en", "/docs-zh"]);
+const PUBLIC_PATHS = new Set(["/health", "/version", "/openapi.json", "/docs-en", "/docs-zh"]);
 
 export async function registerAuth(
   app: FastifyInstance,

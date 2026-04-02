@@ -1,3 +1,5 @@
+import { rmSync } from "node:fs";
+
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -46,13 +48,16 @@ vi.mock("../src/services/chat-service", async () => {
 });
 
 import { buildApp } from "../src/app";
+import { ChatServiceError } from "../src/services/chat-service";
 
 describe("buildApp LLM runtime wiring", () => {
   let app: FastifyInstance;
   let originalMasterKey: string | undefined;
+  let persistedDatabasePath: string | null;
 
   beforeEach(async () => {
     runtimeWiringState.lastChatServiceOptions = null;
+    persistedDatabasePath = null;
     originalMasterKey = process.env.APP_SECRETS_MASTER_KEY;
     process.env.APP_SECRETS_MASTER_KEY = "test-master-key";
 
@@ -85,6 +90,11 @@ describe("buildApp LLM runtime wiring", () => {
 
     if (app) {
       await app.close();
+    }
+
+    if (persistedDatabasePath) {
+      rmSync(persistedDatabasePath, { force: true });
+      persistedDatabasePath = null;
     }
   });
 
@@ -278,5 +288,68 @@ describe("buildApp LLM runtime wiring", () => {
     expect(first.narrator?.model?.providerId).not.toBe(second.narrator?.model?.providerId);
     expect(first.narrator?.model?.languageModel).toBeDefined();
     expect(second.narrator?.model?.languageModel).toBeDefined();
+  });
+
+  it("wraps profile secret decryption failures as ChatServiceError during turn model resolution", async () => {
+    await app.close();
+    persistedDatabasePath = `data/test-llm-runtime-secret-format-${Date.now()}.db`;
+
+    process.env.APP_SECRETS_MASTER_KEY = "correct-master-key";
+    ({ app } = await buildApp({
+      databasePath: persistedDatabasePath,
+      logger: false,
+      enableWebSocket: false,
+      orchestration: {
+        providers: [
+          {
+            id: "default-openai",
+            type: "openai-compatible",
+            apiKey: "sk-default",
+          },
+        ],
+        defaultModel: {
+          providerId: "default-openai",
+          modelId: "gpt-4o-mini",
+        },
+      },
+    }));
+
+    const sessionId = await createSession();
+    const profileId = await createProfile({ preset_name: "Broken Turn Profile", model_id: "gpt-4o-mini" });
+
+    const activateRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${profileId}/activate`,
+      payload: { scope: "global", instance_slot: "narrator" },
+    });
+    expect(activateRes.statusCode).toBe(200);
+
+    await app.close();
+
+    process.env.APP_SECRETS_MASTER_KEY = "wrong-master-key";
+    ({ app } = await buildApp({
+      databasePath: persistedDatabasePath,
+      logger: false,
+      enableWebSocket: false,
+      orchestration: {
+        providers: [{ id: "default-openai", type: "openai-compatible", apiKey: "sk-default" }],
+        defaultModel: { providerId: "default-openai", modelId: "gpt-4o-mini" },
+      },
+    }));
+
+    const resolveTurnModels = getResolveTurnModels();
+    const resolutionError = await resolveTurnModels(sessionId, "default-admin")
+      .then(() => null)
+      .catch((error) => error);
+
+    expect(resolutionError).toBeInstanceOf(ChatServiceError);
+    expect(resolutionError).toMatchObject({
+      code: "secret_invalid_format",
+      message: "Stored profile secret cannot be decrypted. Check APP_SECRETS_MASTER_KEY or data integrity.",
+    });
+    expect((resolutionError as ChatServiceError).cause).toMatchObject({
+      code: "secret_invalid_format",
+      message: "Stored profile secret cannot be decrypted. Check APP_SECRETS_MASTER_KEY or data integrity.",
+    });
   });
 });

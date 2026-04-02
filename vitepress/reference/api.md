@@ -101,7 +101,7 @@ WebSocket 也遵循相同边界：
 | `404` | 资源不存在，或资源存在但不属于当前账号 |
 | `409` | 冲突（如账号内重名、乐观锁失败） |
 | `413` | 请求体过大 |
-| `500` | 服务端错误 |
+| `500` | 服务端错误（如 `secret_invalid_format`） |
 | `502` | 上游 LLM 服务错误 |
 | `503` | 服务不可用或暂时繁忙（如 `secret_unavailable`、`resource_busy`、`commit_busy`、`generation_queue_timeout`） |
 | `504` | 上游生成超时 |

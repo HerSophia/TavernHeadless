@@ -464,6 +464,7 @@ export async function registerLlmProfileRoutes(
         response: {
           200: runtimeResponseJsonSchema,
           400: errorResponseJsonSchema,
+          500: errorResponseJsonSchema,
           503: errorResponseJsonSchema,
         },
       },
@@ -633,6 +634,10 @@ function sendServiceError(reply: FastifyReply, error: unknown) {
 
     if (error.code === "invalid_params") {
       return sendError(reply, 400, error.code, error.message);
+    }
+
+    if (error.code === "secret_invalid_format") {
+      return sendError(reply, 500, error.code, error.message);
     }
 
     if (error.code === "secret_unavailable") {

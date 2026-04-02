@@ -33,11 +33,14 @@ describe("Auth integration", () => {
       }));
     });
 
-    it("keeps health/docs public and protects business routes", async () => {
+    it("keeps health/version/docs public and protects business routes", async () => {
       const server = app!;
 
       const healthRes = await server.inject({ method: "GET", url: "/health" });
       expect(healthRes.statusCode).toBe(200);
+
+      const versionRes = await server.inject({ method: "GET", url: "/version" });
+      expect(versionRes.statusCode).toBe(200);
 
       const docsRes = await server.inject({ method: "GET", url: "/docs/" });
       expect(docsRes.statusCode).toBe(200);
@@ -136,8 +139,11 @@ describe("Auth integration", () => {
       }));
     });
 
-    it("requires valid bearer token", async () => {
+    it("requires valid bearer token while keeping version public", async () => {
       const server = app!;
+
+      const versionRes = await server.inject({ method: "GET", url: "/version" });
+      expect(versionRes.statusCode).toBe(200);
 
       const noAuthRes = await server.inject({ method: "GET", url: "/sessions" });
       expect(noAuthRes.statusCode).toBe(401);

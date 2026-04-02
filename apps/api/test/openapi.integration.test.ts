@@ -60,6 +60,14 @@ function getOpenApiResponseExample(operation: OpenApiOperation | undefined, stat
   return getOpenApiSchemaExample(operation?.responses?.[statusCode]);
 }
 
+function readRecordNode(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
+}
+
 describe("OpenAPI integration", () => {
   let app: FastifyInstance;
 
@@ -82,6 +90,7 @@ describe("OpenAPI integration", () => {
     expect(body.openapi).toMatch(/^3\./);
     expect(body.info.title).toBe("TavernHeadless API");
     expect(Object.keys(body.paths)).toContain("/health");
+    expect(Object.keys(body.paths)).toContain("/version");
     expect(Object.keys(body.paths)).toContain("/sessions");
     expect(Object.keys(body.paths)).toContain("/floors");
     expect(Object.keys(body.paths)).toContain("/memories");
@@ -102,6 +111,9 @@ describe("OpenAPI integration", () => {
     expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs/{id}/cancel");
     expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs/{id}/retry");
     expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs/{id}/file");
+
+    const versionPath = body.paths["/version"] as { get?: OpenApiOperation };
+    expect(versionPath.get?.security).toEqual([]);
   });
 
   it("supports Chinese localization via lang query", async () => {
@@ -319,6 +331,39 @@ describe("OpenAPI integration", () => {
 
     const llmProfileActivatePath = body.paths["/llm-profiles/{id}/activate"] as { post?: OpenApiOperation };
     expect(llmProfileActivatePath.post?.operationId).toBe("activateLlmProfile");
+
+    const llmProfileRuntimePath = body.paths["/llm-profiles/runtime"] as { get?: OpenApiOperation };
+    expect(llmProfileRuntimePath.get?.operationId).toBe("getLlmRuntimeProfiles");
+    expect(llmProfileRuntimePath.get?.responses).toHaveProperty("500");
+
+    const mcpServersPath = readRecordNode(body.paths["/mcp/servers"]);
+    const mcpServersGet = readRecordNode(mcpServersPath?.get);
+    const mcpServersPost = readRecordNode(mcpServersPath?.post);
+    const mcpGetResponses = readRecordNode(mcpServersGet?.responses);
+    const mcpPostResponses = readRecordNode(mcpServersPost?.responses);
+    const mcpListResponse = readRecordNode(mcpGetResponses?.["200"]);
+    const mcpListContent = readRecordNode(mcpListResponse?.content);
+    const mcpListMedia = readRecordNode(mcpListContent?.["application/json"]);
+    const mcpListSchema = readRecordNode(mcpListMedia?.schema);
+    const mcpListProperties = readRecordNode(mcpListSchema?.properties);
+    const mcpListDataSchema = readRecordNode(mcpListProperties?.data);
+    const mcpListItemSchema = readRecordNode(mcpListDataSchema?.items);
+    const mcpListItemProperties = readRecordNode(mcpListItemSchema?.properties);
+    const mcpStdioSchema = readRecordNode(mcpListItemProperties?.stdio);
+    const mcpHttpSchema = readRecordNode(mcpListItemProperties?.http);
+    const mcpStdioProperties = readRecordNode(mcpStdioSchema?.properties);
+    const mcpHttpProperties = readRecordNode(mcpHttpSchema?.properties);
+
+    expect(mcpGetResponses).toHaveProperty("200");
+    expect(mcpPostResponses).toHaveProperty("503");
+    expect(mcpStdioProperties).toHaveProperty("env_masked");
+    expect(mcpStdioProperties).not.toHaveProperty("env");
+    expect(mcpHttpProperties).toHaveProperty("headers_masked");
+    expect(mcpHttpProperties).not.toHaveProperty("headers");
+
+    const mcpUpdatePath = body.paths["/mcp/servers/{id}"] as { patch?: OpenApiOperation };
+    expect(mcpUpdatePath.patch?.responses).toHaveProperty("500");
+    expect(mcpUpdatePath.patch?.responses).toHaveProperty("503");
 
     const llmModelDiscoverPath = body.paths["/llm-profiles/models/discover"] as { post?: OpenApiOperation };
     expect(llmModelDiscoverPath.post?.operationId).toBe("discoverLlmProfileModels");

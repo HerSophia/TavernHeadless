@@ -24,12 +24,32 @@ export interface HttpTransportConfig {
   headers?: Record<string, string>;
 }
 
+/** 管理接口中返回的 stdio 配置（secret 已掩码） */
+export interface MaskedStdioTransportConfig {
+  /** 启动命令 */
+  command: string;
+  /** 命令行参数 */
+  args?: string[];
+  /** 工作目录 */
+  cwd?: string;
+  /** 已掩码的环境变量 */
+  env_masked?: Record<string, string>;
+}
+
+/** 管理接口中返回的 HTTP 配置（secret 已掩码） */
+export interface MaskedHttpTransportConfig {
+  /** MCP 服务器 URL */
+  url: string;
+  /** 已掩码的请求头 */
+  headers_masked?: Record<string, string>;
+}
+
 // ── Server 配置 ────────────────────────────────────────
 
 /** 传输类型 */
 export type McpTransportType = 'stdio' | 'http';
 
-/** MCP 服务器配置（从数据库加载） */
+/** MCP 服务器配置（运行时实体，包含真实 secret） */
 export interface McpServerConfig {
   /** 服务器 ID */
   id: string;
@@ -117,13 +137,13 @@ export interface UpdateMcpServerInput {
   default_side_effect_level?: ToolSideEffectLevel;
 }
 
-/** MCP 服务器配置 API 响应 */
+/** MCP 服务器配置 API 响应（不回显真实 secret） */
 export interface McpServerConfigResponse {
   id: string;
   name: string;
   transport: McpTransportType;
-  stdio?: StdioTransportConfig;
-  http?: HttpTransportConfig;
+  stdio?: MaskedStdioTransportConfig;
+  http?: MaskedHttpTransportConfig;
   tool_prefix: string | null;
   enabled: boolean;
   connect_timeout_ms: number;

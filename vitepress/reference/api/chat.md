@@ -59,7 +59,7 @@ POST /sessions/:id/respond
 | `409` | `session_archived` / `generation_conflict` / `commit_conflict` | 会话状态冲突，或提交边界冲突 |
 | `503` | `secret_unavailable` / `commit_busy` / `generation_queue_timeout` | 密钥不可用，或生成 / 提交等待阶段已超时 |
 | `504` | `generation_timeout` | LLM 执行超时 |
-| `500` | `orchestration_failed` / `turn_commit_failed` | 生成过程出现未分类内部错误 |
+| `500` | `secret_invalid_format` / `orchestration_failed` / `turn_commit_failed` | 已保存的密文无法解密，或生成过程出现未分类内部错误 |
 
 这里的 `commit_busy` 是聊天提交链路专用错误，不复用资源写入路径上的 `resource_busy`。
 
@@ -101,7 +101,7 @@ event: error
 data: {"code":"generation_timeout","message":"Turn orchestration failed: LLM request timed out after 60000ms"}
 ```
 
-一旦 SSE 连接已经建立，运行期错误会通过 `error` 事件返回，不再切换 HTTP 状态码。`code` 可能为 `generation_conflict`、`generation_queue_timeout`、`generation_timeout`、`commit_busy`、`commit_conflict` 等值。资源写入路径上的 `resource_busy` 不会通过这里复用。
+一旦 SSE 连接已经建立，运行期错误会通过 `error` 事件返回，不再切换 HTTP 状态码。`code` 可能为 `generation_conflict`、`generation_queue_timeout`、`generation_timeout`、`commit_busy`、`commit_conflict`、`secret_invalid_format` 等值。资源写入路径上的 `resource_busy` 不会通过这里复用。
 
 客户端断开连接时，服务端会自动中止生成。
 

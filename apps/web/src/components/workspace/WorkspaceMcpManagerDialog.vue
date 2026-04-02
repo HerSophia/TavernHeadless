@@ -195,6 +195,12 @@ function formatTimestamp(value: number | null | undefined): string {
             <UiDialogRow :label="props.t('dialogs.mcpManagerStdioArgs')">
               <UiTextArea v-model="props.mcpManagerDialog.serverDraft.stdioArgsJson" rows="4" textarea-class="mt-1 font-mono text-[11px]" />
             </UiDialogRow>
+            <UiDialogRow v-if="props.mcpManagerDialog.serverDraft.stdioEnvMaskedJson" :label="props.t('dialogs.mcpManagerStdioEnvMasked')" row-class="md:col-span-2">
+              <UiTextArea :value="props.mcpManagerDialog.serverDraft.stdioEnvMaskedJson" readonly rows="4" textarea-class="mt-1 font-mono text-[11px] opacity-70" />
+              <div class="mt-1 text-[11px] text-zinc-500">
+                {{ props.t("dialogs.mcpManagerMaskedSecretHint") }}
+              </div>
+            </UiDialogRow>
             <UiDialogRow :label="props.t('dialogs.mcpManagerStdioEnv')" row-class="md:col-span-2">
               <UiTextArea v-model="props.mcpManagerDialog.serverDraft.stdioEnvJson" rows="5" textarea-class="mt-1 font-mono text-[11px]" />
             </UiDialogRow>
@@ -204,6 +210,12 @@ function formatTimestamp(value: number | null | undefined): string {
         <template v-else>
           <UiDialogRow :label="props.t('dialogs.mcpManagerHttpUrl')">
             <UiTextInput v-model="props.mcpManagerDialog.serverDraft.httpUrl" />
+          </UiDialogRow>
+          <UiDialogRow v-if="props.mcpManagerDialog.serverDraft.httpHeadersMaskedJson" :label="props.t('dialogs.mcpManagerHttpHeadersMasked')">
+            <UiTextArea :value="props.mcpManagerDialog.serverDraft.httpHeadersMaskedJson" readonly rows="4" textarea-class="mt-1 font-mono text-[11px] opacity-70" />
+            <div class="mt-1 text-[11px] text-zinc-500">
+              {{ props.t("dialogs.mcpManagerMaskedSecretHint") }}
+            </div>
           </UiDialogRow>
           <UiDialogRow :label="props.t('dialogs.mcpManagerHttpHeaders')">
             <UiTextArea v-model="props.mcpManagerDialog.serverDraft.httpHeadersJson" rows="5" textarea-class="mt-1 font-mono text-[11px]" />

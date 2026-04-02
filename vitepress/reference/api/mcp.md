@@ -51,9 +51,11 @@ GET /mcp/servers
       "transport": "stdio",
       "stdio": {
         "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+        "env_masked": {
+          "API_TOKEN": "toke****5678"
+        }
       },
-      "http": null,
       "tool_prefix": "fs",
       "enabled": true,
       "connect_timeout_ms": 30000,
@@ -64,7 +66,7 @@ GET /mcp/servers
       "updated_at": 1719400000000
     }
   ],
-  "meta": { "total": 1, "limit": 20, "offset": 0, "has_more": false }
+  "meta": { "total": 1, "limit": 20, "offset": 0, "has_more": false, "sort_by": "created_at", "sort_order": "desc" }
 }
 ```
 
@@ -122,6 +124,12 @@ POST /mcp/servers
 | `call_timeout_ms` | integer | 否 | 工具调用超时（默认 60000） |
 | `tool_refresh_interval_ms` | integer | 否 | 工具列表刷新间隔（默认 300000，设 0 不刷新） |
 | `default_side_effect_level` | string | 否 | 该服务器工具的默认副作用级别（默认 `irreversible`） |
+
+> 说明：
+>
+> - 请求体仍可提交 `stdio.env` 和 `http.headers` 明文值。
+> - 列表、详情、创建、更新、toggle 响应不再回显真实 secret；`stdio` 改为返回 `env_masked`，`http` 改为返回 `headers_masked`。
+> - 如果请求包含 secret，但服务端未配置 `APP_SECRETS_MASTER_KEY`，会返回 `503 secret_unavailable`。
 
 ### 更新服务器配置
 

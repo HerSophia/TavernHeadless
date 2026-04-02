@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../src/app";
 
+const originalMasterKey = process.env.APP_SECRETS_MASTER_KEY;
+
 type ItemResponse<T> = { data: T };
 type ListResponse<T> = {
   data: T[];
@@ -29,10 +31,12 @@ type McpServerResponse = {
   stdio?: {
     command: string;
     args?: string[];
+    cwd?: string;
+    env_masked?: Record<string, string>;
   };
   http?: {
     url: string;
-    headers?: Record<string, string>;
+    headers_masked?: Record<string, string>;
   };
   tool_prefix: string | null;
   enabled: boolean;
@@ -48,16 +52,27 @@ describe("MCP config routes", () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
+    delete process.env.APP_SECRETS_MASTER_KEY;
     ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
   });
 
   afterEach(async () => {
+    if (originalMasterKey === undefined) {
+      delete process.env.APP_SECRETS_MASTER_KEY;
+    } else {
+      process.env.APP_SECRETS_MASTER_KEY = originalMasterKey;
+    }
+
     if (app) {
       await app.close();
     }
   });
 
-  it("creates stdio and http configs and lists them with enabled filters", async () => {
+  it("masks stdio env and http headers in create, detail, and list responses", async () => {
+    await app.close();
+    process.env.APP_SECRETS_MASTER_KEY = "mcp-test-master-key";
+    ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
+
     const stdioRes = await app.inject({
       method: "POST",
       url: "/mcp/servers",
@@ -65,8 +80,12 @@ describe("MCP config routes", () => {
         name: "Stdio Server",
         transport: "stdio",
         stdio: {
+          env: {
+            API_TOKEN: "token12345678",
+          },
           command: "node",
           args: ["server.js"],
+          cwd: "/srv/mcp",
         },
         tool_prefix: "stdio_",
       },
@@ -77,6 +96,8 @@ describe("MCP config routes", () => {
     expect(stdioServer.transport).toBe("stdio");
     expect(stdioServer.tool_prefix).toBe("stdio_");
     expect(stdioServer.enabled).toBe(true);
+    expect(stdioServer.stdio?.env_masked).toEqual({ API_TOKEN: "toke****5678" });
+    expect(stdioServer.stdio).not.toHaveProperty("env");
 
     const httpRes = await app.inject({
       method: "POST",
@@ -87,7 +108,7 @@ describe("MCP config routes", () => {
         http: {
           url: "https://mcp.example.com/runtime",
           headers: {
-            authorization: "Bearer token",
+            authorization: "secret12345678",
           },
         },
         enabled: false,
@@ -98,6 +119,8 @@ describe("MCP config routes", () => {
     const httpServer = httpRes.json<ItemResponse<McpServerResponse>>().data;
     expect(httpServer.transport).toBe("http");
     expect(httpServer.enabled).toBe(false);
+    expect(httpServer.http?.headers_masked).toEqual({ authorization: "secr****5678" });
+    expect(httpServer.http).not.toHaveProperty("headers");
 
     const allRes = await app.inject({ method: "GET", url: "/mcp/servers" });
     expect(allRes.statusCode).toBe(200);
@@ -106,8 +129,11 @@ describe("MCP config routes", () => {
     expect(allBody.data.map((item) => item.name)).toEqual(["Stdio Server", "HTTP Server"]);
 
     const enabledRes = await app.inject({ method: "GET", url: "/mcp/servers?enabled=true" });
+    const detailRes = await app.inject({ method: "GET", url: `/mcp/servers/${httpServer.id}` });
     expect(enabledRes.statusCode).toBe(200);
+    expect(detailRes.statusCode).toBe(200);
     const enabledBody = enabledRes.json<ListResponse<McpServerResponse>>();
+    const detailBody = detailRes.json<ItemResponse<McpServerResponse>>();
     expect(enabledBody.meta.total).toBe(1);
     expect(enabledBody.data[0]?.id).toBe(stdioServer.id);
 
@@ -116,6 +142,10 @@ describe("MCP config routes", () => {
     const disabledBody = disabledRes.json<ListResponse<McpServerResponse>>();
     expect(disabledBody.meta.total).toBe(1);
     expect(disabledBody.data[0]?.id).toBe(httpServer.id);
+
+    expect(disabledBody.data[0]?.http?.headers_masked).toEqual({ authorization: "secr****5678" });
+    expect(detailBody.data.http?.headers_masked).toEqual({ authorization: "secr****5678" });
+    expect(detailBody.data.http).not.toHaveProperty("headers");
   });
 
   it("gets a single config and returns 404 when the config does not exist", async () => {
@@ -151,6 +181,24 @@ describe("MCP config routes", () => {
   });
 
   it("returns 409 for duplicate names and 400 for missing transport config", async () => {
+    const missingSecretKeyRes = await app.inject({
+      method: "POST",
+      url: "/mcp/servers",
+      payload: {
+        name: "Secret Server",
+        transport: "stdio",
+        stdio: {
+          command: "node",
+          env: {
+            API_TOKEN: "token12345678",
+          },
+        },
+      },
+    });
+
+    expect(missingSecretKeyRes.statusCode).toBe(503);
+    expect(missingSecretKeyRes.json<ErrorResponse>().error.code).toBe("secret_unavailable");
+
     const firstCreate = await app.inject({
       method: "POST",
       url: "/mcp/servers",
@@ -191,6 +239,37 @@ describe("MCP config routes", () => {
 
     expect(invalidConfigRes.statusCode).toBe(400);
     expect(invalidConfigRes.json<ErrorResponse>().error.code).toBe("invalid_config");
+  });
+
+  it("returns 503 when updating a config to include secrets without a master key", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/mcp/servers",
+      payload: {
+        name: "Update Secret Server",
+        transport: "stdio",
+        stdio: {
+          command: "node",
+        },
+      },
+    });
+
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json<ItemResponse<McpServerResponse>>().data;
+
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/mcp/servers/${created.id}`,
+      payload: {
+        stdio: {
+          command: "node",
+          env: { API_TOKEN: "token12345678" },
+        },
+      },
+    });
+
+    expect(patchRes.statusCode).toBe(503);
+    expect(patchRes.json<ErrorResponse>().error.code).toBe("secret_unavailable");
   });
 
   it("updates configs, clears tool_prefix, and covers validation, not-found, and conflict branches", async () => {

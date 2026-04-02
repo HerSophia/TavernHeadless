@@ -183,4 +183,59 @@ describe("useWorkspaceMcpManagerDialog", () => {
 
     scope.stop();
   });
+
+  it("keeps edit secret inputs empty while exposing masked summaries", async () => {
+    const server = {
+      callTimeoutMs: 60000,
+      connectTimeoutMs: 30000,
+      createdAt: 1,
+      defaultSideEffectLevel: "sandbox",
+      enabled: true,
+      http: {
+        url: "https://mcp.example.com/runtime",
+        headersMasked: { authorization: "secr****5678" },
+      },
+      id: "mcp-1",
+      name: "Filesystem",
+      stdio: {
+        args: ["server.js"],
+        command: "node",
+        cwd: "/srv/mcp",
+        envMasked: { API_TOKEN: "toke****5678" },
+      },
+      toolPrefix: "fs",
+      toolRefreshIntervalMs: 300000,
+      transport: "stdio",
+      updatedAt: 2,
+    };
+
+    workspaceApiMocks.fetchMcpServers.mockResolvedValue({ meta: {}, servers: [server] });
+    workspaceApiMocks.fetchMcpStatuses.mockResolvedValue([]);
+    workspaceApiMocks.fetchMcpServer.mockResolvedValue(server);
+    workspaceApiMocks.fetchMcpServerStatus.mockResolvedValue({
+      connectedAt: null,
+      error: null,
+      lastTimeoutAt: null,
+      reconnectRequired: false,
+      serverId: "mcp-1",
+      serverName: "Filesystem",
+      state: "disconnected",
+      toolCount: 0,
+      toolsRefreshedAt: null,
+      transport: "stdio",
+    });
+
+    const scope = effectScope();
+    const state = scope.run(() => useWorkspaceMcpManagerDialog({ addEvent: vi.fn(), currentAccount: ref("acc-1"), t: (key) => key }));
+
+    await state?.openMcpManagerDialog();
+    await state?.selectMcpServer("mcp-1");
+
+    expect(state?.mcpManagerDialog.serverDraft.stdioEnvJson).toBe("");
+    expect(state?.mcpManagerDialog.serverDraft.httpHeadersJson).toBe("");
+    expect(state?.mcpManagerDialog.serverDraft.stdioEnvMaskedJson).toContain("toke****5678");
+    expect(state?.mcpManagerDialog.serverDraft.httpHeadersMaskedJson).toContain("secr****5678");
+
+    scope.stop();
+  });
 });

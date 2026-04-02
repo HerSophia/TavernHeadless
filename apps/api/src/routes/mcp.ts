@@ -18,7 +18,7 @@
  *   POST   /mcp/servers/:id/test      — 测试连接
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 
 import type { DatabaseConnection } from '../db/client.js';
@@ -90,20 +90,61 @@ const listServersQuerySchema = listQuerySchemaBase.extend({
 // JSON Schema (OpenAPI)
 // ══════════════════════════════════════════════════
 
+const maskedStringRecordSchema = {
+  type: 'object',
+  additionalProperties: { type: 'string' },
+};
+
+const maskedStdioConfigResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['command'],
+  properties: {
+    command: { type: 'string' },
+    args: { type: 'array', items: { type: 'string' } },
+    cwd: { type: 'string' },
+    env_masked: maskedStringRecordSchema,
+  },
+};
+
+const maskedHttpConfigResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['url'],
+  properties: {
+    url: { type: 'string' },
+    headers_masked: maskedStringRecordSchema,
+  },
+};
+
 const mcpServerResponseSchema = {
   type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'name',
+    'transport',
+    'tool_prefix',
+    'enabled',
+    'connect_timeout_ms',
+    'call_timeout_ms',
+    'tool_refresh_interval_ms',
+    'default_side_effect_level',
+    'created_at',
+    'updated_at',
+  ],
   properties: {
     id: { type: 'string' },
     name: { type: 'string' },
     transport: { type: 'string', enum: ['stdio', 'http'] },
-    stdio: { type: 'object', nullable: true },
-    http: { type: 'object', nullable: true },
+    stdio: maskedStdioConfigResponseSchema,
+    http: maskedHttpConfigResponseSchema,
     tool_prefix: { type: 'string', nullable: true },
     enabled: { type: 'boolean' },
     connect_timeout_ms: { type: 'integer' },
     call_timeout_ms: { type: 'integer' },
     tool_refresh_interval_ms: { type: 'integer' },
-    default_side_effect_level: { type: 'string' },
+    default_side_effect_level: { type: 'string', enum: ['none', 'sandbox', 'irreversible'] },
     created_at: { type: 'integer' },
     updated_at: { type: 'integer' },
   },
@@ -201,6 +242,7 @@ export async function registerMcpConfigRoutes(
       response: {
         201: { type: 'object', properties: { data: mcpServerResponseSchema } },
         400: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
       },
     },
@@ -212,10 +254,7 @@ export async function registerMcpConfigRoutes(
       const config = await service.createConfig(parsed.data, auth.accountId);
       return reply.code(201).send({ data: config });
     } catch (err) {
-      if (err instanceof McpServiceError) {
-        const status = err.code === 'name_conflict' ? 409 : 400;
-        return sendError(reply, status, err.code, err.message);
-      }
+      if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
       throw err;
     }
   });
@@ -230,6 +269,8 @@ export async function registerMcpConfigRoutes(
         200: { type: 'object', properties: { data: mcpServerResponseSchema } },
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
       },
     },
@@ -243,10 +284,7 @@ export async function registerMcpConfigRoutes(
       if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
       return { data: config };
     } catch (err) {
-      if (err instanceof McpServiceError) {
-        const status = err.code === 'name_conflict' ? 409 : 400;
-        return sendError(reply, status, err.code, err.message);
-      }
+      if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
       throw err;
     }
   });
@@ -317,7 +355,7 @@ export async function registerMcpRuntimeRoutes(
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const auth = getRequestAuthContext(request);
-    const config = await service.getConfigEntity(id, auth.accountId);
+    const config = await service.getConfig(id, auth.accountId);
     if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
 
     const status = mcpManager.getStatus(id);
@@ -358,22 +396,29 @@ export async function registerMcpRuntimeRoutes(
       response: {
         200: { type: 'object', properties: { data: mcpStatusResponseSchema } },
         404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const auth = getRequestAuthContext(request);
-    const config = await service.getConfigEntity(id, auth.accountId);
-    if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
+    try {
+      const { id } = request.params as { id: string };
+      const auth = getRequestAuthContext(request);
+      const config = await service.getConfigEntity(id, auth.accountId);
+      if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
 
-    if (!mcpManager.hasServer(id)) {
-      await mcpManager.addServer(config);
-    } else {
-      await mcpManager.reconnect(id);
+      if (!mcpManager.hasServer(id)) {
+        await mcpManager.addServer(config);
+      } else {
+        await mcpManager.reconnect(id);
+      }
+
+      const status = mcpManager.getStatus(id);
+      return { data: formatStatus(status!) };
+    } catch (err) {
+      if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
+      throw err;
     }
-
-    const status = mcpManager.getStatus(id);
-    return { data: formatStatus(status!) };
   });
 
   // POST /mcp/servers/:id/disconnect
@@ -390,7 +435,7 @@ export async function registerMcpRuntimeRoutes(
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const auth = getRequestAuthContext(request);
-    const config = await service.getConfigEntity(id, auth.accountId);
+    const config = await service.getConfig(id, auth.accountId);
     if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
 
     const connection = mcpManager.getConnectionSync(id);
@@ -427,26 +472,33 @@ export async function registerMcpRuntimeRoutes(
           },
         },
         404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const auth = getRequestAuthContext(request);
-    const config = await service.getConfigEntity(id, auth.accountId);
-    if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
+    try {
+      const { id } = request.params as { id: string };
+      const auth = getRequestAuthContext(request);
+      const config = await service.getConfigEntity(id, auth.accountId);
+      if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
 
-    const conn = await mcpManager.getConnection(id);
-    if (!conn) return sendError(reply, 404, 'not_found', 'MCP server not found in manager');
+      const conn = await mcpManager.getConnection(id);
+      if (!conn) return sendError(reply, 404, 'not_found', 'MCP server not found in manager');
 
-    const tools = conn.getTools().map((t) => ({
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
-      side_effect_level: t.sideEffectLevel,
-      source: t.source,
-    }));
+      const tools = conn.getTools().map((t) => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+        side_effect_level: t.sideEffectLevel,
+        source: t.source,
+      }));
 
-    return { data: tools };
+      return { data: tools };
+    } catch (err) {
+      if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
+      throw err;
+    }
   });
 
   // POST /mcp/servers/:id/test
@@ -471,44 +523,51 @@ export async function registerMcpRuntimeRoutes(
           },
         },
         404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const auth = getRequestAuthContext(request);
-    const config = await service.getConfigEntity(id, auth.accountId);
-    if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
-
-    const startTime = Date.now();
-    const testConnection = new McpConnection(config);
-
     try {
-      await testConnection.connect();
-      const tools = testConnection.getTools();
-      const durationMs = Date.now() - startTime;
+      const { id } = request.params as { id: string };
+      const auth = getRequestAuthContext(request);
+      const config = await service.getConfigEntity(id, auth.accountId);
+      if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
 
-      await testConnection.disconnect();
+      const startTime = Date.now();
+      const testConnection = new McpConnection(config);
 
-      return {
-        data: {
-          success: true,
-          tool_count: tools.length,
-          duration_ms: durationMs,
-          error: null,
-        },
-      };
+      try {
+        await testConnection.connect();
+        const tools = testConnection.getTools();
+        const durationMs = Date.now() - startTime;
+
+        await testConnection.disconnect();
+
+        return {
+          data: {
+            success: true,
+            tool_count: tools.length,
+            duration_ms: durationMs,
+            error: null,
+          },
+        };
+      } catch (err) {
+        const durationMs = Date.now() - startTime;
+        await testConnection.disconnect().catch(() => {});
+
+        return {
+          data: {
+            success: false,
+            tool_count: 0,
+            duration_ms: durationMs,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
     } catch (err) {
-      const durationMs = Date.now() - startTime;
-      await testConnection.disconnect().catch(() => {});
-
-      return {
-        data: {
-          success: false,
-          tool_count: 0,
-          duration_ms: durationMs,
-          error: err instanceof Error ? err.message : String(err),
-        },
-      };
+      if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
+      throw err;
     }
   });
 }
@@ -516,6 +575,19 @@ export async function registerMcpRuntimeRoutes(
 // ── 辅助函数 ─────────────────────────────────────
 
 import type { McpConnectionStatus } from '../mcp/types.js';
+
+function sendMcpServiceError(reply: FastifyReply, error: McpServiceError) {
+  switch (error.code) {
+    case 'name_conflict':
+      return sendError(reply, 409, error.code, error.message);
+    case 'secret_unavailable':
+      return sendError(reply, 503, error.code, error.message);
+    case 'secret_invalid_format':
+      return sendError(reply, 500, error.code, error.message);
+    default:
+      return sendError(reply, 400, error.code, error.message);
+  }
+}
 
 function formatStatus(status: McpConnectionStatus) {
   return {

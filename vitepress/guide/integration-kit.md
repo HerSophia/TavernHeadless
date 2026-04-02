@@ -519,6 +519,13 @@ console.log(committedResult.assistantMessageId);
 
 MCP 状态读取还会保留 `reconnectRequired`、`lastTimeoutAt` 这类运行时字段。
 
+MCP 管理接口的 secret 字段也已经和请求字段分开：
+
+- `createServer()` / `updateServer()` 仍然写入 `stdio.env`、`http.headers`
+- `listServers()`、`getServer()` 以及创建、更新、toggle 的返回记录只会给出 `stdio.envMasked`、`http.headersMasked`
+
+这意味着接入方不能再依赖管理接口回显原始 secret。编辑已有配置时，应把 secret 视为“留空保持原值，重新填写则整体替换”的字段。
+
 `mcp_call_uncertain_timeout` 表示结果不确定并且需要重连，不应当成普通失败来解释。
 
 ## 和 `apps/web` 的关系
