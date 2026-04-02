@@ -239,6 +239,11 @@ GET /llm-profiles/runtime
 
 `source` 可能的值：`env`（环境变量 fallback）、`global_profile`、`session_profile`。
 
+运行时解析可能返回的错误：
+
+- `503 secret_unavailable`：服务端未配置 `APP_SECRETS_MASTER_KEY`
+- `500 secret_invalid_format`：数据库中的密文无法解密，通常表示主密钥不匹配或数据已损坏
+
 这个接口描述的是 **Profile 侧** 的 provider / model 解析结果。若还需要查看实例侧的 `enabled`、`preset_id`、`params` 最终解析，应再查询 `GET /llm-instances/resolved`。
 
 ## 发现可用模型

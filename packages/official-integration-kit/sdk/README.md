@@ -531,6 +531,20 @@ const tools = await client.mcp.listServerTools({
 
 多账号模式下，MCP 配置和运行时状态都是账号私有资源。访问其他账号的 MCP 配置会得到 `404`。
 
+MCP 管理接口现在不再回显真实 secret：
+
+- `createServer()` / `updateServer()` 请求仍可写入 `stdio.env`、`http.headers`
+- `listServers()`、`getServer()` 以及创建、更新、toggle 的返回记录只会暴露 `stdio.envMasked`、`http.headersMasked`
+
+```ts
+const server = await client.mcp.getServer({ accountId: "account-1", serverId: "mcp-1" });
+
+console.log(server.stdio?.envMasked);
+console.log(server.http?.headersMasked);
+```
+
+如果请求包含 secret 且服务端未配置 `APP_SECRETS_MASTER_KEY`，SDK 会收到后端返回的 `503 secret_unavailable`。
+
 `getServerStatus()` 和 `listStatuses()` 会保留 `reconnectRequired`、`lastTimeoutAt` 这些运行时字段。
 
 当服务端返回 `mcp_call_uncertain_timeout` 时，含义是这次调用结果**不确定**，并且连接需要重建；它不是普通的确定性失败。

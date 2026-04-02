@@ -11,6 +11,13 @@ import { nanoid } from 'nanoid';
 
 import type { AppDb } from '../db/client.js';
 import { mcpServerConfigs } from '../db/schema.js';
+import {
+  SecretFormatError,
+  SecretUnavailableError,
+  decryptSecret,
+  encryptSecret,
+  maskSecret,
+} from '../lib/secrets.js';
 import type {
   McpServerConfig,
   CreateMcpServerInput,
@@ -18,11 +25,78 @@ import type {
   McpServerConfigResponse,
   StdioTransportConfig,
   HttpTransportConfig,
+  MaskedStdioTransportConfig,
+  MaskedHttpTransportConfig,
+  McpTransportType,
 } from '../mcp/types.js';
 
 // ── 内部辅助 ─────────────────────────────────────
 
 type McpRow = typeof mcpServerConfigs.$inferSelect;
+
+type McpPublicConfigV1 = {
+  version: 1;
+  stdio?: {
+    command: string;
+    args?: string[];
+    cwd?: string;
+  };
+  http?: {
+    url: string;
+  };
+};
+
+type McpSecretBundleV1 = {
+  version: 1;
+  stdio?: {
+    env?: Record<string, string>;
+  };
+  http?: {
+    headers?: Record<string, string>;
+  };
+};
+
+type McpSecretSummaryV1 = {
+  version: 1;
+  stdio?: {
+    envMasked?: Record<string, string>;
+  };
+  http?: {
+    headersMasked?: Record<string, string>;
+  };
+};
+
+type StoredConfigParseResult = {
+  publicConfig: McpPublicConfigV1;
+  legacySecretBundle: McpSecretBundleV1 | null;
+  legacySecretSummary: McpSecretSummaryV1 | null;
+};
+
+export interface ResolveMcpConfigsResult {
+  configs: McpServerConfig[];
+  failures: Array<{
+    accountId: string;
+    serverId: string;
+    serverName: string;
+    transport: McpTransportType;
+    error: string;
+  }>;
+}
+
+export interface ListMcpServersQuery {
+  enabled?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+type ListEnabledConfigsOptions = {
+  resolveSecrets?: boolean;
+  skipInvalidConfigs?: boolean;
+};
+
+type ServiceOptions = {
+  masterKey?: string;
+};
 
 function normalizeCandidateIds(candidateIds?: string[]): string[] {
   if (!candidateIds) {
@@ -40,22 +114,176 @@ function normalizeCandidateIds(candidateIds?: string[]): string[] {
   return [...uniqueIds];
 }
 
-/**
- * 将数据库行转为业务对象 McpServerConfig。
- * config_json 字段存储 stdio / http 传输配置。
- */
-function rowToConfig(row: McpRow): McpServerConfig {
-  const configData = JSON.parse(row.configJson) as {
+function parseStoredConfig(configJson: string): StoredConfigParseResult {
+  const raw = JSON.parse(configJson) as {
     stdio?: StdioTransportConfig;
     http?: HttpTransportConfig;
   };
 
+  const publicConfig: McpPublicConfigV1 = {
+    version: 1,
+    stdio: raw.stdio
+      ? {
+          command: raw.stdio.command,
+          args: raw.stdio.args,
+          cwd: raw.stdio.cwd,
+        }
+      : undefined,
+    http: raw.http
+      ? {
+          url: raw.http.url,
+        }
+      : undefined,
+  };
+
+  const legacySecretBundle = createSecretBundle({
+    stdio: raw.stdio,
+    http: raw.http,
+  });
+
+  return {
+    publicConfig,
+    legacySecretBundle,
+    legacySecretSummary: legacySecretBundle ? buildSecretSummary(legacySecretBundle) : null,
+  };
+}
+
+function parseSecretSummary(summaryJson?: string | null): McpSecretSummaryV1 | null {
+  if (!summaryJson) {
+    return null;
+  }
+
+  try {
+    const raw = JSON.parse(summaryJson) as McpSecretSummaryV1;
+    return {
+      version: 1,
+      stdio: raw.stdio?.envMasked ? { envMasked: raw.stdio.envMasked } : undefined,
+      http: raw.http?.headersMasked ? { headersMasked: raw.http.headersMasked } : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildPublicConfigFromRuntime(config: {
+  transport: McpTransportType;
+  stdio?: StdioTransportConfig;
+  http?: HttpTransportConfig;
+}): McpPublicConfigV1 {
+  return {
+    version: 1,
+    stdio: config.transport === 'stdio' && config.stdio
+      ? {
+          command: config.stdio.command,
+          args: config.stdio.args,
+          cwd: config.stdio.cwd,
+        }
+      : undefined,
+    http: config.transport === 'http' && config.http
+      ? {
+          url: config.http.url,
+        }
+      : undefined,
+  };
+}
+
+function createSecretBundle(config: {
+  stdio?: Pick<StdioTransportConfig, 'env'>;
+  http?: Pick<HttpTransportConfig, 'headers'>;
+}): McpSecretBundleV1 | null {
+  const env = config.stdio?.env;
+  const headers = config.http?.headers;
+
+  const hasEnv = Boolean(env && Object.keys(env).length > 0);
+  const hasHeaders = Boolean(headers && Object.keys(headers).length > 0);
+  if (!hasEnv && !hasHeaders) {
+    return null;
+  }
+
+  return {
+    version: 1,
+    stdio: hasEnv ? { env } : undefined,
+    http: hasHeaders ? { headers } : undefined,
+  };
+}
+
+function buildSecretSummary(secretBundle: McpSecretBundleV1): McpSecretSummaryV1 {
+  return {
+    version: 1,
+    stdio: secretBundle.stdio?.env
+      ? {
+          envMasked: Object.fromEntries(
+            Object.entries(secretBundle.stdio.env).map(([key, value]) => [key, maskSecret(value)]),
+          ),
+        }
+      : undefined,
+    http: secretBundle.http?.headers
+      ? {
+          headersMasked: Object.fromEntries(
+            Object.entries(secretBundle.http.headers).map(([key, value]) => [key, maskSecret(value)]),
+          ),
+        }
+      : undefined,
+  };
+}
+
+function toMaskedStdioConfig(
+  publicConfig: McpPublicConfigV1,
+  secretSummary: McpSecretSummaryV1 | null,
+): MaskedStdioTransportConfig | undefined {
+  if (!publicConfig.stdio) {
+    return undefined;
+  }
+
+  return {
+    command: publicConfig.stdio.command,
+    args: publicConfig.stdio.args,
+    cwd: publicConfig.stdio.cwd,
+    env_masked: secretSummary?.stdio?.envMasked,
+  };
+}
+
+function toMaskedHttpConfig(
+  publicConfig: McpPublicConfigV1,
+  secretSummary: McpSecretSummaryV1 | null,
+): MaskedHttpTransportConfig | undefined {
+  if (!publicConfig.http) {
+    return undefined;
+  }
+
+  return {
+    url: publicConfig.http.url,
+    headers_masked: secretSummary?.http?.headersMasked,
+  };
+}
+
+function serializePublicConfig(publicConfig: McpPublicConfigV1): string {
+  return JSON.stringify(publicConfig);
+}
+
+function mergeRuntimeConfig(
+  row: McpRow,
+  publicConfig: McpPublicConfigV1,
+  secretBundle: McpSecretBundleV1 | null,
+): McpServerConfig {
   return {
     id: row.id,
     name: row.name,
     transport: row.transport as McpServerConfig['transport'],
-    stdio: configData.stdio,
-    http: configData.http,
+    stdio: publicConfig.stdio
+      ? {
+          command: publicConfig.stdio.command,
+          args: publicConfig.stdio.args,
+          cwd: publicConfig.stdio.cwd,
+          env: secretBundle?.stdio?.env,
+        }
+      : undefined,
+    http: publicConfig.http
+      ? {
+          url: publicConfig.http.url,
+          headers: secretBundle?.http?.headers,
+        }
+      : undefined,
     toolPrefix: row.toolPrefix ?? undefined,
     enabled: row.enabled === 1,
     connectTimeoutMs: row.connectTimeoutMs,
@@ -67,37 +295,81 @@ function rowToConfig(row: McpRow): McpServerConfig {
   };
 }
 
-/** 业务对象转为 API 响应格式 */
-function configToResponse(config: McpServerConfig): McpServerConfigResponse {
+function configToResponse(row: McpRow): McpServerConfigResponse {
+  const stored = parseStoredConfig(row.configJson);
+  const secretSummary = parseSecretSummary(row.secretConfigMaskedJson) ?? stored.legacySecretSummary;
+
   return {
-    id: config.id,
-    name: config.name,
-    transport: config.transport,
-    stdio: config.stdio,
-    http: config.http,
-    tool_prefix: config.toolPrefix ?? null,
-    enabled: config.enabled,
-    connect_timeout_ms: config.connectTimeoutMs,
-    call_timeout_ms: config.callTimeoutMs,
-    tool_refresh_interval_ms: config.toolRefreshIntervalMs,
-    default_side_effect_level: config.defaultSideEffectLevel,
-    created_at: config.createdAt,
-    updated_at: config.updatedAt,
+    id: row.id,
+    name: row.name,
+    transport: row.transport as McpTransportType,
+    stdio: toMaskedStdioConfig(stored.publicConfig, secretSummary),
+    http: toMaskedHttpConfig(stored.publicConfig, secretSummary),
+    tool_prefix: row.toolPrefix ?? null,
+    enabled: row.enabled === 1,
+    connect_timeout_ms: row.connectTimeoutMs,
+    call_timeout_ms: row.callTimeoutMs,
+    tool_refresh_interval_ms: row.toolRefreshIntervalMs,
+    default_side_effect_level: row.defaultSideEffectLevel as McpServerConfig['defaultSideEffectLevel'],
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
   };
 }
 
-// ── 列表查询参数 ──────────────────────────────────
+function configToEntity(row: McpRow): McpServerConfig {
+  const stored = parseStoredConfig(row.configJson);
 
-export interface ListMcpServersQuery {
-  enabled?: boolean;
-  limit?: number;
-  offset?: number;
+  return mergeRuntimeConfig(
+    row,
+    stored.publicConfig,
+    null,
+  );
 }
 
-// ── McpService ────────────────────────────────────
+function mergeUpdatedTransportConfig(
+  current: McpServerConfig,
+  input: UpdateMcpServerInput,
+): Pick<McpServerConfig, 'transport' | 'stdio' | 'http'> {
+  const transport = input.transport ?? current.transport;
+
+  if (transport === 'stdio') {
+    const stdio = input.stdio !== undefined
+      ? {
+          ...current.stdio,
+          ...input.stdio,
+        }
+      : current.stdio;
+
+    return {
+      transport,
+      stdio,
+      http: undefined,
+    };
+  }
+
+  const http = input.http !== undefined
+    ? {
+        ...current.http,
+        ...input.http,
+      }
+    : current.http;
+
+  return {
+    transport,
+    stdio: undefined,
+    http,
+  };
+}
 
 export class McpService {
-  constructor(private db: AppDb) {}
+  private readonly masterKey: string;
+
+  constructor(
+    private db: AppDb,
+    options: ServiceOptions = {},
+  ) {
+    this.masterKey = options.masterKey ?? process.env.APP_SECRETS_MASTER_KEY ?? '';
+  }
 
   /**
    * 查询服务器配置列表，支持 enabled 过滤和分页。
@@ -133,15 +405,19 @@ export class McpService {
     ]);
 
     return {
-      configs: rows.map(rowToConfig).map(configToResponse),
+      configs: rows.map(configToResponse),
       total: totalResult[0]?.count ?? 0,
     };
   }
 
   /**
    * 返回账号内所有 enabled=1 的服务器配置。
+   * 该方法主要供工具目录构建使用，不解析 secret。
    */
-  async listEnabledConfigs(accountId: string): Promise<McpServerConfig[]> {
+  async listEnabledConfigs(
+    accountId: string,
+    _options: ListEnabledConfigsOptions = {},
+  ): Promise<McpServerConfig[]> {
     const rows = await this.db
       .select()
       .from(mcpServerConfigs)
@@ -151,21 +427,93 @@ export class McpService {
       ))
       .orderBy(mcpServerConfigs.createdAt);
 
-    return rows.map(rowToConfig);
+    return rows.map(configToEntity);
   }
 
   /**
    * 返回所有账号内 enabled=1 的服务器配置。
-   * 仅供应用启动时初始化全局连接管理器使用。
+   * 仅返回成功解析的运行时配置；失败配置会在 initialize 结果中单独给出。
    */
   async listAllEnabledConfigs(): Promise<McpServerConfig[]> {
+    const result = await this.resolveAllEnabledConfigsForManager();
+    return result.configs;
+  }
+
+  /**
+   * 返回所有账号内 enabled=1 的运行时配置和解析失败记录。
+   */
+  async resolveAllEnabledConfigsForManager(): Promise<ResolveMcpConfigsResult> {
     const rows = await this.db
       .select()
       .from(mcpServerConfigs)
       .where(eq(mcpServerConfigs.enabled, 1))
       .orderBy(mcpServerConfigs.createdAt);
 
-    return rows.map(rowToConfig);
+    const configs: McpServerConfig[] = [];
+    const failures: ResolveMcpConfigsResult['failures'] = [];
+
+    for (const row of rows) {
+      try {
+        configs.push(this.rowToRuntimeConfig(row));
+      } catch (error) {
+        failures.push({
+          accountId: row.accountId,
+          serverId: row.id,
+          serverName: row.name,
+          transport: row.transport as McpTransportType,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return { configs, failures };
+  }
+
+  /**
+   * 回填 legacy 明文 secret 到新列。
+   * 没有配置主密钥时，仅跳过，不抛错。
+   */
+  async backfillLegacySecretStorage(): Promise<{ migrated: number; skipped: number }> {
+    const rows = await this.db
+      .select()
+      .from(mcpServerConfigs)
+      .orderBy(mcpServerConfigs.createdAt);
+
+    let migrated = 0;
+    let skipped = 0;
+
+    for (const row of rows) {
+      if (row.secretConfigEncrypted) {
+        continue;
+      }
+
+      const stored = parseStoredConfig(row.configJson);
+      if (!stored.legacySecretBundle) {
+        continue;
+      }
+
+      if (!this.hasMasterKey()) {
+        skipped += 1;
+        continue;
+      }
+
+      const storageColumns = this.toStorageColumns(
+        mergeRuntimeConfig(row, stored.publicConfig, stored.legacySecretBundle),
+      );
+
+      await this.db
+        .update(mcpServerConfigs)
+        .set({
+          configJson: storageColumns.configJson,
+          secretConfigEncrypted: storageColumns.secretConfigEncrypted,
+          secretConfigMaskedJson: storageColumns.secretConfigMaskedJson,
+        })
+        .where(eq(mcpServerConfigs.id, row.id));
+
+      migrated += 1;
+    }
+
+    return { migrated, skipped };
   }
 
   /**
@@ -192,37 +540,23 @@ export class McpService {
   }
 
   /**
-   * 根据 ID 获取单条配置。
+   * 根据 ID 获取单条配置（管理视图，不返回真实 secret）。
    */
   async getConfig(id: string, accountId: string): Promise<McpServerConfigResponse | null> {
-    const rows = await this.db
-      .select()
-      .from(mcpServerConfigs)
-      .where(and(
-        eq(mcpServerConfigs.id, id),
-        eq(mcpServerConfigs.accountId, accountId),
-      ))
-      .limit(1);
-
-    if (rows.length === 0) return null;
-    return configToResponse(rowToConfig(rows[0]!));
+    const row = await this.getConfigRow(id, accountId);
+    return row ? configToResponse(row) : null;
   }
 
   /**
-   * 根据 ID 获取业务对象（供内部使用）。
+   * 根据 ID 获取运行时业务对象（包含真实 secret）。
    */
   async getConfigEntity(id: string, accountId: string): Promise<McpServerConfig | null> {
-    const rows = await this.db
-      .select()
-      .from(mcpServerConfigs)
-      .where(and(
-        eq(mcpServerConfigs.id, id),
-        eq(mcpServerConfigs.accountId, accountId),
-      ))
-      .limit(1);
+    const row = await this.getConfigRow(id, accountId);
+    if (!row) {
+      return null;
+    }
 
-    if (rows.length === 0) return null;
-    return rowToConfig(rows[0]!);
+    return this.rowToRuntimeConfig(row);
   }
 
   /**
@@ -252,8 +586,8 @@ export class McpService {
 
     const now = Date.now();
     const id = nanoid();
-
-    const configJson = JSON.stringify({
+    const storageColumns = this.toStorageColumns({
+      transport: input.transport,
       stdio: input.stdio,
       http: input.http,
     });
@@ -263,7 +597,9 @@ export class McpService {
       accountId,
       name: input.name,
       transport: input.transport,
-      configJson,
+      configJson: storageColumns.configJson,
+      secretConfigEncrypted: storageColumns.secretConfigEncrypted,
+      secretConfigMaskedJson: storageColumns.secretConfigMaskedJson,
       toolPrefix: input.tool_prefix ?? null,
       enabled: (input.enabled ?? true) ? 1 : 0,
       connectTimeoutMs: input.connect_timeout_ms ?? 30000,
@@ -286,10 +622,12 @@ export class McpService {
     input: UpdateMcpServerInput,
     accountId: string
   ): Promise<McpServerConfigResponse | null> {
-    const current = await this.getConfigEntity(id, accountId);
-    if (!current) return null;
+    const row = await this.getConfigRow(id, accountId);
+    if (!row) {
+      return null;
+    }
 
-    if (input.name !== undefined && input.name !== current.name) {
+    if (input.name !== undefined && input.name !== row.name) {
       const existing = await this.db
         .select({ id: mcpServerConfigs.id })
         .from(mcpServerConfigs)
@@ -304,40 +642,42 @@ export class McpService {
       }
     }
 
-    const newTransport = input.transport ?? current.transport;
-    const newStdio = input.stdio !== undefined ? input.stdio : current.stdio;
-    const newHttp = input.http !== undefined ? input.http : current.http;
-
-    if (newTransport === 'stdio' && !newStdio) {
-      throw new McpServiceError('invalid_config', 'stdio transport requires stdio config');
-    }
-    if (newTransport === 'http' && !newHttp) {
-      throw new McpServiceError('invalid_config', 'http transport requires http config');
-    }
-
     const updates: Record<string, unknown> = { updatedAt: Date.now() };
 
     if (input.name !== undefined) updates.name = input.name;
-    if (input.transport !== undefined) updates.transport = input.transport;
-
-    if (input.stdio !== undefined || input.http !== undefined || input.transport !== undefined) {
-      updates.configJson = JSON.stringify({
-        stdio: newStdio,
-        http: newHttp,
-      });
-    }
-
-    if (input.tool_prefix !== undefined) {
-      updates.toolPrefix = input.tool_prefix;
-    }
+    if (input.tool_prefix !== undefined) updates.toolPrefix = input.tool_prefix;
     if (input.connect_timeout_ms !== undefined) updates.connectTimeoutMs = input.connect_timeout_ms;
     if (input.call_timeout_ms !== undefined) updates.callTimeoutMs = input.call_timeout_ms;
     if (input.tool_refresh_interval_ms !== undefined) updates.toolRefreshIntervalMs = input.tool_refresh_interval_ms;
     if (input.default_side_effect_level !== undefined) updates.defaultSideEffectLevel = input.default_side_effect_level;
 
+    if (input.stdio !== undefined || input.http !== undefined || input.transport !== undefined) {
+      const current = this.rowToRuntimeConfig(row);
+      const next = mergeUpdatedTransportConfig(current, input);
+
+      if (next.transport === 'stdio' && !next.stdio) {
+        throw new McpServiceError('invalid_config', 'stdio transport requires stdio config');
+      }
+      if (next.transport === 'http' && !next.http) {
+        throw new McpServiceError('invalid_config', 'http transport requires http config');
+      }
+
+      const storageColumns = this.toStorageColumns({
+        ...current,
+        transport: next.transport,
+        stdio: next.stdio,
+        http: next.http,
+      });
+
+      updates.transport = next.transport;
+      updates.configJson = storageColumns.configJson;
+      updates.secretConfigEncrypted = storageColumns.secretConfigEncrypted;
+      updates.secretConfigMaskedJson = storageColumns.secretConfigMaskedJson;
+    }
+
     await this.db
       .update(mcpServerConfigs)
-      .set(updates as any)
+      .set(updates as never)
       .where(and(
         eq(mcpServerConfigs.id, id),
         eq(mcpServerConfigs.accountId, accountId),
@@ -382,11 +722,98 @@ export class McpService {
 
     return this.getConfig(id, accountId);
   }
+
+  private async getConfigRow(id: string, accountId: string): Promise<McpRow | null> {
+    const rows = await this.db
+      .select()
+      .from(mcpServerConfigs)
+      .where(and(
+        eq(mcpServerConfigs.id, id),
+        eq(mcpServerConfigs.accountId, accountId),
+      ))
+      .limit(1);
+
+    return rows[0] ?? null;
+  }
+
+  private rowToRuntimeConfig(row: McpRow): McpServerConfig {
+    const stored = parseStoredConfig(row.configJson);
+    const secretBundle = row.secretConfigEncrypted
+      ? this.decryptSecretBundle(row.secretConfigEncrypted, row.name)
+      : stored.legacySecretBundle;
+
+    return mergeRuntimeConfig(row, stored.publicConfig, secretBundle);
+  }
+
+  private toStorageColumns(config: Pick<McpServerConfig, 'transport' | 'stdio' | 'http'>): {
+    configJson: string;
+    secretConfigEncrypted: string | null;
+    secretConfigMaskedJson: string | null;
+  } {
+    const publicConfig = buildPublicConfigFromRuntime(config);
+    const secretBundle = createSecretBundle({
+      stdio: config.transport === 'stdio' ? config.stdio : undefined,
+      http: config.transport === 'http' ? config.http : undefined,
+    });
+
+    if (!secretBundle) {
+      return {
+        configJson: serializePublicConfig(publicConfig),
+        secretConfigEncrypted: null,
+        secretConfigMaskedJson: null,
+      };
+    }
+
+    if (!this.hasMasterKey()) {
+      throw new McpServiceError('secret_unavailable', 'APP_SECRETS_MASTER_KEY is required for MCP secret encryption');
+    }
+
+    return {
+      configJson: serializePublicConfig(publicConfig),
+      secretConfigEncrypted: encryptSecret(JSON.stringify(secretBundle), this.masterKey),
+      secretConfigMaskedJson: JSON.stringify(buildSecretSummary(secretBundle)),
+    };
+  }
+
+  private decryptSecretBundle(value: string, serverName: string): McpSecretBundleV1 {
+    try {
+      const plain = decryptSecret(value, this.masterKey);
+      const raw = JSON.parse(plain) as McpSecretBundleV1;
+
+      return {
+        version: 1,
+        stdio: raw.stdio?.env ? { env: raw.stdio.env } : undefined,
+        http: raw.http?.headers ? { headers: raw.http.headers } : undefined,
+      };
+    } catch (error) {
+      if (error instanceof SecretUnavailableError) {
+        throw new McpServiceError('secret_unavailable', 'APP_SECRETS_MASTER_KEY is required for MCP secret decryption');
+      }
+
+      if (error instanceof SecretFormatError || error instanceof SyntaxError) {
+        throw new McpServiceError(
+          'secret_invalid_format',
+          `Stored MCP secret cannot be decrypted for server "${serverName}". Check APP_SECRETS_MASTER_KEY or data integrity.`,
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  private hasMasterKey(): boolean {
+    return this.masterKey.trim().length > 0;
+  }
 }
 
 // ── 错误类型 ───────────────────────────────────────
 
-export type McpServiceErrorCode = 'name_conflict' | 'invalid_config' | 'not_found';
+export type McpServiceErrorCode =
+  | 'name_conflict'
+  | 'invalid_config'
+  | 'not_found'
+  | 'secret_invalid_format'
+  | 'secret_unavailable';
 
 export class McpServiceError extends Error {
   constructor(

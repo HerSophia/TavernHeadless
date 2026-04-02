@@ -36,11 +36,13 @@ export type McpServerDraft = {
   connectTimeoutMs: string;
   defaultSideEffectLevel: WorkspaceMcpDefaultSideEffectLevel;
   enabled: boolean;
+  httpHeadersMaskedJson: string;
   httpHeadersJson: string;
   httpUrl: string;
   id: string;
   mode: "create" | "edit";
   name: string;
+  stdioEnvMaskedJson: string;
   stdioArgsJson: string;
   stdioCommand: string;
   stdioCwd: string;
@@ -83,15 +85,17 @@ function createMcpServerDraft(mode: "create" | "edit" = "create", server?: Works
       connectTimeoutMs: String(server.connectTimeoutMs),
       defaultSideEffectLevel: server.defaultSideEffectLevel,
       enabled: server.enabled,
-      httpHeadersJson: serializeJson(server.http?.headers, ""),
+      httpHeadersMaskedJson: serializeJson(server.http?.headersMasked, ""),
+      httpHeadersJson: "",
       httpUrl: server.http?.url ?? "",
       id: server.id,
       mode,
       name: server.name,
+      stdioEnvMaskedJson: serializeJson(server.stdio?.envMasked, ""),
       stdioArgsJson: serializeJson(server.stdio?.args ?? [], "[]"),
       stdioCommand: server.stdio?.command ?? "",
       stdioCwd: server.stdio?.cwd ?? "",
-      stdioEnvJson: serializeJson(server.stdio?.env, ""),
+      stdioEnvJson: "",
       toolPrefix: server.toolPrefix ?? "",
       toolRefreshIntervalMs: String(server.toolRefreshIntervalMs),
       transport: server.transport
@@ -103,12 +107,14 @@ function createMcpServerDraft(mode: "create" | "edit" = "create", server?: Works
     connectTimeoutMs: "30000",
     defaultSideEffectLevel: "sandbox",
     enabled: true,
+    httpHeadersMaskedJson: "",
     httpHeadersJson: "",
     httpUrl: "",
     id: "",
     mode,
     name: "",
     stdioArgsJson: "[]",
+    stdioEnvMaskedJson: "",
     stdioCommand: "",
     stdioCwd: "",
     stdioEnvJson: "",

@@ -470,14 +470,30 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   }
 
   // ── 可选：MCP 工具集成 ──
+  const mcpService = new McpService(database.db);
+  const mcpBackfill = await mcpService.backfillLegacySecretStorage();
+  if (mcpBackfill.migrated > 0 || mcpBackfill.skipped > 0) {
+    app.log.info(mcpBackfill, 'MCP secret storage backfill completed');
+  }
+
   let mcpManager: McpConnectionManager | undefined;
 
   if (options.enableMcp) {
-    const mcpService = new McpService(database.db);
-    const mcpConfigs = await mcpService.listAllEnabledConfigs();
+    const resolvedMcpConfigs = await mcpService.resolveAllEnabledConfigsForManager();
 
     mcpManager = new McpConnectionManager(app.log);
-    await mcpManager.initialize(mcpConfigs);
+    await mcpManager.initialize(resolvedMcpConfigs.configs);
+
+    for (const failure of resolvedMcpConfigs.failures) {
+      mcpManager.registerUnavailableServer(
+        {
+          id: failure.serverId,
+          name: failure.serverName,
+          transport: failure.transport,
+        },
+        failure.error,
+      );
+    }
 
     // 注册 MCP 运行时路由
     await registerMcpRuntimeRoutes(app, mcpManager, database);
@@ -487,7 +503,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       await mcpManager!.shutdown();
     });
 
-    app.log.info({ serverCount: mcpConfigs.length }, 'MCP integration enabled');
+    app.log.info({
+      serverCount: resolvedMcpConfigs.configs.length,
+      failedServerCount: resolvedMcpConfigs.failures.length,
+    }, 'MCP integration enabled');
   }
 
   if (options.orchestration && orchestrationContext) {

@@ -204,6 +204,13 @@ describe("chat routes", () => {
       errorCode: "generation_timeout",
     },
     {
+      name: "secret_invalid_format",
+      code: "secret_invalid_format",
+      message: "Stored profile secret cannot be decrypted. Check APP_SECRETS_MASTER_KEY or data integrity.",
+      statusCode: 500,
+      errorCode: "secret_invalid_format",
+    },
+    {
       name: "orchestration_failed",
       code: "orchestration_failed",
       message: "Turn orchestration failed",
@@ -296,6 +303,10 @@ describe("chat routes", () => {
     {
       code: "generation_timeout",
       message: "Turn orchestration failed: LLM request timed out after 60000ms",
+    },
+    {
+      code: "secret_invalid_format",
+      message: "Stored profile secret cannot be decrypted. Check APP_SECRETS_MASTER_KEY or data integrity.",
     },
     {
       code: "instance_slot_disabled_required",

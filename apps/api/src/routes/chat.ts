@@ -668,6 +668,7 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
       return { statusCode: 503, code: error.code, message: error.message };
     case "generation_timeout":
       return { statusCode: 504, code: error.code, message: error.message };
+    case "secret_invalid_format":
     case "orchestration_failed":
     case "turn_commit_failed":
       return { statusCode: 500, code: error.code, message: error.message };

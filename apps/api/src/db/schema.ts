@@ -756,6 +756,8 @@ export const mcpServerConfigs = sqliteTable(
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
     transport: text("transport", { enum: ["stdio", "http"] }).notNull(),
     configJson: text("config_json").notNull(),
+    secretConfigEncrypted: text("secret_config_encrypted"),
+    secretConfigMaskedJson: text("secret_config_masked_json"),
     toolPrefix: text("tool_prefix"),
     enabled: integer("enabled").notNull().default(1),
     connectTimeoutMs: integer("connect_timeout_ms").notNull().default(30000),

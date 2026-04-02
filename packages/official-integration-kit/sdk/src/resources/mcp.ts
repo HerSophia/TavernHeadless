@@ -27,16 +27,28 @@ export type McpHttpConfig = {
   url: string;
 };
 
+export type McpMaskedStdioConfig = {
+  args?: string[];
+  command: string;
+  cwd?: string;
+  envMasked?: Record<string, string>;
+};
+
+export type McpMaskedHttpConfig = {
+  headersMasked?: Record<string, string>;
+  url: string;
+};
+
 export type McpServerRecord = {
   callTimeoutMs: number;
   connectTimeoutMs: number;
   createdAt: number;
   defaultSideEffectLevel: McpDefaultSideEffectLevel;
   enabled: boolean;
-  http: McpHttpConfig | null;
+  http: McpMaskedHttpConfig | null;
   id: string;
   name: string;
-  stdio: McpStdioConfig | null;
+  stdio: McpMaskedStdioConfig | null;
   toolPrefix: string | null;
   toolRefreshIntervalMs: number;
   transport: McpTransport;
@@ -328,10 +340,10 @@ function mapMcpServer(value: unknown): McpServerRecord | null {
     createdAt: readNumber(record.created_at),
     defaultSideEffectLevel: readString(record.default_side_effect_level, "irreversible") as McpDefaultSideEffectLevel,
     enabled: readBoolean(record.enabled),
-    http: mapMcpHttpConfig(record.http),
+    http: mapMcpMaskedHttpConfig(record.http),
     id: readString(record.id),
     name: readString(record.name),
-    stdio: mapMcpStdioConfig(record.stdio),
+    stdio: mapMcpMaskedStdioConfig(record.stdio),
     toolPrefix: readNullableString(record.tool_prefix),
     toolRefreshIntervalMs: readNumber(record.tool_refresh_interval_ms),
     transport: readString(record.transport, "stdio") as McpTransport,
@@ -387,7 +399,7 @@ function mapMcpListMeta(value: unknown): McpListMeta {
   };
 }
 
-function mapMcpStdioConfig(value: unknown): McpStdioConfig | null {
+function mapMcpMaskedStdioConfig(value: unknown): McpMaskedStdioConfig | null {
   const record = readRecord(value);
   if (!record) {
     return null;
@@ -397,18 +409,18 @@ function mapMcpStdioConfig(value: unknown): McpStdioConfig | null {
     args: readStringArray(record.args),
     command: readString(record.command),
     cwd: readNullableString(record.cwd) ?? undefined,
-    env: readStringRecord(record.env) ?? undefined,
+    envMasked: readStringRecord(record.env_masked) ?? undefined,
   };
 }
 
-function mapMcpHttpConfig(value: unknown): McpHttpConfig | null {
+function mapMcpMaskedHttpConfig(value: unknown): McpMaskedHttpConfig | null {
   const record = readRecord(value);
   if (!record) {
     return null;
   }
 
   return {
-    headers: readStringRecord(record.headers) ?? undefined,
+    headersMasked: readStringRecord(record.headers_masked) ?? undefined,
     url: readString(record.url),
   };
 }

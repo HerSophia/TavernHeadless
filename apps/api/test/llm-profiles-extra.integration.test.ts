@@ -2,12 +2,14 @@
  * llm-profiles.ts extra branch coverage.
  *
  * Targets:
- *   - sendServiceError: profile_inactive, secret_unavailable
+ *   - sendServiceError: profile_inactive, secret_unavailable, secret_invalid_format
  *   - activate inactive profile -> 409
  *   - delete missing profile -> 404
  *   - patch deleted profile -> 409
  *   - rename conflict on patch
  */
+
+import { rmSync } from "node:fs";
 
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,8 +19,10 @@ import { buildApp } from "../src/app";
 describe("LLM Profiles extra branch coverage", () => {
   let app: FastifyInstance;
   let originalMasterKey: string | undefined;
+  let persistedDatabasePath: string | null;
 
   beforeEach(async () => {
+    persistedDatabasePath = null;
     originalMasterKey = process.env.APP_SECRETS_MASTER_KEY;
     process.env.APP_SECRETS_MASTER_KEY = "test-master-key";
     ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
@@ -32,6 +36,10 @@ describe("LLM Profiles extra branch coverage", () => {
     }
     vi.unstubAllGlobals();
     if (app) await app.close();
+    if (persistedDatabasePath) {
+      rmSync(persistedDatabasePath, { force: true });
+      persistedDatabasePath = null;
+    }
   });
 
   async function createProfile(name: string) {
@@ -116,6 +124,50 @@ describe("LLM Profiles extra branch coverage", () => {
     });
     expect(res.statusCode).toBe(503);
     expect((res.json() as { error: { code: string } }).error.code).toBe("secret_unavailable");
+  });
+
+  it("returns 500 secret_invalid_format when runtime profile secret cannot be decrypted", async () => {
+    await app.close();
+    persistedDatabasePath = `data/test-llm-profile-secret-format-${Date.now()}.db`;
+
+    process.env.APP_SECRETS_MASTER_KEY = "correct-master-key";
+    ({ app } = await buildApp({ databasePath: persistedDatabasePath, logger: false }));
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Broken Runtime Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        api_key: "sk-test-runtime-secret",
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const profileId = (createRes.json() as { data: { id: string } }).data.id;
+
+    const activateRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${profileId}/activate`,
+      payload: { scope: "global", instance_slot: "narrator" },
+    });
+    expect(activateRes.statusCode).toBe(200);
+
+    await app.close();
+
+    process.env.APP_SECRETS_MASTER_KEY = "wrong-master-key";
+    ({ app } = await buildApp({ databasePath: persistedDatabasePath, logger: false }));
+
+    const runtimeRes = await app.inject({
+      method: "GET",
+      url: "/llm-profiles/runtime",
+    });
+
+    expect(runtimeRes.statusCode).toBe(500);
+    expect((runtimeRes.json() as { error: { code: string; message: string } }).error).toEqual({
+      code: "secret_invalid_format",
+      message: "Stored profile secret cannot be decrypted. Check APP_SECRETS_MASTER_KEY or data integrity.",
+    });
   });
 
   it("returns 404 when unbinding a missing binding", async () => {

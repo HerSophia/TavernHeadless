@@ -4,7 +4,7 @@ import type { InstanceSlot, ProviderType } from "@tavern/core";
 
 import type { AppDb } from "../db/client";
 import { llmProfileBindings, llmProfiles, sessions } from "../db/schema";
-import { decryptSecret } from "../lib/secrets";
+import { decryptSecret, SecretFormatError } from "../lib/secrets";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants";
 import { normalizeBindingParams, parseBindingParamsJson, type LlmBindingGenerationParams } from "../lib/llm-params";
 import { createDefaultMutationRuntime } from "./default-mutation-runtime.js";
@@ -80,6 +80,7 @@ export class LlmProfileServiceError extends Error {
       | "profile_inactive"
       | "profile_not_found"
       | "secret_unavailable"
+      | "secret_invalid_format"
       | "session_scope_not_found",
     message: string
   ) {
@@ -519,11 +520,21 @@ export class LlmProfileService {
   }
 
   private decrypt(value: string): string {
-    if (!this.masterKey || this.masterKey.trim().length === 0) {
-      throw new LlmProfileServiceError("secret_unavailable", "APP_SECRETS_MASTER_KEY is required for profile decryption");
-    }
+    try {
+      if (!this.masterKey || this.masterKey.trim().length === 0) {
+        throw new LlmProfileServiceError("secret_unavailable", "APP_SECRETS_MASTER_KEY is required for profile decryption");
+      }
 
-    return decryptSecret(value, this.masterKey);
+      return decryptSecret(value, this.masterKey);
+    } catch (error) {
+      if (error instanceof LlmProfileServiceError) {
+        throw error;
+      }
+      if (error instanceof SecretFormatError) {
+        throw new LlmProfileServiceError("secret_invalid_format", "Stored profile secret cannot be decrypted. Check APP_SECRETS_MASTER_KEY or data integrity.");
+      }
+      throw error;
+    }
   }
 }
 

@@ -1,5 +1,9 @@
+import { rmSync } from "node:fs";
+
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const originalMasterKey = process.env.APP_SECRETS_MASTER_KEY;
 
 const runtimeMockState = vi.hoisted(() => {
   const instances = new Map<string, any>();
@@ -99,9 +103,12 @@ type McpStatusResponse = {
 
 describe("MCP runtime routes", () => {
   let app: FastifyInstance;
+  let persistedDatabasePath: string | null;
 
   beforeEach(async () => {
     runtimeMockState.instances.clear();
+    persistedDatabasePath = null;
+    delete process.env.APP_SECRETS_MASTER_KEY;
     ({ app } = await buildApp({
       databasePath: ":memory:",
       logger: false,
@@ -110,9 +117,20 @@ describe("MCP runtime routes", () => {
   });
 
   afterEach(async () => {
+    if (originalMasterKey === undefined) {
+      delete process.env.APP_SECRETS_MASTER_KEY;
+    } else {
+      process.env.APP_SECRETS_MASTER_KEY = originalMasterKey;
+    }
+
     runtimeMockState.instances.clear();
     if (app) {
       await app.close();
+    }
+
+    if (persistedDatabasePath) {
+      rmSync(persistedDatabasePath, { force: true });
+      persistedDatabasePath = null;
     }
   });
 
@@ -314,5 +332,57 @@ describe("MCP runtime routes", () => {
 
     expect(missingTestRes.statusCode).toBe(404);
     expect(missingTestRes.json<ErrorResponse>().error.code).toBe("not_found");
+  });
+
+  it("keeps secret-backed servers visible in error state when runtime decryption fails after restart", async () => {
+    await app.close();
+    persistedDatabasePath = `data/test-mcp-runtime-secret-${Date.now()}.db`;
+
+    process.env.APP_SECRETS_MASTER_KEY = "correct-master-key";
+    ({ app } = await buildApp({
+      databasePath: persistedDatabasePath,
+      logger: false,
+      enableMcp: true,
+    }));
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/mcp/servers",
+      payload: {
+        name: "Secret Runtime Server",
+        transport: "stdio",
+        stdio: {
+          command: "node",
+          env: {
+            API_TOKEN: "token12345678",
+          },
+        },
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const server = createRes.json<ItemResponse<McpServerResponse>>().data;
+
+    await app.close();
+
+    process.env.APP_SECRETS_MASTER_KEY = "wrong-master-key";
+    ({ app } = await buildApp({
+      databasePath: persistedDatabasePath,
+      logger: false,
+      enableMcp: true,
+    }));
+
+    const statusesRes = await app.inject({ method: "GET", url: "/mcp/statuses" });
+    expect(statusesRes.statusCode).toBe(200);
+    expect(statusesRes.json<ItemResponse<McpStatusResponse[]>>().data).toEqual([
+      expect.objectContaining({
+        server_id: server.id,
+        state: "error",
+        error: expect.stringContaining("Stored MCP secret cannot be decrypted for server \"Secret Runtime Server\""),
+      }),
+    ]);
+
+    const statusRes = await app.inject({ method: "GET", url: `/mcp/servers/${server.id}/status` });
+    expect(statusRes.statusCode).toBe(200);
+    expect(statusRes.json<ItemResponse<McpStatusResponse>>().data).toMatchObject({ server_id: server.id, state: "error" });
   });
 });
