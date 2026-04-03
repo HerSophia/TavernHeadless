@@ -132,6 +132,8 @@
 | `floor_no` | `INTEGER` | `NOT NULL` | 楼层编号 |
 | `branch_id` | `TEXT` | `NOT NULL`, default `main` | 分支标识 |
 | `parent_floor_id` | `TEXT` | `NULL` | 父楼层 ID |
+| `superseded_at` | `INTEGER` | `NULL` | 被替代时间戳（ms） |
+| `superseded_by_floor_id` | `TEXT` | `NULL` | 替代它的新楼层 ID |
 | `state` | `TEXT` | `NOT NULL`, default `draft` | 楼层状态 |
 | `metadata_json` | `TEXT` | `NULL` | 楼层元信息（含 `user_binding`） |
 | `token_in` | `INTEGER` | `NOT NULL`, default `0` | 输入 token 计数 |
@@ -143,8 +145,14 @@
 - `state`: `draft | generating | committed | failed`
 
 索引：
-- 唯一索引 `floor_session_no_branch_uq(session_id, floor_no, branch_id)`
+- 部分唯一索引 `floor_session_no_branch_live_uq(session_id, floor_no, branch_id) WHERE superseded_at IS NULL`
 - 普通索引 `floor_session_branch_state_no_idx(session_id, branch_id, state, floor_no)`
+- 部分索引 `floor_session_branch_live_state_no_idx(session_id, branch_id, state, floor_no) WHERE superseded_at IS NULL`
+
+说明：
+
+- `superseded_at IS NULL` 表示 live floor
+- `superseded_at IS NOT NULL` 表示该楼层已经被后续 regenerate 替代，但记录仍保留用于审计与追溯
 
 ## `message_page`
 

@@ -10,7 +10,7 @@
  * - 重新生成（Regenerate）
  */
 
-import { asc, eq, and, desc } from "drizzle-orm";
+import { asc, eq, and, desc, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
   assemblePrompt,
@@ -712,8 +712,8 @@ export class ChatService {
    * 2. 找到最后一个 committed 楼层（main 分支）
    * 3. 提取该楼层的用户消息
    * 4. 加载该楼层之前的历史消息
-   * 5. 将旧楼层的 branchId 改为 "superseded-{id}"（让出唯一约束）
-   * 6. 创建新的 draft 楼层（同 floorNo，main 分支，parentFloorId 指向旧楼层）
+   * 5. 将旧楼层标记为 superseded（让出 live 唯一约束）
+   * 6. 创建新的 draft 楼层（同 floorNo，同 branchId，parentFloorId 指向旧楼层）
    * 7. 保存用户消息到新楼层
    * 8. 构建 TurnInput + 调用 Orchestrator
    * 9. 保存助手回复
@@ -773,7 +773,7 @@ export class ChatService {
         floorId: newFloorId,
         sessionId,
         floorNo: targetFloor.floorNo,
-        branchId: "main",
+        branchId: targetFloor.branchId,
         parentFloorId: targetFloor.id,
         userMessage,
         userId: session.userId,
@@ -782,7 +782,11 @@ export class ChatService {
         prepare: (tx) => {
           tx
             .update(floors)
-            .set({ branchId: `superseded-${targetFloor.id}`, updatedAt: now })
+            .set({
+              supersededAt: now,
+              supersededByFloorId: newFloorId,
+              updatedAt: now,
+            })
             .where(eq(floors.id, targetFloor.id))
             .run();
         },
@@ -2460,7 +2464,8 @@ export class ChatService {
           and(
             eq(floors.id, sourceFloorId),
             eq(floors.sessionId, sessionId),
-            eq(floors.state, "committed")
+            eq(floors.state, "committed"),
+            isNull(floors.supersededAt)
           )
         )
         .limit(1);
@@ -2481,7 +2486,8 @@ export class ChatService {
           and(
             eq(floors.sessionId, sessionId),
             eq(floors.state, "committed"),
-            eq(floors.branchId, "main")
+            eq(floors.branchId, "main"),
+            isNull(floors.supersededAt)
           )
         )
         .orderBy(desc(floors.floorNo))

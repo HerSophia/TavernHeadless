@@ -23,8 +23,16 @@ export interface FloorContentMutationRejection {
 export function getFloorContentMutationRejection(input: {
   mutationKind: FloorContentMutationKind;
   floorState?: FloorState;
+  floorSupersededAt?: number | null;
   pageKind?: PageKind;
 }): FloorContentMutationRejection | null {
+  if (input.floorSupersededAt != null) {
+    return {
+      code: "content_target_locked",
+      message: `Superseded floors are read-only for ${describeMutation(input.mutationKind)}`,
+    };
+  }
+
   if (input.mutationKind === "page.activate") {
     if (input.pageKind === "input") {
       return {

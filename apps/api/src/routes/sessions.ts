@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, like, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, like, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { SimpleTokenCounter } from "@tavern/core";
@@ -1480,7 +1480,7 @@ export async function registerSessionRoutes(
         updatedAt: floors.updatedAt
       })
       .from(floors)
-      .where(eq(floors.sessionId, sessionId));
+      .where(and(eq(floors.sessionId, sessionId), isNull(floors.supersededAt)));
 
     const branchMap = new Map<string, {
       branch_id: string;
@@ -1590,7 +1590,11 @@ export async function registerSessionRoutes(
     const diffRows = await db
       .select({ id: floors.id, branchId: floors.branchId, floorNo: floors.floorNo, state: floors.state })
       .from(floors)
-      .where(and(eq(floors.sessionId, sessionId), inArray(floors.branchId, [baseBranchId, targetBranchId])))
+      .where(and(
+        eq(floors.sessionId, sessionId),
+        inArray(floors.branchId, [baseBranchId, targetBranchId]),
+        isNull(floors.supersededAt),
+      ))
       .orderBy(asc(floors.floorNo));
 
     const baseFloors = diffRows.filter((row) => row.branchId === baseBranchId);
@@ -1672,7 +1676,8 @@ export async function registerSessionRoutes(
         and(
           eq(floors.sessionId, sessionId),
           eq(floors.branchId, branchId),
-          eq(floors.state, "committed")
+          eq(floors.state, "committed"),
+          isNull(floors.supersededAt)
         )
       );
     const total = Number(totalRow?.total ?? 0);
@@ -1685,7 +1690,8 @@ export async function registerSessionRoutes(
         and(
           eq(floors.sessionId, sessionId),
           eq(floors.branchId, branchId),
-          eq(floors.state, "committed")
+          eq(floors.state, "committed"),
+          isNull(floors.supersededAt)
         )
       )
       .orderBy(asc(floors.floorNo))

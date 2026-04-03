@@ -523,6 +523,8 @@ export interface paths {
                                 session_id: string;
                                 /** @enum {string} */
                                 state: "draft" | "generating" | "committed" | "failed";
+                                superseded_at: number | null;
+                                superseded_by_floor_id: string | null;
                                 token_in: number;
                                 token_out: number;
                                 updated_at: number;
@@ -598,6 +600,8 @@ export interface paths {
                                 session_id: string;
                                 /** @enum {string} */
                                 state: "draft" | "generating" | "committed" | "failed";
+                                superseded_at: number | null;
+                                superseded_by_floor_id: string | null;
                                 token_in: number;
                                 token_out: number;
                                 updated_at: number;
@@ -699,6 +703,8 @@ export interface paths {
                                 session_id: string;
                                 /** @enum {string} */
                                 state: "draft" | "generating" | "committed" | "failed";
+                                superseded_at: number | null;
+                                superseded_by_floor_id: string | null;
                                 token_in: number;
                                 token_out: number;
                                 updated_at: number;
@@ -815,6 +821,8 @@ export interface paths {
                                 session_id: string;
                                 /** @enum {string} */
                                 state: "draft" | "generating" | "committed" | "failed";
+                                superseded_at: number | null;
+                                superseded_by_floor_id: string | null;
                                 token_in: number;
                                 token_out: number;
                                 updated_at: number;

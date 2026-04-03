@@ -205,6 +205,7 @@ export async function registerMessagePageRoutes(
     const rejection = getFloorContentMutationRejection({
       mutationKind: "page.create",
       floorState: floor.state,
+      floorSupersededAt: floor.supersededAt,
     });
 
     if (rejection) {
@@ -427,6 +428,7 @@ export async function registerMessagePageRoutes(
     const rejection = getFloorContentMutationRejection({
       mutationKind: "page.update",
       floorState: existingPage.floorState,
+      floorSupersededAt: existingPage.floorSupersededAt,
       pageKind: existingPage.pageKind,
     });
     if (rejection) return sendPageMutationRejection(reply, rejection);
@@ -473,6 +475,7 @@ export async function registerMessagePageRoutes(
     const rejection = getFloorContentMutationRejection({
       mutationKind: "page.delete",
       floorState: existingPage.floorState,
+      floorSupersededAt: existingPage.floorSupersededAt,
       pageKind: existingPage.pageKind,
     });
     if (rejection) return sendPageMutationRejection(reply, rejection);
@@ -547,11 +550,17 @@ export async function registerMessagePageRoutes(
       getFloorContentMutationRejection({
         mutationKind: "page.delete",
         floorState: page.floorState,
+        floorSupersededAt: page.floorSupersededAt,
         pageKind: page.pageKind,
       }) !== null
     );
     if (lockedPage) {
-      return sendPageMutationRejection(reply, getFloorContentMutationRejection({ mutationKind: "page.delete", floorState: lockedPage.floorState, pageKind: lockedPage.pageKind })!);
+      return sendPageMutationRejection(reply, getFloorContentMutationRejection({
+        mutationKind: "page.delete",
+        floorState: lockedPage.floorState,
+        floorSupersededAt: lockedPage.floorSupersededAt,
+        pageKind: lockedPage.pageKind,
+      })!);
     }
 
     const results: { index: number; id: string; action: string }[] = [];

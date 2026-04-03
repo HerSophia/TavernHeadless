@@ -72,13 +72,13 @@
 
 ### 消息页（MessagePage）
 
-楼层内的一个「版本」。比如你点了重新生成（regen），就会在同一个楼层里新建一个消息页，旧的还在。
+楼层内的一个页槽位或页版本，主要用于承载 input / output、流式中间态和同槽位版本切换。当前 `regenerate` 不会在已提交楼层内追加 page，而是创建新的 floor，并把旧 floor 标记为 superseded。
 
 消息页的作用：
 
-- 保存重试/重新生成的不同版本。
+- 保存同一楼层内的页版本与槽位内容。
 - 流式生成时先写到消息页里，生成完再标记为生效。
-- 每个楼层有且只有一个「当前生效页」。
+- 每个 `(floor_id, page_no)` 槽位最多只有一个「当前生效页」。
 
 ### 消息（Message）
 
@@ -145,7 +145,7 @@ API 侧提供 `GET /variables/resolve`，用于解析当前 `session / branch / 
 
 ### 为什么要有「页」这一层？
 
-主要解决重新生成时的隔离问题。假设 AI 生成了一个回复并且写了 `mood = happy`，你觉得不好点了重试，新的生成写了 `mood = sad`。如果没有页级变量，两次生成会互相覆盖。有了页级变量，每次生成都在自己的沙箱里，只有你选定的那个版本才会被提升到楼层、分支或会话。
+主要解决同一楼层内部不同页版本的隔离问题。假设 AI 生成了一个回复并且写了 `mood = happy`，你在同一页槽位里切到另一个版本后，又得到 `mood = sad`。如果没有页级变量，这两次生成会互相覆盖。有了页级变量，每次页版本都在自己的沙箱里，只有你选定的那个版本才会被提升到楼层、分支或会话。
 
 ---
 
@@ -551,14 +551,23 @@ CREATE TABLE floor (
   floor_no        INTEGER NOT NULL,
   branch_id       TEXT NOT NULL DEFAULT 'main',
   parent_floor_id TEXT,
+  superseded_at   INTEGER,
+  superseded_by_floor_id TEXT,
   state           TEXT NOT NULL DEFAULT 'draft',  -- draft / generating / committed / failed
   metadata_json   TEXT,                            -- 包含 user_binding
   token_in        INTEGER DEFAULT 0,
   token_out       INTEGER DEFAULT 0,
   created_at      INTEGER NOT NULL,
-  updated_at      INTEGER NOT NULL,
-  UNIQUE(session_id, floor_no, branch_id)
+  updated_at      INTEGER NOT NULL
 );
+```
+
+当前用部分唯一索引约束 live floor：
+
+```sql
+CREATE UNIQUE INDEX floor_session_no_branch_live_uq
+ON floor(session_id, floor_no, branch_id)
+WHERE superseded_at IS NULL;
 ```
 
 ### 账号内用户卡（account_user）

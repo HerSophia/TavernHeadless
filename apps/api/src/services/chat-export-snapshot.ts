@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
 import { buildBranchVariableScopeId, type BranchVariableScopeRef } from "@tavern/shared";
 
 import type { AppDb } from "../db/client.js";
@@ -182,7 +182,7 @@ export function captureSessionExportSnapshot(
     const floorRows = tx
       .select()
       .from(floors)
-      .where(eq(floors.sessionId, sessionId))
+      .where(and(eq(floors.sessionId, sessionId), isNull(floors.supersededAt)))
       .orderBy(asc(floors.floorNo), asc(floors.branchId))
       .all();
 

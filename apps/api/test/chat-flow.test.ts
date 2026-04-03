@@ -1441,19 +1441,59 @@ describe("ChatService", () => {
       expect(newFloor!.branchId).toBe("main");
     });
 
-    it("should move old floor to superseded branch", async () => {
+    it("should mark old floor as superseded without changing branchId", async () => {
       const respondResult = await chatService.respond(sessionId, { message: "Hello" });
-      await chatService.regenerate(sessionId);
+      const regenResult = await chatService.regenerate(sessionId);
 
-      // 验证旧楼层的 branchId 已变更
       const [oldFloor] = await database.db
         .select()
         .from(floors)
         .where(eq(floors.id, respondResult.floorId));
 
       expect(oldFloor).toBeDefined();
-      expect(oldFloor!.branchId).toBe(`superseded-${respondResult.floorId}`);
-      expect(oldFloor!.state).toBe("committed"); // 旧楼层状态不变
+      expect(oldFloor!.branchId).toBe("main");
+      expect(oldFloor!.supersededAt).toBeTypeOf("number");
+      expect(oldFloor!.supersededByFloorId).toBe(regenResult.floorId);
+      expect(oldFloor!.state).toBe("committed");
+    });
+
+    it("should continue the main branch from the regenerated live floor", async () => {
+      await chatService.respond(sessionId, { message: "First" });
+      await chatService.respond(sessionId, { message: "Second" });
+
+      const regeneratedText = "Regenerated second reply";
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockImplementationOnce(
+        async (input: any) => {
+          await database.db
+            .update(floors)
+            .set({ state: "generating", updatedAt: Date.now() })
+            .where(eq(floors.id, input.floorId));
+
+          return {
+            ...MOCK_TURN_OUTPUT,
+            floorId: input.floorId,
+            generatedText: regeneratedText,
+            rawText: regeneratedText,
+          };
+        }
+      );
+
+      const regenResult = await chatService.regenerate(sessionId);
+      const continued = await chatService.respond(sessionId, { message: "Third" });
+
+      expect(continued.floorNo).toBe(2);
+      const continuedTurnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[3]![0];
+      expect(continuedTurnInput.messages).toEqual([
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: "First" },
+        { role: "assistant", content: MOCK_GENERATED_TEXT },
+        { role: "user", content: "Second" },
+        { role: "assistant", content: regeneratedText },
+        { role: "user", content: "Third" },
+      ]);
+
+      const [continuedFloor] = await database.db.select().from(floors).where(eq(floors.id, continued.floorId));
+      expect(continuedFloor!.parentFloorId).toBe(regenResult.floorId);
     });
 
     it("should throw no_floor_to_regenerate for empty session", async () => {

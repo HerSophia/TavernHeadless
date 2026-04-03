@@ -25,6 +25,8 @@ export type FloorRecord = {
   parentFloorId: string | null;
   sessionId: string;
   state: FloorState;
+  supersededAt: number | null;
+  supersededByFloorId: string | null;
   tokenIn: number;
   tokenOut: number;
   updatedAt: number;
@@ -360,6 +362,8 @@ function mapFloorRecord(value: unknown): FloorRecord | null {
     parentFloorId: readNullableString(record.parent_floor_id),
     sessionId: readString(record.session_id),
     state: readString(record.state) as FloorState,
+    supersededAt: readNullableNumber(record.superseded_at),
+    supersededByFloorId: readNullableString(record.superseded_by_floor_id),
     tokenIn: readNumber(record.token_in),
     tokenOut: readNumber(record.token_out),
     updatedAt: readNumber(record.updated_at),

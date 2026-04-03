@@ -5,7 +5,7 @@
  * 从 ChatService 提取以降低单文件认知负荷。
  */
 
-import { asc, eq, and, desc, lt, inArray } from "drizzle-orm";
+import { asc, eq, and, desc, lt, inArray, isNull } from "drizzle-orm";
 import type { ChatMessage } from "@tavern/core";
 
 import type { AppDb } from "../db/client.js";
@@ -44,6 +44,7 @@ export class ChatHistoryLoader {
       .where(
         and(
           eq(floors.sessionId, sessionId),
+          isNull(floors.supersededAt),
           eq(floors.state, "committed"),
           eq(floors.branchId, "main")
         )
@@ -59,7 +60,11 @@ export class ChatHistoryLoader {
     branchId: string,
     options?: { states?: Array<typeof floors.$inferSelect["state"]> },
   ) {
-    const conditions = [eq(floors.sessionId, sessionId), eq(floors.branchId, branchId)];
+    const conditions = [
+      eq(floors.sessionId, sessionId),
+      eq(floors.branchId, branchId),
+      isNull(floors.supersededAt),
+    ];
 
     if (options?.states && options.states.length > 0) {
       conditions.push(inArray(floors.state, options.states));
@@ -94,7 +99,11 @@ export class ChatHistoryLoader {
     branchId: string,
     beforeFloorNo?: number
   ): Promise<Array<{ id: string; floorNo: number }>> {
-    const baseConditions = [eq(floors.sessionId, sessionId), eq(floors.state, "committed")];
+    const baseConditions = [
+      eq(floors.sessionId, sessionId),
+      eq(floors.state, "committed"),
+      isNull(floors.supersededAt),
+    ];
 
     if (beforeFloorNo !== undefined) {
       baseConditions.push(lt(floors.floorNo, beforeFloorNo));

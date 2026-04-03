@@ -98,6 +98,8 @@ export const floors = sqliteTable(
     floorNo: integer("floor_no").notNull(),
     branchId: text("branch_id").notNull().default("main"),
     parentFloorId: text("parent_floor_id"),
+    supersededAt: integer("superseded_at"),
+    supersededByFloorId: text("superseded_by_floor_id"),
     state: text("state", { enum: ["draft", "generating", "committed", "failed"] })
       .notNull()
       .default("draft"),
@@ -108,14 +110,17 @@ export const floors = sqliteTable(
     updatedAt: integer("updated_at").notNull()
   },
   (table) => ({
-    sessionFloorBranchUnique: uniqueIndex("floor_session_no_branch_uq").on(
+    sessionFloorBranchLiveUnique: uniqueIndex("floor_session_no_branch_live_uq").on(
       table.sessionId,
       table.floorNo,
       table.branchId
-    ),
+    ).where(sql`${table.supersededAt} IS NULL`),
     floorHistoryLookupIdx: index("floor_session_branch_state_no_idx").on(
       table.sessionId, table.branchId, table.state, table.floorNo
-    )
+    ),
+    floorLiveHistoryLookupIdx: index("floor_session_branch_live_state_no_idx").on(
+      table.sessionId, table.branchId, table.state, table.floorNo
+    ).where(sql`${table.supersededAt} IS NULL`)
   })
 );
 
