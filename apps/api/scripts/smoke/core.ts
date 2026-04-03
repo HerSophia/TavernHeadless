@@ -65,7 +65,7 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
 
   // ── Floors CRUD ──────────────────────────────────────
 
-  const floor = await runStep("POST /floors (committed)", () =>
+  const floor = await runStep("POST /floors (draft content floor)", () =>
     api.request<{ data: { id: string } }>(
       "POST",
       "/floors",
@@ -73,12 +73,27 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
         session_id: sessionId,
         floor_no: 0,
         branch_id: "main",
-        state: "committed",
+        state: "draft",
       },
       [201]
     )
   );
   const floorId = must(floor.body?.data?.id, "Missing floor id");
+
+  const committedBranchFloor = await runStep("POST /floors (committed branch source floor)", () =>
+    api.request<{ data: { id: string } }>(
+      "POST",
+      "/floors",
+      {
+        session_id: sessionId,
+        floor_no: 1,
+        branch_id: "main",
+        state: "committed",
+      },
+      [201]
+    )
+  );
+  const committedBranchFloorId = must(committedBranchFloor.body?.data?.id, "Missing committed branch floor id");
 
   await runStep("GET /floors/:id", () => api.request("GET", `/floors/${floorId}`, undefined, [200]));
   await runStep("PATCH /floors/:id", () =>
@@ -114,7 +129,6 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
         floor_id: floorId,
         page_no: 0,
         page_kind: "output",
-        is_active: true,
         version: 1,
       },
       [201]
@@ -145,7 +159,6 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
         floor_id: floorId,
         page_no: 0,
         page_kind: "output",
-        is_active: false,
         version: 2,
       },
       [201]
@@ -202,6 +215,26 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
     api.request("PATCH", `/pages/${pageV2Id}`, { checksum: `${runId}-checksum` }, [200])
   );
 
+  const disposablePage = await runStep("POST /pages (disposable)", () =>
+    api.request<{ data: { id: string } }>(
+      "POST",
+      "/pages",
+      {
+        floor_id: floorId,
+        page_no: 1,
+        page_kind: "mixed",
+        version: 1,
+      },
+      [201]
+    )
+  );
+  const disposablePageId = must(disposablePage.body?.data?.id, "Missing disposable page id");
+  await runStep("DELETE /pages/:id", () => api.request("DELETE", `/pages/${disposablePageId}`, undefined, [200]));
+
+  await runStep("PATCH /floors/:id (commit content floor)", () =>
+    api.request("PATCH", `/floors/${floorId}`, { state: "committed" }, [200])
+  );
+
   // ── Timeline with data ───────────────────────────────
 
   const timeline = await runStep("GET /sessions/:id/timeline (with data)", () =>
@@ -230,36 +263,19 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
   );
   assert(pageV2After.body?.data?.is_active === true, "v2 should be active after activate");
 
-  const disposablePage = await runStep("POST /pages (disposable)", () =>
-    api.request<{ data: { id: string } }>(
-      "POST",
-      "/pages",
-      {
-        floor_id: floorId,
-        page_no: 1,
-        page_kind: "mixed",
-        is_active: false,
-        version: 1,
-      },
-      [201]
-    )
-  );
-  const disposablePageId = must(disposablePage.body?.data?.id, "Missing disposable page id");
-  await runStep("DELETE /pages/:id", () => api.request("DELETE", `/pages/${disposablePageId}`, undefined, [200]));
-
   // ── Branches ────────────────────────────────────────
 
   await runStep("POST /floors/:id/branch (auto)", () =>
-    api.request("POST", `/floors/${floorId}/branch`, {}, [201])
+    api.request("POST", `/floors/${committedBranchFloorId}/branch`, {}, [201])
   );
 
   const customBranchId = `${runId}-branch`;
   await runStep("POST /floors/:id/branch (custom)", () =>
-    api.request("POST", `/floors/${floorId}/branch`, { branch_id: customBranchId }, [201])
+    api.request("POST", `/floors/${committedBranchFloorId}/branch`, { branch_id: customBranchId }, [201])
   );
 
   await runStep("POST /floors/:id/branch (duplicate => 409)", () =>
-    api.request("POST", `/floors/${floorId}/branch`, { branch_id: "main" }, [409])
+    api.request("POST", `/floors/${committedBranchFloorId}/branch`, { branch_id: "main" }, [409])
   );
 
   await runStep("POST /floors (custom branch floor)", () =>
@@ -270,7 +286,7 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
         session_id: sessionId,
         floor_no: 1,
         branch_id: customBranchId,
-        parent_floor_id: floorId,
+        parent_floor_id: committedBranchFloorId,
         state: "committed",
       },
       [201]
