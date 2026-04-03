@@ -14,12 +14,19 @@ export type AuthConfig =
   | { mode: "api_key"; apiKeys: string[]; apiKeyAccountMap?: Record<string, string> }
   | { mode: "jwt"; jwtSecret: string; jwtAccountClaim?: string };
 
-export type AuthContext = {
+export type AuthenticatedAuthContext = {
+  kind: "authenticated";
   accountId: string;
   role: "admin" | "user";
   status: "active" | "disabled";
   subject?: string;
 };
+
+export type PublicAuthContext = {
+  kind: "public";
+};
+
+export type AuthContext = AuthenticatedAuthContext | PublicAuthContext;
 
 type RegisterAuthOptions = {
   db: AppDb;
@@ -29,7 +36,7 @@ type RegisterAuthOptions = {
 
 declare module "fastify" {
   interface FastifyRequest {
-    authContext: AuthContext;
+    authContext?: AuthContext;
   }
 }
 
@@ -57,20 +64,12 @@ export async function registerAuth(
   app.addHook("onRequest", async (request, reply) => {
     const pathname = getPathname(request);
     if (isPublicPath(pathname)) {
-      request.authContext = {
-        accountId: defaultAccountId,
-        role: "admin",
-        status: "active",
-      };
+      request.authContext = { kind: "public" };
       return;
     }
 
     if (auth.mode === "off") {
-      request.authContext = {
-        accountId: defaultAccountId,
-        role: "admin",
-        status: "active",
-      };
+      request.authContext = createDevelopmentAuthContext(defaultAccountId);
       return;
     }
 
@@ -133,12 +132,21 @@ export async function registerAuth(
   });
 }
 
-export function getRequestAuthContext(request: FastifyRequest): AuthContext {
-  return request.authContext ?? {
-    accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-    role: "admin",
-    status: "active",
-  };
+export function getOptionalRequestAuthContext(request: FastifyRequest): AuthContext | undefined {
+  return request.authContext;
+}
+
+export function requireRequestAuthContext(request: FastifyRequest): AuthenticatedAuthContext {
+  const authContext = request.authContext;
+  if (!authContext || authContext.kind !== "authenticated") {
+    throw new Error("Authenticated request context is not available");
+  }
+
+  return authContext;
+}
+
+export function getRequestAuthContext(request: FastifyRequest): AuthenticatedAuthContext {
+  return requireRequestAuthContext(request);
 }
 
 function isPublicPath(pathname: string): boolean {
@@ -180,7 +188,7 @@ async function resolveAccountContext(
   db: AppDb,
   reply: FastifyReply,
   accountId: string
-): Promise<Pick<AuthContext, "accountId" | "role" | "status"> | null> {
+): Promise<AuthenticatedAuthContext | null> {
   const account = await getAccountAuthState(db, accountId);
   if (!account) {
     sendError(reply, 401, "auth_account_not_found", "Authenticated account does not exist");
@@ -193,9 +201,19 @@ async function resolveAccountContext(
   }
 
   return {
+    kind: "authenticated",
     accountId: account.id,
     role: account.role,
     status: account.status,
+  };
+}
+
+function createDevelopmentAuthContext(defaultAccountId: string): AuthenticatedAuthContext {
+  return {
+    kind: "authenticated",
+    accountId: defaultAccountId,
+    role: "admin",
+    status: "active",
   };
 }
 

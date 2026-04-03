@@ -45,10 +45,22 @@ POST /sessions/:id/respond
       "completion_tokens": 128,
       "total_tokens": 448
     },
+    "memory": {
+      "mode": "sync",
+      "status": "applied",
+      "job_id": null
+    },
     "final_state": "committed"
   }
 }
 ```
+
+如果当前会话启用了记忆持久化，响应里会额外返回 `memory`：
+
+- `mode = "sync"` 且 `status = "applied"`：记忆写入已在本次提交内完成
+- `mode = "async"` 且 `status = "queued"`：记忆写入已进入后台队列，`job_id` 对应 `runtime_job.id`
+
+如果当前部署没有启用记忆持久化，这个字段可以省略。
 
 ### 常见错误
 
@@ -101,7 +113,7 @@ event: summary
 data: {"summaries":["The group resumes the campfire planning scene."]}
 
 event: done
-data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"...","summaries":[...],"total_usage":{...},"final_state":"committed"}
+data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"...","summaries":[...],"total_usage":{...},"memory":{"mode":"sync","status":"applied","job_id":null},"final_state":"committed"}
 ```
 
 当前 SSE 事件集包括：
@@ -218,6 +230,11 @@ POST /sessions/:id/regenerate
     "generated_text": "...",
     "summaries": [],
     "total_usage": { "prompt_tokens": 320, "completion_tokens": 128, "total_tokens": 448 },
+    "memory": {
+      "mode": "sync",
+      "status": "applied",
+      "job_id": null
+    },
     "final_state": "committed"
   }
 }
@@ -254,6 +271,11 @@ POST /floors/:id/retry
     "generated_text": "...",
     "summaries": [],
     "total_usage": { "prompt_tokens": 200, "completion_tokens": 80, "total_tokens": 280 },
+    "memory": {
+      "mode": "sync",
+      "status": "applied",
+      "job_id": null
+    },
     "final_state": "committed"
   }
 }

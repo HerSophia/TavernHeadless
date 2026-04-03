@@ -229,6 +229,10 @@ export function loadConfig(): AppConfig {
     throw new Error("ACCOUNT_MODE=multi requires AUTH_MODE to be api_key or jwt");
   }
 
+  if (process.env.NODE_ENV === "production" && auth.mode === "off") {
+    throw new Error("AUTH_MODE=off is not allowed when NODE_ENV=production");
+  }
+
   if (accountMode === "multi" && auth.mode === "api_key" && !auth.apiKeyAccountMap) {
     throw new Error("ACCOUNT_MODE=multi with AUTH_MODE=api_key requires AUTH_API_KEY_ACCOUNTS mapping");
   }

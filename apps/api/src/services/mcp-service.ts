@@ -114,6 +114,17 @@ function normalizeCandidateIds(candidateIds?: string[]): string[] {
   return [...uniqueIds];
 }
 
+function normalizeToolPrefix(
+  value: string | null | undefined,
+): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = typeof value === 'string' ? value.trim() : value;
+  return normalized === null || normalized.length === 0 ? null : normalized;
+}
+
 function parseStoredConfig(configJson: string): StoredConfigParseResult {
   const raw = JSON.parse(configJson) as {
     stdio?: StdioTransportConfig;
@@ -284,7 +295,7 @@ function mergeRuntimeConfig(
           headers: secretBundle?.http?.headers,
         }
       : undefined,
-    toolPrefix: row.toolPrefix ?? undefined,
+    toolPrefix: normalizeToolPrefix(row.toolPrefix) ?? undefined,
     enabled: row.enabled === 1,
     connectTimeoutMs: row.connectTimeoutMs,
     callTimeoutMs: row.callTimeoutMs,
@@ -305,7 +316,7 @@ function configToResponse(row: McpRow): McpServerConfigResponse {
     transport: row.transport as McpTransportType,
     stdio: toMaskedStdioConfig(stored.publicConfig, secretSummary),
     http: toMaskedHttpConfig(stored.publicConfig, secretSummary),
-    tool_prefix: row.toolPrefix ?? null,
+    tool_prefix: normalizeToolPrefix(row.toolPrefix) ?? null,
     enabled: row.enabled === 1,
     connect_timeout_ms: row.connectTimeoutMs,
     call_timeout_ms: row.callTimeoutMs,
@@ -600,7 +611,7 @@ export class McpService {
       configJson: storageColumns.configJson,
       secretConfigEncrypted: storageColumns.secretConfigEncrypted,
       secretConfigMaskedJson: storageColumns.secretConfigMaskedJson,
-      toolPrefix: input.tool_prefix ?? null,
+      toolPrefix: normalizeToolPrefix(input.tool_prefix) ?? null,
       enabled: (input.enabled ?? true) ? 1 : 0,
       connectTimeoutMs: input.connect_timeout_ms ?? 30000,
       callTimeoutMs: input.call_timeout_ms ?? 60000,
@@ -645,7 +656,7 @@ export class McpService {
     const updates: Record<string, unknown> = { updatedAt: Date.now() };
 
     if (input.name !== undefined) updates.name = input.name;
-    if (input.tool_prefix !== undefined) updates.toolPrefix = input.tool_prefix;
+    if (input.tool_prefix !== undefined) updates.toolPrefix = normalizeToolPrefix(input.tool_prefix);
     if (input.connect_timeout_ms !== undefined) updates.connectTimeoutMs = input.connect_timeout_ms;
     if (input.call_timeout_ms !== undefined) updates.callTimeoutMs = input.call_timeout_ms;
     if (input.tool_refresh_interval_ms !== undefined) updates.toolRefreshIntervalMs = input.tool_refresh_interval_ms;

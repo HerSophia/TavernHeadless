@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../src/app";
 import { registerAccountRoutes } from "../src/routes/accounts";
+import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
 
 type ErrorResponse = {
   error: {
@@ -269,6 +270,7 @@ describe("Account routes", () => {
       })
     };
 
+    await registerDevelopmentTestAuth(routeApp, mockConnection);
     await registerAccountRoutes(routeApp, { db: mockConnection } as any);
 
     const deleteRes = await routeApp.inject({

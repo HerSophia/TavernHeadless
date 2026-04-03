@@ -273,6 +273,7 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
       floorId,
       floorNo,
       generatedText: readOptionalString(payload?.generated_text),
+      memory: readRespondMemoryReceipt(payload?.memory),
       summaries: readStringArray(payload?.summaries),
       totalUsage: toApiUsage(payload?.total_usage),
     };
@@ -308,8 +309,32 @@ function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function readRespondMemoryReceipt(value: unknown): TavernRespondDonePayload["memory"] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const mode = readOptionalString(record.mode);
+  const status = readOptionalString(record.status);
+
+  if ((mode !== "sync" && mode !== "async") || (status !== "applied" && status !== "queued")) {
+    return undefined;
+  }
+
+  return {
+    jobId: readNullableString(record.job_id),
+    mode,
+    status,
+  };
+}
+
 function readOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function readNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 function readString(value: unknown): string {

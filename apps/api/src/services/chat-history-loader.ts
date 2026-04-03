@@ -54,15 +54,37 @@ export class ChatHistoryLoader {
     return row ?? null;
   }
 
-  async getLatestFloorInBranch(sessionId: string, branchId: string) {
+  async getLatestFloorInBranch(
+    sessionId: string,
+    branchId: string,
+    options?: { states?: Array<typeof floors.$inferSelect["state"]> },
+  ) {
+    const conditions = [eq(floors.sessionId, sessionId), eq(floors.branchId, branchId)];
+
+    if (options?.states && options.states.length > 0) {
+      conditions.push(inArray(floors.state, options.states));
+    }
+
     const [lastFloor] = await this.db
-      .select({ id: floors.id, floorNo: floors.floorNo })
+      .select({ id: floors.id, floorNo: floors.floorNo, parentFloorId: floors.parentFloorId, state: floors.state })
       .from(floors)
-      .where(and(eq(floors.sessionId, sessionId), eq(floors.branchId, branchId)))
-      .orderBy(desc(floors.floorNo))
+      .where(and(...conditions))
+      .orderBy(desc(floors.floorNo), desc(floors.createdAt))
       .limit(1);
 
     return lastFloor ?? null;
+  }
+
+  async getLatestCommittedFloorInBranch(sessionId: string, branchId: string) {
+    return this.getLatestFloorInBranch(sessionId, branchId, {
+      states: ["committed"],
+    });
+  }
+
+  async getLatestGeneratingFloorInBranch(sessionId: string, branchId: string) {
+    return this.getLatestFloorInBranch(sessionId, branchId, {
+      states: ["generating"],
+    });
   }
 
   // ── 私有方法 ────────────────────────────────────────

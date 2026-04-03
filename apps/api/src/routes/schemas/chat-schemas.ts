@@ -52,6 +52,12 @@ export const usageExample = {
   total_tokens: 448,
 } as const;
 
+export const memoryReceiptExample = {
+  mode: "sync",
+  status: "applied",
+  job_id: null,
+} as const;
+
 export const respondDataExample = {
   floor_id: "floor_12",
   floor_no: 12,
@@ -59,6 +65,7 @@ export const respondDataExample = {
   generated_text: "The firelight wavers as the next part of the story begins.",
   summaries: ["The group resumes the campfire planning scene."],
   total_usage: usageExample,
+  memory: memoryReceiptExample,
   final_state: "committed",
 } as const;
 
@@ -74,6 +81,7 @@ export const regenerateSuccessResponseExample = {
     generated_text: "The assistant retries the last turn with a different phrasing.",
     summaries: ["The last assistant turn was regenerated."],
     total_usage: usageExample,
+    memory: memoryReceiptExample,
     final_state: "committed",
   },
 } as const;
@@ -137,7 +145,7 @@ export const streamResponseExample = [
   'data: {"chunk":"The firelight wavers..."}',
   "",
   "event: done",
-  'data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"The firelight wavers as the next part of the story begins.","summaries":["The group resumes the campfire planning scene."],"total_usage":{"prompt_tokens":320,"completion_tokens":128,"total_tokens":448},"final_state":"committed"}',
+  'data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"The firelight wavers as the next part of the story begins.","summaries":["The group resumes the campfire planning scene."],"total_usage":{"prompt_tokens":320,"completion_tokens":128,"total_tokens":448},"memory":{"mode":"sync","status":"applied","job_id":null},"final_state":"committed"}',
 ].join("\n");
 
 // ── JSON Schema constants ─────────────────────────────
@@ -249,6 +257,18 @@ export const usageJsonSchema = {
   additionalProperties: false,
 } as const;
 
+export const memoryReceiptJsonSchema = {
+  type: "object",
+  required: ["mode", "status", "job_id"],
+  properties: {
+    mode: { type: "string", enum: ["sync", "async"] },
+    status: { type: "string", enum: ["applied", "queued"] },
+    job_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+  },
+  examples: [memoryReceiptExample],
+  additionalProperties: false,
+} as const;
+
 export const respondDataJsonSchema = {
   type: "object",
   required: ["floor_id", "floor_no", "branch_id", "generated_text", "summaries", "total_usage", "final_state"],
@@ -259,6 +279,7 @@ export const respondDataJsonSchema = {
     generated_text: { type: "string" },
     summaries: { type: "array", items: { type: "string" } },
     total_usage: usageJsonSchema,
+    memory: memoryReceiptJsonSchema,
     final_state: { type: "string" },
   },
   examples: [respondDataExample],
@@ -294,6 +315,7 @@ export const regenerateDataJsonSchema = {
     generated_text: { type: "string" },
     summaries: { type: "array", items: { type: "string" } },
     total_usage: usageJsonSchema,
+    memory: memoryReceiptJsonSchema,
     final_state: { type: "string" },
   },
   examples: [regenerateSuccessResponseExample.data],

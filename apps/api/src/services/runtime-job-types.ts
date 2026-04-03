@@ -78,14 +78,21 @@ export interface RuntimeJobProgressUpdate {
   stateMode?: "replace" | "merge";
 }
 
-export interface RuntimeJobPrepareContext<TPayload> {
+export interface RuntimeJobExecutionContext {
+  heartbeat(): Promise<void>;
+  updateProgress(update: RuntimeJobProgressUpdate): Promise<void>;
+}
+
+export interface RuntimeJobPrepareContext<TPayload> extends RuntimeJobExecutionContext {
   db: AppDb;
   job: RuntimeJobRecord;
   payload: TPayload;
   workerId: string;
   leaseTtlMs: number;
   readState<T = unknown>(): T | null;
-  updateProgress(update: RuntimeJobProgressUpdate): Promise<void>;
+  withHeartbeat<T = unknown>(
+    fn: (context: RuntimeJobExecutionContext) => Promise<T>,
+  ): Promise<T>;
 }
 
 export interface RuntimeJobCommitContext<TPayload, TPrepared> {

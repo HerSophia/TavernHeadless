@@ -30,6 +30,8 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | `api_key` | API Key | `Authorization: Bearer <key>` 或 `x-api-key: <key>` |
 | `jwt` | JWT | `Authorization: Bearer <token>` |
 
+`AUTH_MODE=off` 只应用于本地开发。当前服务会在 `NODE_ENV=production && AUTH_MODE=off` 时直接拒绝启动。
+
 `api_key` 模式下，可在 `AUTH_API_KEYS` 中配置多个 key，逗号分隔。
 若同时启用 `ACCOUNT_MODE=multi`，还必须配置 `AUTH_API_KEY_ACCOUNTS`，把每个 key 映射到具体账号。
 
@@ -37,6 +39,14 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 若同时启用 `ACCOUNT_MODE=multi`，JWT 还必须携带账号 claim，默认字段名为 `account_id`，也可以通过 `AUTH_JWT_ACCOUNT_CLAIM` 改名。
 
 多账号隔离时，`ACCOUNT_MODE=multi`，各资源自动按账号隔离；该模式不能与 `AUTH_MODE=off` 一起使用。
+
+以下 public path 始终按匿名请求处理，不会继承管理员上下文：
+
+- `GET /health`
+- `GET /version`
+- `GET /openapi.json`
+- `GET /docs`
+- `GET /docs/*`
 
 认证后的授权真相来源是数据库中的账号行：
 

@@ -157,7 +157,7 @@ describe("SessionToolRegistryService", () => {
         expect.objectContaining({ name: "custom_lookup", source: "custom", availability: "available" }),
         expect.objectContaining({ name: "preset_lookup", source: "preset", availability: "available" }),
         expect.objectContaining({ name: "character_lookup", source: "character", availability: "available" }),
-        expect.objectContaining({ name: "mcp_lookup", source: "mcp", availability: "available" }),
+        expect.objectContaining({ name: "mcp_lookup", source: "mcp", availability: "available", catalogSource: "live" }),
       ]),
     );
   });
@@ -195,6 +195,45 @@ describe("SessionToolRegistryService", () => {
       resultVisibility: "deferred_receipt",
       availability: "available",
       replaySafety: "never_auto_replay",
+    });
+  });
+
+  it("falls back to cached MCP tools and marks the catalog source when live listing fails", async () => {
+    await insertSession();
+    await insertMcpConfig();
+
+    const liveConnection = {
+      state: "connected",
+      getTools: vi.fn().mockReturnValue([makeTool({ name: "mcp_lookup" })]),
+      callTool: vi.fn(),
+    };
+    const manager = {
+      getConnection: vi
+        .fn()
+        .mockResolvedValueOnce(liveConnection)
+        .mockRejectedValueOnce(new Error("mcp unavailable")),
+    } as any;
+
+    const service = new SessionToolRegistryService(db, {
+      baseRegistry,
+      mcpManager: manager,
+    });
+
+    const liveRuntime = await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
+    expect(liveRuntime.catalog.tools.find((entry) => entry.name === "mcp_lookup")).toMatchObject({
+      name: "mcp_lookup",
+      source: "mcp",
+      availability: "available",
+      catalogSource: "live",
+    });
+
+    const cachedRuntime = await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
+    expect((await cachedRuntime.registry.listAll()).some((entry) => entry.name === "mcp_lookup")).toBe(true);
+    expect(cachedRuntime.catalog.tools.find((entry) => entry.name === "mcp_lookup")).toMatchObject({
+      name: "mcp_lookup",
+      source: "mcp",
+      availability: "available",
+      catalogSource: "cached",
     });
   });
 

@@ -47,6 +47,9 @@ AUTH_MODE=off
 # ACCOUNT_MODE=single
 # 注意：ACCOUNT_MODE=multi 不能与 AUTH_MODE=off 一起使用
 
+# 生产环境保护
+# NODE_ENV=production 时不能使用 AUTH_MODE=off
+
 # 认证后的角色和状态以数据库 account 行中的 role / status 为准
 # JWT 的 role claim 不直接授予管理员权限
 
@@ -75,6 +78,10 @@ AUTH_MODE=off
 # MCP 工具集成（可选）
 # ENABLE_MCP=true
 ```
+
+`AUTH_MODE=off` 只建议用于本地开发。当前服务会在 `NODE_ENV=production && AUTH_MODE=off` 时直接拒绝启动。
+
+`/health`、`/version`、`/openapi.json`、`/docs`、`/docs/*` 这些 public path 始终按匿名请求处理，不会继承管理员上下文。
 
 ## 启动
 

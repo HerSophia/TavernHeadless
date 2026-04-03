@@ -114,7 +114,13 @@ pnpm dev:both   # 同时启动
 | `api_key` | 通过 API Key 认证 |
 | `jwt` | 通过 JWT Token 认证 |
 
-还支持多账号隔离（`ACCOUNT_MODE=multi`）和 LLM 密钥加密存储。
+`AUTH_MODE=off` 只应用于本地开发环境。当前服务会在 `NODE_ENV=production && AUTH_MODE=off` 时直接拒绝启动。
+
+多账号隔离时，`ACCOUNT_MODE=multi` 不能与 `AUTH_MODE=off` 一起使用。
+
+`/health`、`/version`、`/openapi.json`、`/docs`、`/docs/*` 这些 public path 始终按匿名请求处理，不会继承管理员上下文。
+
+项目还支持多账号隔离（`ACCOUNT_MODE=multi`）和 LLM 密钥加密存储。
 详细配置见 `.env.example` 中的注释。
 
 ## 常用命令

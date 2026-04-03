@@ -270,6 +270,53 @@ describe("message routes", () => {
     expect(missingDeleteResponse.json<ErrorResponse>().error.code).toBe("not_found");
   });
 
+  it("rejects committed-floor message mutations", async () => {
+    const sessionId = await createSession();
+    const floorId = await createFloor({ sessionId, floorNo: 1, branchId: "main" });
+    const pageId = await createPage({ floorId, pageNo: 1, pageKind: "mixed" });
+    const messageA = await createMessage({ pageId, seq: 1, role: "user", content: "A" });
+    const messageB = await createMessage({ pageId, seq: 2, role: "assistant", content: "B" });
+
+    const commitResponse = await app.inject({
+      method: "PATCH",
+      url: `/floors/${floorId}`,
+      payload: { state: "committed" }
+    });
+    expect(commitResponse.statusCode, commitResponse.body).toBe(200);
+
+    const lockedCreateResponse = await app.inject({
+      method: "POST",
+      url: "/messages",
+      payload: { page_id: pageId, seq: 3, role: "assistant", content: "after commit" }
+    });
+    expect(lockedCreateResponse.statusCode).toBe(409);
+    expect(lockedCreateResponse.json<ErrorResponse>().error.code).toBe("content_target_locked");
+
+    const lockedPatchResponse = await app.inject({
+      method: "PATCH",
+      url: `/messages/${messageA.id}`,
+      payload: { content: "edited" }
+    });
+    expect(lockedPatchResponse.statusCode).toBe(409);
+    expect(lockedPatchResponse.json<ErrorResponse>().error.code).toBe("content_target_locked");
+
+    const lockedDeleteResponse = await app.inject({ method: "DELETE", url: `/messages/${messageA.id}` });
+    expect(lockedDeleteResponse.statusCode).toBe(409);
+    expect(lockedDeleteResponse.json<ErrorResponse>().error.code).toBe("content_target_locked");
+
+    const lockedVisibilityResponse = await app.inject({
+      method: "PATCH",
+      url: "/messages/batch/visibility",
+      payload: { ids: [messageA.id], is_hidden: true }
+    });
+    expect(lockedVisibilityResponse.statusCode).toBe(409);
+    expect(lockedVisibilityResponse.json<ErrorResponse>().error.code).toBe("content_target_locked");
+
+    const lockedBatchDeleteResponse = await app.inject({ method: "POST", url: "/messages/batch/delete", payload: { ids: [messageB.id] } });
+    expect(lockedBatchDeleteResponse.statusCode).toBe(409);
+    expect(lockedBatchDeleteResponse.json<ErrorResponse>().error.code).toBe("content_target_locked");
+  });
+
   it("validates message creation and batch delete requests", async () => {
     const sessionId = await createSession();
     const floorId = await createFloor({ sessionId, floorNo: 0, branchId: "main" });

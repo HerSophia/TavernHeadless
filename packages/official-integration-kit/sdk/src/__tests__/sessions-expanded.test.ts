@@ -372,6 +372,11 @@ describe("sdk sessions expanded resource", () => {
           generated_text: "Hello",
           previous_floor_id: "floor-4",
           summaries: ["summary-1"],
+          memory: {
+            mode: "sync",
+            status: "applied",
+            job_id: null,
+          },
           total_usage: {
             completion_tokens: 5,
             prompt_tokens: 10,
@@ -390,6 +395,11 @@ describe("sdk sessions expanded resource", () => {
       generatedText: "Hello",
       inputTokens: 10,
       outputTokens: 5,
+      memory: {
+        jobId: null,
+        mode: "sync",
+        status: "applied",
+      },
       previousFloorId: "floor-4",
       summaries: ["summary-1"],
       totalTokens: 15,

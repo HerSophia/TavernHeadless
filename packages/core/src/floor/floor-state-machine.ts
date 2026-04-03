@@ -1,8 +1,23 @@
 import type { FloorState } from '@tavern/shared';
+import type { VariableEntry } from '@tavern/shared';
 import type { CoreEventBus } from '../events/index.js';
 import { FloorNotFoundError, FloorStateConflictError, InvalidStateTransitionError } from '../errors.js';
 import type { FloorEntity } from '../types.js';
 import type { FloorRepository } from '../ports/index.js';
+
+export interface PreparedFloorTransition {
+  floorId: string;
+  previousState: FloorState;
+  newState: FloorState;
+}
+
+export interface FloorTransitionResult extends PreparedFloorTransition {
+  floor: FloorEntity;
+}
+
+interface EmitFloorTransitionOptions {
+  promotedVariables?: VariableEntry[];
+}
 
 /**
  * 合法状态转移表
@@ -53,40 +68,67 @@ export class FloorStateMachine {
       throw new FloorNotFoundError(floorId);
     }
 
-    const previousState = floor.state;
-
-    if (!this.canTransition(previousState, targetState)) {
-      throw new InvalidStateTransitionError(previousState, targetState);
-    }
+    const prepared = this.prepareTransition(floor, targetState);
 
     const updated = await this.floorRepo.updateStateCas(
       floorId,
-      previousState,
-      targetState,
+      prepared.previousState,
+      prepared.newState,
       Date.now(),
     );
 
     if (!updated) {
       const current = await this.floorRepo.findById(floorId);
-      throw current ? new FloorStateConflictError(floorId, previousState, current.state) : new FloorNotFoundError(floorId);
+      throw current ? new FloorStateConflictError(floorId, prepared.previousState, current.state) : new FloorNotFoundError(floorId);
     }
 
-    // 广播通用状态变更事件
-    await this.eventBus.emit('floor.stateChanged', {
-      floor: updated,
-      previousState,
-      newState: targetState,
-    });
-
-    // 终态额外发出专用事件
-    if (targetState === 'committed') {
-      await this.eventBus.emit('floor.committed', {
-        floor: updated,
-        promotedVariables: [],  // 由 FloorLifecycle 填充
-      });
-    }
+    const transition = this.completeTransition(prepared, updated);
+    await this.emitTransitionEvents(transition);
 
     return updated;
+  }
+
+  prepareTransition(
+    floor: Pick<FloorEntity, 'id' | 'state'>,
+    targetState: FloorState,
+  ): PreparedFloorTransition {
+    if (!this.canTransition(floor.state, targetState)) {
+      throw new InvalidStateTransitionError(floor.state, targetState);
+    }
+
+    return {
+      floorId: floor.id,
+      previousState: floor.state,
+      newState: targetState,
+    };
+  }
+
+  completeTransition(
+    prepared: PreparedFloorTransition,
+    floor: FloorEntity,
+  ): FloorTransitionResult {
+    return {
+      ...prepared,
+      floor,
+    };
+  }
+
+  async emitTransitionEvents(
+    transition: FloorTransitionResult,
+    options: EmitFloorTransitionOptions = {},
+  ): Promise<void> {
+    await this.eventBus.emit('floor.stateChanged', {
+      floor: transition.floor,
+      previousState: transition.previousState,
+      newState: transition.newState,
+    });
+
+    if (transition.newState === 'committed') {
+      await this.eventBus.emit('floor.committed', {
+        floor: transition.floor,
+        promotedVariables: options.promotedVariables ?? [],
+      });
+    }
   }
 
   /** 便捷方法：draft → generating */
@@ -110,29 +152,21 @@ export class FloorStateMachine {
       throw new FloorNotFoundError(floorId);
     }
 
-    const previousState = floor.state;
-
-    if (!this.canTransition(previousState, 'failed')) {
-      throw new InvalidStateTransitionError(previousState, 'failed');
-    }
+    const prepared = this.prepareTransition(floor, 'failed');
 
     const updated = await this.floorRepo.updateStateCas(
       floorId,
-      previousState,
-      'failed',
+      prepared.previousState,
+      prepared.newState,
       Date.now(),
     );
 
     if (!updated) {
       const current = await this.floorRepo.findById(floorId);
-      throw current ? new FloorStateConflictError(floorId, previousState, current.state) : new FloorNotFoundError(floorId);
+      throw current ? new FloorStateConflictError(floorId, prepared.previousState, current.state) : new FloorNotFoundError(floorId);
     }
 
-    await this.eventBus.emit('floor.stateChanged', {
-      floor: updated,
-      previousState,
-      newState: 'failed',
-    });
+    await this.emitTransitionEvents(this.completeTransition(prepared, updated));
 
     await this.eventBus.emit('floor.failed', {
       floor: updated,

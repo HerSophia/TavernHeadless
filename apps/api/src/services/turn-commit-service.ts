@@ -11,11 +11,14 @@ import type {
   TurnExecutionResult,
 } from "@tavern/core";
 import {
+  FloorStateMachine,
   FloorNotFoundError,
   FloorStateConflictError,
+  InvalidStateTransitionError,
 } from "@tavern/core";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
+import { DrizzleFloorRepository } from "../adapters/drizzle-floor-repository.js";
 import {
   floors,
   floorResultSnapshots,
@@ -74,12 +77,19 @@ export interface TurnCommitInput {
   memoryCommit?: MemoryCommitInput;
 }
 
+export interface TurnCommitMemoryReceipt {
+  mode: "sync" | "async";
+  status: "applied" | "queued";
+  jobId?: string;
+}
+
 export interface TurnCommitResult {
   floorId: string;
   outputPageId: string;
   assistantMessageId: string;
   finalState: "committed";
   usage: TokenUsage;
+  memory?: TurnCommitMemoryReceipt;
 }
 
 export interface TurnCommitServiceOptions {
@@ -219,10 +229,12 @@ function toLegacyToolCallRecord(
   seq: number
 ): ToolCallRecord {
   let status: ToolCallRecord["status"];
-  if (record.status === "success" || record.status === "queued") {
+  if (record.status === "success") {
     status = "success";
   } else if (record.status === "denied" || record.status === "blocked") {
     status = "denied";
+  } else if (record.status === "queued" || record.status === "running") {
+    status = record.status;
   } else {
     status = "error";
   }
@@ -262,6 +274,7 @@ export class TurnCommitService {
   private readonly memoryJobScheduler: MemoryJobScheduler;
   private readonly floorRunService?: FloorRunService;
   private readonly toolRuntimeJobBridge?: ToolRuntimeJobBridge;
+  private readonly floorStateMachine: FloorStateMachine;
 
   constructor(
     private readonly db: AppDb,
@@ -279,6 +292,7 @@ export class TurnCommitService {
       eventBus: this.eventBus,
     });
     this.floorRunService = options.floorRunService;
+    this.floorStateMachine = new FloorStateMachine(new DrizzleFloorRepository(db), this.eventBus);
     this.toolRuntimeJobBridge = options.toolRuntimeJobBridge;
   }
 
@@ -314,9 +328,9 @@ export class TurnCommitService {
     committedAt: number;
     summaries: string[];
     enableConsolidation: boolean;
-  }): void {
+  }) {
     const userInputDigest = this.loadUserInputDigest(tx, args.floor.id, args.accountId);
-    this.memoryJobScheduler.enqueueIngestTurn(tx, {
+    return this.memoryJobScheduler.enqueueIngestTurn(tx, {
       accountId: args.accountId,
       sessionId: args.sessionId,
       floorId: args.floor.id,
@@ -363,9 +377,11 @@ export class TurnCommitService {
 
     let transactionResult: {
       floor: FloorEntity;
+      floorTransition: ReturnType<FloorStateMachine["completeTransition"]>;
       assistantMessage: { pageId: string; messageId: string };
       variableCommit: ReturnType<VariableCommitService["promoteAll"]>;
       variableMutationApply: { runAfterCommit(): Promise<void> };
+      memory?: TurnCommitMemoryReceipt;
     };
     try {
       transactionResult = this.db.transaction((tx) => {
@@ -458,18 +474,44 @@ export class TurnCommitService {
         )?.result as ReturnType<VariableCommitService["promoteAll"]> | undefined
           ?? createEmptyVariableCommitResult(input);
 
-        const updateResult = tx
+        const floorRow = tx
+          .select()
+          .from(floors)
+          .where(eq(floors.id, input.floorId))
+          .limit(1)
+          .all()[0];
+
+        if (!floorRow) {
+          throw new FloorNotFoundError(input.floorId);
+        }
+
+        let preparedFloorTransition: ReturnType<FloorStateMachine["prepareTransition"]>;
+        try {
+          preparedFloorTransition = this.floorStateMachine.prepareTransition(
+            toFloorEntity(floorRow),
+            "committed",
+          );
+        } catch (error) {
+          if (error instanceof InvalidStateTransitionError) {
+            throw new FloorStateConflictError(input.floorId, "generating", floorRow.state);
+          }
+
+          throw error;
+        }
+
+        const updatedFloorRow = tx
           .update(floors)
           .set({
             tokenIn: usage.promptTokens,
             tokenOut: usage.completionTokens,
             updatedAt: committedAt,
-            state: "committed",
+            state: preparedFloorTransition.newState,
           })
-          .where(and(eq(floors.id, input.floorId), eq(floors.state, "generating")))
-          .run();
+          .where(and(eq(floors.id, input.floorId), eq(floors.state, preparedFloorTransition.previousState)))
+          .returning()
+          .all()[0];
 
-        if (updateResult.changes !== 1) {
+        if (!updatedFloorRow) {
           const currentRow = tx
             .select({ id: floors.id, state: floors.state })
             .from(floors)
@@ -481,8 +523,10 @@ export class TurnCommitService {
             throw new FloorNotFoundError(input.floorId);
           }
 
-          throw new FloorStateConflictError(input.floorId, "generating", currentRow.state);
+          throw new FloorStateConflictError(input.floorId, preparedFloorTransition.previousState, currentRow.state);
         }
+
+        const floorTransition = this.floorStateMachine.completeTransition(preparedFloorTransition, toFloorEntity(updatedFloorRow));
 
         tx
           .insert(floorResultSnapshots)
@@ -529,23 +573,13 @@ export class TurnCommitService {
             .run();
         }
 
-        const floorRow = tx
-          .select()
-          .from(floors)
-          .where(eq(floors.id, input.floorId))
-          .limit(1)
-          .all()[0];
-
-        if (!floorRow) {
-          throw new FloorNotFoundError(input.floorId);
-        }
-
-        const floor = toFloorEntity(floorRow);
+        const floor = floorTransition.floor;
+        let memory: TurnCommitMemoryReceipt | undefined;
 
         if (input.memoryCommit) {
           try {
             if (this.enableAsyncMemoryIngest) {
-              this.enqueueIngestTurnJob(tx, {
+              const enqueuedMemory = this.enqueueIngestTurnJob(tx, {
                 accountId: input.accountId,
                 sessionId: input.sessionId,
                 floor,
@@ -554,6 +588,11 @@ export class TurnCommitService {
                 summaries: input.memoryCommit.summaries ?? [],
                 enableConsolidation: input.memoryCommit.enableConsolidation === true,
               });
+              memory = {
+                mode: "async",
+                status: "queued",
+                jobId: enqueuedMemory.jobId,
+              };
             } else {
               applyTransactionalMemoryMutations({
                 tx,
@@ -568,6 +607,10 @@ export class TurnCommitService {
                 sourceFloorId: input.floorId,
                 sourceMessageId: assistantMessage.messageId,
               });
+              memory = {
+                mode: "sync",
+                status: "applied",
+              };
             }
           } catch (error) {
             throw new MemoryPersistError(`Memory persist failed: ${normalizeError(error).message}`, error);
@@ -576,9 +619,11 @@ export class TurnCommitService {
 
         return {
           floor,
+          floorTransition,
           assistantMessage,
           variableCommit,
           variableMutationApply,
+          ...(memory ? { memory } : {}),
         };
       });
     } catch (error) {
@@ -608,9 +653,9 @@ export class TurnCommitService {
 
     await transactionResult.variableMutationApply.runAfterCommit();
     await this.emitPostCommitEvents(
-      transactionResult.floor,
+      transactionResult.floorTransition,
       transactionResult.variableCommit,
-      pendingEvents
+      pendingEvents,
     );
 
     try {
@@ -631,29 +676,19 @@ export class TurnCommitService {
       assistantMessageId: transactionResult.assistantMessage.messageId,
       finalState: "committed",
       usage,
+      memory: transactionResult.memory,
     };
   }
 
   private async emitPostCommitEvents(
-    floor: FloorEntity,
+    floorTransition: ReturnType<FloorStateMachine["completeTransition"]>,
     variableCommit: ReturnType<VariableCommitService["promoteAll"]>,
     pendingEvents: PendingCoreEvent[],
   ): Promise<void> {
     await emitPendingCoreEvents(this.eventBus, pendingEvents);
 
     try {
-      await this.eventBus.emit("floor.stateChanged", {
-        floor,
-        previousState: "generating",
-        newState: "committed",
-      });
-    } catch {
-      // best-effort
-    }
-
-    try {
-      await this.eventBus.emit("floor.committed", {
-        floor,
+      await this.floorStateMachine.emitTransitionEvents(floorTransition, {
         promotedVariables: variableCommit.promotedVariables,
       });
     } catch {
@@ -663,8 +698,8 @@ export class TurnCommitService {
     for (const variable of variableCommit.promotedVariables) {
       try {
         await this.eventBus.emit("variable.promoted", {
-          sessionId: floor.sessionId,
-          branchId: floor.branchId,
+          sessionId: floorTransition.floor.sessionId,
+          branchId: floorTransition.floor.branchId,
           key: variable.key,
           fromScope: variableCommit.fromScope,
           toScope: variableCommit.toScope,

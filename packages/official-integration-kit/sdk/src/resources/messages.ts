@@ -1,7 +1,7 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { TavernApiError } from "../errors/tavern-api-error.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
-import type { RespondGenerationParams, RespondResult, RespondTurnConfig } from "./sessions.js";
+import type { RespondGenerationParams, RespondMemoryReceipt, RespondResult, RespondTurnConfig } from "./sessions.js";
 import {
   compactObject,
   readArray,
@@ -388,6 +388,22 @@ function mapStringArray(value: unknown): string[] {
     .filter((item): item is string => item !== undefined);
 }
 
+function readRespondMemoryReceipt(value: unknown): RespondMemoryReceipt | undefined {
+  const record = readRecord(value);
+  const mode = readOptionalString(record?.mode);
+  const status = readOptionalString(record?.status);
+
+  if ((mode !== "sync" && mode !== "async") || (status !== "applied" && status !== "queued")) {
+    return undefined;
+  }
+
+  return {
+    jobId: readNullableString(record?.job_id),
+    mode,
+    status,
+  };
+}
+
 function mapRegeneratePayload(payload: Record<string, unknown> | null, errorMessage: string): RegenerateResult {
   const data = readRecord(payload?.data);
   const floorId = readOptionalString(data?.floor_id);
@@ -416,6 +432,7 @@ function mapRegeneratePayload(payload: Record<string, unknown> | null, errorMess
     generatedText: readString(data?.generated_text),
     inputTokens: resolveInputTokens(totalUsage),
     outputTokens: resolveOutputTokens(totalUsage),
+    memory: readRespondMemoryReceipt(data?.memory),
     sourceFloorId: readOptionalString(data?.source_floor_id),
     sourceMessageId: readOptionalString(data?.source_message_id),
     summaries: mapStringArray(data?.summaries),

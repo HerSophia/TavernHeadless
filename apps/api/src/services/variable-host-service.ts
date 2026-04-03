@@ -4,6 +4,7 @@ import { buildBranchVariableScopeId, parseBranchVariableScopeId, type VariableSc
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { floors, messagePages, sessions } from "../db/schema.js";
+import { getFloorContentMutationRejection } from "./floor-content-mutability-policy.js";
 import { VariableServiceError } from "./variable-service-errors.js";
 
 export const DEFAULT_GLOBAL_SCOPE_ID = "global";
@@ -139,7 +140,11 @@ export class VariableHostService {
   }
 
   assertWritableTarget(target: VariableTarget): void {
-    if ((target.scope === "floor" || target.scope === "page") && target.floorState === "committed") {
+    const rejection = (target.scope === "floor" || target.scope === "page")
+      ? getFloorContentMutationRejection({ mutationKind: "variable.write", floorState: target.floorState })
+      : null;
+
+    if (rejection) {
       throw new VariableServiceError(
         "variable_target_locked",
         `Variables on committed ${target.scope} targets are read-only`

@@ -141,14 +141,16 @@ export interface ToolCallResult {
 
 // ── Tool Call Record ──────────────────────────────────
 
-/** 工具调用状态（兼容旧 call-records 读模型） */
-export type ToolCallStatus = 'success' | 'error' | 'denied';
+/**
+ * 工具调用状态（兼容旧 call-records 读模型）。
+ *
+ * 兼容读面现在也允许暴露未完成态，避免把 `queued` / `running` 伪装成 `success`。
+ */
+export type ToolCallStatus = 'success' | 'error' | 'denied' | 'queued' | 'running';
 
 /** 真实执行日志状态 */
 export type ToolExecutionStatus =
   | ToolCallStatus
-  | 'running'
-  | 'queued'
   | 'timeout'
   | 'uncertain'
   | 'blocked';

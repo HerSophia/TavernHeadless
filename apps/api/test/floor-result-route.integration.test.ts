@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDatabase, type DatabaseConnection } from "../src/db/client.js";
 import { registerFloorRoutes } from "../src/routes/floors.js";
 import { accounts, floorResultSnapshots, floors, messagePages, messages, sessions } from "../src/db/schema.js";
+import { registerDevelopmentTestAuth } from "./helpers/register-test-auth.js";
 
 const DEFAULT_ACCOUNT_ID = "default-admin";
 
@@ -14,6 +15,7 @@ describe("GET /floors/:id/result", () => {
   beforeEach(async () => {
     database = createDatabase(":memory:");
     app = Fastify({ logger: false });
+    await registerDevelopmentTestAuth(app, database.db);
     await registerFloorRoutes(app, database);
 
     const now = 1_735_689_720_000;

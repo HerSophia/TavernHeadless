@@ -5650,7 +5650,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Query tool call records */
+        /** Query tool call records (legacy-compatible) */
         get: operations["queryToolCallRecords"];
         put?: never;
         post?: never;
@@ -11829,6 +11829,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     updateMessage: {
@@ -11941,6 +11958,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     batchDeleteMessages: {
@@ -12014,6 +12048,23 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12161,6 +12212,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     listPages: {
@@ -12242,7 +12310,6 @@ export interface operations {
                 "application/json": {
                     checksum?: string;
                     floor_id: string;
-                    is_active?: boolean;
                     /** @enum {string} */
                     page_kind: "input" | "output" | "mixed";
                     page_no: number;
@@ -12420,6 +12487,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     updatePage: {
@@ -12436,7 +12520,6 @@ export interface operations {
                 "application/json": {
                     checksum?: string;
                     floor_id?: string;
-                    is_active?: boolean;
                     /** @enum {string} */
                     page_kind?: "input" | "output" | "mixed";
                     page_no?: number;
@@ -12501,6 +12584,23 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
         };
     };
     activatePage: {
@@ -12538,6 +12638,23 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12609,6 +12726,23 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14557,6 +14691,7 @@ export interface operations {
                                 /** @enum {string} */
                                 availability: "available" | "unavailable" | "conflict";
                                 availability_reason?: string | null;
+                                catalog_source?: ("live" | "cached") | null;
                                 /** @enum {string} */
                                 default_delivery_mode: "inline" | "async_job";
                                 name: string;
@@ -14896,7 +15031,7 @@ export interface operations {
                             result: unknown;
                             seq: number;
                             /** @enum {string} */
-                            status: "success" | "error" | "denied";
+                            status: "success" | "error" | "denied" | "queued" | "running";
                             tool_name: string;
                         }[];
                         meta: {

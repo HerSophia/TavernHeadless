@@ -248,6 +248,9 @@ export class ToolService {
 
   // ── Call Records ──────────────────────────────────
 
+  /**
+   * 兼容读面。主审计真相源请优先使用 `queryExecutionRecords()` / `tool_execution_record`。
+   */
   async queryCallRecords(query: ToolCallRecordQuery): Promise<{
     records: ToolCallRecordResponse[];
     total: number;

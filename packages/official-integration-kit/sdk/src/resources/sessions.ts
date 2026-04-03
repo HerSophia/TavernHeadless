@@ -141,6 +141,12 @@ export type SessionActiveRunRecord = {
 
 export type RespondFinalState = "draft" | "generating" | "committed" | "failed";
 
+export type RespondMemoryReceipt = {
+  jobId: string | null;
+  mode: "sync" | "async";
+  status: "applied" | "queued";
+};
+
 export type RespondResult = {
   branchId?: string;
   finalState?: RespondFinalState;
@@ -149,6 +155,7 @@ export type RespondResult = {
   generatedText: string;
   inputTokens: number;
   outputTokens: number;
+  memory?: RespondMemoryReceipt;
   summaries: string[];
   totalTokens: number;
   totalUsage: ApiUsage;
@@ -201,12 +208,14 @@ export type SessionRuntimeToolSlot = "narrator" | "director" | "verifier" | "mem
 export type SessionRuntimeToolAsyncCapability = "inline_only" | "deferred_ok";
 export type SessionRuntimeToolDeliveryMode = "inline" | "async_job";
 export type SessionRuntimeToolResultVisibility = "immediate" | "deferred_receipt";
+export type SessionRuntimeToolCatalogSource = "live" | "cached";
 
 export type SessionRuntimeToolCatalogEntry = {
   allowedSlots: SessionRuntimeToolSlot[];
   asyncCapability: SessionRuntimeToolAsyncCapability;
   availability: SessionRuntimeToolAvailability;
   availabilityReason: string | null;
+  catalogSource: SessionRuntimeToolCatalogSource | null;
   defaultDeliveryMode: SessionRuntimeToolDeliveryMode;
   name: string;
   providerId: string;
@@ -745,6 +754,7 @@ function mapDonePayload(payload: {
   generatedText?: string;
   summaries?: string[];
   totalUsage?: unknown;
+  memory?: RespondMemoryReceipt;
 }): RespondResult {
   const totalUsage = toApiUsage(payload.totalUsage);
 
@@ -756,6 +766,7 @@ function mapDonePayload(payload: {
     generatedText: payload.generatedText ?? "",
     inputTokens: resolveInputTokens(totalUsage),
     outputTokens: resolveOutputTokens(totalUsage),
+    memory: payload.memory,
     summaries: payload.summaries ?? [],
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
@@ -889,6 +900,22 @@ function mapDryRunPayload(payload: Record<string, unknown> | null): RespondDryRu
   };
 }
 
+function readRespondMemoryReceipt(value: unknown): RespondMemoryReceipt | undefined {
+  const record = readRecord(value);
+  const mode = readOptionalString(record?.mode);
+  const status = readOptionalString(record?.status);
+
+  if ((mode !== "sync" && mode !== "async") || (status !== "applied" && status !== "queued")) {
+    return undefined;
+  }
+
+  return {
+    jobId: readNullableString(record?.job_id),
+    mode,
+    status,
+  };
+}
+
 function mapRespondPayload(payload: Record<string, unknown> | null, errorMessage: string): RespondResult {
   const data = readRecord(payload?.data);
   const floorId = readOptionalString(data?.floor_id);
@@ -911,6 +938,7 @@ function mapRespondPayload(payload: Record<string, unknown> | null, errorMessage
     generatedText: readString(data?.generated_text),
     inputTokens: resolveInputTokens(totalUsage),
     outputTokens: resolveOutputTokens(totalUsage),
+    memory: readRespondMemoryReceipt(data?.memory),
     summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
@@ -939,6 +967,7 @@ function mapRegeneratePayload(payload: Record<string, unknown> | null, errorMess
     generatedText: readString(data?.generated_text),
     inputTokens: resolveInputTokens(totalUsage),
     outputTokens: resolveOutputTokens(totalUsage),
+    memory: readRespondMemoryReceipt(data?.memory),
     previousFloorId: readOptionalString(data?.previous_floor_id),
     summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
@@ -1254,6 +1283,7 @@ function mapRuntimeToolCatalogEntry(value: unknown): SessionRuntimeToolCatalogEn
     asyncCapability: readString(record.async_capability, "inline_only") as SessionRuntimeToolCatalogEntry["asyncCapability"],
     availability: readString(record.availability, "unavailable") as SessionRuntimeToolCatalogEntry["availability"],
     availabilityReason: readNullableString(record.availability_reason),
+    catalogSource: readNullableString(record.catalog_source) as SessionRuntimeToolCatalogEntry["catalogSource"],
     defaultDeliveryMode: readString(record.default_delivery_mode, "inline") as SessionRuntimeToolCatalogEntry["defaultDeliveryMode"],
     name: readString(record.name),
     providerId: readString(record.provider_id),

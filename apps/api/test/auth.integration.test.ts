@@ -36,8 +36,16 @@ describe("Auth integration", () => {
     it("keeps health/version/docs public and protects business routes", async () => {
       const server = app!;
 
+      server.get("/docs/public-auth-context", async (request) => ({
+        auth: request.authContext ?? null,
+      }));
+
       const healthRes = await server.inject({ method: "GET", url: "/health" });
       expect(healthRes.statusCode).toBe(200);
+
+      const publicAuthContextRes = await server.inject({ method: "GET", url: "/docs/public-auth-context" });
+      expect(publicAuthContextRes.statusCode, publicAuthContextRes.body).toBe(200);
+      expect(publicAuthContextRes.json()).toEqual({ auth: { kind: "public" } });
 
       const versionRes = await server.inject({ method: "GET", url: "/version" });
       expect(versionRes.statusCode).toBe(200);

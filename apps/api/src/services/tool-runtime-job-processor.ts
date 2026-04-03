@@ -80,9 +80,20 @@ class ToolExecuteJobProcessor implements RuntimeJobProcessor<ToolExecuteJobPaylo
       );
     }
 
+    await context.updateProgress({
+      phase: "executing",
+      progressCurrent: 0,
+      progressTotal: 1,
+      progressMessage: `executing ${envelope.toolName}`,
+      state: { executionId: envelope.executionId },
+      stateMode: "merge",
+    });
+
     let result;
     try {
-      result = await handler.execute(envelope);
+      result = await context.withHeartbeat(async () => {
+        return await handler.execute(envelope);
+      });
     } catch (error) {
       result = {
         error: error instanceof Error ? error.message : String(error),

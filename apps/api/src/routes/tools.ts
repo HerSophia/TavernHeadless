@@ -37,7 +37,7 @@ const sideEffectLevelSchema = z.enum(["none", "sandbox", "irreversible"]);
 const toolSourceSchema = z.enum(["preset", "character", "custom"]);
 const handlerTypeSchema = z.enum(["script", "prompt", "delegate"]);
 const instanceSlotSchema = z.enum(["narrator", "director", "verifier", "memory"]);
-const callRecordStatusSchema = z.enum(["success", "error", "denied"]);
+const callRecordStatusSchema = z.enum(["success", "error", "denied", "queued", "running"]);
 const toolExecutionStatusSchema = z.enum(["running", "queued", "success", "error", "denied", "timeout", "uncertain", "blocked"]);
 const toolExecutionLifecycleStateSchema = z.enum(["opened", "finished"]);
 const toolExecutionCommitOutcomeSchema = z.enum(["pending", "committed", "discarded", "replay_blocked", "uncertain"]);
@@ -239,7 +239,7 @@ const callRecordJsonSchema = {
     tool_name: { type: "string" },
     args: {},
     result: {},
-    status: { type: "string", enum: ["success", "error", "denied"] },
+    status: { type: "string", enum: ["success", "error", "denied", "queued", "running"] },
     duration_ms: { type: "integer", minimum: 0 },
     created_at: { type: "integer", minimum: 0 },
   },
@@ -761,7 +761,7 @@ export async function registerToolRoutes(
   app.get("/tools/call-records", {
     schema: {
       tags: ["tools"],
-      summary: "Query tool call records",
+      summary: "Query tool call records (legacy-compatible)",
       operationId: "queryToolCallRecords",
       querystring: callRecordsQueryJsonSchema,
       response: {

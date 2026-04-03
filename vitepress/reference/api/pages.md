@@ -4,7 +4,13 @@ outline: [2, 3]
 
 # Pages（消息页）
 
-消息页是楼层内的版本容器。每次重新生成通常会在同一楼层下创建新的消息页。`PATCH /pages/:id/activate` 会把同楼层的其他 active page 取消激活，但 `POST /pages`、`PATCH /pages/:id` 和数据库层目前都没有全局唯一 active page 约束。
+消息页是楼层内的版本容器。系统当前的 active 不变量是：同一 `(floor_id, page_no)` 最多只能有一个 `is_active = true` 的版本。
+
+这不是“同一楼层只能有一个 active page”。因此：
+
+- `page_no = 0` 的 input 页和 `page_no = 1` 的 output 页可以同时处于 active 状态
+- `PATCH /pages/:id/activate` 只会切换目标页所在的同一 `(floor_id, page_no)` 槽位
+- `POST /pages` 和 `PATCH /pages/:id` 不再接受公开的 `is_active` 写入
 
 ## Page 对象
 
@@ -33,19 +39,24 @@ POST /pages
 | `floor_id` | string | **是** | 所属楼层 ID |
 | `page_no` | integer | **是** | 页序号 |
 | `page_kind` | string | **是** | 类型：`input` / `output` / `mixed` |
-| `is_active` | boolean | 否 | 是否激活 |
 | `version` | integer | 否 | 版本号 |
 | `checksum` | string | 否 | 校验和 |
 
+### 说明
+
+- 公开请求体不再接受 `is_active`
+- 如果旧客户端仍发送 `is_active`，会收到 `400 validation_error`
+- active 版本的选择由内部服务处理，而不是由公开写接口直接控制
+
 ### 响应 `201`
 
-返回 `{ "data": Page }` 。
+返回 `{ "data": Page }`。
 
 ### 错误
 
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
-| `400` | `validation_error` | 请求体校验失败 |
+| `400` | `validation_error` | 请求体校验失败，包括仍发送 `is_active` |
 | `404` | `not_found` | 所属 floor 不存在 |
 | `409` | `conflict` | 页唯一性等约束冲突 |
 
@@ -69,7 +80,7 @@ GET /pages
 
 ### 响应 `200`
 
-返回 `{ "data": Page[], "meta": ListMeta }` 。
+返回 `{ "data": Page[], "meta": ListMeta }`。
 
 ## 获取消息页详情
 
@@ -83,6 +94,12 @@ GET /pages/:id
 PATCH /pages/:id
 ```
 
+### 说明
+
+- 公开请求体不再接受 `is_active`
+- 如果需要切换当前激活版本，必须使用 `PATCH /pages/:id/activate`
+- 旧客户端如果继续发送 `is_active`，会收到 `400 validation_error`
+
 ## 删除消息页
 
 ```http
@@ -95,11 +112,27 @@ DELETE /pages/:id
 PATCH /pages/:id/activate
 ```
 
-将指定消息页设为当前激活页。这个端点会在同一楼层内取消其他 active page，但这只是 activate 路径上的行为，不代表系统在所有写路径上都强制保证“同楼层只能有一个 active page”。
+将指定消息页设为当前激活页。
+
+### 语义
+
+- 这个端点是事务化的
+- 它只会切换目标页所在的同一 `(floor_id, page_no)` 槽位
+- 它不会清空同一楼层中其他 `page_no` 槽位的 active 页
+- `page_kind = "input"` 的页不允许通过这个端点激活
+- committed 楼层中，公开 page 变更只保留这个受约束的激活路径
 
 ### 响应 `200`
 
 返回激活后的 Page 对象。
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 目标页不允许激活，例如 `page_kind = "input"` |
+| `404` | `not_found` | 消息页不存在，或不属于当前账号 |
+| `409` | `conflict` | 激活事务中的约束冲突 |
 
 ## 批量删除消息页
 

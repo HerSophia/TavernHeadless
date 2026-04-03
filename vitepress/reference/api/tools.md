@@ -16,10 +16,66 @@ outline: [2, 3]
 | 能力 | 路径 | 说明 |
 | ---- | ---- | ---- |
 | 内置工具定义列表 | `GET /tools/builtin` | 只返回当前 `BuiltinToolProvider` 可公开的工具定义，不等于完整运行时目录 |
-| 会话运行时工具目录 | `GET /sessions/:id/tools/runtime` | 返回某个会话实际可见的完整运行时工具目录，可能包含 builtin、resource、MCP 工具 |
-| 执行 journal | `GET /tool-executions` / `GET /floors/:id/tool-executions` | 返回执行生命周期、提交结果、投递模式和异步 job 关联信息 |
-| 调用记录 | `GET /tools/call-records` | 返回较旧的页级调用记录，适合查看最终入页结果 |
+| 会话运行时工具目录 | `GET /sessions/:id/tools/runtime` | 返回某个会话实际可见的完整运行时工具目录，可能包含 builtin、resource、MCP 工具，并标记 MCP 目录来自 `live` 还是 `cached` |
+| 执行 journal | `GET /tool-executions` / `GET /floors/:id/tool-executions` | 返回主执行审计记录。新的工具审计应优先读取这里，对应 `tool_execution_record` |
+| 调用记录 | `GET /tools/call-records` | 返回兼容页级调用记录，对应 `tool_call_record`，只用于旧读取面 |
 | 会话权限 | `GET/PUT/PATCH /sessions/:id/tool-permissions` | 读取或修改单个会话的工具权限快照 |
+
+## 会话运行时工具目录
+
+### 获取会话运行时工具目录
+
+```http
+GET /sessions/:id/tools/runtime
+```
+
+这个端点返回某个会话在当前权限、启用状态和 MCP 连接状态下真正可调用的工具集合。
+
+- 它是**会话级**快照，不是全局静态目录
+- MCP 工具 live 列举成功时，`catalog_source` 为 `live`
+- MCP 工具 live 列举失败但已有快照时，`catalog_source` 为 `cached`
+- 非 MCP 工具的 `catalog_source` 为 `null`
+
+#### 响应 `200`
+
+```json
+{
+  "data": {
+    "session_id": "sess_001",
+    "generated_at": 1735689600000,
+    "tools": [
+      {
+        "name": "github_create_issue",
+        "provider_id": "mcp:mcp-1",
+        "provider_type": "mcp",
+        "source": "mcp",
+        "side_effect_level": "irreversible",
+        "allowed_slots": ["narrator"],
+        "availability": "available",
+        "availability_reason": null,
+        "async_capability": "deferred_ok",
+        "default_delivery_mode": "async_job",
+        "catalog_source": "cached",
+        "replay_safety": "never_auto_replay",
+        "result_visibility": "deferred_receipt"
+      }
+    ],
+    "conflicts": []
+  }
+}
+```
+
+#### 关键字段
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `availability` | string | `available` / `unavailable` / `conflict` |
+| `availability_reason` | string \| null | 当前不可用或冲突时的原因 |
+| `async_capability` | string | `inline_only` / `deferred_ok` |
+| `default_delivery_mode` | string | `inline` / `async_job` |
+| `catalog_source` | string \| null | MCP 目录来源：`live` / `cached`；非 MCP 工具为 `null` |
+| `replay_safety` | string | `safe` / `confirm_on_replay` / `never_auto_replay` / `uncertain` |
+| `result_visibility` | string | `immediate` / `deferred_receipt` |
 
 ## 内置工具
 
@@ -371,7 +427,7 @@ GET /tools/call-records
 
 至少需要提供 `page_id` 或 `floor_id` 之一。
 
-这个端点返回的是较旧的页级调用记录视图。它适合查看最终入页的工具调用结果，但不覆盖 `queued`、`delivery_mode`、`runtime_job_id` 这类执行 journal 字段。
+这个端点返回的是较旧的页级调用记录视图。它适合查看兼容页级结果，但新的工具审计应优先读取 `GET /tool-executions`。该兼容面现在也可能返回 `queued` / `running`，但仍不会覆盖 `delivery_mode`、`runtime_job_id` 等主执行 journal 字段。
 
 #### 查询参数
 
@@ -380,7 +436,7 @@ GET /tools/call-records
 | `page_id` | string | — | 按消息页 ID 过滤 |
 | `floor_id` | string | — | 按楼层 ID 过滤，返回该楼层下所有页的记录 |
 | `caller_slot` | string | — | 按调用方实例过滤 |
-| `status` | string | — | 按状态过滤：`success` / `error` / `denied` |
+| `status` | string | — | 按状态过滤：`success` / `error` / `denied` / `queued` / `running` |
 | `sort_by` | string | `seq` | 排序字段：`seq` / `created_at` |
 | `sort_order` | string | `desc` | 排序方向：`asc` / `desc` |
 | `limit` | integer | `50` | 每页条数 |

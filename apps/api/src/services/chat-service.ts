@@ -79,8 +79,9 @@ import {
   type GenerationExecutionMode,
   GenerationGuardService,
 } from "./generation-guard-service.js";
-import { TurnCommitService } from "./turn-commit-service.js";
+import { TurnCommitService, type TurnCommitMemoryReceipt } from "./turn-commit-service.js";
 import type { FloorRunService } from "./floor-run-service.js";
+import { OwnedMessageRepository, OwnedSessionRepository } from "./owned-resource-repositories.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
@@ -114,6 +115,8 @@ export interface RespondResult {
   finalState: "committed";
   /** 实际写入的分支 */
   branchId: string;
+  /** 记忆提交 / 入队回执（若当前会话启用了记忆持久化） */
+  memory?: TurnCommitMemoryReceipt;
 }
 
 /** /respond/dry-run 请求体 */
@@ -165,6 +168,8 @@ export interface RegenerateResult {
   totalUsage: TurnExecutionResult["totalUsage"];
   /** 最终状态 */
   finalState: "committed";
+  /** 记忆提交 / 入队回执（若当前会话启用了记忆持久化） */
+  memory?: TurnCommitMemoryReceipt;
 }
 
 /** /floors/:id/retry 请求体 */
@@ -193,6 +198,8 @@ export interface RetryFloorResult {
   totalUsage: TurnExecutionResult["totalUsage"];
   /** 最终状态 */
   finalState: "committed";
+  /** 记忆提交 / 入队回执（若当前会话启用了记忆持久化） */
+  memory?: TurnCommitMemoryReceipt;
 }
 
 interface ReplayBlockingExecutionDetail {
@@ -218,6 +225,8 @@ export interface EditAndRegenerateRequest extends RetryFloorRequest {
 export interface EditAndRegenerateResult extends RetryFloorResult {
   sourceFloorId: string;
   sourceMessageId: string;
+  /** 记忆提交 / 入队回执（若当前会话启用了记忆持久化） */
+  memory?: TurnCommitMemoryReceipt;
 }
 
 export interface RespondRuntimeToolEvent {
@@ -617,6 +626,7 @@ export class ChatService {
             totalUsage: commit.usage,
             finalState: commit.finalState,
             branchId,
+            memory: commit.memory,
           };
         } catch (error) {
           await this.tryMarkRunFailed(floorId, error, "respond_failed");
@@ -873,6 +883,7 @@ export class ChatService {
         summaries: execution.summaries,
         totalUsage: commit.usage,
         finalState: commit.finalState,
+        memory: commit.memory,
       };
       } catch (error) {
         await this.tryMarkRunFailed(newFloorId, error, "regenerate_failed");
@@ -1051,6 +1062,7 @@ export class ChatService {
           generatedText: execution.generatedText,
           summaries: execution.summaries,
           totalUsage: commit.usage,
+          memory: commit.memory,
           finalState: commit.finalState,
         };
         } catch (error) {
@@ -1693,11 +1705,7 @@ export class ChatService {
   }
 
   private async getSession(sessionId: string, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID) {
-    const [row] = await this.db
-      .select()
-      .from(sessions)
-      .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)));
-    return row ?? null;
+    return new OwnedSessionRepository(this.db).getById(accountId, sessionId);
   }
 
   private async resolveEditableMessage(
@@ -1710,24 +1718,7 @@ export class ChatService {
     branchId: string;
     sessionId: string;
   }> {
-    const [row] = await this.db
-      .select({
-        messageId: messages.id,
-        role: messages.role,
-        pageKind: messagePages.pageKind,
-        pageIsActive: messagePages.isActive,
-        floorId: floors.id,
-        floorNo: floors.floorNo,
-        floorState: floors.state,
-        branchId: floors.branchId,
-        sessionId: floors.sessionId,
-      })
-      .from(messages)
-      .innerJoin(messagePages, eq(messages.pageId, messagePages.id))
-      .innerJoin(floors, eq(messagePages.floorId, floors.id))
-      .innerJoin(sessions, eq(floors.sessionId, sessions.id))
-      .where(and(eq(messages.id, messageId), eq(sessions.accountId, accountId)))
-      .limit(1);
+    const row = new OwnedMessageRepository(this.db).getContextById(accountId, messageId);
 
     if (!row) {
       throw new ChatServiceError("message_not_found", `Message '${messageId}' not found`);
@@ -1752,7 +1743,7 @@ export class ChatService {
     }
 
     return {
-      messageId: row.messageId,
+      messageId: row.id,
       floorId: row.floorId,
       floorNo: row.floorNo,
       branchId: row.branchId,
@@ -1885,6 +1876,7 @@ export class ChatService {
       generatedText: execution.generatedText,
       summaries: execution.summaries,
       totalUsage: commit.usage,
+      memory: commit.memory,
       finalState: commit.finalState,
     };
     } catch (error) {
@@ -2434,12 +2426,27 @@ export class ChatService {
     branchId: string,
     sourceFloorId?: string
   ): Promise<{ nextFloorNo: number; parentFloorId: string | null }> {
+    const generatingFloorInBranch = await this.historyLoader.getLatestGeneratingFloorInBranch(sessionId, branchId);
+
+    if (generatingFloorInBranch) {
+      throw new ChatServiceError(
+        "invalid_state",
+        `Branch '${branchId}' already has a generating floor '${generatingFloorInBranch.id}'`
+      );
+    }
+
     const lastFloorInBranch = await this.historyLoader.getLatestFloorInBranch(sessionId, branchId);
+    const lastCommittedFloorInBranch = await this.historyLoader.getLatestCommittedFloorInBranch(
+      sessionId,
+      branchId,
+    );
 
     if (lastFloorInBranch) {
       return {
         nextFloorNo: lastFloorInBranch.floorNo + 1,
-        parentFloorId: lastFloorInBranch.id,
+        parentFloorId: lastCommittedFloorInBranch?.id
+          ?? lastFloorInBranch.parentFloorId
+          ?? null,
       };
     }
 

@@ -315,6 +315,7 @@ export async function registerChatRoutes(
         generated_text: result.generatedText,
         summaries: result.summaries,
         total_usage: mapUsageToSnakeCase(result.totalUsage),
+        memory: mapMemoryToSnakeCase(result.memory),
         final_state: result.finalState,
       });
       completed = true;
@@ -388,6 +389,7 @@ export async function registerChatRoutes(
           generated_text: result.generatedText,
           summaries: result.summaries,
           total_usage: mapUsageToSnakeCase(result.totalUsage),
+          memory: mapMemoryToSnakeCase(result.memory),
           final_state: result.finalState,
         },
       });
@@ -446,6 +448,7 @@ export async function registerChatRoutes(
           generated_text: result.generatedText,
           summaries: result.summaries,
           total_usage: mapUsageToSnakeCase(result.totalUsage),
+          memory: mapMemoryToSnakeCase(result.memory),
           final_state: result.finalState,
         },
       });
@@ -498,6 +501,7 @@ export async function registerChatRoutes(
           generated_text: result.generatedText,
           summaries: result.summaries,
           total_usage: mapUsageToSnakeCase(result.totalUsage),
+          memory: mapMemoryToSnakeCase(result.memory),
           final_state: result.finalState,
         },
       });
@@ -548,6 +552,7 @@ export async function registerChatRoutes(
           generated_text: result.generatedText,
           summaries: result.summaries,
           total_usage: mapUsageToSnakeCase(result.totalUsage),
+          memory: mapMemoryToSnakeCase(result.memory),
           final_state: result.finalState,
         },
       });
@@ -582,6 +587,18 @@ function mapUsageToSnakeCase(usage: { promptTokens: number; completionTokens: nu
     prompt_tokens: usage.promptTokens,
     completion_tokens: usage.completionTokens,
     total_tokens: usage.totalTokens,
+  };
+}
+
+function mapMemoryToSnakeCase(memory: { mode: "sync" | "async"; status: "applied" | "queued"; jobId?: string } | undefined) {
+  if (!memory) {
+    return undefined;
+  }
+
+  return {
+    mode: memory.mode,
+    status: memory.status,
+    job_id: memory.jobId ?? null,
   };
 }
 
