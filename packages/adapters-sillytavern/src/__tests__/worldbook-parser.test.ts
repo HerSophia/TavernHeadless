@@ -50,6 +50,7 @@ describe('parseWorldBook', () => {
 
     const wb = parseWorldBook(json);
     expect(wb.entries).toHaveLength(1);
+    expect(wb.entries[0]!.key).toEqual(['dragon']);
     expect(wb.entries[0]!.keysecondary).toEqual(['fire']);
     expect(wb.entries[0]!.order).toBe(50);
     expect(wb.entries[0]!.disable).toBe(false);
@@ -69,6 +70,10 @@ describe('parseWorldBook', () => {
             scan_depth: 5,
             case_sensitive: true,
             match_whole_words: true,
+            exclude_recursion: true,
+            prevent_recursion: true,
+            delay_until_recursion: 2,
+            outlet_name: 'LoreOutlet',
           },
         },
       },
@@ -83,6 +88,10 @@ describe('parseWorldBook', () => {
     expect(entry.scanDepth).toBe(5);
     expect(entry.caseSensitive).toBe(true);
     expect(entry.matchWholeWords).toBe(true);
+    expect(entry.excludeRecursion).toBe(true);
+    expect(entry.preventRecursion).toBe(true);
+    expect(entry.delayUntilRecursion).toBe(2);
+    expect(entry.outletName).toBe('LoreOutlet');
   });
 
   it('maps v2 enabled to disable', () => {
@@ -115,6 +124,19 @@ describe('parseWorldBook', () => {
     expect(parseWorldBook({ entries: [] }, 'My Book').name).toBe('My Book');
     expect(parseWorldBook({ entries: [], name: 'JSON Name' }).name).toBe('JSON Name');
     expect(parseWorldBook({ entries: [] }).name).toBe('Unnamed');
+  });
+
+  it('parses top-level global settings', () => {
+    const wb = parseWorldBook({
+      entries: [],
+      scanDepth: 5,
+      caseSensitive: true,
+      matchWholeWords: true,
+      recursive: true,
+      maxRecursionSteps: 4,
+    });
+
+    expect(wb).toMatchObject({ scanDepth: 5, caseSensitive: true, matchWholeWords: true, recursive: true, maxRecursionSteps: 4 });
   });
 
   it('fills default global settings', () => {

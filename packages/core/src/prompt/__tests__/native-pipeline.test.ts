@@ -95,6 +95,30 @@ describe('assembleNativePrompt', () => {
     expect(afterSection?.messages[0]?.content).toBe('After lore: Excalibur');
   });
 
+  it('keeps depth worldbook entries as dedicated sections', () => {
+    const ir = assembleNativePrompt({
+      systemPrompt: 'System prompt',
+      chatHistory: [{ role: 'user', content: 'The sword is here.' }],
+      worldbookEntries: [
+        { id: 'wb-depth', content: 'Depth lore: {{item}}', position: 'depth', depth: 2, role: 'user' },
+      ],
+      variables: { item: 'Excalibur' },
+      maxTokens: 2048,
+      reservedForReply: 256,
+    });
+
+    const orderedSections = [...ir.sections].sort((a, b) => a.order - b.order);
+    expect(orderedSections.map((section) => section.name)).toEqual([
+      'nativeSystem',
+      'chatHistory',
+      'worldbookDepth:2',
+    ]);
+
+    const depthSection = ir.sections.find((section) => section.name === 'worldbookDepth:2');
+    expect(depthSection?.messages[0]?.role).toBe('user');
+    expect(depthSection?.messages[0]?.content).toBe('Depth lore: Excalibur');
+  });
+
   it('injects memory summary after system section in native pipeline', () => {
     const ir = assembleNativePrompt({
       systemPrompt: 'You are {{char}}.',

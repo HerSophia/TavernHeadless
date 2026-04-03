@@ -132,6 +132,8 @@
 | `floor_no` | `INTEGER` | `NOT NULL` | 楼层编号 |
 | `branch_id` | `TEXT` | `NOT NULL`, default `main` | 分支标识 |
 | `parent_floor_id` | `TEXT` | `NULL` | 父楼层 ID |
+| `superseded_at` | `INTEGER` | `NULL` | 被替代时间戳（ms） |
+| `superseded_by_floor_id` | `TEXT` | `NULL` | 替代它的新楼层 ID |
 | `state` | `TEXT` | `NOT NULL`, default `draft` | 楼层状态 |
 | `metadata_json` | `TEXT` | `NULL` | 楼层元信息（含 `user_binding`） |
 | `token_in` | `INTEGER` | `NOT NULL`, default `0` | 输入 token 计数 |
@@ -143,8 +145,14 @@
 - `state`: `draft | generating | committed | failed`
 
 索引：
-- 唯一索引 `floor_session_no_branch_uq(session_id, floor_no, branch_id)`
+- 部分唯一索引 `floor_session_no_branch_live_uq(session_id, floor_no, branch_id) WHERE superseded_at IS NULL`
 - 普通索引 `floor_session_branch_state_no_idx(session_id, branch_id, state, floor_no)`
+- 部分索引 `floor_session_branch_live_state_no_idx(session_id, branch_id, state, floor_no) WHERE superseded_at IS NULL`
+
+说明：
+
+- `superseded_at IS NULL` 表示 live floor
+- `superseded_at IS NOT NULL` 表示该楼层已经被后续 regenerate 替代，但记录仍保留用于审计与追溯
 
 ## `message_page`
 
@@ -294,6 +302,40 @@
 ### `worldbook`
 - 同 `preset` 结构，字段含义对应世界书。
 - 索引：`worldbook_account_updated_idx(account_id, updated_at)`
+
+### `worldbook_entry`
+
+世界书条目表。`worldbook.data_json` 只保留世界书级全局设置，具体条目落在该表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 条目 ID |
+| `worldbook_id` | `TEXT` | `NOT NULL`, FK -> `worldbook.id` ON DELETE CASCADE | 所属世界书 |
+| `uid` | `INTEGER` | `NOT NULL` | ST 兼容 UID |
+| `comment` | `TEXT` | `NOT NULL`, default `''` | 标题/备注 |
+| `content` | `TEXT` | `NOT NULL`, default `''` | 条目内容 |
+| `keys_json` | `TEXT` | `NOT NULL`, default `'[]'` | 主关键词数组 |
+| `keys_secondary_json` | `TEXT` | `NOT NULL`, default `'[]'` | 辅助关键词数组 |
+| `selective` | `INTEGER` | `NOT NULL`, default `1` | selective 开关 |
+| `selective_logic` | `INTEGER` | `NOT NULL`, default `0` | selective 逻辑 |
+| `constant` | `INTEGER` | `NOT NULL`, default `0` | 常驻条目 |
+| `position` | `INTEGER` | `NOT NULL`, default `0` | 插入位置（含 `outlet=7`） |
+| `order` | `INTEGER` | `NOT NULL`, default `100` | 插入优先级 |
+| `depth` | `INTEGER` | `NOT NULL`, default `4` | depth 值 |
+| `role` | `INTEGER` | `NOT NULL`, default `0` | depth 角色 |
+| `disable` | `INTEGER` | `NOT NULL`, default `0` | 是否禁用 |
+| `scan_depth` | `INTEGER` | `NULL` | 独立扫描深度 |
+| `case_sensitive` | `INTEGER` | `NULL` | 独立大小写设置 |
+| `match_whole_words` | `INTEGER` | `NULL` | 独立全词匹配 |
+| `exclude_recursion` | `INTEGER` | `NOT NULL`, default `0` | 递归轮跳过该条目 |
+| `prevent_recursion` | `INTEGER` | `NOT NULL`, default `0` | 不让内容进入递归缓冲区 |
+| `delay_until_recursion` | `INTEGER` | `NULL` | 至少递归到指定层级后才允许命中 |
+| `outlet_name` | `TEXT` | `NOT NULL`, default `''` | outlet 名称 |
+| `extra_json` | `TEXT` | `NOT NULL`, default `'{}'` | 暂未接运行时的扩展字段 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+- 索引：`wb_entry_worldbook_order_idx(worldbook_id, order)`、`wb_entry_worldbook_updated_idx(worldbook_id, updated_at)`
 
 ### `regex_profile`
 - 同 `preset` 结构，字段含义对应正则配置。

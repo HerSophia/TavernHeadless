@@ -4689,6 +4689,26 @@
                             ],
                             "type": "string"
                           },
+                          "superseded_at": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "superseded_by_floor_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "token_in": {
                             "minimum": 0,
                             "type": "integer"
@@ -4712,6 +4732,8 @@
                           "token_in",
                           "token_out",
                           "created_at",
+                          "superseded_at",
+                          "superseded_by_floor_id",
                           "updated_at"
                         ],
                         "type": "object"
@@ -4905,6 +4927,26 @@
                           ],
                           "type": "string"
                         },
+                        "superseded_at": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "superseded_by_floor_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "token_in": {
                           "minimum": 0,
                           "type": "integer"
@@ -4928,6 +4970,8 @@
                         "token_in",
                         "token_out",
                         "created_at",
+                        "superseded_at",
+                        "superseded_by_floor_id",
                         "updated_at"
                       ],
                       "type": "object"
@@ -5191,6 +5235,26 @@
                           ],
                           "type": "string"
                         },
+                        "superseded_at": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "superseded_by_floor_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "token_in": {
                           "minimum": 0,
                           "type": "integer"
@@ -5214,6 +5278,8 @@
                         "token_in",
                         "token_out",
                         "created_at",
+                        "superseded_at",
+                        "superseded_by_floor_id",
                         "updated_at"
                       ],
                       "type": "object"
@@ -5372,6 +5438,26 @@
                           ],
                           "type": "string"
                         },
+                        "superseded_at": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "superseded_by_floor_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "token_in": {
                           "minimum": 0,
                           "type": "integer"
@@ -5395,6 +5481,8 @@
                         "token_in",
                         "token_out",
                         "created_at",
+                        "superseded_at",
+                        "superseded_by_floor_id",
                         "updated_at"
                       ],
                       "type": "object"

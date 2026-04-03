@@ -106,12 +106,18 @@ outline: [2, 3]
 | `floor_no` | `INTEGER` | `NOT NULL` | 楼层编号 |
 | `branch_id` | `TEXT` | `NOT NULL`, default `main` | 分支标识 |
 | `parent_floor_id` | `TEXT` | `NULL` | 父楼层 ID |
+| `superseded_at` | `INTEGER` | `NULL` | 被替代时间戳（ms） |
+| `superseded_by_floor_id` | `TEXT` | `NULL` | 替代它的新楼层 ID |
 | `state` | `TEXT` | `NOT NULL`, default `draft` | 状态（`draft \| generating \| committed \| failed`） |
 | `metadata_json` | `TEXT` | `NULL` | 楼层元信息 |
 | `token_in` | `INTEGER` | `NOT NULL`, default `0` | 输入 token |
 | `token_out` | `INTEGER` | `NOT NULL`, default `0` | 输出 token |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+- live floor 唯一索引：`floor_session_no_branch_live_uq(session_id, floor_no, branch_id) WHERE superseded_at IS NULL`
+- live 历史索引：`floor_session_branch_live_state_no_idx(session_id, branch_id, state, floor_no) WHERE superseded_at IS NULL`
+- `superseded_at IS NULL` 表示当前有效楼层；非空表示该楼层已被后续 regenerate 替代
 
 ## message_page
 

@@ -1,8 +1,6 @@
 // ── ST WorldBook 精简类型 ──────────────────────────────
-// 原始酒馆世界书条目有 43 个字段，这里只保留 ~15 个核心字段。
-// 砍掉：probability, group, timed effects, recursion control,
-//       match targets (persona/character/scenario), vectorized,
-//       automationId, characterFilter, ignoreBudget, triggers
+// 原始酒馆世界书条目有较多字段，这里保留当前运行时需要的核心字段，
+// 并额外保留递归 / outlet 对齐所需字段。
 
 /** 世界书条目插入位置 */
 export const WI_POSITION = {
@@ -20,6 +18,8 @@ export const WI_POSITION = {
   EM_TOP: 5,
   /** 示例消息之下 */
   EM_BOTTOM: 6,
+  /** Outlet 宏展开槽位 */
+  OUTLET: 7,
 } as const;
 
 export type WIPosition = (typeof WI_POSITION)[keyof typeof WI_POSITION];
@@ -83,6 +83,16 @@ export interface STWorldBookEntry {
   caseSensitive: boolean | null;
   /** 独立全词匹配（null = 使用全局） */
   matchWholeWords: boolean | null;
+  /** 仅允许初始轮触发，递归轮跳过 */
+  excludeRecursion?: boolean;
+  /** 条目本身可触发，但内容不进入递归缓冲区 */
+  preventRecursion?: boolean;
+  /** 至少递归到指定层级后才允许触发；null 表示关闭 */
+  delayUntilRecursion?: number | null;
+  /** Outlet 位置使用的名称 */
+  outletName?: string;
+  /** 暂未接运行时、但需要保留 round-trip 的扩展字段 */
+  extra?: Record<string, unknown>;
 }
 
 /**
@@ -106,4 +116,6 @@ export interface STWorldBook {
   recursive: boolean;
   /** 最大递归步数 */
   maxRecursionSteps: number;
+  /** 暂未接运行时、但需要保留 round-trip 的顶层字段 */
+  extra?: Record<string, unknown>;
 }

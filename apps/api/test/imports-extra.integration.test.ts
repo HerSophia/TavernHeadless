@@ -321,6 +321,10 @@ describe("Import route extra branches", () => {
         depth: 4,
         role: 0,
         disable: false,
+        excludeRecursion: false,
+        preventRecursion: false,
+        delayUntilRecursion: null,
+        outletName: "",
       });
 
       const invalidPutRes = await app.inject({

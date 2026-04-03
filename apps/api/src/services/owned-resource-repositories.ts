@@ -12,6 +12,7 @@ type QueryExecutor = AppDb | DbExecutor;
 
 export interface OwnedPageContext extends OwnedPageRecord {
   floorState: typeof floors.$inferSelect["state"];
+  floorSupersededAt: number | null;
   sessionId: string;
   branchId: string;
 }
@@ -22,6 +23,7 @@ export interface OwnedMessageContext extends OwnedMessageRecord {
   floorId: string;
   floorNo: number;
   floorState: typeof floors.$inferSelect["state"];
+  floorSupersededAt: number | null;
   sessionId: string;
   branchId: string;
 }
@@ -93,6 +95,8 @@ export class OwnedFloorRepository {
         floorNo: floors.floorNo,
         branchId: floors.branchId,
         parentFloorId: floors.parentFloorId,
+        supersededAt: floors.supersededAt,
+        supersededByFloorId: floors.supersededByFloorId,
         state: floors.state,
         metadataJson: floors.metadataJson,
         tokenIn: floors.tokenIn,
@@ -158,6 +162,7 @@ export class OwnedPageRepository {
         createdAt: messagePages.createdAt,
         updatedAt: messagePages.updatedAt,
         floorState: floors.state,
+        floorSupersededAt: floors.supersededAt,
         sessionId: floors.sessionId,
         branchId: floors.branchId,
       })
@@ -223,6 +228,7 @@ export class OwnedMessageRepository {
         floorId: floors.id,
         floorNo: floors.floorNo,
         floorState: floors.state,
+        floorSupersededAt: floors.supersededAt,
         sessionId: floors.sessionId,
         branchId: floors.branchId,
       })

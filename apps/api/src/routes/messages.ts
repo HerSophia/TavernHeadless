@@ -416,6 +416,7 @@ export async function registerMessageRoutes(
     const rejection = getFloorContentMutationRejection({
       mutationKind: "message.create",
       floorState: page.floorState,
+      floorSupersededAt: page.floorSupersededAt,
       pageKind: page.pageKind,
     });
 
@@ -562,12 +563,18 @@ export async function registerMessageRoutes(
       getFloorContentMutationRejection({
         mutationKind,
         floorState: message.floorState,
+        floorSupersededAt: message.floorSupersededAt,
         pageKind: message.pageKind,
       }) !== null
     );
 
     if (lockedMessage) {
-      return sendMessageMutationRejection(reply, getFloorContentMutationRejection({ mutationKind, floorState: lockedMessage.floorState, pageKind: lockedMessage.pageKind })!);
+      return sendMessageMutationRejection(reply, getFloorContentMutationRejection({
+        mutationKind,
+        floorState: lockedMessage.floorState,
+        floorSupersededAt: lockedMessage.floorSupersededAt,
+        pageKind: lockedMessage.pageKind,
+      })!);
     }
 
     const updatedRows =
@@ -637,11 +644,17 @@ export async function registerMessageRoutes(
       getFloorContentMutationRejection({
         mutationKind: "message.delete",
         floorState: message.floorState,
+        floorSupersededAt: message.floorSupersededAt,
         pageKind: message.pageKind,
       }) !== null
     );
     if (lockedMessage) {
-      return sendMessageMutationRejection(reply, getFloorContentMutationRejection({ mutationKind: "message.delete", floorState: lockedMessage.floorState, pageKind: lockedMessage.pageKind })!);
+      return sendMessageMutationRejection(reply, getFloorContentMutationRejection({
+        mutationKind: "message.delete",
+        floorState: lockedMessage.floorState,
+        floorSupersededAt: lockedMessage.floorSupersededAt,
+        pageKind: lockedMessage.pageKind,
+      })!);
     }
 
     const deletedRows =
@@ -780,6 +793,7 @@ export async function registerMessageRoutes(
     const rejection = getFloorContentMutationRejection({
       mutationKind: "message.update",
       floorState: existingMessage.floorState,
+      floorSupersededAt: existingMessage.floorSupersededAt,
       pageKind: existingMessage.pageKind,
     });
     if (rejection) return sendMessageMutationRejection(reply, rejection);
@@ -836,6 +850,7 @@ export async function registerMessageRoutes(
     const rejection = getFloorContentMutationRejection({
       mutationKind: "message.delete",
       floorState: existingMessage.floorState,
+      floorSupersededAt: existingMessage.floorSupersededAt,
       pageKind: existingMessage.pageKind,
     });
     if (rejection) return sendMessageMutationRejection(reply, rejection);

@@ -27,6 +27,7 @@ import {
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { parseWithSchema, parseJsonField, sendError } from "../lib/http.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
+import { buildRawWorldbookEntryPayload } from "../lib/worldbook-utils.js";
 import {
   serializeSessionToThChat,
   serializeSessionToStJsonl,
@@ -415,35 +416,7 @@ export async function registerExportRoutes(
     const entriesObj: Record<string, unknown> = {};
     entryRows.forEach((entry, index) => {
       const key = String(entry.uid ?? index);
-      entriesObj[key] = {
-        uid: entry.uid,
-        key: parseJsonField(entry.keysJson),
-        keysecondary: parseJsonField(entry.keysSecondaryJson),
-        secondary_keys: parseJsonField(entry.keysSecondaryJson),
-        comment: entry.comment,
-        content: entry.content,
-        selective: entry.selective,
-        selectiveLogic: entry.selectiveLogic,
-        constant: entry.constant,
-        position: entry.position,
-        order: entry.order,
-        depth: entry.depth,
-        role: entry.role,
-        disable: entry.disable,
-        enabled: !entry.disable,
-        scanDepth: entry.scanDepth ?? null,
-        caseSensitive: entry.caseSensitive ?? null,
-        matchWholeWords: entry.matchWholeWords ?? null,
-        extensions: {
-          position: entry.position,
-          selectiveLogic: entry.selectiveLogic,
-          role: entry.role,
-          depth: entry.depth,
-          scan_depth: entry.scanDepth ?? null,
-          case_sensitive: entry.caseSensitive ?? null,
-          match_whole_words: entry.matchWholeWords ?? null,
-        },
-      };
+      entriesObj[key] = buildRawWorldbookEntryPayload(entry);
     });
 
     const stWorldbook = {

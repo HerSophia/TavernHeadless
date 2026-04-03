@@ -6,8 +6,9 @@ export type NativePromptMode = 'compat_strict' | 'native';
 export interface NativeWorldbookEntry {
   id: string;
   content: string;
-  position?: 'before' | 'after';
+  position?: 'before' | 'after' | 'depth';
   role?: ChatRole;
+  depth?: number;
 }
 
 export interface NativePipelineInput {
@@ -285,10 +286,27 @@ export class WorldbookResolveNode implements NativePipelineNode {
 
     const beforeMessages: IRMessage[] = [];
     const afterMessages: IRMessage[] = [];
+    const depthSections: IRSection[] = [];
 
     for (const entry of entries) {
       const rendered = renderWithVariables(templateEngine, entry.content, variables).trim();
       if (rendered.length === 0) {
+        continue;
+      }
+
+      if (entry.position === 'depth') {
+        const depth = entry.depth ?? 0;
+        depthSections.push({
+          name: `worldbookDepth:${depth}`,
+          order: 1000 + depth,
+          pinned: true,
+          messages: [{
+            role: entry.role ?? 'system',
+            content: rendered,
+            source: `native:worldbook:${entry.id}@depth${depth}`,
+            prunable: false,
+          }],
+        });
         continue;
       }
 
@@ -319,6 +337,10 @@ export class WorldbookResolveNode implements NativePipelineNode {
         pinned: true,
         messages: afterMessages,
       });
+    }
+
+    if (depthSections.length > 0) {
+      sections.push(...depthSections);
     }
 
     return {

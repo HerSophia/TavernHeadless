@@ -218,6 +218,20 @@
       "when": 1763000000000,
       "tag": "0030_message_page_slot_active_invariant",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1763100000000,
+      "tag": "0031_floor_soft_supersede",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1763200000000,
+      "tag": "0032_worldbook_entry_recursion_and_outlet",
+      "breakpoints": true
     }
   ]
 }

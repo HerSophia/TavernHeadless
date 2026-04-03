@@ -90,6 +90,10 @@ interface EntryResponse {
     scan_depth: number | null;
     case_sensitive: boolean | null;
     match_whole_words: boolean | null;
+    exclude_recursion: boolean;
+    prevent_recursion: boolean;
+    delay_until_recursion: number | null;
+    outlet_name: string;
     created_at: number;
     updated_at: number;
   };
@@ -276,6 +280,10 @@ describe("Worldbook Entry Routes", () => {
       expect(entry.scan_depth).toBeNull();
       expect(entry.case_sensitive).toBeNull();
       expect(entry.match_whole_words).toBeNull();
+      expect(entry.exclude_recursion).toBe(false);
+      expect(entry.prevent_recursion).toBe(false);
+      expect(entry.delay_until_recursion).toBeNull();
+      expect(entry.outlet_name).toBe("");
       expect(entry.created_at).toBeGreaterThan(0);
       expect(entry.updated_at).toBe(entry.created_at);
     });
@@ -291,7 +299,7 @@ describe("Worldbook Entry Routes", () => {
         selective: false,
         selective_logic: 2,
         constant: true,
-        position: 3,
+        position: 7,
         order: 50,
         depth: 8,
         role: 1,
@@ -299,6 +307,10 @@ describe("Worldbook Entry Routes", () => {
         scan_depth: 10,
         case_sensitive: true,
         match_whole_words: false,
+        exclude_recursion: true,
+        prevent_recursion: true,
+        delay_until_recursion: 2,
+        outlet_name: "LoreOutlet",
       });
 
       expect(entry.keys_secondary).toEqual(["war"]);
@@ -306,7 +318,7 @@ describe("Worldbook Entry Routes", () => {
       expect(entry.selective).toBe(false);
       expect(entry.selective_logic).toBe(2);
       expect(entry.constant).toBe(true);
-      expect(entry.position).toBe(3);
+      expect(entry.position).toBe(7);
       expect(entry.order).toBe(50);
       expect(entry.depth).toBe(8);
       expect(entry.role).toBe(1);
@@ -314,6 +326,10 @@ describe("Worldbook Entry Routes", () => {
       expect(entry.scan_depth).toBe(10);
       expect(entry.case_sensitive).toBe(true);
       expect(entry.match_whole_words).toBe(false);
+      expect(entry.exclude_recursion).toBe(true);
+      expect(entry.prevent_recursion).toBe(true);
+      expect(entry.delay_until_recursion).toBe(2);
+      expect(entry.outlet_name).toBe("LoreOutlet");
     });
 
     it("auto-assigns uid incrementally", async () => {

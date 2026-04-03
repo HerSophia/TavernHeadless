@@ -240,7 +240,7 @@ DELETE /worldbooks/wb_kingdom?expected_version=3
 | `selective` | boolean | 是否启用辅助关键词 |
 | `selective_logic` | integer | 辅助关键词逻辑（0=AND_ANY, 1=NOT_ALL, 2=NOT_ANY, 3=AND_ALL） |
 | `constant` | boolean | 常驻条目（无需触发） |
-| `position` | integer | 插入位置（0–6） |
+| `position` | integer | 插入位置（0–7） |
 | `order` | integer | 插入优先级 |
 | `depth` | integer | @depth 模式的深度 |
 | `role` | integer | 消息角色（0=system, 1=user, 2=assistant） |
@@ -248,6 +248,10 @@ DELETE /worldbooks/wb_kingdom?expected_version=3
 | `scan_depth` | integer \| null | 独立扫描深度（null=使用全局） |
 | `case_sensitive` | boolean \| null | 独立大小写设置（null=使用全局） |
 | `match_whole_words` | boolean \| null | 独立全词匹配（null=使用全局） |
+| `exclude_recursion` | boolean | 递归轮是否跳过该条目 |
+| `prevent_recursion` | boolean | 该条目内容是否阻止继续进入递归缓冲区 |
+| `delay_until_recursion` | integer \| null | 至少递归到指定层级后才允许命中 |
+| `outlet_name` | string | `position=7` 时使用的 outlet 名称 |
 | `created_at` | integer | 创建时间戳 |
 | `updated_at` | integer | 更新时间戳 |
 
@@ -294,6 +298,10 @@ GET /worldbooks/:worldbook_id/entries
       "scan_depth": null,
       "case_sensitive": null,
       "match_whole_words": null,
+      "exclude_recursion": false,
+      "prevent_recursion": false,
+      "delay_until_recursion": null,
+      "outlet_name": "",
       "created_at": 1735689600000,
       "updated_at": 1735689660000
     }
@@ -327,7 +335,7 @@ POST /worldbooks/:worldbook_id/entries
 | `selective` | boolean | 否 | 默认 `true` |
 | `selective_logic` | integer | 否 | 默认 `0` |
 | `constant` | boolean | 否 | 默认 `false` |
-| `position` | integer | 否 | 默认 `0` |
+| `position` | integer | 否 | 默认 `0`；`7` 表示 outlet |
 | `order` | integer | 否 | 默认 `100` |
 | `depth` | integer | 否 | 默认 `4` |
 | `role` | integer | 否 | 默认 `0` |
@@ -335,6 +343,10 @@ POST /worldbooks/:worldbook_id/entries
 | `scan_depth` | integer \| null | 否 | 默认 `null` |
 | `case_sensitive` | boolean \| null | 否 | 默认 `null` |
 | `match_whole_words` | boolean \| null | 否 | 默认 `null` |
+| `exclude_recursion` | boolean | 否 | 默认 `false` |
+| `prevent_recursion` | boolean | 否 | 默认 `false` |
+| `delay_until_recursion` | integer \| null | 否 | 默认 `null` |
+| `outlet_name` | string | 否 | 默认空字符串，仅 `position=7` 时有意义 |
 
 ### 请求示例
 
@@ -389,6 +401,10 @@ GET /worldbooks/:worldbook_id/entries/:id
     "scan_depth": null,
     "case_sensitive": null,
     "match_whole_words": null,
+    "exclude_recursion": false,
+    "prevent_recursion": false,
+    "delay_until_recursion": null,
+    "outlet_name": "",
     "created_at": 1735689600000,
     "updated_at": 1735689660000
   }

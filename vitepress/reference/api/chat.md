@@ -210,7 +210,7 @@ POST /sessions/:id/respond/dry-run
 POST /sessions/:id/regenerate
 ```
 
-重新生成会话最后一个楼层的 AI 回复。当前实现会创建一个新的 floor，并把旧 floor 移入 `superseded-*` 分支保留。
+重新生成会话最后一个楼层的 AI 回复。当前实现会创建一个新的 floor，并把旧 floor 标记为 superseded 保留。旧楼层不会出现在默认时间线和分支视图中，但仍可按 ID 审计读取。
 
 ### 请求体
 
@@ -240,7 +240,7 @@ POST /sessions/:id/regenerate
 }
 ```
 
-除“没有可重新生成的楼层”这类资源状态错误外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
+其中 `previous_floor_id` 指向被替代的旧楼层。除“没有可重新生成的楼层”这类资源状态错误外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
 
 ## 楼层重试
 

@@ -15,6 +15,8 @@ outline: [2, 3]
 | `floor_no` | integer | 楼层序号（从 0 开始） |
 | `branch_id` | string | 所属分支 ID |
 | `parent_floor_id` | string \| null | 父楼层 ID |
+| `superseded_at` | integer \| null | 被替代时间戳（毫秒时间戳）；为 `null` 表示当前仍是 live floor |
+| `superseded_by_floor_id` | string \| null | 替代它的新楼层 ID |
 | `state` | string | 状态：`draft` / `generating` / `committed` / `failed` |
 | `token_in` | integer | 输入 token 数 |
 | `token_out` | integer | 输出 token 数 |
@@ -48,6 +50,8 @@ POST /floors
 ```http
 GET /floors
 ```
+
+默认只返回 live floor；已经被后续 regenerate 替代的 superseded floor 不会出现在列表中。
 
 ### 查询参数
 
@@ -145,7 +149,7 @@ POST /floors/:id/branch
 
 为指定楼层准备一个可用的分支描述对象。
 
-当前实现会校验 source floor 是否存在且处于 `committed` 状态，并检查目标 `branch_id` 是否冲突；如果校验通过，返回一个 branch 描述对象。这个过程**不会立即写入新的 floor 或持久化 branch 记录**。
+当前实现会校验 source floor 是否存在、未被 superseded 且处于 `committed` 状态，并检查目标 `branch_id` 是否冲突；如果校验通过，返回一个 branch 描述对象。这个过程**不会立即写入新的 floor 或持久化 branch 记录**。
 
 ### 请求体
 

@@ -20,6 +20,7 @@ export interface VariableTarget {
   floorId?: string;
   pageId?: string;
   floorState?: FloorState;
+  floorSupersededAt?: number | null;
   context: VariableContext;
 }
 
@@ -141,13 +142,13 @@ export class VariableHostService {
 
   assertWritableTarget(target: VariableTarget): void {
     const rejection = (target.scope === "floor" || target.scope === "page")
-      ? getFloorContentMutationRejection({ mutationKind: "variable.write", floorState: target.floorState })
+      ? getFloorContentMutationRejection({ mutationKind: "variable.write", floorState: target.floorState, floorSupersededAt: target.floorSupersededAt })
       : null;
 
     if (rejection) {
       throw new VariableServiceError(
         "variable_target_locked",
-        `Variables on committed ${target.scope} targets are read-only`
+        `Variables on locked ${target.scope} targets are read-only`
       );
     }
   }
@@ -252,6 +253,7 @@ export class VariableHostService {
       .select({
         floorId: floors.id,
         floorState: floors.state,
+        floorSupersededAt: floors.supersededAt,
         sessionId: sessions.id,
         branchId: floors.branchId,
       })
@@ -274,6 +276,7 @@ export class VariableHostService {
       branchId: floor.branchId,
       floorId: floor.floorId,
       floorState: floor.floorState,
+      floorSupersededAt: floor.floorSupersededAt,
       context: {
         accountId,
         sessionId: floor.sessionId,
@@ -290,6 +293,7 @@ export class VariableHostService {
         pageId: messagePages.id,
         floorId: floors.id,
         floorState: floors.state,
+        floorSupersededAt: floors.supersededAt,
         sessionId: sessions.id,
         branchId: floors.branchId,
       })
@@ -314,6 +318,7 @@ export class VariableHostService {
       floorId: page.floorId,
       pageId: page.pageId,
       floorState: page.floorState,
+      floorSupersededAt: page.floorSupersededAt,
       context: {
         accountId,
         sessionId: page.sessionId,

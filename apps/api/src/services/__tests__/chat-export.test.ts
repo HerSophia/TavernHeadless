@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { nanoid } from 'nanoid';
+import { eq } from 'drizzle-orm';
 
 import { createDatabase, type AppDb } from '../../db/client.js';
 import { accounts, sessions, floors, messagePages, memoryEdges, memoryItems, messages, variables } from '../../db/schema.js';
@@ -191,6 +192,64 @@ describe('serializeSessionToThChat', () => {
     expect(ids.has(page2Id)).toBe(true);
     expect(ids.has(msg1Id)).toBe(true);
     expect(ids.has(msg2Id)).toBe(true);
+  });
+
+  it('omits superseded floors from thchat export', () => {
+    const { sessionId, floorId } = seedMinimalSession(db);
+
+    db.update(floors)
+      .set({ supersededAt: NOW + 1, updatedAt: NOW + 1 })
+      .where(eq(floors.id, floorId))
+      .run();
+
+    const replacementFloorId = nanoid();
+    const replacementPageId = nanoid();
+    const replacementMessageId = nanoid();
+
+    db.insert(floors).values({
+      id: replacementFloorId,
+      sessionId,
+      floorNo: 0,
+      branchId: 'main',
+      parentFloorId: floorId,
+      state: 'committed',
+      tokenIn: 7,
+      tokenOut: 8,
+      metadataJson: null,
+      createdAt: NOW + 2,
+      updatedAt: NOW + 2,
+    }).run();
+
+    db.insert(messagePages).values({
+      id: replacementPageId,
+      floorId: replacementFloorId,
+      pageNo: 0,
+      pageKind: 'output',
+      isActive: true,
+      version: 1,
+      checksum: null,
+      createdAt: NOW + 2,
+      updatedAt: NOW + 2,
+    }).run();
+
+    db.insert(messages).values({
+      id: replacementMessageId,
+      pageId: replacementPageId,
+      seq: 0,
+      role: 'assistant',
+      content: 'Replacement live reply',
+      contentFormat: 'text',
+      tokenCount: 4,
+      isHidden: false,
+      source: null,
+      createdAt: NOW + 2,
+    }).run();
+
+    const result = serializeSessionToThChat(db, sessionId);
+
+    expect(result.data.floors).toHaveLength(1);
+    expect(result.data.floors[0]!._original_id).toBe(replacementFloorId);
+    expect(result.data.floors[0]!.pages[0]!.messages[0]!.content).toBe('Replacement live reply');
   });
 
   it('throws on non-existent session', () => {

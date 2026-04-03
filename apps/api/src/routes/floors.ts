@@ -1,4 +1,4 @@
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import { buildBranchVariableScopeId } from "@tavern/shared";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
@@ -101,6 +101,8 @@ const floorJsonSchema = {
     "token_in",
     "token_out",
     "created_at",
+    "superseded_at",
+    "superseded_by_floor_id",
     "updated_at",
   ],
   properties: {
@@ -113,6 +115,8 @@ const floorJsonSchema = {
     token_in: { type: "integer", minimum: 0 },
     token_out: { type: "integer", minimum: 0 },
     created_at: { type: "integer", minimum: 0 },
+    superseded_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
+    superseded_by_floor_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     updated_at: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
@@ -284,6 +288,8 @@ function toFloorResponse(row: typeof floors.$inferSelect) {
     token_in: row.tokenIn,
     token_out: row.tokenOut,
     created_at: row.createdAt,
+    superseded_at: row.supersededAt ?? null,
+    superseded_by_floor_id: row.supersededByFloorId ?? null,
     updated_at: row.updatedAt
   };
 }
@@ -454,7 +460,7 @@ export async function registerFloorRoutes(
       });
     }
 
-    const filters = [inArray(floors.sessionId, ownedSessionIds)];
+    const filters = [inArray(floors.sessionId, ownedSessionIds), isNull(floors.supersededAt)];
 
     if (parsedQuery.data.branch_id !== undefined) {
       filters.push(eq(floors.branchId, parsedQuery.data.branch_id));
@@ -775,6 +781,10 @@ export async function registerFloorRoutes(
       return sendError(reply, 404, "not_found", "Source floor not found");
     }
 
+    if (sourceFloor.supersededAt !== null) {
+      return sendError(reply, 409, "invalid_state", "Cannot branch from a superseded floor");
+    }
+
 
     if (sourceFloor.state !== "committed") {
       return sendError(reply, 409, "invalid_state", "Can only branch from a committed floor");
@@ -790,7 +800,8 @@ export async function registerFloorRoutes(
       .where(
         and(
           eq(floors.sessionId, sourceFloor.sessionId),
-          eq(floors.branchId, branchId)
+          eq(floors.branchId, branchId),
+          isNull(floors.supersededAt)
         )
       )
       .limit(1);

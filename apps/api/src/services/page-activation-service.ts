@@ -28,6 +28,7 @@ export class PageActivationService {
       const rejection = getFloorContentMutationRejection({
         mutationKind: "page.activate",
         floorState: targetPage.floorState,
+        floorSupersededAt: targetPage.floorSupersededAt,
         pageKind: targetPage.pageKind,
       });
 
