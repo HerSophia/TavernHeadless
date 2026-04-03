@@ -380,4 +380,302 @@ describe("assemblePrompt", () => {
     expect(assembled.messages.some((message) => message.content.includes("Ancient IC lore"))).toBe(true);
     expect(assembled.messages.some((message) => message.content.includes("Ancient OOC lore"))).toBe(false);
   });
+
+  it("passes recursive worldbook settings into triggerWorldBook and activates chained entries", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Recursive Worldbook Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_COMPAT_WORLDINFO_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Recursive Worldbook",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({ scanDepth: 3, recursive: true, maxRecursionSteps: 3 }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values([
+      {
+        id: nanoid(),
+        worldbookId,
+        uid: 10,
+        comment: "Dragon Seed",
+        content: "phoenix sigil",
+        keysJson: JSON.stringify(["dragon"]),
+        keysSecondaryJson: JSON.stringify([]),
+        selective: false,
+        selectiveLogic: 0,
+        constant: false,
+        position: 0,
+        order: 100,
+        depth: 4,
+        role: 0,
+        disable: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: nanoid(),
+        worldbookId,
+        uid: 11,
+        comment: "Phoenix Lore",
+        content: "Recursive lore block",
+        keysJson: JSON.stringify(["phoenix"]),
+        keysSecondaryJson: JSON.stringify([]),
+        selective: false,
+        selectiveLogic: 0,
+        constant: false,
+        position: 0,
+        order: 200,
+        depth: 4,
+        role: 0,
+        disable: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: worldbookId,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "dragon",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages.some((message) => message.content.includes("phoenix sigil"))).toBe(true);
+    expect(assembled.messages.some((message) => message.content.includes("Recursive lore block"))).toBe(true);
+    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([10, 11]);
+  });
+
+  it("passes scenario scan source into triggerWorldBook when entry opts in", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Scenario Scan Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_COMPAT_WORLDINFO_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Scenario Scan Worldbook",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 20,
+      comment: "Scenario Lore",
+      content: "Observatory scenario lore",
+      keysJson: JSON.stringify(["observatory"]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: false,
+      selectiveLogic: 0,
+      constant: false,
+      position: 0,
+      order: 100,
+      depth: 4,
+      role: 0,
+      disable: false,
+      extraJson: JSON.stringify({ extensions: { match_scenario: true } }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: worldbookId,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight", scenario: "An observatory above the clouds." }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "hello",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages.some((message) => message.content.includes("Observatory scenario lore"))).toBe(true);
+    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([20]);
+  });
+
+
+  it("preserves atDepth worldbook entries in native mode", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Native Depth Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Native Depth Worldbook",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 30,
+      comment: "Depth Lore",
+      content: "Deep native lore",
+      keysJson: JSON.stringify(["dragon"]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: false,
+      selectiveLogic: 0,
+      constant: false,
+      position: 4,
+      order: 100,
+      depth: 2,
+      role: 1,
+      disable: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: worldbookId,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "native",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "dragon",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages.some((message) => message.content.includes("Deep native lore"))).toBe(true);
+    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([30]);
+  });
+
+  it("does not auto-inject outlet worldbook entries into prompt messages", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Outlet Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_COMPAT_WORLDINFO_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Outlet Worldbook",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 40,
+      comment: "Outlet Lore",
+      content: "Hidden outlet lore",
+      keysJson: JSON.stringify(["dragon"]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: false,
+      selectiveLogic: 0,
+      constant: false,
+      position: 7,
+      order: 100,
+      depth: 4,
+      role: 0,
+      disable: false,
+      outletName: "LoreOutlet",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: worldbookId,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "dragon",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages.some((message) => message.content.includes("Hidden outlet lore"))).toBe(false);
+    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([40]);
+  });
+
 });

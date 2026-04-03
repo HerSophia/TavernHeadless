@@ -303,6 +303,40 @@
 - 同 `preset` 结构，字段含义对应世界书。
 - 索引：`worldbook_account_updated_idx(account_id, updated_at)`
 
+### `worldbook_entry`
+
+世界书条目表。`worldbook.data_json` 只保留世界书级全局设置，具体条目落在该表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 条目 ID |
+| `worldbook_id` | `TEXT` | `NOT NULL`, FK -> `worldbook.id` ON DELETE CASCADE | 所属世界书 |
+| `uid` | `INTEGER` | `NOT NULL` | ST 兼容 UID |
+| `comment` | `TEXT` | `NOT NULL`, default `''` | 标题/备注 |
+| `content` | `TEXT` | `NOT NULL`, default `''` | 条目内容 |
+| `keys_json` | `TEXT` | `NOT NULL`, default `'[]'` | 主关键词数组 |
+| `keys_secondary_json` | `TEXT` | `NOT NULL`, default `'[]'` | 辅助关键词数组 |
+| `selective` | `INTEGER` | `NOT NULL`, default `1` | selective 开关 |
+| `selective_logic` | `INTEGER` | `NOT NULL`, default `0` | selective 逻辑 |
+| `constant` | `INTEGER` | `NOT NULL`, default `0` | 常驻条目 |
+| `position` | `INTEGER` | `NOT NULL`, default `0` | 插入位置（含 `outlet=7`） |
+| `order` | `INTEGER` | `NOT NULL`, default `100` | 插入优先级 |
+| `depth` | `INTEGER` | `NOT NULL`, default `4` | depth 值 |
+| `role` | `INTEGER` | `NOT NULL`, default `0` | depth 角色 |
+| `disable` | `INTEGER` | `NOT NULL`, default `0` | 是否禁用 |
+| `scan_depth` | `INTEGER` | `NULL` | 独立扫描深度 |
+| `case_sensitive` | `INTEGER` | `NULL` | 独立大小写设置 |
+| `match_whole_words` | `INTEGER` | `NULL` | 独立全词匹配 |
+| `exclude_recursion` | `INTEGER` | `NOT NULL`, default `0` | 递归轮跳过该条目 |
+| `prevent_recursion` | `INTEGER` | `NOT NULL`, default `0` | 不让内容进入递归缓冲区 |
+| `delay_until_recursion` | `INTEGER` | `NULL` | 至少递归到指定层级后才允许命中 |
+| `outlet_name` | `TEXT` | `NOT NULL`, default `''` | outlet 名称 |
+| `extra_json` | `TEXT` | `NOT NULL`, default `'{}'` | 暂未接运行时的扩展字段 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+- 索引：`wb_entry_worldbook_order_idx(worldbook_id, order)`、`wb_entry_worldbook_updated_idx(worldbook_id, updated_at)`
+
 ### `regex_profile`
 - 同 `preset` 结构，字段含义对应正则配置。
 - 索引：`regex_profile_account_updated_idx(account_id, updated_at)`

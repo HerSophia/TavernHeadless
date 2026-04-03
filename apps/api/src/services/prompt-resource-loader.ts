@@ -9,6 +9,7 @@ import {
 
 import type { AppDb } from "../db/client.js";
 import { presets, regexProfiles, worldbooks, worldbookEntries } from "../db/schema.js";
+import { parseWorldbookEntryExtraJson } from "../lib/worldbook-utils.js";
 
 export interface LoadedPromptPreset {
   id: string;
@@ -266,6 +267,11 @@ function parseLoadedWorldbookRow(
         scanDepth: entry.scanDepth ?? null,
         caseSensitive: entry.caseSensitive ?? null,
         matchWholeWords: entry.matchWholeWords ?? null,
+        excludeRecursion: entry.excludeRecursion,
+        preventRecursion: entry.preventRecursion,
+        delayUntilRecursion: entry.delayUntilRecursion ?? null,
+        outletName: entry.outletName,
+        extra: parseWorldbookEntryExtraJson(entry.extraJson),
       })),
       scanDepth: typeof globalSettings.scanDepth === "number" ? globalSettings.scanDepth : 2,
       caseSensitive:

@@ -95,6 +95,32 @@ const MINIMAL_WORLDBOOK = {
   },
 };
 
+const RICH_WORLDBOOK = {
+  name: "Recursive World",
+  scanDepth: 6,
+  caseSensitive: true,
+  matchWholeWords: true,
+  recursive: true,
+  maxRecursionSteps: 3,
+  entries: [
+    {
+      uid: 0,
+      keys: ["dragon"],
+      secondary_keys: ["fire"],
+      content: "Dragons are powerful creatures.",
+      enabled: true,
+      insertion_order: 50,
+      extensions: {
+        position: 7,
+        outlet_name: "LoreOutlet",
+        exclude_recursion: true,
+        prevent_recursion: false,
+        delay_until_recursion: 2,
+      },
+    },
+  ],
+};
+
 /** 最小有效正则脚本 JSON 数组 */
 const MINIMAL_REGEX_SCRIPTS = [
   {
@@ -618,6 +644,49 @@ describe("Import Routes", () => {
       const updatedEntries = Array.isArray(updatedData.entries) ? updatedData.entries : [];
       expect((updatedEntries[0] as Record<string, unknown> | undefined)?.content).toBe("Updated worldbook content");
     });
+    it("preserves global settings and recursive or outlet fields across detail and raw update", async () => {
+      const importRes = await app.inject({
+        method: "POST",
+        url: "/import/worldbook",
+        payload: { name: "Rich WB", data: RICH_WORLDBOOK },
+      });
+      expect(importRes.statusCode).toBe(201);
+      const wbId = (importRes.json() as ImportResponse).data.id;
+
+      const detailRes = await app.inject({ method: "GET", url: `/worldbooks/${wbId}` });
+      expect(detailRes.statusCode).toBe(200);
+      const detailBody = detailRes.json() as DetailResponse;
+      const worldbookData = detailBody.data.data as Record<string, unknown>;
+
+      expect(worldbookData).toMatchObject({
+        scanDepth: 6,
+        caseSensitive: true,
+        matchWholeWords: true,
+        recursive: true,
+        maxRecursionSteps: 3,
+      });
+
+      const entries = Array.isArray(worldbookData.entries) ? worldbookData.entries : [];
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        key: ["dragon"],
+        keysecondary: ["fire"],
+        position: 7,
+        excludeRecursion: true,
+        preventRecursion: false,
+        delayUntilRecursion: 2,
+        outletName: "LoreOutlet",
+      });
+
+      const putRes = await app.inject({
+        method: "PUT",
+        url: `/worldbooks/${wbId}`,
+        payload: { name: "Rich WB Updated", expected_version: detailBody.data.version, data: worldbookData },
+      });
+      expect(putRes.statusCode, putRes.body).toBe(200);
+    });
+
+
 
     it("PUT /worldbooks/:id should return 409 when expected_updated_at mismatches", async () => {
       const importRes = await app.inject({

@@ -4,9 +4,15 @@ import { WI_LOGIC, WI_POSITION, WI_ROLE } from '../types/worldbook.js';
 
 // ── Raw Zod schemas ───────────────────────────────────
 
+const rawDelayUntilRecursionSchema = z.union([
+  z.boolean(),
+  z.number().int().nonnegative(),
+]);
+
 const rawEntrySchema = z.object({
   uid: z.number().optional(),
   key: z.array(z.string()).default([]),
+  keys: z.array(z.string()).optional(),
   keysecondary: z.array(z.string()).default([]),
   secondary_keys: z.array(z.string()).optional(), // v2 spec 用 secondary_keys
   selective: z.boolean().default(true),
@@ -24,6 +30,10 @@ const rawEntrySchema = z.object({
   scanDepth: z.number().nullable().default(null),
   caseSensitive: z.boolean().nullable().default(null),
   matchWholeWords: z.boolean().nullable().default(null),
+  excludeRecursion: z.boolean().optional(),
+  preventRecursion: z.boolean().optional(),
+  delayUntilRecursion: rawDelayUntilRecursionSchema.nullable().optional(),
+  outletName: z.string().optional(),
   // Extensions 嵌套（v2 spec 把一些字段放在 extensions 里）
   extensions: z.object({
     position: z.number().optional(),
@@ -33,6 +43,10 @@ const rawEntrySchema = z.object({
     selectiveLogic: z.number().optional(),
     role: z.number().optional(),
     depth: z.number().optional(),
+    exclude_recursion: z.boolean().optional(),
+    prevent_recursion: z.boolean().optional(),
+    delay_until_recursion: rawDelayUntilRecursionSchema.nullable().optional(),
+    outlet_name: z.string().optional(),
   }).passthrough().optional(),
 }).passthrough();
 
@@ -43,20 +57,128 @@ const rawWorldBookSchema = z.object({
     z.array(rawEntrySchema),
   ]).default({}),
   name: z.string().optional(),
+  scanDepth: z.number().int().min(0).optional(),
+  caseSensitive: z.boolean().optional(),
+  matchWholeWords: z.boolean().optional(),
+  recursive: z.boolean().optional(),
+  maxRecursionSteps: z.number().int().min(0).optional(),
 }).passthrough();
 
+const RAW_WORLD_KNOWN_KEYS = new Set([
+  'entries',
+  'name',
+  'scanDepth',
+  'caseSensitive',
+  'matchWholeWords',
+  'recursive',
+  'maxRecursionSteps',
+]);
+
+const RAW_ENTRY_KNOWN_KEYS = new Set([
+  'uid',
+  'key',
+  'keys',
+  'keysecondary',
+  'secondary_keys',
+  'selective',
+  'selectiveLogic',
+  'constant',
+  'content',
+  'comment',
+  'position',
+  'order',
+  'insertion_order',
+  'depth',
+  'role',
+  'disable',
+  'enabled',
+  'scanDepth',
+  'caseSensitive',
+  'matchWholeWords',
+  'excludeRecursion',
+  'preventRecursion',
+  'delayUntilRecursion',
+  'outletName',
+  'extensions',
+]);
+
+const RAW_ENTRY_EXTENSION_KNOWN_KEYS = new Set([
+  'position',
+  'scan_depth',
+  'case_sensitive',
+  'match_whole_words',
+  'selectiveLogic',
+  'role',
+  'depth',
+  'exclude_recursion',
+  'prevent_recursion',
+  'delay_until_recursion',
+  'outlet_name',
+]);
+
 // ── 解析函数 ──────────────────────────────────────────
+
+function toPlainRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function omitKnownFields(record: Record<string, unknown>, knownKeys: Set<string>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(record)) {
+    if (knownKeys.has(key) || value === undefined) {
+      continue;
+    }
+    result[key] = value;
+  }
+
+  return result;
+}
+
+function compactExtra(extra: Record<string, unknown>): Record<string, unknown> | undefined {
+  const entries = Object.entries(extra).filter(([, value]) => value !== undefined);
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(entries);
+}
+
+function normalizeDelayUntilRecursion(value: boolean | number | null | undefined): number | null {
+  if (value === true) {
+    return 1;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.floor(value);
+  }
+
+  return null;
+}
 
 /**
  * 将单个原始条目转换为精简类型
  */
 function normalizeEntry(raw: z.infer<typeof rawEntrySchema>, index: number): STWorldBookEntry {
   const ext = raw.extensions;
+  const primaryKeys = raw.key.length > 0 ? raw.key : (raw.keys ?? []);
+  const secondaryKeys = raw.keysecondary.length > 0 ? raw.keysecondary : (raw.secondary_keys ?? []);
+
+  const rootExtra = omitKnownFields(toPlainRecord(raw), RAW_ENTRY_KNOWN_KEYS);
+  const extensionExtra = omitKnownFields(toPlainRecord(ext), RAW_ENTRY_EXTENSION_KNOWN_KEYS);
+  const extra = compactExtra({
+    ...rootExtra,
+    ...(Object.keys(extensionExtra).length > 0 ? { extensions: extensionExtra } : {}),
+  });
 
   return {
     uid: raw.uid ?? index,
-    key: raw.key,
-    keysecondary: raw.keysecondary.length > 0 ? raw.keysecondary : (raw.secondary_keys ?? []),
+    key: primaryKeys,
+    keysecondary: secondaryKeys,
     selective: raw.selective,
     selectiveLogic: (ext?.selectiveLogic ?? raw.selectiveLogic) as STWorldBookEntry['selectiveLogic'],
     constant: raw.constant,
@@ -70,6 +192,11 @@ function normalizeEntry(raw: z.infer<typeof rawEntrySchema>, index: number): STW
     scanDepth: ext?.scan_depth ?? raw.scanDepth,
     caseSensitive: ext?.case_sensitive ?? raw.caseSensitive,
     matchWholeWords: ext?.match_whole_words ?? raw.matchWholeWords,
+    excludeRecursion: ext?.exclude_recursion ?? raw.excludeRecursion ?? false,
+    preventRecursion: ext?.prevent_recursion ?? raw.preventRecursion ?? false,
+    delayUntilRecursion: normalizeDelayUntilRecursion(ext?.delay_until_recursion ?? raw.delayUntilRecursion),
+    outletName: ext?.outlet_name ?? raw.outletName ?? '',
+    ...(extra ? { extra } : {}),
   };
 }
 
@@ -94,14 +221,16 @@ export function parseWorldBook(json: unknown, name?: string): STWorldBook {
   }
 
   const entries = rawEntries.map((e, i) => normalizeEntry(e, i));
+  const extra = compactExtra(omitKnownFields(toPlainRecord(raw), RAW_WORLD_KNOWN_KEYS));
 
   return {
     name: name ?? raw.name ?? 'Unnamed',
     entries,
-    scanDepth: 2,
-    caseSensitive: false,
-    matchWholeWords: false,
-    recursive: false,
-    maxRecursionSteps: 0,
+    scanDepth: typeof raw.scanDepth === 'number' ? raw.scanDepth : 2,
+    caseSensitive: typeof raw.caseSensitive === 'boolean' ? raw.caseSensitive : false,
+    matchWholeWords: typeof raw.matchWholeWords === 'boolean' ? raw.matchWholeWords : false,
+    recursive: typeof raw.recursive === 'boolean' ? raw.recursive : false,
+    maxRecursionSteps: typeof raw.maxRecursionSteps === 'number' ? raw.maxRecursionSteps : 0,
+    ...(extra ? { extra } : {}),
   };
 }

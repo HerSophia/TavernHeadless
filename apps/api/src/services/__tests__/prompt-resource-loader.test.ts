@@ -126,6 +126,11 @@ describe("PromptResourceLoader", () => {
       depth: 4,
       role: 0,
       disable: false,
+      excludeRecursion: true,
+      preventRecursion: false,
+      delayUntilRecursion: 2,
+      outletName: "LoreOutlet",
+      extraJson: JSON.stringify({ extensions: { probability: 75 } }),
       createdAt: now,
       updatedAt: now,
     });
@@ -152,7 +157,15 @@ describe("PromptResourceLoader", () => {
     expect(worldbook).toMatchObject({ id: worldbookId, updatedAt: now, version: 1 });
     expect(worldbook!.worldbook.scanDepth).toBe(3);
     expect(worldbook!.worldbook.entries).toHaveLength(1);
-    expect(worldbook!.worldbook.entries[0]).toMatchObject({ uid: 7, content: "A blessed sword rests in the shrine." });
+    expect(worldbook!.worldbook.entries[0]).toMatchObject({
+      uid: 7,
+      content: "A blessed sword rests in the shrine.",
+      excludeRecursion: true,
+      preventRecursion: false,
+      delayUntilRecursion: 2,
+      outletName: "LoreOutlet",
+      extra: { extensions: { probability: 75 } },
+    });
 
     expect(regexProfile).not.toBeNull();
     expect(regexProfile).toMatchObject({ id: regexProfileId, updatedAt: now, version: 1 });

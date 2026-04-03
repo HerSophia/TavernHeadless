@@ -301,6 +301,14 @@ export async function assemblePrompt(
         scanDepth: worldbookData.scanDepth,
         caseSensitive: worldbookData.caseSensitive,
         matchWholeWords: worldbookData.matchWholeWords,
+        recursive: worldbookData.recursive,
+        maxRecursionSteps: worldbookData.maxRecursionSteps,
+        scanSources: {
+          personaDescription: persona?.description,
+          characterDescription: character?.description,
+          characterPersonality: character?.personality,
+          scenario: character?.scenario,
+        },
       });
       worldBookResults = applyWorldInfoRegexRules(worldBookResults, enabledRegexScripts);
     }
@@ -642,7 +650,23 @@ function applyWorldInfoRegexRules(
       ...depthEntry,
       entry: applyEntryContent(depthEntry.entry),
     })),
+    outletEntries: worldBookResults.outletEntries
+      ? Object.fromEntries(
+          Object.entries(worldBookResults.outletEntries).map(([name, entries]) => [
+            name,
+            entries.map(applyEntryContent),
+          ])
+        )
+      : undefined,
   };
+}
+
+function worldbookRoleToChatRole(role: number): ChatMessage["role"] {
+  switch (role) {
+    case 1: return "user";
+    case 2: return "assistant";
+    default: return "system";
+  }
 }
 
 function toNativeWorldbookEntries(
@@ -662,8 +686,15 @@ function toNativeWorldbookEntries(
     content: entry.content,
     position: "after" as const,
   }));
+  const depth = worldBookResults.atDepth.map((depthEntry) => ({
+    id: `depth:${depthEntry.entry.uid}`,
+    content: depthEntry.entry.content,
+    position: "depth" as const,
+    depth: depthEntry.depth,
+    role: worldbookRoleToChatRole(depthEntry.role),
+  }));
 
-  return [...before, ...after];
+  return [...before, ...after, ...depth];
 }
 
 /**

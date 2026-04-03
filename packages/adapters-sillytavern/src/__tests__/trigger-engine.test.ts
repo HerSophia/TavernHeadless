@@ -249,6 +249,87 @@ describe('triggerWorldBook', () => {
     });
   });
 
+  describe('recursive scanning', () => {
+    it('activates chained entries when recursive is enabled', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['dragon'], content: 'phoenix sigil', order: 100 }),
+        makeEntry({ uid: 1, key: ['phoenix'], content: 'Phoenix lore', order: 200 }),
+      ];
+
+      const result = triggerWorldBook(entries, { ...defaultContext, messages: ['dragon'], recursive: true, maxRecursionSteps: 2 });
+      expect(result.activated.map(entry => entry.uid)).toEqual([1, 0]);
+    });
+
+    it('does not recurse when recursive is disabled', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['dragon'], content: 'phoenix sigil' }),
+        makeEntry({ uid: 1, key: ['phoenix'], content: 'Phoenix lore' }),
+      ];
+
+      const result = triggerWorldBook(entries, { ...defaultContext, messages: ['dragon'], recursive: false, maxRecursionSteps: 3 });
+      expect(result.activated.map(entry => entry.uid)).toEqual([0]);
+    });
+
+    it('respects maxRecursionSteps', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['dragon'], content: 'phoenix sigil' }),
+        makeEntry({ uid: 1, key: ['phoenix'], content: 'Phoenix lore' }),
+      ];
+
+      const result = triggerWorldBook(entries, { ...defaultContext, messages: ['dragon'], recursive: true, maxRecursionSteps: 1 });
+      expect(result.activated.map(entry => entry.uid)).toEqual([0]);
+    });
+
+    it('prevents recursion when preventRecursion is enabled', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['dragon'], content: 'phoenix sigil', preventRecursion: true }),
+        makeEntry({ uid: 1, key: ['phoenix'], content: 'Phoenix lore' }),
+      ];
+
+      const result = triggerWorldBook(entries, { ...defaultContext, messages: ['dragon'], recursive: true, maxRecursionSteps: 3 });
+      expect(result.activated.map(entry => entry.uid)).toEqual([0]);
+    });
+
+    it('skips recursion-only excluded entries during recursion rounds', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['dragon'], content: 'phoenix sigil' }),
+        makeEntry({ uid: 1, key: ['phoenix'], content: 'Phoenix lore', excludeRecursion: true }),
+      ];
+
+      const result = triggerWorldBook(entries, { ...defaultContext, messages: ['dragon'], recursive: true, maxRecursionSteps: 3 });
+      expect(result.activated.map(entry => entry.uid)).toEqual([0]);
+    });
+
+    it('allows delayUntilRecursion entries to activate on later recursion scans', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['dragon'], content: 'Delayed lore', delayUntilRecursion: 1 }),
+      ];
+
+      const result = triggerWorldBook(entries, { ...defaultContext, messages: ['dragon'], recursive: true, maxRecursionSteps: 2 });
+      expect(result.activated.map(entry => entry.uid)).toEqual([0]);
+    });
+  });
+
+  describe('additional scan sources', () => {
+    it('matches scenario when entry opt-in flag is enabled', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['observatory'], content: 'Scenario lore', extra: { extensions: { match_scenario: true } } }),
+      ];
+
+      const result = triggerWorldBook(entries, { ...defaultContext, messages: ['unrelated'], scanSources: { scenario: 'An observatory above the clouds.' } });
+      expect(result.activated.map(entry => entry.uid)).toEqual([0]);
+    });
+
+    it('does not match scenario when entry opt-in flag is absent', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['observatory'], content: 'Scenario lore' }),
+      ];
+
+      const result = triggerWorldBook(entries, { ...defaultContext, messages: ['unrelated'], scanSources: { scenario: 'An observatory above the clouds.' } });
+      expect(result.activated).toHaveLength(0);
+    });
+  });
+
   describe('ordering', () => {
     it('sorts activated entries by order descending', () => {
       const entries = [
@@ -289,6 +370,16 @@ describe('triggerWorldBook', () => {
       ];
       const result = triggerWorldBook(entries, defaultContext);
       expect(result.after).toHaveLength(2);
+    });
+
+    it('keeps outlet positions out of the after bucket', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['Alice'], position: WI_POSITION.OUTLET, content: 'outlet lore', outletName: 'LoreOutlet' }),
+      ];
+      const result = triggerWorldBook(entries, defaultContext);
+      expect(result.after).toHaveLength(0);
+      expect(result.outletEntries?.LoreOutlet).toHaveLength(1);
+      expect(result.outletEntries?.LoreOutlet?.[0]?.uid).toBe(0);
     });
   });
 

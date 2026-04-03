@@ -74,6 +74,11 @@ import { parseWithSchema, sendError, parseJsonField, stringifyJsonField } from "
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { type JsonRecord, toPresetEditorDocument, toRawPresetFromEditor } from "../lib/preset-utils.js";
 import { executeWithSqliteBusyRetry, ResourceBusyError } from "../lib/retry.js";
+import {
+  buildPersistedWorldbookGlobalSettings,
+  buildRawWorldbookEntryPayload,
+  buildWorldbookEntryInsertValues,
+} from "../lib/worldbook-utils.js";
 import { VariableService } from "../services/variable-service.js";
 import { VariableServiceError } from "../services/variable-service-errors.js";
 import { LocalChatTransferArtifactStore } from "../services/chat-transfer-artifacts.js";
@@ -992,7 +997,7 @@ export async function registerImportRoutes(
     const name = parsed.data.name || stWorldBook.name || "Unnamed Worldbook";
     const now = Date.now();
 
-    const { entries, name: _wbName, ...globalSettings } = stWorldBook;
+    const { entries } = stWorldBook;
 
     const mutation = await executeResourceWrite(async () => {
       db.transaction((tx) => {
@@ -1001,32 +1006,17 @@ export async function registerImportRoutes(
           name,
           source: "sillytavern",
           accountId: auth.accountId,
-          dataJson: JSON.stringify(globalSettings),
+          dataJson: JSON.stringify(buildPersistedWorldbookGlobalSettings(stWorldBook)),
           createdAt: now,
           updatedAt: now,
         }).run();
 
         if (entries.length > 0) {
           tx.insert(worldbookEntries).values(
-            entries.map((entry, index) => ({
+            entries.map((entry, index) => buildWorldbookEntryInsertValues(entry, {
               id: nanoid(),
               worldbookId: id,
               uid: entry.uid ?? index,
-              comment: entry.comment ?? "",
-              content: entry.content ?? "",
-              keysJson: JSON.stringify(entry.key ?? []),
-              keysSecondaryJson: JSON.stringify(entry.keysecondary ?? []),
-              selective: entry.selective ?? true,
-              selectiveLogic: entry.selectiveLogic ?? 0,
-              constant: entry.constant ?? false,
-              position: entry.position ?? 0,
-              order: entry.order ?? 100,
-              depth: entry.depth ?? 4,
-              role: entry.role ?? 0,
-              disable: entry.disable ?? false,
-              scanDepth: entry.scanDepth ?? null,
-              caseSensitive: entry.caseSensitive ?? null,
-              matchWholeWords: entry.matchWholeWords ?? null,
               createdAt: now,
               updatedAt: now,
             }))
@@ -1754,24 +1744,7 @@ export async function registerImportRoutes(
     const globalSettings = parseJsonField(row.dataJson) as Record<string, unknown> | null;
     const assembledData = {
       name: row.name,
-      entries: entryRows.map((e) => ({
-        uid: e.uid,
-        key: parseJsonField(e.keysJson),
-        keysecondary: parseJsonField(e.keysSecondaryJson),
-        selective: e.selective,
-        selectiveLogic: e.selectiveLogic,
-        constant: e.constant,
-        content: e.content,
-        comment: e.comment,
-        position: e.position,
-        order: e.order,
-        depth: e.depth,
-        role: e.role,
-        disable: e.disable,
-        scanDepth: e.scanDepth ?? null,
-        caseSensitive: e.caseSensitive ?? null,
-        matchWholeWords: e.matchWholeWords ?? null,
-      })),
+      entries: entryRows.map((entry) => buildRawWorldbookEntryPayload(entry)),
       ...(globalSettings && typeof globalSettings === "object" ? globalSettings : {}),
     };
 
@@ -1840,7 +1813,7 @@ export async function registerImportRoutes(
 
       const now = Date.now();
       const nextVersion = row.version + 1;
-      const { entries, name: _wbName, ...globalSettings } = nextWorldbook;
+      const { entries } = nextWorldbook;
       let updateApplied = false;
 
       db.transaction((tx) => {
@@ -1848,7 +1821,7 @@ export async function registerImportRoutes(
           .update(worldbooks)
           .set({
             name: bodyParsed.data.name,
-            dataJson: JSON.stringify(globalSettings),
+            dataJson: JSON.stringify(buildPersistedWorldbookGlobalSettings(nextWorldbook)),
             updatedAt: now,
             version: nextVersion,
           })
@@ -1867,25 +1840,10 @@ export async function registerImportRoutes(
 
         if (entries.length > 0) {
           tx.insert(worldbookEntries).values(
-            entries.map((entry, index) => ({
+            entries.map((entry, index) => buildWorldbookEntryInsertValues(entry, {
               id: nanoid(),
               worldbookId: row.id,
               uid: entry.uid ?? index,
-              comment: entry.comment ?? "",
-              content: entry.content ?? "",
-              keysJson: JSON.stringify(entry.key ?? []),
-              keysSecondaryJson: JSON.stringify(entry.keysecondary ?? []),
-              selective: entry.selective ?? true,
-              selectiveLogic: entry.selectiveLogic ?? 0,
-              constant: entry.constant ?? false,
-              position: entry.position ?? 0,
-              order: entry.order ?? 100,
-              depth: entry.depth ?? 4,
-              role: entry.role ?? 0,
-              disable: entry.disable ?? false,
-              scanDepth: entry.scanDepth ?? null,
-              caseSensitive: entry.caseSensitive ?? null,
-              matchWholeWords: entry.matchWholeWords ?? null,
               createdAt: now,
               updatedAt: now,
             }))

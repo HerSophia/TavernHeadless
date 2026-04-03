@@ -50,7 +50,7 @@ const createEntrySchema = z.object({
   selective: z.boolean().optional(),
   selective_logic: z.number().int().min(0).max(3).optional(),
   constant: z.boolean().optional(),
-  position: z.number().int().min(0).max(6).optional(),
+  position: z.number().int().min(0).max(7).optional(),
   order: z.number().int().optional(),
   depth: z.number().int().min(0).optional(),
   role: z.number().int().min(0).max(2).optional(),
@@ -58,6 +58,10 @@ const createEntrySchema = z.object({
   scan_depth: z.number().int().min(0).nullable().optional(),
   case_sensitive: z.boolean().nullable().optional(),
   match_whole_words: z.boolean().nullable().optional(),
+  exclude_recursion: z.boolean().optional(),
+  prevent_recursion: z.boolean().optional(),
+  delay_until_recursion: z.number().int().min(1).nullable().optional(),
+  outlet_name: z.string().optional(),
 });
 
 const updateEntryFieldsShape = {
@@ -68,7 +72,7 @@ const updateEntryFieldsShape = {
   selective: z.boolean().optional(),
   selective_logic: z.number().int().min(0).max(3).optional(),
   constant: z.boolean().optional(),
-  position: z.number().int().min(0).max(6).optional(),
+  position: z.number().int().min(0).max(7).optional(),
   order: z.number().int().optional(),
   depth: z.number().int().min(0).optional(),
   role: z.number().int().min(0).max(2).optional(),
@@ -76,6 +80,10 @@ const updateEntryFieldsShape = {
   scan_depth: z.number().int().min(0).nullable().optional(),
   case_sensitive: z.boolean().nullable().optional(),
   match_whole_words: z.boolean().nullable().optional(),
+  exclude_recursion: z.boolean().optional(),
+  prevent_recursion: z.boolean().optional(),
+  delay_until_recursion: z.number().int().min(1).nullable().optional(),
+  outlet_name: z.string().optional(),
 };
 
 const updateEntrySchema = z
@@ -175,6 +183,10 @@ const entryExample = {
   scan_depth: null,
   case_sensitive: null,
   match_whole_words: null,
+  exclude_recursion: false,
+  prevent_recursion: false,
+  delay_until_recursion: null,
+  outlet_name: "",
   created_at: 1735689600000,
   updated_at: 1735689660000,
 } as const;
@@ -290,7 +302,7 @@ const entryFieldsJsonSchemaProperties = {
   selective: { type: "boolean" },
   selective_logic: { type: "integer", minimum: 0, maximum: 3 },
   constant: { type: "boolean" },
-  position: { type: "integer", minimum: 0, maximum: 6 },
+  position: { type: "integer", minimum: 0, maximum: 7 },
   order: { type: "integer" },
   depth: { type: "integer", minimum: 0 },
   role: { type: "integer", minimum: 0, maximum: 2 },
@@ -298,6 +310,10 @@ const entryFieldsJsonSchemaProperties = {
   scan_depth: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
   case_sensitive: { anyOf: [{ type: "boolean" }, { type: "null" }] },
   match_whole_words: { anyOf: [{ type: "boolean" }, { type: "null" }] },
+  exclude_recursion: { type: "boolean" },
+  prevent_recursion: { type: "boolean" },
+  delay_until_recursion: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
+  outlet_name: { type: "string" },
 } as const;
 
 const entryJsonSchema = {
@@ -307,7 +323,8 @@ const entryJsonSchema = {
     "keys", "keys_secondary",
     "selective", "selective_logic", "constant",
     "position", "order", "depth", "role", "disable",
-    "scan_depth", "case_sensitive", "match_whole_words",
+    "scan_depth", "case_sensitive", "match_whole_words", "exclude_recursion",
+    "prevent_recursion", "delay_until_recursion", "outlet_name",
     "created_at", "updated_at",
   ],
   properties: {
@@ -599,6 +616,10 @@ function toEntryResponse(row: typeof worldbookEntries.$inferSelect) {
     scan_depth: row.scanDepth ?? null,
     case_sensitive: row.caseSensitive ?? null,
     match_whole_words: row.matchWholeWords ?? null,
+    exclude_recursion: row.excludeRecursion,
+    prevent_recursion: row.preventRecursion,
+    delay_until_recursion: row.delayUntilRecursion ?? null,
+    outlet_name: row.outletName,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
@@ -629,6 +650,10 @@ function buildEntryUpdates(
   if (fields.scan_depth !== undefined) updates.scanDepth = fields.scan_depth;
   if (fields.case_sensitive !== undefined) updates.caseSensitive = fields.case_sensitive;
   if (fields.match_whole_words !== undefined) updates.matchWholeWords = fields.match_whole_words;
+  if (fields.exclude_recursion !== undefined) updates.excludeRecursion = fields.exclude_recursion;
+  if (fields.prevent_recursion !== undefined) updates.preventRecursion = fields.prevent_recursion;
+  if (fields.delay_until_recursion !== undefined) updates.delayUntilRecursion = fields.delay_until_recursion;
+  if (fields.outlet_name !== undefined) updates.outletName = fields.outlet_name;
 
   return updates;
 }
@@ -853,6 +878,10 @@ export async function registerWorldbookEntryRoutes(
             scanDepth: parsedBody.data.scan_depth ?? null,
             caseSensitive: parsedBody.data.case_sensitive ?? null,
             matchWholeWords: parsedBody.data.match_whole_words ?? null,
+            excludeRecursion: parsedBody.data.exclude_recursion ?? false,
+            preventRecursion: parsedBody.data.prevent_recursion ?? false,
+            delayUntilRecursion: parsedBody.data.delay_until_recursion ?? null,
+            outletName: parsedBody.data.outlet_name ?? "",
             createdAt: now,
             updatedAt: now,
           })

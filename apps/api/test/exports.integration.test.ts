@@ -37,6 +37,32 @@ const MINIMAL_WORLDBOOK = {
   },
 };
 
+const RICH_WORLDBOOK = {
+  name: "Recursive World",
+  scanDepth: 6,
+  caseSensitive: true,
+  matchWholeWords: true,
+  recursive: true,
+  maxRecursionSteps: 3,
+  entries: {
+    "0": {
+      uid: 0,
+      key: ["dragon"],
+      keysecondary: ["fire"],
+      content: "Dragons are powerful creatures.",
+      selective: true,
+      selectiveLogic: 0,
+      constant: false,
+      position: 7,
+      extensions: {
+        outlet_name: "LoreOutlet",
+        exclude_recursion: true,
+        delay_until_recursion: 2,
+      },
+    },
+  },
+};
+
 const MINIMAL_REGEX_SCRIPTS = [
   {
     id: "regex-1",
@@ -245,6 +271,37 @@ describe("Export routes", () => {
     });
     expect(missingRegexRes.statusCode).toBe(404);
     expect(missingRegexRes.json<ErrorResponse>().error.code).toBe("regex_profile_not_found");
+  });
+
+  it("exports worldbook global settings and recursive or outlet fields without losing semantics", async () => {
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/import/worldbook",
+      payload: {
+        name: "Rich World",
+        data: RICH_WORLDBOOK,
+      },
+    });
+    expect(importRes.statusCode).toBe(201);
+    const worldbookId = importRes.json<ItemResponse<{ id: string }>>().data.id;
+
+    const exportRes = await app.inject({
+      method: "GET",
+      url: `/export/worldbook/${worldbookId}`,
+    });
+    expect(exportRes.statusCode).toBe(200);
+
+    const body = exportRes.json<{
+      scanDepth: number;
+      caseSensitive: boolean;
+      matchWholeWords: boolean;
+      recursive: boolean;
+      maxRecursionSteps: number;
+      entries: Record<string, Record<string, unknown>>;
+    }>();
+    expect(body).toMatchObject({ scanDepth: 6, caseSensitive: true, matchWholeWords: true, recursive: true, maxRecursionSteps: 3 });
+    expect(body.entries["0"]).toMatchObject({ key: ["dragon"], keysecondary: ["fire"], position: 7, outletName: "LoreOutlet", excludeRecursion: true, delayUntilRecursion: 2 });
+    expect((body.entries["0"]?.extensions as Record<string, unknown> | undefined)?.outlet_name).toBe("LoreOutlet");
   });
 
   it("exports the latest character card and a specific version and covers missing-resource branches", async () => {
