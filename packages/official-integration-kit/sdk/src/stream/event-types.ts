@@ -1,4 +1,4 @@
-import type { RespondFinalState } from "../resources/sessions.js";
+import type { RespondFinalState, RespondMemoryReceipt } from "../resources/sessions.js";
 import type { ApiUsage } from "../types/usage.js";
 
 export type TavernRespondStartPayload = {
@@ -81,6 +81,7 @@ export type TavernRespondDonePayload = {
   floorId: string;
   floorNo: number;
   generatedText?: string;
+  memory?: RespondMemoryReceipt;
   summaries: string[];
   totalUsage: ApiUsage;
 };

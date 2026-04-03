@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { registerChatRoutes } from "../src/routes/chat";
 import { ChatServiceError, type ChatService } from "../src/services/chat-service";
+import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
 
 interface ChatServiceStub {
   respond: ReturnType<typeof vi.fn>;
@@ -31,6 +32,7 @@ describe("chat routes", () => {
     options: { enablePromptDryRun?: boolean; enableSseChat?: boolean } = {}
   ) {
     app = Fastify({ logger: false });
+    await registerDevelopmentTestAuth(app);
     await registerChatRoutes(
       app,
       chatService as unknown as ChatService,
@@ -54,6 +56,7 @@ describe("chat routes", () => {
         generatedText: "hello",
         summaries: [],
         totalUsage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
+        memory: { mode: "async", status: "queued", jobId: "memory-job:ingest_turn:floor-1" },
         finalState: "committed",
       })),
     });
@@ -97,6 +100,11 @@ describe("chat routes", () => {
         generated_text: "hello",
         summaries: [],
         total_usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+        memory: {
+          mode: "async",
+          status: "queued",
+          job_id: "memory-job:ingest_turn:floor-1",
+        },
         final_state: "committed",
       },
     });
@@ -627,6 +635,7 @@ describe("chat routes", () => {
         generatedText: "edited",
         summaries: [],
         totalUsage: { promptTokens: 2, completionTokens: 3, totalTokens: 5 },
+        memory: { mode: "sync", status: "applied" },
         finalState: "committed",
       })),
     });
@@ -664,6 +673,11 @@ describe("chat routes", () => {
         generated_text: "edited",
         summaries: [],
         total_usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 },
+        memory: {
+          mode: "sync",
+          status: "applied",
+          job_id: null,
+        },
         final_state: "committed",
       },
     });

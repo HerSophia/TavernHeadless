@@ -5,6 +5,7 @@ import { buildApp } from "../src/app";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import { presets } from "../src/db/schema";
 import { registerImportRoutes } from "../src/routes/imports";
+import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
 
 const MINIMAL_PRESET = {
   prompts: [
@@ -357,6 +358,7 @@ describe("Import route extra branches", () => {
     beforeEach(async () => {
       connection = createDatabase(":memory:");
       app = Fastify({ logger: false });
+      await registerDevelopmentTestAuth(app, connection.db);
       await registerImportRoutes(app, connection);
       await app.ready();
     });

@@ -80,6 +80,11 @@ const client = createTavernClient({
 - `AUTH_MODE=api_key` 时，应当由服务端通过 `AUTH_API_KEY_ACCOUNTS` 把 API Key 绑定到账号
 - SDK 各资源方法里的 `accountId` 参数，以及 `buildAccountHeaders()` 生成的 `x-account-id` 头，都只是兼容头提示，不能替代服务端认证，也不会直接切换账号
 
+另外需要注意：
+
+- `AUTH_MODE=off` 只应用于本地开发；服务端会在 `NODE_ENV=production && AUTH_MODE=off` 时直接拒绝启动
+- `/health`、`/version`、`/openapi.json`、`/docs`、`/docs/*` 这些 public path 始终按匿名请求处理，不会继承管理员上下文
+
 ### 用底层方法直接请求
 
 有些场景下你可能不想走资源方法，想直接发请求：
@@ -124,6 +129,7 @@ const result = await client.sessions.respond({
 console.log(result.generatedText);
 console.log(result.summaries);
 console.log(result.finalState);
+console.log(result.memory);
 console.log(result.totalTokens);
 ```
 
@@ -132,8 +138,18 @@ Chat 相关方法会保留后端返回的这些字段：
 - `generatedText`
 - `summaries`
 - `finalState`
+- `memory`
 
 其中 `finalState === "committed"` 表示生成结果已经越过提交边界，相关持久化写入已经完成。
+
+如果服务端在当前 turn 上启用了记忆持久化，`memory` 会额外说明记忆链路是同步完成还是已进入后台队列：
+
+```ts
+result.memory;
+// { mode: "sync", status: "applied", jobId: null }
+// 或
+// { mode: "async", status: "queued", jobId: "memory-job:ingest_turn:floor-1" }
+```
 
 ### 流式回复
 
@@ -159,6 +175,7 @@ const result = await client.sessions.respondStream({
 console.log(result.floorId);
 console.log(result.summaries);
 console.log(result.finalState);
+console.log(result.memory);
 ```
 
 `respondStream()` 内部已经处理好 SSE 解析，你只管写回调就行。
@@ -505,7 +522,9 @@ const executions = await client.tools.listExecutions({
 
 运行时工具目录通过 `client.sessions.getRuntimeToolCatalog()` 读取。它是**会话级**快照，对应某个 session 在当前权限、启用状态和 MCP 连接状态下真正可调用的工具集合，不是全局静态目录。
 
-公开审计模型已经是 `tool_execution_record`，因此新的查询应优先使用 `listExecutions()`；`tool_call_record` 和 `listCallRecords()` 只用于兼容旧查询面。
+如果某个 MCP 工具目录是从快照回退得到的，对应条目上的 `catalogSource` 会是 `"cached"`；live 列举成功时则是 `"live"`。
+
+公开审计模型已经是 `tool_execution_record`，因此新的查询应优先使用 `listExecutions()`；`tool_call_record` 和 `listCallRecords()` 只用于兼容旧查询面。兼容状态现在也可能返回 `queued` / `running`。
 
 如果你在生成请求里显式传 `toolMode`，当前运行时只支持 `inline`。`standalone` 和 `both` 还不受支持，服务端会返回结构化配置错误，而不是悄悄降级。
 

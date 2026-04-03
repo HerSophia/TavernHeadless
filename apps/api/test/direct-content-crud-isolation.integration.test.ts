@@ -141,6 +141,7 @@ describe("direct content CRUD multi-account isolation", () => {
     pageNo: number;
     pageKind: PageKind;
     isActive?: boolean;
+    version?: number;
   }): Promise<PageDto> {
     const response = await app.inject({
       method: "POST",
@@ -150,7 +151,7 @@ describe("direct content CRUD multi-account isolation", () => {
         floor_id: args.floorId,
         page_no: args.pageNo,
         page_kind: args.pageKind,
-        ...(args.isActive !== undefined ? { is_active: args.isActive } : {}),
+        ...(args.version !== undefined ? { version: args.version } : {}),
       },
     });
 
@@ -328,10 +329,12 @@ describe("direct content CRUD multi-account isolation", () => {
     const floorA = await createFloor({ token: tokenA, sessionId: sessionA, floorNo: 0, branchId: "main" });
     const floorB = await createFloor({ token: tokenB, sessionId: sessionB, floorNo: 0, branchId: "main" });
 
-    const pageA1 = await createPage({ token: tokenA, floorId: floorA.id, pageNo: 1, pageKind: "input", isActive: true });
-    const pageA2 = await createPage({ token: tokenA, floorId: floorA.id, pageNo: 2, pageKind: "output", isActive: false });
-    const pageB1 = await createPage({ token: tokenB, floorId: floorB.id, pageNo: 1, pageKind: "input", isActive: true });
-    const pageB2 = await createPage({ token: tokenB, floorId: floorB.id, pageNo: 2, pageKind: "output", isActive: false });
+    const pageA1 = await createPage({ token: tokenA, floorId: floorA.id, pageNo: 1, pageKind: "input" });
+    const pageA2 = await createPage({ token: tokenA, floorId: floorA.id, pageNo: 2, pageKind: "output", version: 1 });
+    const pageA3 = await createPage({ token: tokenA, floorId: floorA.id, pageNo: 2, pageKind: "output", version: 2 });
+    const pageB1 = await createPage({ token: tokenB, floorId: floorB.id, pageNo: 1, pageKind: "input" });
+    const pageB2 = await createPage({ token: tokenB, floorId: floorB.id, pageNo: 2, pageKind: "output", version: 1 });
+    const pageB3 = await createPage({ token: tokenB, floorId: floorB.id, pageNo: 2, pageKind: "output", version: 2 });
 
     const listOwnResponse = await app.inject({
       method: "GET",
@@ -340,7 +343,7 @@ describe("direct content CRUD multi-account isolation", () => {
     });
 
     expect(listOwnResponse.statusCode, listOwnResponse.body).toBe(200);
-    expect(listOwnResponse.json<ListResponse<PageDto>>().data.map((item) => item.id)).toEqual([pageB1.id, pageB2.id]);
+    expect(new Set(listOwnResponse.json<ListResponse<PageDto>>().data.map((item) => item.id))).toEqual(new Set([pageB1.id, pageB2.id, pageB3.id]));
 
     const filteredForeignListResponse = await app.inject({
       method: "GET",
@@ -374,7 +377,7 @@ describe("direct content CRUD multi-account isolation", () => {
       method: "PATCH",
       url: `/pages/${pageA1.id}`,
       headers: bearer(tokenB),
-      payload: { is_active: false },
+      payload: { version: 99 },
     });
 
     expect(patchForeignResponse.statusCode).toBe(404);
@@ -391,13 +394,13 @@ describe("direct content CRUD multi-account isolation", () => {
 
     const activateOwnResponse = await app.inject({
       method: "PATCH",
-      url: `/pages/${pageB2.id}/activate`,
+      url: `/pages/${pageB3.id}/activate`,
       headers: bearer(tokenB),
     });
 
     expect(activateOwnResponse.statusCode, activateOwnResponse.body).toBe(200);
     expect(activateOwnResponse.json<ItemResponse<PageDto>>().data).toEqual(
-      expect.objectContaining({ id: pageB2.id, is_active: true })
+      expect.objectContaining({ id: pageB3.id, is_active: true })
     );
 
     const pageB1AfterActivateResponse = await app.inject({
@@ -407,11 +410,20 @@ describe("direct content CRUD multi-account isolation", () => {
     });
 
     expect(pageB1AfterActivateResponse.statusCode, pageB1AfterActivateResponse.body).toBe(200);
-    expect(pageB1AfterActivateResponse.json<ItemResponse<PageDto>>().data.is_active).toBe(false);
+    expect(pageB1AfterActivateResponse.json<ItemResponse<PageDto>>().data.is_active).toBe(true);
+
+    const pageB2AfterActivateResponse = await app.inject({
+      method: "GET",
+      url: `/pages/${pageB2.id}`,
+      headers: bearer(tokenB),
+    });
+
+    expect(pageB2AfterActivateResponse.statusCode, pageB2AfterActivateResponse.body).toBe(200);
+    expect(pageB2AfterActivateResponse.json<ItemResponse<PageDto>>().data.is_active).toBe(false);
 
     const activateForeignResponse = await app.inject({
       method: "PATCH",
-      url: `/pages/${pageA2.id}/activate`,
+      url: `/pages/${pageA3.id}/activate`,
       headers: bearer(tokenB),
     });
 

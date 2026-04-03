@@ -43,6 +43,14 @@ POST /users
 
 返回 `{ "data": User }` 。
 
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败 |
+| `409` | `user_conflict` | 同账号下用户名称冲突 |
+| `503` | `resource_busy` | SQLite `busy / locked` 重试耗尽 |
+
 ## 列出用户卡
 
 ```http
@@ -56,7 +64,10 @@ GET /users
 | `status` | string | 按状态过滤 |
 | `include_deleted` | boolean | 是否包含已删除（默认 `false`） |
 | `keyword` | string | 按名称搜索 |
-| `sort_by` | string | `created_at`（默认）/ `updated_at` / `name` |
+| `sort_by` | string | `updated_at`（默认）/ `created_at` / `name` |
+| `sort_order` | string | `asc` / `desc` |
+| `limit` | integer | 每页条数，默认 `50` |
+| `offset` | integer | 偏移量，默认 `0` |
 
 ## 获取用户卡详情
 
@@ -81,6 +92,15 @@ PATCH /users/:id
 }
 ```
 
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体为空或字段校验失败 |
+| `404` | `not_found` | 用户不存在，或已处于 `deleted` 状态 |
+| `409` | `user_revision_conflict` / `user_conflict` | `expected_revision` 过期，或同账号下用户名称冲突 |
+| `503` | `resource_busy` | SQLite `busy / locked` 重试耗尽 |
+
 ## 软删除用户卡
 
 ```http
@@ -96,6 +116,15 @@ DELETE /users/:id
 ```json
 { "data": { "id": "usr_001", "deleted": true, "revision": 4 } }
 ```
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败 |
+| `404` | `not_found` | 用户不存在，或已处于 `deleted` 状态 |
+| `409` | `user_revision_conflict` | `expected_revision` 过期 |
+| `503` | `resource_busy` | SQLite `busy / locked` 重试耗尽 |
 
 ## 批量更新用户状态
 
@@ -138,9 +167,10 @@ PATCH /users/batch/status
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败、ids 为空或超过 100 条、存在重复 ID |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败、ids 为空或超过 100 条、存在重复 ID |
+| `503` | `resource_busy` | SQLite `busy / locked` 重试耗尽 |
 
 ## 批量删除用户
 
@@ -180,9 +210,10 @@ POST /users/batch/delete
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `400` | 请求体校验失败、ids 为空或超过 100 条、存在重复 ID |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败、ids 为空或超过 100 条、存在重复 ID |
+| `503` | `resource_busy` | SQLite `busy / locked` 重试耗尽 |
 
 ## 并发错误码
 

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { registerChatRoutes } from "../src/routes/chat";
 import { ChatServiceError, type ChatService, type RespondResult } from "../src/services/chat-service";
+import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
 
 interface ChatServiceStub {
   respond: ReturnType<typeof vi.fn>;
@@ -31,6 +32,7 @@ describe("POST /sessions/:id/respond/stream", () => {
     options: { enableSseChat?: boolean; enablePromptDryRun?: boolean } = {}
   ) {
     app = Fastify({ logger: false });
+    await registerDevelopmentTestAuth(app);
     await registerChatRoutes(
       app,
       chatService as unknown as ChatService,

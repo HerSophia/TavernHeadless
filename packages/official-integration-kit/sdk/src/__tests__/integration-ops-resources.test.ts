@@ -200,7 +200,7 @@ describe("sdk integration and operations resources", () => {
       page_id: "page-1",
       result: { ok: true },
       seq: 1,
-      status: "success",
+      status: "queued",
       tool_name: "lookup_notes",
     };
     const fetchImpl = vi
@@ -433,7 +433,7 @@ describe("sdk integration and operations resources", () => {
         pageId: "page-1",
         sortBy: "seq",
         sortOrder: "desc",
-        status: "success",
+        status: "queued",
       }),
     ).resolves.toEqual({
       meta: {
@@ -454,7 +454,7 @@ describe("sdk integration and operations resources", () => {
           pageId: "page-1",
           result: { ok: true },
           seq: 1,
-          status: "success",
+          status: "queued",
           toolName: "lookup_notes",
         },
       ],
@@ -466,7 +466,7 @@ describe("sdk integration and operations resources", () => {
     );
     expect(String(fetchImpl.mock.calls[2]![0])).toBe("http://localhost:3000/tools/definitions/tool-1");
     expect(String(fetchImpl.mock.calls[7]![0])).toBe(
-      "http://localhost:3000/tools/call-records?caller_slot=narrator&limit=5&offset=1&page_id=page-1&sort_by=seq&sort_order=desc&status=success",
+      "http://localhost:3000/tools/call-records?caller_slot=narrator&limit=5&offset=1&page_id=page-1&sort_by=seq&sort_order=desc&status=queued",
     );
 
     const [, createInit] = fetchImpl.mock.calls[3]!;

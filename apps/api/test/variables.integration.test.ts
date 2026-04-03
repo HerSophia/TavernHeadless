@@ -358,13 +358,20 @@ describe("variables routes", () => {
         sessionId,
         floorNo: 0,
         branchId: "main",
-        state: "committed",
       });
       const committedPageId = await createPage(app, {
         floorId: committedFloorId,
         pageNo: 0,
         pageKind: "input",
       });
+
+      const commitResponse = await app.inject({
+        method: "PATCH",
+        url: `/floors/${committedFloorId}`,
+        payload: { state: "committed" },
+      });
+
+      expect(commitResponse.statusCode, commitResponse.body).toBe(200);
 
       const floorRes = await app.inject({
         method: "PUT",

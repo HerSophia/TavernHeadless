@@ -16,6 +16,7 @@ import type {
 
 import type { McpServerConfig } from './types.js';
 import type { McpConnectionManager } from './mcp-connection-manager.js';
+import type { McpToolCatalogSnapshotStore } from './mcp-tool-catalog-snapshot-store.js';
 import type { ToolRuntimePolicy } from '../services/tool-runtime-policy.js';
 
 function inferExecutionStatus(error: string): Exclude<ToolExecutionStatus, 'running' | 'queued'> {
@@ -31,6 +32,37 @@ function inferExecutionStatus(error: string): Exclude<ToolExecutionStatus, 'runn
   return 'error';
 }
 
+function cloneToolDefinition(tool: ToolDefinition): ToolDefinition {
+  return {
+    ...tool,
+    parameters: {
+      type: tool.parameters.type,
+      properties: { ...tool.parameters.properties },
+      ...(tool.parameters.required ? { required: [...tool.parameters.required] } : {}),
+    },
+    allowedSlots: [...tool.allowedSlots],
+  };
+}
+
+function normalizeListedTools(
+  configId: string,
+  tools: ToolDefinition[],
+  toolRuntimePolicy?: ToolRuntimePolicy,
+): ToolDefinition[] {
+  return tools.map((tool) => {
+    const annotated = toolRuntimePolicy?.annotateMcpTool(configId, tool) ?? cloneToolDefinition(tool);
+    return cloneToolDefinition(annotated);
+  });
+}
+
+export type McpToolCatalogSource = 'live' | 'cached';
+
+export interface McpToolCatalogResult {
+  tools: ToolDefinition[];
+  source: McpToolCatalogSource;
+  capturedAt: number;
+}
+
 export class McpToolProvider implements ToolProvider {
   readonly id: string;
   readonly type: ToolProviderType = 'mcp';
@@ -40,6 +72,7 @@ export class McpToolProvider implements ToolProvider {
     private connectionManager: McpConnectionManager,
     private readonly options: {
       toolRuntimePolicy?: ToolRuntimePolicy;
+      snapshotStore?: McpToolCatalogSnapshotStore;
     } = {},
   ) {
     this.id = `mcp:${config.id}`;
@@ -50,18 +83,61 @@ export class McpToolProvider implements ToolProvider {
    * 如果连接不可用，返回空数组而不抛异常。
    */
   async listTools(): Promise<ToolDefinition[]> {
+    const catalog = await this.listToolsWithMetadata();
+    return catalog.tools;
+  }
+
+  async listToolsWithMetadata(): Promise<McpToolCatalogResult> {
+    const capturedAt = Date.now();
+
     try {
       const connection = await this.connectionManager.getConnection(this.config.id);
       if (!connection || connection.state !== 'connected') {
-        return [];
+        return await this.readCachedCatalog(capturedAt);
       }
 
-      return connection
-        .getTools()
-        .map((tool) => this.options.toolRuntimePolicy?.annotateMcpTool(this.config.id, tool) ?? { ...tool });
+      const tools = normalizeListedTools(
+        this.config.id,
+        connection.getTools(),
+        this.options.toolRuntimePolicy,
+      );
+
+      if (this.options.snapshotStore) {
+        try {
+          await this.options.snapshotStore.put(this.id, {
+            providerKey: this.id,
+            tools,
+            capturedAt,
+          });
+        } catch {
+          // Snapshot writes use best-effort semantics and must not hide live results.
+        }
+      }
+
+      return {
+        tools,
+        source: 'live',
+        capturedAt,
+      };
     } catch {
-      return [];
+      return await this.readCachedCatalog(capturedAt);
     }
+  }
+
+  private async readCachedCatalog(capturedAt: number): Promise<McpToolCatalogResult> {
+    const snapshot = this.options.snapshotStore
+      ? await this.options.snapshotStore.get(this.id)
+      : null;
+
+    if (snapshot) {
+      return {
+        tools: snapshot.tools.map((tool) => cloneToolDefinition(tool)),
+        source: 'cached',
+        capturedAt: snapshot.capturedAt,
+      };
+    }
+
+    return { tools: [], source: 'live', capturedAt };
   }
 
   /**

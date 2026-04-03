@@ -9,7 +9,9 @@ import { messagePages } from "../db/schema";
 import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
-import { getOwnedFloorById, getOwnedFloorIds, getOwnedPageById, getOwnedPageIds } from "../services/resource-ownership";
+import { getFloorContentMutationRejection, type FloorContentMutationRejection } from "../services/floor-content-mutability-policy";
+import { OwnedFloorRepository, OwnedPageRepository } from "../services/owned-resource-repositories";
+import { PageActivationService } from "../services/page-activation-service";
 
 const pageKindSchema = z.enum(["input", "output", "mixed"]);
 
@@ -28,7 +30,6 @@ const createPageSchema = z.object({
   floor_id: z.string().min(1),
   page_no: z.number().int().nonnegative(),
   page_kind: pageKindSchema,
-  is_active: z.boolean().optional(),
   version: z.number().int().positive().optional(),
   checksum: z.string().min(1).optional()
 });
@@ -37,7 +38,6 @@ const updatePageSchema = z
   .object({
     page_no: z.number().int().nonnegative().optional(),
     page_kind: pageKindSchema.optional(),
-    is_active: z.boolean().optional(),
     version: z.number().int().positive().optional(),
     checksum: z.string().min(1).optional()
   })
@@ -64,7 +64,6 @@ const pageBodyJsonSchema = {
     floor_id: { type: "string", minLength: 1 },
     page_no: { type: "integer", minimum: 0 },
     page_kind: { type: "string", enum: ["input", "output", "mixed"] },
-    is_active: { type: "boolean" },
     version: { type: "integer", minimum: 1 },
     checksum: { type: "string", minLength: 1 },
   },
@@ -134,7 +133,19 @@ const deleteResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
-function toPageResponse(row: typeof messagePages.$inferSelect) {
+type PageRowLike = {
+  id: string;
+  floorId: string;
+  pageNo: number;
+  pageKind: typeof messagePages.$inferSelect["pageKind"];
+  isActive: boolean;
+  version: number;
+  checksum: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+function toPageResponse(row: PageRowLike) {
   return {
     id: row.id,
     floor_id: row.floorId,
@@ -148,11 +159,18 @@ function toPageResponse(row: typeof messagePages.$inferSelect) {
   };
 }
 
+function sendPageMutationRejection(reply: Parameters<typeof sendError>[0], rejection: FloorContentMutationRejection) {
+  return sendError(reply, 409, rejection.code, rejection.message);
+}
+
 export async function registerMessagePageRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection
 ): Promise<void> {
   const { db } = connection;
+  const ownedFloors = new OwnedFloorRepository(db);
+  const ownedPages = new OwnedPageRepository(db);
+  const pageActivationService = new PageActivationService(db);
 
   app.post("/pages", {
     schema: {
@@ -178,13 +196,34 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const floor = await getOwnedFloorById(db, auth.accountId, parsedBody.data.floor_id);
+    const floor = ownedFloors.getById(auth.accountId, parsedBody.data.floor_id);
 
     if (!floor) {
       return sendError(reply, 404, "not_found", "Floor not found");
     }
 
+    const rejection = getFloorContentMutationRejection({
+      mutationKind: "page.create",
+      floorState: floor.state,
+    });
+
+    if (rejection) {
+      return sendPageMutationRejection(reply, rejection);
+    }
+
     const now = Date.now();
+    const activeSlotRow = db
+      .select({ id: messagePages.id })
+      .from(messagePages)
+      .where(
+        and(
+          eq(messagePages.floorId, parsedBody.data.floor_id),
+          eq(messagePages.pageNo, parsedBody.data.page_no),
+          eq(messagePages.isActive, true)
+        )
+      )
+      .limit(1)
+      .all()[0];
 
     const createdRows = await db
       .insert(messagePages)
@@ -193,7 +232,7 @@ export async function registerMessagePageRoutes(
         floorId: parsedBody.data.floor_id,
         pageNo: parsedBody.data.page_no,
         pageKind: parsedBody.data.page_kind,
-        isActive: parsedBody.data.is_active ?? true,
+        isActive: activeSlotRow === undefined,
         version: parsedBody.data.version ?? 1,
         checksum: parsedBody.data.checksum ?? null,
         createdAt: now,
@@ -225,8 +264,7 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const ownedFloorIds = await getOwnedFloorIds(
-      db,
+    const ownedFloorIds = ownedFloors.listIds(
       auth.accountId,
       parsedQuery.data.floor_id !== undefined ? [parsedQuery.data.floor_id] : undefined
     );
@@ -319,7 +357,7 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const row = await getOwnedPageById(db, auth.accountId, parsedParams.data.id);
+    const row = ownedPages.getContextById(auth.accountId, parsedParams.data.id);
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Message page not found");
@@ -342,6 +380,7 @@ export async function registerMessagePageRoutes(
       response: {
         200: pageResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -359,7 +398,7 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const existingPage = await getOwnedPageById(db, auth.accountId, parsedParams.data.id);
+    const existingPage = ownedPages.getContextById(auth.accountId, parsedParams.data.id);
 
     if (!existingPage) {
       return sendError(reply, 404, "not_found", "Message page not found");
@@ -377,10 +416,6 @@ export async function registerMessagePageRoutes(
       updates.pageKind = parsedBody.data.page_kind;
     }
 
-    if (parsedBody.data.is_active !== undefined) {
-      updates.isActive = parsedBody.data.is_active;
-    }
-
     if (parsedBody.data.version !== undefined) {
       updates.version = parsedBody.data.version;
     }
@@ -388,6 +423,13 @@ export async function registerMessagePageRoutes(
     if (parsedBody.data.checksum !== undefined) {
       updates.checksum = parsedBody.data.checksum;
     }
+
+    const rejection = getFloorContentMutationRejection({
+      mutationKind: "page.update",
+      floorState: existingPage.floorState,
+      pageKind: existingPage.pageKind,
+    });
+    if (rejection) return sendPageMutationRejection(reply, rejection);
 
     const [updated] = await db
       .update(messagePages)
@@ -411,6 +453,7 @@ export async function registerMessagePageRoutes(
       response: {
         200: deleteResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -421,11 +464,18 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const existingPage = await getOwnedPageById(db, auth.accountId, parsedParams.data.id);
+    const existingPage = ownedPages.getContextById(auth.accountId, parsedParams.data.id);
 
     if (!existingPage) {
       return sendError(reply, 404, "not_found", "Message page not found");
     }
+
+    const rejection = getFloorContentMutationRejection({
+      mutationKind: "page.delete",
+      floorState: existingPage.floorState,
+      pageKind: existingPage.pageKind,
+    });
+    if (rejection) return sendPageMutationRejection(reply, rejection);
 
     const deleted = await db.delete(messagePages).where(eq(messagePages.id, parsedParams.data.id)).returning();
 
@@ -447,6 +497,7 @@ export async function registerMessagePageRoutes(
       response: {
         200: pageResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         500: errorResponseJsonSchema,
       },
     },
@@ -457,42 +508,15 @@ export async function registerMessagePageRoutes(
     const targetId = parsedParams.data.id;
 
     const auth = getRequestAuthContext(request);
-    const targetPage = await getOwnedPageById(db, auth.accountId, targetId);
-
-    if (!targetPage) {
+    const activation = pageActivationService.activateVersion(auth.accountId, targetId);
+    if (activation.kind === "not_found") {
       return sendError(reply, 404, "not_found", "Message page not found");
     }
-
-    // 幂等：已经是活跃状态则直接返回
-    if (targetPage.isActive) {
-      return reply.send({ data: toPageResponse(targetPage) });
+    if (activation.kind === "rejected") {
+      return sendPageMutationRejection(reply, activation.rejection);
     }
 
-    const now = Date.now();
-
-    // 1. 将同楼层所有活跃页 deactivate
-    await db
-      .update(messagePages)
-      .set({ isActive: false, updatedAt: now })
-      .where(
-        and(
-          eq(messagePages.floorId, targetPage.floorId),
-          eq(messagePages.isActive, true)
-        )
-      );
-
-    // 2. activate 目标页
-    const [updated] = await db
-      .update(messagePages)
-      .set({ isActive: true, updatedAt: now })
-      .where(eq(messagePages.id, targetId))
-      .returning();
-
-    if (!updated) {
-      return sendError(reply, 500, "internal_error", "Failed to activate page");
-    }
-
-    return reply.send({ data: toPageResponse(updated) });
+    return reply.send({ data: toPageResponse(activation.page) });
   });
 
   // ── Batch Operations ────────────────────────────────
@@ -507,6 +531,7 @@ export async function registerMessagePageRoutes(
       response: {
         200: batchResultResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -515,7 +540,19 @@ export async function registerMessagePageRoutes(
 
     const { ids } = bodyParsed.data;
     const auth = getRequestAuthContext(request);
-    const ownedPageIds = new Set(await getOwnedPageIds(db, auth.accountId, ids));
+    const ownedPageContexts = ownedPages.getContextsByIds(auth.accountId, ids);
+    const ownedPageIds = new Set(ownedPageContexts.map((page) => page.id));
+
+    const lockedPage = ownedPageContexts.find((page) =>
+      getFloorContentMutationRejection({
+        mutationKind: "page.delete",
+        floorState: page.floorState,
+        pageKind: page.pageKind,
+      }) !== null
+    );
+    if (lockedPage) {
+      return sendPageMutationRejection(reply, getFloorContentMutationRejection({ mutationKind: "page.delete", floorState: lockedPage.floorState, pageKind: lockedPage.pageKind })!);
+    }
 
     const results: { index: number; id: string; action: string }[] = [];
     let deleted = 0;

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const accounts = sqliteTable(
@@ -166,7 +167,10 @@ export const messagePages = sqliteTable(
     ),
     floorActivePageIdx: index("message_page_floor_active_no_idx").on(
       table.floorId, table.isActive, table.pageNo
-    )
+    ),
+    floorActiveSlotUnique: uniqueIndex("message_page_floor_no_active_uq").on(
+      table.floorId, table.pageNo
+    ).where(sql`${table.isActive} = 1`)
   })
 );
 
@@ -676,7 +680,7 @@ export const toolCallRecords = sqliteTable(
     toolName: text("tool_name").notNull(),
     argsJson: text("args_json").notNull().default('{}'),
     resultJson: text("result_json").notNull().default('{}'),
-    status: text("status", { enum: ["success", "error", "denied"] }).notNull().default("success"),
+    status: text("status", { enum: ["success", "error", "denied", "queued", "running"] }).notNull().default("success"),
     durationMs: integer("duration_ms").notNull().default(0),
     createdAt: integer("created_at").notNull(),
   },

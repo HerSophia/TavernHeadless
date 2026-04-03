@@ -119,7 +119,7 @@ for (const event of events) {
 // state.status 会经历 "idle" → "streaming" → "done"(或 "error")
 // state.content 是已累积的文本
 // state.result 在 done 时填充完整结果
-// state.result.summaries 和 state.result.finalState 会保留最终 done payload
+// state.result.summaries、state.result.finalState、state.result.memory 会保留最终 done payload
 ```
 
 如果 `done` 事件已经带回完整 `summaries`，reducer 会直接采用最终结果；如果旧服务端只在 `summary` 事件里提供摘要，reducer 会回退到已累积的摘要列表。
@@ -147,7 +147,7 @@ for (const event of events) {
 | `toolEvents` | 已收到的全部工具事件 |
 | `run` | 最近一次收到的楼层运行快照 |
 | `warnings` | 由工具重放安全信息推导出的警告 |
-| `result` | 最终结果（仅 done 状态，保留 `generatedText` / `summaries` / `finalState`） |
+| `result` | 最终结果（仅 done 状态，保留 `generatedText` / `summaries` / `finalState` / `memory`） |
 
 ### 整理工具事件和运行时目录
 
@@ -168,6 +168,8 @@ console.log(catalogSummary.conflictCount);
 ```
 
 这里的 `runtimeCatalog` 应来自 SDK 的 `client.sessions.getRuntimeToolCatalog(...)`。它是**会话级**运行时快照，不是全局工具目录。
+
+如果界面还需要标记 MCP 工具目录是否来自回退快照，可以直接读取每个条目的 `catalogSource`（`"live"` / `"cached"` / `null`）。`summarizeRuntimeToolCatalog()` 不会替你丢掉这个原始字段。
 
 ### 选择 active page
 

@@ -36,9 +36,12 @@ GET /mcp/servers
 | 参数 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `enabled` | boolean | 按启用状态过滤 |
-| `sort_by` | string | 排序字段（`created_at` \| `name`，默认 `created_at`） |
-| `limit` | integer | 每页条数 |
-| `offset` | integer | 偏移量 |
+| `sort_by` | string | 接受 `created_at` / `name`，默认 `created_at` |
+| `sort_order` | string | 接受 `asc` / `desc`，默认 `desc` |
+| `limit` | integer | 每页条数，默认 `50` |
+| `offset` | integer | 偏移量，默认 `0` |
+
+当前实现会接收 `sort_by` 和 `sort_order`，并在 `meta` 中回显，但数据库查询顺序目前固定按 `created_at`。客户端不应把这两个字段视为已经严格生效的排序保证。
 
 #### 响应 `200`
 
@@ -66,7 +69,7 @@ GET /mcp/servers
       "updated_at": 1719400000000
     }
   ],
-  "meta": { "total": 1, "limit": 20, "offset": 0, "has_more": false, "sort_by": "created_at", "sort_order": "desc" }
+  "meta": { "total": 1, "limit": 50, "offset": 0, "has_more": false, "sort_by": "created_at", "sort_order": "desc" }
 }
 ```
 
@@ -179,7 +182,9 @@ GET /mcp/servers/:id/status
     "tool_count": 5,
     "connected_at": 1719400000000,
     "tools_refreshed_at": 1719400010000,
-    "error": null
+    "error": null,
+    "reconnect_required": false,
+    "last_timeout_at": null
   }
 }
 ```

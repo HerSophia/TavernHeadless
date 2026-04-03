@@ -21,6 +21,7 @@ import {
 } from "./runtime-scope-state-repository.js";
 import type {
   RuntimeJobCommitResult,
+  RuntimeJobExecutionContext,
   RuntimeJobProgressUpdate,
   RuntimeJobRecord,
   RuntimeJobStatus,
@@ -359,10 +360,13 @@ export class RuntimeWorker {
       } else {
         job = await this.markRunning(job, scopeRef);
         payload = this.catalog.parsePayload(job.jobType, job.payloadJson);
-
-        const updateProgress = async (update: RuntimeJobProgressUpdate) => {
-          job = await this.updateRunningJob(job, scopeRef, update);
-        };
+        const executionContext = this.createExecutionContext(
+          scopeRef,
+          () => job,
+          (updatedJob) => {
+            job = updatedJob;
+          },
+        );
 
         prepared = await processor.prepare({
           db: this.db,
@@ -371,7 +375,10 @@ export class RuntimeWorker {
           workerId: this.workerId,
           leaseTtlMs: this.leaseTtlMs,
           readState: <T>() => parseJobJson<T>(job.stateJson),
-          updateProgress,
+          heartbeat: executionContext.heartbeat,
+          updateProgress: executionContext.updateProgress,
+          withHeartbeat: <T>(execute: (context: RuntimeJobExecutionContext) => Promise<T>) =>
+            this.withJobHeartbeat(executionContext, execute),
         });
       }
 
@@ -489,6 +496,129 @@ export class RuntimeWorker {
     await this.emitJobEvent("runtime.job_started", updatedJob, { workerId: this.workerId });
 
     return updatedJob;
+  }
+
+  private async heartbeatRunningJob(
+    job: RuntimeJobRecord,
+    scopeRef: RuntimeScopeRef,
+  ): Promise<RuntimeJobRecord> {
+    const now = Date.now();
+    const leaseUntil = now + this.leaseTtlMs;
+
+    this.db.transaction((tx) => {
+      this.scopeStates.renewLease(tx, scopeRef, this.workerId, now, leaseUntil);
+      const updateResult = tx.update(runtimeJobs)
+        .set({
+          leaseUntil,
+          updatedAt: now,
+        })
+        .where(and(
+          eq(runtimeJobs.id, job.id),
+          eq(runtimeJobs.status, "running"),
+          eq(runtimeJobs.leaseOwner, this.workerId),
+        ))
+        .run();
+
+      if (updateResult.changes !== 1) {
+        throw new RuntimeJobLeaseLostError(`Failed to renew runtime job '${job.id}' heartbeat`);
+      }
+    });
+
+    return {
+      ...job,
+      leaseUntil,
+      updatedAt: now,
+    };
+  }
+
+  private createExecutionContext(
+    scopeRef: RuntimeScopeRef,
+    getJob: () => RuntimeJobRecord,
+    setJob: (job: RuntimeJobRecord) => void,
+  ): RuntimeJobExecutionContext {
+    let updateQueue: Promise<RuntimeJobRecord> = Promise.resolve(getJob());
+
+    const runUpdate = async (
+      updater: (job: RuntimeJobRecord) => Promise<RuntimeJobRecord>,
+    ): Promise<void> => {
+      updateQueue = updateQueue.then(async (currentJob) => {
+        const updatedJob = await updater(currentJob);
+        setJob(updatedJob);
+        return updatedJob;
+      });
+
+      await updateQueue;
+    };
+
+    return {
+      heartbeat: async () => {
+        await runUpdate((currentJob) => this.heartbeatRunningJob(currentJob, scopeRef));
+      },
+      updateProgress: async (update) => {
+        await runUpdate((currentJob) => this.updateRunningJob(currentJob, scopeRef, update));
+      },
+    };
+  }
+
+  private async withJobHeartbeat<T>(
+    context: RuntimeJobExecutionContext,
+    execute: (context: RuntimeJobExecutionContext) => Promise<T>,
+  ): Promise<T> {
+    const intervalMs = this.computeHeartbeatIntervalMs();
+    let active = true;
+    let heartbeatError: unknown;
+    let rejectHeartbeatFailure: ((reason?: unknown) => void) | undefined;
+    let inFlightHeartbeat = Promise.resolve();
+
+    const heartbeatFailure = new Promise<never>((_resolve, reject) => {
+      rejectHeartbeatFailure = reject;
+    });
+
+    const runHeartbeat = () => {
+      if (!active || heartbeatError !== undefined) {
+        return;
+      }
+
+      inFlightHeartbeat = inFlightHeartbeat.then(async () => {
+        if (!active || heartbeatError !== undefined) {
+          return;
+        }
+
+        await context.heartbeat();
+      });
+
+      void inFlightHeartbeat.catch((error) => {
+        if (heartbeatError !== undefined) {
+          return;
+        }
+
+        heartbeatError = error;
+        rejectHeartbeatFailure?.(error);
+      });
+    };
+
+    const timer = setInterval(runHeartbeat, intervalMs);
+    const execution = Promise.resolve().then(() => execute(context));
+    void execution.catch(() => {});
+
+    try {
+      const result = await Promise.race([execution, heartbeatFailure]);
+      active = false;
+      clearInterval(timer);
+      await Promise.allSettled([inFlightHeartbeat]);
+      if (heartbeatError !== undefined) {
+        throw heartbeatError;
+      }
+      return result;
+    } catch (error) {
+      active = false;
+      clearInterval(timer);
+      await Promise.allSettled([inFlightHeartbeat]);
+      if (heartbeatError !== undefined) {
+        throw heartbeatError;
+      }
+      throw error;
+    }
   }
 
   private async updateRunningJob(
@@ -742,6 +872,10 @@ export class RuntimeWorker {
       errorCode,
       errorClass,
     }, "runtime worker job moved to dead letter");
+  }
+
+  private computeHeartbeatIntervalMs(): number {
+    return Math.max(1, Math.floor(this.leaseTtlMs / 3));
   }
 
   private computeRetryDelayMs(

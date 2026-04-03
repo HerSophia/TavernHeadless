@@ -4,6 +4,7 @@ import { McpToolProvider } from '../mcp-tool-provider.js';
 import { McpConnectionManager } from '../mcp-connection-manager.js';
 import type { McpServerConfig, McpConnectionState } from '../types.js';
 import { ToolRuntimePolicy } from '../../services/tool-runtime-policy.js';
+import { InMemoryMcpToolCatalogSnapshotStore } from '../mcp-tool-catalog-snapshot-store.js';
 
 // ── Mock McpConnection ────────────────────────────
 
@@ -152,6 +153,45 @@ describe('McpToolProvider', () => {
         resultVisibility: 'deferred_receipt',
       });
       expect(tool?.description).toContain('acceptance receipt');
+    });
+
+    it('live listing returns live metadata and refreshes the snapshot store', async () => {
+      const config = makeConfig();
+      const snapshotStore = new InMemoryMcpToolCatalogSnapshotStore();
+      const mockConn = createMockConnection({
+        tools: [{ name: 'get_data', description: 'Get data' }],
+      });
+
+      vi.spyOn(manager, 'getConnection').mockResolvedValue(mockConn as any);
+
+      const provider = new McpToolProvider(config, manager, { snapshotStore });
+      const catalog = await provider.listToolsWithMetadata();
+      const snapshot = await snapshotStore.get(provider.id);
+
+      expect(catalog.source).toBe('live');
+      expect(catalog.tools.map((tool) => tool.name)).toEqual(['get_data']);
+      expect(snapshot?.providerKey).toBe(provider.id);
+      expect(snapshot?.tools.map((tool) => tool.name)).toEqual(['get_data']);
+    });
+
+    it('falls back to cached tools when live listing fails', async () => {
+      const config = makeConfig();
+      const snapshotStore = new InMemoryMcpToolCatalogSnapshotStore();
+      const liveConnection = createMockConnection({
+        tools: [{ name: 'get_data', description: 'Get data' }],
+      });
+
+      vi.spyOn(manager, 'getConnection')
+        .mockResolvedValueOnce(liveConnection as any)
+        .mockRejectedValueOnce(new Error('boom'));
+
+      const provider = new McpToolProvider(config, manager, { snapshotStore });
+      const liveCatalog = await provider.listToolsWithMetadata();
+      const cachedCatalog = await provider.listToolsWithMetadata();
+
+      expect(liveCatalog.source).toBe('live');
+      expect(cachedCatalog.source).toBe('cached');
+      expect(cachedCatalog.tools.map((tool) => tool.name)).toEqual(['get_data']);
     });
   });
 

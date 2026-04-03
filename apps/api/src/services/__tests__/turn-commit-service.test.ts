@@ -329,6 +329,10 @@ describe("TurnCommitService", () => {
       outputPageId: expect.any(String),
       assistantMessageId: expect.any(String),
       finalState: "committed",
+      memory: {
+        mode: "sync",
+        status: "applied",
+      },
       usage: {
         promptTokens: 12,
         completionTokens: 34,
@@ -686,6 +690,11 @@ describe("TurnCommitService", () => {
     });
 
     expect(result.finalState).toBe("committed");
+    expect(result.memory).toEqual({
+      mode: "async",
+      status: "queued",
+      jobId: `memory-job:ingest_turn:${floorId}`,
+    });
     expect(await database.db.select().from(memoryItems)).toEqual([]);
 
     const [job] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.floorId, floorId));
@@ -834,6 +843,16 @@ describe("TurnCommitService", () => {
       deliveryMode: "async_job",
       runtimeJobId: jobId,
       commitOutcome: "committed",
+    });
+
+    const [legacyToolCallRow] = await database.db
+      .select()
+      .from(toolCallRecords)
+      .where(eq(toolCallRecords.id, executionId));
+    expect(legacyToolCallRow).toMatchObject({
+      id: executionId,
+      pageId: expect.any(String),
+      status: "queued",
     });
   });
 

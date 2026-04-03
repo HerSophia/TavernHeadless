@@ -89,7 +89,6 @@ describe("page routes", () => {
     floorId: string;
     pageNo: number;
     pageKind: PageKind;
-    isActive?: boolean;
     version?: number;
     checksum?: string;
   }): Promise<PageDto> {
@@ -100,7 +99,6 @@ describe("page routes", () => {
         floor_id: args.floorId,
         page_no: args.pageNo,
         page_kind: args.pageKind,
-        ...(args.isActive !== undefined ? { is_active: args.isActive } : {}),
         ...(args.version !== undefined ? { version: args.version } : {}),
         ...(args.checksum !== undefined ? { checksum: args.checksum } : {})
       }
@@ -114,10 +112,11 @@ describe("page routes", () => {
     const sessionId = await createSession();
     const floorId = await createFloor({ sessionId, floorNo: 0, branchId: "main" });
 
-    const pageA = await createPage({ floorId, pageNo: 1, pageKind: "input", isActive: true, version: 1 });
-    const pageB = await createPage({ floorId, pageNo: 2, pageKind: "output", isActive: false, version: 3, checksum: "sha-b" });
-    const pageC = await createPage({ floorId, pageNo: 3, pageKind: "mixed", isActive: true, version: 2, checksum: "sha-c" });
-    const pageD = await createPage({ floorId, pageNo: 4, pageKind: "output", isActive: false, version: 4, checksum: "sha-d" });
+    const pageA = await createPage({ floorId, pageNo: 1, pageKind: "input", version: 1 });
+    const pageB = await createPage({ floorId, pageNo: 2, pageKind: "output", version: 3, checksum: "sha-b" });
+    const pageC = await createPage({ floorId, pageNo: 2, pageKind: "output", version: 4, checksum: "sha-c" });
+    const pageD = await createPage({ floorId, pageNo: 4, pageKind: "output", version: 5, checksum: "sha-d" });
+    const pageE = await createPage({ floorId, pageNo: 4, pageKind: "output", version: 6, checksum: "sha-e" });
 
     const listAllByVersionResponse = await app.inject({
       method: "GET",
@@ -127,7 +126,7 @@ describe("page routes", () => {
     expect(listAllByVersionResponse.statusCode, listAllByVersionResponse.body).toBe(200);
     const listAllByVersionBody = listAllByVersionResponse.json<ListResponse<PageDto>>();
     expect(listAllByVersionBody.meta).toEqual({
-      total: 4,
+      total: 5,
       limit: 10,
       offset: 0,
       has_more: false,
@@ -135,9 +134,10 @@ describe("page routes", () => {
       sort_order: "desc"
     });
     expect(listAllByVersionBody.data.map((item) => item.id)).toEqual([
+      pageE.id,
       pageD.id,
-      pageB.id,
       pageC.id,
+      pageB.id,
       pageA.id
     ]);
 
@@ -149,14 +149,14 @@ describe("page routes", () => {
     expect(listAllByUpdatedAtResponse.statusCode, listAllByUpdatedAtResponse.body).toBe(200);
     const listAllByUpdatedAtBody = listAllByUpdatedAtResponse.json<ListResponse<PageDto>>();
     expect(listAllByUpdatedAtBody.meta).toEqual({
-      total: 4,
+      total: 5,
       limit: 10,
       offset: 0,
       has_more: false,
       sort_by: "updated_at",
       sort_order: "desc"
     });
-    expect(listAllByUpdatedAtBody.data).toHaveLength(4);
+    expect(listAllByUpdatedAtBody.data).toHaveLength(5);
 
     const filteredResponse = await app.inject({
       method: "GET",
@@ -175,22 +175,22 @@ describe("page routes", () => {
     });
     expect(filteredBody.data).toEqual([
       expect.objectContaining({
-        id: pageB.id,
+        id: pageC.id,
         floor_id: floorId,
         page_no: 2,
         page_kind: "output",
         is_active: false,
-        version: 3,
-        checksum: "sha-b"
+        version: 4,
+        checksum: "sha-c"
       }),
       expect.objectContaining({
-        id: pageD.id,
+        id: pageE.id,
         floor_id: floorId,
         page_no: 4,
         page_kind: "output",
         is_active: false,
-        version: 4,
-        checksum: "sha-d"
+        version: 6,
+        checksum: "sha-e"
       })
     ]);
   });
@@ -202,7 +202,6 @@ describe("page routes", () => {
       floorId,
       pageNo: 1,
       pageKind: "input",
-      isActive: true,
       version: 1,
       checksum: "sha-initial"
     });
@@ -231,7 +230,6 @@ describe("page routes", () => {
       payload: {
         page_no: 5,
         page_kind: "mixed",
-        is_active: false,
         version: 7,
         checksum: "sha-updated"
       }
@@ -244,7 +242,7 @@ describe("page routes", () => {
         floor_id: floorId,
         page_no: 5,
         page_kind: "mixed",
-        is_active: false,
+        is_active: true,
         version: 7,
         checksum: "sha-updated"
       })
@@ -253,7 +251,7 @@ describe("page routes", () => {
     const invalidPatchResponse = await app.inject({
       method: "PATCH",
       url: `/pages/${page.id}`,
-      payload: {}
+      payload: { is_active: false }
     });
 
     expect(invalidPatchResponse.statusCode).toBe(400);
@@ -270,7 +268,7 @@ describe("page routes", () => {
     const missingPatchResponse = await app.inject({
       method: "PATCH",
       url: "/pages/missing-page",
-      payload: { is_active: true }
+      payload: { version: 2 }
     });
 
     expect(missingPatchResponse.statusCode).toBe(404);
@@ -351,5 +349,70 @@ describe("page routes", () => {
 
     expect((await app.inject({ method: "GET", url: `/pages/${pageA.id}` })).statusCode).toBe(404);
     expect((await app.inject({ method: "GET", url: `/pages/${pageB.id}` })).statusCode).toBe(404);
+  });
+
+  it("locks committed floors for CRUD but still allows output activation within the same slot", async () => {
+    const sessionId = await createSession();
+    const floorId = await createFloor({ sessionId, floorNo: 3, branchId: "main" });
+
+    const inputPage = await createPage({ floorId, pageNo: 0, pageKind: "input", version: 1 });
+    const outputPageV1 = await createPage({ floorId, pageNo: 1, pageKind: "output", version: 1 });
+    const outputPageV2 = await createPage({ floorId, pageNo: 1, pageKind: "output", version: 2 });
+
+    const commitResponse = await app.inject({
+      method: "PATCH",
+      url: `/floors/${floorId}`,
+      payload: { state: "committed" }
+    });
+
+    expect(commitResponse.statusCode, commitResponse.body).toBe(200);
+
+    const lockedCreateResponse = await app.inject({
+      method: "POST",
+      url: "/pages",
+      payload: { floor_id: floorId, page_no: 2, page_kind: "mixed" }
+    });
+    expect(lockedCreateResponse.statusCode).toBe(409);
+    expect(lockedCreateResponse.json<ErrorResponse>().error.code).toBe("content_target_locked");
+
+    const lockedPatchResponse = await app.inject({
+      method: "PATCH",
+      url: `/pages/${outputPageV1.id}`,
+      payload: { checksum: "after-commit" }
+    });
+    expect(lockedPatchResponse.statusCode).toBe(409);
+    expect(lockedPatchResponse.json<ErrorResponse>().error.code).toBe("content_target_locked");
+
+    const lockedDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: `/pages/${outputPageV1.id}`
+    });
+    expect(lockedDeleteResponse.statusCode).toBe(409);
+    expect(lockedDeleteResponse.json<ErrorResponse>().error.code).toBe("content_target_locked");
+
+    const lockedBatchDeleteResponse = await app.inject({
+      method: "POST",
+      url: "/pages/batch/delete",
+      payload: { ids: [outputPageV1.id] }
+    });
+    expect(lockedBatchDeleteResponse.statusCode).toBe(409);
+    expect(lockedBatchDeleteResponse.json<ErrorResponse>().error.code).toBe("content_target_locked");
+
+    const activateInputResponse = await app.inject({
+      method: "PATCH",
+      url: `/pages/${inputPage.id}/activate`
+    });
+    expect(activateInputResponse.statusCode).toBe(409);
+    expect(activateInputResponse.json<ErrorResponse>().error.code).toBe("page_activation_not_allowed");
+
+    const activateOutputResponse = await app.inject({
+      method: "PATCH",
+      url: `/pages/${outputPageV2.id}/activate`
+    });
+    expect(activateOutputResponse.statusCode, activateOutputResponse.body).toBe(200);
+    expect(activateOutputResponse.json<ItemResponse<PageDto>>().data).toEqual(expect.objectContaining({ id: outputPageV2.id, is_active: true }));
+
+    expect((await app.inject({ method: "GET", url: `/pages/${inputPage.id}` })).json<ItemResponse<PageDto>>().data.is_active).toBe(true);
+    expect((await app.inject({ method: "GET", url: `/pages/${outputPageV1.id}` })).json<ItemResponse<PageDto>>().data.is_active).toBe(false);
   });
 });

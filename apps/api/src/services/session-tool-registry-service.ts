@@ -16,8 +16,12 @@ import {
 import type { AppDb } from "../db/client.js";
 import { sessions, toolDefinitions } from "../db/schema.js";
 import { parseJsonField } from "../lib/http.js";
-import { McpToolProvider } from "../mcp/mcp-tool-provider.js";
+import {
+  McpToolProvider,
+  type McpToolCatalogSource,
+} from "../mcp/mcp-tool-provider.js";
 import type { McpConnectionManager } from "../mcp/mcp-connection-manager.js";
+import { InMemoryMcpToolCatalogSnapshotStore, type McpToolCatalogSnapshotStore } from "../mcp/mcp-tool-catalog-snapshot-store.js";
 import { McpService } from "./mcp-service.js";
 import type { ToolRuntimePolicy } from "./tool-runtime-policy.js";
 
@@ -38,6 +42,8 @@ export type SessionRuntimeToolSource =
 
 export type SessionRuntimeToolReplaySafety = ToolReplaySafety;
 
+export type SessionRuntimeToolCatalogSource = McpToolCatalogSource;
+
 export interface SessionRuntimeToolCatalogEntry {
   name: string;
   providerId: string;
@@ -50,6 +56,7 @@ export interface SessionRuntimeToolCatalogEntry {
   replaySafety: SessionRuntimeToolReplaySafety;
   asyncCapability: "inline_only" | "deferred_ok";
   defaultDeliveryMode: "inline" | "async_job";
+  catalogSource?: SessionRuntimeToolCatalogSource;
   resultVisibility: "immediate" | "deferred_receipt";
 }
 
@@ -89,11 +96,13 @@ export class SessionToolRegistryServiceError extends Error {
 export interface SessionToolRegistryServiceOptions {
   baseRegistry: ToolRegistry;
   mcpManager?: McpConnectionManager;
+  mcpSnapshotStore?: McpToolCatalogSnapshotStore;
   toolRuntimePolicy?: ToolRuntimePolicy;
 }
 
 interface RuntimeToolCandidate {
   name: string;
+  catalogSource?: SessionRuntimeToolCatalogSource;
   providerId: string;
   providerType: ToolProviderType;
   source: SessionRuntimeToolSource;
@@ -207,6 +216,7 @@ function buildCatalogEntry(candidate: RuntimeToolCandidate, availability: Sessio
     availability,
     ...(availabilityReason ? { availabilityReason } : {}),
     asyncCapability: candidate.asyncCapability,
+    ...(candidate.catalogSource ? { catalogSource: candidate.catalogSource } : {}),
     defaultDeliveryMode: candidate.defaultDeliveryMode,
     resultVisibility: candidate.resultVisibility,
     replaySafety,
@@ -266,12 +276,16 @@ function toPresetToolInput(row: typeof toolDefinitions.$inferSelect): PresetTool
 
 export class SessionToolRegistryService {
   private readonly mcpService?: McpService;
+  private readonly mcpSnapshotStore?: McpToolCatalogSnapshotStore;
 
   constructor(
     private readonly db: AppDb,
     private readonly options: SessionToolRegistryServiceOptions,
   ) {
     this.mcpService = options.mcpManager ? new McpService(db) : undefined;
+    this.mcpSnapshotStore = options.mcpManager
+      ? options.mcpSnapshotStore ?? new InMemoryMcpToolCatalogSnapshotStore()
+      : undefined;
   }
 
   async buildRuntime(
@@ -521,11 +535,13 @@ export class SessionToolRegistryService {
 
     for (const config of configs) {
       const provider = new McpToolProvider(config, this.options.mcpManager, {
+        snapshotStore: this.mcpSnapshotStore,
         toolRuntimePolicy: this.options.toolRuntimePolicy,
       });
-      const tools = await provider.listTools();
-      const candidates = tools.map<RuntimeToolCandidate>((tool) => ({
+      const catalog = await provider.listToolsWithMetadata();
+      const candidates = catalog.tools.map<RuntimeToolCandidate>((tool) => ({
         name: tool.name,
+        catalogSource: catalog.source,
         providerId: provider.id,
         providerType: provider.type,
         source: "mcp",

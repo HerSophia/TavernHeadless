@@ -463,9 +463,9 @@ describe("tool helpers", () => {
       sessionId: "session-1",
       generatedAt: 1,
       tools: [
-        { name: "set_variable", providerId: "builtin", providerType: "builtin", source: "builtin", sideEffectLevel: "sandbox", allowedSlots: ["narrator"], availability: "available", availabilityReason: null, replaySafety: "safe", asyncCapability: "inline_only", defaultDeliveryMode: "inline", resultVisibility: "immediate" },
-        { name: "mcp_fetch", providerId: "mcp:mcp-1", providerType: "mcp", source: "mcp", sideEffectLevel: "irreversible", allowedSlots: ["narrator"], availability: "available", availabilityReason: null, replaySafety: "never_auto_replay", asyncCapability: "deferred_ok", defaultDeliveryMode: "async_job", resultVisibility: "deferred_receipt" },
-        { name: "conflict_tool", providerId: "mcp:mcp-2", providerType: "mcp", source: "mcp", sideEffectLevel: "sandbox", allowedSlots: ["narrator"], availability: "conflict", availabilityReason: "name_conflict", replaySafety: "confirm_on_replay", asyncCapability: "inline_only", defaultDeliveryMode: "inline", resultVisibility: "immediate" },
+        { name: "set_variable", providerId: "builtin", providerType: "builtin", source: "builtin", sideEffectLevel: "sandbox", allowedSlots: ["narrator"], availability: "available", availabilityReason: null, catalogSource: null, replaySafety: "safe", asyncCapability: "inline_only", defaultDeliveryMode: "inline", resultVisibility: "immediate" },
+        { name: "mcp_fetch", providerId: "mcp:mcp-1", providerType: "mcp", source: "mcp", sideEffectLevel: "irreversible", allowedSlots: ["narrator"], availability: "available", availabilityReason: null, catalogSource: "live", replaySafety: "never_auto_replay", asyncCapability: "deferred_ok", defaultDeliveryMode: "async_job", resultVisibility: "deferred_receipt" },
+        { name: "conflict_tool", providerId: "mcp:mcp-2", providerType: "mcp", source: "mcp", sideEffectLevel: "sandbox", allowedSlots: ["narrator"], availability: "conflict", availabilityReason: "name_conflict", catalogSource: "cached", replaySafety: "confirm_on_replay", asyncCapability: "inline_only", defaultDeliveryMode: "inline", resultVisibility: "immediate" },
       ],
       conflicts: [{ toolName: "conflict_tool", providerIds: ["custom:acc-1", "mcp:mcp-2"], reason: "name_conflict" }],
     })).toEqual({

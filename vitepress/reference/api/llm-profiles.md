@@ -62,6 +62,14 @@ POST /llm-profiles
 > 如果请求中提供 `base_url`，服务端会在保存前执行与模型探测接口相同的 URL Guard。默认拒绝私网、本地回环和其他保留地址。若部署确实需要保存这类地址，必须在服务端设置 `ALLOW_PRIVATE_BASE_URL=true`。
 > `POST /llm-profiles` 不接受 `allow_private_network` 请求字段。是否允许私网地址，只由服务端环境变量策略决定。
 
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `ssrf_blocked` | 请求体校验失败，或 `base_url` 被 URL Guard 拒绝 |
+| `409` | `profile_conflict` | Profile 名称冲突 |
+| `503` | `secret_unavailable` | 服务端未配置 `APP_SECRETS_MASTER_KEY`，无法保存加密 API Key |
+
 ## 列出 Profiles
 
 ```http
@@ -87,6 +95,12 @@ GET /llm-profiles
 GET /llm-profiles/:id
 ```
 
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `profile_not_found` | Profile 不存在 |
+
 ## 更新 Profile
 
 ```http
@@ -97,6 +111,15 @@ PATCH /llm-profiles/:id
 
 如果更新 `base_url`，服务端会执行同样的 URL Guard。`PATCH /llm-profiles/:id` 也不接受 `allow_private_network` 请求字段；是否允许私网地址，仍由服务端 `ALLOW_PRIVATE_BASE_URL` 控制。
 
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `ssrf_blocked` | 请求体为空、请求体校验失败，或 `base_url` 被 URL Guard 拒绝 |
+| `404` | `profile_not_found` | Profile 不存在 |
+| `409` | `profile_conflict` / `profile_inactive` | Profile 名称冲突，或目标 Profile 已处于不可更新状态 |
+| `503` | `secret_unavailable` | 服务端未配置 `APP_SECRETS_MASTER_KEY`，无法保存新的加密 API Key |
+
 ## 删除 Profile
 
 ```http
@@ -105,6 +128,24 @@ DELETE /llm-profiles/:id
 
 软删除，将状态设为 `deleted`。
 
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "id": "lp_narrator",
+    "deleted": true
+  }
+}
+```
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `profile_not_found` | Profile 不存在 |
+| `409` | `profile_in_use` | Profile 仍被现有 binding 引用，无法删除 |
+
 ## 激活 Profile
 
 ```http
@@ -112,6 +153,8 @@ POST /llm-profiles/:id/activate
 ```
 
 将 Profile 绑定到指定的作用域和实例槽位。
+
+当前端点是对 `(scope, scope_id, instance_slot)` 的 **binding upsert**。如果目标 binding 已存在，服务端会覆盖 `profile_id`，并按下面的 `params` 规则决定是否保留或清空原有参数覆盖。
 
 当 `scope="session"` 时，服务端除了校验 `session_id` 字段存在，还会校验该 session 真实存在；若不存在，返回 `404 session_scope_not_found`。
 
@@ -125,6 +168,9 @@ POST /llm-profiles/:id/activate
 | `params` | object \| null | 否 | 生成参数覆盖 |
 
 `params` 可覆盖的字段：
+
+- 省略 `params`：保留已有 binding 的 `params`
+- 显式传 `params: null`：清空已有 binding 的 `params`
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
@@ -154,6 +200,14 @@ POST /llm-profiles/:id/activate
   }
 }
 ```
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `invalid_params` | 请求体校验失败，或 `params` 归一化失败 |
+| `404` | `profile_not_found` / `session_scope_not_found` | Profile 不存在，或 session 作用域不存在 |
+| `409` | `profile_inactive` | 目标 Profile 不是可激活状态 |
 
 ## 解绑 Profile 绑定
 
@@ -189,7 +243,12 @@ DELETE /llm-profiles/bindings/:slot
 }
 ```
 
-若目标 binding 不存在，返回 `404 binding_not_found`。当 `scope=session` 且 session 不存在时，返回 `404 session_scope_not_found`。
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 路径参数或查询参数校验失败 |
+| `404` | `binding_not_found` / `session_scope_not_found` | 目标 binding 不存在，或 session 作用域不存在 |
 
 ## 运行时解析
 
@@ -197,7 +256,7 @@ DELETE /llm-profiles/bindings/:slot
 GET /llm-profiles/runtime
 ```
 
-获取当前各实例槽位的实际解析结果，显示每个槽位使用的 Profile 和配置来源。
+获取当前各实例槽位的实际解析结果，显示每个槽位使用的 Profile 和配置来源。当前实现会始终返回五个槽位：`*`、`narrator`、`director`、`verifier`、`memory`。
 
 ### 查询参数
 
@@ -214,12 +273,12 @@ GET /llm-profiles/runtime
     "slots": [
       {
         "slot": "*",
-        "source": "global_profile",
-        "scope": "global",
-        "profile_id": "lp_narrator",
-        "params": {},
-        "preset_name": "OpenAI Narrator",
-        "provider": "openai",
+        "source": "env",
+        "scope": null,
+        "profile_id": null,
+        "params": null,
+        "preset_name": null,
+        "provider": "openai-compatible",
         "model_id": "gpt-4o-mini"
       },
       {
@@ -227,7 +286,7 @@ GET /llm-profiles/runtime
         "source": "session_profile",
         "scope": "session",
         "profile_id": "lp_director",
-        "params": {},
+        "params": { "max_output_tokens": 512, "temperature": 0.7 },
         "preset_name": "Claude Director",
         "provider": "anthropic",
         "model_id": "claude-sonnet-4-20250514"
@@ -237,12 +296,17 @@ GET /llm-profiles/runtime
 }
 ```
 
+当 `source = "env"` 时，`scope`、`profile_id`、`preset_name`、`params` 都为 `null`。
+
 `source` 可能的值：`env`（环境变量 fallback）、`global_profile`、`session_profile`。
 
-运行时解析可能返回的错误：
+### 错误
 
-- `503 secret_unavailable`：服务端未配置 `APP_SECRETS_MASTER_KEY`
-- `500 secret_invalid_format`：数据库中的密文无法解密，通常表示主密钥不匹配或数据已损坏
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 查询参数校验失败 |
+| `500` | `secret_invalid_format` | 数据库中的密文无法解密，通常表示主密钥不匹配或数据已损坏 |
+| `503` | `secret_unavailable` | 服务端未配置 `APP_SECRETS_MASTER_KEY` |
 
 这个接口描述的是 **Profile 侧** 的 provider / model 解析结果。若还需要查看实例侧的 `enabled`、`preset_id`、`params` 最终解析，应再查询 `GET /llm-instances/resolved`。
 
@@ -274,6 +338,13 @@ POST /llm-profiles/models/discover
 }
 ```
 
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `ssrf_blocked` | 请求体校验失败，或 `base_url` 被 URL Guard 拒绝 |
+| `502` | `model_discovery_failed` / `model_discovery_invalid_response` | 上游模型发现请求失败，或返回了无效响应 |
+
 ## 测试模型连通性
 
 ```http
@@ -303,5 +374,12 @@ POST /llm-profiles/models/test
   }
 }
 ```
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` / `ssrf_blocked` | 请求体校验失败，或 `base_url` 被 URL Guard 拒绝 |
+| `502` | `model_test_failed` / `model_test_invalid_response` | 上游模型测试请求失败，或返回了无效响应 |
 
 另外，session 删除时服务端会同步清理该 session 对应的 `llm_profile_binding`；`DELETE /llm-profiles/:id` 也会在判定前自动清理失效的 session 绑定，避免历史脏数据长期阻塞 Profile 删除。

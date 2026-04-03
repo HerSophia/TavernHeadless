@@ -5,6 +5,7 @@ import { buildApp } from "../src/app";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import { characters, worldbookEntries, worldbooks } from "../src/db/schema";
 import { registerExportRoutes } from "../src/routes/exports";
+import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
 
 const MINIMAL_PRESET = {
   prompts: [
@@ -126,6 +127,7 @@ describe("Export route extra branches", () => {
     beforeEach(async () => {
       connection = createDatabase(":memory:");
       app = Fastify({ logger: false });
+      await registerDevelopmentTestAuth(app, connection.db);
       await registerExportRoutes(app, connection);
       await app.ready();
     });

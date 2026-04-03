@@ -1,3 +1,4 @@
+import { createEventBus } from "@tavern/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
@@ -10,6 +11,16 @@ import { ToolWorker } from "../tool-worker.js";
 
 const DEFAULT_ACCOUNT_ID = "default-admin";
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("ToolWorker", () => {
   let database: DatabaseConnection;
 
@@ -18,6 +29,7 @@ describe("ToolWorker", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     database.close();
   });
 
@@ -56,6 +68,75 @@ describe("ToolWorker", () => {
     });
 
     return { now, sessionId, floorId };
+  }
+
+  async function seedQueuedDeferredToolJob(args: {
+    now: number;
+    sessionId: string;
+    floorId: string;
+    executionId: string;
+    runId: string;
+    jobId: string;
+  }): Promise<void> {
+    await database.db.insert(toolExecutionRecords).values({
+      id: args.executionId,
+      runId: args.runId,
+      floorId: args.floorId,
+      pageId: null,
+      callerSlot: "narrator",
+      providerId: "mcp:mcp-1",
+      providerType: "mcp",
+      toolName: "github_create_issue",
+      argsJson: JSON.stringify({ title: "Need help" }),
+      resultJson: JSON.stringify({ accepted: true, status: "queued" }),
+      status: "queued",
+      lifecycleState: "opened",
+      commitOutcome: "committed",
+      deliveryMode: "async_job",
+      runtimeJobId: null,
+      sideEffectLevel: "irreversible",
+      errorMessage: null,
+      durationMs: 0,
+      startedAt: args.now,
+      finishedAt: null,
+      attemptNo: 1,
+      replayParentExecutionId: null,
+      createdAt: args.now,
+    });
+
+    const bridge = createToolRuntimeJobBridge(database.db);
+    database.db.transaction((tx) => {
+      bridge.enqueue(tx, {
+        executionId: args.executionId,
+        runId: args.runId,
+        jobId: args.jobId,
+        envelope: {
+          executionId: args.executionId,
+          runId: args.runId,
+          sessionId: args.sessionId,
+          accountId: DEFAULT_ACCOUNT_ID,
+          floorId: args.floorId,
+          callerSlot: "narrator",
+          providerId: "mcp:mcp-1",
+          providerType: "mcp",
+          toolName: "github_create_issue",
+          args: { title: "Need help" },
+          sideEffectLevel: "irreversible",
+          deliveryMode: "async_job",
+          asyncCapability: "deferred_ok",
+          resultVisibility: "deferred_receipt",
+          acceptedAt: args.now,
+        },
+        receipt: {
+          accepted: true,
+          delivery_mode: "async_job",
+          execution_id: args.executionId,
+          job_id: args.jobId,
+          status: "queued",
+          message: "Deferred tool accepted.",
+        },
+      });
+    });
   }
 
   it("processes deferred tool jobs and finalizes queued executions as success", async () => {
@@ -151,6 +232,162 @@ describe("ToolWorker", () => {
       commitOutcome: "committed",
     });
     expect(JSON.parse(execution!.resultJson)).toEqual({ issue_number: 42 });
+  });
+
+  it("keeps long-running deferred tool jobs leased until completion when heartbeat is healthy", async () => {
+    const now = 1_736_000_160_000;
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const { sessionId, floorId } = await seedTurnScope();
+    const executionId = nanoid();
+    const runId = nanoid();
+    const jobId = `tool-job:${executionId}`;
+
+    await seedQueuedDeferredToolJob({ now, sessionId, floorId, executionId, runId, jobId });
+
+    const gate = createDeferred<{ data: { issue_number: number } }>();
+    const executeSpy = vi.fn(async () => await gate.promise);
+
+    const handlers = new ToolAsyncHandlerRegistry();
+    handlers.register({ providerType: "mcp", execute: executeSpy });
+
+    const competingHandlers = new ToolAsyncHandlerRegistry();
+    competingHandlers.register({
+      providerType: "mcp",
+      execute: async () => ({ data: { issue_number: 7 } }),
+    });
+
+    const worker = new ToolWorker(database.db, handlers, {
+      workerId: "tool-worker-heartbeat",
+      pollIntervalMs: 60_000,
+      leaseTtlMs: 30,
+    });
+    const competingWorker = new ToolWorker(database.db, competingHandlers, {
+      workerId: "tool-worker-competing",
+      pollIntervalMs: 60_000,
+      leaseTtlMs: 30,
+    });
+
+    const processing = worker.processOneDueJob();
+    await vi.advanceTimersByTimeAsync(120);
+
+    const [runningJob] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, jobId));
+    expect(runningJob).toMatchObject({
+      id: jobId,
+      status: "running",
+      leaseOwner: "tool-worker-heartbeat",
+      phase: "executing",
+    });
+    expect(runningJob?.leaseUntil).toBeGreaterThan(Date.now());
+    await expect(competingWorker.processOneDueJob()).resolves.toBe(false);
+
+    gate.resolve({ data: { issue_number: 99 } });
+    await expect(processing).resolves.toBe(true);
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+
+    const [job] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, jobId));
+    expect(job).toMatchObject({
+      id: jobId,
+      status: "succeeded",
+      phase: "success",
+      progressCurrent: 1,
+      progressTotal: 1,
+    });
+
+    const [execution] = await database.db.select().from(toolExecutionRecords).where(eq(toolExecutionRecords.id, executionId));
+    expect(execution).toMatchObject({
+      id: executionId,
+      status: "success",
+      lifecycleState: "finished",
+      runtimeJobId: jobId,
+    });
+    expect(JSON.parse(execution!.resultJson)).toEqual({ issue_number: 99 });
+  });
+
+  it("falls back to lease-lost handling when heartbeat renewal fails mid-execution", async () => {
+    const now = 1_736_000_170_000;
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    const { sessionId, floorId } = await seedTurnScope();
+    const executionId = nanoid();
+    const runId = nanoid();
+    const jobId = `tool-job:${executionId}`;
+
+    await seedQueuedDeferredToolJob({ now, sessionId, floorId, executionId, runId, jobId });
+
+    const gate = createDeferred<{ data: { issue_number: number } }>();
+    const executeSpy = vi.fn(async () => await gate.promise);
+    const eventBus = createEventBus();
+    const leaseLostHandler = vi.fn();
+    eventBus.on("runtime.job_lease_lost", leaseLostHandler);
+
+    const handlers = new ToolAsyncHandlerRegistry();
+    handlers.register({ providerType: "mcp", execute: executeSpy });
+
+    const worker = new ToolWorker(database.db, handlers, {
+      workerId: "tool-worker-heartbeat-lost",
+      pollIntervalMs: 60_000,
+      leaseTtlMs: 30,
+      eventBus,
+    });
+
+    const processing = worker.processOneDueJob();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const [startedJob] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, jobId));
+    expect(startedJob).toMatchObject({
+      id: jobId,
+      status: "running",
+      leaseOwner: "tool-worker-heartbeat-lost",
+      phase: "executing",
+    });
+
+    await database.db.update(runtimeScopeStates)
+      .set({
+        leaseOwner: "tool-worker-stealer",
+        leaseUntil: now + 500,
+        updatedAt: now + 1,
+      })
+      .where(eq(runtimeScopeStates.scopeKey, `session:${sessionId}`));
+    await database.db.update(runtimeJobs)
+      .set({
+        leaseOwner: "tool-worker-stealer",
+        leaseUntil: now + 500,
+        updatedAt: now + 1,
+      })
+      .where(eq(runtimeJobs.id, jobId));
+
+    await vi.advanceTimersByTimeAsync(120);
+    await expect(processing).resolves.toBe(true);
+
+    gate.resolve({ data: { issue_number: 100 } });
+    await Promise.resolve();
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    expect(leaseLostHandler).toHaveBeenCalledWith(expect.objectContaining({
+      jobId,
+      workerId: "tool-worker-heartbeat-lost",
+      errorClass: "RuntimeJobLeaseLostError",
+    }));
+
+    const [job] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, jobId));
+    expect(job).toMatchObject({
+      id: jobId,
+      status: "running",
+      leaseOwner: "tool-worker-stealer",
+      phase: "executing",
+    });
+
+    const [execution] = await database.db.select().from(toolExecutionRecords).where(eq(toolExecutionRecords.id, executionId));
+    expect(execution).toMatchObject({
+      id: executionId,
+      status: "running",
+      lifecycleState: "opened",
+      runtimeJobId: jobId,
+    });
   });
 
   it("preserves uncertain outcomes without replaying the external call", async () => {

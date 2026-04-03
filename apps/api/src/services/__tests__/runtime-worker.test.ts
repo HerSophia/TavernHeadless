@@ -67,6 +67,7 @@ describe("RuntimeWorker", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     database.close();
   });
 
@@ -365,6 +366,100 @@ describe("RuntimeWorker", () => {
       lastErrorClass: "RuntimeRevisionConflictError",
     });
     expect(job?.lastError).toContain("expected 0, got 99");
+  });
+
+  it("keeps running leases fresh while a processor uses withHeartbeat", async () => {
+    const now = 1_736_000_135_000;
+    const gate = createDeferred<void>();
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    await database.db.insert(accounts).values({
+      id: DEFAULT_ACCOUNT_ID,
+      name: DEFAULT_ACCOUNT_ID,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoNothing().run();
+
+    processors.register<{ value: string }, string, { value: string }>("test.heartbeat_job", {
+      async prepare({ payload, withHeartbeat }) {
+        return await withHeartbeat(async () => {
+          await gate.promise;
+          return payload.value.toUpperCase();
+        });
+      },
+      commit({ prepared }) {
+        return {
+          phase: "completed",
+          result: { value: prepared },
+          progressCurrent: 1,
+          progressTotal: 1,
+          progressMessage: "completed",
+          scopeMutation: "none",
+        };
+      },
+    });
+    catalog.register({
+      jobType: "test.heartbeat_job",
+      payloadSchema: z.object({ value: z.string().min(1) }),
+      initialPhase: "queued",
+    });
+
+    database.db.transaction((tx) => {
+      scheduler.enqueue(tx, {
+        jobId: "job-heartbeat",
+        jobType: "test.heartbeat_job",
+        accountId: DEFAULT_ACCOUNT_ID,
+        scopeType: "test",
+        scopeKey: "scope:heartbeat",
+        payload: { value: "alive" },
+        availableAt: now,
+      });
+    });
+
+    const worker = new RuntimeWorker(database.db, catalog, processors, {
+      workerId: "runtime-worker-heartbeat",
+      pollIntervalMs: 60_000,
+      leaseTtlMs: 30,
+      jobTypes: ["test.heartbeat_job"],
+    });
+    const competingProcessors = new RuntimeJobProcessorRegistry();
+    competingProcessors.register<{ value: string }, string, { value: string }>("test.heartbeat_job", {
+      async prepare({ payload }) {
+        return payload.value.toUpperCase();
+      },
+      commit({ prepared }) {
+        return {
+          phase: "completed",
+          result: { value: prepared },
+          progressCurrent: 1,
+          progressTotal: 1,
+          progressMessage: "completed",
+          scopeMutation: "none",
+        };
+      },
+    });
+    const competingWorker = new RuntimeWorker(database.db, catalog, competingProcessors, {
+      workerId: "runtime-worker-competing",
+      pollIntervalMs: 60_000,
+      leaseTtlMs: 30,
+      jobTypes: ["test.heartbeat_job"],
+    });
+
+    const processing = worker.processOneDueJob();
+    await vi.advanceTimersByTimeAsync(120);
+
+    const [runningJob] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, "job-heartbeat"));
+    expect(runningJob).toMatchObject({ id: "job-heartbeat", status: "running", leaseOwner: "runtime-worker-heartbeat" });
+    expect(runningJob?.leaseUntil).toBeGreaterThan(Date.now());
+    await expect(competingWorker.processOneDueJob()).resolves.toBe(false);
+
+    gate.resolve();
+    await expect(processing).resolves.toBe(true);
+
+    const [completedJob] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.id, "job-heartbeat"));
+    expect(completedJob).toMatchObject({ id: "job-heartbeat", status: "succeeded" });
+    expect(JSON.parse(completedJob!.resultJson ?? "null")).toEqual({ value: "ALIVE" });
   });
 
   it("allows another worker to take over an expired running lease", async () => {

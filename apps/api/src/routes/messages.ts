@@ -9,7 +9,8 @@ import { messages } from "../db/schema";
 import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
-import { getOwnedMessageById, getOwnedMessageIds, getOwnedPageById, getOwnedPageIds } from "../services/resource-ownership";
+import { getFloorContentMutationRejection, type FloorContentMutationRejection } from "../services/floor-content-mutability-policy";
+import { OwnedMessageRepository, OwnedPageRepository } from "../services/owned-resource-repositories";
 
 const messageRoleSchema = z.enum(["user", "assistant", "system", "narrator"]);
 const messageFormatSchema = z.enum(["text", "markdown", "json"]);
@@ -334,7 +335,20 @@ const batchDeleteMessagesResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
-function toMessageResponse(row: typeof messages.$inferSelect) {
+type MessageRowLike = {
+  id: string;
+  pageId: string;
+  seq: number;
+  role: typeof messages.$inferSelect["role"];
+  content: string;
+  contentFormat: typeof messages.$inferSelect["contentFormat"];
+  tokenCount: number;
+  isHidden: boolean;
+  source: string | null;
+  createdAt: number;
+};
+
+function toMessageResponse(row: MessageRowLike) {
   return {
     id: row.id,
     page_id: row.pageId,
@@ -349,11 +363,20 @@ function toMessageResponse(row: typeof messages.$inferSelect) {
   };
 }
 
+function sendMessageMutationRejection(
+  reply: Parameters<typeof sendError>[0],
+  rejection: FloorContentMutationRejection
+) {
+  return sendError(reply, 409, rejection.code, rejection.message);
+}
+
 export async function registerMessageRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection
 ): Promise<void> {
   const { db } = connection;
+  const ownedPages = new OwnedPageRepository(db);
+  const ownedMessages = new OwnedMessageRepository(db);
 
   app.post("/messages", {
     schema: {
@@ -384,10 +407,20 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const page = await getOwnedPageById(db, auth.accountId, parsedBody.data.page_id);
+    const page = ownedPages.getContextById(auth.accountId, parsedBody.data.page_id);
 
     if (!page) {
       return sendError(reply, 404, "not_found", "Message page not found");
+    }
+
+    const rejection = getFloorContentMutationRejection({
+      mutationKind: "message.create",
+      floorState: page.floorState,
+      pageKind: page.pageKind,
+    });
+
+    if (rejection) {
+      return sendMessageMutationRejection(reply, rejection);
     }
 
     const createdRows = await db
@@ -435,8 +468,7 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const ownedPageIds = await getOwnedPageIds(
-      db,
+    const ownedPageIds = ownedPages.listIds(
       auth.accountId,
       parsedQuery.data.page_id !== undefined ? [parsedQuery.data.page_id] : undefined
     );
@@ -511,6 +543,7 @@ export async function registerMessageRoutes(
       response: {
         200: batchUpdateMessageVisibilityResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -521,7 +554,21 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const ownedMessageIds = await getOwnedMessageIds(db, auth.accountId, parsedBody.data.ids);
+    const ownedMessageContexts = ownedMessages.getContextsByIds(auth.accountId, parsedBody.data.ids);
+    const ownedMessageIds = ownedMessageContexts.map((message) => message.id);
+    const mutationKind = parsedBody.data.is_hidden ? "message.hide" : "message.unhide";
+
+    const lockedMessage = ownedMessageContexts.find((message) =>
+      getFloorContentMutationRejection({
+        mutationKind,
+        floorState: message.floorState,
+        pageKind: message.pageKind,
+      }) !== null
+    );
+
+    if (lockedMessage) {
+      return sendMessageMutationRejection(reply, getFloorContentMutationRejection({ mutationKind, floorState: lockedMessage.floorState, pageKind: lockedMessage.pageKind })!);
+    }
 
     const updatedRows =
       ownedMessageIds.length === 0
@@ -572,6 +619,7 @@ export async function registerMessageRoutes(
       response: {
         200: batchDeleteMessagesResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -582,7 +630,19 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const ownedMessageIds = await getOwnedMessageIds(db, auth.accountId, parsedBody.data.ids);
+    const ownedMessageContexts = ownedMessages.getContextsByIds(auth.accountId, parsedBody.data.ids);
+    const ownedMessageIds = ownedMessageContexts.map((message) => message.id);
+
+    const lockedMessage = ownedMessageContexts.find((message) =>
+      getFloorContentMutationRejection({
+        mutationKind: "message.delete",
+        floorState: message.floorState,
+        pageKind: message.pageKind,
+      }) !== null
+    );
+    if (lockedMessage) {
+      return sendMessageMutationRejection(reply, getFloorContentMutationRejection({ mutationKind: "message.delete", floorState: lockedMessage.floorState, pageKind: lockedMessage.pageKind })!);
+    }
 
     const deletedRows =
       ownedMessageIds.length === 0
@@ -635,7 +695,7 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const row = await getOwnedMessageById(db, auth.accountId, parsedParams.data.id);
+    const row = ownedMessages.getContextById(auth.accountId, parsedParams.data.id);
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Message not found");
@@ -663,6 +723,7 @@ export async function registerMessageRoutes(
           additionalProperties: false,
         },
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -680,7 +741,7 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const existingMessage = await getOwnedMessageById(db, auth.accountId, parsedParams.data.id);
+    const existingMessage = ownedMessages.getContextById(auth.accountId, parsedParams.data.id);
 
     if (!existingMessage) {
       return sendError(reply, 404, "not_found", "Message not found");
@@ -716,6 +777,13 @@ export async function registerMessageRoutes(
       updates.source = parsedBody.data.source;
     }
 
+    const rejection = getFloorContentMutationRejection({
+      mutationKind: "message.update",
+      floorState: existingMessage.floorState,
+      pageKind: existingMessage.pageKind,
+    });
+    if (rejection) return sendMessageMutationRejection(reply, rejection);
+
     const [updated] = await db
       .update(messages)
       .set(updates)
@@ -748,6 +816,7 @@ export async function registerMessageRoutes(
           },
         },
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -758,11 +827,18 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const existingMessage = await getOwnedMessageById(db, auth.accountId, parsedParams.data.id);
+    const existingMessage = ownedMessages.getContextById(auth.accountId, parsedParams.data.id);
 
     if (!existingMessage) {
       return sendError(reply, 404, "not_found", "Message not found");
     }
+
+    const rejection = getFloorContentMutationRejection({
+      mutationKind: "message.delete",
+      floorState: existingMessage.floorState,
+      pageKind: existingMessage.pageKind,
+    });
+    if (rejection) return sendMessageMutationRejection(reply, rejection);
 
     const deleted = await db.delete(messages).where(eq(messages.id, parsedParams.data.id)).returning();
 

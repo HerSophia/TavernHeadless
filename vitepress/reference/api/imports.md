@@ -13,7 +13,7 @@ outline: [2, 3]
 - [Regex Profiles（正则配置管理）](./regex-profiles)
 - [Characters（角色卡管理）](./characters)
 
-其中 `POST /import/preset` 和 `POST /import/worldbook` 现在也会遵循资源写入繁忙语义：当 SQLite 写入暂时繁忙且重试耗尽时，返回 `503 resource_busy`。
+其中 `POST /import/preset`、`POST /import/worldbook`、`POST /import/regex` 和 `POST /import/character` 都遵循资源写入繁忙语义：当 SQLite 写入暂时繁忙且重试耗尽时，返回 `503 resource_busy`。
 
 > 说明：异步聊天导入相关的 job 路由属于高级开发者特性。
 > 它们主要用于长任务处理、自动化脚本、开发调试和运维排障。
@@ -78,7 +78,7 @@ POST /import/worldbook
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `name` | string | 否 | 自定义名称；不传时优先使用世界书内名称，否则使用 `Unnamed Worldbook` |
-| `data` | object | **是** | SillyTavern 世界书 JSON 数据 |
+| `data` | object | **是** | 原始 SillyTavern 世界书 JSON 数据。主关键词字段使用 `key`，辅助关键词字段使用 `keysecondary` |
 
 ### 请求示例
 
@@ -86,9 +86,15 @@ POST /import/worldbook
 {
   "name": "Kingdom Lore",
   "data": {
+    "name": "Kingdom Lore",
     "entries": [
       {
-        "keys": ["kingdom"],
+        "uid": 0,
+        "key": ["kingdom"],
+        "keysecondary": ["history"],
+        "selective": true,
+        "selectiveLogic": 0,
+        "comment": "Kingdom basics",
         "content": "The kingdom is recovering from a long war."
       }
     ]
@@ -163,6 +169,7 @@ POST /import/regex
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
 | `400` | `validation_error` / `import_parse_error` | 请求体校验失败，或正则规则数组无法解析 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 导入角色卡
 
@@ -179,7 +186,7 @@ POST /import/character
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `payload` | object | **是** | SillyTavern Character Card JSON |
-| `create_session` | boolean | 否 | 是否同时创建会话，默认 `false` |
+| `create_session` | boolean | 否 | 是否同时创建会话，默认 `true` |
 | `title` | string | 否 | 当 `create_session=true` 时使用的会话标题 |
 
 ### 请求示例
@@ -203,7 +210,7 @@ POST /import/character
 }
 ```
 
-### 响应 `201`（仅导入角色）
+### 响应 `201`（当 `create_session=false` 时）
 
 ```json
 {
@@ -263,6 +270,7 @@ POST /import/character
 | ------ | ---- | ---- |
 | `400` | `validation_error` / `import_parse_error` | 请求体校验失败，或角色卡无法解析 |
 | `413` | `import_payload_too_large` | 请求体超过 `200KB` 限制 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ## 导入聊天文件
 
@@ -321,7 +329,6 @@ POST /import/chat
     "title": "Campfire Scene",
     "floor_count": 5,
     "message_count": 10,
-    "swipe_count": 3,
     "skipped_lines": 0,
     "import_source": "thchat",
     "format": "thchat",
@@ -341,7 +348,7 @@ POST /import/chat
 | `title` | string | 会话标题 |
 | `floor_count` | integer | 导入的楼层数 |
 | `message_count` | integer | 导入的消息数 |
-| `swipe_count` | integer | 导入的 swipe 数 |
+| `swipe_count` | integer | 导入的 swipe 数（仅 SillyTavern JSONL） |
 | `skipped_lines` | integer | 跳过的无法解析行数（仅 ST JSONL） |
 | `import_source` | string | 导入来源标识 |
 | `format` | string | 检测到的格式：`thchat` 或 `sillytavern_jsonl` |
@@ -432,15 +439,14 @@ POST /import/chat/jobs
     "job_id": "chat-transfer-job:import_chat:abc123",
     "status": "pending",
     "job_kind": "import_chat",
-    "format": "sillytavern_jsonl"
+    "format": null
   }
 }
 ```
 
-`format` 是入队时的快速检测结果，可能为：
+`format` 是入队时的快速检测结果。当前入队阶段只会提前识别 `.thchat`，其余情况返回 `null`：
 
 - `thchat`
-- `sillytavern_jsonl`
 - `null`
 
 最终是否成功导入，以作业详情为准。

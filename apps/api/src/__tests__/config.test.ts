@@ -318,6 +318,13 @@ describe("auth configuration", () => {
 
     expect(() => loadConfig()).toThrow("Unsupported AUTH_MODE: oauth2");
   });
+
+  it("throws when NODE_ENV=production and auth mode is off", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("AUTH_MODE", "off");
+
+    expect(() => loadConfig()).toThrow("AUTH_MODE=off is not allowed when NODE_ENV=production");
+  });
 });
 
 // ── Account mode ─────────────────────────────────────

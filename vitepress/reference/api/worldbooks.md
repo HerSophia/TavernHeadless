@@ -8,6 +8,8 @@ outline: [2, 3]
 
 世界书包含一组关键词触发的条目（entries），用于在对话中注入背景设定。
 
+`GET /worldbooks/:id` 和 `PUT /worldbooks/:id` 面向**原始 SillyTavern 世界书 payload**。如果只需要对条目做结构化 CRUD，请使用后半部分的 `Worldbook Entries` 子资源接口。
+
 ## 列出 Worldbooks
 
 ```http
@@ -48,12 +50,32 @@ GET /worldbooks/:id
     "name": "Kingdom Lore",
     "source": "sillytavern",
     "data": {
+      "name": "Kingdom Lore",
       "entries": [
         {
-          "keys": ["kingdom"],
-          "content": "The kingdom is recovering from a long war."
+          "uid": 0,
+          "key": ["kingdom", "realm"],
+          "keysecondary": ["history"],
+          "selective": true,
+          "selectiveLogic": 0,
+          "constant": false,
+          "content": "The kingdom is recovering from a long war.",
+          "comment": "Kingdom basics",
+          "position": 0,
+          "order": 100,
+          "depth": 4,
+          "role": 0,
+          "disable": false,
+          "scanDepth": null,
+          "caseSensitive": null,
+          "matchWholeWords": null
         }
-      ]
+      ],
+      "scanDepth": 2,
+      "caseSensitive": false,
+      "matchWholeWords": false,
+      "recursive": false,
+      "maxRecursionSteps": 0
     },
     "created_at": 1735689600000,
     "updated_at": 1735689660000,
@@ -62,11 +84,13 @@ GET /worldbooks/:id
 }
 ```
 
+这里的 `data.entries[]` 使用的是原始 SillyTavern 字段名，例如 `key`、`keysecondary`、`selectiveLogic`、`scanDepth`、`caseSensitive`、`matchWholeWords`。它不同于下方 `Worldbook Entries` 子资源接口里的规范化字段 `keys`、`keys_secondary`、`selective_logic`、`scan_depth` 等。
+
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `404` | 世界书不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 世界书不存在 |
 
 ## 更新 Worldbook
 
@@ -85,7 +109,7 @@ PUT /worldbooks/:id
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `name` | string | **是** | 名称（至少 1 字符） |
-| `data` | object | **是** | 世界书 JSON 数据 |
+| `data` | object | **是** | 原始 SillyTavern 世界书 JSON 数据 |
 | `expected_version` | integer | 否 | 推荐的乐观锁字段；期望的 `version` 值 |
 | `expected_updated_at` | integer | 否 | 兼容字段；仅用于已有主资源 `PUT` 调用方 |
 
@@ -96,10 +120,25 @@ PUT /worldbooks/:id
   "name": "Kingdom Lore v2",
   "expected_version": 2,
   "data": {
+    "name": "Kingdom Lore v2",
     "entries": [
       {
-        "keys": ["kingdom", "realm"],
-        "content": "The kingdom has entered a new era of peace."
+        "uid": 0,
+        "key": ["kingdom", "realm"],
+        "keysecondary": ["history"],
+        "selective": true,
+        "selectiveLogic": 0,
+        "constant": false,
+        "content": "The kingdom has entered a new era of peace.",
+        "comment": "Kingdom basics",
+        "position": 0,
+        "order": 100,
+        "depth": 4,
+        "role": 0,
+        "disable": false,
+        "scanDepth": null,
+        "caseSensitive": null,
+        "matchWholeWords": null
       }
     ]
   }
@@ -125,7 +164,7 @@ PUT /worldbooks/:id
 
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
-| `400` | `validation_error` | 请求体校验失败，或未提供 `expected_version` / `expected_updated_at` |
+| `400` | `validation_error` / `worldbook_validation_error` | 请求体校验失败、未提供 `expected_version` / `expected_updated_at`，或原始世界书 payload 无法通过校验 |
 | `404` | `worldbook_not_found` | 世界书不存在 |
 | `409` | `worldbook_conflict` | 版本基线过期，或兼容字段 `expected_updated_at` 不匹配 |
 | `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
@@ -160,13 +199,16 @@ DELETE /worldbooks/wb_kingdom?expected_version=3
 
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
-| `404` | `worldbook_not_found` | 世界书不存在 |
+| `400` | `validation_error` | 查询参数校验失败 |
+| `404` | `worldbook_not_found` | 仅当传入 `expected_version` 且目标世界书不存在时返回 |
 | `409` | `worldbook_conflict` | `expected_version` 与服务端当前版本不一致 |
 | `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
+未传 `expected_version` 时，删除走无前置条件的幂等 `204` 路径。即使目标世界书已经不存在，接口仍返回 `204`。
+
 ---
 
-# Worldbook Entries（条目管理）
+## Worldbook Entries（条目管理）
 
 对单个世界书条目进行增删改查和批量操作，无需操作整个世界书 JSON。
 

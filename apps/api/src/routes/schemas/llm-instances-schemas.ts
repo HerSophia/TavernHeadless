@@ -167,38 +167,64 @@ export const resolvedQueryJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const nullableInstanceParamsJsonSchema = {
+  anyOf: [
+    { type: "object", properties: generationParamsJsonSchemaProperties, additionalProperties: false },
+    { type: "null" },
+  ],
+} as const;
+
 export const slotParamsJsonSchema = {
   type: "object",
   required: ["slot"],
   properties: {
-    slot: { type: "string" },
+    slot: {
+      type: "string",
+      description: "Allowed values: *, narrator, director, verifier, memory.",
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const upsertGlobalBodyJsonSchema = {
+  type: "object",
+  properties: {
+    scope: { type: "string", enum: ["global"] },
+    session_id: { type: "string", minLength: 1 },
+    preset_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
+    enabled: { type: "boolean" },
+    params: nullableInstanceParamsJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const upsertSessionBodyJsonSchema = {
+  type: "object",
+  required: ["scope", "session_id"],
+  properties: {
+    scope: { type: "string", enum: ["session"] },
+    session_id: { type: "string", minLength: 1 },
+    preset_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
+    enabled: { type: "boolean" },
+    params: nullableInstanceParamsJsonSchema,
   },
   additionalProperties: false,
 } as const;
 
 export const upsertBodyJsonSchema = {
-  type: "object",
-  properties: {
-    scope: { type: "string", enum: ["global", "session"], default: "global" },
-    session_id: { type: "string", minLength: 1 },
-    preset_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
-    enabled: { type: "boolean", default: true },
-    params: {
-      anyOf: [
-        { type: "object", properties: generationParamsJsonSchemaProperties, additionalProperties: false },
-        { type: "null" },
-      ],
-    },
-  },
+  oneOf: [upsertGlobalBodyJsonSchema, upsertSessionBodyJsonSchema],
   examples: [upsertBodyExample],
-  additionalProperties: false,
 } as const;
 
 export const deleteQueryJsonSchema = {
   type: "object",
   properties: {
     scope: { type: "string", enum: ["global", "session"], default: "global" },
-    session_id: { type: "string", minLength: 1 },
+    session_id: {
+      type: "string",
+      minLength: 1,
+      description: "Required when scope=session.",
+    },
   },
   additionalProperties: false,
 } as const;

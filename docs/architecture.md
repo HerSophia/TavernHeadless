@@ -596,6 +596,16 @@ CREATE TABLE message_page (
 );
 ```
 
+同时还存在一个部分唯一约束：
+
+```sql
+CREATE UNIQUE INDEX message_page_floor_no_active_uq
+ON message_page(floor_id, page_no)
+WHERE is_active = 1;
+```
+
+active 不变量是“同一 `(floor_id, page_no)` 最多一个 active version”，不是“同一 floor 最多一个 active page”。因此 input 槽位和 output 槽位可以同时 active。
+
 ### 消息表（message）
 
 ```sql
@@ -762,7 +772,13 @@ CREATE TABLE tool_execution_record (
 | GET   | `/floors/:id`         | 获取楼层详情         |
 | POST  | `/floors/:id/branch`  | 从该楼层创建分支     |
 | GET   | `/floors/:id/pages`   | 列出楼层的所有消息页 |
-| PATCH | `/pages/:id/activate` | 切换当前生效的消息页 |
+| PATCH | `/pages/:id/activate` | 在同一 `(floor_id, page_no)` 槽位内切换当前生效的消息页 |
+
+说明：
+
+- `POST /pages` 和 `PATCH /pages/:id` 不再接受公开的 `is_active` 写入
+- `PATCH /pages/:id/activate` 是唯一公开的激活入口，并且只影响同一 `(floor_id, page_no)` 槽位
+- `page_kind = "input"` 的页不允许通过该入口激活
 
 ### 变量
 

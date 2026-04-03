@@ -85,10 +85,17 @@ describe("M8: Core RP Experience", () => {
         session_id: session.id,
         floor_no: 0,
         branch_id: "main",
-        state: "committed",
       });
       const page = await createPage(app, { floor_id: floor.id, page_no: 0, page_kind: "output" });
       await createMessage(app, { page_id: page.id, seq: 0, role: "assistant", content: "Hello!" });
+
+      const commitResponse = await app.inject({
+        method: "PATCH",
+        url: `/floors/${floor.id}`,
+        payload: { state: "committed" },
+      });
+
+      expect(commitResponse.statusCode).toBe(200);
 
       const res = await app.inject({
         method: "GET",
@@ -173,11 +180,18 @@ describe("M8: Core RP Experience", () => {
         session_id: session.id,
         floor_no: 0,
         branch_id: "main",
-        state: "committed",
       });
       // 创建两个 page，只有一个 active
       await createPage(app, { floor_id: floor.id, page_no: 0, page_kind: "output", is_active: true, version: 1 });
       await createPage(app, { floor_id: floor.id, page_no: 0, page_kind: "output", is_active: false, version: 2 });
+
+      const commitResponse = await app.inject({
+        method: "PATCH",
+        url: `/floors/${floor.id}`,
+        payload: { state: "committed" },
+      });
+
+      expect(commitResponse.statusCode).toBe(200);
 
       const res = await app.inject({
         method: "GET",
@@ -455,7 +469,7 @@ async function createPage(
     version?: number;
   }
 ): Promise<{ id: string }> {
-  const res = await app.inject({ method: "POST", url: "/pages", payload });
+  const res = await app.inject({ method: "POST", url: "/pages", payload: { floor_id: payload.floor_id, page_no: payload.page_no, page_kind: payload.page_kind, ...(payload.version !== undefined ? { version: payload.version } : {}) } });
   expect(res.statusCode).toBe(201);
   return res.json<ItemResponse<{ id: string }>>().data;
 }

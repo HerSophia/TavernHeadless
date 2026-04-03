@@ -177,6 +177,25 @@ describe('FloorStateMachine', () => {
         FloorStateConflictError
       );
     });
+
+    it('can prepare and complete a committed transition without emitting events immediately', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'generating' }));
+
+      const stateChangedHandler = vi.fn();
+      const committedHandler = vi.fn();
+      bus.on('floor.stateChanged', stateChangedHandler);
+      bus.on('floor.committed', committedHandler);
+
+      const prepared = sm.prepareTransition({ id: 'f1', state: 'generating' }, 'committed');
+      const updated = await repo.updateStateCas('f1', prepared.previousState, prepared.newState, Date.now());
+      const transition = sm.completeTransition(prepared, updated!);
+
+      expect(transition.previousState).toBe('generating');
+      expect(transition.newState).toBe('committed');
+      expect(transition.floor.state).toBe('committed');
+      expect(stateChangedHandler).not.toHaveBeenCalled();
+      expect(committedHandler).not.toHaveBeenCalled();
+    });
   });
 
   // ── Events ──

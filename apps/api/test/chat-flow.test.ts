@@ -1520,6 +1520,77 @@ describe("ChatService", () => {
       expect(userMessages.map((msg: { content: string }) => msg.content)).toEqual(["Root", "Alt timeline"]);
     });
 
+    it("should continue from the latest committed branch floor when the branch tip is failed", async () => {
+      const root = await chatService.respond(sessionId, { message: "Root" });
+      const branchResult = await chatService.respond(sessionId, {
+        message: "Alt timeline",
+        branchId: "alt-1",
+        sourceFloorId: root.floorId,
+      });
+
+      const failedFloorId = nanoid();
+      const now = Date.now();
+      await database.db.insert(floors).values({
+        id: failedFloorId,
+        sessionId,
+        floorNo: branchResult.floorNo + 1,
+        branchId: "alt-1",
+        parentFloorId: branchResult.floorId,
+        state: "failed",
+        tokenIn: 0,
+        tokenOut: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const continued = await chatService.respond(sessionId, {
+        message: "Alt after failure",
+        branchId: "alt-1",
+      });
+
+      expect(continued.branchId).toBe("alt-1");
+      expect(continued.floorNo).toBe(branchResult.floorNo + 2);
+
+      const [continuedFloor] = await database.db
+        .select()
+        .from(floors)
+        .where(eq(floors.id, continued.floorId));
+
+      expect(continuedFloor).toBeDefined();
+      expect(continuedFloor!.parentFloorId).toBe(branchResult.floorId);
+
+      const continuedCall = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[2]![0];
+      const userMessages = continuedCall.messages.filter((msg: { role: string }) => msg.role === "user");
+      expect(userMessages.map((msg: { content: string }) => msg.content)).toEqual([
+        "Root",
+        "Alt timeline",
+        "Alt after failure",
+      ]);
+    });
+
+    it("should reject respond when the branch already has a generating floor", async () => {
+      const root = await chatService.respond(sessionId, { message: "Root" });
+      const now = Date.now();
+
+      await database.db.insert(floors).values({
+        id: nanoid(),
+        sessionId,
+        floorNo: 1,
+        branchId: "alt-1",
+        parentFloorId: root.floorId,
+        state: "generating",
+        tokenIn: 0,
+        tokenOut: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await expect(chatService.respond(sessionId, { message: "Blocked", branchId: "alt-1" })).rejects.toMatchObject({
+        code: "invalid_state",
+      });
+      expect(mockOrchestrator.executeTurn).toHaveBeenCalledTimes(1);
+    });
+
     it("should retry a failed floor in place", async () => {
       (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("transient"));
 

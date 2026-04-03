@@ -20,6 +20,7 @@ import {
   worldbooks,
 } from "../src/db/schema";
 import { SimpleTokenCounter, type TurnOrchestrator } from "@tavern/core";
+import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
 
 interface ChatServiceStub {
   respond: ReturnType<typeof vi.fn>;
@@ -100,6 +101,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
     options: { enablePromptDryRun?: boolean; enableSseChat?: boolean } = {}
   ) {
     app = Fastify({ logger: false });
+    await registerDevelopmentTestAuth(app);
     await registerChatRoutes(
       app,
       chatService as unknown as ChatServiceType,

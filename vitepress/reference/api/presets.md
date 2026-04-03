@@ -60,9 +60,9 @@ GET /presets/:id
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `404` | 预设不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 预设不存在 |
 
 ## 获取 Preset 编辑器视图
 
@@ -117,10 +117,10 @@ GET /presets/:id/editor
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `404` | 预设不存在 |
-| `422` | 预设数据无法转换为编辑器格式 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `preset_not_found` | 预设不存在 |
+| `422` | `preset_unsupported_shape` | 预设数据无法转换为编辑器格式 |
 
 ## Editor Document 结构
 
@@ -253,6 +253,8 @@ DELETE /presets/:id
 
 删除时推荐通过 query string 传入 `expected_version`。此接口不使用 `DELETE` 请求体。
 
+当省略 `expected_version` 时，当前实现走**无前置条件的幂等 `204` 删除路径**；即使目标资源不存在，也仍然返回 `204`。只有显式提供 `expected_version` 时，服务端才会先加载资源并在缺失时返回 `404 preset_not_found`。
+
 ### 查询参数
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -273,13 +275,14 @@ DELETE /presets/preset_story?expected_version=4
 
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
-| `404` | `preset_not_found` | 预设不存在 |
+| `400` | `validation_error` | 查询参数校验失败 |
+| `404` | `preset_not_found` | 仅在提供 `expected_version` 时，目标预设不存在 |
 | `409` | `preset_conflict` | `expected_version` 与服务端当前版本不一致 |
 | `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
 
 ---
 
-# Preset Entries（提示词条目管理）
+## Preset Entries（提示词条目管理）
 
 对预设中的单个提示词条目进行增删改查和批量操作，无需通过编辑器视图操作整个预设。
 
@@ -371,9 +374,9 @@ GET /presets/:preset_id/entries
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `404` | 预设不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 预设不存在 |
 
 ## 创建条目
 
@@ -452,9 +455,9 @@ GET /presets/:preset_id/entries/:identifier
 
 ### 错误
 
-| 状态码 | 说明 |
-| ------ | ---- |
-| `404` | 预设或条目不存在 |
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` / `entry_not_found` | 预设不存在，或目标条目不存在 |
 
 ## 更新条目
 

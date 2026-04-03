@@ -184,7 +184,7 @@ describe("apps/api integration", () => {
     const patchResponse = await app.inject({
       method: "PATCH",
       url: `/pages/${createdPage.id}`,
-      payload: { is_active: false }
+      payload: { version: 2 }
     });
 
     expect(patchResponse.statusCode).toBe(200);
