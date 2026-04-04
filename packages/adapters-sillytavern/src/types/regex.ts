@@ -1,17 +1,19 @@
-// ── ST Regex Script 精简类型 ───────────────────────────
-// 原始酒馆正则有 12 个字段，这里保留 ~10 个核心字段。
-// 砍掉：markdownOnly（我们不做 MD 渲染）、runOnEdit（UI 行为）
+// ── ST Regex Script 兼容类型 ───────────────────────────
 
 /** 正则脚本应用位置 */
 export const REGEX_PLACEMENT = {
+  /** Markdown 显示层（兼容保留） */
+  MD_DISPLAY: 0,
   /** 用户输入 */
   USER_INPUT: 1,
   /** AI 输出 */
   AI_OUTPUT: 2,
-  /** 斜杠命令（不使用） */
+  /** 斜杠命令（兼容保留） */
   SLASH_COMMAND: 3,
   /** 世界书内容 */
   WORLD_INFO: 5,
+  /** Reasoning（兼容保留） */
+  REASONING: 6,
 } as const;
 
 export type RegexPlacement = (typeof REGEX_PLACEMENT)[keyof typeof REGEX_PLACEMENT];
@@ -29,7 +31,9 @@ export const SUBSTITUTE_REGEX = {
 export type SubstituteRegex = (typeof SUBSTITUTE_REGEX)[keyof typeof SUBSTITUTE_REGEX];
 
 /**
- * 精简后的正则脚本
+ * SillyTavern Regex Script 兼容类型。
+ *
+ * 这里保留 ST 原始兼容字段，是否执行由运行时决定。
  */
 export interface STRegexScript {
   /** 脚本 UUID */
@@ -46,6 +50,12 @@ export interface STRegexScript {
   placement: number[];
   /** 是否禁用 */
   disabled: boolean;
+  /** 是否仅影响 Markdown / display */
+  markdownOnly: boolean;
+  /** 是否仅影响 outgoing prompt */
+  promptOnly: boolean;
+  /** 是否在编辑后执行 */
+  runOnEdit: boolean;
   /** 变量替换模式 */
   substituteRegex: SubstituteRegex;
   /** 最小深度 */

@@ -25,37 +25,28 @@ const rawRegexArraySchema = z.array(rawRegexScriptSchema);
 // ── 解析函数 ──────────────────────────────────────────
 
 /**
- * 解析酒馆正则脚本 JSON 数组，返回精简的 STRegexScript[]。
+ * 解析酒馆正则脚本 JSON 数组，返回 STRegexScript[]。
  *
- * 过滤规则：
- * - markdownOnly=true 的脚本被过滤（我们不做 MD 渲染）
- * - placement 中的 MD_DISPLAY(0) 和 SLASH_COMMAND(3) 被移除
+ * 该函数只负责结构校验和默认值补齐，不负责按当前后端执行能力裁剪字段。
  *
  * @throws {z.ZodError} JSON 结构不符合预期时
  */
 export function parseRegexScripts(json: unknown): STRegexScript[] {
   const rawScripts = rawRegexArraySchema.parse(json);
 
-  return rawScripts
-    // 过滤 markdownOnly
-    .filter(s => !s.markdownOnly)
-    .map(s => {
-      // 过滤无用的 placement
-      const filteredPlacement = s.placement.filter(p => p !== 0 && p !== 3);
-
-      return {
-        id: s.id,
-        scriptName: s.scriptName,
-        findRegex: s.findRegex,
-        replaceString: s.replaceString,
-        trimStrings: s.trimStrings,
-        placement: filteredPlacement,
-        disabled: s.disabled,
-        substituteRegex: s.substituteRegex as STRegexScript['substituteRegex'],
-        minDepth: s.minDepth,
-        maxDepth: s.maxDepth,
-      };
-    })
-    // 过滤掉没有有效 placement 的脚本
-    .filter(s => s.placement.length > 0);
+  return rawScripts.map((s) => ({
+    id: s.id,
+    scriptName: s.scriptName,
+    findRegex: s.findRegex,
+    replaceString: s.replaceString,
+    trimStrings: s.trimStrings,
+    placement: s.placement,
+    disabled: s.disabled,
+    markdownOnly: s.markdownOnly,
+    promptOnly: s.promptOnly,
+    runOnEdit: s.runOnEdit,
+    substituteRegex: s.substituteRegex as STRegexScript['substituteRegex'],
+    minDepth: s.minDepth,
+    maxDepth: s.maxDepth,
+  }));
 }

@@ -22,6 +22,9 @@ export type RegexProfileRuleInput = {
   trimStrings?: string[];
   placement?: number[];
   disabled?: boolean;
+  markdownOnly?: boolean;
+  promptOnly?: boolean;
+  runOnEdit?: boolean;
   substituteRegex?: number;
   minDepth?: number;
   maxDepth?: number;

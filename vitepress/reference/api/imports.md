@@ -144,8 +144,11 @@ POST /import/regex
   "data": [
     {
       "scriptName": "trim_whitespace",
-      "find": "\\s+$",
-      "replace": ""
+      "findRegex": "\\s+$",
+      "replaceString": "",
+      "trimStrings": [],
+      "placement": [2],
+      "disabled": false
     }
   ]
 }
@@ -159,10 +162,28 @@ POST /import/regex
     "id": "regex_safe",
     "name": "Safety Filters",
     "source": "sillytavern",
-    "script_count": 1
+    "script_count": 1,
+    "compat_report": {
+      "stored_count": 1,
+      "prompt_executable_count": 1,
+      "persist_executable_count": 1,
+      "display_only_count": 0,
+      "unsupported_runtime_count": 0,
+      "contains_prompt_only": 0,
+      "contains_run_on_edit": 0,
+      "contains_reasoning": 0,
+      "contains_slash_command": 0
+    }
   }
 }
 ```
+
+`compat_report` 用于说明：
+
+- 规则总数
+- 当前后端 prompt 链路可执行的规则数量
+- 当前后端 persist 链路可执行的规则数量
+- 仅保留但不执行的规则数量
 
 ### 错误
 

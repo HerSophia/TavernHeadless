@@ -141,6 +141,17 @@ interface ImportResponse {
     name: string;
     source: string;
     script_count?: number;
+    compat_report?: {
+      stored_count: number;
+      prompt_executable_count: number;
+      persist_executable_count: number;
+      display_only_count: number;
+      unsupported_runtime_count: number;
+      contains_prompt_only: number;
+      contains_run_on_edit: number;
+      contains_reasoning: number;
+      contains_slash_command: number;
+    };
   };
 }
 
@@ -874,6 +885,60 @@ describe("Import Routes", () => {
       expect(body.data.name).toBe("My Regex Profile");
       expect(body.data.source).toBe("sillytavern");
       expect(body.data.script_count).toBe(1);
+      expect(body.data.compat_report).toEqual({
+        stored_count: 1,
+        prompt_executable_count: 1,
+        persist_executable_count: 1,
+        display_only_count: 0,
+        unsupported_runtime_count: 0,
+        contains_prompt_only: 0,
+        contains_run_on_edit: 0,
+        contains_reasoning: 0,
+        contains_slash_command: 0,
+      });
+    });
+
+    it("POST /import/regex should return a compatibility summary for preserved but not fully executable rules", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/import/regex",
+        payload: {
+          name: "Compat Regex Profile",
+          data: [
+            { id: "r1", scriptName: "Persist Rule", findRegex: "hello", replaceString: "world", placement: [2], disabled: false },
+            { id: "r2", scriptName: "Prompt Only Rule", findRegex: "user", replaceString: "traveler", placement: [1], disabled: false, promptOnly: true },
+            { id: "r3", scriptName: "Display Rule", findRegex: "md", replaceString: "display", placement: [0], disabled: false, markdownOnly: true },
+            { id: "r4", scriptName: "Reasoning Rule", findRegex: "think", replaceString: "reason", placement: [6], disabled: false },
+            { id: "r5", scriptName: "Slash Rule", findRegex: "slash", replaceString: "cmd", placement: [3], disabled: false, runOnEdit: true },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = res.json() as ImportResponse;
+      expect(body.data.script_count).toBe(5);
+      expect(body.data.compat_report).toEqual({
+        stored_count: 5,
+        prompt_executable_count: 2,
+        persist_executable_count: 1,
+        display_only_count: 1,
+        unsupported_runtime_count: 2,
+        contains_prompt_only: 1,
+        contains_run_on_edit: 1,
+        contains_reasoning: 1,
+        contains_slash_command: 1,
+      });
+
+      const detailRes = await app.inject({ method: "GET", url: `/regex-profiles/${body.data.id}` });
+      expect(detailRes.statusCode).toBe(200);
+      const detail = detailRes.json() as DetailResponse;
+      const scripts = detail.data.data as Array<Record<string, unknown>>;
+      expect(scripts).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "r2", promptOnly: true }),
+        expect.objectContaining({ id: "r3", markdownOnly: true }),
+        expect.objectContaining({ id: "r5", runOnEdit: true, placement: [3] }),
+        expect.objectContaining({ id: "r4", placement: [6] }),
+      ]));
     });
 
     it("POST /import/regex should return 400 when name is missing", async () => {

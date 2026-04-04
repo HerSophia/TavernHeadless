@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { applyRegexScripts } from '../regex/regex-engine.js';
+import type { RegexContext } from '../regex/regex-engine.js';
 import type { STRegexScript } from '../types/regex.js';
 import { REGEX_PLACEMENT, SUBSTITUTE_REGEX } from '../types/regex.js';
 
@@ -12,6 +13,9 @@ function makeScript(overrides: Partial<STRegexScript> & { findRegex: string }): 
     trimStrings: [],
     placement: [REGEX_PLACEMENT.AI_OUTPUT],
     disabled: false,
+    markdownOnly: false,
+    promptOnly: false,
+    runOnEdit: false,
     substituteRegex: SUBSTITUTE_REGEX.NONE,
     minDepth: 0,
     maxDepth: 0,
@@ -52,8 +56,8 @@ describe('applyRegexScripts', () => {
     });
   });
 
-  describe('capture groups', () => {
-    it('supports $1 capture group', () => {
+  describe('capture groups and match macros', () => {
+    it('supports numbered capture groups', () => {
       const script = makeScript({
         findRegex: '/(\\w+) (\\w+)/g',
         replaceString: '$2 $1',
@@ -61,6 +65,26 @@ describe('applyRegexScripts', () => {
 
       const result = applyRegexScripts('hello world', [script], REGEX_PLACEMENT.AI_OUTPUT);
       expect(result).toBe('world hello');
+    });
+
+    it('supports named capture groups', () => {
+      const script = makeScript({
+        findRegex: '/(?<first>\\w+) (?<second>\\w+)/g',
+        replaceString: '$<second> $<first>',
+      });
+
+      const result = applyRegexScripts('hello world', [script], REGEX_PLACEMENT.AI_OUTPUT);
+      expect(result).toBe('world hello');
+    });
+
+    it('supports {{match}} in replacement text', () => {
+      const script = makeScript({
+        findRegex: '/hello/g',
+        replaceString: '**{{match}}**',
+      });
+
+      const result = applyRegexScripts('hello hello', [script], REGEX_PLACEMENT.AI_OUTPUT);
+      expect(result).toBe('**hello** **hello**');
     });
   });
 
@@ -77,15 +101,26 @@ describe('applyRegexScripts', () => {
   });
 
   describe('trimStrings', () => {
-    it('removes trim strings from result', () => {
+    it('applies trimStrings to inserted replacement tokens', () => {
       const script = makeScript({
-        findRegex: '/$/g', // match end (effectively a no-op replace)
-        replaceString: '',
+        findRegex: '/(keep) (OOC)/g',
+        replaceString: '$1 + $2',
         trimStrings: ['OOC'],
       });
 
-      const result = applyRegexScripts('This is OOC text with OOC', [script], REGEX_PLACEMENT.AI_OUTPUT);
-      expect(result).toBe('This is  text with ');
+      const result = applyRegexScripts('keep OOC and OOC stays', [script], REGEX_PLACEMENT.AI_OUTPUT);
+      expect(result).toBe('keep +  and OOC stays');
+    });
+
+    it('does not trim unrelated text outside replacement tokens', () => {
+      const script = makeScript({
+        findRegex: '/value/g',
+        replaceString: '[{{match}}]',
+        trimStrings: ['value'],
+      });
+
+      const result = applyRegexScripts('prefix value suffix and value outside', [script], REGEX_PLACEMENT.AI_OUTPUT);
+      expect(result).toBe('prefix [] suffix and [] outside');
     });
   });
 
@@ -97,7 +132,6 @@ describe('applyRegexScripts', () => {
         placement: [REGEX_PLACEMENT.USER_INPUT],
       });
 
-      // Apply with AI_OUTPUT → should not match
       const result = applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT);
       expect(result).toBe('hello');
     });
@@ -111,6 +145,81 @@ describe('applyRegexScripts', () => {
 
       const result = applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT);
       expect(result).toBe('world');
+    });
+  });
+
+  describe('channel filtering', () => {
+    it('only applies promptOnly scripts in prompt channel', () => {
+      const script = makeScript({
+        findRegex: '/hello/g',
+        replaceString: 'world',
+        promptOnly: true,
+      });
+
+      expect(applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT)).toBe('hello');
+      expect(applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT, { channel: 'prompt' })).toBe('world');
+    });
+
+    it('only applies markdownOnly scripts in display channel', () => {
+      const script = makeScript({
+        findRegex: '/hello/g',
+        replaceString: 'world',
+        markdownOnly: true,
+      });
+
+      expect(applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT)).toBe('hello');
+      expect(applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT, { channel: 'display' })).toBe('world');
+    });
+
+    it('requires runOnEdit for edit channel', () => {
+      const baseScript = makeScript({
+        findRegex: '/hello/g',
+        replaceString: 'world',
+      });
+
+      expect(applyRegexScripts('hello', [baseScript], REGEX_PLACEMENT.AI_OUTPUT, { channel: 'edit' })).toBe('hello');
+      expect(applyRegexScripts(
+        'hello',
+        [{ ...baseScript, runOnEdit: true }],
+        REGEX_PLACEMENT.AI_OUTPUT,
+        { channel: 'edit' },
+      )).toBe('world');
+    });
+  });
+
+  describe('depth filtering', () => {
+    it('skips scripts when depth is smaller than minDepth', () => {
+      const script = makeScript({
+        findRegex: '/hello/g',
+        replaceString: 'world',
+        minDepth: 2,
+      });
+
+      const context: RegexContext = { channel: 'persist', depth: 1 };
+      expect(applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT, context)).toBe('hello');
+    });
+
+    it('applies scripts when depth is within range', () => {
+      const script = makeScript({
+        findRegex: '/hello/g',
+        replaceString: 'world',
+        minDepth: 1,
+        maxDepth: 3,
+      });
+
+      const context: RegexContext = { channel: 'persist', depth: 2 };
+      expect(applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT, context)).toBe('world');
+    });
+
+    it('skips scripts when depth is greater than maxDepth', () => {
+      const script = makeScript({
+        findRegex: '/hello/g',
+        replaceString: 'world',
+        maxDepth: 1,
+      });
+
+      const context: RegexContext = { channel: 'persist', depth: 2 };
+      expect(applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT, context)).toBe('hello');
     });
   });
 
@@ -135,7 +244,6 @@ describe('applyRegexScripts', () => {
       ];
 
       const result = applyRegexScripts('aaa', scripts, REGEX_PLACEMENT.AI_OUTPUT);
-      // First: aaa → bbb, then: bbb → ccc
       expect(result).toBe('ccc');
     });
   });
@@ -148,8 +256,8 @@ describe('applyRegexScripts', () => {
         substituteRegex: SUBSTITUTE_REGEX.RAW,
       });
 
-      const context = {
-        substituteParams: (text: string) => text.replace('{{char}}', 'Alice'),
+      const context: RegexContext = {
+        substituteFindParams: (text: string) => text.replace('{{char}}', 'Alice'),
       };
 
       const result = applyRegexScripts('Alice is here', [script], REGEX_PLACEMENT.AI_OUTPUT, context);
@@ -163,11 +271,10 @@ describe('applyRegexScripts', () => {
         substituteRegex: SUBSTITUTE_REGEX.ESCAPED,
       });
 
-      const context = {
-        substituteParams: (text: string) => text.replace('{{char}}', 'Alice (the great)'),
+      const context: RegexContext = {
+        substituteFindParams: (text: string) => text.replace('{{char}}', 'Alice (the great)'),
       };
 
-      // "Alice (the great)" with escaped parens should match literal
       const result = applyRegexScripts('Alice (the great) is here', [script], REGEX_PLACEMENT.AI_OUTPUT, context);
       expect(result).toBe('NAME is here');
     });
@@ -179,13 +286,43 @@ describe('applyRegexScripts', () => {
         substituteRegex: SUBSTITUTE_REGEX.NONE,
       });
 
-      const context = {
-        substituteParams: (text: string) => text.replace('{{char}}', 'Alice'),
+      const context: RegexContext = {
+        substituteFindParams: (text: string) => text.replace('{{char}}', 'Alice'),
       };
 
-      // Should try to match literal "{{char}}" which is not in text
       const result = applyRegexScripts('Alice is here', [script], REGEX_PLACEMENT.AI_OUTPUT, context);
       expect(result).toBe('Alice is here');
+    });
+  });
+
+  describe('replacement macro substitution', () => {
+    it('applies replacement macro substitution after capture processing', () => {
+      const script = makeScript({
+        findRegex: '/hello/g',
+        replaceString: 'Hi {{user}}',
+      });
+
+      const context: RegexContext = {
+        substituteReplaceParams: (text: string) => text.replace('{{user}}', 'Traveler'),
+      };
+
+      const result = applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT, context);
+      expect(result).toBe('Hi Traveler');
+    });
+
+    it('applies replacement macro substitution to trim strings', () => {
+      const script = makeScript({
+        findRegex: '/(hero)/g',
+        replaceString: '$1',
+        trimStrings: ['{{trim}}'],
+      });
+
+      const context: RegexContext = {
+        substituteReplaceParams: (text: string) => text.replace('{{trim}}', 'hero'),
+      };
+
+      const result = applyRegexScripts('hero', [script], REGEX_PLACEMENT.AI_OUTPUT, context);
+      expect(result).toBe('');
     });
   });
 
@@ -201,7 +338,6 @@ describe('applyRegexScripts', () => {
 
     it('handles invalid regex gracefully', () => {
       const script = makeScript({ findRegex: '/[invalid/g' });
-      // Should skip the invalid regex and return original text
       expect(applyRegexScripts('hello', [script], REGEX_PLACEMENT.AI_OUTPUT)).toBe('hello');
     });
   });

@@ -70,6 +70,9 @@ function makeScript(overrides?: Partial<STRegexScript>): STRegexScript {
     trimStrings: [],
     placement: [1, 2],
     disabled: false,
+    markdownOnly: false,
+    promptOnly: false,
+    runOnEdit: false,
     substituteRegex: SUBSTITUTE_REGEX.NONE,
     minDepth: 0,
     maxDepth: 0,
@@ -78,14 +81,20 @@ function makeScript(overrides?: Partial<STRegexScript>): STRegexScript {
 }
 
 describe('scriptsToStRegexArray', () => {
-  it('补回 3 个丢弃字段', () => {
-    const result = scriptsToStRegexArray([makeScript()]);
+  it('保留兼容字段原值', () => {
+    const result = scriptsToStRegexArray([
+      makeScript({
+        markdownOnly: true,
+        promptOnly: true,
+        runOnEdit: true,
+      }),
+    ]);
 
     const first = result[0]!;
     expect(result).toHaveLength(1);
-    expect(first.markdownOnly).toBe(false);
-    expect(first.promptOnly).toBe(false);
-    expect(first.runOnEdit).toBe(false);
+    expect(first.markdownOnly).toBe(true);
+    expect(first.promptOnly).toBe(true);
+    expect(first.runOnEdit).toBe(true);
   });
 
   it('保留原有字段不变', () => {
@@ -94,7 +103,7 @@ describe('scriptsToStRegexArray', () => {
       scriptName: 'My Regex',
       findRegex: '/foo/g',
       replaceString: 'bar',
-      placement: [1, 2, 5],
+      placement: [0, 1, 2, 3, 5, 6],
       disabled: true,
       substituteRegex: SUBSTITUTE_REGEX.ESCAPED,
       minDepth: 1,
@@ -107,11 +116,33 @@ describe('scriptsToStRegexArray', () => {
     expect(first!.scriptName).toBe('My Regex');
     expect(first!.findRegex).toBe('/foo/g');
     expect(first!.replaceString).toBe('bar');
-    expect(first!.placement).toEqual([1, 2, 5]);
+    expect(first!.placement).toEqual([0, 1, 2, 3, 5, 6]);
     expect(first!.disabled).toBe(true);
     expect(first!.substituteRegex).toBe(SUBSTITUTE_REGEX.ESCAPED);
     expect(first!.minDepth).toBe(1);
     expect(first!.maxDepth).toBe(10);
+  });
+
+  it('对历史旧数据缺失的兼容字段使用安全默认值', () => {
+    const legacyScript = {
+      id: 'legacy-1',
+      scriptName: 'Legacy Script',
+      findRegex: '/test/g',
+      replaceString: '',
+      trimStrings: [],
+      placement: [2],
+      disabled: false,
+      substituteRegex: SUBSTITUTE_REGEX.NONE,
+      minDepth: 0,
+      maxDepth: 0,
+    } as unknown as STRegexScript;
+
+    const [first] = scriptsToStRegexArray([legacyScript]);
+
+    expect(first).toBeDefined();
+    expect(first!.markdownOnly).toBe(false);
+    expect(first!.promptOnly).toBe(false);
+    expect(first!.runOnEdit).toBe(false);
   });
 
   it('空数组 → 空数组', () => {
@@ -119,22 +150,20 @@ describe('scriptsToStRegexArray', () => {
     expect(result).toEqual([]);
   });
 
-  it('多脚本数组每个都补了字段', () => {
+  it('多脚本数组每个都保留了兼容字段', () => {
     const scripts = [
-      makeScript({ id: 'a' }),
-      makeScript({ id: 'b' }),
-      makeScript({ id: 'c' }),
+      makeScript({ id: 'a', promptOnly: true }),
+      makeScript({ id: 'b', markdownOnly: true }),
+      makeScript({ id: 'c', runOnEdit: true }),
     ];
     const result = scriptsToStRegexArray(scripts);
 
     expect(result).toHaveLength(3);
-    for (const s of result) {
-      expect(s.markdownOnly).toBe(false);
-      expect(s.promptOnly).toBe(false);
-      expect(s.runOnEdit).toBe(false);
-    }
     expect(result[0]!.id).toBe('a');
+    expect(result[0]!.promptOnly).toBe(true);
     expect(result[1]!.id).toBe('b');
+    expect(result[1]!.markdownOnly).toBe(true);
     expect(result[2]!.id).toBe('c');
+    expect(result[2]!.runOnEdit).toBe(true);
   });
 });

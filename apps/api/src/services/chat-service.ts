@@ -16,6 +16,7 @@ import {
   assemblePrompt,
   buildPromptSnapshotPreview,
   buildPromptSnapshotRecord,
+  createRegexMacroSubstituter,
   type SessionPromptInfo,
   type AssembleDebugInfo,
   type PromptSnapshotPreview,
@@ -57,6 +58,10 @@ import {
 } from "@tavern/core";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
+import {
+  applyRegexScripts,
+  REGEX_PLACEMENT,
+} from "@tavern/adapters-sillytavern";
 import { sessions, floors, messagePages, messages } from "../db/schema.js";
 import {
   SessionToolRegistryService,
@@ -82,6 +87,8 @@ import {
 import { TurnCommitService, type TurnCommitMemoryReceipt } from "./turn-commit-service.js";
 import type { FloorRunService } from "./floor-run-service.js";
 import { OwnedMessageRepository, OwnedSessionRepository } from "./owned-resource-repositories.js";
+import { PromptResourceLoader } from "./prompt-resource-loader.js";
+import { VariableService } from "./variable-service.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
@@ -499,6 +506,7 @@ export class ChatService {
       async (generationRuntime) => {
         const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
         this.assertNarratorSlotEnabled(resolvedTurnModels);
+        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
 
         // ── 2. 确定分支上下文 + 加载历史 ──
         const branchContext = await this.resolveRespondBranchContext(
@@ -526,13 +534,24 @@ export class ChatService {
         });
 
         await this.initializeFloorRun(sessionId, floorId, "respond", now);
+        const persistedUserMessage = await this.applyPersistedUserInputRegex({
+          accountId,
+          sessionId,
+          branchId,
+          floorId,
+          pageId: userMessageRef.pageId,
+          session,
+          sessionInfo,
+          rawUserMessage: request.message,
+          persistedMessageId: userMessageRef.messageId,
+        });
+
         runtimeOptions.onStart?.({ floorId, floorNo: nextFloorNo, branchId });
         const unsubscribeRuntimeToolEvents = this.subscribeRuntimeToolEvents(floorId, runtimeOptions);
         const unsubscribeFloorRunEvents = this.subscribeFloorRunEvents(floorId, runtimeOptions);
 
         try {
           // ── 5. 构建 TurnInput + 执行编排 ──
-          const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
           const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
           await this.trackFloorRunPhase(floorId, "semantic_resolved");
           await this.trackFloorRunPhase(floorId, "prechecked");
@@ -543,7 +562,7 @@ export class ChatService {
             accountId,
             sessionInfo,
             history,
-            request.message,
+            persistedUserMessage,
             this.tokenCounter,
             memorySummary,
             {
@@ -578,7 +597,7 @@ export class ChatService {
           const consolidationContext = await this.buildConsolidationContext(
             sessionId,
             accountId,
-            request.message,
+            persistedUserMessage,
             turnConfig
           );
 
@@ -666,13 +685,20 @@ export class ChatService {
     const maxContextTokensOverride = normalizePositiveInt(narratorParams?.maxContextTokens);
 
     const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
+    const persistedUserMessage = await this.applyPersistedUserInputRegex({
+      accountId,
+      sessionId,
+      session,
+      sessionInfo,
+      rawUserMessage: request.message,
+    });
 
     const assembled = await assemblePrompt(
       this.db,
       accountId,
       sessionInfo,
       history,
-      request.message,
+      persistedUserMessage,
       this.tokenCounter,
       memorySummary,
       {
@@ -681,8 +707,8 @@ export class ChatService {
     );
 
     const preprocessedUserMessage = assembled.preProcess
-      ? assembled.preProcess([{ role: "user", content: request.message }])[0]?.content
-      : undefined;
+      ? assembled.preProcess([{ role: "user", content: persistedUserMessage }])[0]?.content
+      : persistedUserMessage;
 
     const debug: AssembleDebugInfo = assembled.debug ?? {
       mode: "fallback",
@@ -1118,6 +1144,9 @@ export class ChatService {
 
       const now = Date.now();
       const newFloorId = nanoid();
+      const resolvedTurnModels = await this.resolveTurnModelsForSession(source.sessionId, accountId);
+      this.assertNarratorSlotEnabled(resolvedTurnModels);
+      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
       const { userMessageRef } = this.createDraftFloorWithUserMessage({
         floorId: newFloorId,
         sessionId: source.sessionId,
@@ -1130,12 +1159,24 @@ export class ChatService {
         now,
       });
 
+      const persistedUserMessage = await this.applyPersistedUserInputRegex({
+        accountId,
+        sessionId: source.sessionId,
+        branchId: newBranchId,
+        floorId: newFloorId,
+        pageId: userMessageRef.pageId,
+        session,
+        sessionInfo,
+        rawUserMessage: request.content,
+        persistedMessageId: userMessageRef.messageId,
+      });
+
       const response = await this.generateForFloor({
         floorId: newFloorId,
         session,
         branchId: newBranchId,
         sessionId: source.sessionId,
-        userMessage: request.content,
+        userMessage: persistedUserMessage,
         userMessageRef,
         history,
         request,
@@ -1902,7 +1943,7 @@ export class ChatService {
     prepare?: (tx: DbExecutor) => void;
   }): { floorId: string; userMessageRef: PersistedMessageRef } {
     const floorId = args.floorId ?? nanoid();
-    const floorMetadataJson = buildFloorMetadataJson(args.userId, args.userSnapshotJson, args.now);
+    const floorMetadataJson = buildFloorMetadataJson(args.userId, args.userSnapshotJson, args.now, args.userMessage);
 
     const userMessageRef = this.db.transaction((tx) => {
       args.prepare?.(tx);
@@ -1949,6 +1990,83 @@ export class ChatService {
       promptMode: session.promptMode,
       userSnapshotJson: session.userSnapshotJson,
     };
+  }
+
+  private async applyPersistedUserInputRegex(args: {
+    accountId: string;
+    sessionId: string;
+    branchId?: string;
+    floorId?: string;
+    pageId?: string;
+    session: Pick<typeof sessions.$inferSelect, "characterSnapshotJson" | "userSnapshotJson" | "metadataJson">;
+    sessionInfo: SessionPromptInfo;
+    rawUserMessage: string;
+    persistedMessageId?: string;
+  }): Promise<string> {
+    const resourceLoader = new PromptResourceLoader(this.db);
+    const regexProfile = await resourceLoader.loadRegexScripts(args.accountId, args.sessionInfo.regexProfileId);
+
+    if (!regexProfile || regexProfile.scripts.length === 0) {
+      return args.rawUserMessage;
+    }
+
+    const variables = await this.resolveRegexVariables({
+      accountId: args.accountId,
+      sessionId: args.sessionId,
+      branchId: args.branchId,
+      floorId: args.floorId,
+      pageId: args.pageId,
+      characterSnapshotJson: args.session.characterSnapshotJson,
+      userSnapshotJson: args.session.userSnapshotJson,
+      metadataJson: args.session.metadataJson,
+    });
+
+    const substituteRegexParams = createRegexMacroSubstituter(variables);
+    const persistedUserMessage = applyRegexScripts(
+      args.rawUserMessage,
+      regexProfile.scripts,
+      REGEX_PLACEMENT.USER_INPUT,
+      {
+        channel: "persist",
+        substituteFindParams: substituteRegexParams,
+        substituteReplaceParams: substituteRegexParams,
+      },
+    );
+
+    if (args.persistedMessageId && persistedUserMessage !== args.rawUserMessage) {
+      await this.messagePersistence.updateMessageContent(args.persistedMessageId, persistedUserMessage);
+    }
+
+    return persistedUserMessage;
+  }
+
+  private async resolveRegexVariables(args: {
+    accountId: string;
+    sessionId: string;
+    branchId?: string;
+    floorId?: string;
+    pageId?: string;
+    characterSnapshotJson: string | null;
+    userSnapshotJson: string | null;
+    metadataJson: string | null;
+  }): Promise<Record<string, unknown>> {
+    const variables = Object.create(null) as Record<string, unknown>;
+    const variableService = new VariableService(this.db);
+    const snapshot = await variableService.resolveSnapshot({
+      accountId: args.accountId,
+      sessionId: args.sessionId,
+      branchId: args.branchId,
+      floorId: args.floorId,
+      pageId: args.pageId,
+    });
+
+    for (const entry of snapshot.resolved) {
+      variables[entry.key] = entry.value;
+    }
+
+    variables.char = parseRegexCharacterName(args.characterSnapshotJson) ?? "Assistant";
+    variables.user = parseRegexUserName(args.userSnapshotJson, args.metadataJson) ?? "User";
+    return variables;
   }
 
   private isSlotDisabled(models: ResolvedTurnModels, slot: InstanceSlot): boolean {
@@ -2508,14 +2626,16 @@ export class ChatService {
 function buildFloorMetadataJson(
   userId: string | null,
   userSnapshotJson: string | null,
-  replacedAt: number
+  replacedAt: number,
+  userInputRaw?: string,
 ): string | null {
   const snapshotSummary = parseUserSnapshotSummary(userSnapshotJson);
-  if (!userId && !snapshotSummary) {
+  if (!userId && !snapshotSummary && typeof userInputRaw !== "string") {
     return null;
   }
 
   return JSON.stringify({
+    ...(typeof userInputRaw === "string" ? { user_input_raw: userInputRaw } : {}),
     user_binding: {
       user_id: userId,
       snapshot_summary: snapshotSummary,
@@ -2533,6 +2653,57 @@ function parseUserSnapshotSummary(userSnapshotJson: string | null): { name: stri
     const parsed = JSON.parse(userSnapshotJson) as Record<string, unknown>;
     const name = typeof parsed.name === "string" ? parsed.name.trim() : "";
     return name ? { name } : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseRegexCharacterName(characterSnapshotJson: string | null): string | null {
+  if (!characterSnapshotJson) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(characterSnapshotJson) as Record<string, unknown>;
+    const name = typeof parsed.name === "string" ? parsed.name.trim() : "";
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
+function parseRegexUserName(
+  userSnapshotJson: string | null,
+  metadataJson: string | null,
+): string | null {
+  if (userSnapshotJson) {
+    try {
+      const parsed = JSON.parse(userSnapshotJson) as Record<string, unknown>;
+      const name = typeof parsed.name === "string" ? parsed.name.trim() : "";
+      if (name) {
+        return name;
+      }
+    } catch {
+      // ignore and fall through to metadata persona
+    }
+  }
+
+  if (!metadataJson) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(metadataJson) as Record<string, unknown>;
+    const persona = parsed.persona;
+    if (!persona || typeof persona !== "object") {
+      return null;
+    }
+
+    const personaRecord = persona as Record<string, unknown>;
+    const name = typeof personaRecord.name === "string"
+      ? personaRecord.name.trim()
+      : "";
+    return name || null;
   } catch {
     return null;
   }

@@ -6,7 +6,7 @@ outline: [2, 3]
 
 管理通过 [导入接口](./imports#导入-regex-规则) 导入的 SillyTavern 正则替换规则集。
 
-每个 Regex Profile 包含一组正则替换脚本，用于在对话生成时对输出文本进行后处理。
+每个 Regex Profile 包含一组正则脚本，可用于 `user_input`、`ai_output`、`world_info` 等不同 placement。是否真正执行，取决于当前后端支持范围。
 
 ## 列出 Regex Profiles
 
@@ -56,6 +56,9 @@ GET /regex-profiles/:id
         "trimStrings": [],
         "placement": [2],
         "disabled": false,
+        "markdownOnly": false,
+        "promptOnly": false,
+        "runOnEdit": false,
         "substituteRegex": 0,
         "minDepth": 0,
         "maxDepth": 0
@@ -103,7 +106,16 @@ PUT /regex-profiles/:id
 | `expected_version` | integer | 否 | 推荐的乐观锁字段；期望的 `version` 值 |
 | `expected_updated_at` | integer | 否 | 兼容字段；仅用于已有主资源 `PUT` 调用方 |
 
-`data` 中每条规则的 `placement` 可使用 `1`（`user_input`）、`2`（`ai_output`）、`5`（`world_info`）。其中 `5` 会作用于注入 prompt 的 worldbook 文本。
+`data` 中每条规则当前会按原始兼容格式保存。常见 `placement` 值包括：
+
+- `0`：`markdown display`
+- `1`：`user_input`
+- `2`：`ai_output`
+- `3`：`slash_command`
+- `5`：`world_info`
+- `6`：`reasoning`
+
+当前后端正式执行的主链 placement 仍以 `USER_INPUT`、`AI_OUTPUT`、`WORLD_INFO` 为主；其余 placement 会保留，但不保证当前版本实际执行。
 
 ### 请求示例
 
@@ -118,7 +130,10 @@ PUT /regex-profiles/:id
       "replaceString": "",
       "trimStrings": [],
       "placement": [2],
-      "disabled": false
+      "disabled": false,
+      "markdownOnly": false,
+      "promptOnly": false,
+      "runOnEdit": false
     }
   ]
 }

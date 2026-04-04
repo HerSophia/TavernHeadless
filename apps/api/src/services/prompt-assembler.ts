@@ -310,7 +310,7 @@ export async function assemblePrompt(
           scenario: character?.scenario,
         },
       });
-      worldBookResults = applyWorldInfoRegexRules(worldBookResults, enabledRegexScripts);
+      worldBookResults = applyWorldInfoRegexRules(worldBookResults, enabledRegexScripts, promptSnapshot.variables);
     }
 
     promptSnapshot.worldbookActivatedEntryUids = collectActivatedEntryUids(worldBookResults);
@@ -372,6 +372,8 @@ export async function assemblePrompt(
 
   let preProcess: AssembleResult["preProcess"];
   let postProcess: AssembleResult["postProcess"];
+  const substituteRegexParams = createRegexMacroSubstituter(promptSnapshot.variables);
+  const regexContextBase = { substituteFindParams: substituteRegexParams, substituteReplaceParams: substituteRegexParams };
 
   if (enabledRegexScripts.length > 0) {
     preProcess = (candidateMessages: ChatMessage[]): ChatMessage[] => {
@@ -382,7 +384,26 @@ export async function assemblePrompt(
             content: applyRegexScripts(
               message.content,
               enabledRegexScripts,
-              REGEX_PLACEMENT.USER_INPUT
+              REGEX_PLACEMENT.USER_INPUT,
+              {
+                ...regexContextBase,
+                channel: "prompt",
+              }
+            ),
+          };
+        }
+
+        if (message.role === "assistant") {
+          return {
+            ...message,
+            content: applyRegexScripts(
+              message.content,
+              enabledRegexScripts,
+              REGEX_PLACEMENT.AI_OUTPUT,
+              {
+                ...regexContextBase,
+                channel: "prompt",
+              }
             ),
           };
         }
@@ -392,7 +413,10 @@ export async function assemblePrompt(
     };
 
     postProcess = (text: string): string => {
-      return applyRegexScripts(text, enabledRegexScripts, REGEX_PLACEMENT.AI_OUTPUT);
+      return applyRegexScripts(text, enabledRegexScripts, REGEX_PLACEMENT.AI_OUTPUT, {
+        ...regexContextBase,
+        channel: "persist",
+      });
     };
   }
 
@@ -568,6 +592,22 @@ async function resolvePromptVariables(args: {
   };
 }
 
+export function createRegexMacroSubstituter(variables: Record<string, unknown>): (text: string) => string {
+  return (text: string) => text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+    const normalizedKey = String(key).trim();
+    if (!normalizedKey) {
+      return match;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(variables, normalizedKey)) {
+      return match;
+    }
+
+    const value = variables[normalizedKey];
+    return value === null || value === undefined ? '' : String(value);
+  });
+}
+
 function resolvePromptMode(
   session: SessionPromptInfo,
   metadata: SessionMetadata
@@ -622,7 +662,8 @@ function buildNativeSystemPrompt(
 
 function applyWorldInfoRegexRules(
   worldBookResults: TriggerResult | undefined,
-  scripts: LoadedPromptRegexProfile["scripts"] | undefined
+  scripts: LoadedPromptRegexProfile["scripts"] | undefined,
+  variables: Record<string, unknown>,
 ): TriggerResult | undefined {
   if (!worldBookResults || !scripts || scripts.length === 0) {
     return worldBookResults;
@@ -633,7 +674,24 @@ function applyWorldInfoRegexRules(
     return worldBookResults;
   }
 
-  const transformContent = (content: string) => applyRegexScripts(content, worldInfoScripts, REGEX_PLACEMENT.WORLD_INFO);
+  const substituteRegexParams = createRegexMacroSubstituter(variables);
+  const regexContextBase = {
+    substituteFindParams: substituteRegexParams,
+    substituteReplaceParams: substituteRegexParams,
+  };
+
+  const transformContent = (content: string) => {
+    const persistedContent = applyRegexScripts(content, worldInfoScripts, REGEX_PLACEMENT.WORLD_INFO, {
+      ...regexContextBase,
+      channel: "persist",
+    });
+
+    return applyRegexScripts(persistedContent, worldInfoScripts, REGEX_PLACEMENT.WORLD_INFO, {
+      ...regexContextBase,
+      channel: "prompt",
+    });
+  };
+
   const transformedContentByUid = new Map(
     worldBookResults.activated.map((entry) => [entry.uid, transformContent(entry.content)] as const)
   );

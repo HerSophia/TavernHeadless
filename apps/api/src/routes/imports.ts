@@ -48,7 +48,9 @@ import {
   parseWorldBook,
   parseRegexScripts,
   parseCharacterCard,
+  REGEX_PLACEMENT,
   type STCharacterCard,
+  type STRegexScript,
   parseChatFile,
   groupMessagesIntoFloors,
   parseSendDate,
@@ -113,6 +115,40 @@ const importRegexSchema = z.object({
   /** 原始酒馆正则脚本 JSON 数组 */
   data: z.array(z.record(z.unknown())),
 });
+
+const SUPPORTED_REGEX_PROMPT_PLACEMENTS = new Set<number>([
+  REGEX_PLACEMENT.USER_INPUT,
+  REGEX_PLACEMENT.AI_OUTPUT,
+  REGEX_PLACEMENT.WORLD_INFO,
+]);
+
+function buildRegexCompatReport(scripts: STRegexScript[]) {
+  const storedCount = scripts.length;
+  const promptExecutableCount = scripts.filter(
+    (script) => !script.markdownOnly && script.placement.some((placement) => SUPPORTED_REGEX_PROMPT_PLACEMENTS.has(placement)),
+  ).length;
+  const persistExecutableCount = scripts.filter(
+    (script) => !script.markdownOnly && !script.promptOnly && script.placement.some((placement) => SUPPORTED_REGEX_PROMPT_PLACEMENTS.has(placement)),
+  ).length;
+  const displayOnlyCount = scripts.filter((script) => script.markdownOnly && !script.promptOnly).length;
+  const unsupportedRuntimeCount = scripts.filter((script) => {
+    const promptExecutable = !script.markdownOnly && script.placement.some((placement) => SUPPORTED_REGEX_PROMPT_PLACEMENTS.has(placement));
+    const displayOnly = script.markdownOnly && !script.promptOnly;
+    return !promptExecutable && !displayOnly;
+  }).length;
+
+  return {
+    stored_count: storedCount,
+    prompt_executable_count: promptExecutableCount,
+    persist_executable_count: persistExecutableCount,
+    display_only_count: displayOnlyCount,
+    unsupported_runtime_count: unsupportedRuntimeCount,
+    contains_prompt_only: scripts.filter((script) => script.promptOnly).length,
+    contains_run_on_edit: scripts.filter((script) => script.runOnEdit).length,
+    contains_reasoning: scripts.filter((script) => script.placement.includes(REGEX_PLACEMENT.REASONING)).length,
+    contains_slash_command: scripts.filter((script) => script.placement.includes(REGEX_PLACEMENT.SLASH_COMMAND)).length,
+  };
+}
 
 const importCharacterSchema = z.object({
   payload: z.record(z.unknown()),
@@ -230,8 +266,11 @@ const importRegexBodyExample = {
   data: [
     {
       scriptName: "trim_whitespace",
-      find: "\\s+$",
-      replace: "",
+      findRegex: "\\s+$",
+      replaceString: "",
+      trimStrings: [],
+      placement: [2],
+      disabled: false,
     },
   ],
 } as const;
@@ -250,6 +289,17 @@ const importRegexResponseExample = {
     name: "Safety Filters",
     source: "sillytavern",
     script_count: 1,
+    compat_report: {
+      stored_count: 1,
+      prompt_executable_count: 1,
+      persist_executable_count: 1,
+      display_only_count: 0,
+      unsupported_runtime_count: 0,
+      contains_prompt_only: 0,
+      contains_run_on_edit: 0,
+      contains_reasoning: 0,
+      contains_slash_command: 0,
+    },
   },
 } as const;
 
@@ -520,12 +570,38 @@ const importRegexResponseJsonSchema = {
   properties: {
     data: {
       type: "object",
-      required: ["id", "name", "source", "script_count"],
+      required: ["id", "name", "source", "script_count", "compat_report"],
       properties: {
         id: { type: "string" },
         name: { type: "string" },
         source: { type: "string" },
-        script_count: { type: "integer", minimum: 0 }
+        script_count: { type: "integer", minimum: 0 },
+        compat_report: {
+          type: "object",
+          required: [
+            "stored_count",
+            "prompt_executable_count",
+            "persist_executable_count",
+            "display_only_count",
+            "unsupported_runtime_count",
+            "contains_prompt_only",
+            "contains_run_on_edit",
+            "contains_reasoning",
+            "contains_slash_command",
+          ],
+          properties: {
+            stored_count: { type: "integer", minimum: 0 },
+            prompt_executable_count: { type: "integer", minimum: 0 },
+            persist_executable_count: { type: "integer", minimum: 0 },
+            display_only_count: { type: "integer", minimum: 0 },
+            unsupported_runtime_count: { type: "integer", minimum: 0 },
+            contains_prompt_only: { type: "integer", minimum: 0 },
+            contains_run_on_edit: { type: "integer", minimum: 0 },
+            contains_reasoning: { type: "integer", minimum: 0 },
+            contains_slash_command: { type: "integer", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
       },
       additionalProperties: false
     }
@@ -1075,6 +1151,7 @@ export async function registerImportRoutes(
     const auth = getRequestAuthContext(request);
     const id = nanoid();
     const name = parsed.data.name;
+    const compatReport = buildRegexCompatReport(stScripts);
 
     try {
       const created = await executeResourceWriteOrThrow(() => {
@@ -1089,7 +1166,7 @@ export async function registerImportRoutes(
           updatedAt: now,
         }).run();
 
-        return { id, name, source: "sillytavern", script_count: stScripts.length };
+        return { id, name, source: "sillytavern", script_count: stScripts.length, compat_report: compatReport };
       });
 
       return reply.code(201).send({
