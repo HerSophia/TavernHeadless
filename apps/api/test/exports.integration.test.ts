@@ -87,6 +87,17 @@ const CHARACTER_CARD_V2 = {
     scenario: "An observatory above a sea of clouds.",
     first_mes: "Welcome back. The stars kept your seat warm.",
     mes_example: "<START>\nLuna: I catalog memories by starlight.",
+    alternate_greetings: [
+      "The archive lamps are already lit.",
+      "The charts waited for you.",
+    ],
+    system_prompt: "Stay in character as a moon archivist.",
+    post_history_instructions: "End replies with a soft invitation.",
+    creator_notes: "Imported from export integration test.",
+    tags: ["moon", "archive"],
+    creator: "Test Suite",
+    character_version: "2.1",
+    extensions: { source_app: "vitest" },
   },
 };
 
@@ -332,12 +343,47 @@ describe("Export routes", () => {
     const latestBody = latestRes.json<{
       spec: string;
       spec_version: string;
-      data: { name: string; first_mes: string };
+      data: {
+        name: string;
+        first_mes: string;
+        alternate_greetings: string[];
+        system_prompt: string;
+        post_history_instructions: string;
+        creator_notes: string;
+      };
     }>();
     expect(latestBody.spec).toBe("chara_card_v2");
     expect(latestBody.spec_version).toBe("2.0");
     expect(latestBody.data.name).toBe("Luna");
     expect(latestBody.data.first_mes).toBe("Welcome back. The stars kept your seat warm.");
+    expect(latestBody.data.alternate_greetings).toEqual([
+      "The archive lamps are already lit.",
+      "The charts waited for you.",
+    ]);
+    expect(latestBody.data.system_prompt).toBe("Stay in character as a moon archivist.");
+    expect(latestBody.data.post_history_instructions).toBe("End replies with a soft invitation.");
+    expect(latestBody.data.creator_notes).toBe("Imported from export integration test.");
+
+    const latestV3Res = await app.inject({
+      method: "GET",
+      url: `/export/character/${imported.character_id}?format=v3`,
+    });
+
+    expect(latestV3Res.statusCode).toBe(200);
+    const latestV3Body = latestV3Res.json<{
+      spec: string;
+      spec_version: string;
+      data: { first_mes: string; alternate_greetings: string[]; group_only_greetings: string[]; creator_notes: string };
+    }>();
+    expect(latestV3Body.spec).toBe("chara_card_v3");
+    expect(latestV3Body.spec_version).toBe("3.0");
+    expect(latestV3Body.data.first_mes).toBe("Welcome back. The stars kept your seat warm.");
+    expect(latestV3Body.data.alternate_greetings).toEqual([
+      "The archive lamps are already lit.",
+      "The charts waited for you.",
+    ]);
+    expect(latestV3Body.data.group_only_greetings).toEqual([]);
+    expect(latestV3Body.data.creator_notes).toBe("Imported from export integration test.");
 
     const versionedRes = await app.inject({
       method: "GET",

@@ -109,6 +109,15 @@ apps/api/
 - [x] 增加字段清洗与长度限制，非法输入走 Zod 错误
 - [x] adapters 包新增 character parser/type 导出
 - [x] 新增 `character-parser` 单测（4 tests）
+- [x] 角色卡 parser 升级为 `legacy / v2 / v3` 分发结构
+- [x] 新增 `ImportedCharacterCard` / `CharacterProfile` 分层类型
+- [x] 支持 richer V2 / 最小 V3 字段保留：`alternate_greetings`、`system_prompt`、`post_history_instructions`、`creator_notes`、`tags`、`creator`、`character_version`、`extensions`
+- [x] `snapshotToStCharacterCard()` 改为优先导出真实扩展字段
+- [x] 新增多 greeting 与 richer 字段回归测试（parser / serializer）
+- [x] 建会话与角色导入建会话已支持 floor 0 多 greeting page（首楼 swipes）
+- [x] 角色快照的 `alternateGreetings` 已接入初始 output page 生成与激活切换链路
+- [x] 新增 Character Card V3 导出结构与 `GET /export/character/:id?format=v3`
+- [x] `characterBook` 已接入 prompt worldbook 主链，并支持与会话 worldbook 叠加触发
 
 ### 文件清单
 

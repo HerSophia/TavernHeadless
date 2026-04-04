@@ -66,9 +66,33 @@ describe("Sessions route extra branch coverage", () => {
 
   it("POST /sessions with character_snapshot only (no character_id)", async () => {
     const session = await createSession(app, {
-      character_snapshot: { name: "SnapshotChar", greeting: "Hello!" },
+      character_snapshot: {
+        name: "SnapshotChar",
+        primaryGreeting: "Hello!",
+        alternateGreetings: ["Alt one.", "Alt two."],
+        systemPrompt: "Stay in character.",
+      },
     });
-  expect(session.character_binding).not.toBeNull();
+
+    expect(session.character_binding).not.toBeNull();
+
+    const timelineRes = await app.inject({
+      method: "GET",
+      url: `/sessions/${session.id}/timeline`,
+    });
+    expect(timelineRes.statusCode, timelineRes.body).toBe(200);
+    const timeline = timelineRes.json<{
+      data: {
+        floors: Array<{
+          page_count: number;
+          active_page: { messages: Array<{ content: string }> } | null;
+        }>;
+      };
+    }>();
+
+    expect(timeline.data.floors).toHaveLength(1);
+    expect(timeline.data.floors[0]!.page_count).toBe(3);
+    expect(timeline.data.floors[0]!.active_page?.messages[0]!.content).toBe("Hello!");
   });
 
   it("POST /sessions with user_snapshot only (no user_id)", async () => {

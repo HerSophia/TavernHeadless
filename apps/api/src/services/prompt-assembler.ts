@@ -22,6 +22,7 @@
 import { createHash } from "node:crypto";
 
 import { normalizePositiveInt } from "../lib/utils.js";
+import { parseSessionCharacterSnapshot, type SessionCharacterSnapshot } from "../lib/character-snapshot.js";
 import {
   assembleNativePrompt,
   MessageBuilder,
@@ -32,11 +33,14 @@ import {
 } from "@tavern/core";
 import {
   assembleCompat,
+  parseWorldBook,
+  type TriggerContext,
   type TriggerResult,
   triggerWorldBook,
   applyRegexScripts,
   REGEX_PLACEMENT,
   type STPreset,
+  type STWorldBook,
 } from "@tavern/adapters-sillytavern";
 
 import type { AppDb } from "../db/client.js";
@@ -64,14 +68,7 @@ export interface SessionPromptInfo {
 export type PromptMode = "compat_strict" | "compat_plus" | "native";
 
 /** 会话冻结角色快照（从 session.characterSnapshotJson 解析） */
-export interface CharacterSnapshot {
-  name?: string;
-  description?: string;
-  personality?: string;
-  scenario?: string;
-  exampleDialogue?: string;
-  greeting?: string;
-}
+export type CharacterSnapshot = SessionCharacterSnapshot;
 
 export interface PersonaInfo {
   name?: string;
@@ -292,22 +289,19 @@ export async function assemblePrompt(
   if (presetData) {
     let worldBookResults: TriggerResult | undefined;
     const worldbookData = promptSnapshot.worldbook?.worldbook;
+    const runtimeWorldbooks = collectPromptWorldbooks(worldbookData, character);
 
-    if (worldbookData && worldbookData.entries.length > 0) {
+    if (runtimeWorldbooks.length > 0) {
       const triggerMessages = fullHistory.map((message) => message.content).reverse();
 
-      worldBookResults = triggerWorldBook(worldbookData.entries, {
+      worldBookResults = triggerPromptWorldbooks(runtimeWorldbooks, {
         messages: triggerMessages,
-        scanDepth: worldbookData.scanDepth,
-        caseSensitive: worldbookData.caseSensitive,
-        matchWholeWords: worldbookData.matchWholeWords,
-        recursive: worldbookData.recursive,
-        maxRecursionSteps: worldbookData.maxRecursionSteps,
         scanSources: {
           personaDescription: persona?.description,
           characterDescription: character?.description,
           characterPersonality: character?.personality,
           scenario: character?.scenario,
+          creatorNotes: character?.creatorNotes,
         },
       });
       worldBookResults = applyWorldInfoRegexRules(worldBookResults, enabledRegexScripts, promptSnapshot.variables);
@@ -359,6 +353,8 @@ export async function assemblePrompt(
   if (memorySummary && !usedNativePipeline) {
     messages = injectMemorySummary(messages, memorySummary);
   }
+  messages = injectCharacterSystemPrompt(messages, character);
+  messages = injectCharacterPostHistoryInstructions(messages, character);
 
   // ── 5. 正则处理函数 ──
   promptSnapshot.regexPreRuleNames = collectRegexRuleNames(
@@ -508,16 +504,7 @@ function parseCharacterSnapshot(snapshotJson: string | null): CharacterSnapshot 
     return undefined;
   }
 
-  try {
-    const parsed = JSON.parse(snapshotJson) as Record<string, unknown>;
-    if (typeof parsed !== "object" || parsed === null) {
-      return undefined;
-    }
-
-    return parsed as CharacterSnapshot;
-  } catch {
-    return undefined;
-  }
+  return parseSessionCharacterSnapshot(snapshotJson);
 }
 
 function parseUserSnapshot(snapshotJson: string | null): UserSnapshot | undefined {
@@ -660,6 +647,73 @@ function buildNativeSystemPrompt(
   return parts.join("\n\n");
 }
 
+function parseCharacterBookWorldbook(character?: CharacterSnapshot): STWorldBook | null {
+  if (!character?.characterBook) {
+    return null;
+  }
+
+  try {
+    const parsed = parseWorldBook(character.characterBook, `${character.name ?? "Character"} Character Book`);
+
+    return {
+      ...parsed,
+      entries: parsed.entries.map((entry, index) => ({
+        ...entry,
+        uid: -1_000_000 - index,
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function collectPromptWorldbooks(worldbookData: STWorldBook | null | undefined, character?: CharacterSnapshot): STWorldBook[] {
+  const result: STWorldBook[] = [];
+
+  if (worldbookData && worldbookData.entries.length > 0) {
+    result.push(worldbookData);
+  }
+
+  const characterBookWorldbook = parseCharacterBookWorldbook(character);
+  if (characterBookWorldbook && characterBookWorldbook.entries.length > 0) {
+    result.push(characterBookWorldbook);
+  }
+
+  return result;
+}
+
+function triggerPromptWorldbooks(
+  worldbooks: STWorldBook[],
+  baseContext: Pick<TriggerContext, "messages" | "scanSources">,
+): TriggerResult | undefined {
+  const results = worldbooks.map((worldbook) => triggerWorldBook(worldbook.entries, {
+    messages: baseContext.messages,
+    scanDepth: worldbook.scanDepth,
+    caseSensitive: worldbook.caseSensitive,
+    matchWholeWords: worldbook.matchWholeWords,
+    recursive: worldbook.recursive,
+    maxRecursionSteps: worldbook.maxRecursionSteps,
+    scanSources: baseContext.scanSources,
+  }));
+
+  if (results.length === 0) {
+    return undefined;
+  }
+
+  const activated = results.flatMap((result) => result.activated).sort((a, b) => b.order - a.order);
+  const before = results.flatMap((result) => result.before).sort((a, b) => b.order - a.order);
+  const after = results.flatMap((result) => result.after).sort((a, b) => b.order - a.order);
+  const atDepth = results.flatMap((result) => result.atDepth).sort((a, b) => b.entry.order - a.entry.order);
+  const outletEntries = Object.fromEntries(Object.entries(results.reduce<Record<string, typeof results[number]["activated"]>>((acc, result) => {
+    for (const [outletName, entries] of Object.entries(result.outletEntries ?? {})) {
+      acc[outletName] = [...(acc[outletName] ?? []), ...entries].sort((a, b) => b.order - a.order);
+    }
+    return acc;
+  }, {})).map(([outletName, entries]) => [outletName, entries]));
+
+  return { activated, before, after, atDepth, ...(Object.keys(outletEntries).length > 0 ? { outletEntries } : {}) };
+}
+
 function applyWorldInfoRegexRules(
   worldBookResults: TriggerResult | undefined,
   scripts: LoadedPromptRegexProfile["scripts"] | undefined,
@@ -795,6 +849,29 @@ function buildFallbackMessages(
   }
 
   return messages;
+}
+
+function injectCharacterSystemPrompt(
+  messages: ChatMessage[],
+  character?: CharacterSnapshot,
+): ChatMessage[] {
+  const systemPrompt = character?.systemPrompt?.trim();
+  if (!systemPrompt) return messages;
+
+  const insertAt = Math.max(messages.findIndex((message) => message.role === "system"), -1) + 1;
+  const result = [...messages];
+  result.splice(insertAt, 0, { role: "system", content: systemPrompt });
+  return result;
+}
+
+function injectCharacterPostHistoryInstructions(
+  messages: ChatMessage[],
+  character?: CharacterSnapshot,
+): ChatMessage[] {
+  const postHistoryInstructions = character?.postHistoryInstructions?.trim();
+  if (!postHistoryInstructions) return messages;
+
+  return [...messages, { role: "system", content: postHistoryInstructions }];
 }
 
 /**

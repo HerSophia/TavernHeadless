@@ -342,9 +342,9 @@ curl -O http://localhost:3000/export/regex/regex_001
 GET /export/character/:id
 ```
 
-将角色卡导出为 SillyTavern Character Card V2 格式的 JSON 文件。
+将角色卡导出为 SillyTavern Character Card V2 或 Character Card V3 格式的 JSON 文件。
 
-默认导出最新版本。可通过 `version_id` 查询参数指定特定版本。
+默认导出最新版本。可通过 `version_id` 查询参数指定特定版本。可通过 `format` 查询参数指定导出格式。
 
 ### 路径参数
 
@@ -356,6 +356,7 @@ GET /export/character/:id
 
 | 参数 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
+| `format` | string | 否 | 导出格式：`v2`（默认）或 `v3` |
 | `version_id` | string | 否 | 导出指定版本 ID，不传则导出最新版本 |
 
 ### 响应
@@ -376,20 +377,62 @@ GET /export/character/:id
     "scenario": "Night watch at the city wall",
     "first_mes": "The moon is bright tonight.",
     "mes_example": "<START>\n{{char}}: The tide is turning.",
-    "creator_notes": "",
-    "system_prompt": "",
-    "post_history_instructions": "",
-    "alternate_greetings": [],
-    "tags": [],
-    "creator": "",
-    "character_version": "",
-    "extensions": {}
+    "creator_notes": "Imported example.",
+    "system_prompt": "Stay in character as a moon archivist.",
+    "post_history_instructions": "End replies with a soft invitation.",
+    "alternate_greetings": [
+      "The archive lamps are already lit.",
+      "The charts waited for you."
+    ],
+    "tags": ["moon", "archive"],
+    "creator": "Docs Example",
+    "character_version": "2.1",
+    "extensions": {
+      "source_app": "docs"
+    }
   }
 }
 ```
 
-::: tip 信息损失
-TavernHeadless 内部使用 `CharacterSnapshot` 格式存储角色数据，仅保留核心 6 个字段（name, description, personality, scenario, greeting, exampleDialogue）。导出为 V2 格式时，`creator_notes`、`system_prompt`、`post_history_instructions`、`alternate_greetings`、`tags` 等 ST 扩展字段填充为空值。
+当 `format=v3` 时，响应体示例：
+
+```json
+{
+  "spec": "chara_card_v3",
+  "spec_version": "3.0",
+  "data": {
+    "name": "Luna",
+    "description": "A moon priestess who keeps watch at night.",
+    "personality": "Calm and precise",
+    "scenario": "Night watch at the city wall",
+    "first_mes": "The moon is bright tonight.",
+    "alternate_greetings": [
+      "The archive lamps are already lit.",
+      "The charts waited for you."
+    ],
+    "group_only_greetings": [],
+    "mes_example": "<START>\n{{char}}: The tide is turning.",
+    "creator_notes": "Imported example.",
+    "system_prompt": "Stay in character as a moon archivist.",
+    "post_history_instructions": "End replies with a soft invitation.",
+    "tags": ["moon", "archive"],
+    "creator": "Docs Example",
+    "character_version": "2.1",
+    "extensions": {
+      "source_app": "docs"
+    }
+  }
+}
+```
+
+::: tip 当前边界
+TavernHeadless 当前内部已保存 richer 角色快照。导出 V2 / V3 时会优先回填真实的 `creator_notes`、`system_prompt`、`post_history_instructions`、`alternate_greetings`、`tags`、`creator`、`character_version`、`extensions` 等字段。
+
+当前仍属于最小兼容边界的部分包括：
+
+- `group_only_greetings` 的运行时语义
+- `assets` 等 V3 richer 资源字段的导出面
+- `assets`、`nickname`、`source`、时间戳等 V3 可选字段，只有快照中存在时才会导出
 :::
 
 ### 错误

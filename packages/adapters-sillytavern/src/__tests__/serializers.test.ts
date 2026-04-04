@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { snapshotToStCharacterCard } from '../serializers/character-serializer.js';
+import { snapshotToCharacterCardV3, snapshotToStCharacterCard } from '../serializers/character-serializer.js';
 import { scriptsToStRegexArray } from '../serializers/regex-serializer.js';
 import type { STRegexScript } from '../types/regex.js';
 import { SUBSTITUTE_REGEX } from '../types/regex.js';
@@ -7,14 +7,23 @@ import { SUBSTITUTE_REGEX } from '../types/regex.js';
 // ── snapshotToStCharacterCard ──────────────────────────
 
 describe('snapshotToStCharacterCard', () => {
-  it('完整 snapshot → 正确映射所有字段', () => {
+  it('完整 snapshot → 正确映射 richer 字段', () => {
     const result = snapshotToStCharacterCard({
       name: 'Alice',
       description: 'A curious girl',
       personality: 'Adventurous',
       scenario: 'Wonderland',
       exampleDialogue: '<START>\nAlice: Hello!',
-      greeting: 'Welcome to Wonderland!',
+      primaryGreeting: 'Welcome to Wonderland!',
+      alternateGreetings: ['Alt 1', ' Alt 2 '],
+      systemPrompt: 'Stay in character.',
+      postHistoryInstructions: 'End with a question.',
+      creatorNotes: 'Creator note.',
+      tags: ['heroine', ' curious '],
+      creator: 'Lewis',
+      characterVersion: '2.0',
+      extensions: { source_app: 'test' },
+      characterBook: { entries: [] },
     });
 
     expect(result.data.name).toBe('Alice');
@@ -23,9 +32,28 @@ describe('snapshotToStCharacterCard', () => {
     expect(result.data.scenario).toBe('Wonderland');
     expect(result.data.first_mes).toBe('Welcome to Wonderland!');
     expect(result.data.mes_example).toBe('<START>\nAlice: Hello!');
+    expect(result.data.alternate_greetings).toEqual(['Alt 1', 'Alt 2']);
+    expect(result.data.system_prompt).toBe('Stay in character.');
+    expect(result.data.post_history_instructions).toBe('End with a question.');
+    expect(result.data.creator_notes).toBe('Creator note.');
+    expect(result.data.tags).toEqual(['heroine', 'curious']);
+    expect(result.data.creator).toBe('Lewis');
+    expect(result.data.character_version).toBe('2.0');
+    expect(result.data.extensions).toEqual({ source_app: 'test' });
+    expect(result.data.character_book).toEqual({ entries: [] });
   });
 
-  it('最小 snapshot（只有 name）→ 可选字段补空字符串', () => {
+  it('兼容 legacy greeting 字段作为 first_mes 回退来源', () => {
+    const result = snapshotToStCharacterCard({
+      name: 'Legacy',
+      greeting: 'Legacy greeting',
+    });
+
+    expect(result.data.first_mes).toBe('Legacy greeting');
+    expect(result.data.alternate_greetings).toEqual([]);
+  });
+
+  it('最小 snapshot（只有 name）→ 可选字段补安全默认值', () => {
     const result = snapshotToStCharacterCard({ name: 'Bob' });
 
     expect(result.data.name).toBe('Bob');
@@ -34,6 +62,15 @@ describe('snapshotToStCharacterCard', () => {
     expect(result.data.scenario).toBe('');
     expect(result.data.first_mes).toBe('');
     expect(result.data.mes_example).toBe('');
+    expect(result.data.creator_notes).toBe('');
+    expect(result.data.system_prompt).toBe('');
+    expect(result.data.post_history_instructions).toBe('');
+    expect(result.data.alternate_greetings).toEqual([]);
+    expect(result.data.tags).toEqual([]);
+    expect(result.data.creator).toBe('');
+    expect(result.data.character_version).toBe('');
+    expect(result.data.extensions).toEqual({});
+    expect(result.data.character_book).toBeUndefined();
   });
 
   it('V2 envelope 结构正确', () => {
@@ -45,17 +82,39 @@ describe('snapshotToStCharacterCard', () => {
     expect(typeof result.data).toBe('object');
   });
 
-  it('固定补空字段全部存在且为空值', () => {
-    const result = snapshotToStCharacterCard({ name: 'Test' });
+  it('可导出 Character Card V3 结构', () => {
+    const result = snapshotToCharacterCardV3({
+      name: 'Alice',
+      description: 'A curious girl',
+      personality: 'Adventurous',
+      scenario: 'Wonderland',
+      exampleDialogue: '<START>\nAlice: Hello!',
+      primaryGreeting: 'Welcome to Wonderland!',
+      alternateGreetings: ['Alt 1'],
+      groupOnlyGreetings: ['Group Alt'],
+      systemPrompt: 'Stay in character.',
+      postHistoryInstructions: 'End with a question.',
+      creatorNotes: 'Creator note.',
+      tags: ['heroine'],
+      creator: 'Lewis',
+      characterVersion: '3.0',
+      nickname: 'Ali',
+      source: ['https://example.com/card'],
+      creationDate: 1710000000,
+      modificationDate: 1710001234,
+      assets: [{ type: 'icon', uri: 'https://example.com/icon.png', name: 'main', ext: 'png' }],
+      extensions: { source_app: 'test' },
+      characterBook: { entries: [] },
+    });
 
-    expect(result.data.creator_notes).toBe('');
-    expect(result.data.system_prompt).toBe('');
-    expect(result.data.post_history_instructions).toBe('');
-    expect(result.data.alternate_greetings).toEqual([]);
-    expect(result.data.tags).toEqual([]);
-    expect(result.data.creator).toBe('');
-    expect(result.data.character_version).toBe('');
-    expect(result.data.extensions).toEqual({});
+    expect(result.spec).toBe('chara_card_v3');
+    expect(result.spec_version).toBe('3.0');
+    expect(result.data.first_mes).toBe('Welcome to Wonderland!');
+    expect(result.data.alternate_greetings).toEqual(['Alt 1']);
+    expect(result.data.group_only_greetings).toEqual(['Group Alt']);
+    expect(result.data.character_book).toEqual({ entries: [] });
+    expect(result.data.assets).toEqual([{ type: 'icon', uri: 'https://example.com/icon.png', name: 'main', ext: 'png' }]);
+    expect(result.data.nickname).toBe('Ali');
   });
 });
 

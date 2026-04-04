@@ -671,6 +671,7 @@ interface CharacterSnapshot {
   scenario?: string;
   exampleDialogue?: string;
   greeting?: string;
+  primaryGreeting?: string;
 }
 
 interface RegexScript {
@@ -999,7 +1000,7 @@ export class ResourceToolProvider implements ToolProvider {
               description: snapshot.description ?? '',
               personality: snapshot.personality ?? '',
               scenario: snapshot.scenario ?? '',
-              first_mes: snapshot.greeting ?? '',
+              first_mes: snapshot.primaryGreeting ?? snapshot.greeting ?? '',
               mes_example: snapshot.exampleDialogue ?? '',
             }
           : null,

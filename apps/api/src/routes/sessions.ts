@@ -12,18 +12,19 @@ import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination
 import { getRequestAuthContext } from "../plugins/auth";
 import { getLatestOwnedActiveCharacterVersion, getOwnedActiveCharacterVersionById } from "../services/resource-ownership";
 import { FloorRunService } from "../services/floor-run-service";
+import {
+  getGreetingCandidates,
+  getPrimaryGreeting,
+  hasAnyGreeting,
+  normalizeSessionCharacterSnapshot,
+  parseSessionCharacterSnapshot,
+  sessionCharacterSnapshotSchema as characterSnapshotSchema,
+  type SessionCharacterSnapshot,
+} from "../lib/character-snapshot.js";
 
 const sessionStatusSchema = z.enum(["active", "archived"]);
 const promptModeSchema = z.enum(["compat_strict", "compat_plus", "native"]);
 const characterSyncPolicySchema = z.enum(["pin", "manual", "force"]);
-const characterSnapshotSchema = z.object({
-  name: z.string().trim().min(1),
-  description: z.string().optional(),
-  personality: z.string().optional(),
-  scenario: z.string().optional(),
-  exampleDialogue: z.string().optional(),
-  greeting: z.string().optional()
-});
 
 const userSnapshotSchema = z.object({
   name: z.string().trim().min(1),
@@ -623,21 +624,14 @@ function parseCharacterSnapshotSummary(snapshotJson: string | null) {
     return null;
   }
 
-  const raw = parseJsonField(snapshotJson) as Record<string, unknown> | null;
-  if (!raw) {
-    return null;
-  }
-
-  const name = typeof raw.name === "string" ? raw.name.trim() : "";
-  const greeting = typeof raw.greeting === "string" ? raw.greeting.trim() : "";
-
-  if (!name) {
+  const snapshot = parseSessionCharacterSnapshot(snapshotJson);
+  if (!snapshot?.name) {
     return null;
   }
 
   return {
-    name,
-    has_greeting: greeting.length > 0
+    name: snapshot.name,
+    has_greeting: hasAnyGreeting(snapshot)
   };
 }
 
@@ -704,7 +698,7 @@ interface ResolveCharacterBindingInput {
   character_id?: string;
   character_version_id?: string;
   character_sync_policy?: "pin" | "manual" | "force";
-  character_snapshot?: z.infer<typeof characterSnapshotSchema>;
+  character_snapshot?: SessionCharacterSnapshot;
 }
 
 interface ResolveUserBindingInput {
@@ -746,11 +740,19 @@ async function resolveCharacterBinding(
     };
   }
 
+  const directSnapshot = input.character_snapshot
+    ? normalizeSessionCharacterSnapshot(input.character_snapshot)
+    : undefined;
+
+  if (input.character_snapshot && !directSnapshot) {
+    return { statusCode: 400, code: "invalid_character_snapshot", message: "Character snapshot is invalid" };
+  }
+
   if (input.character_snapshot && !input.character_id && !input.character_version_id) {
     return {
       characterId: null,
       characterVersionId: null,
-      characterSnapshotJson: stringifyJsonField(input.character_snapshot),
+      characterSnapshotJson: stringifyJsonField(directSnapshot),
       characterSyncPolicy: syncPolicy
     };
   }
@@ -767,16 +769,15 @@ async function resolveCharacterBinding(
     return { statusCode: 400, code: "character_version_mismatch", message: "character_id does not match character_version_id" };
   }
 
-  const snapshot = input.character_snapshot ?? parseJsonField(versionRow.dataJson);
-  const parsedSnapshot = characterSnapshotSchema.safeParse(snapshot);
-  if (!parsedSnapshot.success) {
+  const snapshot = directSnapshot ?? normalizeSessionCharacterSnapshot(parseJsonField(versionRow.dataJson));
+  if (!snapshot) {
     return { statusCode: 400, code: "invalid_character_snapshot", message: "Character snapshot is invalid" };
   }
 
   return {
     characterId: versionRow.characterId,
     characterVersionId: versionRow.id,
-    characterSnapshotJson: stringifyJsonField(parsedSnapshot.data),
+    characterSnapshotJson: stringifyJsonField(snapshot),
     characterSyncPolicy: syncPolicy
   };
 }
@@ -934,12 +935,12 @@ async function syncCharacterBinding(
     return { statusCode: 404, code: "character_not_found", message: "Character version not found" };
   }
 
-  const parsedSnapshot = characterSnapshotSchema.safeParse(parseJsonField(latestVersion.dataJson));
-  if (!parsedSnapshot.success) {
+  const snapshot = normalizeSessionCharacterSnapshot(parseJsonField(latestVersion.dataJson));
+  if (!snapshot) {
     return { statusCode: 500, code: "invalid_character_snapshot", message: "Stored character snapshot is invalid" };
   }
 
-  const snapshotJson = stringifyJsonField(parsedSnapshot.data);
+  const snapshotJson = stringifyJsonField(snapshot);
   if (sessionRow.characterVersionId === latestVersion.id && sessionRow.characterSnapshotJson === snapshotJson) {
     return { row: sessionRow };
   }
@@ -1019,13 +1020,13 @@ export async function registerSessionRoutes(
 
     const created = requireRow(createdRows[0], "Failed to create session");
 
-    const snapshot = parseJsonField(characterBinding.characterSnapshotJson) as Record<string, unknown> | null;
-    const greeting = typeof snapshot?.greeting === "string" ? snapshot.greeting.trim() : "";
+    const snapshot = parseSessionCharacterSnapshot(characterBinding.characterSnapshotJson);
+    const greetingCandidates = getGreetingCandidates(snapshot);
+    const greeting = greetingCandidates[0] ?? "";
 
     if (greeting) {
       const tokenCounter = new SimpleTokenCounter();
       const floorId = nanoid();
-      const pageId = nanoid();
       const greetingTokens = tokenCounter.count(greeting);
 
       await db.insert(floors).values({
@@ -1042,30 +1043,36 @@ export async function registerSessionRoutes(
         updatedAt: now,
       });
 
-      await db.insert(messagePages).values({
-        id: pageId,
-        floorId,
-        pageNo: 0,
-        pageKind: "output",
-        isActive: true,
-        version: 1,
-        checksum: null,
-        createdAt: now,
-        updatedAt: now,
-      });
+      for (let index = 0; index < greetingCandidates.length; index += 1) {
+        const pageId = nanoid();
+        const content = greetingCandidates[index]!;
+        const isActive = index === 0;
 
-      await db.insert(messages).values({
-        id: nanoid(),
-        pageId,
-        seq: 0,
-        role: "assistant",
-        content: greeting,
-        contentFormat: "text",
-        tokenCount: greetingTokens,
-        isHidden: false,
-        source: "greeting",
-        createdAt: now,
-      });
+        await db.insert(messagePages).values({
+          id: pageId,
+          floorId,
+          pageNo: 0,
+          pageKind: "output",
+          isActive,
+          version: index + 1,
+          checksum: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        await db.insert(messages).values({
+          id: nanoid(),
+          pageId,
+          seq: 0,
+          role: "assistant",
+          content,
+          contentFormat: "text",
+          tokenCount: tokenCounter.count(content),
+          isHidden: false,
+          source: "greeting",
+          createdAt: now,
+        });
+      }
     }
 
     return reply.code(201).send({ data: toSessionResponse(created) });
@@ -1228,7 +1235,7 @@ export async function registerSessionRoutes(
     let nextUserId = existingSession.userId;
     let nextUserSnapshotJson = existingSession.userSnapshotJson;
 
-    const existingCharacterSnapshot = (parseJsonField(existingSession.characterSnapshotJson) as z.infer<typeof characterSnapshotSchema> | null) ?? undefined;
+    const existingCharacterSnapshot = parseSessionCharacterSnapshot(existingSession.characterSnapshotJson) ?? undefined;
 
     const hasCharacterBindingUpdate =
       parsedBody.data.character_id !== undefined ||

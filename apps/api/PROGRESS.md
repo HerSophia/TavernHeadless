@@ -46,6 +46,36 @@
   - `snapshotToStCharacterCard()` — CharacterSnapshot → ST Character Card V2
   - `scriptsToStRegexArray()` — TH 精简格式 → ST 原始格式（+markdownOnly/promptOnly/runOnEdit）
 
+### 1.1) 角色卡系统升级（richer V2 + 最小 V3 兼容）
+
+- [x] `parseCharacterCard()` 升级为 `legacy / v2 / v3` 分发结构
+- [x] 新增 `ImportedCharacterCard`、`CharacterProfile`、`SessionCharacterSnapshot`
+- [x] 导入链路改为：外部角色卡 → imported card → normalized profile → session snapshot
+- [x] `sessions` 路由角色快照 schema 放宽并保留未知字段，避免会话绑定时再次裁剪扩展字段
+- [x] 建会话与导入建会话的首楼逻辑改为读取 `primaryGreeting`，并兼容旧 `greeting`
+- [x] `snapshot_summary.has_greeting` 升级为同时识别主 greeting 与 alternate greetings
+- [x] `prompt-assembler` 已接入 `systemPrompt` / `postHistoryInstructions` 的最小运行时注入
+- [x] `creatorNotes` / `characterBook` / `extensions` 已保留到快照与 prompt snapshot 调试结构
+- [x] `snapshotToStCharacterCard()` 改为优先导出真实的 `alternate_greetings`、`system_prompt`、`post_history_instructions`、`creator_notes`、`tags`、`creator`、`character_version`、`extensions`
+- [x] 当角色存在 `alternateGreetings` 时，建会话和导入建会话会在 floor 0 创建多个 output page，支持首楼 greeting swipes
+- [x] `GET /export/character/:id` 新增 `format=v3`，支持 Character Card V3 导出结构
+- [x] `characterBook` 已接入 prompt worldbook 主链；在 compat / native 模式下会与会话 worldbook 一同触发与合并
+
+### 1.2) 角色卡系统升级测试
+
+- [x] `packages/adapters-sillytavern/src/__tests__/character-parser.test.ts`：补 richer V2 / 最小 V3 / 未知字段保留测试
+- [x] `packages/adapters-sillytavern/src/__tests__/serializers.test.ts`：补 richer 字段导出映射测试
+- [x] `apps/api/test/character-import.integration.test.ts`：补 richer V2 导入后导出回放测试
+- [x] `apps/api/test/exports.integration.test.ts`：补 richer V2 导出断言
+- [x] `apps/api/src/services/__tests__/prompt-assembler.test.ts`：补角色级 `systemPrompt` / `postHistoryInstructions` 注入测试
+- [x] `apps/api/test/character-import.integration.test.ts`：补 floor 0 多 greeting page 创建与激活切换测试
+- [x] `apps/api/test/sessions-extra.integration.test.ts`：补 snapshot-only session 的多 greeting page 测试
+- [x] `apps/api/src/services/__tests__/prompt-assembler.test.ts`：补 characterBook 单独触发与与会话 worldbook 叠加测试
+- [x] `pnpm --filter @tavern/adapters-sillytavern typecheck`
+- [x] `pnpm --filter @tavern/api typecheck`
+- [x] 目标回归：120 tests passed（parser / serializer / import / session sync / export / prompt-assembler / resource-tool-provider）
+- [x] 新增 V3 导出断言（`apps/api/test/exports.integration.test.ts`、serializer V3 unit test）
+
 ### 2) 测试
 
 - [x] `packages/adapters-sillytavern/src/__tests__/chat-parser.test.ts`（25 个测试）
