@@ -154,15 +154,44 @@ console.log(result.finalState);
 const preview = await client.sessions.respondDryRun({
   sessionId: "session-1",
   message: "继续",
+  promptIntent: "continue",
 });
 
 console.log(preview.promptSnapshot.promptMode);
 console.log(preview.promptSnapshot.promptDigest);
+console.log(preview.assembly.promptIntent);
+console.log(preview.assembly.assistantPrefillApplied);
+console.log(preview.assembly.assistantPrefillStrategy);
+console.log(preview.assembly.continueNudgeApplied);
+console.log(preview.assembly.continueNudgeText);
+console.log(preview.assembly.namesBehaviorApplied);
+console.log(preview.assembly.triggerFilteredEntryIds);
+console.log(preview.assembly.inChatInsertedEntryIds);
+console.log(preview.assembly.selectedPromptOrderCharacterId);
+console.log(preview.assembly.unsupportedPresetFields);
+console.log(preview.assembly.presetWarnings);
 ```
 
 `respondDryRun()` 的 `promptSnapshot` 现在也会带上 `presetVersion`、`worldbookVersion`、`regexProfileVersion`，用来表示本轮真正冻结使用的资源版本。
 
 如果有持久化变量试图占用保留别名，`preview.assembly.reservedVariableCollisions` 会返回被系统别名覆盖的键。目前保留别名是 `char` 和 `user`。
+
+如果 preset 存在多条 `prompt_order` 轨道，或者使用了 `assistantPrefill`、`continueNudgePrompt`、`namesBehavior`、Prompt Manager trigger / in-chat insertion，SDK 现在还会把下列 dry-run 字段一并整理出来：
+
+- `preview.assembly.promptIntent`
+- `preview.assembly.assistantPrefillApplied`
+- `preview.assembly.assistantPrefillStrategy`
+- `preview.assembly.continueNudgeApplied`
+- `preview.assembly.continueNudgeText`
+- `preview.assembly.namesBehaviorApplied`
+- `preview.assembly.triggerFilteredEntryIds`
+- `preview.assembly.inChatInsertedEntryIds`
+- `preview.assembly.selectedPromptOrderCharacterId`
+- `preview.assembly.ignoredPromptOrderCharacterIds`
+- `preview.assembly.unsupportedPresetFields`
+- `preview.assembly.ignoredPresetFields`
+- `preview.assembly.unresolvedPresetMarkers`
+- `preview.assembly.presetWarnings`
 
 ### 运行时工具目录与执行审计
 
@@ -411,7 +440,7 @@ try {
 
 `presets`、`worldbooks`、`regexProfiles` 的列表、详情和更新响应都会返回 `version`。更新时应优先回填 `expectedVersion`，避免静默覆盖。`regexProfiles.update()` 的 `data` 应直接传规则对象数组；删除主资源时也可以传 `expectedVersion`。
 
-`respondDryRun()` 返回的 `promptSnapshot` 也会带 `presetVersion`、`worldbookVersion`、`regexProfileVersion`，用于说明本轮真正冻结使用的资源版本。
+`respondDryRun()` 返回的 `promptSnapshot` 会带 `presetVersion`、`worldbookVersion`、`regexProfileVersion`；`assembly` 除了选中的 `prompt_order` 轨道、未执行字段和 warning，还会带 `promptIntent`、assistant prefill / continue nudge / names behavior 的执行结果，以及 trigger / in-chat insertion 的最小运行语义结果，用于说明本轮真正冻结使用的资源版本与兼容边界。
 
 ## SDK 资源覆盖范围
 

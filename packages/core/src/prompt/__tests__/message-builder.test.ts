@@ -119,6 +119,50 @@ describe('MessageBuilder', () => {
       expect(result.tokenUsage.availableForReply).toBe(990);
     });
 
+    it('inserts in-chat sections into chat history by depth and order', () => {
+      const builder = new MessageBuilder(new CharTokenCounter());
+      const ir = makeIR([
+        {
+          name: 'chatHistory',
+          order: 0,
+          pinned: false,
+          semantic: 'chat_history',
+          messages: [
+            { role: 'system', content: '[Start]', prunable: false },
+            { role: 'user', content: 'First', prunable: true, priority: 0 },
+            { role: 'assistant', content: 'Second', prunable: true, priority: 1 },
+          ],
+        },
+        {
+          name: 'assistantInsert',
+          order: 1,
+          pinned: true,
+          insertion: { kind: 'in_chat', depth: 1, order: 2 },
+          messages: [{ role: 'assistant', content: 'Inserted assistant', prunable: false }],
+        },
+        {
+          name: 'userInsert',
+          order: 2,
+          pinned: true,
+          insertion: { kind: 'in_chat', depth: 1, order: 1 },
+          messages: [{ role: 'user', content: 'Inserted user', prunable: false }],
+        },
+      ]);
+
+      const result = builder.assemble(ir);
+
+      expect(result.messages).toEqual([
+        { role: 'system', content: '[Start]' },
+        { role: 'user', content: 'First' },
+        { role: 'user', content: 'Inserted user' },
+        { role: 'assistant', content: 'Inserted assistant' },
+        { role: 'assistant', content: 'Second' },
+      ]);
+      expect(result.tokenUsage.bySection['chatHistory']).toBe('[Start]'.length + 'First'.length + 'Second'.length);
+      expect(result.tokenUsage.bySection['userInsert']).toBe('Inserted user'.length);
+      expect(result.tokenUsage.bySection['assistantInsert']).toBe('Inserted assistant'.length);
+    });
+
     it('handles empty IR', () => {
       const builder = new MessageBuilder(new CharTokenCounter());
       const ir = makeIR([], 1000, 200);

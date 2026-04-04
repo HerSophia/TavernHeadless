@@ -36,6 +36,9 @@ export type RespondGenerationParams = {
   topP?: number;
 };
 
+export type PromptIntent = "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+
+
 export type SessionCharacterBinding = {
   characterId: string | null;
   characterVersionId: string | null;
@@ -265,11 +268,25 @@ export type RespondDryRunPromptSnapshot = {
 export type RespondDryRunAssembly = {
   memorySummaryInjected: boolean;
   mode: "preset" | "fallback";
+  promptIntent: PromptIntent;
+  assistantPrefillApplied: boolean;
+  assistantPrefillStrategy: "provider_native" | "assistant_message_fallback" | "unsupported" | "none";
   preprocessedUserMessage: string | null;
   presetUsed: boolean;
   regexPostRules: string[];
   regexPreRules: string[];
   reservedVariableCollisions: Array<"char" | "user">;
+  selectedPromptOrderCharacterId: number | null;
+  ignoredPromptOrderCharacterIds: number[];
+  unsupportedPresetFields: string[];
+  ignoredPresetFields: string[];
+  unresolvedPresetMarkers: string[];
+  presetWarnings: string[];
+  continueNudgeApplied: boolean;
+  continueNudgeText: string | null;
+  namesBehaviorApplied: "off" | "always";
+  triggerFilteredEntryIds: string[];
+  inChatInsertedEntryIds: string[];
   worldbookHits: number;
 };
 
@@ -322,6 +339,7 @@ export type SessionsRespondBaseOptions = {
   generationParams?: RespondGenerationParams;
   sessionId: string;
   sourceFloorId?: string;
+  promptIntent?: PromptIntent;
 };
 
 export type SessionsRespondOptions = SessionsRespondBaseOptions & {
@@ -803,6 +821,7 @@ function mapRespondRequestBody(options: SessionsRespondOptions | SessionsRespond
     branch_id: options.branchId,
     config: options.config,
     generation_params: mapGenerationParams(options.generationParams),
+    prompt_intent: options.promptIntent,
     message: options.message,
     source_floor_id: options.sourceFloorId,
   });
@@ -831,6 +850,28 @@ function mapNumberArray(value: unknown): number[] {
 function readDryRunMode(value: unknown): RespondDryRunAssembly["mode"] {
   return readString(value) === "preset" ? "preset" : "fallback";
 }
+
+function readPromptIntent(value: unknown): PromptIntent {
+  const intent = readString(value, "normal");
+  return intent === "continue"
+    || intent === "impersonate"
+    || intent === "swipe"
+    || intent === "regenerate"
+    || intent === "quiet"
+    ? intent
+    : "normal";
+}
+
+function readAssistantPrefillStrategy(value: unknown): RespondDryRunAssembly["assistantPrefillStrategy"] {
+  const strategy = readString(value, "none");
+  return strategy === "provider_native"
+    || strategy === "assistant_message_fallback"
+    || strategy === "unsupported"
+    || strategy === "none"
+    ? strategy
+    : "none";
+}
+
 
 function readPromptMode(value: unknown): RespondDryRunPromptSnapshot["promptMode"] {
   const mode = readString(value);
@@ -883,11 +924,25 @@ function mapDryRunPayload(payload: Record<string, unknown> | null): RespondDryRu
     assembly: {
       memorySummaryInjected: readBoolean(assembly?.memory_summary_injected),
       mode: readDryRunMode(assembly?.mode),
+      promptIntent: readPromptIntent(assembly?.prompt_intent),
+      assistantPrefillApplied: readBoolean(assembly?.assistant_prefill_applied),
+      assistantPrefillStrategy: readAssistantPrefillStrategy(assembly?.assistant_prefill_strategy),
       preprocessedUserMessage: readNullableString(assembly?.preprocessed_user_message),
       presetUsed: readBoolean(assembly?.preset_used),
       regexPostRules: mapStringArray(assembly?.regex_post_rules),
       regexPreRules: mapStringArray(assembly?.regex_pre_rules),
       reservedVariableCollisions: mapReservedPromptAliasCollisions(assembly?.reserved_variable_collisions),
+      selectedPromptOrderCharacterId: readNullableNumber(assembly?.selected_prompt_order_character_id),
+      ignoredPromptOrderCharacterIds: mapNumberArray(assembly?.ignored_prompt_order_character_ids),
+      unsupportedPresetFields: mapStringArray(assembly?.unsupported_preset_fields),
+      ignoredPresetFields: mapStringArray(assembly?.ignored_preset_fields),
+      unresolvedPresetMarkers: mapStringArray(assembly?.unresolved_preset_markers),
+      presetWarnings: mapStringArray(assembly?.preset_warnings),
+      continueNudgeApplied: readBoolean(assembly?.continue_nudge_applied),
+      continueNudgeText: readNullableString(assembly?.continue_nudge_text),
+      namesBehaviorApplied: readString(assembly?.names_behavior_applied, "off") === "always" ? "always" : "off",
+      triggerFilteredEntryIds: mapStringArray(assembly?.trigger_filtered_entry_ids),
+      inChatInsertedEntryIds: mapStringArray(assembly?.in_chat_inserted_entry_ids),
       worldbookHits: readNumber(assembly?.worldbook_hits),
     },
     availableForReply: readNumber(data?.available_for_reply),

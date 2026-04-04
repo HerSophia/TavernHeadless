@@ -78,6 +78,8 @@ const generationParamsSchema = z.object({
 const respondBodySchema = z.object({
   /** 用户消息文本 */
   message: z.string().min(1, "Message cannot be empty"),
+  /** prompt 运行意图（可选） */
+  prompt_intent: z.enum(["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"]).optional(),
   /** 回合配置覆盖（可选） */
   config: turnConfigSchema.optional(),
   /** 生成参数覆盖（可选） */
@@ -163,8 +165,10 @@ export async function registerChatRoutes(
 
     const dryRunRequest: DryRunRequest = {
       message: parsedBody.data.message,
+      promptIntent: parsedBody.data.prompt_intent,
     };
     const accountId = getRequestAuthContext(request).accountId;
+
 
     try {
       const result = await chatService.dryRun(parsedParams.data.id, dryRunRequest, accountId);
@@ -193,12 +197,26 @@ export async function registerChatRoutes(
           },
           assembly: {
             mode: result.assembly.mode,
+            prompt_intent: result.assembly.promptIntent,
+            assistant_prefill_applied: result.assembly.assistantPrefillApplied,
+            assistant_prefill_strategy: result.assembly.assistantPrefillStrategy,
             preset_used: result.assembly.presetUsed,
             worldbook_hits: result.assembly.worldbookHits,
             regex_pre_rules: result.assembly.regexPreRules,
             regex_post_rules: result.assembly.regexPostRules,
             memory_summary_injected: result.assembly.memorySummaryInjected,
             reserved_variable_collisions: result.assembly.reservedVariableCollisions,
+            selected_prompt_order_character_id: result.assembly.selectedPromptOrderCharacterId,
+            ignored_prompt_order_character_ids: result.assembly.ignoredPromptOrderCharacterIds,
+            unsupported_preset_fields: result.assembly.unsupportedPresetFields,
+            ignored_preset_fields: result.assembly.ignoredPresetFields,
+            unresolved_preset_markers: result.assembly.unresolvedPresetMarkers,
+            preset_warnings: result.assembly.presetWarnings,
+            continue_nudge_applied: result.assembly.continueNudgeApplied,
+            continue_nudge_text: result.assembly.continueNudgeText ?? null,
+            names_behavior_applied: result.assembly.namesBehaviorApplied,
+            trigger_filtered_entry_ids: result.assembly.triggerFilteredEntryIds,
+            in_chat_inserted_entry_ids: result.assembly.inChatInsertedEntryIds,
             preprocessed_user_message: result.assembly.preprocessedUserMessage ?? null,
           },
         },
@@ -244,6 +262,7 @@ export async function registerChatRoutes(
         : undefined,
       branchId: parsedBody.data.branch_id,
       sourceFloorId: parsedBody.data.source_floor_id,
+      promptIntent: parsedBody.data.prompt_intent,
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -375,6 +394,7 @@ export async function registerChatRoutes(
         : undefined,
       branchId: parsedBody.data.branch_id,
       sourceFloorId: parsedBody.data.source_floor_id,
+      promptIntent: parsedBody.data.prompt_intent,
     };
     const accountId = getRequestAuthContext(request).accountId;
 

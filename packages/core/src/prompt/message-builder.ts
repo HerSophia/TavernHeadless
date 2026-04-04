@@ -3,6 +3,8 @@ import type {
   ChatMessage,
   AssembledPrompt,
   TokenCounter,
+  IRMessage,
+  IRSection,
 } from './types.js';
 import { TokenBudget } from './token-budget.js';
 
@@ -14,6 +16,11 @@ export interface MessageBuilderOptions {
    * 默认 false
    */
   mergeAdjacentSameRole?: boolean;
+}
+
+interface FlattenedSectionMessage {
+  sectionName: string;
+  message: IRMessage;
 }
 
 /**
@@ -41,42 +48,30 @@ export class MessageBuilder {
   }
 
   /**
-   * 将 IR 按分区排序 → 扁平化 → 可选合并 → 统计
+   * 将 IR 按分区排序 → 展开插入位 → 扁平化 → 可选合并 → 统计
    */
   assemble(ir: PromptIR, prunedCount: number = 0): AssembledPrompt {
-    // 1. 按 order 排序分区
     const sortedSections = [...ir.sections].sort((a, b) => a.order - b.order);
+    const expandedMessages = this.expandSections(sortedSections);
 
-    // 2. 扁平化为 ChatMessage[]，同时统计各分区 token
     const flatMessages: ChatMessage[] = [];
     const bySection: Record<string, number> = {};
     let totalTokens = 0;
 
-    for (const section of sortedSections) {
-      let sectionTokens = 0;
-
-      for (const msg of section.messages) {
-        const tokens = msg.tokenCount ?? this.counter.count(msg.content);
-        sectionTokens += tokens;
-
-        flatMessages.push({
-          role: msg.role,
-          content: msg.content,
-        });
-      }
-
-      if (section.messages.length > 0) {
-        bySection[section.name] = (bySection[section.name] ?? 0) + sectionTokens;
-      }
-      totalTokens += sectionTokens;
+    for (const item of expandedMessages) {
+      const tokens = item.message.tokenCount ?? this.counter.count(item.message.content);
+      flatMessages.push({
+        role: item.message.role,
+        content: item.message.content,
+      });
+      bySection[item.sectionName] = (bySection[item.sectionName] ?? 0) + tokens;
+      totalTokens += tokens;
     }
 
-    // 3. 可选：合并相邻同 role 消息
     const finalMessages = this.options.mergeAdjacentSameRole
       ? this.mergeAdjacent(flatMessages)
       : flatMessages;
 
-    // 如果合并了消息，需要重新计算 token
     let finalTotal = totalTokens;
     if (this.options.mergeAdjacentSameRole && finalMessages.length !== flatMessages.length) {
       finalTotal = 0;
@@ -99,6 +94,111 @@ export class MessageBuilder {
       },
       prunedCount,
     };
+  }
+
+  private expandSections(sections: IRSection[]): FlattenedSectionMessage[] {
+    const relativeSections = sections.filter((section) => section.insertion?.kind !== 'in_chat');
+    const inChatSections = sections.filter((section) => section.insertion?.kind === 'in_chat');
+    const chatHistorySectionIndex = relativeSections.findIndex((section) => section.semantic === 'chat_history');
+    const expanded: FlattenedSectionMessage[] = [];
+
+    for (let index = 0; index < relativeSections.length; index++) {
+      const section = relativeSections[index]!;
+      if (index === chatHistorySectionIndex) {
+        expanded.push(...this.expandChatHistorySection(section, inChatSections));
+        continue;
+      }
+
+      expanded.push(...section.messages.map((message) => ({
+        sectionName: section.name,
+        message,
+      })));
+    }
+
+    if (chatHistorySectionIndex < 0 && inChatSections.length > 0) {
+      const fallbackSections = [...inChatSections].sort((left, right) => left.order - right.order);
+      for (const section of fallbackSections) {
+        expanded.push(...section.messages.map((message) => ({
+          sectionName: section.name,
+          message,
+        })));
+      }
+    }
+
+    return expanded;
+  }
+
+  private expandChatHistorySection(section: IRSection, inChatSections: IRSection[]): FlattenedSectionMessage[] {
+    const prefixMessages = section.messages.filter((message) => typeof message.priority !== 'number');
+    const historyMessages = section.messages.filter((message) => typeof message.priority === 'number');
+    const historyLength = historyMessages.length;
+    const buckets = new Map<number, IRSection[]>();
+
+    const sortedInsertions = [...inChatSections].sort((left, right) => {
+      const leftDepth = left.insertion?.depth ?? 0;
+      const rightDepth = right.insertion?.depth ?? 0;
+      if (leftDepth !== rightDepth) {
+        return leftDepth - rightDepth;
+      }
+
+      const leftOrder = left.insertion?.order ?? 0;
+      const rightOrder = right.insertion?.order ?? 0;
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+
+      const leftRolePriority = this.rolePriority(left.messages[0]?.role);
+      const rightRolePriority = this.rolePriority(right.messages[0]?.role);
+      if (leftRolePriority !== rightRolePriority) {
+        return leftRolePriority - rightRolePriority;
+      }
+
+      return left.order - right.order;
+    });
+
+    for (const inChatSection of sortedInsertions) {
+      const depth = Math.max(0, inChatSection.insertion?.depth ?? 0);
+      const insertIndex = Math.max(0, Math.min(historyLength, historyLength - depth));
+      const bucket = buckets.get(insertIndex) ?? [];
+      bucket.push(inChatSection);
+      buckets.set(insertIndex, bucket);
+    }
+
+    const expanded: FlattenedSectionMessage[] = prefixMessages.map((message) => ({
+      sectionName: section.name,
+      message,
+    }));
+
+    for (let position = 0; position <= historyLength; position++) {
+      const bucket = buckets.get(position) ?? [];
+      for (const bucketSection of bucket) {
+        expanded.push(...bucketSection.messages.map((message) => ({
+          sectionName: bucketSection.name,
+          message,
+        })));
+      }
+
+      if (position < historyLength) {
+        expanded.push({
+          sectionName: section.name,
+          message: historyMessages[position]!,
+        });
+      }
+    }
+
+    return expanded;
+  }
+
+  private rolePriority(role: ChatMessage['role'] | undefined): number {
+    switch (role) {
+      case 'user':
+        return 0;
+      case 'assistant':
+        return 1;
+      case 'system':
+      default:
+        return 2;
+    }
   }
 
   /**

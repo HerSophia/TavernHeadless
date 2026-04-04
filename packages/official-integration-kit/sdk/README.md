@@ -216,6 +216,7 @@ const preview = await client.sessions.respondDryRun({
   accountId: "account-1",
   sessionId: "session-1",
   message: "继续",
+  promptIntent: "continue",
 });
 
 console.log(preview.messages);
@@ -223,6 +224,15 @@ console.log(preview.promptSnapshot.promptMode);
 console.log(preview.promptSnapshot.promptDigest);
 console.log(preview.promptSnapshot.tokenEstimate);
 console.log(preview.promptSnapshot.presetVersion);
+console.log(preview.assembly.selectedPromptOrderCharacterId);
+console.log(preview.assembly.promptIntent);
+console.log(preview.assembly.assistantPrefillApplied);
+console.log(preview.assembly.assistantPrefillStrategy);
+console.log(preview.assembly.continueNudgeApplied);
+console.log(preview.assembly.namesBehaviorApplied);
+console.log(preview.assembly.triggerFilteredEntryIds);
+console.log(preview.assembly.unsupportedPresetFields);
+console.log(preview.assembly.presetWarnings);
 ```
 
 `respondDryRun()` 返回的 `promptSnapshot` 预览字段与真实提交后的 `prompt_snapshot` 对齐，适合在生成前检查 preset、worldbook、regex 和摘要注入结果。
@@ -234,7 +244,24 @@ console.log(preview.promptSnapshot.presetVersion);
 - `regexProfileVersion`
 - `assembly.reservedVariableCollisions`
 
-它们对应本轮真正冻结使用的资源版本号。
+如果 preset 存在多条 `prompt_order` 轨道，或者使用了 `assistantPrefill`、`continueNudgePrompt`、`namesBehavior`、Prompt Manager trigger / in-chat insertion，`assembly` 还会继续返回：
+
+- `promptIntent`
+- `assistantPrefillApplied`
+- `assistantPrefillStrategy`
+- `continueNudgeApplied`
+- `continueNudgeText`
+- `namesBehaviorApplied`
+- `triggerFilteredEntryIds`
+- `inChatInsertedEntryIds`
+- `selectedPromptOrderCharacterId`
+- `ignoredPromptOrderCharacterIds`
+- `unsupportedPresetFields`
+- `ignoredPresetFields`
+- `unresolvedPresetMarkers`
+- `presetWarnings`
+
+前一组字段对应本轮真正冻结使用的资源版本号。后一组字段用于说明本轮 preset 的兼容边界和降级信息。
 
 ### 资源更新的乐观锁
 

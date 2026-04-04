@@ -1,7 +1,7 @@
-import type { PromptIR, IRSection, IRMessage, ChatRole } from '@tavern/core';
+import type { PromptIR, IRSection, IRMessage, ChatRole, PromptRunIntent } from '@tavern/core';
 import type { STPreset, STPromptEntry } from './types/preset.js';
 import type { STWorldBookEntry } from './types/worldbook.js';
-import type { TriggerResult, DepthEntry } from './worldbook/trigger-engine.js';
+import type { TriggerResult } from './worldbook/trigger-engine.js';
 import { WI_ROLE } from './types/worldbook.js';
 
 // ── 公开类型 ──────────────────────────────────────────
@@ -26,6 +26,14 @@ export interface CompatAssemblerInput {
   personaDescription?: string;
   /** 模板变量（{{char}}, {{user}} 等） */
   variables?: Record<string, unknown>;
+  /** 运行意图 */
+  intent?: PromptRunIntent;
+  /** 名称行为最小策略 */
+  namesBehavior?: 'off' | 'always';
+  /** 用户显示名 */
+  userName?: string;
+  /** 助手显示名 */
+  assistantName?: string;
 }
 
 // ── 内部工具 ──────────────────────────────────────────
@@ -49,16 +57,62 @@ function renderTemplate(text: string, variables: Record<string, unknown>): strin
   });
 }
 
-/** 将世界书 role 数字转为 ChatRole */
 function wiRoleToChatRole(role: number): ChatRole {
   switch (role) {
-    case WI_ROLE.USER: return 'user';
-    case WI_ROLE.ASSISTANT: return 'assistant';
-    default: return 'system';
+    case WI_ROLE.USER:
+      return 'user';
+    case WI_ROLE.ASSISTANT:
+      return 'assistant';
+    default:
+      return 'system';
   }
 }
 
-/** 将世界书条目转为 IR 消息 */
+function shouldIncludePromptEntry(promptEntry: STPromptEntry | undefined, intent: PromptRunIntent): boolean {
+  if (!promptEntry?.behavior?.triggers || promptEntry.behavior.triggers.length === 0) {
+    return true;
+  }
+
+  return promptEntry.behavior.triggers.includes(intent);
+}
+
+function toInsertion(promptEntry: STPromptEntry | undefined): IRSection['insertion'] | undefined {
+  const placement = promptEntry?.behavior?.placement;
+  if (!placement || placement.kind !== 'in_chat') {
+    return undefined;
+  }
+
+  return {
+    kind: 'in_chat',
+    depth: placement.depth,
+    order: placement.order,
+  };
+}
+
+function applyNamesBehavior(
+  content: string,
+  role: ChatRole,
+  namesBehavior: 'off' | 'always',
+  userName?: string,
+  assistantName?: string,
+): string {
+  if (namesBehavior !== 'always' || content.trim().length === 0) {
+    return content;
+  }
+
+  if (role === 'user') {
+    const name = userName?.trim() || 'User';
+    return content.startsWith(`${name}: `) ? content : `${name}: ${content}`;
+  }
+
+  if (role === 'assistant') {
+    const name = assistantName?.trim() || 'Assistant';
+    return content.startsWith(`${name}: `) ? content : `${name}: ${content}`;
+  }
+
+  return content;
+}
+
 function worldBookEntriesToMessages(
   entries: STWorldBookEntry[],
   wiFormat: string,
@@ -66,7 +120,6 @@ function worldBookEntriesToMessages(
 ): IRMessage[] {
   if (entries.length === 0) return [];
 
-  // 合并所有条目的 content，按 wiFormat 格式化
   const messages: IRMessage[] = [];
   for (const entry of entries) {
     const content = renderTemplate(
@@ -85,60 +138,52 @@ function worldBookEntriesToMessages(
   return messages;
 }
 
-/** 创建一个包含单条系统消息的 section（如果 content 非空） */
-function makeSystemSection(
-  name: string,
-  order: number,
-  content: string | undefined,
-  variables: Record<string, unknown>,
-  source?: string,
-): IRSection | null {
-  if (!content?.trim()) return null;
-  const rendered = renderTemplate(content, variables);
+function makePromptSection(args: {
+  name: string;
+  order: number;
+  content?: string;
+  variables: Record<string, unknown>;
+  source?: string;
+  role?: ChatRole;
+  pinned?: boolean;
+  insertion?: IRSection['insertion'];
+  semantic?: IRSection['semantic'];
+  namesBehavior?: 'off' | 'always';
+  userName?: string;
+  assistantName?: string;
+}): IRSection | null {
+  if (!args.content?.trim()) return null;
+  const rendered = renderTemplate(args.content, args.variables);
   if (!rendered.trim()) return null;
 
+  const role = args.role ?? 'system';
+  const finalContent = args.insertion?.kind === 'in_chat'
+    ? applyNamesBehavior(rendered, role, args.namesBehavior ?? 'off', args.userName, args.assistantName)
+    : rendered;
+
   return {
-    name,
-    order,
-    pinned: true,
+    name: args.name,
+    order: args.order,
+    pinned: args.pinned ?? true,
+    ...(args.insertion ? { insertion: args.insertion } : {}),
+    ...(args.semantic ? { semantic: args.semantic } : {}),
     messages: [{
-      role: 'system',
-      content: rendered,
-      source: source ?? name,
+      role,
+      content: finalContent,
+      source: args.source ?? args.name,
       prunable: false,
     }],
   };
 }
 
-/** 查找预设中的 prompt entry 并获取 content */
-function getPromptContent(preset: STPreset, identifier: string): string | undefined {
-  const entry = preset.prompts.find(p => p.identifier === identifier);
-  return entry?.content;
+function getPromptEntry(preset: STPreset, identifier: string): STPromptEntry | undefined {
+  return preset.prompts.find((entry) => entry.identifier === identifier);
 }
 
 // ── 主函数 ────────────────────────────────────────────
 
 /**
  * compat_strict 编排器：将酒馆预设 + 世界书 + 聊天历史组装成 PromptIR。
- *
- * 按照 preset.promptOrder 的顺序创建 IRSection，严格复刻酒馆的
- * prompt_order 拼装逻辑。
- *
- * ## 支持的 identifier
- *
- * | identifier | 内容来源 |
- * |---|---|
- * | `main` | preset.prompts[main].content |
- * | `worldInfoBefore` | worldBookResults.before |
- * | `charDescription` | characterDescription |
- * | `charPersonality` | characterPersonality |
- * | `scenario` | scenario |
- * | `personaDescription` | personaDescription |
- * | `nsfw` / `enhanceDefinitions` | preset.prompts 中的内容 |
- * | `worldInfoAfter` | worldBookResults.after |
- * | `dialogueExamples` | exampleDialogue |
- * | `chatHistory` | chatHistory |
- * | `jailbreak` | preset.prompts[jailbreak].content |
  */
 export function assembleCompat(input: CompatAssemblerInput): PromptIR {
   const {
@@ -151,83 +196,128 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
     exampleDialogue,
     personaDescription,
     variables = {},
+    intent = 'normal',
+    namesBehavior = 'off',
+    userName,
+    assistantName,
   } = input;
 
   const sections: IRSection[] = [];
   let orderIndex = 0;
 
-  // 遍历 promptOrder 创建各 section
   for (const identifier of preset.promptOrder) {
     const currentOrder = orderIndex++;
+    const promptEntry = getPromptEntry(preset, identifier);
+    if (!shouldIncludePromptEntry(promptEntry, intent)) {
+      continue;
+    }
 
     switch (identifier) {
-      // ── 预设提示词 sections ──
       case 'main':
       case 'nsfw':
       case 'jailbreak':
       case 'enhanceDefinitions': {
-        const content = getPromptContent(preset, identifier);
-        const section = makeSystemSection(identifier, currentOrder, content, variables, `preset:${identifier}`);
+        const section = makePromptSection({
+          name: identifier,
+          order: currentOrder,
+          content: promptEntry?.content,
+          variables,
+          source: `preset:${identifier}`,
+          role: promptEntry?.role ?? 'system',
+          insertion: toInsertion(promptEntry),
+          namesBehavior,
+          userName,
+          assistantName,
+        });
         if (section) sections.push(section);
         break;
       }
-
-      // ── 世界书 before ──
       case 'worldInfoBefore': {
-        const entries = worldBookResults?.before ?? [];
-        const messages = worldBookEntriesToMessages(entries, preset.wiFormat, variables);
-        if (messages.length > 0) {
+        const entryMessages = worldBookEntriesToMessages(worldBookResults?.before ?? [], preset.wiFormat, variables);
+        if (entryMessages.length > 0) {
           sections.push({
             name: 'worldInfoBefore',
             order: currentOrder,
             pinned: true,
-            messages,
+            ...(toInsertion(promptEntry) ? { insertion: toInsertion(promptEntry) } : {}),
+            messages: entryMessages,
           });
         }
         break;
       }
-
-      // ── 世界书 after ──
       case 'worldInfoAfter': {
-        const entries = worldBookResults?.after ?? [];
-        const messages = worldBookEntriesToMessages(entries, preset.wiFormat, variables);
-        if (messages.length > 0) {
+        const entryMessages = worldBookEntriesToMessages(worldBookResults?.after ?? [], preset.wiFormat, variables);
+        if (entryMessages.length > 0) {
           sections.push({
             name: 'worldInfoAfter',
             order: currentOrder,
             pinned: true,
-            messages,
+            ...(toInsertion(promptEntry) ? { insertion: toInsertion(promptEntry) } : {}),
+            messages: entryMessages,
           });
         }
         break;
       }
-
-      // ── 角色信息 sections ──
       case 'charDescription': {
-        const section = makeSystemSection('charDescription', currentOrder, characterDescription, variables);
+        const section = makePromptSection({
+          name: 'charDescription',
+          order: currentOrder,
+          content: characterDescription,
+          variables,
+          role: promptEntry?.role ?? 'system',
+          insertion: toInsertion(promptEntry),
+          namesBehavior,
+          userName,
+          assistantName,
+        });
         if (section) sections.push(section);
         break;
       }
-
       case 'charPersonality': {
-        const section = makeSystemSection('charPersonality', currentOrder, characterPersonality, variables);
+        const section = makePromptSection({
+          name: 'charPersonality',
+          order: currentOrder,
+          content: characterPersonality,
+          variables,
+          role: promptEntry?.role ?? 'system',
+          insertion: toInsertion(promptEntry),
+          namesBehavior,
+          userName,
+          assistantName,
+        });
         if (section) sections.push(section);
         break;
       }
-
       case 'scenario': {
-        const section = makeSystemSection('scenario', currentOrder, scenario, variables);
+        const section = makePromptSection({
+          name: 'scenario',
+          order: currentOrder,
+          content: scenario,
+          variables,
+          role: promptEntry?.role ?? 'system',
+          insertion: toInsertion(promptEntry),
+          namesBehavior,
+          userName,
+          assistantName,
+        });
         if (section) sections.push(section);
         break;
       }
-
       case 'personaDescription': {
-        const section = makeSystemSection('personaDescription', currentOrder, personaDescription, variables);
+        const section = makePromptSection({
+          name: 'personaDescription',
+          order: currentOrder,
+          content: personaDescription,
+          variables,
+          role: promptEntry?.role ?? 'system',
+          insertion: toInsertion(promptEntry),
+          namesBehavior,
+          userName,
+          assistantName,
+        });
         if (section) sections.push(section);
         break;
       }
-
-      // ── 示例对话 ──
       case 'dialogueExamples': {
         if (exampleDialogue?.trim()) {
           const fullContent = `${preset.newExampleChatPrompt}\n${renderTemplate(exampleDialogue, variables)}`;
@@ -235,8 +325,9 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
             name: 'dialogueExamples',
             order: currentOrder,
             pinned: true,
+            ...(toInsertion(promptEntry) ? { insertion: toInsertion(promptEntry) } : {}),
             messages: [{
-              role: 'system',
+              role: promptEntry?.role ?? 'system',
               content: fullContent,
               source: 'dialogueExamples',
               prunable: false,
@@ -245,12 +336,9 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
         }
         break;
       }
-
-      // ── 聊天历史 ──
       case 'chatHistory': {
         const messages: IRMessage[] = [];
 
-        // 新对话标记
         if (preset.newChatPrompt) {
           messages.push({
             role: 'system',
@@ -260,15 +348,20 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
           });
         }
 
-        // 聊天消息（从旧到新）
         for (let i = 0; i < chatHistory.length; i++) {
           const msg = chatHistory[i]!;
           messages.push({
             role: msg.role,
-            content: renderTemplate(msg.content, variables),
+            content: applyNamesBehavior(
+              renderTemplate(msg.content, variables),
+              msg.role,
+              namesBehavior,
+              userName,
+              assistantName,
+            ),
             source: `chat:${i}`,
             prunable: true,
-            priority: i, // 旧消息优先被裁剪
+            priority: i,
           });
         }
 
@@ -276,22 +369,25 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
           name: 'chatHistory',
           order: currentOrder,
           pinned: false,
+          semantic: 'chat_history',
           messages,
         });
         break;
       }
-
-      // ── 其他自定义 prompt entries ──
       default: {
-        const promptEntry = preset.prompts.find(p => p.identifier === identifier);
         if (promptEntry && !promptEntry.marker && promptEntry.content?.trim()) {
-          const section = makeSystemSection(
-            identifier,
-            currentOrder,
-            promptEntry.content,
+          const section = makePromptSection({
+            name: identifier,
+            order: currentOrder,
+            content: promptEntry.content,
             variables,
-            `preset:${identifier}`,
-          );
+            source: `preset:${identifier}`,
+            role: promptEntry.role ?? 'system',
+            insertion: toInsertion(promptEntry),
+            namesBehavior,
+            userName,
+            assistantName,
+          });
           if (section) sections.push(section);
         }
         break;
@@ -299,7 +395,6 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
     }
   }
 
-  // ── @depth 条目注入 ──
   if (worldBookResults?.atDepth && worldBookResults.atDepth.length > 0) {
     for (const depthEntry of worldBookResults.atDepth) {
       const content = renderTemplate(
@@ -310,8 +405,13 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
 
       sections.push({
         name: `worldInfoDepth:${depthEntry.depth}`,
-        order: 1000 + depthEntry.depth, // 放在最后，由 MessageBuilder 处理 depth 插入
+        order: 1000 + depthEntry.depth,
         pinned: true,
+        insertion: {
+          kind: 'in_chat',
+          depth: depthEntry.depth,
+          order: depthEntry.entry.order,
+        },
         messages: [{
           role: wiRoleToChatRole(depthEntry.role),
           content,
@@ -320,6 +420,18 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
         }],
       });
     }
+  }
+
+  if (intent === 'continue' && preset.continueNudgePrompt.trim()) {
+    const section = makePromptSection({
+      name: 'continueNudge',
+      order: sections.reduce((max, section) => Math.max(max, section.order), 0) + 1,
+      content: preset.continueNudgePrompt,
+      variables,
+      source: 'continueNudgePrompt',
+      role: 'system',
+    });
+    if (section) sections.push(section);
   }
 
   return {

@@ -19,6 +19,8 @@ import {
   createRegexMacroSubstituter,
   type SessionPromptInfo,
   type AssembleDebugInfo,
+  type AssistantPrefillExecutionStrategy,
+  materializePromptSendMessages,
   type PromptSnapshotPreview,
 } from "./prompt-assembler.js";
 import type {
@@ -37,6 +39,7 @@ import type {
   TokenCounter,
   MemoryInjectionOptions,
   MemoryStore,
+  ProviderType,
   ToolPermissions,
   CoreEventMap,
   CoreEventBus,
@@ -45,6 +48,7 @@ import type {
 } from "@tavern/core";
 import {
   createEventBus,
+  type PromptRunIntent,
   evaluateToolReplaySafety,
   evaluateExecutedToolCallReplaySafety,
   FloorNotFoundError,
@@ -88,6 +92,7 @@ import { TurnCommitService, type TurnCommitMemoryReceipt } from "./turn-commit-s
 import type { FloorRunService } from "./floor-run-service.js";
 import { OwnedMessageRepository, OwnedSessionRepository } from "./owned-resource-repositories.js";
 import { PromptResourceLoader } from "./prompt-resource-loader.js";
+import { resolveAssistantPrefillStrategy } from "../lib/llm-provider-discovery.js";
 import { VariableService } from "./variable-service.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
@@ -104,6 +109,8 @@ export interface RespondRequest {
   branchId?: string;
   /** 当目标分支尚无楼层时，可指定分叉源楼层 */
   sourceFloorId?: string;
+  /** 当前 prompt 运行意图 */
+  promptIntent?: PromptRunIntent;
 }
 
 /** /respond 响应体 */
@@ -130,6 +137,8 @@ export interface RespondResult {
 export interface DryRunRequest {
   /** 用户消息文本 */
   message: string;
+  /** 当前 prompt 运行意图 */
+  promptIntent?: PromptRunIntent;
 }
 
 /** /respond/dry-run 响应体 */
@@ -274,6 +283,7 @@ export interface ResolvedTurnModel {
   model?: ModelConfig;
   source: "env" | "global_profile" | "session_profile";
   profileId?: string;
+  providerType?: ProviderType;
   generationParams?: Partial<GenerationParams>;
   enabled?: boolean;
   presetId?: string;
@@ -403,6 +413,10 @@ export interface ChatServiceOptions {
    * 可选：执行策略。
    */
   executionPolicy?: TurnExecutionPolicyOverrides;
+  /**
+   * narrator 默认 provider 类型。
+   */
+  defaultNarratorProviderType?: ProviderType;
 }
 
 // ── ChatService ───────────────────────────────────────
@@ -429,6 +443,7 @@ export class ChatService {
   private readonly toolExecutionRepository: DrizzleToolExecutionRepository;
   private readonly generationCoordinator: GenerationCoordinator;
   private readonly executionPolicy: TurnExecutionPolicy;
+  private readonly defaultNarratorProviderType?: ProviderType;
 
   constructor(
     private readonly db: AppDb,
@@ -463,6 +478,7 @@ export class ChatService {
     this.generationCoordinator = options.generationCoordinator
       ?? options.generationGuard
       ?? new InMemoryGenerationCoordinator();
+    this.defaultNarratorProviderType = options.defaultNarratorProviderType;
   }
 
   /**
@@ -555,6 +571,7 @@ export class ChatService {
           const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
           await this.trackFloorRunPhase(floorId, "semantic_resolved");
           await this.trackFloorRunPhase(floorId, "prechecked");
+          const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
           const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
           const assembled = await assemblePrompt(
@@ -568,6 +585,8 @@ export class ChatService {
             {
               maxContextTokensOverride,
               variableContext: { sessionId, branchId, floorId, pageId: userMessageRef.pageId },
+              intent: request.promptIntent,
+              assistantPrefillStrategy,
             }
           );
           await this.trackFloorRunPhase(floorId, "prompt_assembled");
@@ -607,7 +626,7 @@ export class ChatService {
             floorId,
             pageId: userMessageRef.pageId,
             accountId,
-            messages: assembled.messages,
+            messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
             generationParams,
             config: turnConfig,
             consolidationContext,
@@ -681,6 +700,7 @@ export class ChatService {
     const history = await this.historyLoader.loadHistory(sessionId);
     const memorySummary = await this.retrieveMemorySummary(sessionId, accountId);
     const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+    const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
     const maxContextTokensOverride = normalizePositiveInt(narratorParams?.maxContextTokens);
 
@@ -703,6 +723,8 @@ export class ChatService {
       memorySummary,
       {
         includeDebug: true, maxContextTokensOverride, variableContext: { sessionId },
+        intent: request.promptIntent,
+        assistantPrefillStrategy,
       }
     );
 
@@ -712,12 +734,26 @@ export class ChatService {
 
     const debug: AssembleDebugInfo = assembled.debug ?? {
       mode: "fallback",
+      promptIntent: request.promptIntent ?? "normal",
+      assistantPrefillApplied: false,
+      assistantPrefillStrategy: "none",
       presetUsed: false,
       worldbookHits: 0,
       regexPreRules: [],
       regexPostRules: [],
       memorySummaryInjected: false,
       reservedVariableCollisions: [],
+      selectedPromptOrderCharacterId: null,
+      ignoredPromptOrderCharacterIds: [],
+      unsupportedPresetFields: [],
+      ignoredPresetFields: [],
+      unresolvedPresetMarkers: [],
+      presetWarnings: [],
+      continueNudgeApplied: false,
+      continueNudgeText: undefined,
+      namesBehaviorApplied: "off",
+      triggerFilteredEntryIds: [],
+      inChatInsertedEntryIds: [],
     };
 
     return {
@@ -825,6 +861,7 @@ export class ChatService {
       const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
       await this.trackFloorRunPhase(newFloorId, "semantic_resolved");
       await this.trackFloorRunPhase(newFloorId, "prechecked");
+      const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
       const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
       const assembled = await assemblePrompt(
@@ -838,6 +875,8 @@ export class ChatService {
         {
           maxContextTokensOverride,
           variableContext: { sessionId, branchId: targetFloor.branchId, floorId: newFloorId, pageId: userMessageRef.pageId },
+          intent: "regenerate",
+          assistantPrefillStrategy,
         }
       );
       await this.trackFloorRunPhase(newFloorId, "prompt_assembled");
@@ -876,7 +915,7 @@ export class ChatService {
         floorId: newFloorId,
         pageId: userMessageRef.pageId,
         accountId,
-        messages: assembled.messages,
+        messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
         generationParams,
         config: turnConfig,
         consolidationContext,
@@ -1000,6 +1039,7 @@ export class ChatService {
 
         const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
         const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+        const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
         const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
         const assembled = await assemblePrompt(
@@ -1018,6 +1058,7 @@ export class ChatService {
               floorId: targetFloor.id,
               pageId: userMessageRef.pageId,
             },
+            assistantPrefillStrategy,
           }
         );
         await this.trackFloorRunPhase(targetFloor.id, "prompt_assembled");
@@ -1056,7 +1097,7 @@ export class ChatService {
           floorId: targetFloor.id,
           pageId: userMessageRef.pageId,
           accountId,
-          messages: assembled.messages,
+          messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
           generationParams,
           config: turnConfig,
           consolidationContext,
@@ -1819,6 +1860,7 @@ export class ChatService {
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
     await this.trackFloorRunPhase(args.floorId, "semantic_resolved");
     await this.trackFloorRunPhase(args.floorId, "prechecked");
+    const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
     const maxContextTokensOverride = this.resolveMaxContextTokensOverride(args.request.generationParams, narratorParams);
 
     const assembled = await assemblePrompt(
@@ -1837,6 +1879,7 @@ export class ChatService {
           floorId: args.floorId,
           pageId: args.userMessageRef.pageId,
         },
+        assistantPrefillStrategy,
       }
     );
     await this.trackFloorRunPhase(args.floorId, "prompt_assembled");
@@ -1875,7 +1918,7 @@ export class ChatService {
       floorId: args.floorId,
       pageId: args.userMessageRef.pageId,
       accountId: args.accountId,
-      messages: assembled.messages,
+      messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
       generationParams,
       config: turnConfig,
       consolidationContext,
@@ -2273,6 +2316,14 @@ export class ChatService {
       }
     }
     return {};
+  }
+
+  private resolveNarratorAssistantPrefillStrategy(
+    models: ResolvedTurnModels,
+  ): AssistantPrefillExecutionStrategy {
+    return resolveAssistantPrefillStrategy(
+      models.narrator?.providerType ?? this.defaultNarratorProviderType,
+    );
   }
 
   private async markTurnModelUsed(model: ResolvedTurnModel | undefined, accountId: string): Promise<void>;

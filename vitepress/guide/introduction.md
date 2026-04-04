@@ -101,10 +101,12 @@ draft → generating → committed
 | 模式 | 说明 |
 | ---- | ---- |
 | `compat_strict` | 严格复刻 SillyTavern 的提示词拼接行为，导入预设即用 |
-| `compat_plus` | 在兼容基础上加入记忆注入等高级功能 |
-| `native` | 完全使用原生流水线编排，可自由组合节点 |
+| `compat_plus` | 在兼容基础上加入少量已声明的增强能力，当前主要用于记忆注入 |
+| `native` | 使用原生编排路径；当前实现主要是一条固定流水线，后续再演进为声明式图模型 |
 
 会话创建时通过 `prompt_mode` 字段选择。
+
+导入 ST preset 时，建议默认使用 `compat_strict`。`native` 当前不承诺 ST preset 的保真执行。
 
 ---
 

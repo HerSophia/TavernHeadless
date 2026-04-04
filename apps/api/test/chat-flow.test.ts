@@ -307,6 +307,65 @@ describe("ChatService", () => {
     expect(assistantMsg!.source).toBe("narrator");
   });
 
+  it("applies assistant prefill as a temporary trailing assistant message during send", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Prefill Preset",
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        prompts: [
+          { identifier: "main", name: "Main Prompt", role: "system", content: "Stay in character." },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+        prompt_order: [
+          {
+            character_id: 100000,
+            order: [
+              { identifier: "main", enabled: true },
+              { identifier: "chatHistory", enabled: true },
+            ],
+          },
+        ],
+        openai_max_context: 2048,
+        openai_max_tokens: 300,
+        temperature: 0.7,
+        top_p: 1,
+        top_k: 0,
+        min_p: 0,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        repetition_penalty: 1,
+        new_chat_prompt: "",
+        new_example_chat_prompt: "",
+        continue_nudge_prompt: "",
+        assistant_prefill: "Knight:",
+        wi_format: "{0}",
+        names_behavior: 0,
+        stream_openai: true,
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.update(sessions).set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now }).where(eq(sessions.id, sessionId));
+
+    await chatService.respond(sessionId, { message: "Hello, brave knight!" });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.messages[turnInput.messages.length - 1]).toEqual({ role: "assistant", content: "Knight:" });
+
+    const outputPages = await database.db.select().from(messagePages).where(eq(messagePages.pageKind, "output"));
+    const [assistantMsg] = await database.db
+      .select()
+      .from(messages)
+      .where(eq(messages.pageId, outputPages[0]!.id));
+
+    expect(assistantMsg?.content).toBe(MOCK_GENERATED_TEXT);
+  });
+
   it("should forward runtime tool events during respond", async () => {
     const eventBus = createEventBus();
     const tokenCounter = new SimpleTokenCounter();

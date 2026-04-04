@@ -163,6 +163,7 @@ export {
   type RegexProfileRuleInput,
   type RegexProfilesResource,
   type RegenerateResult,
+  type PromptIntent,
   type RespondDryRunAssembly,
   type RespondDryRunMessage,
   type RespondDryRunPromptSnapshot,

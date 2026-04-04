@@ -403,6 +403,120 @@ describe('assembleCompat', () => {
       expect(section).toBeDefined();
       expect(section!.messages[0]!.content).toBe('Custom content');
     });
+
+    it('preserves custom prompt entry role instead of forcing system', () => {
+      const preset = makePreset({
+        prompts: [
+          ...makePreset().prompts,
+          { identifier: 'customAssistant', name: 'Custom Assistant', role: 'assistant', content: 'Assistant guidance', enabled: true },
+        ],
+        promptOrder: ['main', 'customAssistant', 'chatHistory'],
+      });
+
+      const ir = assembleCompat({
+        preset,
+        chatHistory: [],
+      });
+
+      const section = ir.sections.find(s => s.name === 'customAssistant');
+      expect(section?.messages[0]?.role).toBe('assistant');
+      expect(section?.messages[0]?.content).toBe('Assistant guidance');
+    });
+
+    it('preserves built-in prompt entry role for main-like preset sections', () => {
+      const preset = makePreset({
+        prompts: makePreset().prompts.map((entry) =>
+          entry.identifier === 'main' ? { ...entry, role: 'user' as const, content: 'User main prompt' } : entry
+        ),
+      });
+
+      const ir = assembleCompat({
+        preset,
+        chatHistory: [],
+      });
+
+      const section = ir.sections.find(s => s.name === 'main');
+      expect(section?.messages[0]?.role).toBe('user');
+      expect(section?.messages[0]?.content).toBe('User main prompt');
+    });
+  });
+
+  describe('prompt manager semantics', () => {
+    it('filters prompt entries when triggers do not match current intent', () => {
+      const preset = makePreset({
+        prompts: makePreset().prompts.map((entry) =>
+          entry.identifier === 'main'
+            ? {
+                ...entry,
+                behavior: {
+                  placement: { kind: 'relative', order: 0 },
+                  triggers: ['quiet'],
+                },
+              }
+            : entry
+        ),
+      });
+
+      const ir = assembleCompat({
+        preset,
+        chatHistory: [{ role: 'user', content: 'Hi' }],
+        intent: 'normal',
+      });
+
+      expect(ir.sections.find((section) => section.name === 'main')).toBeUndefined();
+      expect(ir.sections.find((section) => section.name === 'chatHistory')).toBeDefined();
+    });
+
+    it('appends continue nudge only for continue intent', () => {
+      const preset = makePreset({ continueNudgePrompt: '[Continue immediately]' });
+
+      const normalIr = assembleCompat({
+        preset,
+        chatHistory: [{ role: 'user', content: 'Hi' }],
+        intent: 'normal',
+      });
+      const continueIr = assembleCompat({
+        preset,
+        chatHistory: [{ role: 'user', content: 'Hi' }],
+        intent: 'continue',
+      });
+
+      expect(normalIr.sections.find((section) => section.name === 'continueNudge')).toBeUndefined();
+      expect(continueIr.sections.at(-1)?.name).toBe('continueNudge');
+      expect(continueIr.sections.at(-1)?.messages[0]?.content).toBe('[Continue immediately]');
+    });
+
+    it('marks in-chat prompt entries with insertion metadata and applies names behavior to user or assistant roles', () => {
+      const preset = makePreset({
+        prompts: [
+          ...makePreset().prompts,
+          {
+            identifier: 'continueHint',
+            name: 'Continue Hint',
+            role: 'assistant',
+            content: 'Keep moving.',
+            enabled: true,
+            behavior: {
+              placement: { kind: 'in_chat', depth: 0, order: 2 },
+              triggers: ['continue'],
+            },
+          },
+        ],
+        promptOrder: ['chatHistory', 'continueHint'],
+      });
+
+      const ir = assembleCompat({
+        preset,
+        chatHistory: [{ role: 'user', content: 'Hello' }],
+        intent: 'continue',
+        namesBehavior: 'always',
+        assistantName: 'Knight',
+      });
+
+      const section = ir.sections.find((candidate) => candidate.name === 'continueHint');
+      expect(section?.insertion).toEqual({ kind: 'in_chat', depth: 0, order: 2 });
+      expect(section?.messages[0]?.content).toBe('Knight: Keep moving.');
+    });
   });
 
   describe('edge cases', () => {

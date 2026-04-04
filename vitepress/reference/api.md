@@ -161,6 +161,10 @@ WebSocket 也遵循相同边界：
 
 聊天 dry-run 的 `prompt_snapshot` 与落库的 `prompt_snapshot` 记录也会保存 `preset_version`、`worldbook_version`、`regex_profile_version`，用于说明当轮生成实际冻结使用的资源版本。
 
+如果 preset 本身存在多条 `prompt_order` 轨道，或者包含当前未完整执行的字段与 marker，聊天 dry-run 的 `assembly` 还会返回选中的轨道、被忽略的轨道和 warning，用来解释兼容边界。
+
+同一份 `assembly` 现在还会回显 `prompt_intent`、`assistant_prefill_applied`、`assistant_prefill_strategy`、`continue_nudge_applied`、`continue_nudge_text`、`names_behavior_applied`、`trigger_filtered_entry_ids` 与 `in_chat_inserted_entry_ids`，用于说明本轮提示词运行语义是否真正进入发送链路。`assistant_prefill` 不再作为统一的 blanket-unsupported 字段处理，而是按 provider 运行时策略决定是否 fallback 执行或标记为 unsupported。
+
 ## 资源目录
 
 | 资源 | 说明 | 文档 |

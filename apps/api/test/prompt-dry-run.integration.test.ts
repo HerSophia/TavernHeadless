@@ -164,12 +164,28 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       },
       assembly: {
         mode: "fallback",
+        promptIntent: "continue",
+        assistantPrefillApplied: true,
+        assistantPrefillStrategy: "assistant_message_fallback",
         presetUsed: false,
+        selectedPromptOrderCharacterId: 100000,
+        ignoredPromptOrderCharacterIds: [200001],
         worldbookHits: 0,
         regexPreRules: ["Input Rule"],
         regexPostRules: [],
         memorySummaryInjected: true,
         reservedVariableCollisions: [],
+        unsupportedPresetFields: [],
+        ignoredPresetFields: ["top_level.openai_model"],
+        unresolvedPresetMarkers: ["customMarker"],
+        presetWarnings: [
+          "检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。",
+        ],
+        continueNudgeApplied: true,
+        continueNudgeText: "[Continue]",
+        namesBehaviorApplied: "always",
+        triggerFilteredEntryIds: ["quietPrompt"],
+        inChatInsertedEntryIds: ["continueHint"],
         preprocessedUserMessage: "hello",
       },
     };
@@ -183,12 +199,12 @@ describe("POST /sessions/:id/respond/dry-run", () => {
     const response = await app.inject({
       method: "POST",
       url: "/sessions/s1/respond/dry-run",
-      payload: { message: "hello" },
+      payload: { message: "hello", prompt_intent: "continue" },
     });
 
     expect(response.statusCode).toBe(200);
     expect(chatService.dryRun).toHaveBeenCalledOnce();
-    expect(chatService.dryRun).toHaveBeenCalledWith("s1", { message: "hello" }, "default-admin");
+    expect(chatService.dryRun).toHaveBeenCalledWith("s1", { message: "hello", promptIntent: "continue" }, "default-admin");
 
     const body = response.json() as { data: Record<string, unknown> };
     expect(body.data.token_estimate).toBe(42);
@@ -214,12 +230,26 @@ describe("POST /sessions/:id/respond/dry-run", () => {
     });
     expect(body.data.assembly).toEqual({
       mode: "fallback",
+      prompt_intent: "continue",
+      assistant_prefill_applied: true,
+      assistant_prefill_strategy: "assistant_message_fallback",
       preset_used: false,
       worldbook_hits: 0,
+      selected_prompt_order_character_id: 100000,
+      ignored_prompt_order_character_ids: [200001],
       regex_pre_rules: ["Input Rule"],
       regex_post_rules: [],
       memory_summary_injected: true,
       reserved_variable_collisions: [],
+      unsupported_preset_fields: [],
+      ignored_preset_fields: ["top_level.openai_model"],
+      unresolved_preset_markers: ["customMarker"],
+      preset_warnings: ["检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。"],
+      continue_nudge_applied: true,
+      continue_nudge_text: "[Continue]",
+      names_behavior_applied: "always",
+      trigger_filtered_entry_ids: ["quietPrompt"],
+      in_chat_inserted_entry_ids: ["continueHint"],
       preprocessed_user_message: "hello",
     });
   });
@@ -248,12 +278,26 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       },
       assembly: {
         mode: "preset",
+        promptIntent: "normal",
+        assistantPrefillApplied: false,
+        assistantPrefillStrategy: "none",
         presetUsed: true,
+        selectedPromptOrderCharacterId: null,
+        ignoredPromptOrderCharacterIds: [],
         worldbookHits: 1,
         regexPreRules: [],
         regexPostRules: ["Output Rule"],
         memorySummaryInjected: false,
         reservedVariableCollisions: [],
+        unsupportedPresetFields: [],
+        ignoredPresetFields: [],
+        unresolvedPresetMarkers: [],
+        presetWarnings: [],
+        continueNudgeApplied: false,
+        continueNudgeText: undefined,
+        namesBehaviorApplied: "off",
+        triggerFilteredEntryIds: [],
+        inChatInsertedEntryIds: [],
       },
     };
 
@@ -295,12 +339,26 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         },
         assembly: {
           mode: "preset",
+          prompt_intent: "normal",
+          assistant_prefill_applied: false,
+          assistant_prefill_strategy: "none",
           preset_used: true,
+          selected_prompt_order_character_id: null,
+          ignored_prompt_order_character_ids: [],
           worldbook_hits: 1,
           regex_pre_rules: [],
           regex_post_rules: ["Output Rule"],
           memory_summary_injected: false,
           reserved_variable_collisions: [],
+          unsupported_preset_fields: [],
+          ignored_preset_fields: [],
+          unresolved_preset_markers: [],
+          preset_warnings: [],
+          continue_nudge_applied: false,
+          continue_nudge_text: null,
+          names_behavior_applied: "off",
+          trigger_filtered_entry_ids: [],
+          in_chat_inserted_entry_ids: [],
           preprocessed_user_message: null,
         },
       },
@@ -512,6 +570,44 @@ describe("ChatService.dryRun", () => {
     });
     expect(result.promptSnapshot.promptDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(await database.db.select().from(promptSnapshots)).toEqual([]);
+  });
+
+  it("reports assistant prefill runtime semantics without materializing it into dry-run message history", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Prefill Preset",
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        assistant_prefill: "Knight:",
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    const result = await chatService.dryRun(sessionId, { message: "hello prefill" });
+    const visibleTokenCounter = new SimpleTokenCounter();
+    const visibleTokenEstimate = result.messages.reduce((sum, message) => sum + visibleTokenCounter.count(message.content), 0);
+
+    expect(result.messages.some((message) => message.role === "assistant" && message.content === "Knight:")).toBe(false);
+    expect(result.messages.some((message) => message.role === "user" && message.content.includes("hello prefill"))).toBe(true);
+    expect(result.assembly.assistantPrefillApplied).toBe(true);
+    expect(result.assembly.assistantPrefillStrategy).toBe("assistant_message_fallback");
+    expect(result.assembly.unsupportedPresetFields).not.toContain("assistant_prefill");
+    expect(result.tokenEstimate).toBeGreaterThan(visibleTokenEstimate);
+    expect(result.promptSnapshot.tokenEstimate).toBe(result.tokenEstimate);
   });
 
   it("injects persisted visible variables into dry-run prompt assembly and reports reserved alias collisions", async () => {

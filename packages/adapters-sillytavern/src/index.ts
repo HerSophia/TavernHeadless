@@ -1,5 +1,13 @@
 // ── Types ─────────────────────────────────────────────
-export type { STPreset, STPromptEntry } from './types/preset.js';
+export type {
+  STPreset,
+  STPresetImportReport,
+  STPromptEntry,
+  STPromptEntryBehavior,
+  STPromptOrderItem,
+  STPromptOrderTrack,
+  STPromptPlacement,
+} from './types/preset.js';
 export type { STChatHeader, STChatMessage } from './types/chat.js';
 export type { STWorldBook, STWorldBookEntry } from './types/worldbook.js';
 export { WI_POSITION, WI_LOGIC, WI_ROLE } from './types/worldbook.js';
@@ -49,3 +57,7 @@ export { assembleCompat } from './compat-assembler.js';
 export type { CompatAssemblerInput } from './compat-assembler.js';
 export { assembleCompatPlus } from './compat-plus-assembler.js';
 export type { CompatPlusAssemblerInput } from './compat-plus-assembler.js';
+
+// ── Native Imported Group ─────────────────────────────
+export { buildImportedPresetPromptGraph } from './preset-to-native-group.js';
+export type { BuildImportedPresetPromptGraphOptions } from './preset-to-native-group.js';

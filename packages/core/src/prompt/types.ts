@@ -25,6 +25,17 @@ export interface IRMessage {
   priority?: number;
 }
 
+export interface IRSectionInsertion {
+  /** 插入方式 */
+  kind: 'relative' | 'in_chat';
+  /** in-chat 插入深度 */
+  depth?: number;
+  /** 同深度下的排序值 */
+  order?: number;
+}
+
+export type IRSectionSemantic = 'chat_history';
+
 /**
  * IR 分区：按逻辑分组的消息块
  *
@@ -39,6 +50,10 @@ export interface IRSection {
   pinned?: boolean;
   /** 分区排序权重（数值小的排前面） */
   order: number;
+  /** 可选：分区的插入语义 */
+  insertion?: IRSectionInsertion;
+  /** 可选：分区的语义类型 */
+  semantic?: IRSectionSemantic;
 }
 
 /**

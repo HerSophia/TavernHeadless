@@ -69,16 +69,26 @@ export type {
 // ── Floor ─────────────────────────────────────────────
 export { FloorStateMachine } from './floor/index.js';
 export { FloorLifecycle } from './floor/index.js';
+export { FloorNotFoundError, FloorStateConflictError, InvalidStateTransitionError } from './errors.js';
+export type { FloorEntity } from './types.js';
+export type { FloorRepository } from './ports/floor-repository.js';
 
 // ── Variables ─────────────────────────────────────────
 export { VariableResolver } from './variables/index.js';
 export { VariableStore } from './variables/index.js';
+export type { VariableContext } from './types.js';
+export type { VariableRepository, VariableRepositoryOptions } from './ports/variable-repository.js';
+
+// ── Repository Ports ──────────────────────────────────
+export type { MemoryRepository } from './ports/memory-repository.js';
 
 // ── Prompt ────────────────────────────────────────────
 export type {
   ChatRole,
   IRMessage,
   IRSection,
+  IRSectionInsertion,
+  IRSectionSemantic,
   PromptIR,
   PromptMetadata,
   TokenCounter,
@@ -114,6 +124,36 @@ export {
   NativePipelineError,
 } from './prompt/index.js';
 export { MessageBuilder } from './prompt/index.js';
+
+// ── Prompt Graph ──────────────────────────────────────
+export type {
+  PromptRunIntent,
+  PromptTrigger,
+  PromptPlacement,
+  PromptNodeBase,
+  StaticTextNode,
+  VariableTemplateNode,
+  MarkerNode,
+  ChatHistoryNode,
+  CharacterNode,
+  PersonaNode,
+  WorldbookNode,
+  ExampleDialogueNode,
+  MemoryNode,
+  ToolResultNode,
+  PromptNode,
+  PromptEdge,
+  PromptNodeGroup,
+  PromptExecutionPolicy,
+  PromptGraphImportBinding,
+  PromptGraphDocument,
+  PromptGraphCharacterInput,
+  PromptGraphPersonaInput,
+  PromptGraphWorldbookEntry,
+  PromptGraphCompilerInput,
+  PromptGraphCompiler,
+} from './prompt-graph/index.js';
+export { compilePromptGraph, PromptGraphCompileError } from './prompt-graph/index.js';
 
 // ── LLM ───────────────────────────────────────────────
 export type {
@@ -189,108 +229,70 @@ export type {
   MemoryRevisionRef,
   MemoryRevisionSnapshot,
 } from './memory/index.js';
-export type { ConsolidationInput, ConsolidationResult } from './memory/index.js';
-export type { MemoryIngestInput, MemoryIngestResult } from './memory/index.js';
-export type { MemoryCompactionPlannerInput, MemoryCompactionPlan, MemoryCompactionPlannerOptions, MemoryCompactionTriggerReason } from './memory/index.js';
-export type { MemoryCompactionInput, MemoryCompactionResult } from './memory/index.js';
 
 // ── Orchestration ─────────────────────────────────────
-export { Director } from './orchestration/index.js';
+export { TurnOrchestrator, TurnError, ToolReplayBlockedError, UnsupportedToolModeError } from './orchestration/turn-orchestrator.js';
+export { Director } from './orchestration/director.js';
+export { Verifier } from './orchestration/verifier.js';
 export type {
-  DirectorInput,
-  DirectorOutput,
-  DirectorResult,
-} from './orchestration/index.js';
-export { Verifier } from './orchestration/index.js';
-export type {
-  VerifierInput,
-  VerifierOutput,
-  VerifierIssue,
-  VerifierResult,
-} from './orchestration/index.js';
-export {
-  TurnOrchestrator,
-  TurnError,
-  ToolReplayBlockedError,
-  UnsupportedToolModeError,
-} from './orchestration/index.js';
-export type {
-  TurnOrchestratorDeps,
-  TurnPhase,
   TurnConfig,
-  TurnRunObserver,
+  VerifierFailStrategy,
+  ToolMode,
   TurnInput,
   TurnExecutionResult,
   TurnOutput,
-  VerifierFailStrategy,
-  ToolMode,
-} from './orchestration/index.js';
-
-// ── Ports ─────────────────────────────────────────────
-export type { FloorRepository } from './ports/index.js';
-export type { VariableRepository, VariableRepositoryOptions } from './ports/index.js';
-export type { MemoryRepository } from './ports/index.js';
-export type { PromptSnapshotRepository } from './ports/index.js';
-export type { ToolExecutionRepository } from './ports/index.js';
-
-// ── Types ─────────────────────────────────────────────
-export type { VariableContext, FloorEntity } from './types.js';
-
-// ── Errors ────────────────────────────────────────────
-export {
-  InvalidStateTransitionError,
-  FloorImmutableError,
-  FloorNotFoundError,
-  FloorStateConflictError,
-  VariableNotFoundError,
-  InvalidScopePromotionError,
-  MissingScopeIdError,
-} from './errors.js';
+  TurnRunObserver,
+} from './orchestration/types.js';
+export type { DirectorInput, DirectorResult } from './orchestration/director.js';
+export type { VerifierInput, VerifierResult } from './orchestration/verifier.js';
 
 // ── Tools ─────────────────────────────────────────────
+export { ToolRegistry } from './tools/tool-registry.js';
+export { ToolExecutor } from './tools/tool-executor.js';
+export { BuiltinToolProvider } from './tools/builtin-provider.js';
+export { PresetToolProvider } from './tools/preset-provider.js';
+export { ToolMutationBuffer } from './tools/tool-mutation-buffer.js';
 export type {
+  ToolDefinition,
   ToolSideEffectLevel,
   ToolExecutionDeliveryMode,
   ToolAsyncCapability,
   ToolResultVisibility,
+  ToolParameterProperty,
+  ToolParameterSchema,
   ToolAsyncReceipt,
   RuntimeToolEnvelope,
   PendingToolJobRequest,
   RuntimeToolDispatchResult,
-  ToolParameterProperty,
-  ToolParameterSchema,
-  ToolDefinition,
   ToolCallResult,
   ToolCallStatus,
-  ToolExecutionStatus,
-  ToolExecutionLifecycleState,
-  ToolExecutionCommitOutcome,
-  ToolExecutionProviderType,
+  ToolProvider,
+  BufferedToolVariableMutation,
+  ToolPermissions,
+  ToolProviderType,
+  ToolDenyReason,
   ToolCallRecord,
   ExecutedToolCallRecord,
   ToolExecutionOpenRecord,
   ToolExecutionFinishPatch,
   ToolExecutionContext,
+  ToolExecutionStatus,
+  ToolExecutionCommitOutcome,
+  ToolExecutionLifecycleState,
   ToolReplaySafety,
   ToolProviderCompensationMode,
   ToolReplaySafetyEvaluation,
-  BufferedToolVariableMutation,
-  ToolPermissions,
-  ToolProviderType,
-  ToolProvider,
+  ToolExecutionProviderType,
   McpToolProviderConfig,
-  ToolDenyReason,
-} from './tools/index.js';
-export { ToolRegistry } from './tools/index.js';
-export { ToolExecutor } from './tools/index.js';
-export type { LLMToolEntry } from './tools/index.js';
-export { BuiltinToolProvider } from './tools/index.js';
-export { PresetToolProvider } from './tools/index.js';
-export { ToolMutationBuffer } from './tools/index.js';
+} from './tools/types.js';
+export type { PresetToolInput } from './tools/preset-provider.js';
 export {
-  evaluateExecutedToolCallReplaySafety,
   evaluateToolReplaySafety,
+  evaluateExecutedToolCallReplaySafety,
   isAutoReplaySafe,
   resolveToolProviderCompensationMode,
-} from './tools/index.js';
-export type { PresetToolInput } from './tools/index.js';
+} from './tools/replay-safety.js';
+
+// ── Ports ─────────────────────────────────────────────
+export type { PromptSnapshotRepository } from './ports/prompt-snapshot-repository.js';
+export type { ToolExecutionRepository } from './ports/tool-execution-repository.js';

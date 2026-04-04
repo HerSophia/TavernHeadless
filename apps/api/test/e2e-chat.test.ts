@@ -397,13 +397,18 @@ describe("E2E Chat with PromptAssembler", () => {
       character: { name: "Knight" },
     });
 
-    await chatService.respond(sessionId, { message: "Draw your sword!" });
+    const result = await chatService.respond(sessionId, { message: "Draw your sword!" });
 
     const input = capturedInputs[0]!;
     const allContent = input.messages.map((m) => m.content).join("\n");
+    const [snapshotRow] = await database.db
+      .select()
+      .from(promptSnapshots)
+      .where(eq(promptSnapshots.floorId, result.floorId));
 
     expect(allContent).toContain("Write Knight's next response in this roleplay.");
-    expect(allContent).not.toContain("Stay in character at all times.");
+    expect(allContent).toContain("Stay in character at all times.");
+    expect(snapshotRow?.promptMode).toBe("native");
 
     const userMessages = input.messages.filter((m) => m.role === "user");
     expect(userMessages[userMessages.length - 1]?.content).toBe("Draw your sword!");
@@ -417,12 +422,18 @@ describe("E2E Chat with PromptAssembler", () => {
       character: { name: "Knight" },
     });
 
-    await chatService.respond(sessionId, { message: "Legacy mode" });
+    const result = await chatService.respond(sessionId, { message: "Legacy mode" });
 
     const input = capturedInputs[0]!;
     const allContent = input.messages.map((m) => m.content).join("\n");
+    const [snapshotRow] = await database.db
+      .select()
+      .from(promptSnapshots)
+      .where(eq(promptSnapshots.floorId, result.floorId));
+
     expect(allContent).toContain("Write Knight's next response in this roleplay.");
-    expect(allContent).not.toContain("Stay in character at all times.");
+    expect(allContent).toContain("Stay in character at all times.");
+    expect(snapshotRow?.promptMode).toBe("native");
   });
 
   it("should prioritize explicit prompt_mode field over metadata prompt_mode", async () => {
@@ -468,8 +479,8 @@ describe("E2E Chat with PromptAssembler", () => {
     const allContent = dryRun.messages.map((m) => m.content).join("\n");
 
     expect(allContent).toContain("Write Knight's next response in this roleplay.");
-    expect(allContent).not.toContain("Stay in character at all times.");
     expect(dryRun.assembly.presetUsed).toBe(true);
+    expect(dryRun.promptSnapshot.promptMode).toBe("native");
   });
 
   it("should align dry-run prompt snapshot with the committed prompt_snapshot row", async () => {

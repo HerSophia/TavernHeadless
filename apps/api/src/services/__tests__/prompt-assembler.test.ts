@@ -337,7 +337,92 @@ describe("assemblePrompt", () => {
       char: "Knight",
       user: "Traveler",
     });
-    expect(assembled.debug?.reservedVariableCollisions).toEqual(["char", "user"]);
+    expect(assembled.debug).toMatchObject({
+      promptIntent: "normal",
+      reservedVariableCollisions: ["char", "user"],
+      selectedPromptOrderCharacterId: 100000,
+      ignoredPromptOrderCharacterIds: [],
+    });
+    expect(assembled.debug?.unsupportedPresetFields).toEqual([]);
+  });
+
+  it("applies continue intent semantics across compat assembly and debug output", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Continue Prompt Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          ...SAMPLE_PRESET_DATA.prompts,
+          {
+            identifier: "continueHint",
+            name: "Continue Hint",
+            role: "assistant",
+            content: "Keep going.",
+            injection_position: 1,
+            injection_depth: 0,
+            injection_order: 1,
+            injection_trigger: ["continue"],
+          },
+        ],
+        prompt_order: [
+          {
+            character_id: 100000,
+            order: [
+              { identifier: "main", enabled: true },
+              { identifier: "chatHistory", enabled: true },
+              { identifier: "continueHint", enabled: true },
+            ],
+          },
+        ],
+        continue_nudge_prompt: "[Continue]",
+        assistant_prefill: "Knight:",
+        names_behavior: 1,
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        presetId,
+        worldbookProfileId: null,
+        regexProfileId: null,
+        metadataJson: null,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        promptMode: "compat_strict",
+        userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+      },
+      [],
+      "Advance the scene.",
+      new SimpleTokenCounter(),
+      undefined,
+      { includeDebug: true, intent: "continue", assistantPrefillStrategy: "assistant_message_fallback" },
+    );
+
+    expect(assembled.messages.map((message) => message.content)).toEqual(expect.arrayContaining([
+      "Traveler: Advance the scene.",
+      "Knight: Keep going.",
+      "[Continue]",
+    ]));
+    expect(assembled.messages.some((message) => message.role === "assistant" && message.content === "Knight:")).toBe(false);
+    expect(assembled.sendDirectives).toEqual({ assistantPrefill: "Knight:" });
+    expect(assembled.debug).toMatchObject({
+      promptIntent: "continue",
+      assistantPrefillApplied: true,
+      assistantPrefillStrategy: "assistant_message_fallback",
+      continueNudgeApplied: true,
+      namesBehaviorApplied: "always",
+      inChatInsertedEntryIds: ["continueHint"],
+      triggerFilteredEntryIds: [],
+    });
   });
 
   it("applies WORLD_INFO regex rules to injected worldbook content in native mode and preserves user/ai regex behavior", async () => {
@@ -870,6 +955,117 @@ describe("assemblePrompt", () => {
     expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([40]);
   });
 
+  it("routes compat_plus through the compat_plus assembler path", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Compat Plus Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const strictSessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+    const compatPlusSessionInfo: SessionPromptInfo = {
+      ...strictSessionInfo,
+      promptMode: "compat_plus",
+    };
+
+    const strictAssembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      strictSessionInfo,
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      "Stored memory"
+    );
+    const compatPlusAssembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      compatPlusSessionInfo,
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      "Stored memory"
+    );
+
+    expect(strictAssembled.messages).toHaveLength(3);
+    expect(strictAssembled.messages[1]).toMatchObject({ role: "system", content: "[Memory Summary]\nStored memory" });
+    expect(compatPlusAssembled.messages).toHaveLength(2);
+    expect(compatPlusAssembled.messages[0]?.content).toContain("[Memory Summary]\nStored memory");
+    expect(compatPlusAssembled.messages[1]).toMatchObject({ role: "user", content: "Advance." });
+    expect(compatPlusAssembled.promptSnapshot.promptMode).toBe("compat_plus");
+  });
+
+  it("compiles imported preset prompt entries through native graph mapping", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Native Imported Group Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          ...SAMPLE_PRESET_DATA.prompts,
+          {
+            identifier: "assistantGuide",
+            name: "Assistant Guide",
+            role: "assistant",
+            content: "Native assistant guidance",
+            enabled: true,
+          },
+        ],
+        prompt_order: [{
+          character_id: 100000,
+          order: [
+            { identifier: "main", enabled: true },
+            { identifier: "assistantGuide", enabled: true },
+            { identifier: "chatHistory", enabled: true },
+          ],
+        }],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        presetId,
+        worldbookProfileId: null,
+        regexProfileId: null,
+        metadataJson: null,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        promptMode: "native",
+        userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+      },
+      [],
+      "Hello",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages[0]).toMatchObject({ role: "system" });
+    expect(assembled.messages[1]).toMatchObject({ role: "assistant", content: "Native assistant guidance" });
+    expect(assembled.messages.at(-1)).toMatchObject({ role: "user", content: "Hello" });
+  });
+
   it("injects character system prompt and post-history instructions in compat mode", async () => {
     const now = Date.now();
     const presetId = nanoid();
@@ -958,7 +1154,8 @@ describe("assemblePrompt", () => {
       new SimpleTokenCounter(),
     );
 
-    expect(assembled.messages[1]).toMatchObject({ role: "system", content: "Native character system prompt." });
+    expect(assembled.messages[0]).toMatchObject({ role: "system" });
+    expect(assembled.messages[0]?.content).toContain("Native character system prompt.");
     expect(assembled.messages.at(-1)).toMatchObject({ role: "system", content: "Native character post-history instructions." });
   });
 
