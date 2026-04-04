@@ -38,6 +38,7 @@ interface CharacterSnapshotPayload {
   personality?: string
   scenario?: string
   greeting?: string
+  primaryGreeting?: string
   exampleDialogue?: string
 }
 
@@ -398,7 +399,11 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
     if (typeof request.envelope.payload.patch.description === "string") newSnapshot.description = request.envelope.payload.patch.description
     if (typeof request.envelope.payload.patch.personality === "string") newSnapshot.personality = request.envelope.payload.patch.personality
     if (typeof request.envelope.payload.patch.scenario === "string") newSnapshot.scenario = request.envelope.payload.patch.scenario
-    if (typeof request.envelope.payload.patch.greeting === "string") newSnapshot.greeting = request.envelope.payload.patch.greeting
+    if (typeof request.envelope.payload.patch.primaryGreeting === "string") newSnapshot.primaryGreeting = request.envelope.payload.patch.primaryGreeting
+    if (typeof request.envelope.payload.patch.greeting === "string") {
+      newSnapshot.greeting = request.envelope.payload.patch.greeting
+      newSnapshot.primaryGreeting = request.envelope.payload.patch.greeting
+    }
     if (typeof request.envelope.payload.patch.exampleDialogue === "string") newSnapshot.exampleDialogue = request.envelope.payload.patch.exampleDialogue
 
     const newVersionNo = row.latestVersionNo + 1

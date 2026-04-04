@@ -48,8 +48,10 @@ import {
   parseWorldBook,
   parseRegexScripts,
   parseCharacterCard,
+  normalizeImportedCharacterCard,
   REGEX_PLACEMENT,
-  type STCharacterCard,
+  type CharacterProfile,
+  type ImportedCharacterCard,
   type STRegexScript,
   parseChatFile,
   groupMessagesIntoFloors,
@@ -58,6 +60,13 @@ import {
 } from "@tavern/adapters-sillytavern";
 
 import type { DatabaseConnection } from "../db/client.js";
+import {
+  getGreetingCandidates,
+  getPrimaryGreeting,
+  hasAnyGreeting,
+  parseSessionCharacterSnapshot,
+  type SessionCharacterSnapshot,
+} from "../lib/character-snapshot.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import {
   presets,
@@ -1215,7 +1224,7 @@ export async function registerImportRoutes(
       );
     }
 
-    let characterCard: STCharacterCard;
+    let characterCard: ImportedCharacterCard;
     try {
       characterCard = parseCharacterCard(parsed.data.payload);
     } catch (error) {
@@ -1227,12 +1236,13 @@ export async function registerImportRoutes(
       );
     }
 
-    const snapshot = toCharacterSnapshot(characterCard);
+    const characterProfile = normalizeImportedCharacterCard(characterCard);
+    const snapshot = toSessionCharacterSnapshot(characterProfile);
 
     if (!parsed.data.create_session) {
       try {
         const characterBinding = await executeResourceWriteOrThrow(() => createCharacterFromImport(db, {
-          name: characterCard.name,
+          name: characterProfile.core.name,
           accountId: auth.accountId,
           snapshot,
           source: "sillytavern",
@@ -1242,7 +1252,7 @@ export async function registerImportRoutes(
         return reply.code(201).send({
           data: {
             create_session: false,
-            character: toCharacterResponse(characterCard),
+            character: toCharacterResponse(characterProfile),
             character_id: characterBinding.characterId,
             character_version_id: characterBinding.characterVersionId,
           }
@@ -1258,18 +1268,18 @@ export async function registerImportRoutes(
 
     try {
       const imported = await executeResourceWriteOrThrow(() => createCharacterWithSessionFromImport(db, {
-        name: characterCard.name,
+        name: characterProfile.core.name,
         accountId: auth.accountId,
         snapshot,
         source: "sillytavern",
-        title: parsed.data.title ?? characterCard.name,
+        title: parsed.data.title ?? characterProfile.core.name,
         now: Date.now(),
       }));
 
       return reply.code(201).send({
         data: {
           create_session: true,
-          character: toCharacterResponse(characterCard),
+          character: toCharacterResponse(characterProfile),
           session: imported.session
         }
       });
@@ -2229,15 +2239,6 @@ export async function registerImportRoutes(
   });
 }
 
-interface CharacterSnapshot {
-  name: string;
-  description?: string;
-  personality?: string;
-  scenario?: string;
-  exampleDialogue?: string;
-  greeting?: string;
-}
-
 interface CharacterBindingPayload {
   characterId: string;
   characterVersionId: string;
@@ -2262,25 +2263,41 @@ interface ImportedSessionResponse {
   updated_at: number;
 }
 
-function toCharacterSnapshot(card: STCharacterCard): CharacterSnapshot {
+function toSessionCharacterSnapshot(profile: CharacterProfile): SessionCharacterSnapshot {
   return {
-    name: card.name,
-    description: card.description || undefined,
-    personality: card.personality || undefined,
-    scenario: card.scenario || undefined,
-    exampleDialogue: card.mesExample || undefined,
-    greeting: card.firstMes || undefined,
+    name: profile.core.name,
+    description: profile.core.description,
+    personality: profile.core.personality,
+    scenario: profile.core.scenario,
+    exampleDialogue: profile.core.exampleDialogue,
+    primaryGreeting: profile.greetings.primaryGreeting,
+    alternateGreetings: profile.greetings.alternateGreetings,
+    groupOnlyGreetings: profile.greetings.groupOnlyGreetings,
+    systemPrompt: profile.prompts.systemPrompt,
+    postHistoryInstructions: profile.prompts.postHistoryInstructions,
+    creatorNotes: profile.prompts.creatorNotes,
+    characterBook: profile.characterBook,
+    extensions: profile.extensions,
+    tags: profile.metadata.tags,
+    creator: profile.metadata.creator,
+    characterVersion: profile.metadata.characterVersion,
+    nickname: profile.metadata.nickname,
+    source: profile.metadata.source,
+    creationDate: profile.metadata.creationDate,
+    modificationDate: profile.metadata.modificationDate,
+    assets: profile.assets,
+    importedFormat: profile.importedFormat,
   };
 }
 
-function toCharacterResponse(card: STCharacterCard) {
+function toCharacterResponse(profile: CharacterProfile) {
   return {
-    name: card.name,
-    description: card.description,
-    personality: card.personality,
-    scenario: card.scenario,
-    first_mes: card.firstMes,
-    mes_example: card.mesExample,
+    name: profile.core.name,
+    description: profile.core.description ?? "",
+    personality: profile.core.personality ?? "",
+    scenario: profile.core.scenario ?? "",
+    first_mes: profile.greetings.primaryGreeting ?? "",
+    mes_example: profile.core.exampleDialogue ?? "",
   };
 }
 
@@ -2290,7 +2307,7 @@ function createCharacterFromImport(
     name: string;
     accountId: string;
     source: string;
-    snapshot: CharacterSnapshot;
+    snapshot: SessionCharacterSnapshot;
     now: number;
   }
 ): CharacterBindingPayload {
@@ -2303,7 +2320,7 @@ function createCharacterWithSessionFromImport(
     name: string;
     accountId: string;
     source: string;
-    snapshot: CharacterSnapshot;
+    snapshot: SessionCharacterSnapshot;
     title: string;
     now: number;
   }
@@ -2334,7 +2351,7 @@ function createCharacterFromImportInternal(
     name: string;
     accountId: string;
     source: string;
-    snapshot: CharacterSnapshot;
+    snapshot: SessionCharacterSnapshot;
     now: number;
   }
 ): CharacterBindingPayload {
@@ -2399,13 +2416,13 @@ function createSessionFromCharacterImportInternal(
     updatedAt: input.now
   }).run();
 
-  const snapshot = parseJsonField(input.characterBinding.characterSnapshotJson) as CharacterSnapshot | null;
-  const greeting = snapshot?.greeting;
+  const snapshot = parseSessionCharacterSnapshot(input.characterBinding.characterSnapshotJson);
+  const greetingCandidates = getGreetingCandidates(snapshot);
+  const greeting = greetingCandidates[0];
 
   if (greeting) {
     const tokenCounter = new SimpleTokenCounter();
     const floorId = nanoid();
-    const pageId = nanoid();
     const greetingTokens = tokenCounter.count(greeting);
 
     db.insert(floors).values({
@@ -2421,30 +2438,36 @@ function createSessionFromCharacterImportInternal(
       updatedAt: input.now
     }).run();
 
-    db.insert(messagePages).values({
-      id: pageId,
-      floorId,
-      pageNo: 0,
-      pageKind: "output",
-      isActive: true,
-      version: 1,
-      checksum: null,
-      createdAt: input.now,
-      updatedAt: input.now
-    }).run();
+    for (let index = 0; index < greetingCandidates.length; index += 1) {
+      const pageId = nanoid();
+      const content = greetingCandidates[index]!;
+      const isActive = index === 0;
 
-    db.insert(messages).values({
-      id: nanoid(),
-      pageId,
-      seq: 0,
-      role: "assistant",
-      content: greeting,
-      contentFormat: "text",
-      tokenCount: greetingTokens,
-      isHidden: false,
-      source: "greeting",
-      createdAt: input.now
-    }).run();
+      db.insert(messagePages).values({
+        id: pageId,
+        floorId,
+        pageNo: 0,
+        pageKind: "output",
+        isActive,
+        version: index + 1,
+        checksum: null,
+        createdAt: input.now,
+        updatedAt: input.now
+      }).run();
+
+      db.insert(messages).values({
+        id: nanoid(),
+        pageId,
+        seq: 0,
+        role: "assistant",
+        content,
+        contentFormat: "text",
+        tokenCount: tokenCounter.count(content),
+        isHidden: false,
+        source: "greeting",
+        createdAt: input.now
+      }).run();
+    }
   }
 
   return {
@@ -2457,7 +2480,7 @@ function createSessionFromCharacterImportInternal(
       sync_policy: "pin",
       snapshot_summary: {
         name: snapshot?.name ?? input.title,
-        has_greeting: Boolean(greeting)
+        has_greeting: hasAnyGreeting(snapshot)
       }
     },
     created_at: input.now,

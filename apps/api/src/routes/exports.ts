@@ -6,7 +6,7 @@
  * GET /export/preset/:id     — 导出预设（ST 格式 JSON）
  * GET /export/worldbook/:id  — 导出世界书（ST 格式 JSON）
  * GET /export/regex/:id      — 导出正则脚本（ST 格式 JSON 数组）
- * GET /export/character/:id  — 导出角色卡（ST Character Card V2 JSON）
+ * GET /export/character/:id  — 导出角色卡（ST Character Card V2/V3 JSON）
  */
 
 import type { FastifyInstance } from "fastify";
@@ -28,6 +28,7 @@ import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js
 import { parseWithSchema, parseJsonField, sendError } from "../lib/http.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { buildRawWorldbookEntryPayload } from "../lib/worldbook-utils.js";
+import type { SessionCharacterSnapshot } from "../lib/character-snapshot.js";
 import {
   serializeSessionToThChat,
   serializeSessionToStJsonl,
@@ -39,6 +40,7 @@ import {
   ResourceWriteRouteError,
 } from "../services/resource-write.js";
 import {
+  snapshotToCharacterCardV3,
   snapshotToStCharacterCard,
   scriptsToStRegexArray,
 } from "@tavern/adapters-sillytavern";
@@ -79,6 +81,7 @@ const exportIdParamsSchema = z.object({
 });
 
 const exportCharacterQuerySchema = z.object({
+  format: z.enum(["v2", "v3"]).default("v2"),
   version_id: z.string().min(1).optional(),
 });
 
@@ -145,6 +148,7 @@ const createExportChatJobResponseJsonSchema = {
 const exportCharacterQueryJsonSchema = {
   type: "object" as const,
   properties: {
+    format: { type: "string" as const, enum: ["v2", "v3"], default: "v2" },
     version_id: { type: "string" as const, minLength: 1 },
   },
   additionalProperties: false,
@@ -471,7 +475,7 @@ export async function registerExportRoutes(
   app.get("/export/character/:id", {
     schema: {
       tags: ["exports"],
-      summary: "Export character as ST Character Card V2 JSON file",
+      summary: "Export character as ST Character Card V2 or V3 JSON file",
       operationId: "exportCharacter",
       params: idParamsJsonSchema,
       querystring: exportCharacterQueryJsonSchema,
@@ -523,16 +527,12 @@ export async function registerExportRoutes(
       return sendError(reply, 404, "character_version_not_found", "Character version not found");
     }
 
-    const snapshot = parseJsonField(version.dataJson) as {
-      name: string;
-      description?: string;
-      personality?: string;
-      scenario?: string;
-      exampleDialogue?: string;
-      greeting?: string;
-    };
+    const snapshot = parseJsonField(version.dataJson) as SessionCharacterSnapshot;
 
-    const stCard = snapshotToStCharacterCard(snapshot);
+    const stCard = parsedQuery.data.format === "v3"
+      ? snapshotToCharacterCardV3(snapshot)
+      : snapshotToStCharacterCard(snapshot);
+
     const filename = `${sanitizeFilename(character.name)}.json`;
     return sendJsonFile(reply, filename, stCard);
   });

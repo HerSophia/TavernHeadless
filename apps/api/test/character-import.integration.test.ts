@@ -13,6 +13,19 @@ const CHARACTER_CARD_V2 = {
     scenario: "An observatory above a sea of clouds.",
     first_mes: "Welcome back. The stars kept your seat warm.",
     mes_example: "<START>\nLuna: I catalog memories by starlight.",
+    alternate_greetings: [
+      "The archive lamps are already lit.",
+      "The charts waited for you.",
+    ],
+    system_prompt: "Stay in character as a moon archivist.",
+    post_history_instructions: "End replies with a soft invitation.",
+    creator_notes: "Imported from integration test.",
+    tags: ["moon", "archive"],
+    creator: "Test Suite",
+    character_version: "2.1",
+    extensions: {
+      source_app: "vitest",
+    },
   },
 };
 
@@ -74,7 +87,9 @@ describe("Character Import Route", () => {
     const timelineBody = timelineRes.json<{
       data: {
         floors: Array<{
+          id: string;
           floor_no: number;
+          page_count: number;
           active_page: { messages: Array<{ role: string; content: string }> } | null;
         }>;
       };
@@ -82,13 +97,41 @@ describe("Character Import Route", () => {
 
     expect(timelineBody.data.floors).toHaveLength(1);
     expect(timelineBody.data.floors[0]!.floor_no).toBe(0);
+    expect(timelineBody.data.floors[0]!.page_count).toBe(3);
     expect(timelineBody.data.floors[0]!.active_page?.messages[0]!.role).toBe("assistant");
     expect(timelineBody.data.floors[0]!.active_page?.messages[0]!.content).toBe(
       "Welcome back. The stars kept your seat warm."
     );
+
+    const floorId = timelineBody.data.floors[0]!.id;
+    const pagesRes = await app.inject({ method: "GET", url: `/pages?floor_id=${floorId}&limit=10&offset=0` });
+    expect(pagesRes.statusCode, pagesRes.body).toBe(200);
+    const pagesBody = pagesRes.json<{
+      data: Array<{ id: string; is_active: boolean; page_no: number; version: number }>;
+    }>();
+    expect(pagesBody.data).toHaveLength(3);
+    expect(pagesBody.data.filter((page) => page.is_active)).toHaveLength(1);
+
+    const alternatePage = pagesBody.data.find((page) => page.version === 2);
+    expect(alternatePage).toBeDefined();
+
+    const activateRes = await app.inject({
+      method: "PATCH",
+      url: `/pages/${alternatePage!.id}/activate`,
+    });
+    expect(activateRes.statusCode, activateRes.body).toBe(200);
+
+    const timelineAfterActivateRes = await app.inject({ method: "GET", url: `/sessions/${sessionId}/timeline` });
+    expect(timelineAfterActivateRes.statusCode).toBe(200);
+    const timelineAfterActivateBody = timelineAfterActivateRes.json<{
+      data: { floors: Array<{ active_page: { messages: Array<{ content: string }> } | null }> };
+    }>();
+    expect(timelineAfterActivateBody.data.floors[0]!.active_page?.messages[0]!.content).toBe(
+      "The archive lamps are already lit."
+    );
   });
 
-  it("supports create_session=false and only returns normalized data", async () => {
+  it("supports create_session=false and keeps richer V2 fields for export", async () => {
     const importRes = await app.inject({
       method: "POST",
       url: "/import/character",
@@ -117,6 +160,39 @@ describe("Character Import Route", () => {
     expect(importBody.data.session).toBeUndefined();
     expect(importBody.data.character_id).toBeDefined();
     expect(importBody.data.character_version_id).toBeDefined();
+
+    const exportRes = await app.inject({
+      method: "GET",
+      url: `/export/character/${importBody.data.character_id}`,
+    });
+
+    expect(exportRes.statusCode, exportRes.body).toBe(200);
+    const exportBody = exportRes.json<{
+      data: {
+        first_mes: string;
+        alternate_greetings: string[];
+        system_prompt: string;
+        post_history_instructions: string;
+        creator_notes: string;
+        tags: string[];
+        creator: string;
+        character_version: string;
+        extensions: Record<string, unknown>;
+      };
+    }>();
+
+    expect(exportBody.data.first_mes).toBe("Welcome back. The stars kept your seat warm.");
+    expect(exportBody.data.alternate_greetings).toEqual([
+      "The archive lamps are already lit.",
+      "The charts waited for you.",
+    ]);
+    expect(exportBody.data.system_prompt).toBe("Stay in character as a moon archivist.");
+    expect(exportBody.data.post_history_instructions).toBe("End replies with a soft invitation.");
+    expect(exportBody.data.creator_notes).toBe("Imported from integration test.");
+    expect(exportBody.data.tags).toEqual(["moon", "archive"]);
+    expect(exportBody.data.creator).toBe("Test Suite");
+    expect(exportBody.data.character_version).toBe("2.1");
+    expect(exportBody.data.extensions).toEqual({ source_app: "vitest" });
 
     const sessionsRes = await app.inject({ method: "GET", url: "/sessions" });
     const sessionsBody = sessionsRes.json<{ data: unknown[] }>();

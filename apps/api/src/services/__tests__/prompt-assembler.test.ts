@@ -596,6 +596,142 @@ describe("assemblePrompt", () => {
     expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([20]);
   });
 
+  it("injects characterBook entries in compat mode without bound session worldbook", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Character Book Compat Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_COMPAT_WORLDINFO_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({
+        name: "Knight",
+        characterBook: {
+          entries: [
+            {
+              keys: ["lantern"],
+              content: "Character book lore",
+              enabled: true,
+              insertion_order: 150,
+              selective: false,
+            },
+          ],
+          scanDepth: 3,
+        },
+      }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "lantern",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages.some((message) => message.content.includes("Character book lore"))).toBe(true);
+    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toHaveLength(1);
+    expect(assembled.promptSnapshot.worldbookActivatedEntryUids[0]).toBeLessThan(0);
+  });
+
+  it("stacks characterBook with bound session worldbook in native mode", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Character Book Native Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Session Worldbook",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 50,
+      comment: "Session Lore",
+      content: "Session worldbook lore",
+      keysJson: JSON.stringify(["dragon"]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: false,
+      selectiveLogic: 0,
+      constant: false,
+      position: 0,
+      order: 100,
+      depth: 4,
+      role: 0,
+      disable: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: worldbookId,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({
+        name: "Knight",
+        characterBook: {
+          entries: [
+            {
+              keys: ["dragon"],
+              content: "Character book lore",
+              enabled: true,
+              insertion_order: 120,
+              selective: false,
+            },
+          ],
+          scanDepth: 3,
+        },
+      }),
+      promptMode: "native",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "dragon",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages.some((message) => message.content.includes("Session worldbook lore"))).toBe(true);
+    expect(assembled.messages.some((message) => message.content.includes("Character book lore"))).toBe(true);
+    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toHaveLength(2);
+    expect(assembled.promptSnapshot.worldbookActivatedEntryUids.some((uid) => uid < 0)).toBe(true);
+  });
+
 
   it("preserves atDepth worldbook entries in native mode", async () => {
     const now = Date.now();
@@ -732,6 +868,98 @@ describe("assemblePrompt", () => {
 
     expect(assembled.messages.some((message) => message.content.includes("Hidden outlet lore"))).toBe(false);
     expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([40]);
+  });
+
+  it("injects character system prompt and post-history instructions in compat mode", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Character Prompt Override Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({
+        name: "Knight",
+        description: "A sworn guardian.",
+        systemPrompt: "Character system prompt.",
+        postHistoryInstructions: "Character post-history instructions.",
+        creatorNotes: "Creator notes.",
+        characterBook: { entries: [] },
+        extensions: { source_app: "vitest" },
+      }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "Hello",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages[1]).toMatchObject({ role: "system", content: "Character system prompt." });
+    expect(assembled.messages.at(-2)).toMatchObject({ role: "user", content: "Hello" });
+    expect(assembled.messages.at(-1)).toMatchObject({ role: "system", content: "Character post-history instructions." });
+    expect(assembled.promptSnapshot.character).toMatchObject({
+      creatorNotes: "Creator notes.",
+      characterBook: { entries: [] },
+      extensions: { source_app: "vitest" },
+    });
+  });
+
+  it("injects character prompt overrides in native mode", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Native Character Prompt Override Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({
+        name: "Knight",
+        systemPrompt: "Native character system prompt.",
+        postHistoryInstructions: "Native character post-history instructions.",
+      }),
+      promptMode: "native",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "Hello",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages[1]).toMatchObject({ role: "system", content: "Native character system prompt." });
+    expect(assembled.messages.at(-1)).toMatchObject({ role: "system", content: "Native character post-history instructions." });
   });
 
 });

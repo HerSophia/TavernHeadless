@@ -198,7 +198,7 @@ POST /import/regex
 POST /import/character
 ```
 
-导入一个 SillyTavern 角色卡。当前优先支持 TavernCard V2。
+导入一个 SillyTavern 角色卡。当前支持 legacy 扁平卡、TavernCard V2，以及 Character Card V3 的最小导入兼容。
 
 请求体大小限制是 **200KB**。
 
@@ -223,7 +223,18 @@ POST /import/character
       "personality": "Calm and precise",
       "scenario": "Night watch at the city wall",
       "first_mes": "The moon is bright tonight.",
-      "mes_example": "<START>\n{{char}}: The tide is turning."
+      "mes_example": "<START>\n{{char}}: The tide is turning.",
+      "alternate_greetings": [
+        "The archive lamps are already lit.",
+        "The charts waited for you."
+      ],
+      "system_prompt": "Stay in character as a moon archivist.",
+      "post_history_instructions": "End replies with a soft invitation.",
+      "creator_notes": "Imported example.",
+      "tags": ["moon", "archive"],
+      "creator": "Docs Example",
+      "character_version": "2.1",
+      "extensions": { "source_app": "docs" }
     }
   },
   "create_session": true,
@@ -284,6 +295,13 @@ POST /import/character
   }
 }
 ```
+
+### 当前兼容范围说明
+
+- 支持 legacy 扁平角色卡导入
+- 支持 `spec === "chara_card_v2"` 的 TavernCard V2 导入
+- 支持 `spec === "chara_card_v3"` 的最小导入兼容
+- 当前 V3 导入会保留基础字段、多 greeting、关键提示字段、`character_book` 和 `extensions` 等数据，但本轮文档承诺仍以最小兼容为边界
 
 ### 错误
 

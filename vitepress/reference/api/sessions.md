@@ -14,6 +14,8 @@ POST /sessions
 
 创建一个新的会话。如果绑定的角色有 greeting，会自动创建第一个楼层和消息。
 
+当角色快照中存在 `alternateGreetings` 时，系统会为 floor 0 额外创建同一 `page_no` 下的多个输出页，并将主 greeting 设为活动页。后续可通过 `PATCH /pages/:id/activate` 切换这些 greeting 页。
+
 ### 请求体
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -23,7 +25,7 @@ POST /sessions
 | `character_id` | string | 否 | 绑定角色 ID |
 | `character_version_id` | string | 否 | 指定角色版本 ID |
 | `character_sync_policy` | string | 否 | 同步策略：`pin`（默认）/ `manual` / `force` |
-| `character_snapshot` | object | 否 | 手动提供的角色快照（name, description, personality, scenario, exampleDialogue, greeting） |
+| `character_snapshot` | object | 否 | 手动提供的角色快照。当前支持基础字段，以及 `primaryGreeting`、`alternateGreetings`、`systemPrompt`、`postHistoryInstructions`、`creatorNotes`、`characterBook` 等扩展字段 |
 | `user_id` | string | 否 | 绑定用户卡 ID |
 | `user_snapshot` | object | 否 | 手动提供的用户快照 |
 | `preset_id` | string | 否 | 绑定的 Preset ID |
@@ -255,7 +257,7 @@ GET /sessions/:id/timeline
             }
           ]
         },
-        "page_count": 1
+        "page_count": 3
       }
     ]
   },
