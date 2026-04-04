@@ -9,7 +9,30 @@ import { z } from "zod";
 // ── Provider schema (re-declared to avoid circular import) ──
 
 const providerValues = ["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"] as const;
-type ProviderValue = (typeof providerValues)[number];
+export type ProviderValue = (typeof providerValues)[number];
+
+export type AssistantPrefillStrategy = "provider_native" | "assistant_message_fallback" | "unsupported";
+
+/**
+ * 解析 assistant prefill 的发送策略。
+ *
+ * 当前运行时暂不依赖 provider 专有 prefill 字段，
+ * 只为具备稳定消息回退路径的 provider 启用 trailing assistant message fallback。
+ * `provider_native` 作为预留值保留给后续真正的 provider 专有接线。
+ */
+export function resolveAssistantPrefillStrategy(provider?: ProviderValue): AssistantPrefillStrategy {
+  switch (provider) {
+    case "google":
+      return "unsupported";
+    case "openai":
+    case "anthropic":
+    case "deepseek":
+    case "xai":
+    case "openai-compatible":
+    default:
+      return "assistant_message_fallback";
+  }
+}
 
 // ── Types ─────────────────────────────────────────────
 

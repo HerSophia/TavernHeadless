@@ -12,7 +12,7 @@
  *   ↓ 世界书触发
  * triggerWorldBook(entries, context)
  *   ↓ Prompt 编排
- * assembleCompat(...) / assembleNativePrompt(...)
+ * assembleCompat(...) / assembleCompatPlus(...) / assembleNativePrompt(...)
  *   ↓ Token 裁剪
  * MessageBuilder.build(promptIR)
  *   ↓ 正则挂载
@@ -24,22 +24,25 @@ import { createHash } from "node:crypto";
 import { normalizePositiveInt } from "../lib/utils.js";
 import { parseSessionCharacterSnapshot, type SessionCharacterSnapshot } from "../lib/character-snapshot.js";
 import {
-  assembleNativePrompt,
+  compilePromptGraph,
   MessageBuilder,
   type ChatMessage,
-  type NativeWorldbookEntry,
+  type MemoryInjectionResult,
+  type PromptRunIntent,
+  type PromptGraphWorldbookEntry,
   type PromptSnapshotRecord,
   type TokenCounter,
 } from "@tavern/core";
 import {
   assembleCompat,
+  assembleCompatPlus,
+  buildImportedPresetPromptGraph,
   parseWorldBook,
   type TriggerContext,
   type TriggerResult,
   triggerWorldBook,
   applyRegexScripts,
   REGEX_PLACEMENT,
-  type STPreset,
   type STWorldBook,
 } from "@tavern/adapters-sillytavern";
 
@@ -132,10 +135,22 @@ export interface PromptVariableContextInput {
   pageId?: string;
 }
 
+export interface PromptSendDirectives {
+  assistantPrefill?: string;
+}
+
+export type AssistantPrefillExecutionStrategy =
+  | "provider_native"
+  | "assistant_message_fallback"
+  | "unsupported"
+  | "none";
+
 /** 编排结果 */
 export interface AssembleResult {
   /** 裁剪后的最终消息数组 */
   messages: ChatMessage[];
+  /** provider-sensitive 发送指令 */
+  sendDirectives: PromptSendDirectives;
   /** 前处理函数（正则 USER_INPUT）- 对每条用户消息的 content 进行处理 */
   preProcess?: (messages: ChatMessage[]) => ChatMessage[];
   /** 后处理函数（正则 AI_OUTPUT） */
@@ -154,6 +169,12 @@ export interface AssembleResult {
 export interface AssembleDebugInfo {
   /** 编排模式 */
   mode: "preset" | "fallback";
+  /** 本轮运行意图 */
+  promptIntent: PromptRunIntent;
+  /** assistant prefill 是否已执行 */
+  assistantPrefillApplied: boolean;
+  /** assistant prefill 的执行策略 */
+  assistantPrefillStrategy: AssistantPrefillExecutionStrategy;
   /** 是否启用了预设 */
   presetUsed: boolean;
   /** 世界书命中条目数 */
@@ -166,6 +187,28 @@ export interface AssembleDebugInfo {
   memorySummaryInjected: boolean;
   /** 被系统别名覆盖的持久化变量 key */
   reservedVariableCollisions: ReservedPromptAlias[];
+  /** 当前选中的 prompt_order 轨道 character_id */
+  selectedPromptOrderCharacterId: number | null;
+  /** 被忽略的其他 prompt_order 轨道 character_id */
+  ignoredPromptOrderCharacterIds: number[];
+  /** 当前已识别但未完整执行的 preset 字段 */
+  unsupportedPresetFields: string[];
+  /** 当前被忽略的 preset 字段 */
+  ignoredPresetFields: string[];
+  /** 当前无法映射的 marker 标识 */
+  unresolvedPresetMarkers: string[];
+  /** preset 导入与运行时边界提示 */
+  presetWarnings: string[];
+  /** continue nudge 是否已应用 */
+  continueNudgeApplied: boolean;
+  /** continue nudge 文本（若有） */
+  continueNudgeText?: string;
+  /** 实际生效的名称行为最小策略 */
+  namesBehaviorApplied: "off" | "always";
+  /** 因 trigger 不匹配而被过滤的 preset entry 标识 */
+  triggerFilteredEntryIds: string[];
+  /** 以 in-chat 方式插入的 preset entry 标识 */
+  inChatInsertedEntryIds: string[];
 }
 
 export interface AssemblePromptOptions {
@@ -178,6 +221,10 @@ export interface AssemblePromptOptions {
   maxContextTokensOverride?: number;
   /** 当前回合可见变量的解析上下文 */
   variableContext?: PromptVariableContextInput;
+  /** 当前运行意图 */
+  intent?: PromptRunIntent;
+  /** narrator provider 对 assistant prefill 的执行策略 */
+  assistantPrefillStrategy?: AssistantPrefillExecutionStrategy;
 }
 
 // ── 默认 System Prompt ────────────────────────────────
@@ -280,11 +327,19 @@ export async function assemblePrompt(
   // ── 3. 编排 ──
   let messages: ChatMessage[];
   let maxPromptTokens = normalizePositiveInt(options.maxContextTokensOverride) ?? DEFAULT_MAX_TOKENS;
+  const promptIntent = options.intent ?? "normal";
   let mode: AssembleDebugInfo["mode"] = "fallback";
   let worldbookHits = 0;
-  let usedNativePipeline = false;
+  let characterOverridesHandledInPromptIR = false;
+  let memorySummaryHandledInPromptIR = false;
 
   const presetData = promptSnapshot.preset?.preset ?? null;
+  const sendDirectives = buildPromptSendDirectives(presetData, promptIntent);
+  const assistantPrefillRequested = typeof sendDirectives.assistantPrefill === "string"
+    && sendDirectives.assistantPrefill.trim().length > 0;
+  const assistantPrefillStrategy = assistantPrefillRequested
+    ? (options.assistantPrefillStrategy ?? "unsupported")
+    : "none";
 
   if (presetData) {
     let worldBookResults: TriggerResult | undefined;
@@ -310,31 +365,62 @@ export async function assemblePrompt(
     promptSnapshot.worldbookActivatedEntryUids = collectActivatedEntryUids(worldBookResults);
     worldbookHits = promptSnapshot.worldbookActivatedEntryUids.length;
 
+    const compatInput = {
+      preset: presetData,
+      worldBookResults,
+      chatHistory: fullHistory,
+      characterDescription: character?.description,
+      characterPersonality: character?.personality,
+      scenario: character?.scenario,
+      exampleDialogue: character?.exampleDialogue,
+      personaDescription: persona?.description,
+      intent: promptIntent,
+      namesBehavior: resolveNamesBehavior(presetData.namesBehavior),
+      userName: userSnapshot?.name ?? persona?.name,
+      assistantName: character?.name,
+      variables,
+    };
     const useNativePipeline = promptSnapshot.promptMode === "native";
-    usedNativePipeline = useNativePipeline;
+    const useCompatPlusPipeline = promptSnapshot.promptMode === "compat_plus";
+    const compatPlusMemoryInjection = useCompatPlusPipeline
+      ? createCompatPlusMemoryInjection(memorySummary, tokenCounter)
+      : undefined;
+    characterOverridesHandledInPromptIR = useNativePipeline;
+    memorySummaryHandledInPromptIR = useNativePipeline || compatPlusMemoryInjection !== undefined;
 
     const promptIR = useNativePipeline
-      ? assembleNativePrompt({
-          systemPrompt: buildNativeSystemPrompt(presetData, character, persona),
-          chatHistory: fullHistory,
-          worldbookEntries: toNativeWorldbookEntries(worldBookResults),
-          variables,
-          memorySummary,
-          maxTokens: normalizePositiveInt(options.maxContextTokensOverride) ?? presetData.maxContext,
-          reservedForReply: presetData.maxTokens,
-          tokenCounter,
-        })
-      : assembleCompat({
-          preset: presetData,
-          worldBookResults,
-          chatHistory: fullHistory,
-          characterDescription: character?.description,
-          characterPersonality: character?.personality,
-          scenario: character?.scenario,
-          exampleDialogue: character?.exampleDialogue,
-          personaDescription: persona?.description,
-          variables,
-        });
+      ? compilePromptGraph(
+          buildImportedPresetPromptGraph(presetData, {
+            artifactId: promptSnapshot.presetId ?? undefined,
+            depthLevels: collectWorldbookDepthLevels(worldBookResults),
+          }),
+          {
+            intent: promptIntent,
+            variables,
+            character: {
+              name: character?.name,
+              description: character?.description,
+              personality: character?.personality,
+              scenario: character?.scenario,
+              systemPrompt: character?.systemPrompt,
+              postHistoryInstructions: character?.postHistoryInstructions,
+            },
+            persona: persona ? { name: persona.name, description: persona.description } : undefined,
+            chatHistory: fullHistory,
+            worldbookEntries: toPromptGraphWorldbookEntries(worldBookResults),
+            exampleDialogue: character?.exampleDialogue,
+            memorySummary,
+            maxTokens: normalizePositiveInt(options.maxContextTokensOverride) ?? presetData.maxContext,
+            reservedForReply: presetData.maxTokens,
+            tokenCounter,
+          }
+        )
+      : useCompatPlusPipeline
+        ? assembleCompatPlus({
+            ...compatInput,
+            memoryInjection: compatPlusMemoryInjection,
+          })
+        : assembleCompat(compatInput);
 
     const builder = new MessageBuilder(tokenCounter, {
       mergeAdjacentSameRole: true,
@@ -350,11 +436,13 @@ export async function assemblePrompt(
   }
 
   // ── 4. 记忆摘要注入 ──
-  if (memorySummary && !usedNativePipeline) {
+  if (memorySummary && !memorySummaryHandledInPromptIR) {
     messages = injectMemorySummary(messages, memorySummary);
   }
-  messages = injectCharacterSystemPrompt(messages, character);
-  messages = injectCharacterPostHistoryInstructions(messages, character);
+  if (!characterOverridesHandledInPromptIR) {
+    messages = injectCharacterSystemPrompt(messages, character);
+    messages = injectCharacterPostHistoryInstructions(messages, character);
+  }
 
   // ── 5. 正则处理函数 ──
   promptSnapshot.regexPreRuleNames = collectRegexRuleNames(
@@ -416,28 +504,55 @@ export async function assemblePrompt(
     };
   }
 
-  const effectiveMessages = previewPromptMessages(messages, preProcess);
+  const previewMessages = materializePromptSendMessages(messages, sendDirectives, assistantPrefillStrategy);
+  const effectiveMessages = previewPromptMessages(previewMessages, preProcess);
   const tokenUsage = buildPromptTokenUsage(effectiveMessages, tokenCounter, maxPromptTokens);
   promptSnapshot.promptDigest = computePromptDigest(effectiveMessages);
   promptSnapshot.tokenEstimate = tokenUsage.total;
 
   const memorySummaryInjected =
     typeof memorySummary === "string" && memorySummary.trim().length > 0;
+  const presetImportReport = promptSnapshot.preset?.preset.importReport;
+  const presetWarnings = [...(presetImportReport?.warnings ?? [])];
+  if (assistantPrefillRequested && assistantPrefillStrategy === "unsupported") {
+    presetWarnings.push("assistant_prefill 当前 narrator provider 不支持；本轮不会执行该发送指令。");
+  }
+  const continueNudgeApplied =
+    promptIntent === "continue" && typeof presetData?.continueNudgePrompt === "string" && presetData.continueNudgePrompt.trim().length > 0;
+  const namesBehaviorApplied = presetData ? resolveNamesBehavior(presetData.namesBehavior) : "off";
+  const triggerFilteredEntryIds = presetData ? collectTriggerFilteredEntryIds(presetData, promptIntent) : [];
+  const inChatInsertedEntryIds = presetData ? collectInChatInsertedEntryIds(presetData, promptIntent) : [];
+  const assistantPrefillApplied = assistantPrefillRequested && shouldMarkAssistantPrefillApplied(assistantPrefillStrategy);
 
   const debug = options.includeDebug
     ? {
         mode,
+        promptIntent,
+        assistantPrefillApplied,
+        assistantPrefillStrategy,
         presetUsed: promptSnapshot.preset !== null,
         worldbookHits,
         regexPreRules: promptSnapshot.regexPreRuleNames,
         regexPostRules: promptSnapshot.regexPostRuleNames,
         memorySummaryInjected,
         reservedVariableCollisions,
+        selectedPromptOrderCharacterId: presetImportReport?.selectedPromptOrderCharacterId ?? null,
+        ignoredPromptOrderCharacterIds: presetImportReport?.ignoredPromptOrderCharacterIds ?? [],
+        unsupportedPresetFields: presetImportReport?.unsupportedFields ?? [],
+        ignoredPresetFields: presetImportReport?.ignoredFields ?? [],
+        unresolvedPresetMarkers: presetImportReport?.unresolvedMarkers ?? [],
+        presetWarnings,
+        continueNudgeApplied,
+        continueNudgeText: continueNudgeApplied ? presetData?.continueNudgePrompt : undefined,
+        namesBehaviorApplied,
+        triggerFilteredEntryIds,
+        inChatInsertedEntryIds,
       }
     : undefined;
 
   return {
     messages,
+    sendDirectives,
     preProcess,
     postProcess,
     tokenUsage,
@@ -611,41 +726,81 @@ function resolvePromptMode(
   return "compat_strict";
 }
 
-function buildNativeSystemPrompt(
-  preset: STPreset,
-  character?: CharacterSnapshot,
-  persona?: PersonaInfo
-): string {
-  const mainPrompt = preset.prompts.find((entry) => entry.identifier === "main")?.content?.trim();
-
-  const parts: string[] = [];
-
-  if (mainPrompt) {
-    parts.push(mainPrompt);
-  }
-
-  if (character?.description) {
-    parts.push(character.description);
-  }
-
-  if (character?.personality) {
-    parts.push(`Personality: ${character.personality}`);
-  }
-
-  if (character?.scenario) {
-    parts.push(`Scenario: ${character.scenario}`);
-  }
-
-  if (persona?.description) {
-    parts.push(`The user is ${persona.name ?? "User"}: ${persona.description}`);
-  }
-
-  if (parts.length === 0) {
-    return DEFAULT_SYSTEM_PROMPT;
-  }
-
-  return parts.join("\n\n");
+function resolveNamesBehavior(value: number): "off" | "always" {
+  return value === 1 ? "always" : "off";
 }
+
+function shouldApplyAssistantPrefill(intent: PromptRunIntent): boolean {
+  return intent !== "impersonate";
+}
+
+function buildPromptSendDirectives(
+  preset: { assistantPrefill: string } | null,
+  intent: PromptRunIntent,
+): PromptSendDirectives {
+  if (!preset || !shouldApplyAssistantPrefill(intent)) {
+    return {};
+  }
+
+  const assistantPrefill = preset.assistantPrefill.trim();
+  if (assistantPrefill.length === 0) {
+    return {};
+  }
+
+  return { assistantPrefill };
+}
+
+export function materializePromptSendMessages(
+  messages: ChatMessage[],
+  sendDirectives: PromptSendDirectives | undefined,
+  strategy: AssistantPrefillExecutionStrategy,
+): ChatMessage[] {
+  const assistantPrefill = sendDirectives?.assistantPrefill?.trim();
+  if (!assistantPrefill || strategy !== "assistant_message_fallback") {
+    return [...messages];
+  }
+
+  return [
+    ...messages,
+    {
+      role: "assistant",
+      content: assistantPrefill,
+    },
+  ];
+}
+
+function shouldMarkAssistantPrefillApplied(strategy: AssistantPrefillExecutionStrategy): boolean {
+  return strategy === "provider_native" || strategy === "assistant_message_fallback";
+}
+
+function shouldIncludePromptEntryForIntent(
+  promptEntry: { behavior?: { triggers?: PromptRunIntent[] } } | undefined,
+  intent: PromptRunIntent,
+): boolean {
+  const triggers = promptEntry?.behavior?.triggers;
+  return !triggers || triggers.length === 0 || triggers.includes(intent);
+}
+
+function collectTriggerFilteredEntryIds(
+  preset: { promptOrder: string[]; prompts: Array<{ identifier: string; behavior?: { triggers?: PromptRunIntent[] } }> },
+  intent: PromptRunIntent,
+): string[] {
+  return preset.promptOrder.filter((identifier) => {
+    const promptEntry = preset.prompts.find((entry) => entry.identifier === identifier);
+    return !shouldIncludePromptEntryForIntent(promptEntry, intent);
+  });
+}
+
+function collectInChatInsertedEntryIds(
+  preset: { promptOrder: string[]; prompts: Array<{ identifier: string; behavior?: { triggers?: PromptRunIntent[]; placement?: { kind: string } } }> },
+  intent: PromptRunIntent,
+): string[] {
+  return preset.promptOrder.filter((identifier) => {
+    const promptEntry = preset.prompts.find((entry) => entry.identifier === identifier);
+    return shouldIncludePromptEntryForIntent(promptEntry, intent) && promptEntry?.behavior?.placement?.kind === "in_chat";
+  });
+}
+
 
 function parseCharacterBookWorldbook(character?: CharacterSnapshot): STWorldBook | null {
   if (!character?.characterBook) {
@@ -781,9 +936,17 @@ function worldbookRoleToChatRole(role: number): ChatMessage["role"] {
   }
 }
 
-function toNativeWorldbookEntries(
+function collectWorldbookDepthLevels(worldBookResults: TriggerResult | undefined): number[] {
+  if (!worldBookResults) {
+    return [];
+  }
+
+  return [...new Set(worldBookResults.atDepth.map((depthEntry) => depthEntry.depth))].sort((left, right) => left - right);
+}
+
+function toPromptGraphWorldbookEntries(
   worldBookResults: TriggerResult | undefined
-): NativeWorldbookEntry[] {
+): PromptGraphWorldbookEntry[] {
   if (!worldBookResults) {
     return [];
   }
@@ -904,6 +1067,35 @@ function injectMemorySummary(
   const result = [...messages];
   result.splice(insertAt, 0, memoryMessage);
   return result;
+}
+
+function createCompatPlusMemoryInjection(
+  memorySummary: string | undefined,
+  tokenCounter: TokenCounter
+): MemoryInjectionResult | undefined {
+  const trimmed = memorySummary?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const formattedText = `[Memory Summary]\n${trimmed}`;
+
+  return {
+    items: [{
+      id: "compat-plus-memory-summary",
+      scope: "chat",
+      scopeId: "prompt",
+      type: "summary",
+      content: trimmed,
+      importance: 1,
+      confidence: 1,
+      status: "active",
+      createdAt: 0,
+      updatedAt: 0,
+    }],
+    formattedText,
+    tokenCount: tokenCounter.count(formattedText),
+  };
 }
 
 function collectActivatedEntryUids(worldBookResults: TriggerResult | undefined): number[] {

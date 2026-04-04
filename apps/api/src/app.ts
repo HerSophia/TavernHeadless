@@ -713,6 +713,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
                     model: { providerId, modelId: resolvedProfile.modelId, languageModel },
                     source: resolvedProfile.source === "session" ? "session_profile" : "global_profile",
                     profileId: resolvedProfile.profileId,
+                    providerType: resolvedProfile.provider,
                     generationParams,
                     enabled,
                     presetId,
@@ -723,6 +724,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
                 result[slot] = {
                   source: resolvedProfile.source === "session" ? "session_profile" : "global_profile",
                   profileId: resolvedProfile.profileId,
+                  providerType: resolvedProfile.provider,
                   generationParams,
                   enabled,
                   presetId,
@@ -772,6 +774,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
             baseDelayMs: options.turnCommitRetryBaseDelayMs,
           },
         },
+        defaultNarratorProviderType: options.orchestration.providers.find(
+          (provider) => provider.id === options.orchestration?.defaultModel.providerId,
+        )?.type,
         toolRegistry,
         sessionToolRegistryService,
         eventBus: activeOrchestrationContext.eventBus,

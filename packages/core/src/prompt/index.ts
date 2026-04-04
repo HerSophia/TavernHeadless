@@ -3,6 +3,8 @@ export type {
   ChatRole,
   IRMessage,
   IRSection,
+  IRSectionInsertion,
+  IRSectionSemantic,
   PromptIR,
   PromptMetadata,
   TokenCounter,

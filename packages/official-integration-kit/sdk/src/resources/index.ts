@@ -192,6 +192,7 @@ export {
 } from "./regex-profiles.js";
 export {
   createSessionsResource,
+  type PromptIntent,
   type RespondDryRunAssembly,
   type RespondDryRunMessage,
   type RespondDryRunPromptSnapshot,

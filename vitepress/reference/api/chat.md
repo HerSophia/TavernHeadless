@@ -147,19 +147,20 @@ data: {"code":"generation_timeout","message":"Turn orchestration failed: LLM req
 POST /sessions/:id/respond/dry-run
 ```
 
-只组装 Prompt 并返回调试信息，不实际调用 LLM，无副作用。
+只组装 Prompt 并返回调试信息，不实际调用 LLM，无副作用。除了 `prompt_snapshot`，响应里的 `assembly` 还会返回 preset 兼容边界信息。
 
 ### 请求体
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `message` | string | **是** | 用户消息文本 |
+| `prompt_intent` | string | 否 | Prompt 运行意图：`normal` / `continue` / `impersonate` / `swipe` / `regenerate` / `quiet` |
 | `config` | [TurnConfig](#turnconfig-对象) | 否 | 兼容 `/respond` 的输入形状 |
 | `generation_params` | [GenerationParams](#generationparams-对象) | 否 | 兼容 `/respond` 的输入形状 |
 | `branch_id` | string | 否 | 兼容 `/respond` 的输入形状 |
 | `source_floor_id` | string | 否 | 兼容 `/respond` 的输入形状 |
 
-当前 route schema 与 `/sessions/:id/respond` 保持兼容，但服务当前只实际读取 `message`。其余字段可以通过校验，但不会改变 dry-run 结果。
+当前 route schema 与 `/sessions/:id/respond` 保持兼容。dry-run 当前会实际读取 `message` 和 `prompt_intent`；其余字段可以通过校验，但不会改变 dry-run 结果。
 
 ### 响应 `200`
 
@@ -192,17 +193,35 @@ POST /sessions/:id/respond/dry-run
     },
     "assembly": {
       "mode": "preset",
+      "prompt_intent": "continue",
+      "assistant_prefill_applied": true,
+      "assistant_prefill_strategy": "assistant_message_fallback",
       "preset_used": true,
+      "selected_prompt_order_character_id": 100000,
+      "ignored_prompt_order_character_ids": [200001],
+      "continue_nudge_applied": true,
+      "continue_nudge_text": "[Continue your last message without repeating its original content.]",
+      "names_behavior_applied": "always",
+      "trigger_filtered_entry_ids": ["quietPrompt"],
+      "in_chat_inserted_entry_ids": ["continueHint"],
       "worldbook_hits": 1,
       "regex_pre_rules": ["trim_whitespace"],
       "regex_post_rules": [],
       "memory_summary_injected": true,
       "reserved_variable_collisions": [],
+      "unsupported_preset_fields": [],
+      "ignored_preset_fields": [],
+      "unresolved_preset_markers": [],
+      "preset_warnings": [
+        "检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。"
+      ],
       "preprocessed_user_message": "Please continue the campfire scene."
     }
   }
 }
 ```
+
+其中 `selected_prompt_order_character_id`、`ignored_prompt_order_character_ids`、`unsupported_preset_fields`、`ignored_preset_fields`、`unresolved_preset_markers` 和 `preset_warnings` 用于说明本轮 preset 的兼容边界与降级情况。`prompt_intent`、`assistant_prefill_applied`、`assistant_prefill_strategy`、`continue_nudge_applied`、`continue_nudge_text`、`names_behavior_applied`、`trigger_filtered_entry_ids` 与 `in_chat_inserted_entry_ids` 用于说明本轮运行语义是否真正进入发送链路。
 
 ## 重新生成
 

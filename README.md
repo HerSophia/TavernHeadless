@@ -20,7 +20,7 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 
 - 会话管理、分支、重试、时间线等核心功能
 - SillyTavern 生态导入（预设、世界书、正则、角色卡）
-- 流式输出（SSE）、Prompt 调试（dry-run）、OpenAPI 文档
+- 流式输出（SSE）、带 `prompt_intent` / 运行语义回显的 Prompt 调试（dry-run）、OpenAPI 文档
 - Web 管理台已提供 LLM、Tools、MCP 的基础管理与运行检查界面
 - 官方集成层两包：`@tavern/sdk`、`@tavern/client-helpers`，并已覆盖会话、内容结构、变量、记忆条目 / 边 / 作业 / scope 状态、导出、Tools、MCP 等主要接入域
 - 三种认证模式、多账号隔离、LLM 密钥加密存储
@@ -34,7 +34,7 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 - **兼容 SillyTavern 生态** — 导入现有的预设和世界书就能用
 - **三层消息结构** — 会话 → 楼层 → 消息页，天然支持分支和版本管理
 - **五级变量系统** — 全局、会话、分支、楼层、页级，互不干扰
-- **提示词编排** — 兼容模式（复刻酒馆行为）和原生模式并存
+- **提示词编排** — 兼容模式与原生图编译路径并存，最终统一落到 PromptIR
 - **记忆系统** — 支持 Memory V2 双层摘要、结构化存储、按需注入和后台维护
 - **开发者友好** — TypeScript 全栈、OpenAPI 导出、类型化 SDK
 - **官方集成层** — 提供 `@tavern/sdk` 和 `@tavern/client-helpers`

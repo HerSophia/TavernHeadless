@@ -164,23 +164,30 @@ API 侧提供 `GET /variables/resolve`，用于解析当前 `session / branch / 
 这条路径又分两档：
 
 - `compat_strict`：严格复刻酒馆行为，变量展开、世界书触发、拼接顺序都尽量一致。
-- `compat_plus`：在兼容基础上可以加高级功能（比如自动记忆摘要），但不破坏原有行为。
+- `compat_plus`：在兼容基础上加入少量已声明的增强能力，比如记忆注入，但不改变兼容层的基本边界。
 
 ### 路径二：原生编排模式（native）
 
-完全使用我们自己的提示词编排器。编排器是一条流水线，你可以自由组合以下节点：
+当前会走原生编排路径。现在 API 主链已经开始把导入的 ST preset 映射为 Native Imported Group，再通过 `PromptGraphDocument -> PromptIR` 的编译路径输出统一中间格式。
 
-| 节点                | 做什么                              |
-| ------------------- | ----------------------------------- |
-| `template`          | 渲染模板，填入变量                  |
-| `condition`         | 按条件选择不同的模板或路径          |
-| `worldbook_resolve` | 检查世界书触发条件，注入命中的条目  |
-| `transform`         | 正则替换、文本清洗                  |
-| `memory_inject`     | 注入记忆摘要和关键事实              |
-| `token_budget`      | 按 token 预算裁剪历史消息           |
-| `pack_messages`     | 最终拼装成 LLM 要求的 messages 数组 |
+这一模式不承诺 ST preset 的保真执行。导入 ST preset 时，默认应优先使用 `compat_strict`。
 
-当前 v1 已落地 `template / condition / worldbook_resolve / transform / memory_inject / token_budget / pack_messages` 闭环，
+| 原生图节点 | 做什么 |
+| --- | --- |
+| `static_text` | 普通文本 prompt 节点 |
+| `marker` | 锚点或插槽标记 |
+| `chat_history` | 聊天历史 |
+| `character` | 角色描述、个性、场景、system prompt、post-history |
+| `persona` | 用户 persona 描述 |
+| `worldbook` | 世界书 before / after / depth 注入 |
+| `example_dialogue` | 示例对话 |
+| `memory` | 记忆摘要 |
+| `tool_result` | 工具结果 |
+| `variable_template` | 变量模板文本 |
+
+原先 `packages/core` 中的 `native-pipeline` 节点链仍然保留，主要作为过渡执行层和测试基础；但 `apps/api` 的 native 主链已经优先使用 graph compiler。
+
+当前 v1 已落地最小 PromptGraph 文档模型与 `compilePromptGraph()` 闭环，
 并在 API 侧支持会话显式字段 `session.prompt_mode`。解析优先级是：
 `session.prompt_mode` > `metadata.promptMode` > `metadata.prompt_mode`。
 
@@ -206,6 +213,10 @@ API 侧提供 `GET /variables/resolve`，用于解析当前 `session / branch / 
 提示词组装时，现在会把当前可见的持久化 `global / chat / branch / floor / page` 变量一起注入模板变量表。
 
 其中 `char` 和 `user` 仍然保留为系统别名。如果持久化变量与这两个键冲突，系统别名优先，dry-run 会把冲突写到 `assembly.reserved_variable_collisions`。
+
+如果 preset 存在多条 `prompt_order` 轨道，或者包含当前未完整执行的字段与 marker，dry-run 的 `assembly` 还会返回选中的轨道、被忽略的轨道、未执行字段和 warning，方便调用方判断本轮兼容边界。
+
+同一份 `assembly` 现在还会回显 `prompt_intent`、`assistant_prefill_applied`、`assistant_prefill_strategy`、`continue_nudge_applied`、`continue_nudge_text`、`names_behavior_applied`、`trigger_filtered_entry_ids` 与 `in_chat_inserted_entry_ids`。其中 `assistant_prefill` 作为发送指令处理，不写入真实历史；若当前 narrator provider 不支持，dry-run 会把策略标记为 `unsupported` 并保留 warning。
 
 `/sessions/:id/respond/dry-run` 走的是同一条 Prompt 组装路径，但只返回快照预览，不写入数据库。真实生成则会在 commit 阶段把同字段模型写入 `prompt_snapshot` 表。因此 dry-run 返回的 `prompt_snapshot` 可以直接拿来和已提交楼层的快照对比。
 
