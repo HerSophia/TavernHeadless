@@ -25,7 +25,7 @@ describe('parseRegexScripts', () => {
     expect(result[0]!.placement).toEqual([2]);
   });
 
-  it('filters markdownOnly scripts', () => {
+  it('preserves markdownOnly scripts for compatibility', () => {
     const json = [
       {
         id: 'r1',
@@ -33,43 +33,39 @@ describe('parseRegexScripts', () => {
         placement: [2],
         markdownOnly: true,
       },
+    ];
+
+    const result = parseRegexScripts(json);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.id).toBe('r1');
+    expect(result[0]!.markdownOnly).toBe(true);
+  });
+
+  it('preserves placement values including MD_DISPLAY, SLASH_COMMAND and REASONING', () => {
+    const json = [
       {
-        id: 'r2',
-        findRegex: '/test2/g',
-        placement: [2],
-        markdownOnly: false,
+        id: 'r1',
+        findRegex: '/test/g',
+        placement: [0, 1, 2, 3, 5, 6],
+      },
+    ];
+
+    const result = parseRegexScripts(json);
+    expect(result[0]!.placement).toEqual([0, 1, 2, 3, 5, 6]);
+  });
+
+  it('preserves scripts with currently unsupported placements', () => {
+    const json = [
+      {
+        id: 'r1',
+        findRegex: '/test/g',
+        placement: [0, 3],
       },
     ];
 
     const result = parseRegexScripts(json);
     expect(result).toHaveLength(1);
-    expect(result[0]!.id).toBe('r2');
-  });
-
-  it('removes MD_DISPLAY(0) and SLASH_COMMAND(3) from placement', () => {
-    const json = [
-      {
-        id: 'r1',
-        findRegex: '/test/g',
-        placement: [0, 1, 2, 3, 5],
-      },
-    ];
-
-    const result = parseRegexScripts(json);
-    expect(result[0]!.placement).toEqual([1, 2, 5]);
-  });
-
-  it('filters scripts with no valid placement after cleaning', () => {
-    const json = [
-      {
-        id: 'r1',
-        findRegex: '/test/g',
-        placement: [0, 3], // only MD_DISPLAY and SLASH_COMMAND
-      },
-    ];
-
-    const result = parseRegexScripts(json);
-    expect(result).toHaveLength(0);
+    expect(result[0]!.placement).toEqual([0, 3]);
   });
 
   it('fills default values for missing fields', () => {
@@ -87,9 +83,29 @@ describe('parseRegexScripts', () => {
     expect(result[0]!.replaceString).toBe('');
     expect(result[0]!.trimStrings).toEqual([]);
     expect(result[0]!.disabled).toBe(false);
+    expect(result[0]!.markdownOnly).toBe(false);
+    expect(result[0]!.promptOnly).toBe(false);
+    expect(result[0]!.runOnEdit).toBe(false);
     expect(result[0]!.substituteRegex).toBe(0);
     expect(result[0]!.minDepth).toBe(0);
     expect(result[0]!.maxDepth).toBe(0);
+  });
+
+  it('preserves promptOnly and runOnEdit flags', () => {
+    const json = [
+      {
+        id: 'r1',
+        findRegex: '/hello/g',
+        placement: [1, 6],
+        promptOnly: true,
+        runOnEdit: true,
+      },
+    ];
+
+    const [script] = parseRegexScripts(json);
+    expect(script).toBeDefined();
+    expect(script!.promptOnly).toBe(true);
+    expect(script!.runOnEdit).toBe(true);
   });
 
   it('parses empty array', () => {

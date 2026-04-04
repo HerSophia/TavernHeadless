@@ -290,7 +290,7 @@ curl -O http://localhost:3000/export/worldbook/wb_001
 GET /export/regex/:id
 ```
 
-将正则配置导出为 SillyTavern 格式的 JSON 数组。导入时被省略的三个字段（`markdownOnly`、`promptOnly`、`runOnEdit`）会以 `false` 补回。
+将正则配置导出为 SillyTavern 格式的 JSON 数组。当前会尽量保留导入后保存下来的兼容字段值；如果历史旧数据缺失这些字段，导出时会使用安全默认值补齐。
 
 ### 路径参数
 
@@ -312,14 +312,14 @@ GET /export/regex/:id
     "scriptName": "trim_whitespace",
     "findRegex": "\\s+$",
     "replaceString": "",
-    "placement": ["AI_OUTPUT"],
+    "placement": [2],
     "disabled": false,
-    "markdownOnly": false,
-    "promptOnly": false,
-    "runOnEdit": false,
+    "markdownOnly": true,
+    "promptOnly": true,
+    "runOnEdit": true,
     "substituteRegex": 0,
-    "minDepth": null,
-    "maxDepth": null
+    "minDepth": 0,
+    "maxDepth": 0
   }
 ]
 ```

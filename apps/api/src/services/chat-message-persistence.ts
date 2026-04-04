@@ -76,6 +76,26 @@ export class ChatMessagePersistence {
     };
   }
 
+  async updateMessageContent(
+    messageId: string,
+    content: string,
+  ): Promise<void> {
+    return this.db.transaction((tx) => {
+      this.updateMessageContentWithExecutor(tx, messageId, content);
+    });
+  }
+
+  updateMessageContentWithExecutor(
+    executor: DbExecutor,
+    messageId: string,
+    content: string,
+  ): void {
+    executor.update(messages).set({
+      content,
+      tokenCount: this.tokenCounter.count(content),
+    }).where(eq(messages.id, messageId)).run();
+  }
+
   /**
    * 保存助手回复：创建 output page + message。
    */

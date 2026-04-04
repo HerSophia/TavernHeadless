@@ -88,6 +88,7 @@ const SAMPLE_WORLD_INFO_REGEX_DATA = [
     trimStrings: [],
     placement: [1],
     disabled: false,
+    promptOnly: true,
     substituteRegex: 0,
     minDepth: 0,
     maxDepth: 0,
@@ -120,6 +121,8 @@ describe("assemblePrompt", () => {
   async function seedWorldInfoRegexScenario(args: {
     presetData: Record<string, unknown>;
     promptMode: SessionPromptInfo["promptMode"];
+    regexScripts?: unknown[];
+    worldbookContent?: string;
   }): Promise<SessionPromptInfo> {
     const now = Date.now();
     const presetId = nanoid();
@@ -151,7 +154,7 @@ describe("assemblePrompt", () => {
       worldbookId,
       uid: 7,
       comment: "Sword Lore",
-      content: "Ancient OOC lore",
+      content: args.worldbookContent ?? "Ancient OOC lore",
       keysJson: JSON.stringify(["sword"]),
       keysSecondaryJson: JSON.stringify([]),
       selective: false,
@@ -171,7 +174,7 @@ describe("assemblePrompt", () => {
       name: "Regex A",
       source: "sillytavern",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(SAMPLE_WORLD_INFO_REGEX_DATA),
+      dataJson: JSON.stringify(args.regexScripts ?? SAMPLE_WORLD_INFO_REGEX_DATA),
       createdAt: now,
       updatedAt: now,
     });
@@ -360,6 +363,59 @@ describe("assemblePrompt", () => {
     ]);
     expect(assembled.postProcess).toBeDefined();
     expect(assembled.postProcess?.("hero arrives")).toBe("knight arrives");
+  });
+
+  it("wires substituteRegex into USER_INPUT, AI_OUTPUT and WORLD_INFO prompt processing", async () => {
+    const sessionInfo = await seedWorldInfoRegexScenario({
+      presetData: SAMPLE_PRESET_DATA,
+      promptMode: "native",
+      worldbookContent: "Ancient Knight lore",
+      regexScripts: [
+        {
+          id: "regex-world-info-substitute",
+          scriptName: "World Info Substitute",
+          findRegex: "/{{char}}/g",
+          replaceString: "Guardian",
+          trimStrings: [],
+          placement: [5],
+          disabled: false,
+          substituteRegex: 1,
+          minDepth: 0,
+          maxDepth: 0,
+        },
+        {
+          id: "regex-user-input-substitute",
+          scriptName: "User Input Substitute",
+          findRegex: "/{{user}}/g",
+          replaceString: "friend",
+          trimStrings: [],
+          placement: [1],
+          promptOnly: true,
+          disabled: false,
+          substituteRegex: 1,
+          minDepth: 0,
+          maxDepth: 0,
+        },
+        {
+          id: "regex-ai-output-substitute",
+          scriptName: "AI Output Substitute",
+          findRegex: "/{{char}}/g",
+          replaceString: "champion",
+          trimStrings: [],
+          placement: [2],
+          promptOnly: true,
+          disabled: false,
+          substituteRegex: 1,
+          minDepth: 0,
+          maxDepth: 0,
+        },
+      ],
+    });
+
+    const assembled = await assemblePrompt(database.db, DEFAULT_ADMIN_ACCOUNT_ID, sessionInfo, [], "Traveler sword", new SimpleTokenCounter());
+    expect(assembled.messages.some((message) => message.content.includes("Ancient Guardian lore"))).toBe(true);
+    expect(assembled.preProcess?.([{ role: "user", content: "Traveler sword" }])).toEqual([{ role: "user", content: "friend sword" }]);
+    expect(assembled.preProcess?.([{ role: "assistant", content: "Knight arrives" }])).toEqual([{ role: "assistant", content: "champion arrives" }]);
   });
 
   it("applies WORLD_INFO regex rules to injected worldbook content in compat mode", async () => {

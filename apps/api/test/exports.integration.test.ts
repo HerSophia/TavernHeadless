@@ -71,6 +71,9 @@ const MINIMAL_REGEX_SCRIPTS = [
     replaceString: "world",
     placement: [1, 2],
     disabled: false,
+    markdownOnly: true,
+    promptOnly: true,
+    runOnEdit: true,
   },
 ];
 
@@ -261,9 +264,11 @@ describe("Export routes", () => {
     });
     expect(regexExportRes.statusCode).toBe(200);
     expect(regexExportRes.headers["content-disposition"]).toContain('filename="Regex_One.json"');
-    const regexBody = regexExportRes.json<Array<{ scriptName: string; markdownOnly: boolean }>>();
+    const regexBody = regexExportRes.json<Array<{ scriptName: string; markdownOnly: boolean; promptOnly: boolean; runOnEdit: boolean }>>();
     expect(regexBody[0]?.scriptName).toBe("Test Regex");
-    expect(regexBody[0]?.markdownOnly).toBe(false);
+    expect(regexBody[0]?.markdownOnly).toBe(true);
+    expect(regexBody[0]?.promptOnly).toBe(true);
+    expect(regexBody[0]?.runOnEdit).toBe(true);
 
     const missingRegexRes = await app.inject({
       method: "GET",

@@ -27,7 +27,7 @@ export type { STRawRegexScript } from './serializers/regex-serializer.js';
 export { triggerWorldBook } from './worldbook/trigger-engine.js';
 export type { TriggerContext, TriggerResult, DepthEntry } from './worldbook/trigger-engine.js';
 export { applyRegexScripts } from './regex/regex-engine.js';
-export type { RegexContext } from './regex/regex-engine.js';
+export type { RegexContext, RegexExecutionChannel } from './regex/regex-engine.js';
 
 // ── Assemblers ────────────────────────────────────────
 export { assembleCompat } from './compat-assembler.js';

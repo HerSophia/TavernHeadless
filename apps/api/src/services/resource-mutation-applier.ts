@@ -122,6 +122,9 @@ interface RegexScript {
   trimStrings: string[]
   placement: number[]
   disabled: boolean
+  markdownOnly: boolean
+  promptOnly: boolean
+  runOnEdit: boolean
   substituteRegex: number
   minDepth: number
   maxDepth: number
@@ -678,6 +681,9 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       trimStrings: request.envelope.payload.trimStrings ?? [],
       placement: request.envelope.payload.placement ?? [2],
       disabled: request.envelope.payload.disabled ?? false,
+      markdownOnly: false,
+      promptOnly: false,
+      runOnEdit: false,
       substituteRegex: 0,
       minDepth: 0,
       maxDepth: 0,

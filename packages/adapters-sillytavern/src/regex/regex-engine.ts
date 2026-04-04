@@ -3,14 +3,35 @@ import { SUBSTITUTE_REGEX } from '../types/regex.js';
 
 // ── 公开类型 ──────────────────────────────────────────
 
+/** 正则执行通道 */
+export type RegexExecutionChannel = 'persist' | 'prompt' | 'display' | 'edit';
+
 /** 正则脚本执行上下文 */
 export interface RegexContext {
   /**
-   * 变量替换函数（用于 substituteRegex 模式）。
+   * findRegex 的宏替换函数（用于 substituteRegex 模式）。
    * 接收一段含 {{var}} 的文本，返回替换后的文本。
    */
-  substituteParams?: (text: string) => string;
+  substituteFindParams?: (text: string) => string;
+  /**
+   * replaceString / trimStrings 的宏替换函数。
+   */
+  substituteReplaceParams?: (text: string) => string;
+  /**
+   * 当前消息深度。
+   */
+  depth?: number;
+  /**
+   * 当前执行通道。
+   * - persist: 持久化文本
+   * - prompt: 发给模型前的 prompt 文本
+   * - display: 显示层文本
+   * - edit: 编辑后重新应用
+   */
+  channel?: RegexExecutionChannel;
 }
+
+const DEFAULT_CHANNEL: RegexExecutionChannel = 'persist';
 
 // ── 内部工具 ──────────────────────────────────────────
 
@@ -53,32 +74,110 @@ function substituteRegexPattern(
   }
 
   if (mode === SUBSTITUTE_REGEX.ESCAPED) {
-    // 先替换，再对 {{}} 宏结果进行正则转义
-    // 策略：先找到所有宏位置，替换后转义
     return findRegex.replace(/\{\{[^}]+\}\}/g, (match) => {
       const replaced = substituteParams(match);
-      // 转义正则特殊字符
       return replaced.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     });
   }
 
-  // RAW: 直接替换
   return substituteParams(findRegex);
 }
 
-/**
- * 执行单个正则脚本的 trimStrings 操作。
- */
-function applyTrimStrings(text: string, trimStrings: string[]): string {
+function resolveChannel(context?: RegexContext): RegexExecutionChannel {
+  return context?.channel ?? DEFAULT_CHANNEL;
+}
+
+function shouldRunForChannel(script: STRegexScript, channel: RegexExecutionChannel): boolean {
+  if (channel === 'display') {
+    return script.markdownOnly;
+  }
+
+  if (channel === 'prompt') {
+    return script.promptOnly;
+  }
+
+  if (channel === 'edit') {
+    return !script.markdownOnly && !script.promptOnly && script.runOnEdit;
+  }
+
+  return !script.markdownOnly && !script.promptOnly;
+}
+
+function shouldRunForDepth(script: STRegexScript, depth?: number): boolean {
+  if (typeof depth !== 'number' || Number.isNaN(depth)) {
+    return true;
+  }
+
+  if (typeof script.minDepth === 'number' && !Number.isNaN(script.minDepth) && script.minDepth >= -1 && depth < script.minDepth) {
+    return false;
+  }
+
+  if (typeof script.maxDepth === 'number' && !Number.isNaN(script.maxDepth) && script.maxDepth >= 0 && depth > script.maxDepth) {
+    return false;
+  }
+
+  return true;
+}
+
+function applyTrimStrings(
+  text: string,
+  trimStrings: string[],
+  substituteReplaceParams?: (text: string) => string,
+): string {
   let result = text;
+
   for (const trim of trimStrings) {
     if (!trim) continue;
-    // trimStrings 支持多次替换
-    while (result.includes(trim)) {
-      result = result.replace(trim, '');
-    }
+    const resolvedTrim = substituteReplaceParams ? substituteReplaceParams(trim) : trim;
+    if (!resolvedTrim) continue;
+    result = result.split(resolvedTrim).join('');
   }
+
   return result;
+}
+
+function getNamedGroups(args: unknown[]): Record<string, unknown> | undefined {
+  const candidate = args.at(-1);
+  if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+    return candidate as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+function stringifyReplacementValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  return String(value);
+}
+
+function buildReplacementString(
+  script: STRegexScript,
+  args: unknown[],
+  substituteReplaceParams?: (text: string) => string,
+): string {
+  const namedGroups = getNamedGroups(args);
+  const replacementTemplate = script.replaceString.replace(/\{\{match\}\}/gi, '$0');
+
+  const replacementWithGroups = replacementTemplate.replace(/\$(\d+)|\$<([^>]+)>/g, (_token, num: string | undefined, groupName: string | undefined) => {
+    const resolvedValue = num !== undefined
+      ? args[Number(num)]
+      : namedGroups?.[groupName ?? ''];
+    const stringValue = stringifyReplacementValue(resolvedValue);
+
+    if (!stringValue) {
+      return '';
+    }
+
+    return applyTrimStrings(stringValue, script.trimStrings, substituteReplaceParams);
+  });
+
+  return substituteReplaceParams ? substituteReplaceParams(replacementWithGroups) : replacementWithGroups;
 }
 
 // ── 主函数 ────────────────────────────────────────────
@@ -89,15 +188,14 @@ function applyTrimStrings(text: string, trimStrings: string[]): string {
  * 执行逻辑：
  * 1. 过滤 disabled 脚本
  * 2. 过滤不匹配 placement 的脚本
- * 3. 按数组顺序依次执行
+ * 3. 按 channel / depth 过滤
  * 4. 对 findRegex 应用变量替换（如果 substituteRegex > 0）
- * 5. 执行正则替换
- * 6. 执行 trimStrings 裁剪
+ * 5. 按数组顺序依次执行替换
  *
  * @param text - 要处理的文本
  * @param scripts - 正则脚本列表
  * @param placement - 当前应用位置（如 REGEX_PLACEMENT.AI_OUTPUT）
- * @param context - 执行上下文（变量替换等）
+ * @param context - 执行上下文（变量替换、深度、通道等）
  * @returns 处理后的文本
  */
 export function applyRegexScripts(
@@ -107,32 +205,28 @@ export function applyRegexScripts(
   context?: RegexContext,
 ): string {
   let result = text;
+  const channel = resolveChannel(context);
 
   for (const script of scripts) {
-    // 跳过禁用脚本
     if (script.disabled) continue;
-
-    // 跳过不匹配 placement 的脚本
     if (!script.placement.includes(placement)) continue;
+    if (!shouldRunForChannel(script, channel)) continue;
+    if (!shouldRunForDepth(script, context?.depth)) continue;
 
-    // 变量替换
     const processedFind = substituteRegexPattern(
       script.findRegex,
       script.substituteRegex,
-      context?.substituteParams,
+      context?.substituteFindParams,
     );
 
-    // 解析正则
     const regex = parseRegexString(processedFind);
     if (!regex) continue;
 
-    // 执行替换
-    result = result.replace(regex, script.replaceString);
-
-    // 执行 trimStrings
-    if (script.trimStrings.length > 0) {
-      result = applyTrimStrings(result, script.trimStrings);
-    }
+    result = result.replace(regex, (...args) => buildReplacementString(
+      script,
+      args,
+      context?.substituteReplaceParams,
+    ));
   }
 
   return result;
