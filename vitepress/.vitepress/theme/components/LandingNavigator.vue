@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import {
+  registerLandingEasterEggAttempt,
+  resetLandingEasterEggAttempts,
+  useLandingEasterEgg,
+} from '../composables/useLandingEasterEgg'
 
 type LandingSectionMeta = {
   id: string
@@ -21,8 +26,11 @@ let snapLocked = false
 let desktopQuery: MediaQueryList | null = null
 let motionQuery: MediaQueryList | null = null
 let sectionObserver: IntersectionObserver | null = null
+let touchStartY: number | null = null
 
 const sectionRatios = new Map<string, number>()
+
+const { isUnlocked } = useLandingEasterEgg()
 
 const activeIndex = computed(() => sections.value.findIndex((section) => section.id === activeId.value))
 const activeSection = computed(() => {
@@ -41,6 +49,25 @@ const progressPercent = computed(() => {
   if (!sections.value.length) return 0
   return ((Math.max(activeIndex.value, 0) + 1) / sections.value.length) * 100
 })
+
+function isFooterSection(section: LandingSectionMeta | null | undefined) {
+  return section?.element.dataset.landingSection === 'start'
+}
+
+function isDocumentAtEnd() {
+  const { documentElement } = document
+  return window.innerHeight + window.scrollY >= documentElement.scrollHeight - 2
+}
+
+function handleFooterUnlockAttempt() {
+  if (!isFooterSection(activeSection.value) || isUnlocked.value) {
+    return false
+  }
+
+  lockSnap(320)
+  registerLandingEasterEggAttempt()
+  return true
+}
 
 function syncFlags() {
   magneticEnabled.value = Boolean(desktopQuery?.matches) && !motionQuery?.matches
@@ -174,7 +201,7 @@ function clearWheelResetTimer() {
   }
 }
 
-function lockSnap() {
+function lockSnap(duration = 820) {
   snapLocked = true
   if (snapUnlockTimer !== null) {
     window.clearTimeout(snapUnlockTimer)
@@ -182,7 +209,7 @@ function lockSnap() {
 
   snapUnlockTimer = window.setTimeout(() => {
     snapLocked = false
-  }, 820)
+  }, duration)
 }
 
 function isEditableTarget(target: EventTarget | null) {
@@ -239,6 +266,10 @@ function moveBy(step: number) {
   const targetIndex = Math.min(Math.max(currentIndex + step, 0), sections.value.length - 1)
 
   if (targetIndex === currentIndex) {
+    if (step > 0 && handleFooterUnlockAttempt()) {
+      return
+    }
+
     lockSnap()
     return
   }
@@ -251,6 +282,10 @@ function onWheel(event: WheelEvent) {
   if (isEditableTarget(event.target)) return
   if (hasScrollableAncestor(event.target, event.deltaY)) return
   if (Math.abs(event.deltaY) < 6) return
+
+  if (event.deltaY < 0 && isFooterSection(activeSection.value)) {
+    resetLandingEasterEggAttempts()
+  }
 
   event.preventDefault()
 
@@ -281,6 +316,11 @@ function onKeydown(event: KeyboardEvent) {
 
   if (event.key === 'ArrowUp' || event.key === 'PageUp') {
     event.preventDefault()
+
+    if (isFooterSection(activeSection.value)) {
+      resetLandingEasterEggAttempts()
+    }
+
     moveBy(-1)
     return
   }
@@ -297,8 +337,41 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
+function onTouchStart(event: TouchEvent) {
+  touchStartY = event.touches[0]?.clientY ?? null
+}
+
+function onTouchEnd(event: TouchEvent) {
+  if (!sections.value.length || touchStartY === null) return
+
+  const endY = event.changedTouches[0]?.clientY ?? touchStartY
+  const deltaY = touchStartY - endY
+  touchStartY = null
+
+  if (deltaY < 36) {
+    if (deltaY < -24 && isFooterSection(activeSection.value)) {
+      resetLandingEasterEggAttempts()
+    }
+    return
+  }
+
+  if (!isFooterSection(activeSection.value) || isUnlocked.value) return
+  if (!isDocumentAtEnd()) return
+
+  handleFooterUnlockAttempt()
+}
+
+function onTouchCancel() {
+  touchStartY = null
+}
+
 function onResizeOrQueryChange() {
   syncFlags()
+  collectSections()
+  scheduleActiveUpdate()
+}
+
+function onRefreshSections() {
   collectSections()
   scheduleActiveUpdate()
 }
@@ -306,6 +379,12 @@ function onResizeOrQueryChange() {
 function onScroll() {
   scheduleActiveUpdate()
 }
+
+watch(activeId, () => {
+  if (!isFooterSection(activeSection.value)) {
+    resetLandingEasterEggAttempts()
+  }
+})
 
 onMounted(() => {
   desktopQuery = window.matchMedia('(min-width: 901px) and (pointer: fine)')
@@ -320,9 +399,13 @@ onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true })
   window.addEventListener('resize', onResizeOrQueryChange)
   window.addEventListener('wheel', onWheel, { passive: false })
+  window.addEventListener('touchstart', onTouchStart, { passive: true })
+  window.addEventListener('touchend', onTouchEnd, { passive: true })
+  window.addEventListener('touchcancel', onTouchCancel, { passive: true })
   window.addEventListener('keydown', onKeydown)
   desktopQuery.addEventListener('change', onResizeOrQueryChange)
   motionQuery.addEventListener('change', onResizeOrQueryChange)
+  window.addEventListener('landing:refresh-sections', onRefreshSections as EventListener)
 })
 
 onUnmounted(() => {
@@ -343,9 +426,13 @@ onUnmounted(() => {
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('resize', onResizeOrQueryChange)
   window.removeEventListener('wheel', onWheel)
+  window.removeEventListener('touchstart', onTouchStart)
+  window.removeEventListener('touchend', onTouchEnd)
+  window.removeEventListener('touchcancel', onTouchCancel)
   window.removeEventListener('keydown', onKeydown)
   desktopQuery?.removeEventListener('change', onResizeOrQueryChange)
   motionQuery?.removeEventListener('change', onResizeOrQueryChange)
+  window.removeEventListener('landing:refresh-sections', onRefreshSections as EventListener)
 })
 </script>
 

@@ -11,4 +11,5 @@ layout: page
   <QuickStartSection />
   <TechStack />
   <FooterSection />
+  <OriginStorySection />
 </div>
