@@ -5,14 +5,13 @@ import { useLandingEasterEgg } from '../composables/useLandingEasterEgg'
 const { isUnlocked } = useLandingEasterEgg()
 const sectionRef = ref<HTMLElement | null>(null)
 
-const storyTags = ['AI RP', 'Headless', 'SillyTavern 兼容', '基础设施', '第一方集成层']
+const storyTags = ['AI RP', 'Headless 架构', 'SillyTavern 兼容', '开发者优先', '基础设施']
 
-// 把下面这组文案替换成你的正式自述即可。
 const storyParagraphs = [
-  '这里留给一段第一人称说明，用来写清楚：我为什么要开始做 TavernHeadless。',
-  '你可以在这里写项目的起点。比如，为什么现有 AI RP 工具链更像一组界面，而不是一层稳定、可复用、可组合的基础设施。',
-  '你也可以在这里写自己的判断。比如，为什么坚持 Headless 架构，为什么要兼容 SillyTavern，为什么要把 SDK、文档和工程边界一起做扎实。',
-  '等你准备好正式文案之后，只需要替换这几段文字。这一屏的排版、气氛和动效可以继续保留。',
+  '2024 年底，我已经用 SillyTavern 玩了很长时间的 AI RP。酒馆很强大——预设、世界书、正则、角色卡，这一套生态积累多年。但它的本质是一个面向终端用户的界面应用，所有核心逻辑和界面逻辑紧耦在一起。如果你想用自己的前端接入，或者把 RP 能力嵌入其他应用，基本上不可能。',
+  '我想要的不是另一个符合自己审美的界面，而是一个可以稳定依赖的引擎层。所有内容通过 API 暴露，所有状态由数据库管理，所有核心逻辑与前端完全解耦。这样，不管下游是 Web 应用、桌面客户端还是自动化脚本，都可以直接接入同一套引擎。',
+  '兼容 SillyTavern 生态是一个有意识的决定。现有的预设、世界书、正则规则和角色卡是用户多年积累的资产，不应该因为切换工具就全部废棄。我希望 TavernHeadless 能作为一个可提升的基底——现在在酒馆里调好的一切，未来都可以带过来。',
+  '我不知道这个项目能到哪。但它的目标很明确：为下一代 AI RP 平台提供一层可靠、可扩展、可组合的基础设施。筛选开发者而非筛选用户，將1000 个开发者能山 1000 个不同的前端放在同一个引擎上，比自己去修敀一个已经很好的界面应用更有意思。',
 ]
 
 async function revealSection() {
@@ -61,17 +60,17 @@ onMounted(() => {
 
       <div class="landing-shell origin-shell">
         <div class="origin-kicker">
-          <span class="origin-kicker-badge">EASTER EGG</span>
+          <span class="origin-kicker-badge">ORIGIN</span>
           <span class="origin-kicker-divider"></span>
           <span class="origin-kicker-text">项目缘起</span>
         </div>
 
         <div class="origin-layout">
           <div class="origin-intro">
-            <p class="origin-caption">这一屏不是功能说明，而是动机说明。</p>
-            <h2 class="origin-title">把项目缘起单独留出来，给判断、经历和长期目标一个更完整的位置。</h2>
+            <p class="origin-caption">NOT ANOTHER CHAT UI</p>
+            <h2 class="origin-title">我想要的是引擎，不是界面</h2>
             <p class="origin-summary">
-              当用户在首页一路下滑到这里，看到的不再是功能列表，而是你为什么决定做这件事。
+              AI RP 生态不缺界面。缺的是一层可以独立运行、可以被任意前端依赖的引擎。
             </p>
 
             <div class="origin-tags" aria-label="主题标签">
@@ -85,13 +84,13 @@ onMounted(() => {
 
             <div class="origin-quote-wrap">
               <span class="origin-quote-mark">“</span>
-              <p class="origin-quote">这里将放一段说明：我为什么要做这样一个项目。</p>
+              <p class="origin-quote">AI RP 缺的不是界面，是基础设施。</p>
             </div>
 
             <div class="origin-copy">
               <p
                 v-for="(paragraph, index) in storyParagraphs"
-                :key="paragraph"
+                :key="index"
                 class="origin-paragraph"
                 :style="{ '--paragraph-delay': `${index * 110}ms` }"
               >
@@ -220,16 +219,17 @@ onMounted(() => {
 .origin-caption {
   margin: 0;
   font-size: 13px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--vp-c-brand-1);
+  font-weight: 600;
 }
 
 .origin-title {
   margin: 0;
-  max-width: 12ch;
-  font-size: clamp(34px, 5vw, 58px);
-  line-height: 1.04;
+  max-width: 10ch;
+  font-size: clamp(38px, 5.5vw, 64px);
+  line-height: 1.02;
   letter-spacing: -0.04em;
   font-weight: 800;
   color: var(--vp-c-text-1);
@@ -239,7 +239,7 @@ onMounted(() => {
 
 .origin-summary {
   margin: 0;
-  max-width: 540px;
+  max-width: 420px;
   font-size: 16px;
   line-height: 1.9;
   color: var(--vp-c-text-2);
@@ -335,9 +335,9 @@ onMounted(() => {
 
 .origin-quote {
   margin: 8px 0 0;
-  max-width: 18ch;
-  font-size: clamp(24px, 3.2vw, 36px);
-  line-height: 1.18;
+  max-width: 16ch;
+  font-size: clamp(22px, 2.8vw, 32px);
+  line-height: 1.22;
   letter-spacing: -0.03em;
   font-weight: 700;
   color: var(--landing-card-title);
@@ -353,7 +353,7 @@ onMounted(() => {
 
 .origin-paragraph {
   margin: 0;
-  font-size: 15px;
+  font-size: 14.5px;
   line-height: 1.95;
   color: var(--landing-card-text);
   opacity: 0;

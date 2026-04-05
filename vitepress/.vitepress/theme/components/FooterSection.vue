@@ -1,16 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { withBase } from 'vitepress'
-import { useLandingEasterEgg } from '../composables/useLandingEasterEgg'
 
 const currentYear = new Date().getFullYear()
-const { isUnlocked, revealAttempts, remainingAttempts, requiredAttempts } = useLandingEasterEgg()
-
-const footerSecretText = computed(() => {
-  if (isUnlocked.value) return '已解锁：项目缘起'
-  if (revealAttempts.value === 0) return '页脚继续下滑三次，可查看一页附记'
-  return `继续下滑 ${remainingAttempts.value} 次，解锁项目缘起`
-})
 
 const links = [
   {
@@ -62,23 +53,6 @@ const links = [
           <a class="footer-btn footer-btn-ghost" href="https://github.com/HerSophia/TavernHeadless" target="_blank" rel="noopener noreferrer">
             GitHub
           </a>
-        </div>
-
-        <div class="footer-secret" :class="{ unlocked: isUnlocked }" aria-live="polite">
-          <div class="footer-secret-copy">
-            <span class="footer-secret-label">隐藏附记</span>
-            <strong class="footer-secret-title">{{ isUnlocked ? '项目缘起' : '继续向下' }}</strong>
-            <span class="footer-secret-text">{{ footerSecretText }}</span>
-          </div>
-
-          <div class="footer-secret-steps" aria-hidden="true">
-            <span
-              v-for="step in requiredAttempts"
-              :key="step"
-              class="footer-secret-step"
-              :class="{ active: revealAttempts >= step || isUnlocked }"
-            ></span>
-          </div>
         </div>
       </div>
 
@@ -185,74 +159,6 @@ const links = [
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 26px;
-}
-
-.footer-secret {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin: 26px auto 0;
-  max-width: 540px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid var(--landing-card-border);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 70%), rgba(255, 255, 255, 0.03);
-  box-shadow: 0 18px 42px -34px rgba(15, 23, 42, 0.42);
-  transition: border-color 0.25s ease, background 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
-}
-
-.footer-secret.unlocked {
-  border-color: rgba(45, 212, 191, 0.34);
-  background: linear-gradient(135deg, rgba(45, 212, 191, 0.12), rgba(129, 140, 248, 0.08));
-  box-shadow: 0 28px 56px -36px rgba(45, 212, 191, 0.36);
-}
-
-.footer-secret-copy {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
-.footer-secret-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--vp-c-brand-1);
-}
-
-.footer-secret-title {
-  font-size: 16px;
-  color: var(--vp-c-text-1);
-}
-
-.footer-secret-text {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--vp-c-text-3);
-}
-
-.footer-secret-steps {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.footer-secret-step {
-  width: 34px;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(127, 127, 127, 0.18);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-  transition: transform 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
-}
-
-.footer-secret-step.active {
-  transform: scaleX(1.06);
-  background: linear-gradient(90deg, var(--vp-c-brand-1), #818cf8);
-  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12), 0 0 18px rgba(45, 212, 191, 0.18);
 }
 
 .footer-btn {
@@ -415,12 +321,6 @@ const links = [
 }
 
 @media (max-width: 900px) {
-  .footer-secret {
-    flex-direction: column;
-    align-items: stretch;
-    text-align: left;
-  }
-
   .footer-grid {
     grid-template-columns: 1fr 1fr;
     gap: 28px;
