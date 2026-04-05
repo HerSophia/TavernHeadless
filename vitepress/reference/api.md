@@ -87,7 +87,7 @@ WebSocket 也遵循相同边界：
 }
 ```
 
-除非某一页另有说明，HTTP JSON 的线缆字段使用 `snake_case`。官方 SDK 在少数高层接口中会提供 `camelCase` 映射，但原始 REST 响应、OpenAPI 和本文档都以 `snake_case` 为准。
+除非某一页另有说明，接口传输的 JSON 字段名统一使用 `snake_case`。官方 SDK 在少数高层接口中会提供 `camelCase` 映射，但原始 REST 响应、OpenAPI 和本文档都以 `snake_case` 为准。
 
 ### 错误响应
 
@@ -120,7 +120,7 @@ WebSocket 也遵循相同边界：
 
 对于已经建立的 SSE 聊天流，运行期失败会通过 `event: error` 事件返回，而不是再切换 HTTP 状态码。此时应读取 `error.code`，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`。资源写入路径上的 `resource_busy` 不会复用聊天链路的 `commit_busy`。
 
-当前默认服务配置使用单实例内存协调器，且 `GENERATION_QUEUE_MODE=reject`。因此同一 `session + branch` 的并发生成通常直接返回 `generation_conflict`。只有部署方显式启用 `GENERATION_QUEUE_MODE=queue` 时，才可能看到 `generation_queue_timeout`；`GENERATION_QUEUE_TIMEOUT_MS` 用于控制 queue 模式下的等待超时。即便如此，排队也只在当前进程内生效。
+默认配置下，同一会话分支的并发生成请求会直接返回 `generation_conflict`（409）。`generation_queue_timeout` 仅在服务端启用排队模式时出现。错误码的完整分类说明见[官方集成层 - 错误映射](/guide/integration-kit#错误映射)。
 
 ## 分页
 
@@ -161,9 +161,7 @@ WebSocket 也遵循相同边界：
 
 聊天 dry-run 的 `prompt_snapshot` 与落库的 `prompt_snapshot` 记录也会保存 `preset_version`、`worldbook_version`、`regex_profile_version`，用于说明当轮生成实际冻结使用的资源版本。
 
-如果 preset 本身存在多条 `prompt_order` 轨道，或者包含当前未完整执行的字段与 marker，聊天 dry-run 的 `assembly` 还会返回选中的轨道、被忽略的轨道和 warning，用来解释兼容边界。
-
-同一份 `assembly` 现在还会回显 `prompt_intent`、`assistant_prefill_applied`、`assistant_prefill_strategy`、`continue_nudge_applied`、`continue_nudge_text`、`names_behavior_applied`、`trigger_filtered_entry_ids` 与 `in_chat_inserted_entry_ids`，用于说明本轮提示词运行语义是否真正进入发送链路。`assistant_prefill` 不再作为统一的 blanket-unsupported 字段处理，而是按 provider 运行时策略决定是否 fallback 执行或标记为 unsupported。
+dry-run 的 `assembly` 还会返回本轮提示词组装的运行结果（生成意图、预填充状态、世界书命中条目等）。完整字段说明见 [Chat dry-run 响应](/reference/api/chat)。
 
 ## 资源目录
 

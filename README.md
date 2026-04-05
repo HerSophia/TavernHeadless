@@ -79,6 +79,9 @@ cd TavernHeadless
 # 安装依赖
 pnpm install
 
+# Windows 下文档构建补丁会在 postinstall 时自动执行
+# 不需要额外手动处理
+
 # 配置环境变量（至少填写 LLM_API_KEY）
 cp .env.example .env
 

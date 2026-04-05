@@ -18,6 +18,12 @@ outline: [2, 3]
 
 ### 常用命令
 
+安装依赖时会自动执行 `postinstall`。
+
+- 当前会运行 `scripts/patch-vitepress-build.mjs`
+- 这个脚本用于修复 Windows 下 VitePress 1.6.4 文档构建时的盘符大小写路径问题
+- 如果上游修复了这个问题，应一并移除脚本和 `postinstall` 说明
+
 ```bash
 pnpm install
 pnpm dev
