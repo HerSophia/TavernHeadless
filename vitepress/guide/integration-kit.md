@@ -155,43 +155,51 @@ const preview = await client.sessions.respondDryRun({
   sessionId: "session-1",
   message: "继续",
   promptIntent: "continue",
+  debugOptions: {
+    includeWorldbookMatches: true,
+  },
 });
 
-console.log(preview.promptSnapshot.promptMode);
-console.log(preview.promptSnapshot.promptDigest);
-console.log(preview.assembly.promptIntent);
-console.log(preview.assembly.assistantPrefillApplied);
-console.log(preview.assembly.assistantPrefillStrategy);
-console.log(preview.assembly.continueNudgeApplied);
-console.log(preview.assembly.continueNudgeText);
-console.log(preview.assembly.namesBehaviorApplied);
-console.log(preview.assembly.triggerFilteredEntryIds);
-console.log(preview.assembly.inChatInsertedEntryIds);
-console.log(preview.assembly.selectedPromptOrderCharacterId);
-console.log(preview.assembly.unsupportedPresetFields);
-console.log(preview.assembly.presetWarnings);
+// 本轮冻结的资源版本
+console.log(preview.promptSnapshot.presetVersion);
+console.log(preview.promptSnapshot.worldbookVersion);
+console.log(preview.promptSnapshot.regexProfileVersion);
+
+// 如果开启了 debugOptions.includeWorldbookMatches，可以直接查看命中的世界书条目和首个命中位置
+console.log(preview.assembly.worldbookMatches?.[0]?.source.worldbookName);
+console.log(preview.assembly.worldbookMatches?.[0]?.activation.firstMatch?.sourceKind);
+
+// 提示词组装模式和摘要
+console.log(preview.promptSnapshot.promptMode);   // compat_strict / compat_plus / native
+console.log(preview.promptSnapshot.promptDigest);  // 组装后的消息摘要
 ```
 
-`respondDryRun()` 的 `promptSnapshot` 现在也会带上 `presetVersion`、`worldbookVersion`、`regexProfileVersion`，用来表示本轮真正冻结使用的资源版本。
+#### promptSnapshot：本轮冻结的资源版本
 
-如果有持久化变量试图占用保留别名，`preview.assembly.reservedVariableCollisions` 会返回被系统别名覆盖的键。目前保留别名是 `char` 和 `user`。
+`promptSnapshot` 记录了本次 dry-run 实际使用的预设、世界书、正则配置的版本号（`presetVersion`、`worldbookVersion`、`regexProfileVersion`）。如果你在两次 dry-run 之间修改过预设，对比版本号就能确认修改是否生效。
 
-如果 preset 存在多条 `prompt_order` 轨道，或者使用了 `assistantPrefill`、`continueNudgePrompt`、`namesBehavior`、Prompt Manager trigger / in-chat insertion，SDK 现在还会把下列 dry-run 字段一并整理出来：
+如果有持久化变量占用了保留别名（目前是 `char` 和 `user`），`preview.assembly.reservedVariableCollisions` 会列出被系统覆盖的键。
 
-- `preview.assembly.promptIntent`
-- `preview.assembly.assistantPrefillApplied`
-- `preview.assembly.assistantPrefillStrategy`
-- `preview.assembly.continueNudgeApplied`
-- `preview.assembly.continueNudgeText`
-- `preview.assembly.namesBehaviorApplied`
-- `preview.assembly.triggerFilteredEntryIds`
-- `preview.assembly.inChatInsertedEntryIds`
-- `preview.assembly.selectedPromptOrderCharacterId`
-- `preview.assembly.ignoredPromptOrderCharacterIds`
-- `preview.assembly.unsupportedPresetFields`
-- `preview.assembly.ignoredPresetFields`
-- `preview.assembly.unresolvedPresetMarkers`
-- `preview.assembly.presetWarnings`
+#### assembly：提示词组装的运行结果
+
+`assembly` 告诉你这次提示词组装过程中，各项功能是否真正生效。主要字段如下：
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `promptIntent` | 本轮的生成意图，如 `chat`（正常对话）或 `continue`（续写） |
+| `assistantPrefillApplied` | 是否应用了 assistant 预填充（让 AI 从指定文本开始续写） |
+| `continueNudgeApplied` | 是否应用了续写引导文本 |
+| `namesBehaviorApplied` | 是否将角色名注入到消息的 `name` 字段 |
+| `triggerFilteredEntryIds` | 被 trigger 条件过滤掉的世界书条目 ID 列表 |
+| `inChatInsertedEntryIds` | 在聊天历史中间插入的世界书条目 ID 列表 |
+| `selectedPromptOrderCharacterId` | 当预设有多条排序轨道时，实际选中的角色轨道 |
+| `unsupportedPresetFields` | 当前模式下不支持的预设字段列表 |
+| `presetWarnings` | 预设兼容性警告 |
+| `worldbookMatches` | 仅在 `debugOptions.includeWorldbookMatches = true` 时返回。列出命中的世界书条目、来源、注入位置和首个命中位置 |
+
+完整字段参考见 [Chat dry-run 响应](/reference/api/chat)。
+
+如果你要做“为什么这条世界书命中了”的调试界面，优先读取 `worldbookMatches`。其中 `source` 表示条目来自哪本世界书，`insertion` 表示它最终插入到 Prompt 的哪里，`activation.firstMatch` 表示它第一次是在哪段扫描源里命中的。
 
 ### 运行时工具目录与执行审计
 
@@ -214,20 +222,20 @@ for (const record of executions.records) {
 }
 ```
 
-运行时工具目录现在会直接暴露：
+运行时工具目录中每个工具会包含以下字段，用来判断该工具的执行方式：
 
-- `asyncCapability`
-- `defaultDeliveryMode`
-- `resultVisibility`
+| 字段 | 说明 |
+| ---- | ---- |
+| `asyncCapability` | 该工具是否支持异步执行。`sync_only` 表示只能同步，`deferred_ok` 表示可以后台执行 |
+| `defaultDeliveryMode` | 默认的交付方式。`inline` 表示同步返回结果，`async_job` 表示提交后台任务并返回受理回执 |
+| `resultVisibility` | 结果何时可见。`immediate` 表示立即返回，`deferred_receipt` 表示先返回回执、结果稍后可查 |
 
-这三个字段可以帮助接入方判断某个工具是否只支持同步调用，还是会返回 deferred receipt。
+执行审计记录中也会包含：
 
-工具执行审计记录现在也会直接暴露：
-
-- `deliveryMode`
-- `runtimeJobId`
-
-如果某次执行走了 `async_job`，可以用 `runtimeJobId` 把工具审计记录和后台 job 状态对应起来。
+| 字段 | 说明 |
+| ---- | ---- |
+| `deliveryMode` | 本次执行实际使用的交付方式（`inline` 或 `async_job`） |
+| `runtimeJobId` | 如果走了 `async_job`，这个 ID 可以用来查询后台任务状态 |
 
 ### 资源更新的版本并发控制
 
@@ -419,28 +427,35 @@ try {
 }
 ```
 
-`mapApiErrorToUiState()` 默认按 HTTP 状态码分桶，但会对部分已知业务错误码优先做 code-aware 映射：
+`mapApiErrorToUiState()` 默认按 HTTP 状态码分类，同时会识别以下常见业务错误码，把它们映射到更准确的界面状态：
 
-- `generation_conflict` → `conflict`
-- `generation_queue_timeout` → `server`
-- `generation_timeout` → `server`
-- `commit_busy` → `server`
-- `commit_conflict` → `conflict`
-- `resource_busy` → `server`
-- `preset_conflict` → `conflict`
-- `worldbook_conflict` → `conflict`
-- `regex_profile_conflict` → `conflict`
-- `turn_commit_failed` → `server`
+**并发冲突（映射为 `conflict`）**— 同一资源被多方同时修改时触发，通常需要重新拉取最新数据再操作：
 
-这条规则同样覆盖流式 `respond/stream` 的 SSE `error` 事件。流已经建立后，SDK 抛出的 `TavernApiError.status` 可能仍然是 `200`，但 `code` 会保留下来，因此接入方应优先看 `code`。
+| 错误码 | 常见场景 |
+| ---- | ---- |
+| `generation_conflict` | 同一会话分支已有生成在进行，不能同时发起第二次 |
+| `commit_conflict` | 楼层提交时状态已被改变（如被其他请求抢先提交） |
+| `preset_conflict` / `worldbook_conflict` / `regex_profile_conflict` | 更新资源时版本号不匹配，说明有人在你之前改过 |
 
-默认服务配置仍是单实例内存协调器，且 `GENERATION_QUEUE_MODE=reject`。因此同一 `session + branch` 的并发请求通常直接返回 `generation_conflict`。只有服务端显式启用 `GENERATION_QUEUE_MODE=queue` 时，接入方才可能看到 `generation_queue_timeout`；`GENERATION_QUEUE_TIMEOUT_MS` 用于控制 queue 模式下的等待超时。即便如此，排队范围也只在当前进程内。
+**服务端繁忙或失败（映射为 `server`）**— 通常可以稍后重试：
+
+| 错误码 | 常见场景 |
+| ---- | ---- |
+| `generation_timeout` | LLM 生成超时 |
+| `generation_queue_timeout` | 生成排队等待超时（仅在服务端启用排队模式时出现） |
+| `commit_busy` | 楼层提交时遇到数据库忙 |
+| `resource_busy` | 资源写入时遇到数据库忙 |
+| `turn_commit_failed` | 生成成功但提交阶段失败 |
+
+这些映射同样覆盖流式 `respond/stream` 的 SSE `error` 事件。流建立后的错误不会改变 HTTP 状态码，因此接入方应优先检查 `error.code` 而不是 `status`。
 
 ### 资源乐观锁与版本快照
 
 `presets`、`worldbooks`、`regexProfiles` 的列表、详情和更新响应都会返回 `version`。更新时应优先回填 `expectedVersion`，避免静默覆盖。`regexProfiles.update()` 的 `data` 应直接传规则对象数组；删除主资源时也可以传 `expectedVersion`。
 
-`respondDryRun()` 返回的 `promptSnapshot` 会带 `presetVersion`、`worldbookVersion`、`regexProfileVersion`；`assembly` 除了选中的 `prompt_order` 轨道、未执行字段和 warning，还会带 `promptIntent`、assistant prefill / continue nudge / names behavior 的执行结果，以及 trigger / in-chat insertion 的最小运行语义结果，用于说明本轮真正冻结使用的资源版本与兼容边界。
+dry-run 返回的 `promptSnapshot` 同样包含 `presetVersion`、`worldbookVersion`、`regexProfileVersion`，用来确认本轮生成冻结的资源版本。
+
+`assembly` 中则包含了本轮提示词组装的运行结果（如生成意图、预填充状态、世界书命中情况等），详见上方 [assembly 字段说明](#assembly提示词组装的运行结果)。
 
 ## SDK 资源覆盖范围
 

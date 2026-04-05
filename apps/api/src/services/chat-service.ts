@@ -134,11 +134,18 @@ export interface RespondResult {
 }
 
 /** /respond/dry-run 请求体 */
+export interface DryRunDebugOptions {
+  /** 是否返回世界书命中详情 */
+  includeWorldbookMatches?: boolean;
+}
+
 export interface DryRunRequest {
   /** 用户消息文本 */
   message: string;
   /** 当前 prompt 运行意图 */
   promptIntent?: PromptRunIntent;
+  /** dry-run 调试选项 */
+  debugOptions?: DryRunDebugOptions;
 }
 
 /** /respond/dry-run 响应体 */
@@ -724,6 +731,7 @@ export class ChatService {
       {
         includeDebug: true, maxContextTokensOverride, variableContext: { sessionId },
         intent: request.promptIntent,
+        includeWorldbookMatchTrace: request.debugOptions?.includeWorldbookMatches,
         assistantPrefillStrategy,
       }
     );
@@ -754,6 +762,7 @@ export class ChatService {
       namesBehaviorApplied: "off",
       triggerFilteredEntryIds: [],
       inChatInsertedEntryIds: [],
+      worldbookMatches: request.debugOptions?.includeWorldbookMatches ? [] : undefined,
     };
 
     return {

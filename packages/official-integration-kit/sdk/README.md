@@ -215,6 +215,9 @@ console.log(committedResult.totalTokens);
 const preview = await client.sessions.respondDryRun({
   accountId: "account-1",
   sessionId: "session-1",
+  debugOptions: {
+    includeWorldbookMatches: true,
+  },
   message: "继续",
   promptIntent: "continue",
 });
@@ -233,6 +236,8 @@ console.log(preview.assembly.namesBehaviorApplied);
 console.log(preview.assembly.triggerFilteredEntryIds);
 console.log(preview.assembly.unsupportedPresetFields);
 console.log(preview.assembly.presetWarnings);
+console.log(preview.assembly.worldbookMatches?.[0]?.source.worldbookName);
+console.log(preview.assembly.worldbookMatches?.[0]?.activation.firstMatch?.sourceKind);
 ```
 
 `respondDryRun()` 返回的 `promptSnapshot` 预览字段与真实提交后的 `prompt_snapshot` 对齐，适合在生成前检查 preset、worldbook、regex 和摘要注入结果。
@@ -260,8 +265,15 @@ console.log(preview.assembly.presetWarnings);
 - `ignoredPresetFields`
 - `unresolvedPresetMarkers`
 - `presetWarnings`
+- `worldbookMatches`（仅在 `debugOptions.includeWorldbookMatches = true` 时返回）
 
 前一组字段对应本轮真正冻结使用的资源版本号。后一组字段用于说明本轮 preset 的兼容边界和降级信息。
+
+如果要做世界书调试，`worldbookMatches` 会把每条命中的世界书条目拆开返回：
+
+- `source`：条目来自会话世界书还是角色卡 character book
+- `insertion`：条目最终注入到 Prompt 的位置
+- `activation.firstMatch`：条目第一次命中的扫描源、关键词和字符区间
 
 ### 资源更新的乐观锁
 

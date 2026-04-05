@@ -13,6 +13,52 @@ export interface TriggerScanSources {
   injections?: string[];
 }
 
+export type TriggerMatchSourceKind =
+  | 'message'
+  | 'persona_description'
+  | 'character_description'
+  | 'character_personality'
+  | 'character_depth_prompt'
+  | 'scenario'
+  | 'creator_notes'
+  | 'injection'
+  | 'recursion_buffer';
+
+export interface HaystackSegment {
+  kind: TriggerMatchSourceKind;
+  text: string;
+  messageIndexFromLatest?: number;
+  injectionIndex?: number;
+}
+
+export interface TriggerFirstMatch {
+  sourceKind: TriggerMatchSourceKind;
+  messageIndexFromLatest?: number;
+  injectionIndex?: number;
+  matchedKey: string;
+  matchedKeyScope: 'primary' | 'secondary';
+  matchedKeyType: 'plain' | 'regex';
+  charStart: number;
+  charEnd: number;
+  excerpt: string;
+}
+
+export interface MatchTrace {
+  matched: boolean;
+  matchedKey: string;
+  matchedKeyScope: 'primary' | 'secondary';
+  matchedKeyType: 'plain' | 'regex';
+  charStart: number;
+  charEnd: number;
+  segmentIndex: number;
+}
+
+export interface ActivationTrace {
+  mode: 'constant' | 'triggered';
+  recursionLevel: number;
+  firstMatch: TriggerFirstMatch | null;
+}
+
 /** 触发引擎的扫描上下文 */
 export interface TriggerContext {
   /** 最近的聊天消息（从新到旧） */
@@ -29,6 +75,8 @@ export interface TriggerContext {
   maxRecursionSteps?: number;
   /** 扩展扫描源（按条目扩展字段控制是否参与匹配） */
   scanSources?: TriggerScanSources;
+  /** 是否返回命中轨迹 */
+  traceEnabled?: boolean;
 }
 
 /** @depth 条目的触发结果 */
@@ -50,6 +98,8 @@ export interface TriggerResult {
   atDepth: DepthEntry[];
   /** position=outlet(7) 的条目，按 outletName 分组 */
   outletEntries?: Record<string, STWorldBookEntry[]>;
+  /** debug 模式下返回，每个 activated entry 的首个命中轨迹 */
+  activationTraces?: Map<number, ActivationTrace>;
 }
 
 type ScanState = 'INITIAL' | 'RECURSION';
@@ -78,6 +128,73 @@ function parseRegex(input: string): RegExp | null {
   }
 }
 
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildExcerpt(text: string, start: number, end: number): string {
+  const excerptStart = Math.max(0, start - 30);
+  const excerptEnd = Math.min(text.length, end + 30);
+  return text.slice(excerptStart, excerptEnd);
+}
+
+function compareMatchTrace(left: MatchTrace, right: MatchTrace): number {
+  if (left.segmentIndex !== right.segmentIndex) {
+    return left.segmentIndex - right.segmentIndex;
+  }
+
+  if (left.charStart !== right.charStart) {
+    return left.charStart - right.charStart;
+  }
+
+  if (left.charEnd !== right.charEnd) {
+    return left.charEnd - right.charEnd;
+  }
+
+  return 0;
+}
+
+function findPlainTextMatch(
+  haystack: string,
+  needle: string,
+  caseSensitive: boolean,
+  matchWholeWords: boolean,
+): { start: number; end: number } | null {
+  if (!needle) {
+    return null;
+  }
+
+  const escaped = escapeRegExp(needle);
+  const flags = caseSensitive ? '' : 'i';
+
+  if (matchWholeWords) {
+    const words = needle.trim().split(/\s+/);
+    if (words.length === 1) {
+      const regex = new RegExp(`(^|\\W)(${escaped})(?=$|\\W)`, flags);
+      const match = regex.exec(haystack);
+      if (!match) {
+        return null;
+      }
+
+      const prefix = match[1] ?? '';
+      const keyword = match[2] ?? '';
+      const start = match.index + prefix.length;
+      return { start, end: start + keyword.length };
+    }
+  }
+
+  const regex = new RegExp(escaped, flags);
+  const match = regex.exec(haystack);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    start: match.index,
+    end: match.index + match[0].length,
+  };
+}
+
 /**
  * 检查单个关键词是否在文本中命中。
  */
@@ -87,31 +204,42 @@ function matchKey(
   caseSensitive: boolean,
   matchWholeWords: boolean,
 ): boolean {
-  // 尝试解析为正则
+  return matchKeyWithTrace(haystack, needle, caseSensitive, matchWholeWords) !== null;
+}
+
+function matchKeyWithTrace(
+  haystack: string,
+  needle: string,
+  caseSensitive: boolean,
+  matchWholeWords: boolean,
+): Omit<MatchTrace, 'matchedKey' | 'matchedKeyScope' | 'segmentIndex'> | null {
   const regex = parseRegex(needle);
   if (regex) {
-    return regex.test(haystack);
-  }
-
-  // 纯文本匹配
-  const h = caseSensitive ? haystack : haystack.toLowerCase();
-  const n = caseSensitive ? needle : needle.toLowerCase();
-
-  if (!n) return false;
-
-  if (matchWholeWords) {
-    // 多词短语用 includes
-    const words = n.split(/\s+/);
-    if (words.length > 1) {
-      return h.includes(n);
+    regex.lastIndex = 0;
+    const match = regex.exec(haystack);
+    if (!match) {
+      return null;
     }
-    // 单词用 word boundary
-    const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const wordRegex = new RegExp(`(?:^|\\W)${escaped}(?:$|\\W)`);
-    return wordRegex.test(h);
+
+    return {
+      matched: true,
+      matchedKeyType: 'regex',
+      charStart: match.index,
+      charEnd: match.index + match[0].length,
+    };
   }
 
-  return h.includes(n);
+  const plainMatch = findPlainTextMatch(haystack, needle, caseSensitive, matchWholeWords);
+  if (!plainMatch) {
+    return null;
+  }
+
+  return {
+    matched: true,
+    matchedKeyType: 'plain',
+    charStart: plainMatch.start,
+    charEnd: plainMatch.end,
+  };
 }
 
 /**
@@ -123,7 +251,7 @@ function matchAnyKey(
   caseSensitive: boolean,
   matchWholeWords: boolean,
 ): boolean {
-  return keys.some(k => matchKey(haystack, k, caseSensitive, matchWholeWords));
+  return keys.some((key) => matchKey(haystack, key, caseSensitive, matchWholeWords));
 }
 
 /**
@@ -135,7 +263,7 @@ function countSecondaryHits(
   caseSensitive: boolean,
   matchWholeWords: boolean,
 ): number {
-  return keys.filter(k => matchKey(haystack, k, caseSensitive, matchWholeWords)).length;
+  return keys.filter((key) => matchKey(haystack, key, caseSensitive, matchWholeWords)).length;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -153,47 +281,68 @@ function buildEntryHaystack(
   scanState: ScanState,
   recurseTexts: string[],
 ): string {
+  return buildEntryHaystackSegments(entry, context, scanState, recurseTexts)
+    .map((segment) => segment.text)
+    .join('\n');
+}
+
+function buildEntryHaystackSegments(
+  entry: STWorldBookEntry,
+  context: TriggerContext,
+  scanState: ScanState,
+  recurseTexts: string[],
+): HaystackSegment[] {
   const depth = Math.max(0, entry.scanDepth ?? context.scanDepth);
   if (depth === 0) {
-    return '';
+    return [];
   }
 
-  const parts: string[] = [];
-  const scanMessages = context.messages.slice(0, depth).join('\n');
-  if (scanMessages) {
-    parts.push(scanMessages);
-  }
+  const segments: HaystackSegment[] = context.messages
+    .slice(0, depth)
+    .map((text, index) => ({ kind: 'message' as const, text, messageIndexFromLatest: index }))
+    .filter((segment) => segment.text.length > 0);
 
   const scanSources = context.scanSources;
   if (scanSources) {
     if (getEntryExtensionFlag(entry, 'match_persona_description') && scanSources.personaDescription?.trim()) {
-      parts.push(scanSources.personaDescription.trim());
+      segments.push({ kind: 'persona_description', text: scanSources.personaDescription.trim() });
     }
     if (getEntryExtensionFlag(entry, 'match_character_description') && scanSources.characterDescription?.trim()) {
-      parts.push(scanSources.characterDescription.trim());
+      segments.push({ kind: 'character_description', text: scanSources.characterDescription.trim() });
     }
     if (getEntryExtensionFlag(entry, 'match_character_personality') && scanSources.characterPersonality?.trim()) {
-      parts.push(scanSources.characterPersonality.trim());
+      segments.push({ kind: 'character_personality', text: scanSources.characterPersonality.trim() });
     }
     if (getEntryExtensionFlag(entry, 'match_character_depth_prompt') && scanSources.characterDepthPrompt?.trim()) {
-      parts.push(scanSources.characterDepthPrompt.trim());
+      segments.push({ kind: 'character_depth_prompt', text: scanSources.characterDepthPrompt.trim() });
     }
     if (getEntryExtensionFlag(entry, 'match_scenario') && scanSources.scenario?.trim()) {
-      parts.push(scanSources.scenario.trim());
+      segments.push({ kind: 'scenario', text: scanSources.scenario.trim() });
     }
     if (getEntryExtensionFlag(entry, 'match_creator_notes') && scanSources.creatorNotes?.trim()) {
-      parts.push(scanSources.creatorNotes.trim());
+      segments.push({ kind: 'creator_notes', text: scanSources.creatorNotes.trim() });
     }
     if (Array.isArray(scanSources.injections) && scanSources.injections.length > 0) {
-      parts.push(...scanSources.injections.map(text => text.trim()).filter(Boolean));
+      scanSources.injections.forEach((text, injectionIndex) => {
+        const trimmed = text.trim();
+        if (!trimmed) {
+          return;
+        }
+        segments.push({ kind: 'injection', text: trimmed, injectionIndex });
+      });
     }
   }
 
   if (scanState === 'RECURSION' && recurseTexts.length > 0) {
-    parts.push(...recurseTexts);
+    for (const text of recurseTexts) {
+      if (!text) {
+        continue;
+      }
+      segments.push({ kind: 'recursion_buffer', text });
+    }
   }
 
-  return parts.join('\n');
+  return segments;
 }
 
 function shouldSkipEntryForScanState(
@@ -225,6 +374,142 @@ function getMaxDelayUntilRecursion(entries: STWorldBookEntry[]): number {
     const value = entry.delayUntilRecursion ?? null;
     return value !== null && value > max ? value : max;
   }, 0);
+}
+
+function collectKeyMatchTraces(
+  segments: HaystackSegment[],
+  keys: string[],
+  matchedKeyScope: 'primary' | 'secondary',
+  caseSensitive: boolean,
+  matchWholeWords: boolean,
+): MatchTrace[] {
+  const traces: MatchTrace[] = [];
+
+  for (const key of keys) {
+    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+      const segment = segments[segmentIndex]!;
+      const match = matchKeyWithTrace(segment.text, key, caseSensitive, matchWholeWords);
+      if (!match) {
+        continue;
+      }
+
+      traces.push({
+        ...match,
+        matchedKey: key,
+        matchedKeyScope,
+        segmentIndex,
+      });
+      break;
+    }
+  }
+
+  return traces;
+}
+
+function selectFirstMatchTrace(traces: MatchTrace[]): MatchTrace | null {
+  if (traces.length === 0) {
+    return null;
+  }
+
+  return [...traces].sort(compareMatchTrace)[0] ?? null;
+}
+
+function toTriggerFirstMatch(trace: MatchTrace, segment: HaystackSegment): TriggerFirstMatch {
+  return {
+    sourceKind: segment.kind,
+    messageIndexFromLatest: segment.messageIndexFromLatest,
+    injectionIndex: segment.injectionIndex,
+    matchedKey: trace.matchedKey,
+    matchedKeyScope: trace.matchedKeyScope,
+    matchedKeyType: trace.matchedKeyType,
+    charStart: trace.charStart,
+    charEnd: trace.charEnd,
+    excerpt: buildExcerpt(segment.text, trace.charStart, trace.charEnd),
+  };
+}
+
+function buildActivationTrace(
+  entry: STWorldBookEntry,
+  context: TriggerContext,
+  scanState: ScanState,
+  recursionLevel: number,
+  recurseTexts: string[],
+): ActivationTrace | null {
+  if (entry.constant) {
+    return {
+      mode: 'constant',
+      recursionLevel,
+      firstMatch: null,
+    };
+  }
+
+  if (entry.key.length === 0) {
+    return null;
+  }
+
+  const caseSensitive = entry.caseSensitive ?? context.caseSensitive;
+  const matchWholeWords = entry.matchWholeWords ?? context.matchWholeWords;
+  const segments = buildEntryHaystackSegments(entry, context, scanState, recurseTexts);
+  const primaryMatchTraces = collectKeyMatchTraces(
+    segments,
+    entry.key,
+    'primary',
+    caseSensitive,
+    matchWholeWords,
+  );
+
+  if (primaryMatchTraces.length === 0) {
+    return null;
+  }
+
+  if (!entry.selective || entry.keysecondary.length === 0) {
+    const firstMatchTrace = selectFirstMatchTrace(primaryMatchTraces);
+    return {
+      mode: 'triggered',
+      recursionLevel,
+      firstMatch: firstMatchTrace ? toTriggerFirstMatch(firstMatchTrace, segments[firstMatchTrace.segmentIndex]!) : null,
+    };
+  }
+
+  const secondaryMatchTraces = collectKeyMatchTraces(
+    segments,
+    entry.keysecondary,
+    'secondary',
+    caseSensitive,
+    matchWholeWords,
+  );
+  const secondaryHitCount = secondaryMatchTraces.length;
+  const secondaryCount = entry.keysecondary.length;
+
+  let triggered = false;
+  switch (entry.selectiveLogic) {
+    case WI_LOGIC.AND_ANY:
+      triggered = secondaryHitCount > 0;
+      break;
+    case WI_LOGIC.AND_ALL:
+      triggered = secondaryHitCount === secondaryCount;
+      break;
+    case WI_LOGIC.NOT_ANY:
+      triggered = secondaryHitCount === 0;
+      break;
+    case WI_LOGIC.NOT_ALL:
+      triggered = secondaryHitCount < secondaryCount;
+      break;
+    default:
+      triggered = true;
+      break;
+  }
+
+  if (!triggered) {
+    return null;
+  }
+
+  const firstMatchTrace = selectFirstMatchTrace([...primaryMatchTraces, ...secondaryMatchTraces]);
+  return {
+    mode: 'triggered',
+    recursionLevel,
+    firstMatch: firstMatchTrace ? toTriggerFirstMatch(firstMatchTrace, segments[firstMatchTrace.segmentIndex]!) : null,
+  };
 }
 
 /**
@@ -294,8 +579,10 @@ export function triggerWorldBook(
   const recursive = context.recursive ?? false;
   const maxRecursionSteps = context.maxRecursionSteps ?? 0;
   const maxDelayLevel = getMaxDelayUntilRecursion(entries);
+  const traceEnabled = context.traceEnabled === true;
 
   const activatedMap = new Map<number, STWorldBookEntry>();
+  const activationTraces = traceEnabled ? new Map<number, ActivationTrace>() : undefined;
   const recurseTexts: string[] = [];
   let loopCount = 0;
 
@@ -312,6 +599,15 @@ export function triggerWorldBook(
       if (entry.disable) continue;
       if (activatedMap.has(entry.uid)) continue;
       if (shouldSkipEntryForScanState(entry, scanState, recursionLevel)) continue;
+
+      if (traceEnabled) {
+        const activationTrace = buildActivationTrace(entry, context, scanState, recursionLevel, recurseTexts);
+        if (activationTrace) {
+          newlyActivated.push(entry);
+          activationTraces?.set(entry.uid, activationTrace);
+        }
+        continue;
+      }
 
       const entryHaystack = buildEntryHaystack(entry, context, scanState, recurseTexts);
       if (isEntryTriggered(entry, entryHaystack, context.caseSensitive, context.matchWholeWords)) {
@@ -342,9 +638,9 @@ export function triggerWorldBook(
     }
 
     const nextRecurseTexts = newlyActivated
-      .filter(entry => !entry.preventRecursion)
-      .map(entry => entry.content)
-      .filter(content => typeof content === 'string' && content.trim().length > 0);
+      .filter((entry) => !entry.preventRecursion)
+      .map((entry) => entry.content)
+      .filter((content) => typeof content === 'string' && content.trim().length > 0);
 
     if (nextRecurseTexts.length > 0) {
       recurseTexts.push(...nextRecurseTexts);
@@ -397,5 +693,12 @@ export function triggerWorldBook(
     }
   }
 
-  return { activated, before, after, atDepth, outletEntries };
+  return {
+    activated,
+    before,
+    after,
+    atDepth,
+    outletEntries,
+    ...(traceEnabled ? { activationTraces } : {}),
+  };
 }

@@ -31,6 +31,14 @@ export const respondBodyExample = {
   generation_params: generationParamsExample,
 } as const;
 
+export const dryRunBodyExample = {
+  message: "Please continue the campfire scene.",
+  prompt_intent: "normal",
+  debug_options: {
+    include_worldbook_matches: true,
+  },
+} as const;
+
 export const regenerateBodyExample = {
   config: {
     enableDirector: true,
@@ -115,7 +123,7 @@ export const dryRunSuccessResponseExample = {
       regex_profile_id: "regex-1",
       regex_profile_updated_at: 1710000002000,
       regex_profile_version: 2,
-      worldbook_activated_entry_uids: [7, 9],
+      worldbook_activated_entry_uids: [7],
       regex_pre_rule_names: ["trim_whitespace"],
       regex_post_rule_names: [],
       prompt_mode: "compat_strict",
@@ -147,6 +155,36 @@ export const dryRunSuccessResponseExample = {
         "检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。",
       ],
       preprocessed_user_message: "Please continue the campfire scene.",
+      worldbook_matches: [
+        {
+          uid: 7,
+          comment: "Campfire Lore",
+          content_preview: "The northern pass is watched by old sentries.",
+          order: 100,
+          source: {
+            kind: "session_worldbook",
+            worldbook_id: "worldbook-1",
+            worldbook_name: "Campfire Worldbook",
+          },
+          insertion: {
+            position: "before",
+          },
+          activation: {
+            mode: "triggered",
+            recursion_level: 0,
+            first_match: {
+              source_kind: "message",
+              message_index_from_latest: 0,
+              matched_key: "campfire",
+              matched_key_scope: "primary",
+              matched_key_type: "plain",
+              char_start: 20,
+              char_end: 28,
+              excerpt: "Please continue the campfire scene.",
+            },
+          },
+        },
+      ],
     },
   },
 } as const;
@@ -236,6 +274,24 @@ export const respondBodyJsonSchema = {
     source_floor_id: { type: "string", minLength: 1 },
   },
   examples: [respondBodyExample],
+  additionalProperties: false,
+} as const;
+
+export const dryRunBodyJsonSchema = {
+  type: "object",
+  required: ["message"],
+  properties: {
+    message: { type: "string", minLength: 1 },
+    prompt_intent: { type: "string", enum: ["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"] },
+    debug_options: {
+      type: "object",
+      properties: {
+        include_worldbook_matches: { type: "boolean" },
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [dryRunBodyExample],
   additionalProperties: false,
 } as const;
 
@@ -337,6 +393,83 @@ export const regenerateDataJsonSchema = {
     final_state: { type: "string" },
   },
   examples: [regenerateSuccessResponseExample.data],
+  additionalProperties: false,
+} as const;
+
+const dryRunWorldbookFirstMatchJsonSchema = {
+  type: "object",
+  required: [
+    "source_kind",
+    "matched_key",
+    "matched_key_scope",
+    "matched_key_type",
+    "char_start",
+    "char_end",
+    "excerpt",
+  ],
+  properties: {
+    source_kind: {
+      type: "string",
+      enum: ["message", "persona_description", "character_description", "character_personality", "character_depth_prompt", "scenario", "creator_notes", "injection", "recursion_buffer"],
+    },
+    message_index_from_latest: { type: "integer", minimum: 0 },
+    injection_index: { type: "integer", minimum: 0 },
+    matched_key: { type: "string" },
+    matched_key_scope: { type: "string", enum: ["primary", "secondary"] },
+    matched_key_type: { type: "string", enum: ["plain", "regex"] },
+    char_start: { type: "integer", minimum: 0 },
+    char_end: { type: "integer", minimum: 0 },
+    excerpt: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const dryRunWorldbookActivationJsonSchema = {
+  type: "object",
+  required: ["mode", "recursion_level", "first_match"],
+  properties: {
+    mode: { type: "string", enum: ["constant", "triggered"] },
+    recursion_level: { type: "integer", minimum: 0 },
+    first_match: { anyOf: [dryRunWorldbookFirstMatchJsonSchema, { type: "null" }] },
+  },
+  additionalProperties: false,
+} as const;
+
+const dryRunWorldbookInsertionJsonSchema = {
+  type: "object",
+  required: ["position"],
+  properties: {
+    position: { type: "string", enum: ["before", "after", "at_depth", "outlet"] },
+    depth: { type: "integer" },
+    role: { type: "string", enum: ["system", "user", "assistant"] },
+    outlet_name: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const dryRunWorldbookSourceJsonSchema = {
+  type: "object",
+  required: ["kind", "worldbook_id", "worldbook_name"],
+  properties: {
+    kind: { type: "string", enum: ["session_worldbook", "character_book"] },
+    worldbook_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    worldbook_name: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const dryRunWorldbookMatchJsonSchema = {
+  type: "object",
+  required: ["uid", "comment", "content_preview", "order", "source", "insertion", "activation"],
+  properties: {
+    uid: { type: "integer" },
+    comment: { type: "string" },
+    content_preview: { type: "string" },
+    order: { type: "integer" },
+    source: dryRunWorldbookSourceJsonSchema,
+    insertion: dryRunWorldbookInsertionJsonSchema,
+    activation: dryRunWorldbookActivationJsonSchema,
+  },
   additionalProperties: false,
 } as const;
 
@@ -453,6 +586,10 @@ export const dryRunDataJsonSchema = {
         trigger_filtered_entry_ids: { type: "array", items: { type: "string" } },
         in_chat_inserted_entry_ids: { type: "array", items: { type: "string" } },
         preprocessed_user_message: { anyOf: [{ type: "string" }, { type: "null" }] },
+        worldbook_matches: {
+          type: "array",
+          items: dryRunWorldbookMatchJsonSchema,
+        },
       },
       additionalProperties: false,
     },

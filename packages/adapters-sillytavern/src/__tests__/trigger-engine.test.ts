@@ -329,6 +329,135 @@ describe('triggerWorldBook', () => {
       expect(result.activated).toHaveLength(0);
     });
   });
+  describe('trace mode', () => {
+    it('does not return activation traces when traceEnabled is false', () => {
+      const entries = [makeEntry({ uid: 0, key: ['Alice'], content: 'Alice info' })];
+      const result = triggerWorldBook(entries, defaultContext);
+      expect(result.activationTraces).toBeUndefined();
+    });
+
+    it('returns the first plain-text match from the latest message', () => {
+      const entries = [makeEntry({ uid: 0, key: ['Alice'], content: 'Alice info' })];
+      const result = triggerWorldBook(entries, { ...defaultContext, traceEnabled: true });
+      expect(result.activationTraces?.get(0)).toEqual({
+        mode: 'triggered',
+        recursionLevel: 0,
+        firstMatch: {
+          sourceKind: 'message',
+          messageIndexFromLatest: 0,
+          matchedKey: 'Alice',
+          matchedKeyScope: 'primary',
+          matchedKeyType: 'plain',
+          charStart: 6,
+          charEnd: 11,
+          excerpt: 'Hello Alice',
+        },
+      });
+    });
+
+    it('marks selective hits as secondary when the earliest activating match comes from a secondary key', () => {
+      const entry = makeEntry({
+        uid: 0,
+        key: ['Alice'],
+        keysecondary: ['mage'],
+        selective: true,
+        selectiveLogic: WI_LOGIC.AND_ANY,
+        content: 'Alice lore',
+      });
+      const result = triggerWorldBook([entry], {
+        ...defaultContext,
+        messages: ['mage Alice'],
+        traceEnabled: true,
+      });
+
+      expect(result.activationTraces?.get(0)?.firstMatch).toEqual({
+        sourceKind: 'message',
+        messageIndexFromLatest: 0,
+        matchedKey: 'mage',
+        matchedKeyScope: 'secondary',
+        matchedKeyType: 'plain',
+        charStart: 0,
+        charEnd: 4,
+        excerpt: 'mage Alice',
+      });
+    });
+
+    it('returns recursion_buffer as the source kind for recursive activations', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['dragon'], content: 'phoenix sigil', order: 100 }),
+        makeEntry({ uid: 1, key: ['phoenix'], content: 'Phoenix lore', order: 200 }),
+      ];
+      const result = triggerWorldBook(entries, {
+        ...defaultContext,
+        messages: ['dragon'],
+        recursive: true,
+        maxRecursionSteps: 2,
+        traceEnabled: true,
+      });
+
+      expect(result.activationTraces?.get(1)).toEqual({
+        mode: 'triggered',
+        recursionLevel: 1,
+        firstMatch: {
+          sourceKind: 'recursion_buffer',
+          matchedKey: 'phoenix',
+          matchedKeyScope: 'primary',
+          matchedKeyType: 'plain',
+          charStart: 0,
+          charEnd: 7,
+          excerpt: 'phoenix sigil',
+        },
+      });
+    });
+
+    it('returns character depth prompt and injection scan source metadata', () => {
+      const entries = [
+        makeEntry({ uid: 0, key: ['lantern'], content: 'Depth lore', extra: { extensions: { match_character_depth_prompt: true } } }),
+        makeEntry({ uid: 1, key: ['oath'], content: 'Injection lore', extra: { extensions: { match_character_depth_prompt: false } } }),
+      ];
+      const result = triggerWorldBook(entries, {
+        ...defaultContext,
+        messages: ['unrelated'],
+        traceEnabled: true,
+        scanSources: {
+          characterDepthPrompt: 'A lantern hangs above the doorway.',
+          injections: ['oath of the watch'],
+        },
+      });
+
+      expect(result.activationTraces?.get(0)?.firstMatch).toEqual({
+        sourceKind: 'character_depth_prompt',
+        matchedKey: 'lantern',
+        matchedKeyScope: 'primary',
+        matchedKeyType: 'plain',
+        charStart: 2,
+        charEnd: 9,
+        excerpt: 'A lantern hangs above the doorway.',
+      });
+      expect(result.activationTraces?.get(1)?.firstMatch).toEqual({
+        sourceKind: 'injection',
+        injectionIndex: 0,
+        matchedKey: 'oath',
+        matchedKeyScope: 'primary',
+        matchedKeyType: 'plain',
+        charStart: 0,
+        charEnd: 4,
+        excerpt: 'oath of the watch',
+      });
+    });
+
+    it('returns null firstMatch for constant entries', () => {
+      const entries = [makeEntry({ uid: 0, key: [], constant: true, content: 'always on' })];
+      const result = triggerWorldBook(entries, { ...defaultContext, traceEnabled: true });
+      expect(result.activationTraces?.get(0)).toEqual({
+        mode: 'constant',
+        recursionLevel: 0,
+        firstMatch: null,
+      });
+    });
+  });
+
+
 
   describe('ordering', () => {
     it('sorts activated entries by order descending', () => {

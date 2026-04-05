@@ -48,7 +48,15 @@ export type { STRawRegexScript } from './serializers/regex-serializer.js';
 
 // ── Engines ───────────────────────────────────────────
 export { triggerWorldBook } from './worldbook/trigger-engine.js';
-export type { TriggerContext, TriggerResult, DepthEntry } from './worldbook/trigger-engine.js';
+export type {
+  TriggerContext,
+  TriggerResult,
+  DepthEntry,
+  TriggerMatchSourceKind,
+  TriggerFirstMatch,
+  MatchTrace,
+  ActivationTrace,
+} from './worldbook/trigger-engine.js';
 export { applyRegexScripts } from './regex/regex-engine.js';
 export type { RegexContext, RegexExecutionChannel } from './regex/regex-engine.js';
 
