@@ -3,8 +3,42 @@ import { onMounted, ref } from 'vue'
 import { withBase } from 'vitepress'
 
 const visible = ref(false)
+const sectionRef = ref<HTMLElement | null>(null)
+const pointerMotionEnabled = ref(false)
+
+function syncPointerMotionAvailability() {
+  if (typeof window === 'undefined') return
+
+  pointerMotionEnabled.value =
+    window.matchMedia('(pointer: fine)').matches &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function resetPointerMotion() {  if (!sectionRef.value) return
+
+  sectionRef.value.style.setProperty('--hero-pointer-x', '50%')
+  sectionRef.value.style.setProperty('--hero-pointer-y', '50%')
+  sectionRef.value.style.setProperty('--hero-shift-x', '0px')
+  sectionRef.value.style.setProperty('--hero-shift-y', '0px')
+}
+
+function handlePointerMove(event: PointerEvent) {
+  if (!pointerMotionEnabled.value || !sectionRef.value) return
+
+  const rect = sectionRef.value.getBoundingClientRect()
+  const x = event.clientX - rect.left
+  const y = event.clientY - rect.top
+  const ratioX = x / rect.width - 0.5
+  const ratioY = y / rect.height - 0.5  sectionRef.value.style.setProperty('--hero-pointer-x', `${x}px`)
+  sectionRef.value.style.setProperty('--hero-pointer-y', `${y}px`)
+  sectionRef.value.style.setProperty('--hero-shift-x', `${ratioX * 42}px`)
+  sectionRef.value.style.setProperty('--hero-shift-y', `${ratioY * 30}px`)
+}
 
 onMounted(() => {
+  syncPointerMotionAvailability()
+  resetPointerMotion()
+
   requestAnimationFrame(() => {
     visible.value = true
   })
@@ -34,15 +68,16 @@ function scrollToOverview() {
 <template>
   <section
     id="landing-hero"
-    class="hero-section landing-fullscreen"
-    data-landing-section="hero"
+    ref="sectionRef"
+    class="hero-section landing-fullscreen"    data-landing-section="hero"
     data-section-title="首页"
     data-section-label="首页"
+    @pointermove="handlePointerMove"
+    @pointerleave="resetPointerMotion"
   >
     <div class="hero-bg">
       <div class="grid-overlay"></div>
-      <div class="radial-mask"></div>
-      <div class="glow glow-tl"></div>
+      <div class="radial-mask"></div>      <div class="glow glow-tl"></div>
       <div class="glow glow-br"></div>
       <div class="glow glow-center"></div>
 
@@ -109,17 +144,24 @@ function scrollToOverview() {
 
 <style scoped>
 .hero-section {
+  --hero-pointer-x: 50%;
+  --hero-pointer-y: 50%;
+  --hero-shift-x: 0px;
+  --hero-shift-y: 0px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  perspective: 1200px;
 }
 
 .hero-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
+  transform-style: preserve-3d;
 }
+
 
 .grid-overlay {
   position: absolute;
@@ -130,6 +172,8 @@ function scrollToOverview() {
   background-size: 60px 60px;
   mask-image: radial-gradient(ellipse 70% 50% at 50% 50%, black 20%, transparent 100%);
   -webkit-mask-image: radial-gradient(ellipse 70% 50% at 50% 50%, black 20%, transparent 100%);
+  transform: translate3d(calc(var(--hero-shift-x) * -0.18), calc(var(--hero-shift-y) * -0.16), 0) scale(1.02);
+  transition: transform 0.32s ease;
   animation: grid-breathe 8s ease-in-out infinite;
 }
 
@@ -146,6 +190,8 @@ function scrollToOverview() {
     rgba(45, 212, 191, 0.04) 0%,
     transparent 70%
   );
+  transform: translate3d(calc(var(--hero-shift-x) * -0.08), calc(var(--hero-shift-y) * -0.08), 0);
+  transition: transform 0.32s ease;
 }
 
 .glow {
@@ -154,6 +200,7 @@ function scrollToOverview() {
   filter: blur(80px);
   opacity: 0;
   animation: glow-fade-in 2s ease forwards;
+  transition: transform 0.45s ease, opacity 0.4s ease;
 }
 
 .glow-tl {
@@ -162,6 +209,7 @@ function scrollToOverview() {
   background: rgba(45, 212, 191, 0.12);
   top: -100px;
   left: 10%;
+  transform: translate3d(calc(var(--hero-shift-x) * -0.34), calc(var(--hero-shift-y) * -0.2), 0);
   animation-delay: 0.5s;
 }
 
@@ -171,6 +219,7 @@ function scrollToOverview() {
   background: rgba(129, 140, 248, 0.1);
   bottom: -80px;
   right: 15%;
+  transform: translate3d(calc(var(--hero-shift-x) * 0.26), calc(var(--hero-shift-y) * 0.18), 0);
   animation-delay: 1s;
 }
 
@@ -180,7 +229,7 @@ function scrollToOverview() {
   background: rgba(45, 212, 191, 0.04);
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) translate3d(calc(var(--hero-shift-x) * 0.12), calc(var(--hero-shift-y) * 0.1), 0);
   animation-delay: 0.2s;
   filter: blur(120px);
 }
@@ -194,6 +243,8 @@ function scrollToOverview() {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
+  transform: translate3d(calc(var(--hero-shift-x) * 0.08), calc(var(--hero-shift-y) * 0.08), 0);
+  transition: transform 0.35s ease;
 }
 
 .particle {
@@ -238,6 +289,8 @@ function scrollToOverview() {
   text-align: center;
   max-width: 760px;
   padding: 0 24px;
+  transform: translate3d(calc(var(--hero-shift-x) * 0.08), calc(var(--hero-shift-y) * 0.08), 0);
+  transition: transform 0.28s ease;
 }
 
 .hero-content .hero-badge,
@@ -380,12 +433,13 @@ function scrollToOverview() {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translate3d(calc(var(--hero-shift-x) * 0.06), 0, 0);
   color: var(--vp-c-text-3);
   background: transparent;
   border: 0;
   padding: 0;
   cursor: pointer;
+  transition: color 0.2s ease, transform 0.28s ease;
 }
 
 .hero-scroll-hint:hover .scroll-text,
@@ -482,6 +536,20 @@ function scrollToOverview() {
 
 :root:not(.dark) .scroll-next {
   color: #64748b;
+}
+
+@media (pointer: coarse), (prefers-reduced-motion: reduce) {
+
+  .hero-content,
+  .hero-scroll-hint,
+  .particles,
+  .grid-overlay,
+  .radial-mask,
+  .glow-tl,
+  .glow-br,
+  .glow-center {
+    transform: none !important;
+  }
 }
 
 @media (max-width: 640px) {

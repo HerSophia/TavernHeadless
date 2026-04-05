@@ -9,12 +9,38 @@ const stats = [
 ]
 
 const containerRef = ref<HTMLElement | null>(null)
+const panelRef = ref<HTMLElement | null>(null)
 const animatedValues = ref(stats.map(() => 0))
 const hasAnimated = ref(false)
 const isVisible = ref(false)
+const activeIndex = ref(-1)
+const pointerMotionEnabled = ref(false)
 
 let observer: IntersectionObserver | null = null
 const delayTimers: number[] = []
+
+function syncPointerMotionAvailability() {
+  if (typeof window === 'undefined') return
+
+  pointerMotionEnabled.value =
+    window.matchMedia('(pointer: fine)').matches &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function resetPanelPointer() {
+  activeIndex.value = -1
+}
+
+function handlePanelPointerMove(event: PointerEvent) {
+  if (!pointerMotionEnabled.value || !panelRef.value) return
+
+  const rect = panelRef.value.getBoundingClientRect()
+  const x = event.clientX - rect.left
+  const y = event.clientY - rect.top
+  const nextIndex = Math.min(Math.max(Math.floor((x / rect.width) * stats.length), 0), stats.length - 1)
+
+  activeIndex.value = nextIndex
+}
 
 function animateNumbers() {
   if (hasAnimated.value) return
@@ -39,6 +65,7 @@ function animateNumbers() {
 }
 
 onMounted(() => {
+  syncPointerMotionAvailability()
   observer = new IntersectionObserver(
     ([entry]) => {
       if (entry.isIntersecting) {
@@ -49,6 +76,8 @@ onMounted(() => {
     { threshold: 0.35 }
   )
   if (containerRef.value) observer.observe(containerRef.value)
+
+  resetPanelPointer()
 })
 
 onUnmounted(() => {
@@ -70,9 +99,19 @@ onUnmounted(() => {
     <div class="landing-shell stats-shell">
       <h2 class="stats-title">引擎一览</h2>
 
-      <div class="stats-panel">
+      <div
+        ref="panelRef"
+        class="stats-panel"
+        @pointermove="handlePanelPointerMove"
+        @pointerleave="resetPanelPointer"
+      >
         <div class="stats-inner">
-          <div v-for="(stat, index) in stats" :key="stat.label" class="stat-item">
+          <div
+            v-for="(stat, index) in stats"
+            :key="stat.label"
+            class="stat-item"
+            :class="{ active: activeIndex === index }"
+          >
             <span class="stat-value">
               {{ animatedValues[index] }}<span class="stat-suffix">{{ stat.suffix }}</span>
             </span>
@@ -116,8 +155,7 @@ onUnmounted(() => {
   padding: 0 !important;
 }
 
-.stats-panel {
-  border-radius: 28px;
+.stats-panel {  border-radius: 28px;
   border: 1px solid var(--landing-card-border);
   background:
     radial-gradient(circle at 12% 18%, rgba(45, 212, 191, 0.18), transparent 28%),
@@ -129,6 +167,7 @@ onUnmounted(() => {
   -webkit-backdrop-filter: blur(14px);
 }
 
+
 .stats-inner {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -136,12 +175,38 @@ onUnmounted(() => {
 }
 
 .stat-item {
+  position: relative;
   padding: 30px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
   text-align: center;
+  transition: transform 0.25s ease, background 0.25s ease;
+}
+
+.stat-item::after {
+  content: '';
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--vp-c-brand-1), #818cf8);
+  opacity: 0;
+  transform: scaleX(0.35);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.stat-item.active {
+  transform: translateY(-6px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 100%);
+}
+
+.stat-item.active::after {
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 .stat-item + .stat-item {
@@ -157,6 +222,11 @@ onUnmounted(() => {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  transition: filter 0.25s ease;
+}
+
+.stat-item.active .stat-value {
+  filter: drop-shadow(0 0 12px rgba(45, 212, 191, 0.25));
 }
 
 .stat-suffix {
@@ -175,6 +245,7 @@ onUnmounted(() => {
   line-height: 1.7;
   color: var(--landing-card-muted);
 }
+
 
 @media (max-width: 860px) {
   .stats-inner {

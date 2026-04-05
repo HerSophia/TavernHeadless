@@ -30,20 +30,73 @@ const tree = [
 const gridRef = ref<HTMLElement | null>(null)
 const cardRefs = ref<HTMLElement[]>([])
 const treeSectionRef = ref<HTMLElement | null>(null)
+const treeWindowRef = ref<HTMLElement | null>(null)
 const visibleSet = ref(new Set<string>())
+const pointerMotionEnabled = ref(false)
 
 let observer: IntersectionObserver | null = null
 
+function syncPointerMotionAvailability() {
+  if (typeof window === 'undefined') return
+
+  pointerMotionEnabled.value =
+    window.matchMedia('(pointer: fine)').matches &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function resetCardMotion(card?: HTMLElement) {
+  if (!card) return
+
+  card.style.setProperty('--card-tilt-x', '0deg')
+  card.style.setProperty('--card-tilt-y', '0deg')
+}
+
 const handleMouseMove = (event: MouseEvent) => {
+  if (!pointerMotionEnabled.value) return
+
   for (const card of cardRefs.value) {
     const rect = card.getBoundingClientRect()
-    card.style.setProperty('--mouse-x', `${event.clientX - rect.left}px`)
-    card.style.setProperty('--mouse-y', `${event.clientY - rect.top}px`)
+    const x = event.clientX - rect.left
+    const y = event.clientY - rect.top
+    const isInside = x >= 0 && x <= rect.width && y >= 0 && y <= rect.height
+    const rotateY = isInside ? ((x / rect.width) - 0.5) * 8 : 0
+    const rotateX = isInside ? (0.5 - (y / rect.height)) * 8 : 0
+
+    card.style.setProperty('--card-tilt-x', `${rotateX}deg`)
+    card.style.setProperty('--card-tilt-y', `${rotateY}deg`)
   }
 }
 
+function handleGridPointerLeave() {
+  for (const card of cardRefs.value) {
+    resetCardMotion(card)
+  }
+}
+
+function handleTreePointerMove(event: PointerEvent) {
+  if (!pointerMotionEnabled.value || !treeWindowRef.value) return
+
+  const rect = treeWindowRef.value.getBoundingClientRect()
+  const x = event.clientX - rect.left
+  const y = event.clientY - rect.top
+  const rotateY = ((x / rect.width) - 0.5) * 6
+  const rotateX = (0.5 - (y / rect.height)) * 5
+
+  treeWindowRef.value.style.setProperty('--tree-tilt-x', `${rotateX}deg`)
+  treeWindowRef.value.style.setProperty('--tree-tilt-y', `${rotateY}deg`)
+}
+
+function resetTreePointer() {
+  if (!treeWindowRef.value) return
+
+  treeWindowRef.value.style.setProperty('--tree-tilt-x', '0deg')
+  treeWindowRef.value.style.setProperty('--tree-tilt-y', '0deg')
+}
+
 onMounted(() => {
+  syncPointerMotionAvailability()
   gridRef.value?.addEventListener('mousemove', handleMouseMove)
+  gridRef.value?.addEventListener('mouseleave', handleGridPointerLeave)
 
   observer = new IntersectionObserver(
     (entries) => {
@@ -67,10 +120,13 @@ onMounted(() => {
   if (treeSectionRef.value) {
     observer.observe(treeSectionRef.value)
   }
+
+  resetTreePointer()
 })
 
 onUnmounted(() => {
   gridRef.value?.removeEventListener('mousemove', handleMouseMove)
+  gridRef.value?.removeEventListener('mouseleave', handleGridPointerLeave)
   observer?.disconnect()
 })
 </script>
@@ -99,7 +155,6 @@ onUnmounted(() => {
             :class="{ visible: visibleSet.has('stack-' + index) }"
             :style="{ transitionDelay: `${index * 60}ms` }"
           >
-            <div class="stack-glow"></div>
             <div class="stack-inner">
               <span class="stack-icon">
                 <svg v-if="item.svg === 'bolt'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -158,7 +213,13 @@ onUnmounted(() => {
           <p class="section-desc">@tavern/sdk 和 @tavern/client-helpers 是公开接入包，其余按内部边界组织。</p>
         </div>
 
-        <div class="tree-window" :class="{ visible: visibleSet.has('tree') }">
+        <div
+          ref="treeWindowRef"
+          class="tree-window"
+          :class="{ visible: visibleSet.has('tree') }"
+          @pointermove="handleTreePointerMove"
+          @pointerleave="resetTreePointer"
+        >
           <div class="tree-header">
             <div class="tree-dots">
               <span class="dot dot-r"></span>
@@ -234,6 +295,8 @@ onUnmounted(() => {
 }
 
 .stack-card {
+  --card-tilt-x: 0deg;
+  --card-tilt-y: 0deg;
   position: relative;
   border-radius: 16px;
   padding: 1px;
@@ -248,19 +311,6 @@ onUnmounted(() => {
   transform: none;
 }
 
-.stack-glow {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  background: radial-gradient(280px circle at var(--mouse-x) var(--mouse-y), var(--landing-glow-color), transparent 40%);
-}
-
-.stack-card:hover .stack-glow {
-  opacity: 1;
-}
-
 .stack-inner {
   position: relative;
   z-index: 1;
@@ -270,12 +320,14 @@ onUnmounted(() => {
   padding: 18px 18px;
   border-radius: 15px;
   background: var(--landing-card-bg);
-  transition: background 0.3s ease, transform 0.3s ease;
+  transform: perspective(960px) rotateX(var(--card-tilt-x)) rotateY(var(--card-tilt-y));
+  transform-style: preserve-3d;
+  transition: background 0.3s ease, transform 0.25s ease;
 }
 
 .stack-card:hover .stack-inner {
   background: var(--landing-card-bg-hover);
-  transform: translateY(-1px);
+  transform: translate3d(0, -1px, 0) perspective(960px) rotateX(var(--card-tilt-x)) rotateY(var(--card-tilt-y));
 }
 
 .stack-icon {
@@ -288,6 +340,13 @@ onUnmounted(() => {
   border-radius: 10px;
   background: var(--landing-icon-bg);
   color: var(--vp-c-brand-1);
+  transform: translateZ(14px);
+  transition: transform 0.25s ease, background 0.25s ease;
+}
+
+.stack-card:hover .stack-icon {
+  transform: translateZ(20px) scale(1.04);
+  background: var(--landing-icon-bg-hover);
 }
 
 .stack-text {
@@ -311,6 +370,8 @@ onUnmounted(() => {
 }
 
 .tree-window {
+  --tree-tilt-x: 0deg;
+  --tree-tilt-y: 0deg;
   width: 100%;
   max-width: 920px;
   margin: 0 auto;
@@ -322,13 +383,13 @@ onUnmounted(() => {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   opacity: 0;
-  transform: translateY(24px);
-  transition: opacity 0.7s ease, transform 0.7s ease;
+  transform: translateY(24px) perspective(1200px) rotateX(var(--tree-tilt-x)) rotateY(var(--tree-tilt-y));
+  transition: opacity 0.7s ease, transform 0.28s ease;
 }
 
 .tree-window.visible {
   opacity: 1;
-  transform: none;
+  transform: translateY(0) perspective(1200px) rotateX(var(--tree-tilt-x)) rotateY(var(--tree-tilt-y));
 }
 
 .tree-header {
@@ -374,8 +435,17 @@ onUnmounted(() => {
 .tree-line {
   display: flex;
   gap: 12px;
+  position: relative;
+  border-radius: 10px;
   padding-right: 16px;
+  transition: transform 0.22s ease, background 0.22s ease, box-shadow 0.22s ease;
   animation: tree-fade-in 0.4s ease both;
+}
+
+.tree-line:hover {
+  transform: translateX(4px);
+  background: rgba(45, 212, 191, 0.06);
+  box-shadow: inset 2px 0 0 rgba(45, 212, 191, 0.4);
 }
 
 @keyframes tree-fade-in {
@@ -415,6 +485,17 @@ onUnmounted(() => {
   color: var(--landing-card-muted);
   font-size: 13px;
   margin-left: auto;
+}
+
+@media (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .stack-inner,
+  .stack-card:hover .stack-inner,
+  .stack-icon,
+  .stack-card:hover .stack-icon,
+  .tree-window,
+  .tree-window.visible {
+    transform: none !important;
+  }
 }
 
 @media (max-width: 1040px) {

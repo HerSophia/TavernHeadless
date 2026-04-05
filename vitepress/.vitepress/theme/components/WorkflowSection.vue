@@ -57,6 +57,8 @@ const activeIndex = ref(0)
 const isVisible = ref(false)
 
 const activeStep = computed(() => steps[activeIndex.value])
+const progressPercent = computed(() => (steps.length > 1 ? (activeIndex.value / (steps.length - 1)) * 100 : 0))
+const stepRefs = ref<HTMLButtonElement[]>([])
 
 let observer: IntersectionObserver | null = null
 let autoplayTimer: number | null = null
@@ -78,6 +80,33 @@ function startAutoplay() {
 function setActive(index: number) {
   activeIndex.value = index
   startAutoplay()
+}
+
+function focusStep(index: number) {
+  const button = stepRefs.value[index]
+  button?.focus()
+}
+
+function moveActive(nextIndex: number) {
+  const normalized = Math.min(Math.max(nextIndex, 0), steps.length - 1)
+  setActive(normalized)
+  focusStep(normalized)
+}
+
+function onStepKeydown(event: KeyboardEvent, index: number) {
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    event.preventDefault()
+    moveActive(index + 1)
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveActive(index - 1)
+  } else if (event.key === 'Home') {
+    event.preventDefault()
+    moveActive(0)
+  } else if (event.key === 'End') {
+    event.preventDefault()
+    moveActive(steps.length - 1)
+  }
 }
 
 onMounted(() => {
@@ -119,18 +148,22 @@ onUnmounted(() => {
         </p>
       </div>
 
-      <div class="workflow-track">
-        <div class="track-line"></div>
+      <div class="workflow-track" @mouseenter="stopAutoplay" @mouseleave="startAutoplay">
+        <div class="track-line">
+          <span class="track-line-progress" :style="{ transform: `scaleX(${progressPercent / 100})` }"></span>
+        </div>
 
         <button
           v-for="(step, index) in steps"
           :key="step.title"
+          :ref="(el) => { if (el) stepRefs[index] = el as HTMLButtonElement }"
           type="button"
           class="step-node"
           :class="{ active: activeIndex === index }"
           @mouseenter="setActive(index)"
           @focus="setActive(index)"
           @click="setActive(index)"
+          @keydown="onStepKeydown($event, index)"
         >
           <span class="step-index">0{{ index + 1 }}</span>
 
@@ -248,12 +281,38 @@ onUnmounted(() => {
   right: 70px;
   top: 54px;
   height: 1px;
-  background: linear-gradient(90deg, rgba(45, 212, 191, 0.06), rgba(45, 212, 191, 0.6), rgba(129, 140, 248, 0.5));
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(45, 212, 191, 0.08), rgba(129, 140, 248, 0.18));
+}
+
+.track-line-progress {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--vp-c-brand-1), #818cf8);
+  box-shadow: 0 0 18px rgba(45, 212, 191, 0.28);
+  transition: transform 0.32s ease;
+}
+
+.track-line-progress::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 52px;
+  height: 8px;
+  transform: translate(35%, -50%);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.42);
+  filter: blur(10px);
 }
 
 .step-node {
   position: relative;
   z-index: 1;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -268,12 +327,27 @@ onUnmounted(() => {
   transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
 }
 
+.step-node::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(180px circle at 50% 0%, rgba(45, 212, 191, 0.14), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
 .step-node:hover,
 .step-node.active {
   transform: translateY(-4px);
   border-color: rgba(45, 212, 191, 0.35);
   background: var(--landing-card-bg-hover);
   box-shadow: 0 18px 36px -24px rgba(45, 212, 191, 0.45);
+}
+
+.step-node:hover::after,
+.step-node.active::after {
+  opacity: 1;
 }
 
 .step-index {
@@ -283,6 +357,7 @@ onUnmounted(() => {
 }
 
 .step-icon {
+  position: relative;
   width: 40px;
   height: 40px;
   display: inline-flex;
@@ -291,6 +366,29 @@ onUnmounted(() => {
   border-radius: 12px;
   background: var(--landing-icon-bg);
   color: var(--vp-c-brand-1);
+  transition: transform 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.step-icon::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 16px;
+  border: 1px solid rgba(45, 212, 191, 0.2);
+  opacity: 0;
+  transform: scale(0.88);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.step-node.active .step-icon {
+  transform: translateY(-1px) scale(1.04);
+  background: var(--landing-icon-bg-hover);
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12), 0 0 18px rgba(45, 212, 191, 0.2);
+}
+
+.step-node.active .step-icon::after {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .step-phase {
@@ -333,6 +431,20 @@ onUnmounted(() => {
   background: var(--landing-card-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+
+.detail-main,
+.detail-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.detail-main:hover,
+.detail-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(45, 212, 191, 0.24);
+  box-shadow: 0 18px 36px -28px rgba(45, 212, 191, 0.22);
 }
 
 .detail-main {

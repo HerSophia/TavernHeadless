@@ -37,21 +37,50 @@ const features = [
 const gridRef = ref<HTMLElement | null>(null)
 const cardRefs = ref<HTMLElement[]>([])
 const visibleSet = ref(new Set<number>())
+const pointerMotionEnabled = ref(false)
 
 let observer: IntersectionObserver | null = null
 
+function syncPointerMotionAvailability() {
+  if (typeof window === 'undefined') return
+
+  pointerMotionEnabled.value =
+    window.matchMedia('(pointer: fine)').matches &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function resetCardMotion(card?: HTMLElement) {
+  if (!card) return
+
+  card.style.setProperty('--card-tilt-x', '0deg')
+  card.style.setProperty('--card-tilt-y', '0deg')
+}
+
 const handleMouseMove = (event: MouseEvent) => {
+  if (!pointerMotionEnabled.value) return
+
   for (const card of cardRefs.value) {
     const rect = card.getBoundingClientRect()
     const x = event.clientX - rect.left
     const y = event.clientY - rect.top
-    card.style.setProperty('--mouse-x', `${x}px`)
-    card.style.setProperty('--mouse-y', `${y}px`)
+    const isInside = x >= 0 && x <= rect.width && y >= 0 && y <= rect.height
+    const rotateY = isInside ? ((x / rect.width) - 0.5) * 10 : 0
+    const rotateX = isInside ? (0.5 - (y / rect.height)) * 10 : 0
+    card.style.setProperty('--card-tilt-x', `${rotateX}deg`)
+    card.style.setProperty('--card-tilt-y', `${rotateY}deg`)
+  }
+}
+
+const handleMouseLeave = () => {
+  for (const card of cardRefs.value) {
+    resetCardMotion(card)
   }
 }
 
 onMounted(() => {
+  syncPointerMotionAvailability()
   gridRef.value?.addEventListener('mousemove', handleMouseMove)
+  gridRef.value?.addEventListener('mouseleave', handleMouseLeave)
 
   observer = new IntersectionObserver(
     (entries) => {
@@ -73,6 +102,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   gridRef.value?.removeEventListener('mousemove', handleMouseMove)
+  gridRef.value?.removeEventListener('mouseleave', handleMouseLeave)
   observer?.disconnect()
 })
 </script>
@@ -99,9 +129,7 @@ onUnmounted(() => {
           class="feature-card"
           :class="{ visible: visibleSet.has(index) }"
           :style="{ transitionDelay: `${index * 80}ms` }"
-        >
-          <div class="card-glow"></div>
-          <div class="card-content">
+        >          <div class="card-content">
             <div class="card-icon">
               <svg v-if="feature.icon === 'compat'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M8 3L4 7l4 4" />
@@ -186,6 +214,8 @@ onUnmounted(() => {
 }
 
 .feature-card {
+  --card-tilt-x: 0deg;
+  --card-tilt-y: 0deg;
   position: relative;
   border-radius: 18px;
   padding: 1px;
@@ -201,18 +231,6 @@ onUnmounted(() => {
   transform: none;
 }
 
-.card-glow {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  background: radial-gradient(360px circle at var(--mouse-x) var(--mouse-y), var(--landing-glow-color), transparent 40%);
-}
-
-.feature-card:hover .card-glow {
-  opacity: 1;
-}
 
 .card-content {
   position: relative;
@@ -223,12 +241,14 @@ onUnmounted(() => {
   background: var(--landing-card-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  transition: background 0.3s ease, transform 0.3s ease;
+  transform: perspective(960px) rotateX(var(--card-tilt-x)) rotateY(var(--card-tilt-y));
+  transform-style: preserve-3d;
+  transition: background 0.3s ease, transform 0.25s ease;
 }
 
 .feature-card:hover .card-content {
   background: var(--landing-card-bg-hover);
-  transform: translateY(-1px);
+  transform: translate3d(0, -1px, 0) perspective(960px) rotateX(var(--card-tilt-x)) rotateY(var(--card-tilt-y));
 }
 
 .card-icon {
@@ -241,11 +261,12 @@ onUnmounted(() => {
   background: var(--landing-icon-bg);
   color: var(--vp-c-brand-1);
   margin-bottom: 14px;
-  transition: transform 0.3s ease, background 0.3s ease;
+  transform: translateZ(14px);
+  transition: transform 0.25s ease, background 0.3s ease;
 }
 
 .feature-card:hover .card-icon {
-  transform: scale(1.05);
+  transform: translateZ(22px) scale(1.05);
   background: var(--landing-icon-bg-hover);
 }
 
@@ -263,6 +284,15 @@ onUnmounted(() => {
   font-size: 14px;
   line-height: 1.7;
   color: var(--landing-card-text);
+}
+
+@media (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .card-content,
+  .feature-card:hover .card-content,
+  .card-icon,
+  .feature-card:hover .card-icon {
+    transform: none !important;
+  }
 }
 
 @media (max-width: 960px) {
