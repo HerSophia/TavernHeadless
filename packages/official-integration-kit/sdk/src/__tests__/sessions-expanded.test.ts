@@ -143,6 +143,36 @@ describe("sdk sessions expanded resource", () => {
             names_behavior_applied: "always",
             trigger_filtered_entry_ids: ["quietPrompt"],
             in_chat_inserted_entry_ids: ["continueHint"],
+            worldbook_matches: [
+              {
+                uid: 7,
+                comment: "Campfire Lore",
+                content_preview: "The northern pass is watched by old sentries.",
+                order: 100,
+                source: {
+                  kind: "session_worldbook",
+                  worldbook_id: "worldbook-1",
+                  worldbook_name: "Campfire Worldbook",
+                },
+                insertion: {
+                  position: "before",
+                },
+                activation: {
+                  mode: "triggered",
+                  recursion_level: 0,
+                  first_match: {
+                    source_kind: "message",
+                    message_index_from_latest: 0,
+                    matched_key: "campfire",
+                    matched_key_scope: "primary",
+                    matched_key_type: "plain",
+                    char_start: 20,
+                    char_end: 28,
+                    excerpt: "Please continue the campfire scene.",
+                  },
+                },
+              },
+            ],
           },
           available_for_reply: 512,
           memory_summary: "memo",
@@ -173,19 +203,12 @@ describe("sdk sessions expanded resource", () => {
     await expect(
       client.sessions.respondDryRun({
         accountId: "acc-1",
-        branchId: "alt-1",
-        config: {
-          enableDirector: true,
-          maxRetries: 2,
-        },
-        generationParams: {
-          reasoningEffort: "high",
-          temperature: 0.8,
+        debugOptions: {
+          includeWorldbookMatches: true,
         },
         message: "hello",
         promptIntent: "continue",
         sessionId: "session-1",
-        sourceFloorId: "floor-1",
       }),
     ).resolves.toEqual({
       assembly: {
@@ -211,6 +234,36 @@ describe("sdk sessions expanded resource", () => {
         regexPreRules: ["pre-rule"],
         reservedVariableCollisions: ["char", "user"],
         worldbookHits: 1,
+        worldbookMatches: [
+          {
+            uid: 7,
+            comment: "Campfire Lore",
+            contentPreview: "The northern pass is watched by old sentries.",
+            order: 100,
+            source: {
+              kind: "session_worldbook",
+              worldbookId: "worldbook-1",
+              worldbookName: "Campfire Worldbook",
+            },
+            insertion: {
+              position: "before",
+            },
+            activation: {
+              mode: "triggered",
+              recursionLevel: 0,
+              firstMatch: {
+                sourceKind: "message",
+                messageIndexFromLatest: 0,
+                matchedKey: "campfire",
+                matchedKeyScope: "primary",
+                matchedKeyType: "plain",
+                charStart: 20,
+                charEnd: 28,
+                excerpt: "Please continue the campfire scene.",
+              },
+            },
+          },
+        ],
       },
       availableForReply: 512,
       memorySummary: "memo",
@@ -239,18 +292,11 @@ describe("sdk sessions expanded resource", () => {
     expect(url).toBe("http://localhost:3000/sessions/session-1/respond/dry-run");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({
-      branch_id: "alt-1",
-      config: {
-        enableDirector: true,
-        maxRetries: 2,
+      debug_options: {
+        include_worldbook_matches: true,
       },
-      generation_params: {
-        reasoning_effort: "high",
-        temperature: 0.8,
-      },
-      prompt_intent: "continue",
       message: "hello",
-      source_floor_id: "floor-1",
+      prompt_intent: "continue",
     }));
   });
 

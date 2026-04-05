@@ -38,7 +38,10 @@ import {
   assembleCompatPlus,
   buildImportedPresetPromptGraph,
   parseWorldBook,
+  type ActivationTrace,
   type TriggerContext,
+  type TriggerFirstMatch,
+  type TriggerMatchSourceKind,
   type TriggerResult,
   triggerWorldBook,
   applyRegexScripts,
@@ -128,6 +131,56 @@ export interface PromptAssemblySnapshot extends PromptSnapshotPreview {
   variables: Record<string, unknown>;
 }
 
+export interface WorldbookMatchSource {
+  kind: "session_worldbook" | "character_book";
+  worldbookId: string | null;
+  worldbookName: string;
+}
+
+export interface WorldbookMatchInsertion {
+  position: "before" | "after" | "at_depth" | "outlet";
+  depth?: number;
+  role?: ChatMessage["role"];
+  outletName?: string;
+}
+
+export interface WorldbookFirstMatch {
+  sourceKind: TriggerMatchSourceKind;
+  messageIndexFromLatest?: number;
+  injectionIndex?: number;
+  matchedKey: string;
+  matchedKeyScope: "primary" | "secondary";
+  matchedKeyType: "plain" | "regex";
+  charStart: number;
+  charEnd: number;
+  excerpt: string;
+}
+
+export interface WorldbookMatchActivation {
+  mode: "constant" | "triggered";
+  recursionLevel: number;
+  firstMatch: WorldbookFirstMatch | null;
+}
+
+export interface WorldbookMatchDetail {
+  uid: number;
+  comment: string;
+  contentPreview: string;
+  order: number;
+  source: WorldbookMatchSource;
+  insertion: WorldbookMatchInsertion;
+  activation: WorldbookMatchActivation;
+}
+
+interface SourcedWorldbook {
+  worldbook: STWorldBook;
+  source: WorldbookMatchSource;
+}
+
+interface PromptWorldbookTriggerResult extends TriggerResult {
+  sourceByUid: Map<number, WorldbookMatchSource>;
+}
+
 export interface PromptVariableContextInput {
   sessionId: string;
   branchId?: string;
@@ -209,6 +262,8 @@ export interface AssembleDebugInfo {
   triggerFilteredEntryIds: string[];
   /** 以 in-chat 方式插入的 preset entry 标识 */
   inChatInsertedEntryIds: string[];
+  /** 命中的世界书详情（仅 dry-run trace 模式返回） */
+  worldbookMatches?: WorldbookMatchDetail[];
 }
 
 export interface AssemblePromptOptions {
@@ -225,6 +280,8 @@ export interface AssemblePromptOptions {
   intent?: PromptRunIntent;
   /** narrator provider 对 assistant prefill 的执行策略 */
   assistantPrefillStrategy?: AssistantPrefillExecutionStrategy;
+  /** 是否启用世界书命中轨迹收集 */
+  includeWorldbookMatchTrace?: boolean;
 }
 
 // ── 默认 System Prompt ────────────────────────────────
@@ -330,6 +387,8 @@ export async function assemblePrompt(
   const promptIntent = options.intent ?? "normal";
   let mode: AssembleDebugInfo["mode"] = "fallback";
   let worldbookHits = 0;
+  let worldBookResults: PromptWorldbookTriggerResult | undefined;
+  let worldbookMatches: WorldbookMatchDetail[] | undefined;
   let characterOverridesHandledInPromptIR = false;
   let memorySummaryHandledInPromptIR = false;
 
@@ -342,9 +401,7 @@ export async function assemblePrompt(
     : "none";
 
   if (presetData) {
-    let worldBookResults: TriggerResult | undefined;
-    const worldbookData = promptSnapshot.worldbook?.worldbook;
-    const runtimeWorldbooks = collectPromptWorldbooks(worldbookData, character);
+    const runtimeWorldbooks = collectPromptWorldbooks(promptSnapshot.worldbook, character);
 
     if (runtimeWorldbooks.length > 0) {
       const triggerMessages = fullHistory.map((message) => message.content).reverse();
@@ -357,7 +414,9 @@ export async function assemblePrompt(
           characterPersonality: character?.personality,
           scenario: character?.scenario,
           creatorNotes: character?.creatorNotes,
+          characterDepthPrompt: character?.postHistoryInstructions,
         },
+        traceEnabled: options.includeWorldbookMatchTrace,
       });
       worldBookResults = applyWorldInfoRegexRules(worldBookResults, enabledRegexScripts, promptSnapshot.variables);
     }
@@ -433,6 +492,10 @@ export async function assemblePrompt(
   } else {
     maxPromptTokens = normalizePositiveInt(options.maxContextTokensOverride) ?? DEFAULT_MAX_TOKENS;
     messages = buildFallbackMessages(fullHistory, character, persona);
+  }
+
+  if (options.includeWorldbookMatchTrace) {
+    worldbookMatches = buildWorldbookMatchDetails(worldBookResults);
   }
 
   // ── 4. 记忆摘要注入 ──
@@ -547,6 +610,7 @@ export async function assemblePrompt(
         namesBehaviorApplied,
         triggerFilteredEntryIds,
         inChatInsertedEntryIds,
+        worldbookMatches,
       }
     : undefined;
 
@@ -822,58 +886,106 @@ function parseCharacterBookWorldbook(character?: CharacterSnapshot): STWorldBook
   }
 }
 
-function collectPromptWorldbooks(worldbookData: STWorldBook | null | undefined, character?: CharacterSnapshot): STWorldBook[] {
-  const result: STWorldBook[] = [];
+function collectPromptWorldbooks(
+  loadedWorldbook: LoadedPromptWorldbook | null | undefined,
+  character?: CharacterSnapshot,
+): SourcedWorldbook[] {
+  const result: SourcedWorldbook[] = [];
+
+  const worldbookData = loadedWorldbook?.worldbook;
 
   if (worldbookData && worldbookData.entries.length > 0) {
-    result.push(worldbookData);
+    result.push({
+      worldbook: worldbookData,
+      source: {
+        kind: "session_worldbook",
+        worldbookId: loadedWorldbook?.id ?? null,
+        worldbookName: worldbookData.name,
+      },
+    });
   }
 
   const characterBookWorldbook = parseCharacterBookWorldbook(character);
   if (characterBookWorldbook && characterBookWorldbook.entries.length > 0) {
-    result.push(characterBookWorldbook);
+    result.push({
+      worldbook: characterBookWorldbook,
+      source: {
+        kind: "character_book",
+        worldbookId: null,
+        worldbookName: characterBookWorldbook.name,
+      },
+    });
   }
 
   return result;
 }
 
 function triggerPromptWorldbooks(
-  worldbooks: STWorldBook[],
-  baseContext: Pick<TriggerContext, "messages" | "scanSources">,
-): TriggerResult | undefined {
-  const results = worldbooks.map((worldbook) => triggerWorldBook(worldbook.entries, {
-    messages: baseContext.messages,
-    scanDepth: worldbook.scanDepth,
-    caseSensitive: worldbook.caseSensitive,
-    matchWholeWords: worldbook.matchWholeWords,
-    recursive: worldbook.recursive,
-    maxRecursionSteps: worldbook.maxRecursionSteps,
-    scanSources: baseContext.scanSources,
+  worldbooks: SourcedWorldbook[],
+  baseContext: Pick<TriggerContext, "messages" | "scanSources" | "traceEnabled">,
+): PromptWorldbookTriggerResult | undefined {
+  const results = worldbooks.map(({ worldbook, source }) => ({
+    source,
+    result: triggerWorldBook(worldbook.entries, {
+      messages: baseContext.messages,
+      scanDepth: worldbook.scanDepth,
+      caseSensitive: worldbook.caseSensitive,
+      matchWholeWords: worldbook.matchWholeWords,
+      recursive: worldbook.recursive,
+      maxRecursionSteps: worldbook.maxRecursionSteps,
+      scanSources: baseContext.scanSources,
+      traceEnabled: baseContext.traceEnabled,
+    }),
   }));
 
   if (results.length === 0) {
     return undefined;
   }
 
-  const activated = results.flatMap((result) => result.activated).sort((a, b) => b.order - a.order);
-  const before = results.flatMap((result) => result.before).sort((a, b) => b.order - a.order);
-  const after = results.flatMap((result) => result.after).sort((a, b) => b.order - a.order);
-  const atDepth = results.flatMap((result) => result.atDepth).sort((a, b) => b.entry.order - a.entry.order);
-  const outletEntries = Object.fromEntries(Object.entries(results.reduce<Record<string, typeof results[number]["activated"]>>((acc, result) => {
+  const sourceByUid = new Map<number, WorldbookMatchSource>();
+  const activationTraces = baseContext.traceEnabled ? new Map<number, ActivationTrace>() : undefined;
+
+  for (const { result, source } of results) {
+    for (const entry of result.activated) {
+      sourceByUid.set(entry.uid, source);
+    }
+
+    if (!activationTraces) {
+      continue;
+    }
+
+    for (const [uid, trace] of result.activationTraces ?? []) {
+      activationTraces.set(uid, trace);
+    }
+  }
+
+  const activated = results.flatMap(({ result }) => result.activated).sort((a, b) => b.order - a.order);
+  const before = results.flatMap(({ result }) => result.before).sort((a, b) => b.order - a.order);
+  const after = results.flatMap(({ result }) => result.after).sort((a, b) => b.order - a.order);
+  const atDepth = results.flatMap(({ result }) => result.atDepth).sort((a, b) => b.entry.order - a.entry.order);
+  const outletEntries = Object.fromEntries(Object.entries(results.reduce<Record<string, STWorldBook["entries"]>>((acc, { result }) => {
     for (const [outletName, entries] of Object.entries(result.outletEntries ?? {})) {
       acc[outletName] = [...(acc[outletName] ?? []), ...entries].sort((a, b) => b.order - a.order);
     }
     return acc;
   }, {})).map(([outletName, entries]) => [outletName, entries]));
 
-  return { activated, before, after, atDepth, ...(Object.keys(outletEntries).length > 0 ? { outletEntries } : {}) };
+  return {
+    activated,
+    before,
+    after,
+    atDepth,
+    sourceByUid,
+    ...(Object.keys(outletEntries).length > 0 ? { outletEntries } : {}),
+    ...(activationTraces ? { activationTraces } : {}),
+  };
 }
 
-function applyWorldInfoRegexRules(
-  worldBookResults: TriggerResult | undefined,
+function applyWorldInfoRegexRules<T extends TriggerResult>(
+  worldBookResults: T | undefined,
   scripts: LoadedPromptRegexProfile["scripts"] | undefined,
   variables: Record<string, unknown>,
-): TriggerResult | undefined {
+): T | undefined {
   if (!worldBookResults || !scripts || scripts.length === 0) {
     return worldBookResults;
   }
@@ -910,6 +1022,7 @@ function applyWorldInfoRegexRules(
   });
 
   return {
+    ...worldBookResults,
     activated: worldBookResults.activated.map(applyEntryContent),
     before: worldBookResults.before.map(applyEntryContent),
     after: worldBookResults.after.map(applyEntryContent),
@@ -925,7 +1038,7 @@ function applyWorldInfoRegexRules(
           ])
         )
       : undefined,
-  };
+  } as T;
 }
 
 function worldbookRoleToChatRole(role: number): ChatMessage["role"] {
@@ -942,6 +1055,81 @@ function collectWorldbookDepthLevels(worldBookResults: TriggerResult | undefined
   }
 
   return [...new Set(worldBookResults.atDepth.map((depthEntry) => depthEntry.depth))].sort((left, right) => left - right);
+}
+
+function mapTriggerFirstMatch(firstMatch: TriggerFirstMatch | null): WorldbookFirstMatch | null {
+  if (!firstMatch) {
+    return null;
+  }
+
+  return {
+    sourceKind: firstMatch.sourceKind,
+    messageIndexFromLatest: firstMatch.messageIndexFromLatest,
+    injectionIndex: firstMatch.injectionIndex,
+    matchedKey: firstMatch.matchedKey,
+    matchedKeyScope: firstMatch.matchedKeyScope,
+    matchedKeyType: firstMatch.matchedKeyType,
+    charStart: firstMatch.charStart,
+    charEnd: firstMatch.charEnd,
+    excerpt: firstMatch.excerpt,
+  };
+}
+
+function buildWorldbookMatchDetails(
+  worldBookResults: PromptWorldbookTriggerResult | undefined,
+): WorldbookMatchDetail[] {
+  if (!worldBookResults) {
+    return [];
+  }
+
+  const beforeByUid = new Set(worldBookResults.before.map((entry) => entry.uid));
+  const depthByUid = new Map(worldBookResults.atDepth.map((depthEntry) => [depthEntry.entry.uid, depthEntry] as const));
+  const outletByUid = new Map<number, string>();
+
+  for (const [outletName, entries] of Object.entries(worldBookResults.outletEntries ?? {})) {
+    for (const entry of entries) {
+      outletByUid.set(entry.uid, outletName);
+    }
+  }
+
+  return worldBookResults.activated.map((entry) => {
+    const depthEntry = depthByUid.get(entry.uid);
+    const outletName = outletByUid.get(entry.uid);
+    const activationTrace = worldBookResults.activationTraces?.get(entry.uid);
+
+    const insertion: WorldbookMatchInsertion = depthEntry
+      ? {
+          position: "at_depth",
+          depth: depthEntry.depth,
+          role: worldbookRoleToChatRole(depthEntry.role),
+        }
+      : outletName
+        ? {
+            position: "outlet",
+            outletName,
+          }
+        : beforeByUid.has(entry.uid)
+          ? { position: "before" }
+          : { position: "after" };
+
+    return {
+      uid: entry.uid,
+      comment: entry.comment,
+      contentPreview: entry.content.slice(0, 200),
+      order: entry.order,
+      source: worldBookResults.sourceByUid.get(entry.uid) ?? {
+        kind: "session_worldbook",
+        worldbookId: null,
+        worldbookName: "",
+      },
+      insertion,
+      activation: {
+        mode: activationTrace?.mode ?? (entry.constant ? "constant" : "triggered"),
+        recursionLevel: activationTrace?.recursionLevel ?? 0,
+        firstMatch: mapTriggerFirstMatch(activationTrace?.firstMatch ?? null),
+      },
+    };
+  });
 }
 
 function toPromptGraphWorldbookEntries(

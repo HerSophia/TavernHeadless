@@ -34,10 +34,12 @@ import {
   retryFloorBodyJsonSchema,
   editAndRegenerateSuccessResponseJsonSchema,
   dryRunSuccessResponseJsonSchema,
+  dryRunBodyJsonSchema,
   streamResponseExample,
 } from "./schemas/chat-schemas.js";
 import { findNativePipelineError } from "../lib/native-pipeline-error.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
+import type { WorldbookMatchDetail } from "../services/prompt-assembler.js";
 
 // ── Zod Schemas ───────────────────────────────────────
 
@@ -61,7 +63,7 @@ const turnConfigSchema = z.object({
   verifierFailStrategy: z.enum(["warn", "block", "retry"]).optional(),
   toolMode: z.enum(["inline", "standalone", "both"]).optional(),
   maxRetries: z.number().int().min(0).max(5).optional(),
-});
+}).strict();
 
 const generationParamsSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
@@ -73,7 +75,7 @@ const generationParamsSchema = z.object({
   stop_sequences: z.array(z.string()).optional(),
   stream: z.boolean().optional(),
   reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
-});
+}).strict();
 
 const respondBodySchema = z.object({
   /** 用户消息文本 */
@@ -86,14 +88,24 @@ const respondBodySchema = z.object({
   generation_params: generationParamsSchema.optional(),
   branch_id: z.string().min(1).optional(),
   source_floor_id: z.string().min(1).optional(),
-});
+}).strict();
+
+const dryRunDebugOptionsSchema = z.object({
+  include_worldbook_matches: z.boolean().optional(),
+}).strict().optional();
+
+const dryRunBodySchema = z.object({
+  message: z.string().min(1, "Message cannot be empty"),
+  prompt_intent: z.enum(["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"]).optional(),
+  debug_options: dryRunDebugOptionsSchema,
+}).strict();
 
 const regenerateBodySchema = z.object({
   /** 回合配置覆盖（可选） */
   config: turnConfigSchema.optional(),
   /** 生成参数覆盖（可选） */
   generation_params: generationParamsSchema.optional(),
-});
+}).strict();
 
 const editAndRegenerateBodySchema = regenerateBodySchema.extend({
   content: z.string().min(1, "Content cannot be empty"),
@@ -143,7 +155,7 @@ export async function registerChatRoutes(
       summary: "Dry-run prompt assembly",
       description: "Assemble prompt and return debug metadata without calling LLM or writing turn data.",
       params: sessionIdParamsJsonSchema,
-      body: respondBodyJsonSchema,
+      body: dryRunBodyJsonSchema,
       response: {
         200: dryRunSuccessResponseJsonSchema,
         400: errorResponseJsonSchema,
@@ -160,12 +172,15 @@ export async function registerChatRoutes(
     const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
 
-    const parsedBody = parseWithSchema(respondBodySchema, request.body, reply);
+    const parsedBody = parseWithSchema(dryRunBodySchema, request.body, reply);
     if (!parsedBody.ok) return;
 
     const dryRunRequest: DryRunRequest = {
       message: parsedBody.data.message,
       promptIntent: parsedBody.data.prompt_intent,
+      ...(parsedBody.data.debug_options
+        ? { debugOptions: { includeWorldbookMatches: parsedBody.data.debug_options.include_worldbook_matches } }
+        : {}),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -218,6 +233,7 @@ export async function registerChatRoutes(
             trigger_filtered_entry_ids: result.assembly.triggerFilteredEntryIds,
             in_chat_inserted_entry_ids: result.assembly.inChatInsertedEntryIds,
             preprocessed_user_message: result.assembly.preprocessedUserMessage ?? null,
+            ...(result.assembly.worldbookMatches ? { worldbook_matches: result.assembly.worldbookMatches.map(mapWorldbookMatchDetail) } : {}),
           },
         },
       });
@@ -664,6 +680,47 @@ function writeSse(rawReply: import("http").ServerResponse, event: string, data: 
   } catch {
     // 客户端可能已断连，静默忽略。
   }
+}
+
+function mapWorldbookMatchDetail(match: WorldbookMatchDetail): Record<string, unknown> {
+  return {
+    uid: match.uid,
+    comment: match.comment,
+    content_preview: match.contentPreview,
+    order: match.order,
+    source: {
+      kind: match.source.kind,
+      worldbook_id: match.source.worldbookId,
+      worldbook_name: match.source.worldbookName,
+    },
+    insertion: {
+      position: match.insertion.position,
+      ...(match.insertion.depth !== undefined ? { depth: match.insertion.depth } : {}),
+      ...(match.insertion.role ? { role: match.insertion.role } : {}),
+      ...(match.insertion.outletName ? { outlet_name: match.insertion.outletName } : {}),
+    },
+    activation: {
+      mode: match.activation.mode,
+      recursion_level: match.activation.recursionLevel,
+      first_match: match.activation.firstMatch
+        ? {
+            source_kind: match.activation.firstMatch.sourceKind,
+            ...(match.activation.firstMatch.messageIndexFromLatest !== undefined
+              ? { message_index_from_latest: match.activation.firstMatch.messageIndexFromLatest }
+              : {}),
+            ...(match.activation.firstMatch.injectionIndex !== undefined
+              ? { injection_index: match.activation.firstMatch.injectionIndex }
+              : {}),
+            matched_key: match.activation.firstMatch.matchedKey,
+            matched_key_scope: match.activation.firstMatch.matchedKeyScope,
+            matched_key_type: match.activation.firstMatch.matchedKeyType,
+            char_start: match.activation.firstMatch.charStart,
+            char_end: match.activation.firstMatch.charEnd,
+            excerpt: match.activation.firstMatch.excerpt,
+          }
+        : null,
+    },
+  };
 }
 
 function mapChatServiceError(error: ChatServiceError): { statusCode: number; code: string; message: string } {

@@ -79,8 +79,6 @@ POST /sessions/:id/respond
 
 这里的 `commit_busy` 是聊天提交链路专用错误，不复用资源写入路径上的 `resource_busy`。
 
-当前默认服务配置使用单实例内存协调器，且 `GENERATION_QUEUE_MODE=reject`。因此同一 `session + branch` 的并发生成通常直接返回 `generation_conflict`。只有部署方显式启用 `GENERATION_QUEUE_MODE=queue` 时，才可能看到 `generation_queue_timeout`；`GENERATION_QUEUE_TIMEOUT_MS` 用于控制 queue 模式下的等待超时。即便如此，排队也只在当前进程内生效，不提供跨实例共享锁。
-
 ## SSE 流式生成
 
 ```http
@@ -149,18 +147,18 @@ POST /sessions/:id/respond/dry-run
 
 只组装 Prompt 并返回调试信息，不实际调用 LLM，无副作用。除了 `prompt_snapshot`，响应里的 `assembly` 还会返回 preset 兼容边界信息。
 
+如果需要查看命中的世界书条目、来源、注入位置和首个命中位置，可以在请求体里打开 `debug_options.include_worldbook_matches`。
+
 ### 请求体
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `message` | string | **是** | 用户消息文本 |
 | `prompt_intent` | string | 否 | Prompt 运行意图：`normal` / `continue` / `impersonate` / `swipe` / `regenerate` / `quiet` |
-| `config` | [TurnConfig](#turnconfig-对象) | 否 | 兼容 `/respond` 的输入形状 |
-| `generation_params` | [GenerationParams](#generationparams-对象) | 否 | 兼容 `/respond` 的输入形状 |
-| `branch_id` | string | 否 | 兼容 `/respond` 的输入形状 |
-| `source_floor_id` | string | 否 | 兼容 `/respond` 的输入形状 |
+| `debug_options` | object | 否 | dry-run 额外调试选项 |
+| `debug_options.include_worldbook_matches` | boolean | 否 | 是否返回 `assembly.worldbook_matches`。默认 `false` |
 
-当前 route schema 与 `/sessions/:id/respond` 保持兼容。dry-run 当前会实际读取 `message` 和 `prompt_intent`；其余字段可以通过校验，但不会改变 dry-run 结果。
+当前 dry-run 使用独立请求契约。它只接受 `message`、`prompt_intent` 和 `debug_options`。
 
 ### 响应 `200`
 
@@ -215,13 +213,50 @@ POST /sessions/:id/respond/dry-run
       "preset_warnings": [
         "检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。"
       ],
-      "preprocessed_user_message": "Please continue the campfire scene."
+      "preprocessed_user_message": "Please continue the campfire scene.",
+      "worldbook_matches": [
+        {
+          "uid": 7,
+          "comment": "Campfire Lore",
+          "content_preview": "The northern pass is watched by old sentries.",
+          "order": 100,
+          "source": {
+            "kind": "session_worldbook",
+            "worldbook_id": "wb_001",
+            "worldbook_name": "Campfire Worldbook"
+          },
+          "insertion": {
+            "position": "before"
+          },
+          "activation": {
+            "mode": "triggered",
+            "recursion_level": 0,
+            "first_match": {
+              "source_kind": "message",
+              "message_index_from_latest": 0,
+              "matched_key": "campfire",
+              "matched_key_scope": "primary",
+              "matched_key_type": "plain",
+              "char_start": 20,
+              "char_end": 28,
+              "excerpt": "Please continue the campfire scene."
+            }
+          }
+        }
+      ]
     }
   }
 }
 ```
 
-其中 `selected_prompt_order_character_id`、`ignored_prompt_order_character_ids`、`unsupported_preset_fields`、`ignored_preset_fields`、`unresolved_preset_markers` 和 `preset_warnings` 用于说明本轮 preset 的兼容边界与降级情况。`prompt_intent`、`assistant_prefill_applied`、`assistant_prefill_strategy`、`continue_nudge_applied`、`continue_nudge_text`、`names_behavior_applied`、`trigger_filtered_entry_ids` 与 `in_chat_inserted_entry_ids` 用于说明本轮运行语义是否真正进入发送链路。
+`assembly` 中的字段分两类：
+
+- **兼容边界**：`selected_prompt_order_character_id`、`unsupported_preset_fields`、`preset_warnings` 等，说明当前预设的哪些功能生效了、哪些被降级或忽略。
+- **运行语义**：`prompt_intent`、`assistant_prefill_applied`、`continue_nudge_applied`、`names_behavior_applied` 等，说明本轮提示词组装时各项功能是否真正执行。
+
+`worldbook_matches` 只有在 `debug_options.include_worldbook_matches=true` 时才返回。它按命中的世界书条目逐条列出来源、注入位置和首个命中位置，适合做调试面板或高亮定位。
+
+各字段的含义见[官方集成层 - assembly 字段说明](/guide/integration-kit#assembly提示词组装的运行结果)。
 
 ## 重新生成
 

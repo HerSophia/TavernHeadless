@@ -381,7 +381,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Export character as ST Character Card V2 JSON file */
+        /** Export character as ST Character Card V2 or V3 JSON file */
         get: operations["exportCharacter"];
         put?: never;
         post?: never;
@@ -8204,6 +8204,7 @@ export interface operations {
     exportCharacter: {
         parameters: {
             query?: {
+                format?: "v2" | "v3";
                 version_id?: string;
             };
             header?: never;
@@ -9027,9 +9028,14 @@ export interface operations {
                  * @example {
                  *       "data": [
                  *         {
-                 *           "find": "\\s+$",
-                 *           "replace": "",
-                 *           "scriptName": "trim_whitespace"
+                 *           "disabled": false,
+                 *           "findRegex": "\\s+$",
+                 *           "placement": [
+                 *             2
+                 *           ],
+                 *           "replaceString": "",
+                 *           "scriptName": "trim_whitespace",
+                 *           "trimStrings": []
                  *         }
                  *       ],
                  *       "name": "Safety Filters"
@@ -9053,6 +9059,17 @@ export interface operations {
                     /**
                      * @example {
                      *       "data": {
+                     *         "compat_report": {
+                     *           "contains_prompt_only": 0,
+                     *           "contains_reasoning": 0,
+                     *           "contains_run_on_edit": 0,
+                     *           "contains_slash_command": 0,
+                     *           "display_only_count": 0,
+                     *           "persist_executable_count": 1,
+                     *           "prompt_executable_count": 1,
+                     *           "stored_count": 1,
+                     *           "unsupported_runtime_count": 0
+                     *         },
                      *         "id": "regex_safe",
                      *         "name": "Safety Filters",
                      *         "script_count": 1,
@@ -9062,6 +9079,17 @@ export interface operations {
                      */
                     "application/json": {
                         data: {
+                            compat_report: {
+                                contains_prompt_only: number;
+                                contains_reasoning: number;
+                                contains_run_on_edit: number;
+                                contains_slash_command: number;
+                                display_only_count: number;
+                                persist_executable_count: number;
+                                prompt_executable_count: number;
+                                stored_count: number;
+                                unsupported_runtime_count: number;
+                            };
                             id: string;
                             name: string;
                             script_count: number;
@@ -16946,8 +16974,10 @@ export interface operations {
                      *           "constant": false,
                      *           "content": "The kingdom is vast and ancient.",
                      *           "created_at": 1735689600000,
+                     *           "delay_until_recursion": null,
                      *           "depth": 4,
                      *           "disable": false,
+                     *           "exclude_recursion": false,
                      *           "id": "ent_abc123",
                      *           "keys": [
                      *             "kingdom",
@@ -16958,7 +16988,9 @@ export interface operations {
                      *           ],
                      *           "match_whole_words": null,
                      *           "order": 100,
+                     *           "outlet_name": "",
                      *           "position": 0,
+                     *           "prevent_recursion": false,
                      *           "role": 0,
                      *           "scan_depth": null,
                      *           "selective": true,
@@ -16985,14 +17017,18 @@ export interface operations {
                             constant: boolean;
                             content: string;
                             created_at: number;
+                            delay_until_recursion: number | null;
                             depth: number;
                             disable: boolean;
+                            exclude_recursion: boolean;
                             id: string;
                             keys: string[];
                             keys_secondary: string[];
                             match_whole_words: boolean | null;
                             order: number;
+                            outlet_name: string;
                             position: number;
+                            prevent_recursion: boolean;
                             role: number;
                             scan_depth: number | null;
                             selective: boolean;
@@ -17065,14 +17101,18 @@ export interface operations {
                     comment?: string;
                     constant?: boolean;
                     content: string;
+                    delay_until_recursion?: number | null;
                     depth?: number;
                     disable?: boolean;
+                    exclude_recursion?: boolean;
                     expected_version?: number;
                     keys: string[];
                     keys_secondary?: string[];
                     match_whole_words?: boolean | null;
                     order?: number;
+                    outlet_name?: string;
                     position?: number;
+                    prevent_recursion?: boolean;
                     role?: number;
                     scan_depth?: number | null;
                     selective?: boolean;
@@ -17095,8 +17135,10 @@ export interface operations {
                      *         "constant": false,
                      *         "content": "The kingdom is vast and ancient.",
                      *         "created_at": 1735689600000,
+                     *         "delay_until_recursion": null,
                      *         "depth": 4,
                      *         "disable": false,
+                     *         "exclude_recursion": false,
                      *         "id": "ent_abc123",
                      *         "keys": [
                      *           "kingdom",
@@ -17107,7 +17149,9 @@ export interface operations {
                      *         ],
                      *         "match_whole_words": null,
                      *         "order": 100,
+                     *         "outlet_name": "",
                      *         "position": 0,
+                     *         "prevent_recursion": false,
                      *         "role": 0,
                      *         "scan_depth": null,
                      *         "selective": true,
@@ -17126,8 +17170,10 @@ export interface operations {
                          *       "constant": false,
                          *       "content": "The kingdom is vast and ancient.",
                          *       "created_at": 1735689600000,
+                         *       "delay_until_recursion": null,
                          *       "depth": 4,
                          *       "disable": false,
+                         *       "exclude_recursion": false,
                          *       "id": "ent_abc123",
                          *       "keys": [
                          *         "kingdom",
@@ -17138,7 +17184,9 @@ export interface operations {
                          *       ],
                          *       "match_whole_words": null,
                          *       "order": 100,
+                         *       "outlet_name": "",
                          *       "position": 0,
+                         *       "prevent_recursion": false,
                          *       "role": 0,
                          *       "scan_depth": null,
                          *       "selective": true,
@@ -17154,14 +17202,18 @@ export interface operations {
                             constant: boolean;
                             content: string;
                             created_at: number;
+                            delay_until_recursion: number | null;
                             depth: number;
                             disable: boolean;
+                            exclude_recursion: boolean;
                             id: string;
                             keys: string[];
                             keys_secondary: string[];
                             match_whole_words: boolean | null;
                             order: number;
+                            outlet_name: string;
                             position: number;
+                            prevent_recursion: boolean;
                             role: number;
                             scan_depth: number | null;
                             selective: boolean;
@@ -17269,8 +17321,10 @@ export interface operations {
                      *         "constant": false,
                      *         "content": "The kingdom is vast and ancient.",
                      *         "created_at": 1735689600000,
+                     *         "delay_until_recursion": null,
                      *         "depth": 4,
                      *         "disable": false,
+                     *         "exclude_recursion": false,
                      *         "id": "ent_abc123",
                      *         "keys": [
                      *           "kingdom",
@@ -17281,7 +17335,9 @@ export interface operations {
                      *         ],
                      *         "match_whole_words": null,
                      *         "order": 100,
+                     *         "outlet_name": "",
                      *         "position": 0,
+                     *         "prevent_recursion": false,
                      *         "role": 0,
                      *         "scan_depth": null,
                      *         "selective": true,
@@ -17300,8 +17356,10 @@ export interface operations {
                          *       "constant": false,
                          *       "content": "The kingdom is vast and ancient.",
                          *       "created_at": 1735689600000,
+                         *       "delay_until_recursion": null,
                          *       "depth": 4,
                          *       "disable": false,
+                         *       "exclude_recursion": false,
                          *       "id": "ent_abc123",
                          *       "keys": [
                          *         "kingdom",
@@ -17312,7 +17370,9 @@ export interface operations {
                          *       ],
                          *       "match_whole_words": null,
                          *       "order": 100,
+                         *       "outlet_name": "",
                          *       "position": 0,
+                         *       "prevent_recursion": false,
                          *       "role": 0,
                          *       "scan_depth": null,
                          *       "selective": true,
@@ -17328,14 +17388,18 @@ export interface operations {
                             constant: boolean;
                             content: string;
                             created_at: number;
+                            delay_until_recursion: number | null;
                             depth: number;
                             disable: boolean;
+                            exclude_recursion: boolean;
                             id: string;
                             keys: string[];
                             keys_secondary: string[];
                             match_whole_words: boolean | null;
                             order: number;
+                            outlet_name: string;
                             position: number;
+                            prevent_recursion: boolean;
                             role: number;
                             scan_depth: number | null;
                             selective: boolean;
@@ -17489,14 +17553,18 @@ export interface operations {
                     comment?: string;
                     constant?: boolean;
                     content?: string;
+                    delay_until_recursion?: number | null;
                     depth?: number;
                     disable?: boolean;
+                    exclude_recursion?: boolean;
                     expected_version?: number;
                     keys?: string[];
                     keys_secondary?: string[];
                     match_whole_words?: boolean | null;
                     order?: number;
+                    outlet_name?: string;
                     position?: number;
+                    prevent_recursion?: boolean;
                     role?: number;
                     scan_depth?: number | null;
                     selective?: boolean;
@@ -17519,8 +17587,10 @@ export interface operations {
                      *         "constant": false,
                      *         "content": "The kingdom is vast and ancient.",
                      *         "created_at": 1735689600000,
+                     *         "delay_until_recursion": null,
                      *         "depth": 4,
                      *         "disable": false,
+                     *         "exclude_recursion": false,
                      *         "id": "ent_abc123",
                      *         "keys": [
                      *           "kingdom",
@@ -17531,7 +17601,9 @@ export interface operations {
                      *         ],
                      *         "match_whole_words": null,
                      *         "order": 100,
+                     *         "outlet_name": "",
                      *         "position": 0,
+                     *         "prevent_recursion": false,
                      *         "role": 0,
                      *         "scan_depth": null,
                      *         "selective": true,
@@ -17550,8 +17622,10 @@ export interface operations {
                          *       "constant": false,
                          *       "content": "The kingdom is vast and ancient.",
                          *       "created_at": 1735689600000,
+                         *       "delay_until_recursion": null,
                          *       "depth": 4,
                          *       "disable": false,
+                         *       "exclude_recursion": false,
                          *       "id": "ent_abc123",
                          *       "keys": [
                          *         "kingdom",
@@ -17562,7 +17636,9 @@ export interface operations {
                          *       ],
                          *       "match_whole_words": null,
                          *       "order": 100,
+                         *       "outlet_name": "",
                          *       "position": 0,
+                         *       "prevent_recursion": false,
                          *       "role": 0,
                          *       "scan_depth": null,
                          *       "selective": true,
@@ -17578,14 +17654,18 @@ export interface operations {
                             constant: boolean;
                             content: string;
                             created_at: number;
+                            delay_until_recursion: number | null;
                             depth: number;
                             disable: boolean;
+                            exclude_recursion: boolean;
                             id: string;
                             keys: string[];
                             keys_secondary: string[];
                             match_whole_words: boolean | null;
                             order: number;
+                            outlet_name: string;
                             position: number;
+                            prevent_recursion: boolean;
                             role: number;
                             scan_depth: number | null;
                             selective: boolean;
@@ -17867,8 +17947,10 @@ export interface operations {
                      *               "constant": false,
                      *               "content": "The kingdom is vast and ancient.",
                      *               "created_at": 1735689600000,
+                     *               "delay_until_recursion": null,
                      *               "depth": 4,
                      *               "disable": false,
+                     *               "exclude_recursion": false,
                      *               "id": "ent_abc123",
                      *               "keys": [
                      *                 "kingdom",
@@ -17879,7 +17961,9 @@ export interface operations {
                      *               ],
                      *               "match_whole_words": null,
                      *               "order": 10,
+                     *               "outlet_name": "",
                      *               "position": 0,
+                     *               "prevent_recursion": false,
                      *               "role": 0,
                      *               "scan_depth": null,
                      *               "selective": true,
@@ -17917,8 +18001,10 @@ export interface operations {
                                  *       "constant": false,
                                  *       "content": "The kingdom is vast and ancient.",
                                  *       "created_at": 1735689600000,
+                                 *       "delay_until_recursion": null,
                                  *       "depth": 4,
                                  *       "disable": false,
+                                 *       "exclude_recursion": false,
                                  *       "id": "ent_abc123",
                                  *       "keys": [
                                  *         "kingdom",
@@ -17929,7 +18015,9 @@ export interface operations {
                                  *       ],
                                  *       "match_whole_words": null,
                                  *       "order": 100,
+                                 *       "outlet_name": "",
                                  *       "position": 0,
+                                 *       "prevent_recursion": false,
                                  *       "role": 0,
                                  *       "scan_depth": null,
                                  *       "selective": true,
@@ -17945,14 +18033,18 @@ export interface operations {
                                     constant: boolean;
                                     content: string;
                                     created_at: number;
+                                    delay_until_recursion: number | null;
                                     depth: number;
                                     disable: boolean;
+                                    exclude_recursion: boolean;
                                     id: string;
                                     keys: string[];
                                     keys_secondary: string[];
                                     match_whole_words: boolean | null;
                                     order: number;
+                                    outlet_name: string;
                                     position: number;
+                                    prevent_recursion: boolean;
                                     role: number;
                                     scan_depth: number | null;
                                     selective: boolean;
@@ -18067,13 +18159,17 @@ export interface operations {
                         comment?: string;
                         constant?: boolean;
                         content?: string;
+                        delay_until_recursion?: number | null;
                         depth?: number;
                         disable?: boolean;
+                        exclude_recursion?: boolean;
                         keys?: string[];
                         keys_secondary?: string[];
                         match_whole_words?: boolean | null;
                         order?: number;
+                        outlet_name?: string;
                         position?: number;
+                        prevent_recursion?: boolean;
                         role?: number;
                         scan_depth?: number | null;
                         selective?: boolean;
@@ -18107,8 +18203,10 @@ export interface operations {
                      *               "constant": false,
                      *               "content": "The kingdom is vast and ancient.",
                      *               "created_at": 1735689600000,
+                     *               "delay_until_recursion": null,
                      *               "depth": 4,
                      *               "disable": true,
+                     *               "exclude_recursion": false,
                      *               "id": "ent_abc123",
                      *               "keys": [
                      *                 "kingdom",
@@ -18119,7 +18217,9 @@ export interface operations {
                      *               ],
                      *               "match_whole_words": null,
                      *               "order": 100,
+                     *               "outlet_name": "",
                      *               "position": 0,
+                     *               "prevent_recursion": false,
                      *               "role": 0,
                      *               "scan_depth": null,
                      *               "selective": true,
@@ -18157,8 +18257,10 @@ export interface operations {
                                  *       "constant": false,
                                  *       "content": "The kingdom is vast and ancient.",
                                  *       "created_at": 1735689600000,
+                                 *       "delay_until_recursion": null,
                                  *       "depth": 4,
                                  *       "disable": false,
+                                 *       "exclude_recursion": false,
                                  *       "id": "ent_abc123",
                                  *       "keys": [
                                  *         "kingdom",
@@ -18169,7 +18271,9 @@ export interface operations {
                                  *       ],
                                  *       "match_whole_words": null,
                                  *       "order": 100,
+                                 *       "outlet_name": "",
                                  *       "position": 0,
+                                 *       "prevent_recursion": false,
                                  *       "role": 0,
                                  *       "scan_depth": null,
                                  *       "selective": true,
@@ -18185,14 +18289,18 @@ export interface operations {
                                     constant: boolean;
                                     content: string;
                                     created_at: number;
+                                    delay_until_recursion: number | null;
                                     depth: number;
                                     disable: boolean;
+                                    exclude_recursion: boolean;
                                     id: string;
                                     keys: string[];
                                     keys_secondary: string[];
                                     match_whole_words: boolean | null;
                                     order: number;
+                                    outlet_name: string;
                                     position: number;
+                                    prevent_recursion: boolean;
                                     role: number;
                                     scan_depth: number | null;
                                     selective: boolean;

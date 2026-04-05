@@ -186,6 +186,36 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         namesBehaviorApplied: "always",
         triggerFilteredEntryIds: ["quietPrompt"],
         inChatInsertedEntryIds: ["continueHint"],
+        worldbookMatches: [
+          {
+            uid: 7,
+            comment: "Campfire Lore",
+            contentPreview: "The northern pass is watched by old sentries.",
+            order: 100,
+            source: {
+              kind: "session_worldbook",
+              worldbookId: "worldbook-1",
+              worldbookName: "Campfire Worldbook",
+            },
+            insertion: {
+              position: "before",
+            },
+            activation: {
+              mode: "triggered",
+              recursionLevel: 0,
+              firstMatch: {
+                sourceKind: "message",
+                messageIndexFromLatest: 0,
+                matchedKey: "campfire",
+                matchedKeyScope: "primary",
+                matchedKeyType: "plain",
+                charStart: 20,
+                charEnd: 28,
+                excerpt: "Please continue the campfire scene.",
+              },
+            },
+          },
+        ],
         preprocessedUserMessage: "hello",
       },
     };
@@ -199,12 +229,22 @@ describe("POST /sessions/:id/respond/dry-run", () => {
     const response = await app.inject({
       method: "POST",
       url: "/sessions/s1/respond/dry-run",
-      payload: { message: "hello", prompt_intent: "continue" },
+      payload: {
+        message: "hello",
+        prompt_intent: "continue",
+        debug_options: {
+          include_worldbook_matches: true,
+        },
+      },
     });
 
     expect(response.statusCode).toBe(200);
     expect(chatService.dryRun).toHaveBeenCalledOnce();
-    expect(chatService.dryRun).toHaveBeenCalledWith("s1", { message: "hello", promptIntent: "continue" }, "default-admin");
+    expect(chatService.dryRun).toHaveBeenCalledWith("s1", {
+      message: "hello",
+      promptIntent: "continue",
+      debugOptions: { includeWorldbookMatches: true },
+    }, "default-admin");
 
     const body = response.json() as { data: Record<string, unknown> };
     expect(body.data.token_estimate).toBe(42);
@@ -250,6 +290,36 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       names_behavior_applied: "always",
       trigger_filtered_entry_ids: ["quietPrompt"],
       in_chat_inserted_entry_ids: ["continueHint"],
+      worldbook_matches: [
+        {
+          uid: 7,
+          comment: "Campfire Lore",
+          content_preview: "The northern pass is watched by old sentries.",
+          order: 100,
+          source: {
+            kind: "session_worldbook",
+            worldbook_id: "worldbook-1",
+            worldbook_name: "Campfire Worldbook",
+          },
+          insertion: {
+            position: "before",
+          },
+          activation: {
+            mode: "triggered",
+            recursion_level: 0,
+            first_match: {
+              source_kind: "message",
+              message_index_from_latest: 0,
+              matched_key: "campfire",
+              matched_key_scope: "primary",
+              matched_key_type: "plain",
+              char_start: 20,
+              char_end: 28,
+              excerpt: "Please continue the campfire scene.",
+            },
+          },
+        },
+      ],
       preprocessed_user_message: "hello",
     });
   });
@@ -318,6 +388,8 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       data: {
         messages: [{ role: "user", content: "hello" }],
         token_estimate: 12,
+
+
         available_for_reply: 256,
         memory_summary: null,
         prompt_snapshot: {
@@ -385,9 +457,50 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       error: {
         code: "session_archived",
         message: "Cannot dry-run in an archived session",
+
+
       },
     });
   });
+  it("does not forward dry-run debug_options into the normal respond service request", async () => {
+    const chatService = createRouteChatService({
+      respond: vi.fn(async () => ({
+        floorId: "floor-1",
+        floorNo: 1,
+        branchId: "main",
+        generatedText: "ok",
+        summaries: [],
+        totalUsage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        finalState: "committed",
+      })),
+    });
+
+    await mountChatRoutes(chatService, { enablePromptDryRun: true });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/respond",
+      payload: {
+        message: "hello",
+        debug_options: {
+          include_worldbook_matches: true,
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(chatService.respond).toHaveBeenCalledOnce();
+    expect(chatService.respond).toHaveBeenCalledWith("s1", {
+      message: "hello",
+      config: undefined,
+      generationParams: undefined,
+      branchId: undefined,
+      sourceFloorId: undefined,
+      promptIntent: undefined,
+    }, {}, "default-admin");
+  });
+
+
 
 });
 
@@ -410,6 +523,8 @@ describe("ChatService.dryRun", () => {
 
     sessionId = nanoid();
     const now = Date.now();
+
+
     await database.db.insert(sessions).values({
       id: sessionId,
       title: "Dry Run Session",
@@ -478,6 +593,8 @@ describe("ChatService.dryRun", () => {
     expect(mockOrchestrator.executeTurn).not.toHaveBeenCalled();
 
     const floorsAfter = await database.db.select().from(floors).where(eq(floors.sessionId, sessionId));
+
+
     const messagesAfter = await database.db.select().from(messageTable);
     const promptSnapshotsAfter = await database.db.select().from(promptSnapshots);
 
@@ -600,6 +717,8 @@ describe("ChatService.dryRun", () => {
     const result = await chatService.dryRun(sessionId, { message: "hello prefill" });
     const visibleTokenCounter = new SimpleTokenCounter();
     const visibleTokenEstimate = result.messages.reduce((sum, message) => sum + visibleTokenCounter.count(message.content), 0);
+
+
 
     expect(result.messages.some((message) => message.role === "assistant" && message.content === "Knight:")).toBe(false);
     expect(result.messages.some((message) => message.role === "user" && message.content.includes("hello prefill"))).toBe(true);
@@ -749,4 +868,122 @@ describe("ChatService.dryRun", () => {
       regexPostRuleNames: [],
     });
   });
+
+  it("returns worldbook match details when requested and keeps contentPreview aligned with WORLD_INFO regex output", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+    const regexProfileId = nanoid();
+    const worldInfoRegexData = [
+      {
+        id: "regex-world-info-1",
+        scriptName: "World Info Rule",
+        findRegex: "/sword/g",
+        replaceString: "blade",
+        trimStrings: [],
+        placement: [5],
+        disabled: false,
+        substituteRegex: 0,
+        minDepth: 0,
+        maxDepth: 0,
+      },
+    ];
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Worldbook Match Preset",
+      source: "sillytavern",
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Dry Run Worldbook",
+      source: "sillytavern",
+      dataJson: JSON.stringify({ scanDepth: 3 }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 7,
+      comment: "Sword",
+      content: "A blessed sword rests in the shrine.",
+      keysJson: JSON.stringify(["sword"]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: false,
+      selectiveLogic: 0,
+      constant: false,
+      position: 0,
+      order: 100,
+      depth: 4,
+      role: 0,
+      disable: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(regexProfiles).values({
+      id: regexProfileId,
+      name: "Dry Run World Info Regex",
+      source: "sillytavern",
+      dataJson: JSON.stringify(worldInfoRegexData),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        worldbookProfileId: worldbookId,
+        regexProfileId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    const result = await chatService.dryRun(sessionId, {
+      message: "hello sword",
+      debugOptions: { includeWorldbookMatches: true },
+    });
+
+    expect(result.assembly.worldbookMatches).toEqual([
+      {
+        uid: 7,
+        comment: "Sword",
+        contentPreview: "A blessed blade rests in the shrine.",
+        order: 100,
+        source: {
+          kind: "session_worldbook",
+          worldbookId,
+          worldbookName: "Dry Run Worldbook",
+        },
+        insertion: {
+          position: "before",
+        },
+        activation: {
+          mode: "triggered",
+          recursionLevel: 0,
+          firstMatch: {
+            sourceKind: "message",
+            messageIndexFromLatest: 0,
+            matchedKey: "sword",
+            matchedKeyScope: "primary",
+            matchedKeyType: "plain",
+            charStart: 6,
+            charEnd: 11,
+            excerpt: "hello sword",
+          },
+        },
+      },
+    ]);
+    expect(result.assembly.worldbookHits).toBe(1);
+    expect(result.promptSnapshot.worldbookActivatedEntryUids).toEqual([7]);
+  });
 });
+

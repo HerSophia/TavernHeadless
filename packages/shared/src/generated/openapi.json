@@ -3959,6 +3959,19 @@
         "parameters": [
           {
             "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "v2",
+              "enum": [
+                "v2",
+                "v3"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "version_id",
             "required": false,
             "schema": {
@@ -4011,7 +4024,7 @@
             "description": "Default Response"
           }
         },
-        "summary": "Export character as ST Character Card V2 JSON file",
+        "summary": "Export character as ST Character Card V2 or V3 JSON file",
         "tags": [
           "exports"
         ]
@@ -7491,9 +7504,14 @@
               "example": {
                 "data": [
                   {
-                    "find": "\\s+$",
-                    "replace": "",
-                    "scriptName": "trim_whitespace"
+                    "disabled": false,
+                    "findRegex": "\\s+$",
+                    "placement": [
+                      2
+                    ],
+                    "replaceString": "",
+                    "scriptName": "trim_whitespace",
+                    "trimStrings": []
                   }
                 ],
                 "name": "Safety Filters"
@@ -7529,6 +7547,17 @@
               "application/json": {
                 "example": {
                   "data": {
+                    "compat_report": {
+                      "contains_prompt_only": 0,
+                      "contains_reasoning": 0,
+                      "contains_run_on_edit": 0,
+                      "contains_slash_command": 0,
+                      "display_only_count": 0,
+                      "persist_executable_count": 1,
+                      "prompt_executable_count": 1,
+                      "stored_count": 1,
+                      "unsupported_runtime_count": 0
+                    },
                     "id": "regex_safe",
                     "name": "Safety Filters",
                     "script_count": 1,
@@ -7541,6 +7570,59 @@
                     "data": {
                       "additionalProperties": false,
                       "properties": {
+                        "compat_report": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "contains_prompt_only": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "contains_reasoning": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "contains_run_on_edit": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "contains_slash_command": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "display_only_count": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "persist_executable_count": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "prompt_executable_count": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "stored_count": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "unsupported_runtime_count": {
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "stored_count",
+                            "prompt_executable_count",
+                            "persist_executable_count",
+                            "display_only_count",
+                            "unsupported_runtime_count",
+                            "contains_prompt_only",
+                            "contains_run_on_edit",
+                            "contains_reasoning",
+                            "contains_slash_command"
+                          ],
+                          "type": "object"
+                        },
                         "id": {
                           "type": "string"
                         },
@@ -7559,7 +7641,8 @@
                         "id",
                         "name",
                         "source",
-                        "script_count"
+                        "script_count",
+                        "compat_report"
                       ],
                       "type": "object"
                     }
@@ -35425,8 +35508,10 @@
                       "constant": false,
                       "content": "The kingdom is vast and ancient.",
                       "created_at": 1735689600000,
+                      "delay_until_recursion": null,
                       "depth": 4,
                       "disable": false,
+                      "exclude_recursion": false,
                       "id": "ent_abc123",
                       "keys": [
                         "kingdom",
@@ -35437,7 +35522,9 @@
                       ],
                       "match_whole_words": null,
                       "order": 100,
+                      "outlet_name": "",
                       "position": 0,
+                      "prevent_recursion": false,
                       "role": 0,
                       "scan_depth": null,
                       "selective": true,
@@ -35468,8 +35555,10 @@
                           "constant": false,
                           "content": "The kingdom is vast and ancient.",
                           "created_at": 1735689600000,
+                          "delay_until_recursion": null,
                           "depth": 4,
                           "disable": false,
+                          "exclude_recursion": false,
                           "id": "ent_abc123",
                           "keys": [
                             "kingdom",
@@ -35480,7 +35569,9 @@
                           ],
                           "match_whole_words": null,
                           "order": 100,
+                          "outlet_name": "",
                           "position": 0,
+                          "prevent_recursion": false,
                           "role": 0,
                           "scan_depth": null,
                           "selective": true,
@@ -35513,11 +35604,25 @@
                             "minimum": 0,
                             "type": "integer"
                           },
+                          "delay_until_recursion": {
+                            "anyOf": [
+                              {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "depth": {
                             "minimum": 0,
                             "type": "integer"
                           },
                           "disable": {
+                            "type": "boolean"
+                          },
+                          "exclude_recursion": {
                             "type": "boolean"
                           },
                           "id": {
@@ -35548,10 +35653,16 @@
                           "order": {
                             "type": "integer"
                           },
+                          "outlet_name": {
+                            "type": "string"
+                          },
                           "position": {
-                            "maximum": 6,
+                            "maximum": 7,
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "prevent_recursion": {
+                            "type": "boolean"
                           },
                           "role": {
                             "maximum": 2,
@@ -35608,6 +35719,10 @@
                           "scan_depth",
                           "case_sensitive",
                           "match_whole_words",
+                          "exclude_recursion",
+                          "prevent_recursion",
+                          "delay_until_recursion",
+                          "outlet_name",
                           "created_at",
                           "updated_at"
                         ],
@@ -35775,11 +35890,25 @@
                   "content": {
                     "type": "string"
                   },
+                  "delay_until_recursion": {
+                    "anyOf": [
+                      {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "depth": {
                     "minimum": 0,
                     "type": "integer"
                   },
                   "disable": {
+                    "type": "boolean"
+                  },
+                  "exclude_recursion": {
                     "type": "boolean"
                   },
                   "expected_version": {
@@ -35811,10 +35940,16 @@
                   "order": {
                     "type": "integer"
                   },
+                  "outlet_name": {
+                    "type": "string"
+                  },
                   "position": {
-                    "maximum": 6,
+                    "maximum": 7,
                     "minimum": 0,
                     "type": "integer"
+                  },
+                  "prevent_recursion": {
+                    "type": "boolean"
                   },
                   "role": {
                     "maximum": 2,
@@ -35862,8 +35997,10 @@
                     "constant": false,
                     "content": "The kingdom is vast and ancient.",
                     "created_at": 1735689600000,
+                    "delay_until_recursion": null,
                     "depth": 4,
                     "disable": false,
+                    "exclude_recursion": false,
                     "id": "ent_abc123",
                     "keys": [
                       "kingdom",
@@ -35874,7 +36011,9 @@
                     ],
                     "match_whole_words": null,
                     "order": 100,
+                    "outlet_name": "",
                     "position": 0,
+                    "prevent_recursion": false,
                     "role": 0,
                     "scan_depth": null,
                     "selective": true,
@@ -35895,8 +36034,10 @@
                         "constant": false,
                         "content": "The kingdom is vast and ancient.",
                         "created_at": 1735689600000,
+                        "delay_until_recursion": null,
                         "depth": 4,
                         "disable": false,
+                        "exclude_recursion": false,
                         "id": "ent_abc123",
                         "keys": [
                           "kingdom",
@@ -35907,7 +36048,9 @@
                         ],
                         "match_whole_words": null,
                         "order": 100,
+                        "outlet_name": "",
                         "position": 0,
+                        "prevent_recursion": false,
                         "role": 0,
                         "scan_depth": null,
                         "selective": true,
@@ -35940,11 +36083,25 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "delay_until_recursion": {
+                          "anyOf": [
+                            {
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "depth": {
                           "minimum": 0,
                           "type": "integer"
                         },
                         "disable": {
+                          "type": "boolean"
+                        },
+                        "exclude_recursion": {
                           "type": "boolean"
                         },
                         "id": {
@@ -35975,10 +36132,16 @@
                         "order": {
                           "type": "integer"
                         },
+                        "outlet_name": {
+                          "type": "string"
+                        },
                         "position": {
-                          "maximum": 6,
+                          "maximum": 7,
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "prevent_recursion": {
+                          "type": "boolean"
                         },
                         "role": {
                           "maximum": 2,
@@ -36035,6 +36198,10 @@
                         "scan_depth",
                         "case_sensitive",
                         "match_whole_words",
+                        "exclude_recursion",
+                        "prevent_recursion",
+                        "delay_until_recursion",
+                        "outlet_name",
                         "created_at",
                         "updated_at"
                       ],
@@ -36431,8 +36598,10 @@
                     "constant": false,
                     "content": "The kingdom is vast and ancient.",
                     "created_at": 1735689600000,
+                    "delay_until_recursion": null,
                     "depth": 4,
                     "disable": false,
+                    "exclude_recursion": false,
                     "id": "ent_abc123",
                     "keys": [
                       "kingdom",
@@ -36443,7 +36612,9 @@
                     ],
                     "match_whole_words": null,
                     "order": 100,
+                    "outlet_name": "",
                     "position": 0,
+                    "prevent_recursion": false,
                     "role": 0,
                     "scan_depth": null,
                     "selective": true,
@@ -36464,8 +36635,10 @@
                         "constant": false,
                         "content": "The kingdom is vast and ancient.",
                         "created_at": 1735689600000,
+                        "delay_until_recursion": null,
                         "depth": 4,
                         "disable": false,
+                        "exclude_recursion": false,
                         "id": "ent_abc123",
                         "keys": [
                           "kingdom",
@@ -36476,7 +36649,9 @@
                         ],
                         "match_whole_words": null,
                         "order": 100,
+                        "outlet_name": "",
                         "position": 0,
+                        "prevent_recursion": false,
                         "role": 0,
                         "scan_depth": null,
                         "selective": true,
@@ -36509,11 +36684,25 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "delay_until_recursion": {
+                          "anyOf": [
+                            {
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "depth": {
                           "minimum": 0,
                           "type": "integer"
                         },
                         "disable": {
+                          "type": "boolean"
+                        },
+                        "exclude_recursion": {
                           "type": "boolean"
                         },
                         "id": {
@@ -36544,10 +36733,16 @@
                         "order": {
                           "type": "integer"
                         },
+                        "outlet_name": {
+                          "type": "string"
+                        },
                         "position": {
-                          "maximum": 6,
+                          "maximum": 7,
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "prevent_recursion": {
+                          "type": "boolean"
                         },
                         "role": {
                           "maximum": 2,
@@ -36604,6 +36799,10 @@
                         "scan_depth",
                         "case_sensitive",
                         "match_whole_words",
+                        "exclude_recursion",
+                        "prevent_recursion",
+                        "delay_until_recursion",
+                        "outlet_name",
                         "created_at",
                         "updated_at"
                       ],
@@ -36705,11 +36904,25 @@
                   "content": {
                     "type": "string"
                   },
+                  "delay_until_recursion": {
+                    "anyOf": [
+                      {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "depth": {
                     "minimum": 0,
                     "type": "integer"
                   },
                   "disable": {
+                    "type": "boolean"
+                  },
+                  "exclude_recursion": {
                     "type": "boolean"
                   },
                   "expected_version": {
@@ -36741,10 +36954,16 @@
                   "order": {
                     "type": "integer"
                   },
+                  "outlet_name": {
+                    "type": "string"
+                  },
                   "position": {
-                    "maximum": 6,
+                    "maximum": 7,
                     "minimum": 0,
                     "type": "integer"
+                  },
+                  "prevent_recursion": {
+                    "type": "boolean"
                   },
                   "role": {
                     "maximum": 2,
@@ -36788,8 +37007,10 @@
                     "constant": false,
                     "content": "The kingdom is vast and ancient.",
                     "created_at": 1735689600000,
+                    "delay_until_recursion": null,
                     "depth": 4,
                     "disable": false,
+                    "exclude_recursion": false,
                     "id": "ent_abc123",
                     "keys": [
                       "kingdom",
@@ -36800,7 +37021,9 @@
                     ],
                     "match_whole_words": null,
                     "order": 100,
+                    "outlet_name": "",
                     "position": 0,
+                    "prevent_recursion": false,
                     "role": 0,
                     "scan_depth": null,
                     "selective": true,
@@ -36821,8 +37044,10 @@
                         "constant": false,
                         "content": "The kingdom is vast and ancient.",
                         "created_at": 1735689600000,
+                        "delay_until_recursion": null,
                         "depth": 4,
                         "disable": false,
+                        "exclude_recursion": false,
                         "id": "ent_abc123",
                         "keys": [
                           "kingdom",
@@ -36833,7 +37058,9 @@
                         ],
                         "match_whole_words": null,
                         "order": 100,
+                        "outlet_name": "",
                         "position": 0,
+                        "prevent_recursion": false,
                         "role": 0,
                         "scan_depth": null,
                         "selective": true,
@@ -36866,11 +37093,25 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "delay_until_recursion": {
+                          "anyOf": [
+                            {
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "depth": {
                           "minimum": 0,
                           "type": "integer"
                         },
                         "disable": {
+                          "type": "boolean"
+                        },
+                        "exclude_recursion": {
                           "type": "boolean"
                         },
                         "id": {
@@ -36901,10 +37142,16 @@
                         "order": {
                           "type": "integer"
                         },
+                        "outlet_name": {
+                          "type": "string"
+                        },
                         "position": {
-                          "maximum": 6,
+                          "maximum": 7,
                           "minimum": 0,
                           "type": "integer"
+                        },
+                        "prevent_recursion": {
+                          "type": "boolean"
                         },
                         "role": {
                           "maximum": 2,
@@ -36961,6 +37208,10 @@
                         "scan_depth",
                         "case_sensitive",
                         "match_whole_words",
+                        "exclude_recursion",
+                        "prevent_recursion",
+                        "delay_until_recursion",
+                        "outlet_name",
                         "created_at",
                         "updated_at"
                       ],
@@ -37490,8 +37741,10 @@
                           "constant": false,
                           "content": "The kingdom is vast and ancient.",
                           "created_at": 1735689600000,
+                          "delay_until_recursion": null,
                           "depth": 4,
                           "disable": false,
+                          "exclude_recursion": false,
                           "id": "ent_abc123",
                           "keys": [
                             "kingdom",
@@ -37502,7 +37755,9 @@
                           ],
                           "match_whole_words": null,
                           "order": 10,
+                          "outlet_name": "",
                           "position": 0,
+                          "prevent_recursion": false,
                           "role": 0,
                           "scan_depth": null,
                           "selective": true,
@@ -37570,8 +37825,10 @@
                                   "constant": false,
                                   "content": "The kingdom is vast and ancient.",
                                   "created_at": 1735689600000,
+                                  "delay_until_recursion": null,
                                   "depth": 4,
                                   "disable": false,
+                                  "exclude_recursion": false,
                                   "id": "ent_abc123",
                                   "keys": [
                                     "kingdom",
@@ -37582,7 +37839,9 @@
                                   ],
                                   "match_whole_words": null,
                                   "order": 100,
+                                  "outlet_name": "",
                                   "position": 0,
+                                  "prevent_recursion": false,
                                   "role": 0,
                                   "scan_depth": null,
                                   "selective": true,
@@ -37615,11 +37874,25 @@
                                     "minimum": 0,
                                     "type": "integer"
                                   },
+                                  "delay_until_recursion": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "depth": {
                                     "minimum": 0,
                                     "type": "integer"
                                   },
                                   "disable": {
+                                    "type": "boolean"
+                                  },
+                                  "exclude_recursion": {
                                     "type": "boolean"
                                   },
                                   "id": {
@@ -37650,10 +37923,16 @@
                                   "order": {
                                     "type": "integer"
                                   },
+                                  "outlet_name": {
+                                    "type": "string"
+                                  },
                                   "position": {
-                                    "maximum": 6,
+                                    "maximum": 7,
                                     "minimum": 0,
                                     "type": "integer"
+                                  },
+                                  "prevent_recursion": {
+                                    "type": "boolean"
                                   },
                                   "role": {
                                     "maximum": 2,
@@ -37710,6 +37989,10 @@
                                   "scan_depth",
                                   "case_sensitive",
                                   "match_whole_words",
+                                  "exclude_recursion",
+                                  "prevent_recursion",
+                                  "delay_until_recursion",
+                                  "outlet_name",
                                   "created_at",
                                   "updated_at"
                                 ],
@@ -37944,11 +38227,25 @@
                       "content": {
                         "type": "string"
                       },
+                      "delay_until_recursion": {
+                        "anyOf": [
+                          {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
                       "depth": {
                         "minimum": 0,
                         "type": "integer"
                       },
                       "disable": {
+                        "type": "boolean"
+                      },
+                      "exclude_recursion": {
                         "type": "boolean"
                       },
                       "keys": {
@@ -37976,10 +38273,16 @@
                       "order": {
                         "type": "integer"
                       },
+                      "outlet_name": {
+                        "type": "string"
+                      },
                       "position": {
-                        "maximum": 6,
+                        "maximum": 7,
                         "minimum": 0,
                         "type": "integer"
+                      },
+                      "prevent_recursion": {
+                        "type": "boolean"
                       },
                       "role": {
                         "maximum": 2,
@@ -38048,8 +38351,10 @@
                           "constant": false,
                           "content": "The kingdom is vast and ancient.",
                           "created_at": 1735689600000,
+                          "delay_until_recursion": null,
                           "depth": 4,
                           "disable": true,
+                          "exclude_recursion": false,
                           "id": "ent_abc123",
                           "keys": [
                             "kingdom",
@@ -38060,7 +38365,9 @@
                           ],
                           "match_whole_words": null,
                           "order": 100,
+                          "outlet_name": "",
                           "position": 0,
+                          "prevent_recursion": false,
                           "role": 0,
                           "scan_depth": null,
                           "selective": true,
@@ -38128,8 +38435,10 @@
                                   "constant": false,
                                   "content": "The kingdom is vast and ancient.",
                                   "created_at": 1735689600000,
+                                  "delay_until_recursion": null,
                                   "depth": 4,
                                   "disable": false,
+                                  "exclude_recursion": false,
                                   "id": "ent_abc123",
                                   "keys": [
                                     "kingdom",
@@ -38140,7 +38449,9 @@
                                   ],
                                   "match_whole_words": null,
                                   "order": 100,
+                                  "outlet_name": "",
                                   "position": 0,
+                                  "prevent_recursion": false,
                                   "role": 0,
                                   "scan_depth": null,
                                   "selective": true,
@@ -38173,11 +38484,25 @@
                                     "minimum": 0,
                                     "type": "integer"
                                   },
+                                  "delay_until_recursion": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "depth": {
                                     "minimum": 0,
                                     "type": "integer"
                                   },
                                   "disable": {
+                                    "type": "boolean"
+                                  },
+                                  "exclude_recursion": {
                                     "type": "boolean"
                                   },
                                   "id": {
@@ -38208,10 +38533,16 @@
                                   "order": {
                                     "type": "integer"
                                   },
+                                  "outlet_name": {
+                                    "type": "string"
+                                  },
                                   "position": {
-                                    "maximum": 6,
+                                    "maximum": 7,
                                     "minimum": 0,
                                     "type": "integer"
+                                  },
+                                  "prevent_recursion": {
+                                    "type": "boolean"
                                   },
                                   "role": {
                                     "maximum": 2,
@@ -38268,6 +38599,10 @@
                                   "scan_depth",
                                   "case_sensitive",
                                   "match_whole_words",
+                                  "exclude_recursion",
+                                  "prevent_recursion",
+                                  "delay_until_recursion",
+                                  "outlet_name",
                                   "created_at",
                                   "updated_at"
                                 ],

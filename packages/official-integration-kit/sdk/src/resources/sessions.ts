@@ -247,6 +247,56 @@ export type RespondDryRunMessage = {
   role: "system" | "user" | "assistant";
 };
 
+export type RespondDryRunWorldbookFirstMatch = {
+  charEnd: number;
+  charStart: number;
+  excerpt: string;
+  injectionIndex?: number;
+  matchedKey: string;
+  matchedKeyScope: "primary" | "secondary";
+  matchedKeyType: "plain" | "regex";
+  messageIndexFromLatest?: number;
+  sourceKind:
+    | "message"
+    | "persona_description"
+    | "character_description"
+    | "character_personality"
+    | "character_depth_prompt"
+    | "scenario"
+    | "creator_notes"
+    | "injection"
+    | "recursion_buffer";
+};
+
+export type RespondDryRunWorldbookMatchActivation = {
+  firstMatch: RespondDryRunWorldbookFirstMatch | null;
+  mode: "constant" | "triggered";
+  recursionLevel: number;
+};
+
+export type RespondDryRunWorldbookMatchInsertion = {
+  depth?: number;
+  outletName?: string;
+  position: "before" | "after" | "at_depth" | "outlet";
+  role?: "system" | "user" | "assistant";
+};
+
+export type RespondDryRunWorldbookMatchSource = {
+  kind: "session_worldbook" | "character_book";
+  worldbookId: string | null;
+  worldbookName: string;
+};
+
+export type RespondDryRunWorldbookMatchDetail = {
+  activation: RespondDryRunWorldbookMatchActivation;
+  comment: string;
+  contentPreview: string;
+  insertion: RespondDryRunWorldbookMatchInsertion;
+  order: number;
+  source: RespondDryRunWorldbookMatchSource;
+  uid: number;
+};
+
 export type RespondDryRunPromptSnapshot = {
   presetId: string | null;
   presetUpdatedAt: number | null;
@@ -288,6 +338,7 @@ export type RespondDryRunAssembly = {
   triggerFilteredEntryIds: string[];
   inChatInsertedEntryIds: string[];
   worldbookHits: number;
+  worldbookMatches?: RespondDryRunWorldbookMatchDetail[];
 };
 
 export type RespondDryRunResult = {
@@ -346,7 +397,15 @@ export type SessionsRespondOptions = SessionsRespondBaseOptions & {
   message: string;
 };
 
-export type SessionsRespondDryRunOptions = SessionsRespondOptions;
+export type SessionsRespondDryRunOptions = {
+  accountId?: AccountIdHint;
+  debugOptions?: {
+    includeWorldbookMatches?: boolean;
+  };
+  message: string;
+  promptIntent?: PromptIntent;
+  sessionId: string;
+};
 
 export type SessionsRespondStreamOptions = SessionsRespondOptions &
   RespondStreamCallbacks & {
@@ -676,7 +735,7 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
     },
     async respondDryRun(options: SessionsRespondDryRunOptions): Promise<RespondDryRunResult> {
       const response = await client.fetchJson<Record<string, unknown>>(`/sessions/${encodeURIComponent(options.sessionId)}/respond/dry-run`, {
-        body: mapRespondRequestBody(options),
+        body: mapDryRunRequestBody(options),
         headers: buildAccountHeaders(options.accountId),
         method: "POST",
       });
@@ -816,7 +875,7 @@ function mapGenerationParams(generationParams?: RespondGenerationParams): Record
   return Object.keys(mapped).length > 0 ? mapped : undefined;
 }
 
-function mapRespondRequestBody(options: SessionsRespondOptions | SessionsRespondStreamOptions | SessionsRespondDryRunOptions): Record<string, unknown> {
+function mapRespondRequestBody(options: SessionsRespondOptions | SessionsRespondStreamOptions): Record<string, unknown> {
   return compactObject({
     branch_id: options.branchId,
     config: options.config,
@@ -824,6 +883,18 @@ function mapRespondRequestBody(options: SessionsRespondOptions | SessionsRespond
     prompt_intent: options.promptIntent,
     message: options.message,
     source_floor_id: options.sourceFloorId,
+  });
+}
+
+function mapDryRunRequestBody(options: SessionsRespondDryRunOptions): Record<string, unknown> {
+  return compactObject({
+    debug_options: options.debugOptions
+      ? compactObject({
+          include_worldbook_matches: options.debugOptions.includeWorldbookMatches,
+        })
+      : undefined,
+    message: options.message,
+    prompt_intent: options.promptIntent,
   });
 }
 
@@ -920,6 +991,10 @@ function mapDryRunPayload(payload: Record<string, unknown> | null): RespondDryRu
   const assembly = readRecord(data?.assembly);
   const promptSnapshot = readRecord(data?.prompt_snapshot);
 
+  const worldbookMatches = readArray(assembly?.worldbook_matches)
+    .map(mapDryRunWorldbookMatchDetail)
+    .filter((match): match is RespondDryRunWorldbookMatchDetail => match !== null);
+
   return {
     assembly: {
       memorySummaryInjected: readBoolean(assembly?.memory_summary_injected),
@@ -943,6 +1018,7 @@ function mapDryRunPayload(payload: Record<string, unknown> | null): RespondDryRu
       namesBehaviorApplied: readString(assembly?.names_behavior_applied, "off") === "always" ? "always" : "off",
       triggerFilteredEntryIds: mapStringArray(assembly?.trigger_filtered_entry_ids),
       inChatInsertedEntryIds: mapStringArray(assembly?.in_chat_inserted_entry_ids),
+      ...(assembly?.worldbook_matches !== undefined ? { worldbookMatches } : {}),
       worldbookHits: readNumber(assembly?.worldbook_hits),
     },
     availableForReply: readNumber(data?.available_for_reply),
@@ -954,6 +1030,80 @@ function mapDryRunPayload(payload: Record<string, unknown> | null): RespondDryRu
     tokenEstimate: readNumber(data?.token_estimate),
   };
 }
+
+function mapDryRunWorldbookFirstMatch(value: unknown): RespondDryRunWorldbookFirstMatch | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const sourceKind = readString(record.source_kind);
+  if (
+    sourceKind !== "message"
+    && sourceKind !== "persona_description"
+    && sourceKind !== "character_description"
+    && sourceKind !== "character_personality"
+    && sourceKind !== "character_depth_prompt"
+    && sourceKind !== "scenario"
+    && sourceKind !== "creator_notes"
+    && sourceKind !== "injection"
+    && sourceKind !== "recursion_buffer"
+  ) {
+    return null;
+  }
+
+  return {
+    charEnd: readNumber(record.char_end),
+    charStart: readNumber(record.char_start),
+    excerpt: readString(record.excerpt),
+    injectionIndex: readNullableNumber(record.injection_index) ?? undefined,
+    matchedKey: readString(record.matched_key),
+    matchedKeyScope: readString(record.matched_key_scope, "primary") === "secondary" ? "secondary" : "primary",
+    matchedKeyType: readString(record.matched_key_type, "plain") === "regex" ? "regex" : "plain",
+    messageIndexFromLatest: readNullableNumber(record.message_index_from_latest) ?? undefined,
+    sourceKind,
+  };
+}
+
+function mapDryRunWorldbookMatchDetail(value: unknown): RespondDryRunWorldbookMatchDetail | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const source = readRecord(record.source);
+  const insertion = readRecord(record.insertion);
+  const activation = readRecord(record.activation);
+  const firstMatch = activation?.first_match === null ? null : mapDryRunWorldbookFirstMatch(activation?.first_match);
+  const position = readString(insertion?.position, "after");
+  const role = readOptionalString(insertion?.role);
+
+  return {
+    activation: {
+      firstMatch,
+      mode: readString(activation?.mode, "triggered") === "constant" ? "constant" : "triggered",
+      recursionLevel: readNumber(activation?.recursion_level),
+    },
+    comment: readString(record.comment),
+    contentPreview: readString(record.content_preview),
+    insertion: {
+      depth: readNullableNumber(insertion?.depth) ?? undefined,
+      outletName: readNullableString(insertion?.outlet_name) ?? undefined,
+      position: (position === "before" || position === "after" || position === "at_depth" || position === "outlet"
+        ? position
+        : "after") as RespondDryRunWorldbookMatchInsertion["position"],
+      role: (role === "system" || role === "user" || role === "assistant" ? role : undefined) as RespondDryRunWorldbookMatchInsertion["role"] | undefined,
+    },
+    order: readNumber(record.order),
+    source: {
+      kind: readString(source?.kind, "session_worldbook") === "character_book" ? "character_book" : "session_worldbook",
+      worldbookId: readNullableString(source?.worldbook_id),
+      worldbookName: readString(source?.worldbook_name),
+    },
+    uid: readNumber(record.uid),
+  };
+}
+
 
 function readRespondMemoryReceipt(value: unknown): RespondMemoryReceipt | undefined {
   const record = readRecord(value);
