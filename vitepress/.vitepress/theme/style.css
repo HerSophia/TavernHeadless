@@ -6,11 +6,37 @@
  */
 
 :root {
-  /* 主色调：Teal，理性、冷静 */
   --vp-c-brand-1: #2dd4bf;
   --vp-c-brand-2: #14b8a6;
   --vp-c-brand-3: #0d9488;
   --vp-c-brand-soft: rgba(45, 212, 191, 0.14);
+
+  --landing-section-height: 100vh;
+  --landing-shell-max: 1200px;
+  --landing-shell-padding-block: clamp(72px, 10vh, 112px);
+  --landing-shell-padding-inline: 24px;
+  --landing-nav-top: calc(var(--vp-nav-height, 64px) + 16px);
+  --landing-nav-right: clamp(16px, 3vw, 28px);
+
+  --landing-card-bg: rgba(240, 240, 244, 0.88);
+  --landing-card-bg-hover: rgba(232, 232, 238, 0.94);
+  --landing-card-border: rgba(0, 0, 0, 0.09);
+  --landing-card-title: #1a1a2e;
+  --landing-card-text: #4a4a5a;
+  --landing-card-muted: #6e6e7e;
+  --landing-icon-bg: rgba(45, 212, 191, 0.10);
+  --landing-icon-bg-hover: rgba(45, 212, 191, 0.18);
+  --landing-glow-color: rgba(45, 212, 191, 0.16);
+  --landing-overlay-bg: rgba(255, 255, 255, 0.72);
+  --landing-overlay-border: rgba(0, 0, 0, 0.08);
+  --landing-overlay-text: #2b2b35;
+  --landing-overlay-muted: #6e6e7e;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --landing-section-height: 100dvh;
+  }
 }
 
 .dark {
@@ -19,20 +45,81 @@
   --vp-c-brand-3: #99f6e4;
   --vp-c-brand-soft: rgba(45, 212, 191, 0.16);
 
-  /* 深色模式下更深邃的背景 */
   --vp-c-bg: #09090b;
   --vp-c-bg-alt: #121215;
   --vp-c-bg-elv: #18181b;
   --vp-c-bg-soft: #18181b;
+
+  --landing-card-bg: rgba(24, 26, 33, 0.82);
+  --landing-card-bg-hover: rgba(24, 26, 33, 0.94);
+  --landing-card-border: rgba(255, 255, 255, 0.12);
+  --landing-card-title: #f0f0f3;
+  --landing-card-text: #b0b0ba;
+  --landing-card-muted: #a1a1aa;
+  --landing-icon-bg: rgba(45, 212, 191, 0.08);
+  --landing-icon-bg-hover: rgba(45, 212, 191, 0.14);
+  --landing-glow-color: rgba(45, 212, 191, 0.22);
+  --landing-overlay-bg: rgba(18, 18, 21, 0.72);
+  --landing-overlay-border: rgba(255, 255, 255, 0.10);
+  --landing-overlay-text: #f4f4f5;
+  --landing-overlay-muted: #a1a1aa;
 }
 
-/* 代码字体 */
 :root {
-  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', 'Menlo', 'Monaco',
-    'Consolas', monospace;
+  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', 'Menlo', 'Monaco', 'Consolas', monospace;
 }
 
-/* 侧边栏活跃项强调 */
+html {
+  scroll-behavior: smooth;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 2;
+}
+
+.VPSwitchAppearance {
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+.VPSwitchAppearance:hover,
+.VPSwitchAppearance:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.28), 0 0 18px rgba(45, 212, 191, 0.14);
+}
+
+.VPSwitchAppearance .sun,
+.VPSwitchAppearance .moon {
+  transition: transform 0.3s ease, opacity 0.25s ease, filter 0.3s ease;
+}
+
+.VPSwitchAppearance:hover .sun {
+  transform: rotate(12deg) scale(1.06);
+}
+
+.dark .VPSwitchAppearance:hover .moon {
+  transform: rotate(-10deg) scale(1.08);
+}
+
+html.landing-snap-root,
+body.landing-snap-root {
+  scroll-snap-type: y mandatory;
+  overscroll-behavior-y: contain;
+}
+
+body {
+  overflow-x: hidden;
+}
+
 .VPSidebarItem.is-active > .item > .link > .text {
   color: var(--vp-c-brand-1);
 }
@@ -41,38 +128,110 @@
  * Landing Page（layout: page 模式）
  * ======================================================================== */
 
-/* 首页去掉 page 布局自带的上下边距和侧边栏留白 */
-.custom-landing-content {
-  max-width: 900px;
+.VPContent.has-sidebar,
+.VPContent:not(.has-sidebar) {
+  padding: 0 !important;
+}
+
+.landing-page {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+.landing-fullscreen {
+  position: relative;
+  width: 100vw;
+  height: var(--landing-section-height);
+  min-height: var(--landing-section-height);
+  margin-left: calc(50% - 50vw);
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.landing-page > .landing-fullscreen + .landing-fullscreen::before,
+.landing-page > * + * > .landing-fullscreen:first-child::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(600px, 80vw);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--vp-c-brand-1) 50%,
+    transparent 100%
+  );
+  opacity: 0.2;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.landing-shell {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  max-width: var(--landing-shell-max);
   margin: 0 auto;
-  padding: 0 24px 80px;
+  padding: var(--landing-shell-padding-block) var(--landing-shell-padding-inline);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
-.custom-landing-content h2 {
-  text-align: center;
-  font-size: 24px;
-  font-weight: 700;
-  margin-top: 80px;
-  margin-bottom: 12px;
-  border: none;
-  padding-top: 0;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.custom-landing-content h2 + p {
-  text-align: center;
-  color: var(--vp-c-text-3);
+@media (max-width: 900px) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  html.landing-snap-root,
+  body.landing-snap-root {
+    scroll-snap-type: none;
+    overscroll-behavior-y: auto;
+  }
+
+  .landing-fullscreen {
+    height: auto;
+    min-height: var(--landing-section-height);
+    scroll-snap-align: none;
+    scroll-snap-stop: normal;
+  }
+
+  .landing-shell {
+    padding: 92px 20px 72px;
+  }
 }
 
-/* 技术栈表格居中且不要太宽 */
-.custom-landing-content table {
-  margin: 24px auto;
-  max-width: 600px;
-}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 
-/* 项目结构代码块：适当收窄 */
-.custom-landing-content div[class*='language-'] {
-  max-width: 700px;
-  margin-left: auto;
-  margin-right: auto;
-  border-radius: 12px;
+  html.landing-snap-root,
+  body.landing-snap-root {
+    scroll-snap-type: none;
+    overscroll-behavior-y: auto;
+  }
+
+  .landing-page *,
+  .landing-page *::before,
+  .landing-page *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -85,13 +85,13 @@ GET /sessions/:id/tools/runtime
 GET /tools/builtin
 ```
 
-这个端点只列出 `ToolService.listBuiltinTools()` 当前可公开的工具定义。
+这个端点只列出系统内置的工具定义。
 
 它**不是**聊天运行时的完整工具目录。
 
-当前服务实现里，`ToolService` 会直接实例化一个**未注入 variable/memory 依赖**的 `BuiltinToolProvider`。因此这个端点通常只返回始终可用的 builtin 子集，例如 `roll_dice`、`random_choice`、`get_time`、`get_character_info`。
+这个端点通常只返回不依赖会话上下文就能使用的内置工具，例如 `roll_dice`、`random_choice`、`get_time`、`get_character_info`。
 
-`get_variable`、`set_variable`、`query_memory` 这类依赖运行时注入的 builtin，不应由这个端点视为稳定保证。`ResourceToolProvider` 注册的资源工具，以及 MCP 工具，也不会出现在这里。
+`get_variable`、`set_variable`、`query_memory` 等需要会话上下文的内置工具，以及资源管理工具和 MCP 工具，不会出现在这里。
 
 如果要查看某个会话在当前运行时真正可调用的工具，应使用 `GET /sessions/:id/tools/runtime`。
 
