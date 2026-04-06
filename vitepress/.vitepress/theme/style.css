@@ -128,8 +128,7 @@ body {
  * Landing Page（layout: page 模式）
  * ======================================================================== */
 
-.VPContent.has-sidebar,
-.VPContent:not(.has-sidebar) {
+.VPContent:not(.has-sidebar):has(.landing-page) {
   padding: 0 !important;
 }
 
