@@ -85,6 +85,17 @@ type ErrorResponse = {
 
 type McpServerResponse = {
   id: string;
+  live_status: {
+    attached: boolean;
+    connected_at: number | null;
+    error: string | null;
+    last_timeout_at: number | null;
+    reason: "disabled" | "manager_unavailable" | "not_attached" | null;
+    reconnect_required: boolean;
+    state: string;
+    tool_count: number;
+    tools_refreshed_at: number | null;
+  };
   name: string;
 };
 
@@ -112,6 +123,19 @@ describe("MCP runtime routes", () => {
     ({ app } = await buildApp({
       databasePath: ":memory:",
       logger: false,
+      orchestration: {
+        providers: [
+          {
+            id: "test-provider",
+            type: "openai-compatible",
+            apiKey: "sk-test",
+          },
+        ],
+        defaultModel: {
+          providerId: "test-provider",
+          modelId: "gpt-4o-mini",
+        },
+      },
       enableMcp: true,
     }));
   });
@@ -153,8 +177,23 @@ describe("MCP runtime routes", () => {
     return res.json<ItemResponse<McpServerResponse>>().data;
   }
 
-  it("adds a new server on first connect and exposes status information", async () => {
+  async function createSession(title = "MCP Runtime Session") {
+    const res = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      payload: { title },
+    });
+
+    expect(res.statusCode).toBe(201);
+    return res.json<ItemResponse<{ id: string }>>().data.id;
+  }
+
+  it("creates a server and keeps config/live status synchronized", async () => {
     const server = await createServer("Runtime Connect Server", "runtime_");
+    expect(server.live_status).toMatchObject({ attached: true, state: "connected", reason: null, tool_count: 1 });
+
+    const createdInstance = runtimeMockState.instances.get(server.id);
+    expect(createdInstance?.connectCalls).toBe(1);
 
     const connectRes = await app.inject({
       method: "POST",
@@ -169,15 +208,16 @@ describe("MCP runtime routes", () => {
 
     const instance = runtimeMockState.instances.get(server.id);
     expect(instance).toBeDefined();
-    expect(instance.connectCalls).toBe(1);
+    expect(instance.connectCalls).toBe(2);
 
-    const statusRes = await app.inject({
-      method: "GET",
-      url: `/mcp/servers/${server.id}/status`,
-    });
+    const detailRes = await app.inject({ method: "GET", url: `/mcp/servers/${server.id}` });
+    expect(detailRes.statusCode).toBe(200);
+    expect(detailRes.json<ItemResponse<McpServerResponse>>().data.live_status).toMatchObject({ attached: true, state: "connected", tool_count: 1 });
+
+    const statusRes = await app.inject({ method: "GET", url: `/mcp/servers/${server.id}/status` });
 
     expect(statusRes.statusCode).toBe(200);
-    expect(statusRes.json<ItemResponse<McpStatusResponse>>().data.state).toBe("connected");
+    expect(statusRes.json<ItemResponse<McpStatusResponse>>().data).toMatchObject({ state: "connected", attached: true, reason: null });
 
     const statusesRes = await app.inject({
       method: "GET",
@@ -233,8 +273,8 @@ describe("MCP runtime routes", () => {
 
     expect(secondConnect.statusCode).toBe(200);
     const instance = runtimeMockState.instances.get(server.id);
-    expect(instance.connectCalls).toBe(2);
-    expect(instance.disconnectCalls).toBe(1);
+    expect(instance.connectCalls).toBe(3);
+    expect(instance.disconnectCalls).toBe(2);
 
     const disconnectRes = await app.inject({
       method: "POST",
@@ -245,7 +285,7 @@ describe("MCP runtime routes", () => {
     const disconnected = disconnectRes.json<ItemResponse<McpStatusResponse>>().data;
     expect(disconnected.state).toBe("disconnected");
     expect(disconnected.tool_count).toBe(0);
-    expect(instance.disconnectCalls).toBe(2);
+    expect(instance.disconnectCalls).toBe(3);
   });
 
   it("lists tools for a connected server and covers the 404 runtime branches", async () => {
@@ -384,5 +424,83 @@ describe("MCP runtime routes", () => {
     const statusRes = await app.inject({ method: "GET", url: `/mcp/servers/${server.id}/status` });
     expect(statusRes.statusCode).toBe(200);
     expect(statusRes.json<ItemResponse<McpStatusResponse>>().data).toMatchObject({ server_id: server.id, state: "error" });
+  });
+
+  it("syncs create, update, toggle, and delete changes into runtime tools and session runtime catalog", async () => {
+    const sessionId = await createSession();
+    const server = await createServer("Runtime Sync Server", "sync_");
+
+    const initialCatalog = await app.inject({ method: "GET", url: `/sessions/${sessionId}/tools/runtime` });
+    expect(initialCatalog.statusCode).toBe(200);
+    expect(
+      initialCatalog
+        .json<{ data: { tools: Array<{ name: string; source: string }> } }>()
+        .data.tools
+        .filter((tool) => tool.source === "mcp")
+        .map((tool) => tool.name),
+    ).toContain("sync_echo");
+
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/mcp/servers/${server.id}`,
+      payload: { tool_prefix: "updated_" },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    expect(patchRes.json<ItemResponse<McpServerResponse>>().data.live_status).toMatchObject({ attached: true, state: "connected" });
+
+    const toolsAfterUpdate = await app.inject({ method: "GET", url: `/mcp/servers/${server.id}/tools` });
+    expect(toolsAfterUpdate.statusCode).toBe(200);
+    expect((toolsAfterUpdate.json() as ItemResponse<Array<{ name: string }>>).data.map((tool) => tool.name)).toEqual(["updated_echo"]);
+
+    const catalogAfterUpdate = await app.inject({ method: "GET", url: `/sessions/${sessionId}/tools/runtime` });
+    expect(catalogAfterUpdate.statusCode).toBe(200);
+    expect(
+      catalogAfterUpdate
+        .json<{ data: { tools: Array<{ name: string; source: string }> } }>()
+        .data.tools
+        .filter((tool) => tool.source === "mcp")
+        .map((tool) => tool.name),
+    ).toContain("updated_echo");
+
+    const disableRes = await app.inject({
+      method: "PATCH",
+      url: `/mcp/servers/${server.id}/toggle`,
+      payload: { enabled: false },
+    });
+    expect(disableRes.statusCode).toBe(200);
+    expect(disableRes.json<ItemResponse<McpServerResponse>>().data.live_status).toMatchObject({ attached: false, reason: "disabled", state: "disconnected" });
+
+    const disabledToolsRes = await app.inject({ method: "GET", url: `/mcp/servers/${server.id}/tools` });
+    expect(disabledToolsRes.statusCode).toBe(409);
+    expect(disabledToolsRes.json<ErrorResponse>().error.code).toBe("mcp_server_disabled");
+
+    const catalogAfterDisable = await app.inject({ method: "GET", url: `/sessions/${sessionId}/tools/runtime` });
+    expect(catalogAfterDisable.statusCode).toBe(200);
+    expect(
+      catalogAfterDisable
+        .json<{ data: { tools: Array<{ name: string; source: string }> } }>()
+        .data.tools
+        .filter((tool) => tool.source === "mcp"),
+    ).toEqual([]);
+
+    const enableRes = await app.inject({
+      method: "PATCH",
+      url: `/mcp/servers/${server.id}/toggle`,
+      payload: { enabled: true },
+    });
+    expect(enableRes.statusCode).toBe(200);
+    expect(enableRes.json<ItemResponse<McpServerResponse>>().data.live_status).toMatchObject({ attached: true, state: "connected", reason: null });
+
+    const deleteRes = await app.inject({ method: "DELETE", url: `/mcp/servers/${server.id}` });
+    expect(deleteRes.statusCode).toBe(200);
+
+    const catalogAfterDelete = await app.inject({ method: "GET", url: `/sessions/${sessionId}/tools/runtime` });
+    expect(catalogAfterDelete.statusCode).toBe(200);
+    expect(
+      catalogAfterDelete
+        .json<{ data: { tools: Array<{ name: string; source: string }> } }>()
+        .data.tools
+        .filter((tool) => tool.source === "mcp"),
+    ).toEqual([]);
   });
 });

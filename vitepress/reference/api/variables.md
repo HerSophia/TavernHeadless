@@ -22,6 +22,10 @@ outline: [2, 3]
 
 `branch` 的宿主由 `session_id + branch_id` 共同确定。对 `branch` 来说，`scope_id` 是服务端内部使用的规范化字符串。调用方更适合使用 `scope_ref`、`session_id` 和 `branch_id`。
 
+`branch` 写入还有一个前置条件：目标 branch 必须已经被至少一个 floor 物化。也就是说，如果该 branch 还没有任何 floor，服务端会返回 `variable_host_not_found`。
+
+当 `session`、`floor`、`page` 等宿主被删除时，对应作用域变量会一起清理。`/variables` 列表和详情不会继续暴露宿主已经失效的孤儿变量。
+
 ## Variable 对象
 
 | 字段 | 类型 | 说明 |
@@ -93,6 +97,8 @@ PUT /variables
 
 如果同时提供 `scope_id` 和 `session_id + branch_id`，服务端会校验两者是否一致；不一致时返回 `400`。
 
+无论使用哪种写法，`branch` 写入前都需要该 branch 已经至少有一条 floor。变量接口不会替你惰性创建 branch 宿主。
+
 ### 响应
 
 - `200`：更新成功
@@ -106,7 +112,7 @@ PUT /variables
 | ------ | ---- |
 | `400` | 请求体校验失败、上下文不一致、变量值不合法 |
 | `404` | 目标宿主不存在，或当前账号不可访问 |
-| `409` | 目标已锁定，例如写入已 `committed` 的 `floor` 或 `page` |
+| `409` | 目标已锁定，例如写入 `generating` 或 `committed` 的 `floor` / `page` |
 
 ## 批量设置变量
 
@@ -175,7 +181,7 @@ PUT /variables/batch
 | ------ | ---- |
 | `400` | 请求体校验失败、items 为空或超过 100 条、同批次目标重复 |
 | `404` | 某个变量宿主不存在，或当前账号不可访问 |
-| `409` | 某个目标已锁定，例如写入已 `committed` 的 `floor` 或 `page` |
+| `409` | 某个目标已锁定，例如写入 `generating` 或 `committed` 的 `floor` / `page` |
 
 ## 查询变量
 
@@ -217,6 +223,8 @@ GET /variables/:id
 
 返回 `{ "data": Variable }`。
 
+如果变量宿主已经失效，该接口会按不存在处理，不会继续暴露孤儿变量。
+
 ### 错误
 
 | 状态码 | 说明 |
@@ -235,12 +243,14 @@ DELETE /variables/:id
 { "data": { "id": "var_001", "deleted": true } }
 ```
 
+如果传入的是历史孤儿变量 ID，服务端仍会接受删除，用于清理宿主已失效的数据。
+
 ### 错误
 
 | 状态码 | 说明 |
 | ------ | ---- |
 | `404` | 变量不存在，或当前账号不可访问 |
-| `409` | 目标已锁定，例如删除已 `committed` 的 `floor` 或 `page` 变量 |
+| `409` | 目标已锁定，例如删除 `generating` 或 `committed` 的 `floor` / `page` 变量 |
 
 ## 解析当前上下文可见变量
 

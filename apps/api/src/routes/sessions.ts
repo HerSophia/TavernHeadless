@@ -21,6 +21,7 @@ import {
   sessionCharacterSnapshotSchema as characterSnapshotSchema,
   type SessionCharacterSnapshot,
 } from "../lib/character-snapshot.js";
+import { deleteVariablesForSession } from "../services/variable-owned-resource-cleanup.js";
 
 const sessionStatusSchema = z.enum(["active", "archived"]);
 const promptModeSchema = z.enum(["compat_strict", "compat_plus", "native"]);
@@ -900,10 +901,22 @@ function deleteSessionOwnedProfileBindings(tx: DbExecutor, sessionId: string, ac
 }
 
 function deleteOwnedSessionAndBindings(tx: DbExecutor, sessionId: string, accountId: string) {
-  const deleted = tx.delete(sessions).where(sessionOwnershipFilter(sessionId, accountId)).returning({ id: sessions.id }).all();
-  if (deleted.length > 0) {
-    deleteSessionOwnedProfileBindings(tx, sessionId, accountId);
+  const existing = tx
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(sessionOwnershipFilter(sessionId, accountId))
+    .limit(1)
+    .all()[0];
+
+  if (!existing) {
+    return [];
   }
+
+  deleteVariablesForSession(tx, { accountId, sessionId });
+  deleteSessionOwnedProfileBindings(tx, sessionId, accountId);
+
+  const deleted = tx.delete(sessions).where(sessionOwnershipFilter(sessionId, accountId)).returning({ id: sessions.id }).all();
+
   return deleted;
 }
 
@@ -1426,6 +1439,7 @@ export async function registerSessionRoutes(
       response: {
         200: deleteResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -1436,6 +1450,20 @@ export async function registerSessionRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const [sessionRow] = await db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId))
+      .limit(1);
+
+    if (!sessionRow) {
+      return sendError(reply, 404, "not_found", "Session not found");
+    }
+
+    const activeRun = await floorRunService.getActiveRunSummary(sessionRow.id);
+    if (activeRun) {
+      return sendError(reply, 409, "active_run_in_progress", `Session '${sessionRow.id}' cannot be deleted while a run is in progress`);
+    }
     const deleted = db.transaction((tx) => (
       deleteOwnedSessionAndBindings(tx, parsedParams.data.id, auth.accountId)
     ));
@@ -1871,10 +1899,37 @@ export async function registerSessionRoutes(
     const { ids } = bodyParsed.data;
     const results: { index: number; id: string; action: string }[] = [];
     let deleted = 0;
+    let conflicts = 0;
     let notFound = 0;
+
+    const existingRows = await db
+      .select({ id: sessions.id })
+      .from(sessions)
+      .where(and(eq(sessions.accountId, auth.accountId), inArray(sessions.id, ids)));
+    const existingSessionIds = new Set(existingRows.map((row) => row.id));
+    const activeRunSessionIds = new Set(
+      (await Promise.all(
+        existingRows.map(async (row) => {
+          const activeRun = await floorRunService.getActiveRunSummary(row.id);
+          return activeRun ? row.id : null;
+        })
+      )).filter((id): id is string => id !== null)
+    );
 
     db.transaction((tx) => {
       ids.forEach((id, index) => {
+        if (!existingSessionIds.has(id)) {
+          results.push({ index, id, action: "not_found" });
+          notFound++;
+          return;
+        }
+
+        if (activeRunSessionIds.has(id)) {
+          results.push({ index, id, action: "conflict" });
+          conflicts++;
+          return;
+        }
+
         const rows = deleteOwnedSessionAndBindings(tx, id, auth.accountId);
 
         if (rows.length > 0) {
@@ -1888,7 +1943,7 @@ export async function registerSessionRoutes(
     });
 
     return reply.send({
-      data: { results, meta: { total: ids.length, deleted, not_found: notFound } },
+      data: { results, meta: { total: ids.length, deleted, not_found: notFound, conflicts } },
     });
   });
 }

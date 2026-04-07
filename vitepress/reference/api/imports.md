@@ -323,13 +323,14 @@ POST /import/chat
 - `.jsonl`：SillyTavern JSONL 格式
 
 `.thchat` 中的记忆条目支持 Memory V2 元数据，例如 `summary_tier`、`lifecycle_status`、`source_job_id`、coverage 统计，以及扩展关系类型 `derived_from`、`compacts`、`resolves`。
+`.thchat` 的楼层也支持 `superseded_at` 与 `superseded_by_floor_id_ref`，导入后会恢复 superseded 历史关系。
 
 ### 请求体
 
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `data` | string | **是** | 聊天文件文本内容（JSONL 或 JSON） |
-| `character_id` | string | 否 | 绑定角色 ID；导入后会话会关联该角色 |
+| `character_id` | string | 否 | 绑定角色 ID；导入后会话会关联该角色，并按该角色当前最新 active 版本解析绑定快照 |
 | `title` | string | 否 | 自定义会话标题；不传时从文件推断 |
 
 ### 请求示例
@@ -415,6 +416,9 @@ POST /import/chat
 - `send_date` 支持 Unix 毫秒、ISO 8601 字符串和常见文本时间格式
 - 无法解析时回退到 `Date.now()`
 
+- 当请求显式提供 `character_id` 时，系统会复用常规 session 绑定语义，选择该角色当前最新 active 版本，并把该版本的快照写入导入后的 session
+- 当 `.thchat` 请求同时提供 `character_id` 时，文件内嵌的 `character_snapshot` 与 `character_sync_policy` 不再作为并行真相保留；导入后的 session 会使用解析出的绑定快照，并将 `character_sync_policy` 固定为 `pin`
+
 ### 错误
 
 | 状态码 | code | 说明 |
@@ -444,7 +448,7 @@ POST /import/chat/jobs
 这个接口只负责：
 
 1. 校验请求体
-2. 解析可选的 `character_id` 绑定
+2. 按与同步导入一致的语义解析可选 `character_id` 绑定（最新 active 版本）
 3. 把原始输入写入 artifact 存储
 4. 创建对应后台作业
 
@@ -507,3 +511,4 @@ POST /import/chat/jobs
 
 - 输入成功入队后，后续解析失败不会再回到这个接口返回 `400`，而是体现在作业状态，例如 `dead_letter`
 - worker 会先读取原始 artifact，再构建归一化 manifest，最后以原子发布方式写入最终 session
+- 异步 `.thchat` 导入在显式提供 `character_id` 时，也会覆盖文件内嵌的 `character_snapshot` / `character_sync_policy`，与同步导入保持一致

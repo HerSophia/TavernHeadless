@@ -135,7 +135,6 @@ export class MemoryStore {
     options: MemoryInjectionOptions,
   ): Promise<MemoryInjectionResult> {
     const query: MemoryQuery = {
-      scopeId,
       status: 'active',
       orderBy: 'importance',
       lifecycleStatus: 'active',
@@ -143,7 +142,25 @@ export class MemoryStore {
       accountId: options.accountId,
     };
 
-    if (options.scope) query.scope = options.scope;
+    if (options.scopeContext) {
+      if (options.scope) {
+        query.scope = options.scope;
+        query.scopeId = this.scopeResolver.resolve(options.scope, options.scopeContext, scopeId);
+      } else {
+        const scopeRefs = this.scopeResolver.resolveVisibleRefs(options.scopeContext);
+        if (scopeRefs.length > 0) {
+          query.scopeRefs = scopeRefs;
+        } else {
+          query.scopeId = scopeId;
+        }
+      }
+    } else {
+      query.scopeId = scopeId;
+      if (options.scope) {
+        query.scope = options.scope;
+      }
+    }
+
     if (options.minImportance !== undefined) query.minImportance = options.minImportance;
 
     const baseLimit = options.maxItems ?? 50;

@@ -17,6 +17,7 @@ import {
   InvalidStateTransitionError,
 } from "@tavern/core";
 
+import type { AccountContextOptions } from "../accounts/account-context.js";
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { DrizzleFloorRepository } from "../adapters/drizzle-floor-repository.js";
 import {
@@ -92,7 +93,7 @@ export interface TurnCommitResult {
   memory?: TurnCommitMemoryReceipt;
 }
 
-export interface TurnCommitServiceOptions {
+export interface TurnCommitServiceOptions extends AccountContextOptions {
   enableAsyncMemoryIngest?: boolean;
   memoryJobScheduler?: MemoryJobScheduler;
   mutationRuntime?: MutationRuntime;
@@ -290,6 +291,8 @@ export class TurnCommitService {
       db,
       mutationRuntime: options.mutationRuntime,
       eventBus: this.eventBus,
+      accountMode: options.accountMode,
+      defaultAccountId: options.defaultAccountId,
     });
     this.floorRunService = options.floorRunService;
     this.floorStateMachine = new FloorStateMachine(new DrizzleFloorRepository(db), this.eventBus);

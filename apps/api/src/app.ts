@@ -192,6 +192,8 @@ export type BuildAppOptions = {
   cors?: CorsConfig;
   /** 是否启用 MCP 工具集成（默认 false） */
   enableMcp?: boolean;
+  /** 是否允许不安全的 script handler 创建与执行（默认 false） */
+  enableUnsafeScriptHandler?: boolean;
 };
 
 export type BuildAppResult = {
@@ -454,8 +456,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
-    const memoryRepo = new DrizzleMemoryRepository(database.db);
-    const variableRepo = new DrizzleVariableRepository(database.db);
+    const memoryRepo = new DrizzleMemoryRepository(database.db, {
+      accountMode,
+    });
+    const variableRepo = new DrizzleVariableRepository(database.db, {
+      accountMode,
+    });
     const toolExecutionRepo = new DrizzleToolExecutionRepository(database.db);
 
     orchestrationContext = createOrchestrationContext(
@@ -548,6 +554,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     sessionToolRegistryService = new SessionToolRegistryService(database.db, {
       baseRegistry: baseToolRegistry,
       mcpManager,
+      enableUnsafeScriptHandler: options.enableUnsafeScriptHandler,
       toolRuntimePolicy: toolRuntimeComponents.policy,
     });
   }
@@ -571,13 +578,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       exportArtifactTtlMs: options.chatExportArtifactTtlMs,
       eventBus: orchestrationContext?.eventBus,
     },
+    mcpManager,
+    enableUnsafeScriptHandler: options.enableUnsafeScriptHandler,
+    accountMode,
   });
 
   // ── 可选：聊天业务路由 ──
   if (options.orchestration && orchestrationContext) {
     const activeOrchestrationContext = orchestrationContext;
 
-    const llmProfileService = new LlmProfileService(database.db);
+    const llmProfileService = new LlmProfileService(database.db, {
+      accountMode,
+      defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
+    });
     const llmInstanceService = new LlmInstanceService(database.db);
 
     const toolRegistry = baseToolRegistry ?? new ToolRegistry();
@@ -595,6 +608,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         enableAsyncMemoryIngest: options.enableMemory === true && options.enableAsyncMemoryIngest === true,
         floorRunService,
         mutationRuntime: mutationRuntimeComponents?.runtime,
+        accountMode,
+        defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
         toolRuntimeJobBridge: toolRuntimeComponents?.bridge,
       },
     );
@@ -677,7 +692,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         enableDualSummaryInjection: options.enableDualSummaryInjection,
         floorRunService,
         turnCommitService,
-        resolveTurnModels: async (sessionId, accountId = DEFAULT_ADMIN_ACCOUNT_ID) => {
+        resolveTurnModels: async (sessionId, accountId) => {
           try {
             const [profileMap, instanceSlots] = await Promise.all([
               llmProfileService.resolveActiveProfiles(sessionId, accountId),
@@ -758,7 +773,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
             throw error;
           }
         },
-        onTurnModelUsed: async (resolvedModel, accountId = DEFAULT_ADMIN_ACCOUNT_ID) => {
+        onTurnModelUsed: async (resolvedModel, accountId) => {
           if (!resolvedModel.profileId) {
             return;
           }
@@ -780,6 +795,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         toolRegistry,
         sessionToolRegistryService,
         eventBus: activeOrchestrationContext.eventBus,
+        accountMode,
+        defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
       }
     );
 

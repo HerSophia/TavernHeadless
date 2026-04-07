@@ -75,10 +75,22 @@ describe('PresetToolProvider > executeTool', () => {
 
   // ── script handler ─────────────────────────────────
 
-  it('executes script handler and returns data', async () => {
+  it('returns disabled error for script handler by default', async () => {
     const provider = new PresetToolProvider('preset:1', [
       makeTool({ handler: { script: 'return args.x * 2' } }),
     ]);
+
+    const result = await provider.executeTool('my_tool', { x: 5 }, ctx);
+    expect(result.error).toContain('disabled by default');
+    expect(result.data).toBeUndefined();
+  });
+
+  it('executes script handler and returns data when explicitly enabled', async () => {
+    const provider = new PresetToolProvider(
+      'preset:1',
+      [makeTool({ handler: { script: 'return args.x * 2' } })],
+      { allowUnsafeScriptHandlerExecution: true },
+    );
 
     const result = await provider.executeTool('my_tool', { x: 5 }, ctx);
     expect(result.data).toBe(10);
@@ -86,27 +98,33 @@ describe('PresetToolProvider > executeTool', () => {
   });
 
   it('returns error when script handler is empty string', async () => {
-    const provider = new PresetToolProvider('preset:1', [
-      makeTool({ handler: { script: '' } }),
-    ]);
+    const provider = new PresetToolProvider(
+      'preset:1',
+      [makeTool({ handler: { script: '' } })],
+      { allowUnsafeScriptHandlerExecution: true },
+    );
 
     const result = await provider.executeTool('my_tool', {}, ctx);
     expect(result.error).toBe('Script handler is empty');
   });
 
   it('returns error when handler.script is undefined', async () => {
-    const provider = new PresetToolProvider('preset:1', [
-      makeTool({ handler: {} }),
-    ]);
+    const provider = new PresetToolProvider(
+      'preset:1',
+      [makeTool({ handler: {} })],
+      { allowUnsafeScriptHandlerExecution: true },
+    );
 
     const result = await provider.executeTool('my_tool', {}, ctx);
     expect(result.error).toBe('Script handler is empty');
   });
 
   it('returns error when script throws', async () => {
-    const provider = new PresetToolProvider('preset:1', [
-      makeTool({ handler: { script: 'throw new Error("boom")' } }),
-    ]);
+    const provider = new PresetToolProvider(
+      'preset:1',
+      [makeTool({ handler: { script: 'throw new Error("boom")' } })],
+      { allowUnsafeScriptHandlerExecution: true },
+    );
 
     const result = await provider.executeTool('my_tool', {}, ctx);
     expect(result.error).toContain('Script execution failed');

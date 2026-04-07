@@ -1,6 +1,7 @@
 import type { BufferedToolVariableMutation, CoreEventBus } from "@tavern/core"
 
-import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js"
+import type { AccountContextOptions } from "../accounts/account-context.js"
+import { resolveAccountIdOrThrow } from "../accounts/account-context.js"
 import type { AppDb, DbExecutor } from "../db/client.js"
 import { MutationApplierRegistry } from "./mutation-applier-registry.js"
 import { DefaultMutationBatch } from "./mutation-batch.js"
@@ -56,14 +57,19 @@ export class VariableCommitService {
   private readonly eventBus?: CoreEventBus
   private readonly now: () => number
   private readonly db?: AppDb
+  private readonly accountContext: AccountContextOptions
 
-  constructor(options: VariableCommitServiceOptions = {}) {
+  constructor(options: VariableCommitServiceOptions & AccountContextOptions = {}) {
     this.mutationRuntime = options.mutationRuntime
     this.registry = new MutationApplierRegistry()
     registerVariableMutationAppliers(this.registry)
     this.eventBus = options.eventBus
     this.now = options.now ?? Date.now
     this.db = options.db
+    this.accountContext = {
+      accountMode: options.accountMode,
+      defaultAccountId: options.defaultAccountId,
+    }
   }
 
   beginBatch(): MutationBatch {
@@ -90,6 +96,7 @@ export class VariableCommitService {
     },
   ): void {
     for (const mutation of args.mutations ?? []) {
+      const accountId = resolveAccountIdOrThrow(mutation.accountId ?? args.accountId, this.accountContext)
       const payload: VariableSetMutationPayload = {
         items: [{
           scope: mutation.scope,
@@ -97,7 +104,7 @@ export class VariableCommitService {
           key: mutation.key,
           valueJson: JSON.stringify(mutation.value),
           updatedAt: args.committedAt,
-          ...(mutation.accountId ? { accountId: mutation.accountId } : {}),
+          accountId,
         }],
         emitEvents: false,
       }
@@ -106,7 +113,7 @@ export class VariableCommitService {
         id: buildBufferedMutationEnvelopeId(mutation),
         kind: VARIABLE_MUTATION_KINDS.set,
         source: "tool",
-        accountId: mutation.accountId ?? args.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID,
+        accountId,
         scopeType: "variable",
         scopeKey: `${mutation.scope}:${mutation.scopeId}`,
         applyPhase: "commit",
@@ -120,8 +127,9 @@ export class VariableCommitService {
   }
 
   stagePromotion(batch: MutationBatch, input: VariableCommitInput): void {
+    const accountId = resolveAccountIdOrThrow(input.accountId, this.accountContext)
     const payload: VariablePromotePageToFloorMutationPayload = {
-      accountId: input.accountId,
+      accountId,
       pageId: input.pageId,
       floorId: input.floorId,
       sessionId: input.sessionId,
@@ -136,7 +144,7 @@ export class VariableCommitService {
       id: buildPromotionEnvelopeId(input),
       kind: VARIABLE_MUTATION_KINDS.promotePageToFloor,
       source: "system",
-      accountId: input.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID,
+      accountId,
       sessionId: input.sessionId,
       floorId: input.floorId,
       pageId: input.pageId,
@@ -155,13 +163,14 @@ export class VariableCommitService {
     mutations: BufferedToolVariableMutation[] | undefined,
     tx: DbExecutor,
     committedAt: number,
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID,
+    accountId?: string,
   ): void {
+    const resolvedAccountId = resolveAccountIdOrThrow(accountId, this.accountContext)
     const batch = this.createTransactionBatch(tx)
     this.stageBufferedMutations(batch, {
       mutations,
       committedAt,
-      accountId,
+      accountId: resolvedAccountId,
     })
     batch.applyInTransaction(tx)
   }

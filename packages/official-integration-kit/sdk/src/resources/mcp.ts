@@ -14,6 +14,7 @@ import {
 export type McpTransport = "stdio" | "http";
 export type McpConnectionState = "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
 export type McpDefaultSideEffectLevel = "none" | "sandbox" | "irreversible";
+export type McpServerLiveStatusReason = "disabled" | "manager_unavailable" | "not_attached";
 
 export type McpStdioConfig = {
   args?: string[];
@@ -47,6 +48,17 @@ export type McpServerRecord = {
   enabled: boolean;
   http: McpMaskedHttpConfig | null;
   id: string;
+  liveStatus?: {
+    attached: boolean;
+    connectedAt: number | null;
+    error: string | null;
+    lastTimeoutAt: number | null;
+    reason: McpServerLiveStatusReason | null;
+    reconnectRequired: boolean;
+    state: McpConnectionState;
+    toolCount: number;
+    toolsRefreshedAt: number | null;
+  } | null;
   name: string;
   stdio: McpMaskedStdioConfig | null;
   toolPrefix: string | null;
@@ -56,9 +68,11 @@ export type McpServerRecord = {
 };
 
 export type McpServerStatus = {
+  attached?: boolean;
   connectedAt: number | null;
   error: string | null;
   serverId: string;
+  reason?: McpServerLiveStatusReason | null;
   serverName: string;
   state: McpConnectionState;
   toolCount: number;
@@ -334,6 +348,8 @@ function mapMcpServer(value: unknown): McpServerRecord | null {
     return null;
   }
 
+  const liveStatus = mapMcpLiveStatus(record.live_status);
+
   return {
     callTimeoutMs: readNumber(record.call_timeout_ms),
     connectTimeoutMs: readNumber(record.connect_timeout_ms),
@@ -342,6 +358,7 @@ function mapMcpServer(value: unknown): McpServerRecord | null {
     enabled: readBoolean(record.enabled),
     http: mapMcpMaskedHttpConfig(record.http),
     id: readString(record.id),
+    ...(liveStatus !== null ? { liveStatus } : {}),
     name: readString(record.name),
     stdio: mapMcpMaskedStdioConfig(record.stdio),
     toolPrefix: readNullableString(record.tool_prefix),
@@ -358,9 +375,11 @@ function mapMcpStatus(value: unknown): McpServerStatus | null {
   }
 
   return {
+    ...(record.attached !== undefined ? { attached: readBoolean(record.attached) } : {}),
     connectedAt: readNullableNumber(record.connected_at),
     error: readNullableString(record.error),
     lastTimeoutAt: readNullableNumber(record.last_timeout_at),
+    ...(record.reason !== undefined ? { reason: readNullableString(record.reason) as McpServerLiveStatusReason | null } : {}),
     reconnectRequired: readBoolean(record.reconnect_required, readString(record.state) === "reconnect_required"),
     serverId: readString(record.server_id),
     serverName: readString(record.server_name),
@@ -396,6 +415,25 @@ function mapMcpListMeta(value: unknown): McpListMeta {
     sortBy: readString(record?.sort_by),
     sortOrder: readString(record?.sort_order, "desc") as "asc" | "desc",
     total: readNumber(record?.total),
+  };
+}
+
+function mapMcpLiveStatus(value: unknown): McpServerRecord["liveStatus"] {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    attached: readBoolean(record.attached),
+    connectedAt: readNullableNumber(record.connected_at),
+    error: readNullableString(record.error),
+    lastTimeoutAt: readNullableNumber(record.last_timeout_at),
+    reason: readNullableString(record.reason) as McpServerLiveStatusReason | null,
+    reconnectRequired: readBoolean(record.reconnect_required, readString(record.state) === "reconnect_required"),
+    state: readString(record.state, "disconnected") as McpConnectionState,
+    toolCount: readNumber(record.tool_count),
+    toolsRefreshedAt: readNullableNumber(record.tools_refreshed_at),
   };
 }
 

@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, like, lte } from "drizzle-orm";
+import { and, count, eq, gte, inArray, like, lte, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { SimpleTokenCounter } from "@tavern/core";
@@ -19,6 +19,19 @@ const memoryLifecycleStatusSchema = z.enum(["active", "compacted", "deprecated"]
 const memoryFactKeyInputSchema = z.string().trim().min(1).nullable().optional();
 const memoryFactKeyFilterSchema = z.string().trim().min(1).optional();
 const memoryRelationSchema = z.enum(["supports", "contradicts", "updates", "derived_from", "compacts", "resolves"]);
+const memoryTextContentObjectSchema = z.object({
+  text: z.string().min(1)
+}).strict();
+const memoryContentSchema = z.union([
+  z.string().min(1),
+  memoryTextContentObjectSchema
+]);
+
+type MemoryTextContent = z.infer<typeof memoryContentSchema>;
+
+function isMemoryTextContentObject(value: unknown): value is { text: string } {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) && typeof (value as { text?: unknown }).text === "string";
+}
 
 function normalizeFactKey(value: string | null | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase();
@@ -55,6 +68,23 @@ function resolveStoredLifecycleStatus(status: z.infer<typeof memoryStatusSchema>
   return lifecycleStatus ?? toLifecycleStatus(status);
 }
 
+function normalizeMemoryContent(value: unknown): MemoryTextContent {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (isMemoryTextContentObject(value)) {
+    return { text: value.text };
+  }
+
+  return JSON.stringify(value);
+}
+
+function getMemoryContentText(value: unknown): string {
+  const normalized = normalizeMemoryContent(value);
+  return typeof normalized === "string" ? normalized : normalized.text;
+}
+
 const memoryItemParamsSchema = z.object({
   id: z.string().min(1)
 });
@@ -68,7 +98,7 @@ const createMemoryItemSchema = z.object({
   scope_id: z.string().min(1),
   type: memoryTypeSchema,
   summary_tier: memorySummaryTierSchema.optional(),
-  content: z.unknown(),
+  content: memoryContentSchema,
   importance: z.number().min(0).max(1).optional(),
   fact_key: memoryFactKeyInputSchema,
   confidence: z.number().min(0).max(1).optional(),
@@ -84,7 +114,7 @@ const updateMemoryItemSchema = z
     scope_id: z.string().min(1).optional(),
     type: memoryTypeSchema.optional(),
     summary_tier: memorySummaryTierSchema.optional(),
-    content: z.unknown().optional(),
+    content: memoryContentSchema.optional(),
     importance: z.number().min(0).max(1).optional(),
     fact_key: memoryFactKeyInputSchema,
     confidence: z.number().min(0).max(1).optional(),
@@ -322,6 +352,17 @@ const listMetaJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const memoryContentJsonSchema = {
+  anyOf: [
+    { type: "string", minLength: 1 },
+    {
+      type: "object",
+      required: ["text"],
+      properties: { text: { type: "string", minLength: 1 } },
+      additionalProperties: false,
+    },
+  ],
+} as const;
 
 const memoryItemJsonSchema = {
   type: "object",
@@ -343,7 +384,7 @@ const memoryItemJsonSchema = {
     scope_id: { type: "string" },
     type: { type: "string", enum: ["fact", "summary", "open_loop"] },
     summary_tier: { anyOf: [{ type: "string", enum: ["micro", "macro"] }, { type: "null" }] },
-    content: {},
+    content: memoryContentJsonSchema,
     importance: { type: "number", minimum: 0, maximum: 1 },
     fact_key: { anyOf: [{ type: "string" }, { type: "null" }] },
     confidence: { type: "number", minimum: 0, maximum: 1 },
@@ -406,7 +447,7 @@ const createMemoryBodyJsonSchema = {
     scope_id: { type: "string", minLength: 1 },
     type: { type: "string", enum: ["fact", "summary", "open_loop"] },
     summary_tier: { type: "string", enum: ["micro", "macro"] },
-    content: {},
+    content: memoryContentJsonSchema,
     importance: { type: "number", minimum: 0, maximum: 1 },
     fact_key: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
     confidence: { type: "number", minimum: 0, maximum: 1 },
@@ -693,7 +734,7 @@ function toMemoryItemResponse(row: typeof memoryItems.$inferSelect) {
     scope_id: row.scopeId,
     type: row.type,
     summary_tier: row.summaryTier,
-    content: parseJsonField(row.contentJson),
+    content: normalizeMemoryContent(parseJsonField(row.contentJson)),
     fact_key: row.factKey,
     importance: row.importance,
     confidence: row.confidence,
@@ -720,6 +761,59 @@ function toMemoryEdgeResponse(row: typeof memoryEdges.$inferSelect) {
     relation: row.relation,
     created_at: row.createdAt
   };
+}
+
+const MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE = "Memory edge endpoints must reference existing memory items in the current account";
+
+async function hasOwnedMemoryEdgeNodes(
+  db: DatabaseConnection["db"],
+  accountId: string,
+  nodeIds: readonly string[],
+): Promise<boolean> {
+  const uniqueNodeIds = Array.from(new Set(nodeIds));
+  const rows = await db
+    .select({ id: memoryItems.id })
+    .from(memoryItems)
+    .where(and(eq(memoryItems.accountId, accountId), inArray(memoryItems.id, uniqueNodeIds)));
+
+  return rows.length === uniqueNodeIds.length;
+}
+
+async function findConflictingMemoryEdge(
+  db: DatabaseConnection["db"],
+  accountId: string,
+  input: { fromId: string; toId: string; relation: z.infer<typeof memoryRelationSchema> },
+  excludeId?: string,
+): Promise<{ id: string } | null> {
+  const filters = [
+    eq(memoryEdges.accountId, accountId),
+    eq(memoryEdges.fromId, input.fromId),
+    eq(memoryEdges.toId, input.toId),
+    eq(memoryEdges.relation, input.relation),
+  ];
+
+  if (excludeId) {
+    filters.push(ne(memoryEdges.id, excludeId));
+  }
+
+  const [row] = await db
+    .select({ id: memoryEdges.id })
+    .from(memoryEdges)
+    .where(and(...filters))
+    .limit(1);
+
+  return row ?? null;
+}
+
+function mapMemoryEdgeWriteError(error: unknown): { statusCode: 404 | 409; code: string; message: string } | null {
+  const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: unknown }).code) : undefined;
+  if (code?.startsWith("SQLITE_CONSTRAINT_FOREIGNKEY")) {
+    return { statusCode: 404, code: "memory_edge_node_not_found", message: MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE };
+  }
+  if (code?.startsWith("SQLITE_CONSTRAINT")) {
+    return { statusCode: 409, code: "memory_edge_conflict", message: "Memory edge already exists in the current account" };
+  }
+  return null;
 }
 
 function buildMemoryFilters(
@@ -1029,8 +1123,8 @@ export async function registerMemoryRoutes(
       confidenceTotal += row.confidence;
 
       const parsed = parseJsonField(row.contentJson);
-      const text = typeof parsed === "string" ? parsed : JSON.stringify(parsed);
-      if (text) {
+      const text = getMemoryContentText(parsed);
+      if (text.length > 0) {
         estimatedTokens += tokenCounter.count(text);
       }
     }
@@ -1332,6 +1426,7 @@ export async function registerMemoryRoutes(
       response: {
         201: memoryEdgeResponseJsonSchema,
         400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
       },
     },
@@ -1343,21 +1438,43 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const createdRows = await db
-      .insert(memoryEdges)
-      .values({
-        id: nanoid(),
-        accountId: auth.accountId,
-        fromId: parsedBody.data.from_id,
-        toId: parsedBody.data.to_id,
-        relation: parsedBody.data.relation,
-        createdAt: Date.now()
-      })
-      .returning();
+    if (!(await hasOwnedMemoryEdgeNodes(db, auth.accountId, [parsedBody.data.from_id, parsedBody.data.to_id]))) {
+      return sendError(reply, 404, "memory_edge_node_not_found", MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE);
+    }
 
-    const created = requireRow(createdRows[0], "Failed to create memory edge");
+    const duplicate = await findConflictingMemoryEdge(db, auth.accountId, {
+      fromId: parsedBody.data.from_id,
+      toId: parsedBody.data.to_id,
+      relation: parsedBody.data.relation,
+    });
+    if (duplicate) {
+      return sendError(reply, 409, "memory_edge_conflict", "Memory edge already exists in the current account");
+    }
 
-    return reply.code(201).send({ data: toMemoryEdgeResponse(created) });
+    try {
+      const createdRows = await db
+        .insert(memoryEdges)
+        .values({
+          id: nanoid(),
+          accountId: auth.accountId,
+          fromId: parsedBody.data.from_id,
+          toId: parsedBody.data.to_id,
+          relation: parsedBody.data.relation,
+          createdAt: Date.now()
+        })
+        .returning();
+
+      const created = requireRow(createdRows[0], "Failed to create memory edge");
+
+      return reply.code(201).send({ data: toMemoryEdgeResponse(created) });
+    } catch (error) {
+      const mapped = mapMemoryEdgeWriteError(error);
+      if (mapped) {
+        return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
+      }
+
+      throw error;
+    }
   });
 
   app.get("/memory-edges", {
@@ -1465,6 +1582,7 @@ export async function registerMemoryRoutes(
       response: {
         200: memoryEdgeResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -1482,17 +1600,49 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const [updated] = await db
-      .update(memoryEdges)
-      .set({ relation: parsedBody.data.relation })
+    const [existing] = await db
+      .select()
+      .from(memoryEdges)
       .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
-      .returning();
+      .limit(1);
 
-    if (!updated) {
+    if (!existing) {
       return sendError(reply, 404, "not_found", "Memory edge not found");
     }
 
-    return reply.send({ data: toMemoryEdgeResponse(updated) });
+    if (!(await hasOwnedMemoryEdgeNodes(db, auth.accountId, [existing.fromId, existing.toId]))) {
+      return sendError(reply, 404, "memory_edge_node_not_found", MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE);
+    }
+
+    const duplicate = await findConflictingMemoryEdge(db, auth.accountId, {
+      fromId: existing.fromId,
+      toId: existing.toId,
+      relation: parsedBody.data.relation,
+    }, existing.id);
+    if (duplicate) {
+      return sendError(reply, 409, "memory_edge_conflict", "Memory edge already exists in the current account");
+    }
+
+    try {
+      const [updated] = await db
+        .update(memoryEdges)
+        .set({ relation: parsedBody.data.relation })
+        .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
+        .returning();
+
+      if (!updated) {
+        return sendError(reply, 404, "not_found", "Memory edge not found");
+      }
+
+      return reply.send({ data: toMemoryEdgeResponse(updated) });
+    } catch (error) {
+      const mapped = mapMemoryEdgeWriteError(error);
+      if (mapped) {
+        return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
+      }
+
+      throw error;
+    }
   });
 
   app.delete("/memory-edges/:id", {

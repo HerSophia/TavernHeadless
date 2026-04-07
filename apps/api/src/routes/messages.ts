@@ -11,6 +11,10 @@ import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination
 import { getRequestAuthContext } from "../plugins/auth";
 import { getFloorContentMutationRejection, type FloorContentMutationRejection } from "../services/floor-content-mutability-policy";
 import { OwnedMessageRepository, OwnedPageRepository } from "../services/owned-resource-repositories";
+import {
+  mapSqliteConstraintErrorToRouteError,
+  type SqliteConstraintErrorMapping,
+} from "../services/resource-write.js";
 
 const messageRoleSchema = z.enum(["user", "assistant", "system", "narrator"]);
 const messageFormatSchema = z.enum(["text", "markdown", "json"]);
@@ -370,6 +374,17 @@ function sendMessageMutationRejection(
   return sendError(reply, 409, rejection.code, rejection.message);
 }
 
+const MESSAGE_CONSTRAINT_MAPPINGS: SqliteConstraintErrorMapping[] = [
+  {
+    constraintName: "message_page_seq_uq",
+    fallbackPatterns: ["message.page_id, message.seq"],
+    statusCode: 409,
+    code: "message_conflict",
+    message: "Message sequence already exists in the target page",
+  },
+];
+const mapMessageWriteError = (error: unknown) => mapSqliteConstraintErrorToRouteError(error, MESSAGE_CONSTRAINT_MAPPINGS);
+
 export async function registerMessageRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection
@@ -424,21 +439,30 @@ export async function registerMessageRoutes(
       return sendMessageMutationRejection(reply, rejection);
     }
 
-    const createdRows = await db
-      .insert(messages)
-      .values({
-        id: nanoid(),
-        pageId: parsedBody.data.page_id,
-        seq: parsedBody.data.seq,
-        role: parsedBody.data.role,
-        content: parsedBody.data.content,
-        contentFormat: parsedBody.data.content_format ?? "text",
-        tokenCount: parsedBody.data.token_count ?? 0,
-        isHidden: parsedBody.data.is_hidden ?? false,
-        source: parsedBody.data.source ?? null,
-        createdAt: Date.now()
-      })
-      .returning();
+    let createdRows;
+    try {
+      createdRows = await db
+        .insert(messages)
+        .values({
+          id: nanoid(),
+          pageId: parsedBody.data.page_id,
+          seq: parsedBody.data.seq,
+          role: parsedBody.data.role,
+          content: parsedBody.data.content,
+          contentFormat: parsedBody.data.content_format ?? "text",
+          tokenCount: parsedBody.data.token_count ?? 0,
+          isHidden: parsedBody.data.is_hidden ?? false,
+          source: parsedBody.data.source ?? null,
+          createdAt: Date.now()
+        })
+        .returning();
+    } catch (error) {
+      const mapped = mapMessageWriteError(error);
+      if (mapped) {
+        return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
+      }
+      throw error;
+    }
 
     const created = requireRow(createdRows[0], "Failed to create message");
 
@@ -798,11 +822,20 @@ export async function registerMessageRoutes(
     });
     if (rejection) return sendMessageMutationRejection(reply, rejection);
 
-    const [updated] = await db
-      .update(messages)
-      .set(updates)
-      .where(eq(messages.id, existingMessage.id))
-      .returning();
+    let updated;
+    try {
+      [updated] = await db
+        .update(messages)
+        .set(updates)
+        .where(eq(messages.id, existingMessage.id))
+        .returning();
+    } catch (error) {
+      const mapped = mapMessageWriteError(error);
+      if (mapped) {
+        return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
+      }
+      throw error;
+    }
 
     if (!updated) {
       return sendError(reply, 404, "not_found", "Message not found");

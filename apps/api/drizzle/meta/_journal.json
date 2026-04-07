@@ -232,6 +232,34 @@
       "when": 1763200000000,
       "tag": "0032_worldbook_entry_recursion_and_outlet",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1763300000000,
+      "tag": "0033_tool_definition_account_uniqueness",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1763400000000,
+      "tag": "0034_remove_account_id_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1763500000000,
+      "tag": "0035_tool_definition_null_source_id_uniqueness",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1763600000000,
+      "tag": "0036_memory_edge_account_uniqueness",
+      "breakpoints": true
     }
   ]
 }

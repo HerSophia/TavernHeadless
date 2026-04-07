@@ -9,6 +9,9 @@ outline: [2, 3]
 所有账号端点仅限 `admin` 角色访问，非 admin 请求返回 `403`。
 这里的 `admin` 以数据库 `accounts.role` 为准，不依赖 JWT `role` claim。
 
+- `ACCOUNT_MODE=single`：`GET /accounts` 只返回默认账号；`GET /accounts/:id` 只允许读取默认账号；`POST` / `PATCH` / `DELETE` 会返回 `409 account_mode_restricted`。
+- `ACCOUNT_MODE=multi`：保留完整的账号管理语义。
+
 ## Account 对象
 
 | 字段 | 类型 | 说明 |
@@ -28,6 +31,8 @@ GET /accounts
 ```
 
 ### 响应 `200`
+
+单账号模式下，这里只会返回默认账号。
 
 ```json
 {
@@ -68,6 +73,7 @@ POST /accounts
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
 | `403` | `account_forbidden` | 权限不足 |
+| `409` | `account_mode_restricted` | 单账号模式下不允许创建账号 |
 | `409` | `account_conflict` | 账号 ID 已存在 |
 
 ## 获取账号详情
@@ -77,6 +83,8 @@ GET /accounts/:id
 ```
 
 ### 路径参数
+
+单账号模式下，只允许读取默认账号，读取其他账号 ID 会返回 `404 account_not_found`。
 
 | 参数 | 类型 | 说明 |
 | ---- | ---- | ---- |
@@ -147,6 +155,7 @@ PATCH /accounts/:id
 | `400` | `validation_error` | 请求体为空或校验失败 |
 | `403` | `account_forbidden` | 权限不足 |
 | `404` | `account_not_found` | 账号不存在 |
+| `409` | `account_mode_restricted` | 单账号模式下不允许更新账号 |
 | `409` | `account_protected` | 默认账号不允许修改 `role` 或 `status` |
 
 ## 删除账号
@@ -180,4 +189,4 @@ DELETE /accounts/:id
 | ------ | ---- | ---- |
 | `403` | `account_forbidden` | 权限不足 |
 | `404` | `account_not_found` | 账号不存在 |
-| `409` | `account_protected` / `account_has_resources` | 默认账号不允许删除，或账号下仍有关联资源 |
+| `409` | `account_mode_restricted` / `account_protected` / `account_has_resources` | 单账号模式下不允许删除账号，默认账号不允许删除，或账号下仍有关联资源 |

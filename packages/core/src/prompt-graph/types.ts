@@ -49,8 +49,9 @@ export interface PersonaNode extends PromptNodeBase {
 
 export interface WorldbookNode extends PromptNodeBase {
   nodeType: 'worldbook';
-  position: 'before' | 'after' | 'depth';
+  position: 'before' | 'after' | 'depth' | 'outlet';
   depth?: number;
+  outletName?: string;
 }
 
 export interface ExampleDialogueNode extends PromptNodeBase {
@@ -132,9 +133,10 @@ export interface PromptGraphPersonaInput {
 export interface PromptGraphWorldbookEntry {
   id: string;
   content: string;
-  position?: 'before' | 'after' | 'depth';
+  position?: 'before' | 'after' | 'depth' | 'outlet';
   role?: ChatRole;
   depth?: number;
+  outletName?: string;
 }
 
 export interface PromptGraphCompilerInput {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { nanoid } from "nanoid";
 
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import { createDatabase, type AppDb } from "../../db/client";
 import { floors, sessions } from "../../db/schema";
 import { DrizzleFloorRepository } from "../drizzle-floor-repository";
@@ -24,6 +25,7 @@ describe("DrizzleFloorRepository", () => {
     await db.insert(sessions).values({
       id: sessionId,
       title: "Test Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
       createdAt: now,
       updatedAt: now,

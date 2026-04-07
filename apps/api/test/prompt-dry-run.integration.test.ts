@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
 
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { registerChatRoutes } from "../src/routes/chat";
 import { ChatService, ChatServiceError, type ChatService as ChatServiceType, type DryRunResult } from "../src/services/chat-service";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
@@ -528,6 +529,7 @@ describe("ChatService.dryRun", () => {
     await database.db.insert(sessions).values({
       id: sessionId,
       title: "Dry Run Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -612,6 +614,7 @@ describe("ChatService.dryRun", () => {
     await database.db.insert(presets).values({
       id: presetId,
       name: "Dry Run Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
       createdAt: now,
@@ -621,6 +624,7 @@ describe("ChatService.dryRun", () => {
     await database.db.insert(worldbooks).values({
       id: worldbookId,
       name: "Dry Run Worldbook",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify({ scanDepth: 3 }),
       createdAt: now,
@@ -650,6 +654,7 @@ describe("ChatService.dryRun", () => {
     await database.db.insert(regexProfiles).values({
       id: regexProfileId,
       name: "Dry Run Regex",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify(SAMPLE_REGEX_DATA),
       createdAt: now,
@@ -696,6 +701,7 @@ describe("ChatService.dryRun", () => {
     await database.db.insert(presets).values({
       id: presetId,
       name: "Dry Run Prefill Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify({
         ...SAMPLE_PRESET_DATA,
@@ -749,6 +755,7 @@ describe("ChatService.dryRun", () => {
     await database.db.insert(presets).values({
       id: presetId,
       name: "Dry Run Variable Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify(variablePresetData),
       createdAt: now,
@@ -766,10 +773,10 @@ describe("ChatService.dryRun", () => {
       .where(eq(sessions.id, sessionId));
 
     await database.db.insert(variables).values([
-      { id: nanoid(), scope: "global", scopeId: "global", key: "mood", valueJson: JSON.stringify("calm"), updatedAt: now },
-      { id: nanoid(), scope: "chat", scopeId: sessionId, key: "mood", valueJson: JSON.stringify("focused"), updatedAt: now + 1 },
-      { id: nanoid(), scope: "global", scopeId: "global", key: "char", valueJson: JSON.stringify("Shadow"), updatedAt: now + 2 },
-      { id: nanoid(), scope: "global", scopeId: "global", key: "user", valueJson: JSON.stringify("Stranger"), updatedAt: now + 3 },
+      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "global", scopeId: "global", key: "mood", valueJson: JSON.stringify("calm"), updatedAt: now },
+      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "chat", scopeId: sessionId, key: "mood", valueJson: JSON.stringify("focused"), updatedAt: now + 1 },
+      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "global", scopeId: "global", key: "char", valueJson: JSON.stringify("Shadow"), updatedAt: now + 2 },
+      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "global", scopeId: "global", key: "user", valueJson: JSON.stringify("Stranger"), updatedAt: now + 3 },
     ]);
 
     const result = await chatService.dryRun(sessionId, { message: "hello variables" });
@@ -892,6 +899,7 @@ describe("ChatService.dryRun", () => {
     await database.db.insert(presets).values({
       id: presetId,
       name: "Dry Run Worldbook Match Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
       createdAt: now,
@@ -901,6 +909,7 @@ describe("ChatService.dryRun", () => {
     await database.db.insert(worldbooks).values({
       id: worldbookId,
       name: "Dry Run Worldbook",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify({ scanDepth: 3 }),
       createdAt: now,
@@ -930,6 +939,7 @@ describe("ChatService.dryRun", () => {
     await database.db.insert(regexProfiles).values({
       id: regexProfileId,
       name: "Dry Run World Info Regex",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify(worldInfoRegexData),
       createdAt: now,

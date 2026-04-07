@@ -44,6 +44,12 @@ interface SessionResponse {
     title: string | null;
     character_binding: {
       character_id: string;
+      character_version_id: string | null;
+      sync_policy: "pin" | "manual" | "force";
+      snapshot_summary: {
+        name: string;
+        has_greeting: boolean;
+      } | null;
     } | null;
   };
 }
@@ -143,6 +149,47 @@ async function createCharacter(app: FastifyInstance): Promise<string> {
   return res.json<{ data: { character_id: string } }>().data.character_id;
 }
 
+async function getCharacterRevision(app: FastifyInstance, characterId: string): Promise<number> {
+  const detailRes = await app.inject({
+    method: "GET",
+    url: `/characters/${characterId}`,
+  });
+
+  expect(detailRes.statusCode, detailRes.body).toBe(200);
+  return detailRes.json<{ data: { revision: number } }>().data.revision;
+}
+
+async function appendCharacterVersion(
+  app: FastifyInstance,
+  characterId: string,
+  input: { name: string; greeting: string },
+): Promise<string> {
+  const revision = await getCharacterRevision(app, characterId);
+  const response = await app.inject({
+    method: "POST",
+    url: `/characters/${characterId}/versions`,
+    payload: {
+      snapshot: {
+        name: input.name,
+        description: `${input.name} description`,
+        personality: `${input.name} personality`,
+        scenario: `${input.name} scenario`,
+        primaryGreeting: input.greeting,
+      },
+      expected_revision: revision,
+    },
+  });
+
+  expect(response.statusCode, response.body).toBe(201);
+  return response.json<{ data: { id: string } }>().data.id;
+}
+
+async function getSession(app: FastifyInstance, sessionId: string): Promise<SessionResponse> {
+  const sessionRes = await app.inject({ method: "GET", url: `/sessions/${sessionId}` });
+  expect(sessionRes.statusCode, sessionRes.body).toBe(200);
+  return sessionRes.json<SessionResponse>();
+}
+
 describe("Import chat routes", () => {
   let app: FastifyInstance;
 
@@ -191,9 +238,7 @@ describe("Import chat routes", () => {
 
     const sessionId = importBody.data.session_id;
 
-    const sessionRes = await app.inject({ method: "GET", url: `/sessions/${sessionId}` });
-    expect(sessionRes.statusCode).toBe(200);
-    const sessionBody = sessionRes.json<SessionResponse>();
+    const sessionBody = await getSession(app, sessionId);
     expect(sessionBody.data.character_binding?.character_id).toBe(characterId);
 
     const timelineRes = await app.inject({ method: "GET", url: `/sessions/${sessionId}/timeline` });
@@ -204,6 +249,41 @@ describe("Import chat routes", () => {
 
     const contents = timelineBody.data.floors[0]!.active_page?.messages.map((message) => message.content) ?? [];
     expect(contents).toEqual(expect.arrayContaining(["Question", "Answer v2"]));
+  });
+
+  it("POST /import/chat binds character_id to the latest active character version for jsonl imports", async () => {
+    const characterId = await createCharacter(app);
+    const latestVersionId = await appendCharacterVersion(app, characterId, {
+      name: "Luna Prime",
+      greeting: "The archive has been updated.",
+    });
+
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/import/chat",
+      payload: {
+        data: [
+          JSON.stringify({ chat_metadata: {}, user_name: "Traveler", character_name: "Luna" }),
+          JSON.stringify({ name: "Traveler", is_user: true, mes: "Hello" }),
+          JSON.stringify({ name: "Luna", is_user: false, mes: "Welcome back" }),
+        ].join("\n"),
+        character_id: characterId,
+      },
+    });
+
+    expect(importRes.statusCode, importRes.body).toBe(201);
+    const sessionId = importRes.json<ChatImportResponse>().data.session_id;
+
+    const sessionBody = await getSession(app, sessionId);
+    expect(sessionBody.data.character_binding).toEqual(expect.objectContaining({
+      character_id: characterId,
+      character_version_id: latestVersionId,
+      sync_policy: "pin",
+      snapshot_summary: expect.objectContaining({
+        name: "Luna Prime",
+        has_greeting: true,
+      }),
+    }));
   });
 
   it("POST /import/chat returns 400 when the chat file contains no messages", async () => {
@@ -321,9 +401,7 @@ describe("Import chat routes", () => {
 
     const sessionId = importBody.data.session_id;
 
-    const sessionRes = await app.inject({ method: "GET", url: `/sessions/${sessionId}` });
-    expect(sessionRes.statusCode).toBe(200);
-    const sessionBody = sessionRes.json<SessionResponse>();
+    const sessionBody = await getSession(app, sessionId);
     expect(sessionBody.data.title).toBe("Override ThChat Title");
     expect(sessionBody.data.character_binding?.character_id).toBe(characterId);
 
@@ -336,6 +414,11 @@ describe("Import chat routes", () => {
 
     const floorId = timelineBody.data.floors[0]!.id;
     const pageId = timelineBody.data.floors[0]!.active_page!.id;
+
+    expect(sessionBody.data.character_binding).toEqual(expect.objectContaining({
+      character_id: characterId,
+      sync_policy: "pin",
+    }));
 
     const chatVarsRes = await app.inject({
       method: "GET",
@@ -462,6 +545,123 @@ describe("Import chat routes", () => {
     expect(memoryEdgesBody.data).toEqual([
       expect.objectContaining({ relation: "derived_from" }),
     ]);
+  });
+
+  it("POST /import/chat uses the bound character snapshot and pin policy for .thchat imports", async () => {
+    const characterId = await createCharacter(app);
+    const latestVersionId = await appendCharacterVersion(app, characterId, {
+      name: "Bound Archivist",
+      greeting: "Bound greeting from latest version.",
+    });
+    const file = makeMinimalThChatFile();
+    file.data.character_snapshot = { name: "Archived Snapshot", greeting: "Archived greeting" };
+    file.data.character_sync_policy = "manual";
+
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/import/chat",
+      payload: {
+        data: JSON.stringify(file),
+        character_id: characterId,
+      },
+    });
+
+    expect(importRes.statusCode, importRes.body).toBe(201);
+    const sessionId = importRes.json<ChatImportResponse>().data.session_id;
+
+    const sessionBody = await getSession(app, sessionId);
+    expect(sessionBody.data.character_binding).toEqual(expect.objectContaining({
+      character_id: characterId,
+      character_version_id: latestVersionId,
+      sync_policy: "pin",
+      snapshot_summary: expect.objectContaining({
+        name: "Bound Archivist",
+        has_greeting: true,
+      }),
+    }));
+
+    const exportRes = await app.inject({
+      method: "GET",
+      url: `/export/chat/${sessionId}`,
+    });
+    expect(exportRes.statusCode, exportRes.body).toBe(200);
+    const exported = exportRes.json<{ data: { character_snapshot: { name: string }; character_sync_policy: string } }>();
+    expect(exported.data.character_snapshot.name).toBe("Bound Archivist");
+    expect(exported.data.character_sync_policy).toBe("pin");
+  });
+
+  it("POST /import/chat preserves superseded floor history when round-tripping .thchat exports", async () => {
+    const file = makeMinimalThChatFile();
+    file.data.floors[0].superseded_at = 1700000000500;
+    file.data.floors[0].superseded_by_floor_id_ref = "floor_002";
+    file.data.floors.push({
+      floor_no: 0,
+      branch_id: "main",
+      parent_floor_id_ref: "floor_001",
+      state: "committed",
+      token_in: 0,
+      token_out: 5,
+      metadata: { floor: 2 },
+      created_at: 1700000000600,
+      updated_at: 1700000000601,
+      _original_id: "floor_002",
+      pages: [
+        {
+          page_no: 0,
+          page_kind: "output",
+          is_active: true,
+          version: 1,
+          checksum: "chk-002",
+          created_at: 1700000000600,
+          updated_at: 1700000000601,
+          _original_id: "page_002",
+          messages: [
+            {
+              seq: 0,
+              role: "assistant",
+              content: "Replacement live reply",
+              content_format: "text",
+              token_count: 5,
+              is_hidden: false,
+              source: "archive",
+              created_at: 1700000000600,
+              _original_id: "msg_002",
+            },
+          ],
+        },
+      ],
+    });
+
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/import/chat",
+      payload: { data: JSON.stringify(file) },
+    });
+
+    expect(importRes.statusCode, importRes.body).toBe(201);
+    const importBody = importRes.json<ChatImportResponse>();
+    expect(importBody.data.floor_count).toBe(2);
+
+    const exportRes = await app.inject({ method: "GET", url: `/export/chat/${importBody.data.session_id}` });
+    expect(exportRes.statusCode, exportRes.body).toBe(200);
+
+    const exported = exportRes.json<{ data: { floors: Array<{
+      _original_id: string;
+      parent_floor_id_ref: string | null;
+      superseded_at?: number | null;
+      superseded_by_floor_id_ref?: string | null;
+      pages: Array<{ messages: Array<{ content: string }> }>;
+    }> } }>();
+    expect(exported.data.floors).toHaveLength(2);
+
+    const supersededFloor = exported.data.floors.find((floor) => floor.superseded_at != null);
+    const liveFloor = exported.data.floors.find(
+      (floor) => floor.superseded_at == null && floor.pages[0]?.messages[0]?.content === "Replacement live reply",
+    );
+
+    expect(supersededFloor?.pages[0]?.messages[0]?.content).toBe("Hello from .thchat");
+    expect(supersededFloor?.superseded_by_floor_id_ref).toBe(liveFloor?._original_id);
+    expect(liveFloor?.parent_floor_id_ref).toBe(supersededFloor?._original_id);
   });
 
   it("POST /import/chat synthesizes memory scope states for .thchat files without memories", async () => {

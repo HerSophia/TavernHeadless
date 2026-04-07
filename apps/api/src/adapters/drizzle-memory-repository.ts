@@ -16,6 +16,8 @@ import type {
   MemoryType,
 } from "@tavern/shared";
 
+import type { AccountContextOptions } from "../accounts/account-context.js";
+import { resolveAccountIdOrThrow } from "../accounts/account-context.js";
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { memoryEdges, memoryItems } from "../db/schema.js";
 
@@ -96,17 +98,41 @@ function normalizeFactKey(value: string | undefined): string | undefined {
 
 // ── Adapter ───────────────────────────────────────────
 
-export class DrizzleMemoryRepository implements MemoryRepository {
-  private readonly accountId: string;
+type DrizzleMemoryRepositoryOptions = AccountContextOptions & {
+  accountId?: string;
+};
 
-  constructor(db: AppDb, accountId?: string);
-  constructor(db: DbExecutor, accountId?: string);
-  constructor(private readonly db: AppDb | DbExecutor, accountId?: string) {
-    this.accountId = accountId ?? "default-admin";
+export class DrizzleMemoryRepository implements MemoryRepository {
+  private readonly accountContext: AccountContextOptions;
+  private readonly configuredAccountId?: string;
+
+  constructor(db: AppDb, options?: string | DrizzleMemoryRepositoryOptions);
+  constructor(db: DbExecutor, options?: string | DrizzleMemoryRepositoryOptions);
+  constructor(
+    private readonly db: AppDb | DbExecutor,
+    options?: string | DrizzleMemoryRepositoryOptions,
+  ) {
+    if (typeof options === "string") {
+      this.accountContext = {
+        accountMode: "single",
+        defaultAccountId: options,
+      };
+      this.configuredAccountId = options;
+      return;
+    }
+
+    this.accountContext = {
+      accountMode: options?.accountMode,
+      defaultAccountId: options?.defaultAccountId,
+    };
+    this.configuredAccountId = options?.accountId;
   }
 
   private resolveAccountId(queryAccountId?: string, options?: MemoryAccessOptions): string {
-    return queryAccountId ?? options?.accountId ?? this.accountId;
+    return resolveAccountIdOrThrow(
+      queryAccountId ?? options?.accountId ?? this.configuredAccountId,
+      this.accountContext,
+    );
   }
 
   async findById(id: string, options?: MemoryAccessOptions): Promise<MemoryItem | null> {
@@ -123,12 +149,26 @@ export class DrizzleMemoryRepository implements MemoryRepository {
     const accountId = this.resolveAccountId(query.accountId);
     const conditions: SQL[] = [eq(memoryItems.accountId, accountId)];
 
-    if (query.scope !== undefined) {
-      conditions.push(eq(memoryItems.scope, query.scope));
+    if (query.scopeRefs !== undefined) {
+      if (query.scopeRefs.length === 0) {
+        return [];
+      }
+
+      const scopeConditions = query.scopeRefs.map((scopeRef) => and(
+        eq(memoryItems.scope, scopeRef.scope),
+        eq(memoryItems.scopeId, scopeRef.scopeId),
+      ));
+
+      conditions.push(scopeConditions.length === 1 ? scopeConditions[0]! : or(...scopeConditions)!);
+    } else {
+      if (query.scope !== undefined) {
+        conditions.push(eq(memoryItems.scope, query.scope));
+      }
+      if (query.scopeId !== undefined) {
+        conditions.push(eq(memoryItems.scopeId, query.scopeId));
+      }
     }
-    if (query.scopeId !== undefined) {
-      conditions.push(eq(memoryItems.scopeId, query.scopeId));
-    }
+
     if (query.type !== undefined) {
       conditions.push(eq(memoryItems.type, query.type));
     }

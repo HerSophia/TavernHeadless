@@ -215,8 +215,12 @@ export class MemoryJobScheduler {
 
     if (jobType === "maintenance" && seed) {
       const [accountId, scope, scopeId, bucket] = seed.split(":", 4);
+      if (!accountId || accountId.trim().length === 0) {
+        return `memory-job:${jobType}:${seed}`;
+      }
+
       return makeMaintenanceJobId(
-        accountId ?? "default-admin",
+        accountId,
         (scope === "global" || scope === "chat" || scope === "floor" ? scope : "chat") as MemoryScope,
         scopeId ?? "scope",
         Number(bucket ?? 0),

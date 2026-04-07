@@ -90,6 +90,7 @@ describe("loadConfig", () => {
     expect(config.enableDualSummaryInjection).toBe(false);
     expect(config.enableDeferredIrreversibleTools).toBe(false);
     expect(config.deferredIrreversibleMcpTools).toEqual([]);
+    expect(config.enableUnsafeScriptHandler).toBe(false);
   });
 
   it("reads Memory V2 feature flags", () => {
@@ -104,6 +105,13 @@ describe("loadConfig", () => {
     expect(config.enableDualSummaryInjection).toBe(true);
     expect(config.enableDeferredIrreversibleTools).toBe(true);
     expect(config.deferredIrreversibleMcpTools).toEqual(["mcp-1/github_create_issue", "mcp-2/files_write"]);
+  });
+
+  it("reads ENABLE_UNSAFE_SCRIPT_HANDLER=true", () => {
+    vi.stubEnv("ENABLE_UNSAFE_SCRIPT_HANDLER", "true");
+
+    const config = loadConfig();
+    expect(config.enableUnsafeScriptHandler).toBe(true);
   });
 
   it("reads MemoryWorker tuning envs", () => {

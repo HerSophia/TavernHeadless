@@ -43,6 +43,8 @@ export function renderExportSnapshotToThChat(
     token_in: floor.tokenIn,
     token_out: floor.tokenOut,
     metadata: floor.metadata,
+    superseded_at: floor.supersededAt,
+    superseded_by_floor_id_ref: floor.supersededByFloorId,
     created_at: floor.createdAt,
     updated_at: floor.updatedAt,
     _original_id: floor.id,
@@ -160,7 +162,7 @@ export function *iterExportSnapshotToStJsonlLines(snapshot: SessionExportSnapsho
   });
 
   const exportFloors = snapshot.floors
-    .filter((floor) => floor.branchId === "main" && floor.state === "committed")
+    .filter((floor) => floor.branchId === "main" && floor.state === "committed" && floor.supersededAt == null)
     .sort((left, right) => left.floorNo - right.floorNo);
 
   for (const floor of exportFloors) {

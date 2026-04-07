@@ -5,16 +5,16 @@
 
 ## 当前里程碑
 
-\- 里程碑：`后端 Beta 阶段（收口完成）`
-\- 状态：`Beta 准入标准全部达成，可进入正式 sign-off`
+\- 里程碑：`后端 Beta3 阶段（收口完成）`
+\- 状态：`Beta3 准入标准全部达成，可进入正式 sign-off`
 \- 最后更新：`2026-07-01`
 
 ## 当前判断（审计后）
 
-- `apps/api` 已完成 M2-M22 的全部后端能力落地，Beta 准入标准 14/14 已全部达成。
+- `apps/api` 已完成 M2-M22 的全部后端能力落地，Beta3 准入标准 14/14 已全部达成。
 - 当前已覆盖的主能力包括：CRUD 与迁移、聊天生成与重生成、SSE、Prompt dry-run、分支治理、角色生命周期、多账号隔离与用户绑定、`LLM Profile Vault`、模型发现与连通性测试、记忆注入与维护任务、OpenAPI/Swagger、Typed SDK、CORS 与中英文化文档入口、LLM Instance Config API。
-- `apps/api/package.json` 与 OpenAPI `info.version` 已同步到 `0.2.0-beta.2`，用于表达后端 beta 预发布版本姿态。
-- 真实 provider 最小回归已执行完毕，结果良好，Beta 准入标准全部满足。后续工作转入正式发布准备与文档完善。
+- `apps/api/package.json` 与 OpenAPI `info.version` 已同步到 `0.2.0-beta.3`，用于表达后端 Beta3 预发布版本姿态。
+- 真实 provider 最小回归已执行完毕，结果良好，Beta3 准入标准全部满足。后续工作转入正式发布准备与文档完善。
 
 ## 聊天文件导入导出 + 全资源导出系统
 

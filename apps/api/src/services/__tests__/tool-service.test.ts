@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { createDatabase, type AppDb } from '../../db/client.js';
-import { accounts } from '../../db/schema.js';
-import { ToolService, type CreateDefinitionInput } from '../tool-service.js';
+import { accounts, toolDefinitions } from '../../db/schema.js';
 import { DEFAULT_ADMIN_ACCOUNT_ID } from '../../accounts/constants.js';
+import { ToolService, ToolServiceError, type CreateDefinitionInput } from '../tool-service.js';
 
 // ── helpers ──────────────────────────────────────────────
 
@@ -77,6 +77,50 @@ describe('ToolService', () => {
       expect(result.handler_type).toBe('script');
       expect(result.enabled).toBe(true);
     });
+
+    it('rejects duplicate definition identity within the same account', async () => {
+      await service.createDefinition(makeInput({ name: 'duplicate_tool' }), DEFAULT_ADMIN_ACCOUNT_ID);
+
+      await expect(
+        service.createDefinition(makeInput({ name: 'duplicate_tool' }), DEFAULT_ADMIN_ACCOUNT_ID)
+      ).rejects.toMatchObject({
+        name: 'ToolServiceError',
+        code: 'tool_definition_conflict',
+      } satisfies Partial<ToolServiceError>);
+    });
+
+    it('allows the same definition identity in different accounts', async () => {
+      const created = await service.createDefinition(makeInput({ name: 'shared_tool' }), DEFAULT_ADMIN_ACCOUNT_ID);
+      const other = await service.createDefinition(makeInput({ name: 'shared_tool' }), 'acc-other');
+
+      expect(created.name).toBe('shared_tool');
+      expect(other.name).toBe('shared_tool');
+      expect(other.id).not.toBe(created.id);
+    });
+
+    it('database unique index rejects duplicate null source_id identity within the same account', async () => {
+      const created = await service.createDefinition(makeInput({ name: 'db_duplicate_tool' }), DEFAULT_ADMIN_ACCOUNT_ID);
+      const now = Date.now();
+
+      await expect(
+        db.insert(toolDefinitions).values({
+          id: 'direct-duplicate-tool',
+          name: created.name,
+          description: 'Direct duplicate',
+          parametersJson: '{"type":"object","properties":{}}',
+          sideEffectLevel: 'none',
+          allowedSlotsJson: '[]',
+          source: 'custom',
+          sourceId: null,
+          enabled: true,
+          handlerType: 'script',
+          handlerJson: '{}',
+          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+          createdAt: now,
+          updatedAt: now,
+        })
+      ).rejects.toMatchObject({ code: expect.stringMatching(/^SQLITE_CONSTRAINT/) });
+    });
   });
 
   describe('getDefinition', () => {
@@ -145,13 +189,13 @@ describe('ToolService', () => {
         allowed_slots: ['director'],
         source: 'preset',
         source_id: 'preset-123',
-        handler_type: 'prompt',
-        handler: { prompt: 'do something' },
+        handler_type: 'script',
+        handler: { script: 'return args.y' },
       });
 
       expect(updated!.source).toBe('preset');
       expect(updated!.source_id).toBe('preset-123');
-      expect(updated!.handler_type).toBe('prompt');
+      expect(updated!.handler_type).toBe('script');
     });
 
     it('returns unchanged definition when no fields are provided', async () => {
@@ -164,6 +208,18 @@ describe('ToolService', () => {
     it('returns null for non-existent id', async () => {
       const result = await service.updateDefinition('nope', DEFAULT_ADMIN_ACCOUNT_ID, { name: 'x' });
       expect(result).toBeNull();
+    });
+
+    it('rejects duplicate identity on update', async () => {
+      const first = await service.createDefinition(makeInput({ name: 'tool_one' }), DEFAULT_ADMIN_ACCOUNT_ID);
+      const second = await service.createDefinition(makeInput({ name: 'tool_two' }), DEFAULT_ADMIN_ACCOUNT_ID);
+
+      await expect(
+        service.updateDefinition(second.id, DEFAULT_ADMIN_ACCOUNT_ID, { name: first.name })
+      ).rejects.toMatchObject({
+        name: 'ToolServiceError',
+        code: 'tool_definition_conflict',
+      } satisfies Partial<ToolServiceError>);
     });
   });
 

@@ -193,6 +193,13 @@ DELETE /sessions/:id
 }
 ```
 
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 会话不存在 |
+| `409` | `active_run_in_progress` | 当前会话仍有活跃运行，不能删除 |
+
 ## 同步角色绑定
 
 ```http
@@ -392,7 +399,7 @@ POST /sessions/batch/delete
 
 ```json
 {
-  "ids": ["sess_001", "sess_missing"]
+  "ids": ["sess_001", "sess_002", "sess_missing"]
 }
 ```
 
@@ -402,13 +409,16 @@ POST /sessions/batch/delete
 {
   "data": {
     "results": [
-      { "index": 0, "id": "sess_001", "action": "deleted" },
-      { "index": 1, "id": "sess_missing", "action": "not_found" }
+      { "index": 0, "id": "sess_001", "action": "conflict" },
+      { "index": 1, "id": "sess_002", "action": "deleted" },
+      { "index": 2, "id": "sess_missing", "action": "not_found" }
     ],
-    "meta": { "total": 2, "deleted": 1, "not_found": 1 }
+    "meta": { "total": 3, "deleted": 1, "not_found": 1, "conflicts": 1 }
   }
 }
 ```
+
+其中 `action = "conflict"` 表示该会话仍有活跃运行，本次批量删除不会删除它。
 
 ### 错误
 

@@ -44,6 +44,13 @@ export function getFloorContentMutationRejection(input: {
     return null;
   }
 
+  if (input.mutationKind === "variable.write" && input.floorState === "generating") {
+    return {
+      code: "content_target_locked",
+      message: `Generating floors are read-only for ${describeMutation(input.mutationKind)}`,
+    };
+  }
+
   if (input.floorState === "committed") {
     return {
       code: "content_target_locked",

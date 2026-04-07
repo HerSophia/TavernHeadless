@@ -405,6 +405,9 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 3. 打包成「记忆摘要块」注入到提示词中。
 4. 在兼容模式下，还会按酒馆的方式将摘要放到旧楼层的位置（替代被隐藏的完整内容）。
 
+主聊天链读取记忆时，会先按当前上下文展开 `global → chat → floor` 三层可见范围，
+再按既有的 importance / balanced / dual-summary 规则统一排序、裁剪和注入。
+
 ### 安全机制
 
 - Memory 实例的输出需要经过校验才会写入数据库，不会直接落库。
@@ -828,7 +831,7 @@ CREATE TABLE tool_execution_record (
 | GET  | `/export/regex/:id`      | 导出正则配置（ST 格式 JSON 数组）             |
 | GET  | `/export/character/:id`  | 导出角色卡（ST Character Card V2 JSON）       |
 
-导入和导出形成对称关系：导入解析外部格式写入数据库，导出从数据库序列化为标准文件。聊天文件额外有一套 TavernHeadless 原生格式（`.thchat`），能无损保留完整四层数据结构、变量和记忆。
+导入和导出形成对称关系：导入解析外部格式写入数据库，导出从数据库序列化为标准文件。聊天文件额外有一套 TavernHeadless 原生格式（`.thchat`），能无损保留完整四层数据结构、变量、记忆，以及 superseded 楼层历史关系。
 
 ---
 
@@ -876,7 +879,7 @@ CREATE TABLE tool_execution_record (
 - 所有 LLM 实例（Narrator / Director / Verifier / Memory）都可以调用工具，但每个实例的工具权限独立配置。
 - 主审计模型是 `tool_execution_record`，以 floor 为主归属，并允许附带可空的 `page_id`。
 - 运行时工具目录是**会话级**快照，通过 `/sessions/:id/tools/runtime` 暴露当前 session 真正可调用的 builtin / custom / MCP 工具集合。
-- 当前运行时只支持 `inline`。`standalone` 和 `both` 会返回结构化配置错误，不再被文档视为已实现能力。
+- 当前公开配置的 `toolMode` 仍只有 `inline`。`standalone` 和 `both` 会返回结构化配置错误，不再被文档视为已实现能力；但在 `inline` 回合内部，允许部分 allowlisted 工具先返回 deferred receipt，再通过 `runtime_job` 延后完成。
 - 兼容期内仍保留 `tool_call_record` 供旧查询接口使用，但它不是长期主模型。
 
 ### 工具来源
@@ -894,7 +897,7 @@ CREATE TABLE tool_execution_record (
 
 | 模式 | 说明 |
 | ---- | ---- |
-| `inline` | 工具定义传入 Vercel AI SDK 的 `tools` 参数，LLM 在生成过程中自主决定是否调用（通过 `maxSteps` 多步执行）。这是默认模式。 |
+| `inline` | 工具定义传入 Vercel AI SDK 的 `tools` 参数，LLM 在生成过程中自主决定是否调用（通过 `maxSteps` 多步执行）。这是默认模式。对于允许延后执行的工具，`inline` 回合内部仍可能返回 deferred receipt，并附带 `runtime_job_id`。 |
 | `standalone` | 当前未实现。服务端会返回结构化配置错误。 |
 | `both` | 当前未实现。服务端会返回结构化配置错误。 |
 
@@ -954,7 +957,7 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
 | `ToolRegistry` | `packages/core/src/tools/` | 管理所有 ToolProvider，按实例槽位过滤可用工具 |
 | `ToolExecutor` | `packages/core/src/tools/` | 执行工具调用，权限检查，事件发射，计数限制 |
 | `BuiltinToolProvider` | `packages/core/src/tools/` | 内置 7 个工具的实现 |
-| `PresetToolProvider` | `packages/core/src/tools/` | 从数据库加载的自定义工具提供者 |
+| `PresetToolProvider` | `packages/core/src/tools/` | 从数据库加载自定义工具；`script` handler 默认不执行，需显式受信开关 |
 | `ToolProvider` 接口 | `packages/core/src/tools/` | 工具提供者抽象接口 |
 | `McpToolProvider` | `apps/api/src/mcp/` | MCP 工具提供者，通过 McpConnectionManager 代理工具调用 |
 | `McpConnectionManager` | `apps/api/src/mcp/` | 管理多个 MCP 服务器连接的生命周期 |
@@ -993,6 +996,16 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
 | GET | `/mcp/servers/:id/tools` | 查看服务器工具列表 |
 | POST | `/mcp/servers/:id/test` | 测试连接 |
 
+说明：
+
+- `script` handler 在 Beta3 默认关闭。
+- 只有服务端显式设置 `ENABLE_UNSAFE_SCRIPT_HANDLER=true` 时，`/tools/definitions` 的 script 创建、更新和重新启用才会放行。
+- 在默认关闭状态下，历史 definition-backed script tools 会在 `/sessions/:id/tools/runtime` 中显示为 `unavailable`，不会进入可执行运行时目录。
+
 `/mcp/statuses` 和 `/mcp/servers/:id/status` 现在还会暴露 `reconnect_required`、`last_timeout_at`。当一次 MCP 调用触发 `mcp_call_uncertain_timeout` 时，语义是“结果不确定并且需要重连”，不是普通的确定性失败。
+
+`/mcp/servers` 和 `/mcp/servers/:id` 现在还会回显 `live_status`。当 `ENABLE_MCP=true` 时，create / update / enable / disable / delete 会直接同步 live `McpConnectionManager`，不再保留“数据库已变、运行时未变”的分裂状态；如果 runtime 没有挂载，也会通过 `attached` / `reason` 明确回显。
+
+世界书 `position=outlet` 现在会进入真实 prompt 组装：优先按同名 outlet marker/placement 注入；如果没有匹配 marker，则回退为显式 section，而不是静默丢弃。Regex 主链也会透传 `runOnEdit` 与 depth 上下文：`edit-and-regenerate` 使用 `channel="edit"`，USER_INPUT / AI_OUTPUT / at-depth WORLD_INFO 会消费 `minDepth` / `maxDepth`。
 
 同一 `session + branch` 上的排队语义仍只在当前进程内生效。这里没有分布式锁，也没有跨实例队列。

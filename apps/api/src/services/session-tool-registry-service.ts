@@ -32,6 +32,9 @@ const INSTANCE_SLOTS = new Set<InstanceSlot>([
   "memory",
 ]);
 
+const SCRIPT_HANDLER_UNAVAILABLE_REASON =
+  'Script handler execution is disabled by server policy. Set ENABLE_UNSAFE_SCRIPT_HANDLER=true only in a trusted environment.';
+
 export type SessionRuntimeToolSource =
   | "builtin"
   | "resource"
@@ -98,6 +101,7 @@ export interface SessionToolRegistryServiceOptions {
   mcpManager?: McpConnectionManager;
   mcpSnapshotStore?: McpToolCatalogSnapshotStore;
   toolRuntimePolicy?: ToolRuntimePolicy;
+  enableUnsafeScriptHandler?: boolean;
 }
 
 interface RuntimeToolCandidate {
@@ -327,6 +331,19 @@ export class SessionToolRegistryService {
       })),
     );
 
+    if (this.options.enableUnsafeScriptHandler !== true) {
+      for (const candidate of definitionCandidates) {
+        snapshot.tools.push(buildCatalogEntry(candidate, "unavailable", SCRIPT_HANDLER_UNAVAILABLE_REASON));
+      }
+
+      await this.appendMcpProviders(registry, snapshot, callableOwners, accountId);
+      sortSnapshot(snapshot);
+      return {
+        registry,
+        catalog: snapshot,
+      };
+    }
+
     const definitionCandidatesByName = new Map<string, RuntimeToolCandidate[]>();
     for (const candidate of definitionCandidates) {
       const existing = definitionCandidatesByName.get(candidate.name) ?? [];
@@ -383,7 +400,10 @@ export class SessionToolRegistryService {
         continue;
       }
 
-      registry.register(new PresetToolProvider(descriptor.providerId, descriptor.tools));
+      registry.register(new PresetToolProvider(descriptor.providerId, descriptor.tools, {
+        allowUnsafeScriptHandlerExecution: true,
+        disabledErrorMessage: SCRIPT_HANDLER_UNAVAILABLE_REASON,
+      }));
     }
 
     await this.appendMcpProviders(registry, snapshot, callableOwners, accountId);
@@ -461,6 +481,7 @@ export class SessionToolRegistryService {
       .where(and(
         eq(toolDefinitions.accountId, accountId),
         eq(toolDefinitions.source, "custom"),
+        eq(toolDefinitions.handlerType, "script"),
         eq(toolDefinitions.enabled, true),
       ));
 
@@ -478,6 +499,7 @@ export class SessionToolRegistryService {
         .where(and(
           eq(toolDefinitions.accountId, accountId),
           eq(toolDefinitions.source, "preset"),
+          eq(toolDefinitions.handlerType, "script"),
           eq(toolDefinitions.sourceId, session.presetId),
           eq(toolDefinitions.enabled, true),
         ));
@@ -497,6 +519,7 @@ export class SessionToolRegistryService {
         .where(and(
           eq(toolDefinitions.accountId, accountId),
           eq(toolDefinitions.source, "character"),
+          eq(toolDefinitions.handlerType, "script"),
           eq(toolDefinitions.sourceId, session.characterId),
           eq(toolDefinitions.enabled, true),
         ));

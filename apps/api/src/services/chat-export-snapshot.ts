@@ -1,8 +1,9 @@
-import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { buildBranchVariableScopeId, type BranchVariableScopeRef } from "@tavern/shared";
 
+import type { AccountContextOptions } from "../accounts/account-context.js";
+import { resolveAccountIdOrThrow } from "../accounts/account-context.js";
 import type { AppDb } from "../db/client.js";
-import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js";
 import {
   floors,
   memoryEdges,
@@ -15,10 +16,19 @@ import {
 import { parseJsonField } from "../lib/http.js";
 import { VariableService } from "./variable-service.js";
 
-export interface ChatExportSnapshotOptions {
+export interface ChatExportSnapshotOptions extends AccountContextOptions {
   accountId?: string;
   includeVariables?: boolean;
   includeMemories?: boolean;
+}
+
+type ChatExportAccountContext = Pick<
+  ChatExportSnapshotOptions,
+  "accountId" | "accountMode" | "defaultAccountId"
+>;
+
+function resolveExportAccountId(options: ChatExportAccountContext): string {
+  return resolveAccountIdOrThrow(options.accountId, options);
 }
 
 export interface ExportSnapshotMessage {
@@ -54,6 +64,8 @@ export interface ExportSnapshotFloor {
   tokenIn: number;
   tokenOut: number;
   metadata: unknown;
+  supersededAt: number | null;
+  supersededByFloorId: string | null;
   createdAt: number;
   updatedAt: number;
   pages: ExportSnapshotPage[];
@@ -125,9 +137,9 @@ export interface SessionExportSnapshot {
 export function countSessionExportMessages(
   db: AppDb,
   sessionId: string,
-  options?: Pick<ChatExportSnapshotOptions, "accountId">,
+  options: ChatExportAccountContext,
 ): number {
-  const accountId = options?.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
+  const accountId = resolveExportAccountId(options);
 
   const session = db
     .select({ id: sessions.id })
@@ -154,11 +166,11 @@ export function countSessionExportMessages(
 export function captureSessionExportSnapshot(
   db: AppDb,
   sessionId: string,
-  options?: ChatExportSnapshotOptions,
+  options: ChatExportSnapshotOptions,
 ): SessionExportSnapshot {
-  const includeVariables = options?.includeVariables ?? true;
-  const includeMemories = options?.includeMemories ?? true;
-  const accountId = options?.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
+  const includeVariables = options.includeVariables ?? true;
+  const includeMemories = options.includeMemories ?? true;
+  const accountId = resolveExportAccountId(options);
 
   return db.transaction((tx) => {
     const session = tx
@@ -182,8 +194,8 @@ export function captureSessionExportSnapshot(
     const floorRows = tx
       .select()
       .from(floors)
-      .where(and(eq(floors.sessionId, sessionId), isNull(floors.supersededAt)))
-      .orderBy(asc(floors.floorNo), asc(floors.branchId))
+      .where(eq(floors.sessionId, sessionId))
+      .orderBy(asc(floors.floorNo), asc(floors.branchId), asc(floors.createdAt), asc(floors.updatedAt))
       .all();
 
     const floorIds = floorRows.map((row) => row.id);
@@ -256,6 +268,8 @@ export function captureSessionExportSnapshot(
       tokenIn: row.tokenIn,
       tokenOut: row.tokenOut,
       metadata: parseJsonField(row.metadataJson ?? null),
+      supersededAt: row.supersededAt,
+      supersededByFloorId: row.supersededByFloorId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       pages: pagesByFloor.get(row.id) ?? [],

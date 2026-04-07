@@ -11,7 +11,12 @@ import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination
 import { getRequestAuthContext } from "../plugins/auth";
 import { getFloorContentMutationRejection, type FloorContentMutationRejection } from "../services/floor-content-mutability-policy";
 import { OwnedFloorRepository, OwnedPageRepository } from "../services/owned-resource-repositories";
+import { deleteVariablesForPages } from "../services/variable-owned-resource-cleanup.js";
 import { PageActivationService } from "../services/page-activation-service";
+import {
+  mapSqliteConstraintErrorToRouteError,
+  type SqliteConstraintErrorMapping,
+} from "../services/resource-write.js";
 
 const pageKindSchema = z.enum(["input", "output", "mixed"]);
 
@@ -30,17 +35,20 @@ const createPageSchema = z.object({
   floor_id: z.string().min(1),
   page_no: z.number().int().nonnegative(),
   page_kind: pageKindSchema,
+  is_active: z.never().optional(),
   version: z.number().int().positive().optional(),
   checksum: z.string().min(1).optional()
-});
+}).strict();
 
 const updatePageSchema = z
   .object({
     page_no: z.number().int().nonnegative().optional(),
     page_kind: pageKindSchema.optional(),
+    is_active: z.never().optional(),
     version: z.number().int().positive().optional(),
     checksum: z.string().min(1).optional()
   })
+  .strict()
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
 
 
@@ -64,6 +72,7 @@ const pageBodyJsonSchema = {
     floor_id: { type: "string", minLength: 1 },
     page_no: { type: "integer", minimum: 0 },
     page_kind: { type: "string", enum: ["input", "output", "mixed"] },
+    is_active: { not: {} },
     version: { type: "integer", minimum: 1 },
     checksum: { type: "string", minLength: 1 },
   },
@@ -163,6 +172,25 @@ function sendPageMutationRejection(reply: Parameters<typeof sendError>[0], rejec
   return sendError(reply, 409, rejection.code, rejection.message);
 }
 
+const PAGE_CONSTRAINT_MAPPINGS: SqliteConstraintErrorMapping[] = [
+  {
+    constraintName: "message_page_floor_no_version_uq",
+    fallbackPatterns: ["message_page.floor_id, message_page.page_no, message_page.version"],
+    statusCode: 409,
+    code: "page_conflict",
+    message: "Message page version already exists in the target floor/page slot",
+  },
+  {
+    constraintName: "message_page_floor_no_active_uq",
+    fallbackPatterns: ["message_page.floor_id, message_page.page_no"],
+    statusCode: 409,
+    code: "page_conflict",
+    message: "An active message page already exists in the target floor/page slot",
+  },
+];
+
+const mapPageWriteError = (error: unknown) => mapSqliteConstraintErrorToRouteError(error, PAGE_CONSTRAINT_MAPPINGS);
+
 export async function registerMessagePageRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection
@@ -226,20 +254,29 @@ export async function registerMessagePageRoutes(
       .limit(1)
       .all()[0];
 
-    const createdRows = await db
-      .insert(messagePages)
-      .values({
-        id: nanoid(),
-        floorId: parsedBody.data.floor_id,
-        pageNo: parsedBody.data.page_no,
-        pageKind: parsedBody.data.page_kind,
-        isActive: activeSlotRow === undefined,
-        version: parsedBody.data.version ?? 1,
-        checksum: parsedBody.data.checksum ?? null,
-        createdAt: now,
-        updatedAt: now
-      })
-      .returning();
+    let createdRows;
+    try {
+      createdRows = await db
+        .insert(messagePages)
+        .values({
+          id: nanoid(),
+          floorId: parsedBody.data.floor_id,
+          pageNo: parsedBody.data.page_no,
+          pageKind: parsedBody.data.page_kind,
+          isActive: activeSlotRow === undefined,
+          version: parsedBody.data.version ?? 1,
+          checksum: parsedBody.data.checksum ?? null,
+          createdAt: now,
+          updatedAt: now
+        })
+        .returning();
+    } catch (error) {
+      const mapped = mapPageWriteError(error);
+      if (mapped) {
+        return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
+      }
+      throw error;
+    }
 
     const created = requireRow(createdRows[0], "Failed to create message page");
 
@@ -433,11 +470,20 @@ export async function registerMessagePageRoutes(
     });
     if (rejection) return sendPageMutationRejection(reply, rejection);
 
-    const [updated] = await db
-      .update(messagePages)
-      .set(updates)
-      .where(eq(messagePages.id, existingPage.id))
-      .returning();
+    let updated;
+    try {
+      [updated] = await db
+        .update(messagePages)
+        .set(updates)
+        .where(eq(messagePages.id, existingPage.id))
+        .returning();
+    } catch (error) {
+      const mapped = mapPageWriteError(error);
+      if (mapped) {
+        return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
+      }
+      throw error;
+    }
 
     if (!updated) {
       return sendError(reply, 404, "not_found", "Message page not found");
@@ -480,7 +526,14 @@ export async function registerMessagePageRoutes(
     });
     if (rejection) return sendPageMutationRejection(reply, rejection);
 
-    const deleted = await db.delete(messagePages).where(eq(messagePages.id, parsedParams.data.id)).returning();
+    const deleted = await db.transaction((tx) => {
+      deleteVariablesForPages(tx, auth.accountId, [existingPage.id]);
+      return tx
+        .delete(messagePages)
+        .where(eq(messagePages.id, parsedParams.data.id))
+        .returning()
+        .all();
+    });
 
     if (deleted.length === 0) {
       return sendError(reply, 404, "not_found", "Message page not found");
@@ -568,6 +621,9 @@ export async function registerMessagePageRoutes(
     let notFound = 0;
 
     db.transaction((tx) => {
+      const deletablePageIds = ids.filter((id) => ownedPageIds.has(id));
+      deleteVariablesForPages(tx, auth.accountId, deletablePageIds);
+
       ids.forEach((id, index) => {
         if (!ownedPageIds.has(id)) {
           results.push({ index, id, action: "not_found" });

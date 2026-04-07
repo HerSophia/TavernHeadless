@@ -17,9 +17,19 @@ export type MemoryStatus = "active" | "deprecated";
 export type MemorySummaryTier = "micro" | "macro";
 export type MemoryLifecycleStatus = "active" | "compacted" | "deprecated";
 
+export type MemoryContent =
+  | string
+  | {
+      text: string;
+    };
+
+function isMemoryContentObject(value: unknown): value is { text: string } {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) && typeof (value as { text?: unknown }).text === "string";
+}
+
 export type MemoryRecord = {
   confidence: number;
-  content: unknown;
+  content: MemoryContent;
   coverageEndFloorNo: number | null;
   coverageStartFloorNo: number | null;
   createdAt: number;
@@ -115,7 +125,7 @@ export type MemoriesResource = {
   create(options: {
     accountId?: AccountIdHint;
     confidence?: number;
-    content: unknown;
+    content: MemoryContent;
     factKey?: string | null;
     importance?: number;
     lifecycleStatus?: MemoryLifecycleStatus;
@@ -134,7 +144,7 @@ export type MemoriesResource = {
   update(options: {
     accountId?: AccountIdHint;
     confidence?: number;
-    content?: unknown;
+    content?: MemoryContent;
     factKey?: string | null;
     importance?: number;
     lifecycleStatus?: MemoryLifecycleStatus;
@@ -327,7 +337,7 @@ function mapMemoryRecord(value: unknown): MemoryRecord | null {
 
   return {
     confidence: readNumber(record.confidence),
-    content: record.content,
+    content: normalizeMemoryContent(record.content),
     coverageEndFloorNo: readNullableNumber(record.coverage_end_floor_no),
     coverageStartFloorNo: readNullableNumber(record.coverage_start_floor_no),
     createdAt: readNumber(record.created_at),
@@ -351,6 +361,18 @@ function mapMemoryRecord(value: unknown): MemoryRecord | null {
     type: readString(record.type, "fact") as MemoryType,
     updatedAt: readNumber(record.updated_at),
   };
+}
+
+function normalizeMemoryContent(value: unknown): MemoryContent {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (isMemoryContentObject(value)) {
+    return { text: value.text };
+  }
+
+  return JSON.stringify(value);
 }
 
 function mapBatchUpdateStatusResult(

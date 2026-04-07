@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 
+import type { AccountMode } from "../accounts/constants.js";
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { parseWithSchema, sendError } from "../lib/http";
@@ -140,6 +141,7 @@ const testModelSchema = z.object({
 
 export interface RegisterLlmProfileRoutesOptions {
   mutationRuntime?: MutationRuntime;
+  accountMode?: AccountMode;
 }
 
 export async function registerLlmProfileRoutes(
@@ -147,7 +149,10 @@ export async function registerLlmProfileRoutes(
   connection: DatabaseConnection,
   options: RegisterLlmProfileRoutesOptions = {},
 ): Promise<void> {
-  const service = new LlmProfileService(connection.db, { mutationRuntime: options.mutationRuntime });
+  const service = new LlmProfileService(connection.db, {
+    mutationRuntime: options.mutationRuntime,
+    accountMode: options.accountMode,
+  });
 
   app.post(
     "/llm-profiles",

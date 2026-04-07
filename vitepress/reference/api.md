@@ -12,7 +12,7 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 | ---- | -- |
 | 基础 URL | `http://localhost:3000` |
 | OpenAPI 版本 | 3.0.3 |
-| API 版本 | `0.2.0-beta.2` |
+| API 版本 | `0.2.0-beta.3` |
 | OpenAPI JSON | `GET /openapi.json` |
 | Swagger UI | `GET /docs/` |
 | 中文文档 | `GET /docs-zh` |

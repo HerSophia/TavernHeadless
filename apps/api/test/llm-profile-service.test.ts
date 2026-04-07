@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { MissingAccountContextError } from "../src/accounts/account-context";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import { llmProfileBindings, llmProfiles, sessions } from "../src/db/schema";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants";
@@ -31,6 +32,12 @@ describe("LlmProfileService", () => {
 
     return created.id;
   }
+
+  it("rejects missing account context in multi-account mode", async () => {
+    const multiService = new LlmProfileService(connection.db, { accountMode: "multi", masterKey: MASTER_KEY });
+
+    await expect(multiService.listProfiles()).rejects.toBeInstanceOf(MissingAccountContextError);
+  });
 
   it("rejects session-scoped activation when the target session does not exist", async () => {
     const profileId = await createProfile("missing-session-profile");

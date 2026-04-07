@@ -103,12 +103,21 @@ export class McpConnectionManager {
    */
   async removeServer(serverId: string): Promise<void> {
     const connection = this.connections.get(serverId);
-    if (!connection) return;
+    if (!connection) {
+      this.unavailableStatuses.delete(serverId);
+      this.connectPromises.delete(serverId);
+      return;
+    }
 
-    await connection.disconnect();
     this.connections.delete(serverId);
     this.unavailableStatuses.delete(serverId);
     this.connectPromises.delete(serverId);
+
+    try {
+      await connection.disconnect();
+    } catch (error) {
+      this.logger?.warn({ serverId, error: String(error) }, 'Failed to disconnect MCP server while removing it from manager');
+    }
   }
 
   /**

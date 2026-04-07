@@ -27,7 +27,7 @@ import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js
 import { parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http.js";
 import { buildListMeta, listQuerySchemaBase } from "../lib/pagination.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
-import { ToolService } from "../services/tool-service.js";
+import { ToolService, ToolServiceError } from "../services/tool-service.js";
 
 // ══════════════════════════════════════════════════════════
 // Zod Schemas
@@ -35,7 +35,7 @@ import { ToolService } from "../services/tool-service.js";
 
 const sideEffectLevelSchema = z.enum(["none", "sandbox", "irreversible"]);
 const toolSourceSchema = z.enum(["preset", "character", "custom"]);
-const handlerTypeSchema = z.enum(["script", "prompt", "delegate"]);
+const handlerTypeSchema = z.enum(["script"]);
 const instanceSlotSchema = z.enum(["narrator", "director", "verifier", "memory"]);
 const callRecordStatusSchema = z.enum(["success", "error", "denied", "queued", "running"]);
 const toolExecutionStatusSchema = z.enum(["running", "queued", "success", "error", "denied", "timeout", "uncertain", "blocked"]);
@@ -184,7 +184,7 @@ const definitionJsonSchema = {
     source: { type: "string", enum: ["preset", "character", "custom"] },
     source_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     enabled: { type: "boolean" },
-    handler_type: { type: "string", enum: ["script", "prompt", "delegate"] },
+    handler_type: { type: "string", enum: ["script"] },
     handler: {},
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
@@ -422,7 +422,7 @@ const createDefinitionBodyJsonSchema = {
     source: { type: "string", enum: ["preset", "character", "custom"] },
     source_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
     enabled: { type: "boolean" },
-    handler_type: { type: "string", enum: ["script", "prompt", "delegate"] },
+    handler_type: { type: "string", enum: ["script"] },
     handler: { type: "object" },
   },
   additionalProperties: false,
@@ -460,12 +460,31 @@ const toolPermissionsBodyJsonSchema = {
 // Route Registration
 // ══════════════════════════════════════════════════════════
 
+const SCRIPT_HANDLER_DISABLED_MESSAGE =
+  "Script handler definitions are disabled by server policy. Set ENABLE_UNSAFE_SCRIPT_HANDLER=true only in a trusted environment.";
+
+export interface RegisterToolRoutesOptions {
+  enableUnsafeScriptHandler?: boolean;
+}
+
 export async function registerToolRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection,
+  options: RegisterToolRoutesOptions = {},
 ): Promise<void> {
   const { db } = connection;
   const toolService = new ToolService(db);
+
+  function rejectDisabledScriptHandler(reply: Parameters<typeof sendError>[0]) {
+    return sendError(reply, 403, "tool_script_handler_disabled", SCRIPT_HANDLER_DISABLED_MESSAGE, {
+      env: "ENABLE_UNSAFE_SCRIPT_HANDLER",
+      trusted_only: true,
+    });
+  }
+
+  function isUnsafeScriptHandlerEnabled(): boolean {
+    return options.enableUnsafeScriptHandler === true;
+  }
 
   // ── GET /tools/builtin ─────────────────────���────────
 
@@ -559,6 +578,8 @@ export async function registerToolRoutes(
       response: {
         201: definitionResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -566,9 +587,17 @@ export async function registerToolRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const def = await toolService.createDefinition(parsedBody.data, auth.accountId);
+    if (!isUnsafeScriptHandlerEnabled()) {
+      return rejectDisabledScriptHandler(reply);
+    }
 
-    return reply.code(201).send({ data: def });
+    try {
+      const def = await toolService.createDefinition(parsedBody.data, auth.accountId);
+
+      return reply.code(201).send({ data: def });
+    } catch (error) {
+      return sendToolServiceError(reply, error);
+    }
   });
 
   // ── PATCH /tools/definitions/:id ────────────────────
@@ -583,7 +612,9 @@ export async function registerToolRoutes(
       response: {
         200: definitionResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -594,12 +625,20 @@ export async function registerToolRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const def = await toolService.updateDefinition(parsedParams.data.id, auth.accountId, parsedBody.data);
-    if (!def) {
-      return sendError(reply, 404, "not_found", "Tool definition not found");
+    if (!isUnsafeScriptHandlerEnabled()) {
+      return rejectDisabledScriptHandler(reply);
     }
 
-    return reply.send({ data: def });
+    try {
+      const def = await toolService.updateDefinition(parsedParams.data.id, auth.accountId, parsedBody.data);
+      if (!def) {
+        return sendError(reply, 404, "not_found", "Tool definition not found");
+      }
+
+      return reply.send({ data: def });
+    } catch (error) {
+      return sendToolServiceError(reply, error);
+    }
   });
 
   // ── DELETE /tools/definitions/:id ───────────────────
@@ -641,6 +680,7 @@ export async function registerToolRoutes(
         200: definitionResponseJsonSchema,
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -651,6 +691,10 @@ export async function registerToolRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
+    if (parsedBody.data.enabled === true && !isUnsafeScriptHandlerEnabled()) {
+      return rejectDisabledScriptHandler(reply);
+    }
+
     const def = await toolService.toggleDefinition(parsedParams.data.id, auth.accountId, parsedBody.data.enabled);
     if (!def) {
       return sendError(reply, 404, "not_found", "Tool definition not found");
@@ -952,4 +996,12 @@ export async function registerToolRoutes(
 
     return reply.send({ data: merged });
   });
+}
+
+function sendToolServiceError(reply: Parameters<typeof sendError>[0], error: unknown) {
+  if (error instanceof ToolServiceError && error.code === "tool_definition_conflict") {
+    return sendError(reply, 409, error.code, error.message);
+  }
+
+  throw error;
 }

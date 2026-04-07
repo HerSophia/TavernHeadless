@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import { accounts, memoryItems, runtimeScopeStates } from "../src/db/schema";
 import { MemoryMaintenanceService } from "../src/services/memory-maintenance-service";
@@ -31,6 +32,7 @@ describe("MemoryMaintenanceService", () => {
     await database.db.insert(memoryItems).values([
       {
         id: "sum-old",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
         scope: "chat",
         scopeId: "s1",
         type: "summary",
@@ -45,6 +47,7 @@ describe("MemoryMaintenanceService", () => {
       },
       {
         id: "sum-new",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
         scope: "chat",
         scopeId: "s1",
         type: "summary",
@@ -59,6 +62,7 @@ describe("MemoryMaintenanceService", () => {
       },
       {
         id: "fact-old",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
         scope: "chat",
         scopeId: "s1",
         type: "fact",
@@ -105,6 +109,7 @@ describe("MemoryMaintenanceService", () => {
 
     await database.db.insert(memoryItems).values({
       id: "sum-old",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       scope: "chat",
       scopeId: "s1",
       type: "summary",
@@ -143,6 +148,7 @@ describe("MemoryMaintenanceService", () => {
     await database.db.insert(memoryItems).values([
       {
         id: "dep-old",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
         scope: "chat",
         scopeId: "s1",
         type: "summary",
@@ -157,6 +163,7 @@ describe("MemoryMaintenanceService", () => {
       },
       {
         id: "dep-touched",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
         scope: "chat",
         scopeId: "s1",
         type: "summary",

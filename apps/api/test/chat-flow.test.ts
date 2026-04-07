@@ -35,7 +35,7 @@ import type { ProviderConfig, ProviderFactory } from "@tavern/core";
 // 只测试路由层 + ChatService 的 DB 逻辑。
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { sessions, floors, messagePages, messages, presets, promptSnapshots, toolExecutionRecords, variables } from "../src/db/schema";
+import { sessions, floors, messagePages, messages, presets, promptSnapshots, regexProfiles, toolExecutionRecords, variables } from "../src/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants";
 import { nanoid } from "nanoid";
@@ -162,6 +162,21 @@ describe("ChatService", () => {
     };
   }
 
+  function createMutatingGenerationCoordinator(
+    mutate: (input: GenerationCoordinatorExecutionInput<unknown>) => Promise<void> | void,
+  ): GenerationCoordinator {
+    return {
+      async execute<T>(input: GenerationCoordinatorExecutionInput<T>): Promise<T> {
+        await mutate(input as GenerationCoordinatorExecutionInput<unknown>);
+        return input.task({
+          requestId: "test-request",
+          acquiredAt: Date.now(),
+          abortSignal: new AbortController().signal,
+        });
+      },
+    };
+  }
+
   beforeEach(async () => {
     database = createDatabase(":memory:");
 
@@ -223,6 +238,7 @@ describe("ChatService", () => {
     await database.db.insert(sessions).values({
       id: sessionId,
       title: "Test Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -314,6 +330,7 @@ describe("ChatService", () => {
     await database.db.insert(presets).values({
       id: presetId,
       name: "Prefill Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify({
         prompts: [
@@ -499,6 +516,7 @@ describe("ChatService", () => {
 
         await database.db.insert(variables).values({
           id: nanoid(),
+          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
           scope: "page",
           scopeId: input.pageId!,
           key: "mood",
@@ -676,6 +694,100 @@ describe("ChatService", () => {
     });
 
     expect(calls).toEqual([abortController.signal]);
+  });
+
+  it("should revalidate session status after generation handoff", async () => {
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      generationCoordinator: createMutatingGenerationCoordinator(async () => {
+        await database.db
+          .update(sessions)
+          .set({ status: "archived", updatedAt: Date.now() })
+          .where(eq(sessions.id, sessionId));
+      }),
+    });
+
+    await expect(service.respond(sessionId, { message: "Queued message" })).rejects.toMatchObject({
+      code: "session_archived",
+    });
+    expect(mockOrchestrator.executeTurn).not.toHaveBeenCalled();
+  });
+
+  it("should reject regenerate when the latest floor changes while queued", async () => {
+    const initial = await chatService.respond(sessionId, { message: "seed" });
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      generationCoordinator: createMutatingGenerationCoordinator(async () => {
+        const now = Date.now();
+        await database.db.insert(floors).values({
+          id: nanoid(),
+          sessionId,
+          floorNo: initial.floorNo + 1,
+          branchId: "main",
+          parentFloorId: initial.floorId,
+          state: "committed",
+          tokenIn: 0,
+          tokenOut: 0,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }),
+    });
+
+    await expect(service.regenerate(sessionId)).rejects.toMatchObject({
+      code: "generation_target_stale",
+    });
+    expect(mockOrchestrator.executeTurn).not.toHaveBeenCalled();
+  });
+
+  it("should reject retry when the target floor changes while queued", async () => {
+    const initial = await chatService.respond(sessionId, { message: "seed" });
+    await database.db
+      .update(floors)
+      .set({ state: "failed", updatedAt: Date.now() })
+      .where(eq(floors.id, initial.floorId));
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      generationCoordinator: createMutatingGenerationCoordinator(async () => {
+        await database.db
+          .update(floors)
+          .set({ branchId: "alt", updatedAt: Date.now() })
+          .where(eq(floors.id, initial.floorId));
+      }),
+    });
+
+    await expect(service.retryFloor(initial.floorId)).rejects.toMatchObject({
+      code: "generation_target_stale",
+    });
+    expect(mockOrchestrator.executeTurn).not.toHaveBeenCalled();
+  });
+
+  it("should reject edit-and-regenerate when the source context changes while queued", async () => {
+    const initial = await chatService.respond(sessionId, { message: "seed" });
+    const [inputPage] = await database.db
+      .select({ id: messagePages.id })
+      .from(messagePages)
+      .where(and(eq(messagePages.floorId, initial.floorId), eq(messagePages.pageKind, "input")));
+    const [sourceMessage] = await database.db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
+      generationCoordinator: createMutatingGenerationCoordinator(async () => {
+        await database.db
+          .update(floors)
+          .set({ floorNo: initial.floorNo + 10, updatedAt: Date.now() })
+          .where(eq(floors.id, initial.floorId));
+      }),
+    });
+
+    await expect(service.editAndRegenerate(sourceMessage!.id, { content: "edited" })).rejects.toMatchObject({
+      code: "generation_target_stale",
+    });
+    expect(mockOrchestrator.executeTurn).not.toHaveBeenCalled();
   });
 
   it("should resolve per-turn model override and mark profile as used", async () => {
@@ -1912,6 +2024,69 @@ describe("ChatService", () => {
         .where(and(eq(messages.pageId, newInputPage!.id), eq(messages.role, "user")));
 
       expect(editedUserMessage?.content).toBe("Edited user line");
+    });
+
+    it("should switch USER_INPUT regex execution to the edit channel during editAndRegenerate", async () => {
+      const regexProfileId = nanoid();
+      const now = Date.now();
+
+      await database.db.insert(regexProfiles).values({
+        id: regexProfileId,
+        name: "Edit Regex",
+        source: "sillytavern",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        dataJson: JSON.stringify([
+          {
+            id: "regex-edit-channel",
+            scriptName: "Edit Channel Rule",
+            findRegex: "/draft/g",
+            replaceString: "persisted",
+            trimStrings: [],
+            placement: [1],
+            disabled: false,
+            substituteRegex: 0,
+            minDepth: 0,
+            maxDepth: 0,
+          },
+        ]),
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await database.db.update(sessions).set({ regexProfileId, updatedAt: now }).where(eq(sessions.id, sessionId));
+
+      const baseTurn = await chatService.respond(sessionId, { message: "draft" });
+
+      const [baseInputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, baseTurn.floorId), eq(messagePages.pageKind, "input")));
+
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id, content: messages.content })
+        .from(messages)
+        .where(and(eq(messages.pageId, baseInputPage!.id), eq(messages.role, "user")));
+
+      expect(sourceMessage?.content).toBe("persisted");
+
+      const editedResult = await chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "draft",
+        branchId: "edit-regex",
+      });
+
+      const [newInputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, editedResult.floorId), eq(messagePages.pageKind, "input")));
+
+      const [editedUserMessage] = await database.db
+        .select({ content: messages.content })
+        .from(messages)
+        .where(and(eq(messages.pageId, newInputPage!.id), eq(messages.role, "user")));
+
+      expect(editedUserMessage?.content).toBe("draft");
+      const editTurnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+      expect(editTurnInput?.messages.some((message: { role: string; content: string }) => message.role === "user" && message.content === "draft")).toBe(true);
     });
 
     it("should not leave an orphan draft floor when editAndRegenerate front-half write fails", async () => {

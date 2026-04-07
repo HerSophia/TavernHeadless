@@ -19,8 +19,20 @@ function createMockRepo(): MemoryRepository {
     async findMany(query) {
       let items = Array.from(storage.values());
 
-      if (query.scopeId) items = items.filter((i) => i.scopeId === query.scopeId);
-      if (query.scope) items = items.filter((i) => i.scope === query.scope);
+      if (query.scopeRefs && query.scopeRefs.length > 0) {
+        const allowedRefs = new Set(
+          query.scopeRefs.map((scopeRef) => `${scopeRef.scope}:${scopeRef.scopeId}`),
+        );
+        items = items.filter((item) => allowedRefs.has(`${item.scope}:${item.scopeId}`));
+      } else {
+        if (query.scopeId) {
+          items = items.filter((i) => i.scopeId === query.scopeId);
+        }
+        if (query.scope) {
+          items = items.filter((i) => i.scope === query.scope);
+        }
+      }
+
       if (query.type) items = items.filter((i) => i.type === query.type);
       if (query.summaryTier) items = items.filter((i) => i.summaryTier === query.summaryTier);
       if (query.status) items = items.filter((i) => i.status === query.status);
@@ -277,6 +289,45 @@ describe('MemoryStore', () => {
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0]!.type).toBe('fact');
+    });
+
+    it('merges visible global chat and floor scopes when scopeContext is provided', async () => {
+      const { store, repo } = createStore();
+
+      await repo.create({
+        scope: 'global',
+        scopeId: 'account-1',
+        type: 'fact',
+        content: 'global fact',
+        importance: 0.9,
+        confidence: 1.0,
+        status: 'active',
+      });
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'summary',
+        content: 'chat summary',
+        importance: 0.8,
+        confidence: 1.0,
+        status: 'active',
+      });
+      await repo.create({
+        scope: 'floor',
+        scopeId: 'floor-1',
+        type: 'open_loop',
+        content: 'floor open loop',
+        importance: 0.7,
+        confidence: 1.0,
+        status: 'active',
+      });
+
+      const result = await store.prepareInjection('session-1', {
+        maxTokens: 10000,
+        scopeContext: { accountId: 'account-1', sessionId: 'session-1', floorId: 'floor-1' },
+      });
+
+      expect(result.items.map((item) => item.scope)).toEqual(['global', 'chat', 'floor']);
     });
 
     it('orders by importance (highest first)', async () => {

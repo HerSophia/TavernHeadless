@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { MissingAccountContextError } from "../../accounts/account-context.js";
 import { createDatabase, type AppDb } from "../../db/client";
 import { accounts } from "../../db/schema";
 import { DrizzleMemoryRepository } from "../drizzle-memory-repository";
@@ -370,6 +371,14 @@ describe("DrizzleMemoryRepository", () => {
 
     expect(accountAItems.map((item) => item.content)).toEqual(["A"]);
     expect(accountBItems.map((item) => item.content)).toEqual(["B"]);
+  });
+
+  it("rejects missing account context in multi-account mode", async () => {
+    const strictRepo = new DrizzleMemoryRepository(db, { accountMode: "multi" });
+
+    await expect(
+      strictRepo.findMany({ scope: "chat", scopeId: "shared-session" }),
+    ).rejects.toBeInstanceOf(MissingAccountContextError);
   });
 
   it("does not read or mutate records across account boundaries", async () => {

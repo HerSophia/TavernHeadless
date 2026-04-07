@@ -996,4 +996,64 @@ describe("sdk integration and operations resources", () => {
       connectedAt: null, error: "Tool call timeout after 30000ms; execution outcome is uncertain; reconnect required", lastTimeoutAt: 987654, reconnectRequired: true, serverId: "mcp-9", serverName: "Timeout Server", state: "reconnect_required", toolCount: 0, toolsRefreshedAt: null, transport: "http",
     });
   });
+
+  it("maps MCP config live_status and status attached/reason metadata", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: "mcp-live-1",
+          name: "Live Server",
+          transport: "stdio",
+          stdio: { command: "node" },
+          http: null,
+          tool_prefix: "live_",
+          enabled: true,
+          connect_timeout_ms: 30000,
+          call_timeout_ms: 60000,
+          tool_refresh_interval_ms: 300000,
+          default_side_effect_level: "irreversible",
+          created_at: 100,
+          updated_at: 101,
+          live_status: {
+            attached: true,
+            reason: null,
+            state: "connected",
+            tool_count: 2,
+            connected_at: 123,
+            tools_refreshed_at: 124,
+            error: null,
+            reconnect_required: false,
+            last_timeout_at: null,
+          },
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          server_id: "mcp-live-1",
+          server_name: "Live Server",
+          transport: "stdio",
+          state: "disconnected",
+          tool_count: 0,
+          connected_at: null,
+          tools_refreshed_at: null,
+          error: "Configured MCP server is enabled in storage but not attached to the runtime manager.",
+          reconnect_required: false,
+          last_timeout_at: null,
+          attached: false,
+          reason: "not_attached",
+        },
+      }));
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const mcp = createMcpResource(transport);
+
+    await expect(mcp.getServer({ serverId: "mcp-live-1" })).resolves.toMatchObject({
+      id: "mcp-live-1",
+      liveStatus: { attached: true, reason: null, state: "connected", toolCount: 2 },
+    });
+    await expect(mcp.getServerStatus({ serverId: "mcp-live-1" })).resolves.toMatchObject({
+      attached: false,
+      reason: "not_attached",
+      state: "disconnected",
+    });
+  });
 });

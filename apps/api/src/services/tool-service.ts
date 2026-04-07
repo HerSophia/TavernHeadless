@@ -38,7 +38,7 @@ export interface CreateDefinitionInput {
   source: 'preset' | 'character' | 'custom';
   source_id?: string | null;
   enabled?: boolean;
-  handler_type: 'script' | 'prompt' | 'delegate';
+  handler_type: 'script';
   handler: Record<string, unknown>;
 }
 
@@ -50,7 +50,7 @@ export interface UpdateDefinitionInput {
   allowed_slots?: string[];
   source?: 'preset' | 'character' | 'custom';
   source_id?: string | null;
-  handler_type?: 'script' | 'prompt' | 'delegate';
+  handler_type?: 'script';
   handler?: Record<string, unknown>;
 }
 
@@ -64,7 +64,7 @@ export interface ToolDefinitionResponse {
   source: string;
   source_id: string | null;
   enabled: boolean;
-  handler_type: string;
+  handler_type: 'script';
   handler: unknown;
   created_at: number;
   updated_at: number;
@@ -109,9 +109,23 @@ export interface ToolExecutionRecordResponse {
   created_at: number;
 }
 
+export class ToolServiceError extends Error {
+  constructor(
+    public readonly code: "tool_definition_conflict",
+    message: string,
+  ) {
+    super(message);
+    this.name = "ToolServiceError";
+  }
+}
+
 // ── Helpers ─────────────────────────────────────────
 
 function toDefinitionResponse(row: ToolDefinitionRow): ToolDefinitionResponse {
+  if (row.handlerType !== "script") {
+    throw new Error(`Unsupported tool handler type '${row.handlerType}' escaped the public tool surface`);
+  }
+
   return {
     id: row.id,
     name: row.name,
@@ -165,25 +179,36 @@ export class ToolService {
     input: CreateDefinitionInput,
     accountId: string,
   ): Promise<ToolDefinitionResponse> {
-    const now = Date.now();
-    const row = await this.repo.insertDefinition({
-      id: nanoid(),
-      name: input.name,
-      description: input.description,
-      parametersJson: stringifyJsonField(input.parameters) ?? '{"type":"object","properties":{}}',
-      sideEffectLevel: input.side_effect_level,
-      allowedSlotsJson: stringifyJsonField(input.allowed_slots) ?? '[]',
-      source: input.source,
-      sourceId: input.source_id ?? null,
-      enabled: input.enabled ?? true,
-      handlerType: input.handler_type,
-      handlerJson: stringifyJsonField(input.handler) ?? '{}',
-      accountId,
-      createdAt: now,
-      updatedAt: now,
-    });
+    try {
+      await this.ensureDefinitionIdentityAvailable({
+        accountId,
+        name: input.name,
+        source: input.source,
+        sourceId: input.source_id ?? null,
+      });
 
-    return toDefinitionResponse(row);
+      const now = Date.now();
+      const row = await this.repo.insertDefinition({
+        id: nanoid(),
+        name: input.name,
+        description: input.description,
+        parametersJson: stringifyJsonField(input.parameters) ?? '{"type":"object","properties":{}}',
+        sideEffectLevel: input.side_effect_level,
+        allowedSlotsJson: stringifyJsonField(input.allowed_slots) ?? '[]',
+        source: input.source,
+        sourceId: input.source_id ?? null,
+        enabled: input.enabled ?? true,
+        handlerType: input.handler_type,
+        handlerJson: stringifyJsonField(input.handler) ?? '{}',
+        accountId,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      return toDefinitionResponse(row);
+    } catch (error) {
+      throw this.mapWriteError(error, input.name);
+    }
   }
 
   async getDefinition(
@@ -209,6 +234,11 @@ export class ToolService {
     accountId: string,
     input: UpdateDefinitionInput,
   ): Promise<ToolDefinitionResponse | null> {
+    const existing = await this.repo.getDefinitionById(id, accountId);
+    if (!existing) {
+      return null;
+    }
+
     const updates: Record<string, unknown> = {};
 
     if (input.name !== undefined) updates.name = input.name;
@@ -227,10 +257,24 @@ export class ToolService {
       updates.handlerJson = stringifyJsonField(input.handler) ?? '{}';
     }
 
-    if (Object.keys(updates).length === 0) return this.getDefinition(id, accountId);
+    if (Object.keys(updates).length === 0) {
+      return toDefinitionResponse(existing);
+    }
 
-    const row = await this.repo.updateDefinition(id, accountId, updates as any);
-    return row ? toDefinitionResponse(row) : null;
+    try {
+      await this.ensureDefinitionIdentityAvailable({
+        accountId,
+        name: input.name ?? existing.name,
+        source: input.source ?? existing.source,
+        sourceId: input.source_id !== undefined ? input.source_id ?? null : existing.sourceId,
+        excludeId: id,
+      });
+
+      const row = await this.repo.updateDefinition(id, accountId, updates as any);
+      return row ? toDefinitionResponse(row) : null;
+    } catch (error) {
+      throw this.mapWriteError(error, input.name ?? existing.name);
+    }
   }
 
   async deleteDefinition(id: string, accountId: string): Promise<boolean> {
@@ -306,5 +350,42 @@ export class ToolService {
       })),
       total: result.total,
     };
+  }
+
+  private async ensureDefinitionIdentityAvailable(input: {
+    accountId: string;
+    name: string;
+    source: CreateDefinitionInput["source"];
+    sourceId: string | null;
+    excludeId?: string;
+  }): Promise<void> {
+    const existing = await this.repo.findDefinitionByIdentity({
+      accountId: input.accountId,
+      name: input.name,
+      source: input.source,
+      sourceId: input.sourceId,
+      excludeId: input.excludeId,
+    });
+
+    if (existing) {
+      throw new ToolServiceError("tool_definition_conflict", this.buildDefinitionConflictMessage(input.name));
+    }
+  }
+
+  private mapWriteError(error: unknown, name?: string): ToolServiceError {
+    if (error instanceof ToolServiceError) {
+      return error;
+    }
+
+    const code = typeof error === "object" && error !== null ? (error as { code?: string }).code : undefined;
+    if (typeof code === "string" && code.startsWith("SQLITE_CONSTRAINT")) {
+      return new ToolServiceError("tool_definition_conflict", this.buildDefinitionConflictMessage(name));
+    }
+
+    throw error;
+  }
+
+  private buildDefinitionConflictMessage(name?: string): string {
+    return name ? `Tool definition already exists: ${name}` : "Tool definition already exists";
   }
 }

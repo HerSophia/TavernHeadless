@@ -494,6 +494,29 @@ describe("chat routes", () => {
     );
   });
 
+  it("maps generation_target_stale on /sessions/:id/regenerate", async () => {
+    const chatService = createChatService({
+      regenerate: vi.fn(async () => {
+        throw new ChatServiceError("generation_target_stale", "Latest committed floor changed while the regenerate request was waiting to run");
+      }),
+    });
+
+    await mountChatRoutes(chatService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/regenerate",
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ error: { code: string; message: string } }>()).toEqual({
+      error: {
+        code: "generation_target_stale",
+        message: "Latest committed floor changed while the regenerate request was waiting to run",
+      },
+    });
+  });
+
   it("handles /floors/:id/retry with an omitted body", async () => {
     const chatService = createChatService({
       retryFloor: vi.fn(async () => ({

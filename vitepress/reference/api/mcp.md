@@ -66,12 +66,36 @@ GET /mcp/servers
       "tool_refresh_interval_ms": 300000,
       "default_side_effect_level": "irreversible",
       "created_at": 1719400000000,
-      "updated_at": 1719400000000
+      "updated_at": 1719400000000,
+      "live_status": {
+        "attached": true,
+        "reason": null,
+        "state": "connected",
+        "tool_count": 5,
+        "connected_at": 1719400000000,
+        "tools_refreshed_at": 1719400010000,
+        "error": null,
+        "reconnect_required": false,
+        "last_timeout_at": null
+      }
     }
   ],
   "meta": { "total": 1, "limit": 50, "offset": 0, "has_more": false, "sort_by": "created_at", "sort_order": "desc" }
 }
 ```
+
+`listServers()`、`getServer()` 以及创建、更新、toggle 的响应现在都会携带 `live_status`。
+
+- `attached=true` 表示数据库配置已经进入当前 live runtime manager。
+- `reason="disabled"` 表示配置在数据库中存在，但因为 `enabled=false` 没有进入运行时。
+- `reason="manager_unavailable"` 表示当前服务没有启用 `ENABLE_MCP=true`。
+- `reason="not_attached"` 表示数据库配置为 enabled，但运行时没有成功装载，调用方不应把它误判为“配置不存在”。
+
+当 `ENABLE_MCP=true` 时，配置 CRUD 会直接同步 live `McpConnectionManager`：
+
+- create / enable 后会把服务器加入 manager
+- update 后会刷新或替换 manager 中的 live server
+- disable / delete 后会从 manager 中显式移除
 
 ### 获取服务器配置
 
@@ -184,10 +208,14 @@ GET /mcp/servers/:id/status
     "tools_refreshed_at": 1719400010000,
     "error": null,
     "reconnect_required": false,
-    "last_timeout_at": null
+    "last_timeout_at": null,
+    "attached": true,
+    "reason": null
   }
 }
 ```
+
+即使某个配置已经存在但当前没有真正挂载到 runtime manager，这个端点也会返回 `200`，并用 `attached` / `reason` 明确说明状态，而不是把它伪装成 `404`。
 
 #### 连接状态
 
@@ -216,6 +244,8 @@ POST /mcp/servers/:id/connect
 
 连接或重连 MCP 服务器。如果服务器尚未在连接管理器中，会从数据库加载配置后添加。
 
+如果配置当前是 `enabled=false`，会返回 `409 mcp_server_disabled`。
+
 ### 断开服务器
 
 ```http
@@ -227,6 +257,12 @@ POST /mcp/servers/:id/disconnect
 ```http
 GET /mcp/servers/:id/tools
 ```
+
+这个端点只在服务器已经进入 runtime manager 且当前可连接时返回工具列表。
+
+- `409 mcp_server_disabled`：配置被禁用
+- `409 mcp_runtime_not_attached`：数据库里有 enabled 配置，但 runtime 尚未挂载
+- `503 mcp_runtime_unavailable`：runtime 已知该服务器，但当前连接不可用
 
 #### 响应 `200`
 

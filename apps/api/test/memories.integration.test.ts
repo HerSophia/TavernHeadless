@@ -543,11 +543,35 @@ describe("memory routes", () => {
     expect(invalidCreateEdgeResponse.statusCode).toBe(400);
     expect(invalidCreateEdgeResponse.json<ErrorResponse>().error.code).toBe("validation_error");
 
+    const missingNodeResponse = await app.inject({
+      method: "POST",
+      url: "/memory-edges",
+      payload: {
+        from_id: "missing-memory",
+        to_id: memoryB.id,
+        relation: "supports",
+      },
+    });
+    expect(missingNodeResponse.statusCode, missingNodeResponse.body).toBe(404);
+    expect(missingNodeResponse.json<ErrorResponse>().error.code).toBe("memory_edge_node_not_found");
+
     const edge = await createMemoryEdge(app, {
       fromId: memoryA.id,
       toId: memoryB.id,
       relation: "supports"
     });
+
+    const duplicateEdgeResponse = await app.inject({
+      method: "POST",
+      url: "/memory-edges",
+      payload: {
+        from_id: memoryA.id,
+        to_id: memoryB.id,
+        relation: "supports",
+      },
+    });
+    expect(duplicateEdgeResponse.statusCode, duplicateEdgeResponse.body).toBe(409);
+    expect(duplicateEdgeResponse.json<ErrorResponse>().error.code).toBe("memory_edge_conflict");
 
     const listEdgesResponse = await app.inject({
       method: "GET",
@@ -591,6 +615,20 @@ describe("memory routes", () => {
         relation: "updates"
       })
     );
+
+    const secondaryEdge = await createMemoryEdge(app, {
+      fromId: memoryA.id,
+      toId: memoryB.id,
+      relation: "supports",
+    });
+
+    const conflictPatchEdgeResponse = await app.inject({
+      method: "PATCH",
+      url: `/memory-edges/${secondaryEdge.id}`,
+      payload: { relation: "updates" }
+    });
+    expect(conflictPatchEdgeResponse.statusCode, conflictPatchEdgeResponse.body).toBe(409);
+    expect(conflictPatchEdgeResponse.json<ErrorResponse>().error.code).toBe("memory_edge_conflict");
 
     const invalidPatchEdgeResponse = await app.inject({
       method: "PATCH",
@@ -677,6 +715,16 @@ describe("memory routes with multi-account auth", () => {
         content: { text: "account a summary" }
       },
       authHeader(tokenA)
+    );
+    const memoryB1 = await createMemory(
+      app,
+      {
+        scope: "chat",
+        scopeId: "session-b",
+        type: "fact",
+        content: { text: "account b memory" }
+      },
+      authHeader(tokenB)
     );
     const edgeA = await createMemoryEdge(
       app,
@@ -805,6 +853,19 @@ describe("memory routes with multi-account auth", () => {
       payload: { relation: "updates" }
     });
     expect(patchEdgeBResponse.statusCode).toBe(404);
+
+    const crossAccountCreateEdgeResponse = await app.inject({
+      method: "POST",
+      url: "/memory-edges",
+      headers: authHeader(tokenA),
+      payload: {
+        from_id: memoryA1.id,
+        to_id: memoryB1.id,
+        relation: "supports",
+      }
+    });
+    expect(crossAccountCreateEdgeResponse.statusCode).toBe(404);
+    expect(crossAccountCreateEdgeResponse.json<ErrorResponse>().error.code).toBe("memory_edge_node_not_found");
 
     const deleteEdgeBResponse = await app.inject({
       method: "DELETE",

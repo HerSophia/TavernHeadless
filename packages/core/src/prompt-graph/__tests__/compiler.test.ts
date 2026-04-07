@@ -179,6 +179,57 @@ describe('compilePromptGraph', () => {
     expect(ir.sections[0]?.messages[0]?.content).toBe('[Memory Summary]\nAnchored summary');
   });
 
+  it('maps outlet worldbook entries onto matching anchor markers and preserves in-chat insertion', () => {
+    const document: PromptGraphDocument = {
+      version: 1,
+      rootGroupId: 'root',
+      policies: {},
+      groups: [{
+        id: 'root',
+        name: 'Root',
+        edges: [],
+        nodes: [
+          {
+            id: 'history',
+            name: 'History',
+            nodeType: 'chat_history',
+            enabled: true,
+            role: 'system',
+            placement: { kind: 'relative', order: 0 },
+          },
+          {
+            id: 'outlet-marker',
+            name: 'Lore Outlet Marker',
+            nodeType: 'marker',
+            enabled: true,
+            role: 'system',
+            placement: { kind: 'in_chat', depth: 1, order: 3 },
+            markerId: 'LoreOutlet',
+          },
+          {
+            id: 'outlet-worldbook',
+            name: 'Worldbook Outlet LoreOutlet',
+            nodeType: 'worldbook',
+            enabled: true,
+            role: 'system',
+            placement: { kind: 'anchor', anchorId: 'LoreOutlet', order: 0 },
+            position: 'outlet',
+            outletName: 'LoreOutlet',
+          },
+        ],
+      }],
+    };
+
+    const ir = compilePromptGraph(document, {
+      chatHistory: [{ role: 'user', content: 'Hello' }],
+      worldbookEntries: [{ id: 'wb-outlet', content: 'Outlet lore', position: 'outlet', outletName: 'LoreOutlet' }],
+      maxTokens: 256,
+      reservedForReply: 32,
+    });
+
+    expect(ir.sections.find((section) => section.name === 'Worldbook Outlet LoreOutlet')).toMatchObject({ insertion: { kind: 'in_chat', depth: 1, order: 3 } });
+  });
+
   it('adds continue nudge policy only for continue intent', () => {
     const document: PromptGraphDocument = {
       version: 1,

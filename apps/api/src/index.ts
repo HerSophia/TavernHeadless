@@ -41,6 +41,7 @@ const { app } = await buildApp({
   auth: config.auth,
   cors: config.cors,
   enableMcp: config.enableMcp,
+  enableUnsafeScriptHandler: config.enableUnsafeScriptHandler,
 });
 
 app

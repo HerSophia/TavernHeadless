@@ -68,7 +68,7 @@ POST /sessions/:id/respond
 | ------ | ---- | ---- |
 | `400` | `validation_error` / `invalid_message_scope` | 参数校验失败，或消息作用域错误 |
 | `404` | `not_found` | 会话不存在 |
-| `409` | `session_archived` / `generation_conflict` / `commit_conflict` | 会话状态冲突，或提交边界冲突 |
+| `409` | `session_archived` / `generation_conflict` / `commit_conflict` / `generation_target_stale` | 会话状态冲突、提交边界冲突，或排队请求等待期间目标上下文已经变化 |
 | `503` | `secret_unavailable` / `commit_busy` / `generation_queue_timeout` | 密钥不可用，或生成 / 提交等待阶段已超时 |
 | `504` | `generation_timeout` | LLM 执行超时 |
 | `500` | `secret_invalid_format` / `orchestration_failed` / `turn_commit_failed` | 已保存的密文无法解密，或生成过程出现未分类内部错误 |
@@ -249,6 +249,9 @@ POST /sessions/:id/respond/dry-run
 }
 ```
 
+`prompt_snapshot.regex_pre_rule_names` 和 `prompt_snapshot.regex_post_rule_names` 当前表示本轮装配时启用并写入快照的规则名列表。
+它们适合做资源版本比对和调试展示，不应被解释为逐条精确命中或逐条实际执行结果。
+
 `assembly` 中的字段分两类：
 
 - **兼容边界**：`selected_prompt_order_character_id`、`unsupported_preset_fields`、`preset_warnings` 等，说明当前预设的哪些功能生效了、哪些被降级或忽略。
@@ -294,7 +297,9 @@ POST /sessions/:id/regenerate
 }
 ```
 
-其中 `previous_floor_id` 指向被替代的旧楼层。除“没有可重新生成的楼层”这类资源状态错误外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
+其中 `previous_floor_id` 指向被替代的旧楼层。
+
+如果服务端启用了 queue 模式，而请求在排队期间会话的最新 committed floor 已经变化，接口会返回 `409 generation_target_stale`。除此之外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
 
 ## 楼层重试
 
@@ -335,6 +340,8 @@ POST /floors/:id/retry
 }
 ```
 
+如果服务端启用了 queue 模式，而目标 floor 在等待期间的结构化上下文已经变化（例如 `branch_id` 或 `floor_no` 被修改），接口会返回 `409 generation_target_stale`。
+
 除楼层自身不存在或状态不允许外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
 
 ## 编辑并重新生成
@@ -371,6 +378,8 @@ POST /messages/:id/edit-and-regenerate
   }
 }
 ```
+
+如果服务端启用了 queue 模式，而源消息对应的 floor 上下文在等待期间已经变化，接口会返回 `409 generation_target_stale`。
 
 除源消息不存在等资源错误外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
 

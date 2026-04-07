@@ -186,7 +186,7 @@ console.log(preview.promptSnapshot.promptDigest);  // 组装后的消息摘要
 
 | 字段 | 说明 |
 | ---- | ---- |
-| `promptIntent` | 本轮的生成意图，如 `chat`（正常对话）或 `continue`（续写） |
+| `promptIntent` | 本轮的生成意图，如 `normal`（正常对话）或 `continue`（续写） |
 | `assistantPrefillApplied` | 是否应用了 assistant 预填充（让 AI 从指定文本开始续写） |
 | `continueNudgeApplied` | 是否应用了续写引导文本 |
 | `namesBehaviorApplied` | 是否将角色名注入到消息的 `name` 字段 |
@@ -200,6 +200,22 @@ console.log(preview.promptSnapshot.promptDigest);  // 组装后的消息摘要
 完整字段参考见 [Chat dry-run 响应](/reference/api/chat)。
 
 如果你要做“为什么这条世界书命中了”的调试界面，优先读取 `worldbookMatches`。其中 `source` 表示条目来自哪本世界书，`insertion` 表示它最终插入到 Prompt 的哪里，`activation.firstMatch` 表示它第一次是在哪段扫描源里命中的。
+
+```ts
+const session = await client.sessions.create({
+  title: "黎明前的酒馆",
+  promptMode: "native",
+  presetId: "preset-1",
+});
+
+const importedCharacter = await client.imports.character({
+  payload: cardJson,
+  createSession: false,
+});
+
+await client.pages.activate({ pageId: "page-2" });
+console.log(importedCharacter.characterVersionId);
+```
 
 ### 运行时工具目录与执行审计
 
@@ -226,7 +242,7 @@ for (const record of executions.records) {
 
 | 字段 | 说明 |
 | ---- | ---- |
-| `asyncCapability` | 该工具是否支持异步执行。`sync_only` 表示只能同步，`deferred_ok` 表示可以后台执行 |
+| `asyncCapability` | 该工具是否支持异步执行。`inline_only` 表示只能在当前 inline 回合内完成，`deferred_ok` 表示可以返回 deferred receipt 并交给后台继续执行 |
 | `defaultDeliveryMode` | 默认的交付方式。`inline` 表示同步返回结果，`async_job` 表示提交后台任务并返回受理回执 |
 | `resultVisibility` | 结果何时可见。`immediate` 表示立即返回，`deferred_receipt` 表示先返回回执、结果稍后可查 |
 
@@ -550,7 +566,7 @@ console.log(committedResult.assistantMessageId);
 
 `tools.listExecutions()` 对应新的主审计模型 `tool_execution_record`。`tools.listCallRecords()` 仍对应公开兼容查询面 `/tools/call-records`，只用于兼容旧读取路径。
 
-如果调用方显式传 `toolMode`，当前运行时只支持 `inline`。`standalone` 和 `both` 还不受支持，服务端会返回结构化配置错误。
+如果调用方显式传 `toolMode`，当前公开配置仍只有 `inline`。`standalone` 和 `both` 还不受支持，服务端会返回结构化配置错误；但在 `inline` 回合内部，部分 allowlisted 工具仍可能先返回 deferred receipt，再通过 `runtimeJobId` 对应的后台任务继续执行。
 
 ### MCP 资源
 
@@ -561,7 +577,13 @@ console.log(committedResult.assistantMessageId);
 - connect / disconnect / test
 - 服务器工具列表
 
-MCP 状态读取还会保留 `reconnectRequired`、`lastTimeoutAt` 这类运行时字段。
+`listServers()` 和 `getServer()` 现在还会回显可选的 `liveStatus`。它直接对应服务端的 `live_status`，可以让接入方判断数据库配置是否已经进入 live runtime manager。
+
+MCP 状态读取还会保留 `reconnectRequired`、`lastTimeoutAt`，并在新服务端上额外给出可选的 `attached`、`reason` 字段，用来区分：
+
+- 配置被禁用
+- runtime manager 未启用
+- 数据库里是 enabled，但 runtime 尚未挂载
 
 MCP 管理接口的 secret 字段也已经和请求字段分开：
 
@@ -569,6 +591,8 @@ MCP 管理接口的 secret 字段也已经和请求字段分开：
 - `listServers()`、`getServer()` 以及创建、更新、toggle 的返回记录只会给出 `stdio.envMasked`、`http.headersMasked`
 
 这意味着接入方不能再依赖管理接口回显原始 secret。编辑已有配置时，应把 secret 视为“留空保持原值，重新填写则整体替换”的字段。
+
+当 `ENABLE_MCP=true` 时，create / update / enable / disable / delete 这些配置变更会直接同步 live `McpConnectionManager`，因此 session runtime catalog 与 `/mcp/servers` 的 live 状态会一起变化。
 
 `mcp_call_uncertain_timeout` 表示结果不确定并且需要重连，不应当成普通失败来解释。
 

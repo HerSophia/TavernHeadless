@@ -63,6 +63,7 @@ describe("Tool routes multi-account isolation", () => {
         },
       },
       enableWebSocket: false,
+      enableUnsafeScriptHandler: true,
     });
 
     app = buildResult.app;
@@ -154,6 +155,36 @@ describe("Tool routes multi-account isolation", () => {
 
     return { sessionId, floorId, pageId };
   }
+
+  it("allows different accounts to create the same custom tool name", async () => {
+    const createA = await app.inject({
+      method: "POST",
+      url: "/tools/definitions",
+      headers: authHeaders(tokenA),
+      payload: {
+        name: "shared_tool",
+        description: "Account A shared tool",
+        source: "custom",
+        handler_type: "script",
+        handler: { script: "return 'a'" },
+      },
+    });
+    expect(createA.statusCode, createA.body).toBe(201);
+
+    const createB = await app.inject({
+      method: "POST",
+      url: "/tools/definitions",
+      headers: authHeaders(tokenB),
+      payload: {
+        name: "shared_tool",
+        description: "Account B shared tool",
+        source: "custom",
+        handler_type: "script",
+        handler: { script: "return 'b'" },
+      },
+    });
+    expect(createB.statusCode, createB.body).toBe(201);
+  });
 
   it("isolates tool definition CRUD by account", async () => {
     const createA = await app.inject({

@@ -28,6 +28,7 @@ import { buildListMeta, listQuerySchemaBase } from '../lib/pagination.js';
 import { McpService, McpServiceError } from '../services/mcp-service.js';
 import type { McpConnectionManager } from '../mcp/mcp-connection-manager.js';
 import { McpConnection } from '../mcp/mcp-connection.js';
+import type { McpConnectionStatus } from '../mcp/types.js';
 import { getRequestAuthContext } from '../plugins/auth.js';
 
 // ══════════════════════════════════════════════════
@@ -117,6 +118,23 @@ const maskedHttpConfigResponseSchema = {
   },
 };
 
+const mcpLiveStatusSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['attached', 'reason', 'state', 'tool_count', 'connected_at', 'tools_refreshed_at', 'error', 'reconnect_required', 'last_timeout_at'],
+  properties: {
+    attached: { type: 'boolean' },
+    reason: { anyOf: [{ type: 'string', enum: ['disabled', 'manager_unavailable', 'not_attached'] }, { type: 'null' }] },
+    state: { type: 'string', enum: ['disconnected', 'connecting', 'connected', 'reconnect_required', 'error'] },
+    tool_count: { type: 'integer' },
+    connected_at: { type: 'integer', nullable: true },
+    tools_refreshed_at: { type: 'integer', nullable: true },
+    error: { type: 'string', nullable: true },
+    reconnect_required: { type: 'boolean' },
+    last_timeout_at: { type: 'integer', nullable: true },
+  },
+};
+
 const mcpServerResponseSchema = {
   type: 'object',
   additionalProperties: false,
@@ -132,6 +150,7 @@ const mcpServerResponseSchema = {
     'default_side_effect_level',
     'created_at',
     'updated_at',
+    'live_status',
   ],
   properties: {
     id: { type: 'string' },
@@ -147,6 +166,7 @@ const mcpServerResponseSchema = {
     default_side_effect_level: { type: 'string', enum: ['none', 'sandbox', 'irreversible'] },
     created_at: { type: 'integer' },
     updated_at: { type: 'integer' },
+    live_status: mcpLiveStatusSchema,
   },
 };
 
@@ -163,6 +183,8 @@ const mcpStatusResponseSchema = {
     error: { type: 'string', nullable: true },
     reconnect_required: { type: 'boolean' },
     last_timeout_at: { type: 'integer', nullable: true },
+    attached: { type: 'boolean' },
+    reason: { anyOf: [{ type: 'string', enum: ['disabled', 'manager_unavailable', 'not_attached'] }, { type: 'null' }] },
   },
 };
 
@@ -250,11 +272,178 @@ const toggleServerBodyJsonSchema = {
 // 配置 CRUD 路由
 // ══════════════════════════════════════════════════
 
+type McpDetachedReason = 'disabled' | 'manager_unavailable' | 'not_attached';
+
+function formatStatus(status: McpConnectionStatus) {
+  return {
+    server_id: status.serverId,
+    server_name: status.serverName,
+    transport: status.transport,
+    state: status.state,
+    tool_count: status.toolCount,
+    connected_at: status.connectedAt ?? null,
+    tools_refreshed_at: status.toolsRefreshedAt ?? null,
+    error: status.error ?? null,
+    reconnect_required: status.reconnectRequired ?? status.state === 'reconnect_required',
+    last_timeout_at: status.lastTimeoutAt ?? null,
+    attached: true,
+    reason: null,
+  };
+}
+
+function buildDetachedLiveStatus(reason: McpDetachedReason) {
+  switch (reason) {
+    case 'disabled':
+      return {
+        attached: false,
+        reason,
+        state: 'disconnected' as const,
+        tool_count: 0,
+        connected_at: null,
+        tools_refreshed_at: null,
+        error: null,
+        reconnect_required: false,
+        last_timeout_at: null,
+      };
+    case 'manager_unavailable':
+      return {
+        attached: false,
+        reason,
+        state: 'disconnected' as const,
+        tool_count: 0,
+        connected_at: null,
+        tools_refreshed_at: null,
+        error: 'MCP runtime manager is unavailable because ENABLE_MCP is disabled.',
+        reconnect_required: false,
+        last_timeout_at: null,
+      };
+    case 'not_attached':
+      return {
+        attached: false,
+        reason,
+        state: 'disconnected' as const,
+        tool_count: 0,
+        connected_at: null,
+        tools_refreshed_at: null,
+        error: 'Configured MCP server is enabled in storage but not attached to the runtime manager.',
+        reconnect_required: false,
+        last_timeout_at: null,
+      };
+  }
+}
+
+type McpConfigResponseSummary = {
+  id: string;
+  name: string;
+  transport: 'stdio' | 'http';
+  enabled: boolean;
+};
+
+function buildLiveStatus(
+  config: McpConfigResponseSummary,
+  mcpManager?: McpConnectionManager,
+) {
+  if (!config.enabled) {
+    return buildDetachedLiveStatus('disabled');
+  }
+
+  if (!mcpManager) {
+    return buildDetachedLiveStatus('manager_unavailable');
+  }
+
+  const status = mcpManager.getStatus(config.id);
+  if (!status) {
+    return buildDetachedLiveStatus('not_attached');
+  }
+
+  const formatted = formatStatus(status);
+  return {
+    attached: formatted.attached,
+    reason: formatted.reason,
+    state: formatted.state,
+    tool_count: formatted.tool_count,
+    connected_at: formatted.connected_at,
+    tools_refreshed_at: formatted.tools_refreshed_at,
+    error: formatted.error,
+    reconnect_required: formatted.reconnect_required,
+    last_timeout_at: formatted.last_timeout_at,
+  };
+}
+
+function buildStatusForConfig(config: McpConfigResponseSummary, mcpManager?: McpConnectionManager) {
+  const liveStatus = buildLiveStatus(config, mcpManager);
+  return {
+    server_id: config.id,
+    server_name: config.name,
+    transport: config.transport,
+    state: liveStatus.state,
+    tool_count: liveStatus.tool_count,
+    connected_at: liveStatus.connected_at,
+    tools_refreshed_at: liveStatus.tools_refreshed_at,
+    error: liveStatus.error,
+    reconnect_required: liveStatus.reconnect_required,
+    last_timeout_at: liveStatus.last_timeout_at,
+    attached: liveStatus.attached,
+    reason: liveStatus.reason,
+  };
+}
+
+function attachLiveStatus<T extends McpConfigResponseSummary>(config: T, mcpManager?: McpConnectionManager) {
+  return {
+    ...config,
+    live_status: buildLiveStatus(config, mcpManager),
+  };
+}
+
+export interface RegisterMcpConfigRoutesOptions {
+  mcpManager?: McpConnectionManager;
+}
+
 export async function registerMcpConfigRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection,
+  options: RegisterMcpConfigRoutesOptions = {},
 ): Promise<void> {
   const service = new McpService(connection.db);
+  const mcpManager = options.mcpManager;
+
+  async function syncRuntimeConfig(configId: string, accountId: string, previousStatus: McpConnectionStatus | null = null): Promise<void> {
+    if (!mcpManager) {
+      return;
+    }
+
+    const config = await service.getConfigEntity(configId, accountId);
+    if (!config || !config.enabled) {
+      await mcpManager.removeServer(configId);
+      return;
+    }
+
+    try {
+      await mcpManager.addServer(config);
+
+      if (
+        config.transport === 'http'
+        && previousStatus
+        && previousStatus.state !== 'disconnected'
+        && previousStatus.state !== 'error'
+      ) {
+        await mcpManager.getConnection(config.id);
+      }
+    } catch (error) {
+      app.log.warn({
+        serverId: config.id,
+        serverName: config.name,
+        error,
+      }, 'Failed to synchronize MCP config into runtime manager');
+
+      if (!mcpManager.getStatus(config.id)) {
+        mcpManager.registerUnavailableServer(
+          { id: config.id, name: config.name, transport: config.transport },
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
+  }
 
   // GET /mcp/servers
   app.get('/mcp/servers', {
@@ -286,7 +475,7 @@ export async function registerMcpConfigRoutes(
     });
 
     return {
-      data: result.configs,
+      data: result.configs.map((config) => attachLiveStatus(config, mcpManager)),
       meta: buildListMeta({
         total: result.total,
         limit: parsed.data.limit,
@@ -313,7 +502,7 @@ export async function registerMcpConfigRoutes(
     const auth = getRequestAuthContext(request);
     const config = await service.getConfig(id, auth.accountId);
     if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
-    return { data: config };
+    return { data: attachLiveStatus(config, mcpManager) };
   });
 
   // POST /mcp/servers
@@ -336,7 +525,8 @@ export async function registerMcpConfigRoutes(
     const auth = getRequestAuthContext(request);
     try {
       const config = await service.createConfig(parsed.data, auth.accountId);
-      return reply.code(201).send({ data: config });
+      await syncRuntimeConfig(config.id, auth.accountId);
+      return reply.code(201).send({ data: attachLiveStatus(config, mcpManager) });
     } catch (err) {
       if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
       throw err;
@@ -366,9 +556,11 @@ export async function registerMcpConfigRoutes(
     if (!parsed.ok) return;
     const auth = getRequestAuthContext(request);
     try {
+      const previousStatus = mcpManager?.getStatus(id) ?? null;
       const config = await service.updateConfig(id, parsed.data, auth.accountId);
       if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
-      return { data: config };
+      await syncRuntimeConfig(id, auth.accountId, previousStatus);
+      return { data: attachLiveStatus(config, mcpManager) };
     } catch (err) {
       if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
       throw err;
@@ -392,6 +584,7 @@ export async function registerMcpConfigRoutes(
     const auth = getRequestAuthContext(request);
     const deleted = await service.deleteConfig(id, auth.accountId);
     if (!deleted) return sendError(reply, 404, 'not_found', 'MCP server not found');
+    await mcpManager?.removeServer(id);
     return { data: { deleted: true } };
   });
 
@@ -413,9 +606,16 @@ export async function registerMcpConfigRoutes(
     const parsed = parseWithSchema(toggleServerSchema, request.body, reply);
     if (!parsed.ok) return;
     const auth = getRequestAuthContext(request);
+    const previousStatus = mcpManager?.getStatus(id) ?? null;
     const config = await service.toggleConfig(id, parsed.data.enabled, auth.accountId);
     if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
-    return { data: config };
+
+    if (parsed.data.enabled) {
+      await syncRuntimeConfig(id, auth.accountId, previousStatus);
+    } else {
+      await mcpManager?.removeServer(id);
+    }
+    return { data: attachLiveStatus(config, mcpManager) };
   });
 }
 
@@ -447,9 +647,7 @@ export async function registerMcpRuntimeRoutes(
     const config = await service.getConfig(id, auth.accountId);
     if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
 
-    const status = mcpManager.getStatus(id);
-    if (!status) return sendError(reply, 404, 'not_found', 'MCP server not found in manager');
-    return { data: formatStatus(status) };
+    return { data: buildStatusForConfig(config, mcpManager) };
   });
 
   // GET /mcp/statuses
@@ -485,6 +683,7 @@ export async function registerMcpRuntimeRoutes(
       response: {
         200: { type: 'object', properties: { data: mcpStatusResponseSchema } },
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         500: errorResponseJsonSchema,
         503: errorResponseJsonSchema,
       },
@@ -493,17 +692,24 @@ export async function registerMcpRuntimeRoutes(
     try {
       const { id } = request.params as { id: string };
       const auth = getRequestAuthContext(request);
-      const config = await service.getConfigEntity(id, auth.accountId);
+      const config = await service.getConfig(id, auth.accountId);
       if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
+      if (!config.enabled) {
+        return sendError(reply, 409, 'mcp_server_disabled', 'Disabled MCP servers cannot be connected', {
+          live_status: buildStatusForConfig(config, mcpManager),
+        });
+      }
+
+      const entity = await service.getConfigEntity(id, auth.accountId);
+      if (!entity) return sendError(reply, 404, 'not_found', 'MCP server not found');
 
       if (!mcpManager.hasServer(id)) {
-        await mcpManager.addServer(config);
+        await mcpManager.addServer(entity);
       } else {
         await mcpManager.reconnect(id);
       }
 
-      const status = mcpManager.getStatus(id);
-      return { data: formatStatus(status!) };
+      return { data: buildStatusForConfig(config, mcpManager) };
     } catch (err) {
       if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
       throw err;
@@ -519,6 +725,7 @@ export async function registerMcpRuntimeRoutes(
       response: {
         200: { type: 'object', properties: { data: mcpStatusResponseSchema } },
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -527,12 +734,19 @@ export async function registerMcpRuntimeRoutes(
     const config = await service.getConfig(id, auth.accountId);
     if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
 
+    if (!config.enabled) {
+      return { data: buildStatusForConfig(config, mcpManager) };
+    }
+
     const connection = mcpManager.getConnectionSync(id);
-    if (!connection) return sendError(reply, 404, 'not_found', 'MCP server not found in manager');
+    if (!connection) {
+      return sendError(reply, 409, 'mcp_runtime_not_attached', 'MCP server is enabled in storage but not attached to the runtime manager', {
+        live_status: buildStatusForConfig(config, mcpManager),
+      });
+    }
 
     await connection.disconnect();
-    const status = mcpManager.getStatus(id);
-    return { data: formatStatus(status!) };
+    return { data: buildStatusForConfig(config, mcpManager) };
   });
 
   // GET /mcp/servers/:id/tools
@@ -561,6 +775,7 @@ export async function registerMcpRuntimeRoutes(
           },
         },
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         500: errorResponseJsonSchema,
         503: errorResponseJsonSchema,
       },
@@ -569,11 +784,27 @@ export async function registerMcpRuntimeRoutes(
     try {
       const { id } = request.params as { id: string };
       const auth = getRequestAuthContext(request);
-      const config = await service.getConfigEntity(id, auth.accountId);
+      const config = await service.getConfig(id, auth.accountId);
       if (!config) return sendError(reply, 404, 'not_found', 'MCP server not found');
+      if (!config.enabled) {
+        return sendError(reply, 409, 'mcp_server_disabled', 'Disabled MCP servers do not expose runtime tools', {
+          live_status: buildStatusForConfig(config, mcpManager),
+        });
+      }
+
+      const existingStatus = mcpManager.getStatus(id);
+      if (!existingStatus) {
+        return sendError(reply, 409, 'mcp_runtime_not_attached', 'MCP server is enabled in storage but not attached to the runtime manager', {
+          live_status: buildStatusForConfig(config, mcpManager),
+        });
+      }
 
       const conn = await mcpManager.getConnection(id);
-      if (!conn) return sendError(reply, 404, 'not_found', 'MCP server not found in manager');
+      if (!conn || conn.state !== 'connected') {
+        return sendError(reply, 503, 'mcp_runtime_unavailable', 'MCP server runtime is not currently connected', {
+          live_status: buildStatusForConfig(config, mcpManager),
+        });
+      }
 
       const tools = conn.getTools().map((t) => ({
         name: t.name,
@@ -661,10 +892,6 @@ export async function registerMcpRuntimeRoutes(
   });
 }
 
-// ── 辅助函数 ─────────────────────────────────────
-
-import type { McpConnectionStatus } from '../mcp/types.js';
-
 function sendMcpServiceError(reply: FastifyReply, error: McpServiceError) {
   switch (error.code) {
     case 'name_conflict':
@@ -676,19 +903,4 @@ function sendMcpServiceError(reply: FastifyReply, error: McpServiceError) {
     default:
       return sendError(reply, 400, error.code, error.message);
   }
-}
-
-function formatStatus(status: McpConnectionStatus) {
-  return {
-    server_id: status.serverId,
-    server_name: status.serverName,
-    transport: status.transport,
-    state: status.state,
-    tool_count: status.toolCount,
-    connected_at: status.connectedAt ?? null,
-    tools_refreshed_at: status.toolsRefreshedAt ?? null,
-    error: status.error ?? null,
-    reconnect_required: status.reconnectRequired ?? status.state === 'reconnect_required',
-    last_timeout_at: status.lastTimeoutAt ?? null,
-  };
 }

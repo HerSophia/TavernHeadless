@@ -1,18 +1,18 @@
 import { and, count, eq, inArray, isNull } from "drizzle-orm";
-import { buildBranchVariableScopeId } from "@tavern/shared";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
-import { floors, variables } from "../db/schema";
+import { floors } from "../db/schema";
 import { ensureOptionalObjectBody, parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
 import { FloorResultService } from "../services/floor-result-service";
 import { FloorRunService } from "../services/floor-run-service";
 import { getOwnedFloorById, getOwnedSessionIds } from "../services/resource-ownership";
+import { deleteVariablesForBranch, deleteVariablesForFloor } from "../services/variable-owned-resource-cleanup.js";
 
 const floorStateSchema = z.enum(["draft", "generating", "committed", "failed"]);
 
@@ -398,6 +398,10 @@ export async function registerFloorRoutes(
       if (!parentFloor) {
         return sendError(reply, 404, "not_found", "Parent floor not found");
       }
+
+      if (parentFloor.sessionId !== parsedBody.data.session_id) {
+        return sendError(reply, 409, "floor_parent_session_mismatch", "Parent floor must belong to the same session");
+      }
     }
 
     const now = Date.now();
@@ -619,6 +623,7 @@ export async function registerFloorRoutes(
       response: {
         200: floorResponseJsonSchema,
         400: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -642,11 +647,20 @@ export async function registerFloorRoutes(
       return sendError(reply, 404, "not_found", "Floor not found");
     }
 
+    const activeRun = await floorRunService.getActiveRunForFloor(existingFloor.id);
+    if (activeRun) {
+      return sendError(reply, 409, "active_run_in_progress", `Floor '${existingFloor.id}' cannot be updated while a run is in progress`);
+    }
+
     if (parsedBody.data.parent_floor_id !== undefined) {
       const parentFloor = await getOwnedFloorById(db, auth.accountId, parsedBody.data.parent_floor_id);
 
       if (!parentFloor) {
         return sendError(reply, 404, "not_found", "Parent floor not found");
+      }
+
+      if (parentFloor.sessionId !== existingFloor.sessionId) {
+        return sendError(reply, 409, "floor_parent_session_mismatch", "Parent floor must belong to the same session");
       }
     }
 
@@ -699,6 +713,7 @@ export async function registerFloorRoutes(
       response: {
         200: deleteResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -715,7 +730,25 @@ export async function registerFloorRoutes(
       return sendError(reply, 404, "not_found", "Floor not found");
     }
 
-    const deleted = await db.delete(floors).where(eq(floors.id, parsedParams.data.id)).returning();
+    const activeRun = await floorRunService.getActiveRunForFloor(existingFloor.id);
+    if (activeRun) {
+      return sendError(reply, 409, "active_run_in_progress", `Floor '${existingFloor.id}' cannot be deleted while a run is in progress`);
+    }
+
+    const deleted = await db.transaction((tx) => {
+      deleteVariablesForFloor(tx, {
+        accountId: auth.accountId,
+        floorId: existingFloor.id,
+        sessionId: existingFloor.sessionId,
+        branchId: existingFloor.branchId,
+      });
+
+      return tx
+        .delete(floors)
+        .where(eq(floors.id, parsedParams.data.id))
+        .returning()
+        .all();
+    });
 
     if (deleted.length === 0) {
       return sendError(reply, 404, "not_found", "Floor not found");
@@ -877,7 +910,7 @@ export async function registerFloorRoutes(
     }
 
     const matchedRows = await db
-      .select({ sessionId: floors.sessionId })
+      .select({ id: floors.id, sessionId: floors.sessionId })
       .from(floors)
       .where(and(eq(floors.branchId, branchId), inArray(floors.sessionId, ownedSessionIds)));
 
@@ -902,19 +935,22 @@ export async function registerFloorRoutes(
       return sendError(reply, 500, "internal_error", "Failed to resolve branch session");
     }
 
-    const branchScopeId = buildBranchVariableScopeId(targetSessionId, branchId);
+    const activeRun = await floorRunService.getActiveRunSummary(targetSessionId, branchId);
+    if (activeRun) {
+      return sendError(reply, 409, "active_run_in_progress", `Branch '${branchId}' cannot be deleted while a run is in progress`);
+    }
+
+    const branchFloorIds = matchedRows
+      .filter((row) => row.sessionId === targetSessionId)
+      .map((row) => row.id);
 
     const deletedRows = await db.transaction((tx) => {
-      tx
-        .delete(variables)
-        .where(
-          and(
-            eq(variables.accountId, auth.accountId),
-            eq(variables.scope, "branch"),
-            eq(variables.scopeId, branchScopeId),
-          )
-        )
-        .run();
+      deleteVariablesForBranch(tx, {
+        accountId: auth.accountId,
+        sessionId: targetSessionId,
+        branchId,
+        floorIds: branchFloorIds,
+      });
 
       return tx
         .delete(floors)

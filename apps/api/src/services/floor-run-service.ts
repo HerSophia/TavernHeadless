@@ -394,7 +394,17 @@ export class FloorRunService {
     };
   }
 
-  async getActiveRunSummary(sessionId: string): Promise<SessionActiveRunSummary | null> {
+  async getActiveRunForFloor(floorId: string): Promise<FloorRunSnapshot | null> {
+    const snapshot = await this.getSnapshot(floorId);
+    return snapshot?.status === "running" ? snapshot : null;
+  }
+
+  async getActiveRunSummary(sessionId: string, branchId?: string): Promise<SessionActiveRunSummary | null> {
+    const conditions = [eq(floors.sessionId, sessionId), eq(floorRunStates.status, "running")];
+    if (branchId) {
+      conditions.push(eq(floors.branchId, branchId));
+    }
+
     const row = await this.db
       .select({
         branchId: floors.branchId,
@@ -406,7 +416,7 @@ export class FloorRunService {
       })
       .from(floorRunStates)
       .innerJoin(floors, eq(floorRunStates.floorId, floors.id))
-      .where(and(eq(floors.sessionId, sessionId), eq(floorRunStates.status, "running")))
+      .where(and(...conditions))
       .orderBy(desc(floorRunStates.updatedAt))
       .limit(1)
       .then((rows) => rows[0] ?? null);

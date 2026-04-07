@@ -47,6 +47,8 @@ export const thChatFloorSchema = z.object({
   token_in: z.number().int().min(0),
   token_out: z.number().int().min(0),
   metadata: z.unknown().nullable(),
+  superseded_at: z.number().nullable().optional(),
+  superseded_by_floor_id_ref: z.string().nullable().optional(),
   created_at: z.number(),
   updated_at: z.number(),
   _original_id: z.string(),

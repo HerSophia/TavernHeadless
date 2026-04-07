@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { createEventBus, type CoreEventBus, VariableResolver } from "@tavern/core";
 import { nanoid } from "nanoid";
 import {
@@ -298,17 +298,14 @@ export class VariableService {
       .from(variables)
       .where(whereClause)
       .orderBy(orderBy)
-      .limit(input.limit)
-      .offset(input.offset);
+      .all();
 
-    const totalRows = await this.db
-      .select({ total: count() })
-      .from(variables)
-      .where(whereClause);
+    const visibleRows = await this.filterVisibleVariableRows(rows, input.accountId);
+    const pagedRows = visibleRows.slice(input.offset, input.offset + input.limit);
 
     return {
-      items: rows.map(toVariableRecord),
-      total: Number(totalRows[0]?.total ?? 0),
+      items: pagedRows.map(toVariableRecord),
+      total: visibleRows.length,
     };
   }
 
@@ -322,6 +319,10 @@ export class VariableService {
     const record = row[0];
 
     if (!record) {
+      throw new VariableServiceError("variable_not_found", `Variable '${id}' not found`);
+    }
+
+    if (!(await this.isVariableRowVisible(record, accountId))) {
       throw new VariableServiceError("variable_not_found", `Variable '${id}' not found`);
     }
 
@@ -341,16 +342,23 @@ export class VariableService {
       throw new VariableServiceError("variable_not_found", `Variable '${id}' not found`);
     }
 
-    const target = await this.hostService.resolveTarget(accountId, record.scope, record.scopeId);
-    this.hostService.assertWritableTarget(target);
+    let target: VariableTarget | undefined;
+    try {
+      target = await this.hostService.resolveTarget(accountId, record.scope, record.scopeId);
+      this.hostService.assertWritableTarget(target);
+    } catch (error) {
+      if (!(error instanceof VariableServiceError) || error.code !== "variable_host_not_found") {
+        throw error;
+      }
+    }
 
     const mutationRuntime = this.requireMutationRuntime();
     await mutationRuntime.applyInline<VariableDeleteMutationPayload, { id: string; deleted: true }>(
       this.createDeleteMutationEnvelope(
         accountId,
         toVariableRecord(record),
-        target.sessionId,
-        target.branchId,
+        target?.sessionId,
+        target?.branchId,
       ),
     );
   }
@@ -557,6 +565,51 @@ export class VariableService {
     }
 
     return action(this.db);
+  }
+
+  private async filterVisibleVariableRows(
+    rows: Array<typeof variables.$inferSelect>,
+    accountId: string,
+  ): Promise<Array<typeof variables.$inferSelect>> {
+    const hostVisibility = new Map<string, boolean>();
+    const visibleRows: Array<typeof variables.$inferSelect> = [];
+
+    for (const row of rows) {
+      if (await this.isVariableRowVisible(row, accountId, hostVisibility)) {
+        visibleRows.push(row);
+      }
+    }
+
+    return visibleRows;
+  }
+
+  private async isVariableRowVisible(
+    row: typeof variables.$inferSelect,
+    accountId: string,
+    hostVisibility = new Map<string, boolean>(),
+  ): Promise<boolean> {
+    if (row.scope === "global") {
+      return true;
+    }
+
+    const identity = buildScopeIdentity(row.scope, row.scopeId);
+    const cached = hostVisibility.get(identity);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    try {
+      await this.hostService.resolveTarget(accountId, row.scope, row.scopeId);
+      hostVisibility.set(identity, true);
+      return true;
+    } catch (error) {
+      if (error instanceof VariableServiceError && error.code === "variable_host_not_found") {
+        hostVisibility.set(identity, false);
+        return false;
+      }
+
+      throw error;
+    }
   }
 }
 

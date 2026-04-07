@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import type { AppDb } from "../../db/client";
 import { createDatabase } from "../../db/client";
 import { floors, messagePages, sessions } from "../../db/schema";
@@ -21,6 +22,7 @@ describe("DrizzleToolExecutionRepository", () => {
     await db.insert(sessions).values({
       id: sessionId,
       title: "Test Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
       createdAt: now,
       updatedAt: now,

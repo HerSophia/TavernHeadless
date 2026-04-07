@@ -76,11 +76,24 @@ export interface MemoryAccessOptions {
   accountId?: string;
 }
 
+export interface MemoryScopeContext {
+  accountId?: string;
+  sessionId?: string;
+  floorId?: string;
+}
+
+export interface MemoryScopeRef {
+  scope: MemoryScope;
+  scopeId: string;
+}
+
 export interface MemoryQuery {
   /** 限定作用域 */
   scope?: MemoryScope;
   /** 限定 scope 实体 ID */
   scopeId?: string;
+  /** 同时查询多个可见 scope；提供时优先于 scope / scopeId */
+  scopeRefs?: MemoryScopeRef[];
   /** 限定类型 */
   type?: MemoryType;
   /** 限定摘要分层（仅 summary 类型有效） */
@@ -226,6 +239,8 @@ export interface MemoryInjectionOptions {
     /** 使用哪个时间字段计算 age（默认 updatedAt） */
     by?: 'updatedAt' | 'createdAt';
   };
+  /** 按 global / chat / floor 可见范围补齐主链检索语义时使用的上下文 */
+  scopeContext?: MemoryScopeContext;
   /** 限定作用域 */
   scope?: MemoryScope;
   /** 当前账户 ID（多账号场景下必须传入） */

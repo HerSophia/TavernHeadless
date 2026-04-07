@@ -12,12 +12,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
 
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import { floors, memoryItems, messagePages, messages, sessions } from "../src/db/schema";
+import { DrizzleMemoryRepository } from "../src/adapters/drizzle-memory-repository";
 import { ChatService } from "../src/services/chat-service";
 import type { TurnCommitService } from "../src/services/turn-commit-service";
 import {
   createEventBus,
+  MemoryStore as CoreMemoryStore,
   SimpleTokenCounter,
   type MemoryStore,
   type TurnOrchestrator,
@@ -163,6 +166,7 @@ describe("Memory Injection", () => {
     await database.db.insert(sessions).values({
       id: sessionId,
       title: "Memory Test Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -195,6 +199,11 @@ describe("Memory Injection", () => {
         selectionMode: "balanced",
         includeTypes: ["open_loop", "fact", "summary"],
         typeOrder: ["open_loop", "fact", "summary"],
+        scopeContext: expect.objectContaining({
+          accountId: "default-admin",
+          sessionId,
+          floorId: expect.any(String),
+        }),
       })
     );
 
@@ -243,6 +252,11 @@ describe("Memory Injection", () => {
       maxTokens: 500,
       maxItems: 24,
       includeTypes: ["open_loop", "fact", "summary"],
+      scopeContext: expect.objectContaining({
+        accountId: "default-admin",
+        sessionId,
+        floorId: expect.any(String),
+      }),
     }));
     expect(injectionOptions.selectionMode).toBeUndefined();
 
@@ -270,8 +284,11 @@ describe("Memory Injection", () => {
     expect(memoryStore.query).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        scope: "chat",
-        scopeId: sessionId,
+        scopeRefs: expect.arrayContaining([
+          { scope: "global", scopeId: "default-admin" },
+          { scope: "chat", scopeId: sessionId },
+          expect.objectContaining({ scope: "floor", scopeId: expect.any(String) }),
+        ]),
         accountId: "default-admin",
         type: "summary",
       })
@@ -279,8 +296,11 @@ describe("Memory Injection", () => {
     expect(memoryStore.query).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        scope: "chat",
-        scopeId: sessionId,
+        scopeRefs: expect.arrayContaining([
+          { scope: "global", scopeId: "default-admin" },
+          { scope: "chat", scopeId: sessionId },
+          expect.objectContaining({ scope: "floor", scopeId: expect.any(String) }),
+        ]),
         accountId: "default-admin",
         type: "fact",
       })
@@ -663,6 +683,71 @@ describe("Memory Injection", () => {
     expect(turnInput.consolidationContext?.recentSummaries).toContain("Alice visited the old tower.");
   });
 
+  it("should expose global chat and floor memory scopes to retry prompt assembly and consolidation context", async () => {
+    const orchestrator = createMockOrchestrator(database);
+    const memoryStore = new CoreMemoryStore(
+      new DrizzleMemoryRepository(database.db),
+      createEventBus(),
+      new SimpleTokenCounter(),
+    );
+    const chatService = new ChatService(
+      database.db,
+      orchestrator,
+      new SimpleTokenCounter(),
+      { memoryStore }
+    );
+
+    const { floorId } = await createFloorWithUserMessage({
+      database,
+      sessionId,
+      floorNo: 4,
+      state: "failed",
+      content: "Retry scope visibility",
+    });
+
+    await memoryStore.create({
+      scope: "global",
+      scopeId: "default-admin",
+      type: "fact",
+      content: "Global reminder",
+      importance: 0.9,
+      confidence: 1,
+      status: "active",
+    });
+    await memoryStore.create({
+      scope: "chat",
+      scopeId: sessionId,
+      type: "summary",
+      content: "Chat summary entry",
+      importance: 0.8,
+      confidence: 1,
+      status: "active",
+    });
+    await memoryStore.create({
+      scope: "floor",
+      scopeId: floorId,
+      type: "fact",
+      content: "Floor-local clue",
+      importance: 0.7,
+      confidence: 1,
+      status: "active",
+    });
+
+    await chatService.retryFloor(floorId, { config: { enableMemoryConsolidation: true } });
+
+    const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const memoryMsg = turnInput.messages.find((m: { role: string; content: string }) => m.content.includes("[Memory Summary]"));
+
+    expect(memoryMsg?.content).toContain("Global reminder");
+    expect(memoryMsg?.content).toContain("Chat summary entry");
+    expect(memoryMsg?.content).toContain("Floor-local clue");
+    expect(turnInput.consolidationContext?.recentSummaries).toEqual(expect.arrayContaining(["Chat summary entry"]));
+    expect(turnInput.consolidationContext?.existingFacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: "global", content: "Global reminder" }),
+      expect.objectContaining({ scope: "floor", content: "Floor-local clue" }),
+    ]));
+  });
+
   it("should skip memory writes when turn output has no summaries", async () => {
     const database2 = createDatabase(":memory:");
 
@@ -691,6 +776,7 @@ describe("Memory Injection", () => {
     await database2.db.insert(sessions).values({
       id: sid,
       title: "No Summary Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
       createdAt: Date.now(),
       updatedAt: Date.now(),

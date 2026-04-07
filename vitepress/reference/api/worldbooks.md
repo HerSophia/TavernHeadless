@@ -348,6 +348,11 @@ POST /worldbooks/:worldbook_id/entries
 | `delay_until_recursion` | integer \| null | 否 | 默认 `null` |
 | `outlet_name` | string | 否 | 默认空字符串，仅 `position=7` 时有意义 |
 
+运行时说明：
+
+- `position=7` 的条目现在会进入真实 prompt 组装。
+- 如果预设里存在同名 outlet marker，会按该 marker 的位置注入；如果没有匹配 marker，当前实现会回退为显式 section，而不是静默丢弃。
+
 ### 请求示例
 
 ```json

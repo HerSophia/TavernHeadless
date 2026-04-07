@@ -2,10 +2,11 @@ import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
 import type { DbExecutor } from "../db/client";
 import type { InstanceSlot, ProviderType } from "@tavern/core";
 
+import type { AccountContextOptions } from "../accounts/account-context";
+import { resolveAccountIdOrThrow } from "../accounts/account-context";
 import type { AppDb } from "../db/client";
 import { llmProfileBindings, llmProfiles, sessions } from "../db/schema";
 import { decryptSecret, SecretFormatError } from "../lib/secrets";
-import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants";
 import { normalizeBindingParams, parseBindingParamsJson, type LlmBindingGenerationParams } from "../lib/llm-params";
 import { createDefaultMutationRuntime } from "./default-mutation-runtime.js";
 import type { MutationRuntime } from "./runtime-mutation-types.js";
@@ -93,7 +94,7 @@ type ServiceOptions = {
   masterKey?: string;
   now?: () => number;
   mutationRuntime?: MutationRuntime;
-};
+} & AccountContextOptions;
 
 /** Internal row shape returned by loadAllBindings */
 type BindingRow = {
@@ -114,6 +115,7 @@ export class LlmProfileService {
   private readonly now: () => number;
   private readonly masterKey: string;
   private readonly mutationRuntime: MutationRuntime;
+  private readonly accountContext: AccountContextOptions;
 
   constructor(db: AppDb, options: ServiceOptions = {}) {
     this.db = db;
@@ -123,12 +125,17 @@ export class LlmProfileService {
       now: this.now,
       masterKey: this.masterKey,
     });
+    this.accountContext = {
+      accountMode: options.accountMode,
+      defaultAccountId: options.defaultAccountId,
+    };
   }
 
   async createProfile(
     input: CreateLlmProfileInput,
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
+    accountId?: string,
   ): Promise<LlmProfileListItem> {
+    accountId = this.resolveAccountId(accountId);
     try {
       const result = await this.mutationRuntime.applyInline<
         CreateLlmProfileMutationPayload,
@@ -154,7 +161,7 @@ export class LlmProfileService {
   }
 
   async listProfiles(options: { includeDeleted?: boolean; accountId?: string } = {}): Promise<LlmProfileListItem[]> {
-    const accountId = options.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
+    const accountId = this.resolveAccountId(options.accountId);
     const whereClause = options.includeDeleted
       ? eq(llmProfiles.accountId, accountId)
       : and(eq(llmProfiles.accountId, accountId), ne(llmProfiles.status, "deleted"));
@@ -162,13 +169,15 @@ export class LlmProfileService {
     return rows.map((row) => this.toListItem(row));
   }
 
-  async getProfile(id: string, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID): Promise<LlmProfileListItem | null> {
+  async getProfile(id: string, accountId?: string): Promise<LlmProfileListItem | null> {
+    accountId = this.resolveAccountId(accountId);
     const row = await this.db.select().from(llmProfiles).where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId))).limit(1);
     const profile = row[0];
     return profile ? this.toListItem(profile) : null;
   }
 
-  async updateProfile(id: string, patch: UpdateLlmProfileInput, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID): Promise<LlmProfileListItem> {
+  async updateProfile(id: string, patch: UpdateLlmProfileInput, accountId?: string): Promise<LlmProfileListItem> {
+    accountId = this.resolveAccountId(accountId);
     try {
       const result = await this.mutationRuntime.applyInline<
         UpdateLlmProfileMutationPayload,
@@ -193,7 +202,8 @@ export class LlmProfileService {
     }
   }
 
-  async deleteProfile(id: string, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID): Promise<LlmProfileListItem> {
+  async deleteProfile(id: string, accountId?: string): Promise<LlmProfileListItem> {
+    accountId = this.resolveAccountId(accountId);
     try {
       const result = await this.mutationRuntime.applyInline<
         DeleteLlmProfileMutationPayload,
@@ -224,8 +234,9 @@ export class LlmProfileService {
     profileId: string,
     instanceSlot: string = '*',
     params?: LlmBindingGenerationParams | null,
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
+    accountId?: string,
   ): Promise<void> {
+    accountId = this.resolveAccountId(accountId);
     try {
       const payload: ActivateLlmProfileMutationPayload = {
         scope,
@@ -258,8 +269,9 @@ export class LlmProfileService {
     scope: LlmProfileScope,
     scopeId: string,
     instanceSlot: string = '*',
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID,
+    accountId?: string,
   ): Promise<void> {
+    accountId = this.resolveAccountId(accountId);
     try {
       await this.mutationRuntime.applyInline<UnbindLlmProfileMutationPayload, void>({
         id: `llm-profile-unbind:${scope}:${scopeId}:${instanceSlot}:${this.now()}`,
@@ -286,8 +298,9 @@ export class LlmProfileService {
 
   async resolveActiveProfile(
     sessionId?: string,
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
+    accountId?: string,
   ): Promise<LlmProfileResolved | null> {
+    accountId = this.resolveAccountId(accountId);
     // 向后兼容：等价于解析 '*' 通配槽位
     return this.resolveForSlot(sessionId, '*', accountId);
   }
@@ -302,8 +315,9 @@ export class LlmProfileService {
    */
   async resolveActiveProfiles(
     sessionId?: string,
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID,
+    accountId?: string,
   ): Promise<Partial<Record<InstanceSlot | '*', LlmProfileResolved>>> {
+    accountId = this.resolveAccountId(accountId);
     const ALL_SLOTS: (InstanceSlot | '*')[] = ['*', 'narrator', 'director', 'verifier', 'memory'];
     const result: Partial<Record<InstanceSlot | '*', LlmProfileResolved>> = {};
 
@@ -320,7 +334,8 @@ export class LlmProfileService {
     return result;
   }
 
-  async touchLastUsed(profileId: string, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID): Promise<void> {
+  async touchLastUsed(profileId: string, accountId?: string): Promise<void> {
+    accountId = this.resolveAccountId(accountId);
     await this.db
       .update(llmProfiles)
       .set({
@@ -497,6 +512,10 @@ export class LlmProfileService {
         inArray(llmProfileBindings.id, staleBindingIds),
       ))
       .run();
+  }
+
+  private resolveAccountId(accountId?: string): string {
+    return resolveAccountIdOrThrow(accountId, this.accountContext);
   }
 
   private mapWriteError(error: unknown, presetName?: string): LlmProfileServiceError {

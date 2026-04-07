@@ -45,6 +45,8 @@ POST /floors
 
 返回 `{ "data": Floor }` 。
 
+如果 `parent_floor_id` 存在但不属于 `session_id` 指定的同一会话，接口返回 `409 floor_parent_session_mismatch`。
+
 ## 列出楼层
 
 ```http
@@ -129,6 +131,8 @@ PATCH /floors/:id
 
 返回更新后的 Floor 对象。
 
+如果目标 floor 当前仍有活跃运行，接口返回 `409 active_run_in_progress`。如果更新后的 `parent_floor_id` 不属于当前 floor 的同一会话，接口返回 `409 floor_parent_session_mismatch`。
+
 ## 删除楼层
 
 ```http
@@ -140,6 +144,8 @@ DELETE /floors/:id
 ```json
 { "data": { "id": "floor_001", "deleted": true } }
 ```
+
+如果目标 floor 当前仍有活跃运行，接口返回 `409 active_run_in_progress`。
 
 ## 从楼层创建分支
 
@@ -183,6 +189,7 @@ DELETE /branches/:id
 - `main` 分支不可删除，服务端返回 `409 protected_branch`
 - 如果同名 `branch_id` 同时存在于多个 session，不传 `session_id` 会返回 `409 ambiguous_branch`
 - 删除分支前，服务端会先清理该 branch 对应的 branch-scope 变量
+- 如果目标 branch 当前仍有活跃运行，接口返回 `409 active_run_in_progress`
 
 ### 查询参数
 

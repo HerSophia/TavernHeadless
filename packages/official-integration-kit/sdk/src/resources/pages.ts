@@ -38,7 +38,6 @@ export type PagesCreateOptions = {
   accountId?: AccountIdHint;
   checksum?: string;
   floorId: string;
-  isActive?: boolean;
   pageKind: PageKind;
   pageNo: number;
   version?: number;
@@ -52,7 +51,6 @@ export type PagesGetDetailOptions = {
 export type PagesUpdateOptions = {
   accountId?: AccountIdHint;
   checksum?: string;
-  isActive?: boolean;
   pageId: string;
   pageKind?: PageKind;
   pageNo?: number;
@@ -128,7 +126,6 @@ export function createPagesResource(client: TransportClient): PagesResource {
         body: compactObject({
           checksum: options.checksum,
           floor_id: options.floorId,
-          is_active: options.isActive,
           page_kind: options.pageKind,
           page_no: options.pageNo,
           version: options.version,
@@ -163,11 +160,11 @@ export function createPagesResource(client: TransportClient): PagesResource {
         query: compactObject({
           floor_id: options.floorId,
           is_active: options.isActive,
-          limit: options.limit ?? 100,
-          offset: options.offset ?? 0,
+          limit: options.limit,
+          offset: options.offset,
           page_kind: options.pageKind,
-          sort_by: options.sortBy ?? "created_at",
-          sort_order: options.sortOrder ?? "desc",
+          sort_by: options.sortBy,
+          sort_order: options.sortOrder,
         }),
       });
 
@@ -187,7 +184,6 @@ export function createPagesResource(client: TransportClient): PagesResource {
       const response = await client.patch("/pages/{id}", {
         body: compactObject({
           checksum: options.checksum,
-          is_active: options.isActive,
           page_kind: options.pageKind,
           page_no: options.pageNo,
           version: options.version,

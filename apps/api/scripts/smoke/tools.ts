@@ -15,8 +15,11 @@ export async function smokeTools(ctx: SmokeContext): Promise<void> {
 
   // ── Tool definitions CRUD ──────────────────────────
 
-  const toolDef = await runStep("POST /tools/definitions", () =>
-    api.request<{ data: { id: string } }>(
+  const toolDefinitionCreateResult = await runStep("POST /tools/definitions", async () => {
+    const res = await api.request<
+      | { data: { id: string } }
+      | { error?: { code?: string; message?: string } }
+    >(
       "POST",
       "/tools/definitions",
       {
@@ -28,42 +31,63 @@ export async function smokeTools(ctx: SmokeContext): Promise<void> {
         handler_type: "script",
         handler: {},
       },
-      [201]
-    )
-  );
-  const toolDefId = must(toolDef.body?.data?.id, "Missing tool definition id");
-  track("toolDefinitions", toolDefId);
-  addCleanup(async () => {
-    await api.request("DELETE", `/tools/definitions/${toolDefId}`, undefined, [200, 404]);
+      [201, 403]
+    );
+
+    if (res.status === 201) {
+      return {
+        created: true as const,
+        id: must((res.body as { data?: { id?: string } } | null)?.data?.id, "Missing tool definition id")
+      };
+    }
+
+    const errorCode = (res.body as { error?: { code?: string } } | null)?.error?.code;
+    assert(errorCode === "tool_script_handler_disabled", "Disabled script handler should return tool_script_handler_disabled");
+    return {
+      created: false as const,
+      id: null,
+    };
   });
+
+  const toolDefId = toolDefinitionCreateResult.created ? toolDefinitionCreateResult.id : null;
+  if (toolDefId) {
+    track("toolDefinitions", toolDefId);
+    addCleanup(async () => {
+      await api.request("DELETE", `/tools/definitions/${toolDefId}`, undefined, [200, 404]);
+    });
+  }
 
   await runStep("GET /tools/definitions", async () => {
     const res = await api.request<{ data: unknown[] }>("GET", "/tools/definitions", undefined, [200]);
-    assert(Array.isArray(res.body?.data) && res.body!.data.length >= 1, "Tool definitions list should have at least 1 item");
+    assert(Array.isArray(res.body?.data), "Tool definitions list should be an array");
   });
 
-  await runStep("GET /tools/definitions/:id", async () => {
-    const res = await api.request<{ data: { id: string } }>("GET", `/tools/definitions/${toolDefId}`, undefined, [200]);
-    assert(res.body?.data?.id === toolDefId, "Tool definition id mismatch");
-  });
+  if (toolDefId) {
+    await runStep("GET /tools/definitions/:id", async () => {
+      const res = await api.request<{ data: { id: string } }>("GET", `/tools/definitions/${toolDefId}`, undefined, [200]);
+      assert(res.body?.data?.id === toolDefId, "Tool definition id mismatch");
+    });
 
-  await runStep("PATCH /tools/definitions/:id", () =>
-    api.request("PATCH", `/tools/definitions/${toolDefId}`, { description: "updated" }, [200])
-  );
-
-  await runStep("PATCH /tools/definitions/:id/toggle (disable)", async () => {
-    const res = await api.request<{ data: { enabled: boolean } }>(
-      "PATCH", `/tools/definitions/${toolDefId}/toggle`, { enabled: false }, [200]
+    await runStep("PATCH /tools/definitions/:id", () =>
+      api.request("PATCH", `/tools/definitions/${toolDefId}`, { description: "updated" }, [200])
     );
-    assert(res.body?.data?.enabled === false, "Tool should be disabled after toggle");
-  });
 
-  await runStep("PATCH /tools/definitions/:id/toggle (enable)", async () => {
-    const res = await api.request<{ data: { enabled: boolean } }>(
-      "PATCH", `/tools/definitions/${toolDefId}/toggle`, { enabled: true }, [200]
-    );
-    assert(res.body?.data?.enabled === true, "Tool should be enabled after toggle");
-  });
+    await runStep("PATCH /tools/definitions/:id/toggle (disable)", async () => {
+      const res = await api.request<{ data: { enabled: boolean } }>(
+        "PATCH", `/tools/definitions/${toolDefId}/toggle`, { enabled: false }, [200]
+      );
+      assert(res.body?.data?.enabled === false, "Tool should be disabled after toggle");
+    });
+
+    await runStep("PATCH /tools/definitions/:id/toggle (enable)", async () => {
+      const res = await api.request<{ data: { enabled: boolean } }>(
+        "PATCH", `/tools/definitions/${toolDefId}/toggle`, { enabled: true }, [200]
+      );
+      assert(res.body?.data?.enabled === true, "Tool should be enabled after toggle");
+    });
+  } else {
+    console.log("  ⏭  Script handler definitions are disabled by server policy, skipping custom tool CRUD steps.");
+  }
 
   // ── Session tool permissions ───────────────────────
 
@@ -95,7 +119,7 @@ export async function smokeTools(ctx: SmokeContext): Promise<void> {
 
   // ── Cleanup ───────────────────────────────────────
 
-  if (!options.keepData) {
+  if (!options.keepData && toolDefId) {
     await runStep("DELETE /tools/definitions/:id", () =>
       api.request("DELETE", `/tools/definitions/${toolDefId}`, undefined, [200])
     );

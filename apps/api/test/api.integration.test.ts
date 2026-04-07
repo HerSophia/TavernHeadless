@@ -443,7 +443,8 @@ describe("apps/api integration", () => {
       }
     });
 
-    expect(fkErrorResponse.statusCode).toBe(409);
+    expect(fkErrorResponse.statusCode).toBe(404);
+    expect(fkErrorResponse.json<{ error: { code: string } }>().error.code).toBe("memory_edge_node_not_found");
 
     const edge = await createMemoryEdge(app, {
       from_id: memoryA.id,

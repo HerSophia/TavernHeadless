@@ -76,7 +76,7 @@ export async function executeResourceWrite<T>(
       throw new ResourceWriteRouteError(503, "resource_busy", RESOURCE_BUSY_MESSAGE, { cause: error });
     }
 
-    const mapped = mapSqliteConstraintError(error, options.constraintMappings ?? []);
+    const mapped = mapSqliteConstraintErrorToRouteError(error, options.constraintMappings ?? []);
     if (mapped) {
       throw mapped;
     }
@@ -129,7 +129,7 @@ export function assertRevisionWriteApplied(
   }
 }
 
-function mapSqliteConstraintError(
+export function mapSqliteConstraintErrorToRouteError(
   error: unknown,
   mappings: SqliteConstraintErrorMapping[]
 ): ResourceWriteRouteError | null {

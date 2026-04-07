@@ -351,8 +351,8 @@ describe("MCP account scope isolation", () => {
     });
     expect(connectB.statusCode).toBe(200);
 
-    expect(runtimeMockState.instances.get(configA.id)?.connectCalls).toBe(1);
-    expect(runtimeMockState.instances.get(configB.id)?.connectCalls).toBe(1);
+    expect(runtimeMockState.instances.get(configA.id)?.connectCalls).toBe(2);
+    expect(runtimeMockState.instances.get(configB.id)?.connectCalls).toBe(2);
 
     const statusesA = await app.inject({
       method: "GET",

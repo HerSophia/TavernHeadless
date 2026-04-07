@@ -230,6 +230,12 @@ describe("MemoryJobScheduler", () => {
     });
   });
 
+  it("does not inject default-admin into malformed maintenance job ids", () => {
+    expect(scheduler.createJobId("maintenance", ":chat:session-1:42")).toBe(
+      "memory-job:maintenance::chat:session-1:42",
+    );
+  });
+
   it("enqueues rebuild_scope jobs with an explicit seed", async () => {
     const now = 1_735_800_300_000;
     const sessionId = nanoid();

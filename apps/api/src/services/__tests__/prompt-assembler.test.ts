@@ -200,6 +200,7 @@ describe("assemblePrompt", () => {
     await database.db.insert(sessions).values({
       id: sessionId,
       title: "Prompt Variable Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -233,6 +234,7 @@ describe("assemblePrompt", () => {
     await database.db.insert(presets).values({
       id: presetId,
       name: "Prompt Variable Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
       createdAt: now,
@@ -501,6 +503,152 @@ describe("assemblePrompt", () => {
     expect(assembled.messages.some((message) => message.content.includes("Ancient Guardian lore"))).toBe(true);
     expect(assembled.preProcess?.([{ role: "user", content: "Traveler sword" }])).toEqual([{ role: "user", content: "friend sword" }]);
     expect(assembled.preProcess?.([{ role: "assistant", content: "Knight arrives" }])).toEqual([{ role: "assistant", content: "champion arrives" }]);
+  });
+
+  it("passes chat message depth into USER_INPUT and AI_OUTPUT prompt regex evaluation", async () => {
+    const sessionInfo = await seedWorldInfoRegexScenario({
+      presetData: SAMPLE_PRESET_DATA,
+      promptMode: "native",
+      regexScripts: [
+        {
+          id: "regex-user-depth",
+          scriptName: "User Depth Rule",
+          findRegex: "/hello/g",
+          replaceString: "depth-user",
+          trimStrings: [],
+          placement: [1],
+          promptOnly: true,
+          disabled: false,
+          substituteRegex: 0,
+          minDepth: 2,
+          maxDepth: 2,
+        },
+        {
+          id: "regex-ai-depth",
+          scriptName: "AI Depth Rule",
+          findRegex: "/hero/g",
+          replaceString: "depth-ai",
+          trimStrings: [],
+          placement: [2],
+          promptOnly: true,
+          disabled: false,
+          substituteRegex: 0,
+          minDepth: 1,
+          maxDepth: 1,
+        },
+      ],
+    });
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [
+        { role: "user", content: "hello oldest" },
+        { role: "assistant", content: "hero middle" },
+      ],
+      "hello newest",
+      new SimpleTokenCounter(),
+    );
+
+    const preprocessed = assembled.preProcess?.(assembled.messages) ?? assembled.messages;
+    expect(preprocessed.filter((message) => message.role === "user").map((message) => message.content)).toEqual([
+      "depth-user oldest",
+      "hello newest",
+    ]);
+    expect(preprocessed.filter((message) => message.role === "assistant").map((message) => message.content)).toEqual([
+      "depth-ai middle",
+    ]);
+  });
+
+  it("passes at-depth worldbook depth into WORLD_INFO regex evaluation", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+    const regexProfileId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Depth Worldbook Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Depth Worldbook",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 14,
+      comment: "Depth Lore",
+      content: "Ancient sword lore",
+      keysJson: JSON.stringify(["sword"]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: false,
+      selectiveLogic: 0,
+      constant: false,
+      position: 4,
+      order: 100,
+      depth: 2,
+      role: 0,
+      disable: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(regexProfiles).values({
+      id: regexProfileId,
+      name: "Depth Regex",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify([
+        {
+          id: "regex-world-depth",
+          scriptName: "World Depth Rule",
+          findRegex: "/sword/g",
+          replaceString: "blade",
+          trimStrings: [],
+          placement: [5],
+          disabled: false,
+          substituteRegex: 0,
+          minDepth: 3,
+          maxDepth: 10,
+        },
+      ]),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        presetId,
+        worldbookProfileId: worldbookId,
+        regexProfileId,
+        metadataJson: null,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        promptMode: "native",
+        userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+      },
+      [],
+      "sword",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.messages.some((message) => message.content.includes("Ancient sword lore"))).toBe(true);
+    expect(assembled.messages.some((message) => message.content.includes("Ancient blade lore"))).toBe(false);
   });
 
   it("applies WORLD_INFO regex rules to injected worldbook content in compat mode", async () => {
@@ -886,7 +1034,7 @@ describe("assemblePrompt", () => {
     expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([30]);
   });
 
-  it("does not auto-inject outlet worldbook entries into prompt messages", async () => {
+  it("injects outlet worldbook entries into native prompt messages when a matching outlet marker exists", async () => {
     const now = Date.now();
     const presetId = nanoid();
     const worldbookId = nanoid();
@@ -896,7 +1044,27 @@ describe("assemblePrompt", () => {
       name: "Outlet Preset",
       source: "sillytavern",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(SAMPLE_COMPAT_WORLDINFO_PRESET_DATA),
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "Stay in character.",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+          {
+            identifier: "LoreOutlet",
+            name: "Lore Outlet",
+            marker: true,
+            injection_position: 1,
+            injection_depth: 1,
+            injection_order: 5,
+          },
+        ],
+        prompt_order: [{ character_id: 100000, order: [{ identifier: "main", enabled: true }, { identifier: "LoreOutlet", enabled: true }, { identifier: "chatHistory", enabled: true }] }],
+      }),
       createdAt: now,
       updatedAt: now,
     });
@@ -938,7 +1106,7 @@ describe("assemblePrompt", () => {
       regexProfileId: null,
       metadataJson: null,
       characterSnapshotJson: JSON.stringify({ name: "Knight" }),
-      promptMode: "compat_strict",
+      promptMode: "native",
       userSnapshotJson: JSON.stringify({ name: "Traveler" }),
     };
 
@@ -946,12 +1114,15 @@ describe("assemblePrompt", () => {
       database.db,
       DEFAULT_ADMIN_ACCOUNT_ID,
       sessionInfo,
-      [],
+      [{ role: "user", content: "Old history" }],
       "dragon",
       new SimpleTokenCounter(),
     );
 
-    expect(assembled.messages.some((message) => message.content.includes("Hidden outlet lore"))).toBe(false);
+    expect(assembled.messages.some((message) => message.content.includes("Hidden outlet lore"))).toBe(true);
+    expect(assembled.messages.findIndex((message) => message.content.includes("Hidden outlet lore"))).toBeLessThan(
+      assembled.messages.findIndex((message) => message.content.includes("dragon")),
+    );
     expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([40]);
   });
 

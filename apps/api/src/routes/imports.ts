@@ -101,6 +101,7 @@ import {
   withResourceWriteCas,
   assertRevisionWriteApplied,
 } from "../services/resource-write.js";
+import { getLatestOwnedActiveCharacterVersion } from "../services/resource-ownership.js";
 
 // ── Zod Schemas ───────────────────────────────────────
 
@@ -692,12 +693,16 @@ const importChatResponseJsonSchema = {
         title: { type: "string" },
         floor_count: { type: "integer", minimum: 0 },
         message_count: { type: "integer", minimum: 0 },
+        page_count: { type: "integer", minimum: 0 },
+        variable_count: { type: "integer", minimum: 0 },
+        memory_item_count: { type: "integer", minimum: 0 },
+        memory_edge_count: { type: "integer", minimum: 0 },
         swipe_count: { type: "integer", minimum: 0 },
         skipped_lines: { type: "integer", minimum: 0 },
         import_source: { type: "string" },
         format: { type: "string", enum: ["thchat", "sillytavern_jsonl"] },
       },
-      additionalProperties: true,
+      additionalProperties: false,
     },
   },
   examples: [importChatResponseExample],
@@ -944,27 +949,16 @@ async function resolveImportCharacterBinding(
     };
   }
 
-  const charRow = await db.select({
-    id: characters.id,
-  }).from(characters).where(
-    and(eq(characters.id, requestedCharacterId), eq(characters.accountId, accountId))
-  ).get();
+  const versionRow = await getLatestOwnedActiveCharacterVersion(db, accountId, requestedCharacterId);
 
-  if (!charRow) {
+  if (!versionRow) {
     throw new Error(`Character ${requestedCharacterId} not found`);
   }
 
-  const versionRow = await db.select({
-    id: characterVersions.id,
-    dataJson: characterVersions.dataJson,
-  }).from(characterVersions).where(
-    eq(characterVersions.characterId, charRow.id)
-  ).orderBy(asc(characterVersions.createdAt)).limit(1).get();
-
   return {
-    characterId: charRow.id,
-    characterVersionId: versionRow?.id ?? null,
-    characterSnapshotJson: versionRow?.dataJson ?? null,
+    characterId: versionRow.characterId,
+    characterVersionId: versionRow.id,
+    characterSnapshotJson: versionRow.dataJson,
   };
 }
 
@@ -2687,31 +2681,16 @@ async function handleThChatImport(
     }
   }
 
-  // 查询角色快照（如果外部传入 character_id）
-  let characterId: string | null = null;
-  let characterVersionId: string | null = null;
+  let characterBinding;
 
-  if (params.character_id) {
-    const charRow = await db.select({
-      id: characters.id,
-    }).from(characters).where(
-      and(eq(characters.id, params.character_id), eq(characters.accountId, accountId))
-    ).get();
-
-    if (!charRow) {
-      return sendError(reply, 400, "character_not_found", `Character ${params.character_id} not found`);
+  try {
+    characterBinding = await resolveImportCharacterBinding(db, accountId, params.character_id);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Character ")) {
+      return sendError(reply, 400, "character_not_found", error.message);
     }
-    characterId = charRow.id;
 
-    const versionRow = await db.select({
-      id: characterVersions.id,
-    }).from(characterVersions).where(
-      eq(characterVersions.characterId, charRow.id)
-    ).orderBy(asc(characterVersions.createdAt)).limit(1).get();
-
-    if (versionRow) {
-      characterVersionId = versionRow.id;
-    }
+    throw error;
   }
 
   let result: ReturnType<typeof createSessionFromThChatImport>;
@@ -2720,8 +2699,9 @@ async function handleThChatImport(
       file,
       idMap,
       accountId,
-      characterId,
-      characterVersionId,
+      characterId: characterBinding.characterId,
+      characterVersionId: characterBinding.characterVersionId,
+      characterSnapshotJson: characterBinding.characterSnapshotJson,
       titleOverride: params.title ?? null,
       now,
     });
@@ -2883,6 +2863,7 @@ function createSessionFromThChatImport(
     accountId: string;
     characterId: string | null;
     characterVersionId: string | null;
+    characterSnapshotJson: string | null;
     titleOverride: string | null;
     now: number;
   },
@@ -2920,13 +2901,17 @@ function createSessionFromThChatImport(
       accountId: input.accountId,
       characterId: input.characterId,
       characterVersionId: input.characterVersionId,
-      characterSnapshotJson: data.character_snapshot
-        ? stringifyJsonField(data.character_snapshot)
-        : null,
+      characterSnapshotJson: input.characterId
+        ? input.characterSnapshotJson
+        : data.character_snapshot
+          ? stringifyJsonField(data.character_snapshot)
+          : null,
       userSnapshotJson: data.user_snapshot
         ? stringifyJsonField(data.user_snapshot)
         : null,
-      characterSyncPolicy: data.character_sync_policy,
+      characterSyncPolicy: input.characterId
+        ? "pin"
+        : data.character_sync_policy,
       presetId: null,
       regexProfileId: null,
       worldbookProfileId: null,
@@ -2954,6 +2939,10 @@ function createSessionFromThChatImport(
         sessionId,
         floorNo: floor.floor_no,
         branchId: floor.branch_id,
+        supersededAt: floor.superseded_at ?? null,
+        supersededByFloorId: floor.superseded_by_floor_id_ref
+          ? (input.idMap.get(floor.superseded_by_floor_id_ref) ?? null)
+          : null,
         parentFloorId,
         state: floor.state,
         metadataJson: floor.metadata != null

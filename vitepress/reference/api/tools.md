@@ -11,6 +11,10 @@ outline: [2, 3]
 3. `/tool-executions` 与 `/floors/:id/tool-executions`：查询执行 journal
 4. `/tools/call-records` 与 `/sessions/:id/tool-permissions`：查询旧调用记录与管理会话权限
 
+`script` handler 目前被视为危险执行面。
+Beta3 默认关闭它的创建、更新和执行。
+只有服务端显式设置 `ENABLE_UNSAFE_SCRIPT_HANDLER=true` 时，definition-backed script tools 才会重新进入运行时目录。
+
 ## 概念区分
 
 | 能力 | 路径 | 说明 |
@@ -35,6 +39,7 @@ GET /sessions/:id/tools/runtime
 - MCP 工具 live 列举成功时，`catalog_source` 为 `live`
 - MCP 工具 live 列举失败但已有快照时，`catalog_source` 为 `cached`
 - 非 MCP 工具的 `catalog_source` 为 `null`
+- 当 script handler 被服务端策略关闭时，历史 definition-backed tools 会继续出现在目录里，但 `availability = unavailable`
 
 #### 响应 `200`
 
@@ -76,6 +81,8 @@ GET /sessions/:id/tools/runtime
 | `catalog_source` | string \| null | MCP 目录来源：`live` / `cached`；非 MCP 工具为 `null` |
 | `replay_safety` | string | `safe` / `confirm_on_replay` / `never_auto_replay` / `uncertain` |
 | `result_visibility` | string | `immediate` / `deferred_receipt` |
+
+当前公开配置里的 `toolMode` 仍只有 `inline`。但 `inline` 回合内部并不等于“所有工具都同步完成”：当 `async_capability = deferred_ok` 且 `default_delivery_mode = async_job` 时，本轮会先返回 deferred receipt，再通过 `runtime_job_id` 继续后台执行。
 
 ## 内置工具
 
@@ -221,8 +228,13 @@ POST /tools/definitions
 | `source` | string | 否 | 来源，默认 `custom` |
 | `source_id` | string \| null | 否 | 来源对象 ID |
 | `enabled` | boolean | 否 | 是否启用，默认 `true` |
-| `handler_type` | string | 否 | 处理器类型：`script` / `prompt` / `delegate` |
-| `handler` | object | 否 | 处理器配置对象 |
+| `handler_type` | string | 否 | 当前只公开 `script` |
+| `handler` | object | 否 | `script` 处理器配置对象 |
+
+默认情况下，服务端会拒绝新的 `script` handler 写入。
+只有显式开启 `ENABLE_UNSAFE_SCRIPT_HANDLER=true` 的受信环境才允许创建。
+
+工具定义的唯一性按账号空间计算。同一账号下，重复的 `(name, source, source_id)` 组合会返回稳定的冲突错误；不同账号可以创建同名 custom tool。
 
 #### 请求示例
 
@@ -256,6 +268,8 @@ POST /tools/definitions
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
 | `400` | `validation_error` | 请求体校验失败 |
+| `409` | `tool_definition_conflict` | 当前账号下已存在相同唯一身份的工具定义 |
+| `403` | `tool_script_handler_disabled` | 服务端默认关闭了危险的 `script` handler 写入 |
 
 ### 更新工具定义
 
@@ -272,6 +286,8 @@ PATCH /tools/definitions/:id
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
 | `400` | `validation_error` | 请求体校验失败，或未提供任何更新字段 |
+| `409` | `tool_definition_conflict` | 当前账号下已存在相同唯一身份的工具定义 |
+| `403` | `tool_script_handler_disabled` | 服务端默认关闭了危险的 `script` handler 更新 |
 | `404` | `not_found` | 工具定义不存在 |
 
 ### 删除工具定义
@@ -316,6 +332,7 @@ PATCH /tools/definitions/:id/toggle
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
 | `400` | `validation_error` | 请求体校验失败 |
+| `403` | `tool_script_handler_disabled` | 服务端默认关闭了危险的 `script` handler 重新启用 |
 | `404` | `not_found` | 工具定义不存在 |
 
 ## 执行 journal

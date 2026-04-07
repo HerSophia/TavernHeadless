@@ -9,6 +9,7 @@ import type {
   ToolExecutionProviderType,
   ToolExecutionRecord,
   ToolExecutionsListResult,
+  ToolExecutionsListOptions,
   ToolExecutionStatus,
   ToolHandlerType,
   ToolSideEffectLevel
@@ -142,21 +143,6 @@ export async function deleteToolDefinition(definitionId: string, accountId?: str
   });
 }
 
-export async function fetchToolExecutions(options: {
-  accountId?: string;
-  callerSlot?: string;
-  commitOutcome?: WorkspaceToolExecutionCommitOutcome;
-  floorId?: string;
-  lifecycleState?: WorkspaceToolExecutionLifecycleState;
-  limit?: number;
-  offset?: number;
-  providerType?: WorkspaceToolExecutionProviderType;
-  runId?: string;
-  sessionId?: string;
-  sortBy?: "created_at" | "started_at" | "finished_at";
-  sortOrder?: "asc" | "desc";
-  status?: WorkspaceToolExecutionStatus;
-  toolName?: string;
-} = {}): Promise<WorkspaceToolExecutionsListResult> {
+export async function fetchToolExecutions(options: ToolExecutionsListOptions): Promise<WorkspaceToolExecutionsListResult> {
   return apiClient.tools.listExecutions(options);
 }
