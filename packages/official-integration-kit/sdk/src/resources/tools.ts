@@ -12,7 +12,7 @@ import {
 
 export type ToolSideEffectLevel = "none" | "sandbox" | "irreversible";
 export type ToolDefinitionSource = "preset" | "character" | "custom";
-export type ToolHandlerType = "script" | "prompt" | "delegate";
+export type ToolHandlerType = "script";
 export type ToolCallRecordStatus = "success" | "error" | "denied" | "queued" | "running";
 
 export type ToolExecutionStatus = ToolCallRecordStatus | "running" | "queued" | "timeout" | "uncertain" | "blocked";
@@ -113,7 +113,49 @@ export type ToolExecutionsListResult = {
   records: ToolExecutionRecord[];
 };
 
+type ToolCallRecordsListOptionsBase = {
+  accountId?: AccountIdHint;
+  callerSlot?: string;
+  floorId?: string;
+  limit?: number;
+  offset?: number;
+  pageId?: string;
+  sortBy?: "seq" | "created_at";
+  sortOrder?: "asc" | "desc";
+  status?: ToolCallRecordStatus;
+};
+
+export type ToolCallRecordsListOptions =
+  | (ToolCallRecordsListOptionsBase & { pageId: string; floorId?: string })
+  | (ToolCallRecordsListOptionsBase & { floorId: string; pageId?: string });
+
+type ToolExecutionsListOptionsBase = {
+  accountId?: AccountIdHint;
+  callerSlot?: string;
+  commitOutcome?: ToolExecutionCommitOutcome;
+  floorId?: string;
+  lifecycleState?: ToolExecutionLifecycleState;
+  limit?: number;
+  offset?: number;
+  providerType?: ToolExecutionProviderType;
+  runId?: string;
+  sessionId?: string;
+  sortBy?: "created_at" | "started_at" | "finished_at";
+  sortOrder?: "asc" | "desc";
+  status?: ToolExecutionStatus;
+  toolName?: string;
+};
+
+export type ToolExecutionsListOptions =
+  | (ToolExecutionsListOptionsBase & { floorId: string; sessionId?: string; runId?: string })
+  | (ToolExecutionsListOptionsBase & { sessionId: string; floorId?: string; runId?: string })
+  | (ToolExecutionsListOptionsBase & { runId: string; floorId?: string; sessionId?: string });
+
 export type ToolsResource = {
+  /**
+   * 创建自定义工具定义。
+   * `script` handler 默认可能被服务端安全策略关闭；未开启受信开关时，服务端会返回 `tool_script_handler_disabled`。
+   */
   createDefinition(options: {
     accountId?: AccountIdHint;
     allowedSlots?: string[];
@@ -132,33 +174,8 @@ export type ToolsResource = {
   /**
    * 兼容查询入口。仅承接当前公开的 `/tools/call-records`，不代表长期主审计模型。
    */
-  listCallRecords(options: {
-    accountId?: AccountIdHint;
-    callerSlot?: string;
-    floorId?: string;
-    limit?: number;
-    offset?: number;
-    pageId?: string;
-    sortBy?: "seq" | "created_at";
-    sortOrder?: "asc" | "desc";
-    status?: ToolCallRecordStatus;
-  }): Promise<ToolCallRecordsListResult>;
-  listExecutions(options: {
-    accountId?: AccountIdHint;
-    callerSlot?: string;
-    commitOutcome?: ToolExecutionCommitOutcome;
-    floorId?: string;
-    lifecycleState?: ToolExecutionLifecycleState;
-    limit?: number;
-    offset?: number;
-    providerType?: ToolExecutionProviderType;
-    runId?: string;
-    sessionId?: string;
-    sortBy?: "created_at" | "started_at" | "finished_at";
-    sortOrder?: "asc" | "desc";
-    status?: ToolExecutionStatus;
-    toolName?: string;
-  }): Promise<ToolExecutionsListResult>;
+  listCallRecords(options: ToolCallRecordsListOptions): Promise<ToolCallRecordsListResult>;
+  listExecutions(options: ToolExecutionsListOptions): Promise<ToolExecutionsListResult>;
   listDefinitions(options?: {
     accountId?: AccountIdHint;
     enabled?: boolean;
@@ -170,7 +187,15 @@ export type ToolsResource = {
     sourceId?: string;
   }): Promise<ToolDefinitionsListResult>;
   removeDefinition(options: { accountId?: AccountIdHint; definitionId: string }): Promise<boolean>;
+  /**
+   * 启用或禁用自定义工具定义。
+   * 当服务端默认关闭 `script` handler 时，重新启用会返回 `tool_script_handler_disabled`。
+   */
   toggleDefinition(options: { accountId?: AccountIdHint; definitionId: string; enabled: boolean }): Promise<ToolDefinitionRecord>;
+  /**
+   * 更新自定义工具定义。
+   * `script` handler 默认可能被服务端安全策略关闭；未开启受信开关时，服务端会返回 `tool_script_handler_disabled`。
+   */
   updateDefinition(options: {
     accountId?: AccountIdHint;
     allowedSlots?: string[];
@@ -237,6 +262,8 @@ export function createToolsResource(client: TransportClient): ToolsResource {
         .filter((item): item is BuiltinToolRecord => item !== null);
     },
     async listCallRecords(options): Promise<ToolCallRecordsListResult> {
+      assertToolCallRecordsScope(options);
+
       const query = buildQueryString(compactObject({
         caller_slot: options.callerSlot,
         floor_id: options.floorId,
@@ -261,6 +288,8 @@ export function createToolsResource(client: TransportClient): ToolsResource {
       };
     },
     async listExecutions(options): Promise<ToolExecutionsListResult> {
+      assertToolExecutionsScope(options);
+
       const queryParams = compactObject({
         caller_slot: options.callerSlot,
         commit_outcome: options.commitOutcome,
@@ -395,13 +424,18 @@ function mapToolDefinition(value: unknown): ToolDefinitionRecord | null {
     return null;
   }
 
+  const handlerType = readToolHandlerType(record.handler_type);
+  if (!handlerType) {
+    return null;
+  }
+
   return {
     allowedSlots: readStringArray(record.allowed_slots),
     createdAt: readNumber(record.created_at),
     description: readString(record.description),
     enabled: readBoolean(record.enabled),
     handler: readRecord(record.handler) ?? {},
-    handlerType: readString(record.handler_type, "script") as ToolHandlerType,
+    handlerType,
     id: readString(record.id),
     name: readString(record.name),
     parameters: readRecord(record.parameters) ?? {},
@@ -410,6 +444,10 @@ function mapToolDefinition(value: unknown): ToolDefinitionRecord | null {
     sourceId: readNullableString(record.source_id),
     updatedAt: readNumber(record.updated_at),
   };
+}
+
+function readToolHandlerType(value: unknown): ToolHandlerType | null {
+  return readString(value, "script") === "script" ? "script" : null;
 }
 
 function mapToolCallRecord(value: unknown): ToolCallRecord | null {
@@ -476,6 +514,18 @@ function mapListMeta(value: unknown): ToolsListMeta {
     sortOrder: readString(record?.sort_order, "desc") as "asc" | "desc",
     total: readNumber(record?.total),
   };
+}
+
+function assertToolCallRecordsScope(options: ToolCallRecordsListOptions): void {
+  if (!options.pageId && !options.floorId) {
+    throw new Error("tools.listCallRecords requires pageId or floorId");
+  }
+}
+
+function assertToolExecutionsScope(options: ToolExecutionsListOptions): void {
+  if (!options.sessionId && !options.floorId && !options.runId) {
+    throw new Error("tools.listExecutions requires sessionId, floorId, or runId");
+  }
 }
 
 function readStringArray(value: unknown): string[] {

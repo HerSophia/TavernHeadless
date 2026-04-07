@@ -52,7 +52,7 @@ GET /export/chat/:id
 
 - 无损导出完整的四层树结构（session → floors → pages → messages）
 - 保留所有分支、非 main 分支、非 committed 楼层
-- 保留 token 统计、校验摘要、楼层元数据
+- 保留 token 统计、校验摘要、楼层元数据，以及 `superseded_at` / `superseded_by_floor_id_ref` 楼层历史关系
 - 记忆条目会保留 Memory V2 元数据，例如 `summary_tier`、`lifecycle_status`、`source_job_id`、token / coverage 统计，以及完整的记忆关系枚举
 - 可选包含变量和记忆数据
 - 导入时通过 `_original_id` 机制重建内部引用关系
@@ -65,7 +65,7 @@ GET /export/chat/:id
   "spec_version": "1.0.0",
   "exported_at": 1735689600000,
   "export_source": "api",
-  "export_app_version": "0.2.0-beta.2",
+  "export_app_version": "0.2.0-beta.3",
   "data": {
     "title": "Campfire Scene",
     "status": "active",
@@ -80,7 +80,7 @@ GET /export/chat/:id
 
 `.jsonl` 格式与 SillyTavern 的聊天文件格式兼容。每行一个 JSON 对象，第一行为头部信息，后续每行为一条消息。
 
-仅导出 `branch_id === "main"` 且 `state === "committed"` 的楼层。多版本消息页合并为 `swipes` 数组。
+仅导出 `branch_id === "main"`、`state === "committed"` 且未被 supersede 的 live 楼层。多版本消息页合并为 `swipes` 数组。
 
 信息损失包括：非 main 分支、楼层元数据、token 统计、校验摘要、`content_format`、`narrator` 角色、变量、记忆、会话配置。
 

@@ -245,6 +245,51 @@ describe("Account routes", () => {
     });
   });
 
+  it("exposes only the default account and blocks writes in single mode", async () => {
+    const singleMode = await buildApp({
+      databasePath: ":memory:",
+      logger: false,
+      accountMode: "single",
+      auth: { mode: "off" },
+    });
+
+    try {
+      const listRes = await singleMode.app.inject({
+        method: "GET",
+        url: "/accounts",
+      });
+      expect(listRes.statusCode).toBe(200);
+      expect(listRes.json<{ data: Array<{ id: string }> }>().data).toEqual([
+        expect.objectContaining({ id: "default-admin" }),
+      ]);
+
+      const getDefaultRes = await singleMode.app.inject({
+        method: "GET",
+        url: "/accounts/default-admin",
+      });
+      expect(getDefaultRes.statusCode).toBe(200);
+
+      const getOtherRes = await singleMode.app.inject({
+        method: "GET",
+        url: "/accounts/acc-other",
+      });
+      expect(getOtherRes.statusCode).toBe(404);
+      expect(getOtherRes.json<ErrorResponse>().error.code).toBe("account_not_found");
+
+      for (const [method, url, payload] of [
+        ["POST", "/accounts", { name: "Blocked" }],
+        ["PATCH", "/accounts/default-admin", { name: "Blocked Rename" }],
+        ["DELETE", "/accounts/default-admin", undefined],
+      ] as const) {
+        const response = await singleMode.app.inject({ method, url, payload });
+        expect(response.statusCode, response.body).toBe(409);
+        expect(response.json<ErrorResponse>().error.code).toBe("account_mode_restricted");
+      }
+    } finally {
+      await singleMode.app.close();
+    }
+  });
+
   it("returns account_has_resources when delete hits a foreign key failure", async () => {
     const routeApp = Fastify({ logger: false });
     const mockConnection = {

@@ -31,19 +31,23 @@ export async function createSession(title?: string, accountId?: string): Promise
 }
 
 export async function renameSession(sessionId: string, title: string, accountId?: string): Promise<boolean> {
-  return apiClient.sessions.update({
+  await apiClient.sessions.update({
     accountId,
     sessionId,
     title
   });
+
+  return true;
 }
 
 export async function archiveSession(sessionId: string, accountId?: string): Promise<boolean> {
-  return apiClient.sessions.update({
+  await apiClient.sessions.update({
     accountId,
     sessionId,
     status: "archived"
   });
+
+  return true;
 }
 
 export async function removeSession(sessionId: string, accountId?: string): Promise<boolean> {

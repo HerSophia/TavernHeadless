@@ -42,6 +42,7 @@
  * - MEMORY_WORKER_MAX_RETRY_DELAY_MS: 可选，MemoryWorker 最大重试退避（默认 30000）
  * - MEMORY_WORKER_CANDIDATE_SCAN_LIMIT: 可选，MemoryWorker 单轮候选扫描上限（默认 32）
  * - ENABLE_MCP: 是否启用 MCP 工具集成（默认 false）
+ * - ENABLE_UNSAFE_SCRIPT_HANDLER: 是否允许不安全的 script handler 创建与执行（默认 false，仅限受信环境）
  * - AUTH_MODE: 认证模式（off | api_key | jwt，默认 off）
  * - AUTH_API_KEYS: API Key 模式下的 key 列表（逗号分隔）
  * - AUTH_API_KEY_ACCOUNTS: 多账号 + API Key 模式下的账号映射（key:account_id，逗号分隔）
@@ -148,6 +149,8 @@ export interface AppConfig {
   cors: CorsConfig;
   /** 是否启用 MCP 工具集成 */
   enableMcp: boolean;
+  /** 是否允许不安全的 script handler 创建与执行 */
+  enableUnsafeScriptHandler: boolean;
 }
 
 // ── 加载函数 ──────────────────────────────────────────
@@ -180,6 +183,7 @@ export function loadConfig(): AppConfig {
   const generationQueueTimeoutMs = parsePositiveInt(process.env.GENERATION_QUEUE_TIMEOUT_MS);
   const cors = parseCorsConfig(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN, process.env.CORS_CREDENTIALS);
   const enableMcp = process.env.ENABLE_MCP === "true";
+  const enableUnsafeScriptHandler = process.env.ENABLE_UNSAFE_SCRIPT_HANDLER === "true";
   const memoryInjectionDecay = parseMemoryInjectionDecay(
     process.env.MEMORY_INJECTION_DECAY_HALF_LIFE_DAYS,
     process.env.MEMORY_INJECTION_DECAY_MIN_FACTOR,
@@ -273,6 +277,7 @@ export function loadConfig(): AppConfig {
       accountMode,
       cors,
       enableMcp,
+      enableUnsafeScriptHandler,
     };
   }
 
@@ -347,6 +352,7 @@ export function loadConfig(): AppConfig {
     accountMode,
     cors,
     enableMcp,
+    enableUnsafeScriptHandler,
   };
 }
 

@@ -266,9 +266,13 @@ function publishThChatManifest(
     accountId: manifest.accountId,
     characterId: manifest.characterBinding.characterId,
     characterVersionId: manifest.characterBinding.characterVersionId,
-    characterSnapshotJson: data.character_snapshot ? stringifyJsonField(data.character_snapshot) : null,
+    characterSnapshotJson: manifest.characterBinding.characterId
+      ? manifest.characterBinding.characterSnapshotJson
+      : data.character_snapshot ? stringifyJsonField(data.character_snapshot) : null,
     userSnapshotJson: data.user_snapshot ? stringifyJsonField(data.user_snapshot) : null,
-    characterSyncPolicy: data.character_sync_policy,
+    characterSyncPolicy: manifest.characterBinding.characterId
+      ? "pin"
+      : data.character_sync_policy,
     presetId: null,
     regexProfileId: null,
     worldbookProfileId: null,

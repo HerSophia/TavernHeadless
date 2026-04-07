@@ -65,6 +65,7 @@ export async function importLibraryAsset(
   if (input.kind === "character") {
     const item = await apiClient.imports.character({
       accountId,
+      createSession: false,
       payload: asRecordPayload(input.payload, input.kind),
       title: name
     });

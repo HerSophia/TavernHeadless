@@ -4,19 +4,19 @@ outline: [2, 3]
 
 # 后端 API 进度
 
-> 对应 `apps/api`，当前版本 `0.2.0-beta.2`。
+> 对应 `apps/api`，当前版本 `0.2.0-beta.3`。
 
 ## 当前里程碑
 
-- 里程碑：后端 Beta 阶段（收口完成）
-- 状态：Beta 准入标准 14/14 全部达成，可进入正式 sign-off
+- 里程碑：后端 Beta3 阶段（收口完成）
+- 状态：Beta3 准入标准 14/14 全部达成，可进入正式 sign-off
 
-## Beta 准入标准
+## Beta3 准入标准
 
 - [x] 核心业务路由补齐 OpenAPI 请求/响应示例
 - [x] 中文 OpenAPI 覆盖主路由分组
 - [x] typecheck / test / openapi:export / smoke / memory:maintenance 全部通过
-- [x] 版本号同步到 `0.2.0-beta.2`
+- [x] 版本号同步到 `0.2.0-beta.3`
 - [x] 至少 1 个真实 provider 完成最小回归（已执行，结果良好）
 
 ## 已完成能力一览

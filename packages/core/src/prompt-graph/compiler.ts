@@ -60,10 +60,16 @@ function findGroup(document: PromptGraphDocument, groupId: string): PromptNodeGr
   return group;
 }
 
-function findAnchorOrder(group: PromptNodeGroup, placement: Extract<PromptPlacement, { kind: 'anchor' }>): number | null {
+function findMarkerNode(group: PromptNodeGroup, anchorId: string): MarkerNode | null {
   const marker = group.nodes.find(
-    (node): node is MarkerNode => node.nodeType === 'marker' && node.markerId === placement.anchorId
+    (node): node is MarkerNode => node.nodeType === 'marker' && node.markerId === anchorId,
   );
+
+  return marker ?? null;
+}
+
+function findAnchorOrder(group: PromptNodeGroup, placement: Extract<PromptPlacement, { kind: 'anchor' }>): number | null {
+  const marker = findMarkerNode(group, placement.anchorId);
   if (!marker) {
     return null;
   }
@@ -77,6 +83,22 @@ function findAnchorOrder(group: PromptNodeGroup, placement: Extract<PromptPlacem
   }
 
   return marker.placement.order;
+}
+
+function findAnchorInsertion(
+  group: PromptNodeGroup,
+  placement: Extract<PromptPlacement, { kind: 'anchor' }>,
+): IRSection['insertion'] | undefined {
+  const marker = findMarkerNode(group, placement.anchorId);
+  if (!marker || marker.placement.kind !== 'in_chat') {
+    return undefined;
+  }
+
+  return {
+    kind: 'in_chat',
+    depth: marker.placement.depth,
+    order: marker.placement.order + placement.order,
+  };
 }
 
 function resolvePlacementOrder(group: PromptNodeGroup, placement: PromptPlacement): number {
@@ -292,6 +314,9 @@ function compileWorldbookNode(
       if ((entry.position ?? 'before') !== node.position) {
         return false;
       }
+      if (node.position === 'outlet') {
+        return entry.outletName === node.outletName;
+      }
       if (node.position === 'depth' && node.depth !== undefined) {
         return entry.depth === node.depth;
       }
@@ -306,7 +331,9 @@ function compileWorldbookNode(
 
   const insertion = node.position === 'depth'
     ? { kind: 'in_chat' as const, depth: node.depth ?? 0, order: 0 }
-    : toSectionInsertion(node.placement);
+    : node.position === 'outlet' && node.placement.kind === 'anchor'
+      ? findAnchorInsertion(group, node.placement)
+      : toSectionInsertion(node.placement);
 
   return createSection(node.name, resolvePlacementOrder(group, node.placement), messages, true, {
     insertion,

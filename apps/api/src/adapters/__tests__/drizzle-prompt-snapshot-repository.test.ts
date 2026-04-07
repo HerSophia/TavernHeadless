@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import { createDatabase, type AppDb } from "../../db/client";
 import { floors, sessions } from "../../db/schema";
 import { DrizzlePromptSnapshotRepository } from "../drizzle-prompt-snapshot-repository";
@@ -20,6 +21,7 @@ describe("DrizzlePromptSnapshotRepository", () => {
     await db.insert(sessions).values({
       id: sessionId,
       title: "Test Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
       createdAt: now,
       updatedAt: now,

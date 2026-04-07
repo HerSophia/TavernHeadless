@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { floors, messagePages, sessions, variables } from "../../db/schema.js";
 import { VariableCommitService } from "../variable-commit-service.js";
@@ -10,6 +11,7 @@ async function seedSession(database: DatabaseConnection, sessionId: string, now:
   await database.db.insert(sessions).values({
     id: sessionId,
     title: "Variable Commit Test",
+    accountId: DEFAULT_ADMIN_ACCOUNT_ID,
     status: "active",
     createdAt: now,
     updatedAt: now,
@@ -66,6 +68,7 @@ async function seedVariable(args: {
 }): Promise<void> {
   await args.database.db.insert(variables).values({
     id: args.id ?? nanoid(),
+    accountId: DEFAULT_ADMIN_ACCOUNT_ID,
     scope: args.scope,
     scopeId: args.scopeId,
     key: args.key,

@@ -227,12 +227,12 @@ export function createMessagesResource(client: TransportClient): MessagesResourc
         headers: buildAccountHeaders(options.accountId),
         query: compactObject({
           is_hidden: options.isHidden,
-          limit: options.limit ?? 100,
-          offset: options.offset ?? 0,
+          limit: options.limit,
+          offset: options.offset,
           page_id: options.pageId,
           role: options.role,
-          sort_by: options.sortBy ?? "created_at",
-          sort_order: options.sortOrder ?? "desc",
+          sort_by: options.sortBy,
+          sort_order: options.sortOrder,
         }),
       });
 

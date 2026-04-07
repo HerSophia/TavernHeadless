@@ -46,6 +46,16 @@ describe("getFloorContentMutationRejection", () => {
     });
   });
 
+  it("freezes variable writes on generating floors", () => {
+    expect(getFloorContentMutationRejection({
+      mutationKind: "variable.write",
+      floorState: "generating",
+    })).toEqual({
+      code: "content_target_locked",
+      message: "Generating floors are read-only for variable writes",
+    });
+  });
+
   it("still allows output page activation on committed live floors", () => {
     expect(getFloorContentMutationRejection({
       mutationKind: "page.activate",

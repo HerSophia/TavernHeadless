@@ -23,19 +23,21 @@ export interface ChatExportOptions extends ChatExportSnapshotOptions {
 export function serializeSessionToThChat(
   db: AppDb,
   sessionId: string,
-  options?: ChatExportOptions,
+  options: ChatExportOptions,
 ): ThChatFile {
   const snapshot = captureSessionExportSnapshot(db, sessionId, options);
-  return renderExportSnapshotToThChat(snapshot, { appVersion: options?.appVersion });
+  return renderExportSnapshotToThChat(snapshot, { appVersion: options.appVersion });
 }
 
 export function serializeSessionToStJsonl(
   db: AppDb,
   sessionId: string,
-  options?: Pick<ChatExportOptions, "accountId">,
+  options: Pick<ChatExportOptions, "accountId" | "accountMode" | "defaultAccountId">,
 ): string {
   const snapshot = captureSessionExportSnapshot(db, sessionId, {
-    accountId: options?.accountId,
+    accountId: options.accountId,
+    accountMode: options.accountMode,
+    defaultAccountId: options.defaultAccountId,
     includeVariables: false,
     includeMemories: false,
   });

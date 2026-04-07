@@ -93,6 +93,10 @@ export type VariablesResource = {
     sessionId: string;
   }): Promise<ResolvedVariablesSnapshot>;
   remove(options: { accountId?: AccountIdHint; variableId: string }): Promise<boolean>;
+  /**
+   * `branch` 变量要求目标分支已经被至少一个 floor 物化。
+   * 如果该 branch 还没有任何 floor，服务端会返回 `variable_host_not_found`。
+   */
   upsert(options: {
     accountId?: AccountIdHint;
     key: string;
@@ -102,6 +106,10 @@ export type VariablesResource = {
     branchId?: string;
     value: unknown;
   }): Promise<VariableRecord>;
+  /**
+   * `branch` 变量要求目标分支已经被至少一个 floor 物化。
+   * 如果该 branch 还没有任何 floor，服务端会返回 `variable_host_not_found`。
+   */
   upsertMany(options: {
     accountId?: AccountIdHint;
     items: Array<{
@@ -133,14 +141,14 @@ export function createVariablesResource(client: TransportClient): VariablesResou
     async list(options = {}): Promise<VariableRecord[]> {
       const query = buildQueryString({
         key: options.key,
-        limit: options.limit ?? 100,
-        offset: options.offset ?? 0,
+        limit: options.limit,
+        offset: options.offset,
         scope: options.scope,
         scope_id: options.scopeId,
         session_id: options.sessionId,
         branch_id: options.branchId,
-        sort_by: options.sortBy ?? "updated_at",
-        sort_order: options.sortOrder ?? "desc",
+        sort_by: options.sortBy,
+        sort_order: options.sortOrder,
       });
       const pathname = query ? `/variables?${query}` : "/variables";
       const response = await client.fetchJson<Record<string, unknown>>(pathname, {

@@ -12,6 +12,7 @@ import type { STPreset, STPromptEntry } from './types/preset.js';
 export interface BuildImportedPresetPromptGraphOptions {
   artifactId?: string;
   depthLevels?: number[];
+  outletNames?: string[];
 }
 
 const ROOT_GROUP_ID = 'imported-st-preset-root';
@@ -42,6 +43,23 @@ function toNodePlacement(promptEntry: STPromptEntry | undefined, order: number, 
     depth: placement.depth,
     order: placement.order,
   };
+}
+
+function toOutletNodePlacement(
+  preset: STPreset,
+  outletName: string,
+  fallbackOrder: number,
+): PromptPlacement {
+  const promptEntry = getPromptEntry(preset, outletName);
+  if (promptEntry?.marker) {
+    return {
+      kind: 'anchor',
+      anchorId: outletName,
+      order: 0,
+    };
+  }
+
+  return toNodePlacement(promptEntry, fallbackOrder);
 }
 
 function makeStaticTextNode(args: {
@@ -301,6 +319,25 @@ export function buildImportedPresetPromptGraph(
       position: 'depth',
       depth,
       metadata: { source: 'native-fallback', reason: 'depth worldbook entries detected at runtime' },
+    });
+  }
+
+  const outletNames = [...new Set(options.outletNames ?? [])].filter((outletName) => outletName.trim().length > 0).sort();
+  for (const [index, outletName] of outletNames.entries()) {
+    if (hasNode(nodes, (node) => node.nodeType === 'worldbook' && node.position === 'outlet' && node.outletName === outletName)) {
+      continue;
+    }
+
+    pushNode(nodes, {
+      id: `native:worldbook:outlet:${outletName}`,
+      name: `Worldbook Outlet ${outletName}`,
+      nodeType: 'worldbook',
+      enabled: true,
+      role: 'system',
+      placement: toOutletNodePlacement(preset, outletName, chatHistoryOrder + 1.5 + index / 1000),
+      position: 'outlet',
+      outletName,
+      metadata: { source: 'native-fallback', reason: 'outlet worldbook entries detected at runtime' },
     });
   }
 

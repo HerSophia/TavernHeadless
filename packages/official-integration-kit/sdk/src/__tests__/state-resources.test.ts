@@ -557,9 +557,6 @@ describe("sdk state resources", () => {
     const [listUrl] = fetchImpl.mock.calls[1]!;
     const listRequestUrl = new URL(listUrl as string);
     expect(listRequestUrl.pathname).toBe("/variables");
-    expect(listRequestUrl.searchParams.get("sort_by")).toBe("updated_at");
-    expect(listRequestUrl.searchParams.get("sort_order")).toBe("desc");
-    expect(listRequestUrl.searchParams.get("limit")).toBe("100");
-    expect(listRequestUrl.searchParams.get("offset")).toBe("0");
+    expect(listRequestUrl.search).toBe("");
   });
 });

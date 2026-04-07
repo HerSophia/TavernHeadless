@@ -38,6 +38,11 @@ export type RespondGenerationParams = {
 
 export type PromptIntent = "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
 
+export type SessionCharacterSyncPolicy = "pin" | "manual" | "force";
+export type SessionPromptMode = "compat_strict" | "compat_plus" | "native";
+export type SessionCharacterSnapshotInput = { name: string } & Record<string, unknown>;
+export type SessionUserSnapshotInput = { name: string } & Record<string, unknown>;
+
 
 export type SessionCharacterBinding = {
   characterId: string | null;
@@ -46,7 +51,7 @@ export type SessionCharacterBinding = {
     hasGreeting: boolean;
     name: string;
   } | null;
-  syncPolicy: "pin" | "manual" | "force" | "";
+  syncPolicy: SessionCharacterSyncPolicy;
 };
 
 export type SessionUserBinding = {
@@ -57,26 +62,6 @@ export type SessionUserBinding = {
 };
 
 export type SessionRecord = {
-  characterBinding: {
-    snapshotSummary: {
-      hasGreeting: boolean;
-      name: string;
-    } | null;
-  } | null;
-  createdAt: number;
-  id: string;
-  status: string;
-  title: string | null;
-  updatedAt: number;
-  userBinding: {
-    snapshotSummary: {
-      name: string;
-    } | null;
-  } | null;
-  worldbookProfileId: string | null;
-};
-
-export type SessionDetail = {
   characterBinding: SessionCharacterBinding | null;
   createdAt: number;
   id: string;
@@ -93,6 +78,8 @@ export type SessionDetail = {
   userBinding: SessionUserBinding | null;
   worldbookProfileId: string | null;
 };
+
+export type SessionDetail = SessionRecord;
 
 export type TimelineMessage = {
   content: string;
@@ -310,7 +297,7 @@ export type RespondDryRunPromptSnapshot = {
   worldbookActivatedEntryUids: number[];
   regexPreRuleNames: string[];
   regexPostRuleNames: string[];
-  promptMode: "compat_strict" | "compat_plus" | "native";
+  promptMode: SessionPromptMode;
   promptDigest: string;
   tokenEstimate: number;
 };
@@ -362,8 +349,22 @@ export type SessionsListOptions = {
 
 export type SessionsCreateOptions = {
   accountId?: AccountIdHint;
+  characterId?: string;
+  characterSnapshot?: SessionCharacterSnapshotInput;
+  characterSyncPolicy?: SessionCharacterSyncPolicy;
+  characterVersionId?: string;
+  metadata?: unknown;
+  modelName?: string;
+  modelParams?: unknown;
+  modelProvider?: string;
+  presetId?: string;
+  promptMode?: SessionPromptMode;
+  regexProfileId?: string;
   status?: "active" | "archived";
   title?: string;
+  userId?: string;
+  userSnapshot?: SessionUserSnapshotInput;
+  worldbookProfileId?: string;
 };
 
 export type SessionsGetDetailOptions = {
@@ -373,9 +374,23 @@ export type SessionsGetDetailOptions = {
 
 export type SessionsUpdateOptions = {
   accountId?: AccountIdHint;
+  characterId?: string;
+  characterSnapshot?: SessionCharacterSnapshotInput;
+  characterSyncPolicy?: SessionCharacterSyncPolicy;
+  characterVersionId?: string;
+  metadata?: unknown;
+  modelName?: string;
+  modelParams?: unknown;
+  modelProvider?: string;
+  presetId?: string;
+  promptMode?: SessionPromptMode;
+  regexProfileId?: string;
   sessionId: string;
   status?: "active" | "archived";
   title?: string;
+  userId?: string;
+  userSnapshot?: SessionUserSnapshotInput;
+  worldbookProfileId?: string;
 };
 
 export type SessionsRemoveOptions = {
@@ -530,7 +545,7 @@ export type SessionsResource = {
   respondStream(options: SessionsRespondStreamOptions): Promise<RespondResult>;
   syncCharacter(options: SessionsSyncCharacterOptions): Promise<SessionDetail>;
   timeline(options: SessionsTimelineOptions): Promise<SessionTimeline>;
-  update(options: SessionsUpdateOptions): Promise<boolean>;
+  update(options: SessionsUpdateOptions): Promise<SessionRecord>;
 };
 
 export function createSessionsResource(client: TransportClient): SessionsResource {
@@ -560,10 +575,7 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
     },
     async create(options: SessionsCreateOptions = {}): Promise<SessionRecord | null> {
       const response = await client.post("/sessions", {
-        body: compactObject({
-          status: options.status,
-          title: options.title,
-        }),
+        body: mapSessionWriteBody(options),
         headers: buildAccountHeaders(options.accountId),
       });
 
@@ -650,10 +662,10 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
         headers: buildAccountHeaders(options.accountId),
         query: compactObject({
           keyword: options.keyword,
-          limit: options.limit ?? 50,
-          offset: options.offset ?? 0,
-          sort_by: options.sortBy ?? "updated_at",
-          sort_order: options.sortOrder ?? "desc",
+          limit: options.limit,
+          offset: options.offset,
+          sort_by: options.sortBy,
+          sort_order: options.sortOrder,
           status: options.status,
         }),
       });
@@ -806,19 +818,21 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
         sessionId: readOptionalString(data?.session_id),
       };
     },
-    async update(options: SessionsUpdateOptions): Promise<boolean> {
+    async update(options: SessionsUpdateOptions): Promise<SessionRecord> {
       const response = await client.patch("/sessions/{id}", {
-        body: compactObject({
-          status: options.status,
-          title: options.title,
-        }),
+        body: mapSessionWriteBody(options),
         headers: buildAccountHeaders(options.accountId),
         path: {
           id: options.sessionId,
         },
       });
 
-      return response.status === 200;
+      const payload = mapSession(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Session update returned an invalid payload");
+      }
+
+      return payload;
     },
   };
 }
@@ -873,6 +887,27 @@ function mapGenerationParams(generationParams?: RespondGenerationParams): Record
   });
 
   return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+function mapSessionWriteBody(options: SessionsCreateOptions | SessionsUpdateOptions): Record<string, unknown> {
+  return compactObject({
+    character_id: options.characterId,
+    character_snapshot: options.characterSnapshot,
+    character_sync_policy: options.characterSyncPolicy,
+    character_version_id: options.characterVersionId,
+    metadata: options.metadata,
+    model_name: options.modelName,
+    model_params: options.modelParams,
+    model_provider: options.modelProvider,
+    preset_id: options.presetId,
+    prompt_mode: options.promptMode,
+    regex_profile_id: options.regexProfileId,
+    status: options.status,
+    title: options.title,
+    user_id: options.userId,
+    user_snapshot: options.userSnapshot,
+    worldbook_profile_id: options.worldbookProfileId,
+  });
 }
 
 function mapRespondRequestBody(options: SessionsRespondOptions | SessionsRespondStreamOptions): Record<string, unknown> {
@@ -1181,29 +1216,7 @@ function mapRegeneratePayload(payload: Record<string, unknown> | null, errorMess
 }
 
 function mapSession(value: unknown): SessionRecord | null {
-  const detail = mapSessionDetail(value);
-  if (!detail) {
-    return null;
-  }
-
-  return {
-    characterBinding: detail.characterBinding
-      ? {
-          snapshotSummary: detail.characterBinding.snapshotSummary,
-        }
-      : null,
-    createdAt: detail.createdAt,
-    id: detail.id,
-    status: detail.status,
-    title: detail.title,
-    updatedAt: detail.updatedAt,
-    userBinding: detail.userBinding
-      ? {
-          snapshotSummary: detail.userBinding.snapshotSummary,
-        }
-      : null,
-    worldbookProfileId: detail.worldbookProfileId,
-  };
+  return mapSessionDetail(value);
 }
 
 function mapSessionDetail(value: unknown): SessionDetail | null {
@@ -1248,7 +1261,7 @@ function mapSessionCharacterBinding(value: unknown): SessionCharacterBinding | n
           name: readString(snapshotSummary.name),
         }
       : null,
-    syncPolicy: readString(record.sync_policy) as SessionCharacterBinding["syncPolicy"],
+    syncPolicy: readString(record.sync_policy, "pin") as SessionCharacterBinding["syncPolicy"],
   };
 }
 

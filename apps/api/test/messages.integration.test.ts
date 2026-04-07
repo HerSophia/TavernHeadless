@@ -356,4 +356,37 @@ describe("message routes", () => {
       ])
     );
   });
+
+  it("maps message sequence conflicts to stable 409 errors", async () => {
+    const sessionId = await createSession();
+    const floorId = await createFloor({ sessionId, floorNo: 2, branchId: "main" });
+    const pageId = await createPage({ floorId, pageNo: 1, pageKind: "mixed" });
+    const firstMessage = await createMessage({ pageId, seq: 0, role: "user", content: "First" });
+    const secondMessage = await createMessage({ pageId, seq: 1, role: "assistant", content: "Second" });
+
+    const duplicateCreateResponse = await app.inject({
+      method: "POST",
+      url: "/messages",
+      payload: {
+        page_id: pageId,
+        seq: firstMessage.seq,
+        role: "assistant",
+        content: "Duplicate seq",
+      },
+    });
+
+    expect(duplicateCreateResponse.statusCode, duplicateCreateResponse.body).toBe(409);
+    expect(duplicateCreateResponse.json<ErrorResponse>().error.code).toBe("message_conflict");
+
+    const duplicatePatchResponse = await app.inject({
+      method: "PATCH",
+      url: `/messages/${secondMessage.id}`,
+      payload: {
+        seq: firstMessage.seq,
+      },
+    });
+
+    expect(duplicatePatchResponse.statusCode, duplicatePatchResponse.body).toBe(409);
+    expect(duplicatePatchResponse.json<ErrorResponse>().error.code).toBe("message_conflict");
+  });
 });

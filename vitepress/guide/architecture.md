@@ -360,6 +360,9 @@ Profile 可以按作用域（全局或会话）和槽位粒度绑定。例如：
 3. 打包成「记忆摘要块」注入到提示词中。
 4. 在兼容模式下，还会按酒馆的方式将摘要放到旧楼层的位置（替代被隐藏的完整内容）。
 
+主聊天链读取记忆时，会先按当前上下文展开 `global → chat → floor` 三层可见范围，
+再按既有的 importance / balanced / dual-summary 规则统一排序、裁剪和注入。
+
 ### 安全机制
 
 - 记忆员实例的输出需要经过校验才会写入数据库，不会直接写入。
@@ -489,7 +492,7 @@ Profile 可以按作用域（全局或会话）和槽位粒度绑定。例如：
 | GET  | `/export/regex/:id`      | 导出正则配置（ST 格式 JSON 数组）             |
 | GET  | `/export/character/:id`  | 导出角色卡（ST Character Card V2 JSON）       |
 
-导入和导出形成对称关系：导入解析外部格式写入数据库，导出从数据库序列化为标准文件。聊天文件额外有一套 TavernHeadless 原生格式（`.thchat`），能无损保留完整四层数据结构、变量和记忆。
+导入和导出形成对称关系：导入解析外部格式写入数据库，导出从数据库序列化为标准文件。聊天文件额外有一套 TavernHeadless 原生格式（`.thchat`），能无损保留完整四层数据结构、变量、记忆，以及 superseded 楼层历史关系。
 
 ---
 
@@ -540,7 +543,7 @@ Profile 可以按作用域（全局或会话）和槽位粒度绑定。例如：
 - 所有实例（叙述者、导演、校验员、记忆员）都可以调用工具，每个实例的权限独立配置。
 - 每次工具调用都会生成一条执行记录，归属到当前楼层，方便审计和排查。
 - 运行时工具目录是**会话级**快照，通过 `/sessions/:id/tools/runtime` 查看当前会话真正可调用的工具。
-- 当前只支持内联模式（`inline`），即大模型在生成过程中自主决定是否调用工具。
+- 当前公开配置的 `toolMode` 仍只有 `inline`，即大模型在生成过程中自主决定是否调用工具。但部分 allowlisted 工具在 `inline` 回合内部可以先返回 deferred receipt，再由后台 `runtime_job` 延后完成。
 
 运行时工具目录中的单个工具仍可能带有 `defaultDeliveryMode = async_job`。这表示该工具在当前内联回合里会返回受理回执，并由后台 `runtime_job` 继续完成真实执行。
 
@@ -557,7 +560,7 @@ Profile 可以按作用域（全局或会话）和槽位粒度绑定。例如：
 
 | 模式 | 说明 |
 | ---- | ---- |
-| `inline` | 大模型在生成过程中自主决定是否调用工具。这是默认模式，也是当前唯一可用的模式。 |
+| `inline` | 大模型在生成过程中自主决定是否调用工具。这是默认模式，也是当前唯一可用的公开配置模式。对于允许延后执行的工具，本轮也可能先返回 deferred receipt，再通过 `runtime_job` 继续执行。 |
 | `standalone` | 当前未实现。服务端会返回结构化配置错误。 |
 | `both` | 当前未实现。服务端会返回结构化配置错误。 |
 
@@ -587,6 +590,13 @@ Profile 可以按作用域（全局或会话）和槽位粒度绑定。例如：
 - 工具的写入副作用先停留在页级沙箱，只有楼层提交时才正式生效。
 - 系统同时保留了一套兼容的 `tool_call_record` 查询接口，供旧版客户端使用。
 - MCP 工具目录在 live 列举失败时，可以回退到 cached 快照；会话级运行时目录会通过 `catalog_source` 标记 `live` 或 `cached`。
+- `script` handler 在 Beta3 默认关闭。
+- 只有服务端显式设置 `ENABLE_UNSAFE_SCRIPT_HANDLER=true` 时，`/tools/definitions` 的 script 创建、更新和重新启用才会放行。
+- 默认关闭时，历史 definition-backed script tools 会继续出现在 `/sessions/:id/tools/runtime` 中，但会被标记为 `unavailable`，不会进入可执行目录。
+- `/mcp/servers` 和 `/mcp/servers/:id` 现在会回显 `live_status`，用来说明数据库配置是否已经进入 live runtime manager。
+- 当 `ENABLE_MCP=true` 时，MCP 配置 create / update / enable / disable / delete 会直接同步 `McpConnectionManager`，避免数据库状态和运行时状态分裂。
+- 世界书 `position=outlet` 现在会进入真实 prompt 组装：优先按同名 outlet marker/placement 注入；没有匹配 marker 时，会回退为显式 section，而不是静默丢弃。
+- Regex 主链现在会透传 `runOnEdit` 与 depth 上下文：`edit-and-regenerate` 使用 `channel="edit"`，USER_INPUT / AI_OUTPUT / at-depth WORLD_INFO 会消费 `minDepth` / `maxDepth`。
 
 ### API 端点
 

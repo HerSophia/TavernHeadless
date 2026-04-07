@@ -1,2 +1,0 @@
-protocol=https
-host=github.com

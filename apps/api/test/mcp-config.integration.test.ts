@@ -46,6 +46,17 @@ type McpServerResponse = {
   default_side_effect_level: string;
   created_at: number;
   updated_at: number;
+  live_status: {
+    attached: boolean;
+    connected_at: number | null;
+    error: string | null;
+    last_timeout_at: number | null;
+    reason: "disabled" | "manager_unavailable" | "not_attached" | null;
+    reconnect_required: boolean;
+    state: string;
+    tool_count: number;
+    tools_refreshed_at: number | null;
+  };
 };
 
 describe("MCP config routes", () => {
@@ -146,6 +157,33 @@ describe("MCP config routes", () => {
     expect(disabledBody.data[0]?.http?.headers_masked).toEqual({ authorization: "secr****5678" });
     expect(detailBody.data.http?.headers_masked).toEqual({ authorization: "secr****5678" });
     expect(detailBody.data.http).not.toHaveProperty("headers");
+  });
+
+  it("marks live_status as manager_unavailable when ENABLE_MCP is disabled", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/mcp/servers",
+      payload: {
+        name: "Detached Server",
+        transport: "stdio",
+        stdio: { command: "node" },
+      },
+    });
+
+    expect(createRes.statusCode).toBe(201);
+    const created = createRes.json<ItemResponse<McpServerResponse>>().data;
+    expect(created.live_status).toMatchObject({
+      attached: false,
+      reason: "manager_unavailable",
+      state: "disconnected",
+    });
+
+    const detailRes = await app.inject({ method: "GET", url: `/mcp/servers/${created.id}` });
+    expect(detailRes.statusCode).toBe(200);
+    expect(detailRes.json<ItemResponse<McpServerResponse>>().data.live_status).toMatchObject({
+      attached: false,
+      reason: "manager_unavailable",
+    });
   });
 
   it("gets a single config and returns 404 when the config does not exist", async () => {

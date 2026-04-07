@@ -60,7 +60,7 @@ describe("sdk core resources", () => {
     expect((init?.headers as Headers).get("x-account-id")).toBe("acc-1");
   });
 
-  it("lists sessions with default query and filters invalid rows", async () => {
+  it("lists sessions without overriding backend defaults and filters invalid rows", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
         data: [
@@ -94,13 +94,23 @@ describe("sdk core resources", () => {
     expect(result).toEqual([
       {
         characterBinding: {
+          characterId: null,
+          characterVersionId: null,
           snapshotSummary: {
             hasGreeting: true,
             name: "Seraphina",
           },
+          syncPolicy: "pin",
         },
         createdAt: 10,
         id: "session-1",
+        metadata: null,
+        modelName: null,
+        modelParams: null,
+        modelProvider: null,
+        presetId: null,
+        promptMode: null,
+        regexProfileId: null,
         status: "active",
         title: "Session A",
         updatedAt: 11,
@@ -108,6 +118,7 @@ describe("sdk core resources", () => {
           snapshotSummary: {
             name: "Alice",
           },
+          userId: null,
         },
         worldbookProfileId: null,
       },
@@ -117,10 +128,7 @@ describe("sdk core resources", () => {
     const requestUrl = new URL(url as string);
 
     expect(requestUrl.pathname).toBe("/sessions");
-    expect(requestUrl.searchParams.get("limit")).toBe("50");
-    expect(requestUrl.searchParams.get("offset")).toBe("0");
-    expect(requestUrl.searchParams.get("sort_by")).toBe("updated_at");
-    expect(requestUrl.searchParams.get("sort_order")).toBe("desc");
+    expect(requestUrl.search).toBe("");
   });
 
   it("maps the session runtime tool catalog", async () => {
@@ -481,26 +489,76 @@ describe("sdk core resources", () => {
     expect(requestUrl.searchParams.get("offset")).toBe("0");
   });
 
-  it("updates sessions with compacted bodies and returns false for non-200 success statuses", async () => {
+  it("updates sessions with expanded payloads and returns the updated session", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(null, {
-        status: 204,
+      jsonResponse({
+        data: {
+          character_binding: null,
+          created_at: 10,
+          id: "session-1",
+          metadata: { source: "sdk-test" },
+          model_name: "gpt-4o-mini",
+          model_params: { temperature: 0.7 },
+          model_provider: "openai",
+          preset_id: "preset-1",
+          prompt_mode: "native",
+          regex_profile_id: "regex-1",
+          status: "active",
+          title: "Renamed",
+          updated_at: 11,
+          user_binding: null,
+          worldbook_profile_id: "wb-1",
+        },
       }),
     );
     const client = createTavernClient({ baseUrl, fetchImpl });
 
     await expect(
       client.sessions.update({
+        metadata: { source: "sdk-test" },
+        modelName: "gpt-4o-mini",
+        modelParams: { temperature: 0.7 },
+        modelProvider: "openai",
+        presetId: "preset-1",
+        promptMode: "native",
+        regexProfileId: "regex-1",
         sessionId: "session-1",
         title: "Renamed",
+        worldbookProfileId: "wb-1",
       }),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({
+      characterBinding: null,
+      createdAt: 10,
+      id: "session-1",
+      metadata: { source: "sdk-test" },
+      modelName: "gpt-4o-mini",
+      modelParams: { temperature: 0.7 },
+      modelProvider: "openai",
+      presetId: "preset-1",
+      promptMode: "native",
+      regexProfileId: "regex-1",
+      status: "active",
+      title: "Renamed",
+      updatedAt: 11,
+      userBinding: null,
+      worldbookProfileId: "wb-1",
+    });
 
     const [url, init] = fetchImpl.mock.calls[0]!;
     expect(url).toBeInstanceOf(URL);
     expect(String(url)).toBe("http://localhost:3000/sessions/session-1");
     expect(init?.method).toBe("PATCH");
-    expect(init?.body).toBe(JSON.stringify({ title: "Renamed" }));
+    expect(init?.body).toBe(JSON.stringify({
+      metadata: { source: "sdk-test" },
+      model_name: "gpt-4o-mini",
+      model_params: { temperature: 0.7 },
+      model_provider: "openai",
+      preset_id: "preset-1",
+      prompt_mode: "native",
+      regex_profile_id: "regex-1",
+      title: "Renamed",
+      worldbook_profile_id: "wb-1",
+    }));
   });
 
   it("returns boolean delete results for sessions", async () => {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { MissingAccountContextError } from "../../accounts/account-context.js";
 import { createDatabase, type AppDb } from "../../db/client";
 import { accounts } from "../../db/schema.js";
 import { DrizzleVariableRepository } from "../drizzle-variable-repository";
@@ -112,6 +113,12 @@ describe("DrizzleVariableRepository", () => {
     expect((await repo.findByKey("global", "global", "theme", { accountId: "acc-b" }))?.value).toBe("blue");
     expect(await repo.findAllByScope("global", "global", { accountId: "acc-a" })).toHaveLength(1);
     expect(await repo.findAllByScope("global", "global", { accountId: "acc-b" })).toHaveLength(1);
+  });
+
+  it("rejects missing account context in multi-account mode", async () => {
+    const strictRepo = new DrizzleVariableRepository(db, { accountMode: "multi" });
+
+    await expect(strictRepo.findByKey("global", "global", "theme")).rejects.toBeInstanceOf(MissingAccountContextError);
   });
 
   it("supports null and boolean values", async () => {

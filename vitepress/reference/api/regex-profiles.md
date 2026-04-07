@@ -139,6 +139,12 @@ PUT /regex-profiles/:id
 }
 ```
 
+运行时说明：
+
+- `runOnEdit` 现在会进入真实主链：`edit-and-regenerate` 会按 `channel="edit"` 执行 USER_INPUT 正则。
+- `minDepth` / `maxDepth` 现在会进入主 prompt 链路上下文，用于 USER_INPUT、AI_OUTPUT 以及 at-depth WORLD_INFO 的规则过滤。
+- `promptOnly` / `markdownOnly` / `runOnEdit` / depth 字段都会按当前执行通道共同参与门控，而不再只是保留导入。
+
 ### 响应 `200`
 
 ```json

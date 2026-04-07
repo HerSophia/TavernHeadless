@@ -148,11 +148,11 @@ export function createCharactersResource(client: TransportClient): CharactersRes
     async list(options: CharactersListOptions = {}): Promise<CharacterListItem[]> {
       const query = buildQueryString({
         keyword: options.keyword,
-        limit: options.limit ?? 100,
-        offset: options.offset ?? 0,
-        sort_by: options.sortBy ?? "updated_at",
-        sort_order: options.sortOrder ?? "desc",
-        status: options.status ?? "active",
+        limit: options.limit,
+        offset: options.offset,
+        sort_by: options.sortBy,
+        sort_order: options.sortOrder,
+        status: options.status,
       });
       const pathname = query ? `/characters?${query}` : "/characters";
       const response = await client.fetchJson<Record<string, unknown>>(pathname, {

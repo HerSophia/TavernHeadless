@@ -452,6 +452,7 @@ export async function assemblePrompt(
           buildImportedPresetPromptGraph(presetData, {
             artifactId: promptSnapshot.presetId ?? undefined,
             depthLevels: collectWorldbookDepthLevels(worldBookResults),
+            outletNames: collectWorldbookOutletNames(worldBookResults),
           }),
           {
             intent: promptIntent,
@@ -524,7 +525,9 @@ export async function assemblePrompt(
 
   if (enabledRegexScripts.length > 0) {
     preProcess = (candidateMessages: ChatMessage[]): ChatMessage[] => {
-      return candidateMessages.map((message) => {
+      const depthByMessageIndex = buildRegexDepthByMessageIndex(candidateMessages);
+
+      return candidateMessages.map((message, index) => {
         if (message.role === "user") {
           return {
             ...message,
@@ -534,6 +537,7 @@ export async function assemblePrompt(
               REGEX_PLACEMENT.USER_INPUT,
               {
                 ...regexContextBase,
+                depth: depthByMessageIndex.get(index),
                 channel: "prompt",
               }
             ),
@@ -549,6 +553,7 @@ export async function assemblePrompt(
               REGEX_PLACEMENT.AI_OUTPUT,
               {
                 ...regexContextBase,
+                depth: depthByMessageIndex.get(index),
                 channel: "prompt",
               }
             ),
@@ -562,6 +567,7 @@ export async function assemblePrompt(
     postProcess = (text: string): string => {
       return applyRegexScripts(text, enabledRegexScripts, REGEX_PLACEMENT.AI_OUTPUT, {
         ...regexContextBase,
+        depth: 0,
         channel: "persist",
       });
     };
@@ -1001,24 +1007,28 @@ function applyWorldInfoRegexRules<T extends TriggerResult>(
     substituteReplaceParams: substituteRegexParams,
   };
 
-  const transformContent = (content: string) => {
+  const depthByUid = new Map(worldBookResults.atDepth.map((depthEntry) => [depthEntry.entry.uid, depthEntry.depth] as const));
+
+  const transformContent = (content: string, depth?: number) => {
     const persistedContent = applyRegexScripts(content, worldInfoScripts, REGEX_PLACEMENT.WORLD_INFO, {
       ...regexContextBase,
+      depth,
       channel: "persist",
     });
 
     return applyRegexScripts(persistedContent, worldInfoScripts, REGEX_PLACEMENT.WORLD_INFO, {
       ...regexContextBase,
+      depth,
       channel: "prompt",
     });
   };
 
   const transformedContentByUid = new Map(
-    worldBookResults.activated.map((entry) => [entry.uid, transformContent(entry.content)] as const)
+    worldBookResults.activated.map((entry) => [entry.uid, transformContent(entry.content, depthByUid.get(entry.uid))] as const)
   );
   const applyEntryContent = <T extends { uid: number; content: string }>(entry: T): T => ({
     ...entry,
-    content: transformedContentByUid.get(entry.uid) ?? transformContent(entry.content),
+    content: transformedContentByUid.get(entry.uid) ?? transformContent(entry.content, depthByUid.get(entry.uid)),
   });
 
   return {
@@ -1047,6 +1057,17 @@ function worldbookRoleToChatRole(role: number): ChatMessage["role"] {
     case 2: return "assistant";
     default: return "system";
   }
+}
+
+function collectWorldbookOutletNames(worldBookResults: TriggerResult | undefined): string[] {
+  if (!worldBookResults?.outletEntries) {
+    return [];
+  }
+
+  return Object.keys(worldBookResults.outletEntries)
+    .map((outletName) => outletName.trim())
+    .filter((outletName) => outletName.length > 0)
+    .sort();
 }
 
 function collectWorldbookDepthLevels(worldBookResults: TriggerResult | undefined): number[] {
@@ -1157,7 +1178,14 @@ function toPromptGraphWorldbookEntries(
     role: worldbookRoleToChatRole(depthEntry.role),
   }));
 
-  return [...before, ...after, ...depth];
+  const outlet = Object.entries(worldBookResults.outletEntries ?? {}).flatMap(([outletName, entries]) => entries.map((entry) => ({
+    id: `outlet:${outletName}:${entry.uid}`,
+    content: entry.content,
+    position: "outlet" as const,
+    outletName,
+  })));
+
+  return [...before, ...after, ...depth, ...outlet];
 }
 
 /**
@@ -1297,6 +1325,23 @@ function collectActivatedEntryUids(worldBookResults: TriggerResult | undefined):
   }
 
   return [...uids].sort((left, right) => left - right);
+}
+
+function buildRegexDepthByMessageIndex(messages: ChatMessage[]): Map<number, number> {
+  const depthByMessageIndex = new Map<number, number>();
+  let depth = 0;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role !== "user" && message.role !== "assistant") {
+      continue;
+    }
+
+    depthByMessageIndex.set(index, depth);
+    depth += 1;
+  }
+
+  return depthByMessageIndex;
 }
 
 function collectRegexRuleNames(scripts: { id: string; scriptName: string; placement: number[] }[], placement: number): string[] {

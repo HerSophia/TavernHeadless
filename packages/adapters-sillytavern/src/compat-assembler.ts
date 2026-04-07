@@ -180,6 +180,32 @@ function getPromptEntry(preset: STPreset, identifier: string): STPromptEntry | u
   return preset.prompts.find((entry) => entry.identifier === identifier);
 }
 
+function resolveOutletSectionPlacement(
+  preset: STPreset,
+  outletName: string,
+  fallbackOrder: number,
+): {
+  order: number;
+  insertion?: IRSection['insertion'];
+} {
+  const promptOrderIndex = preset.promptOrder.indexOf(outletName);
+  const promptEntry = getPromptEntry(preset, outletName);
+  const placement = promptEntry?.behavior?.placement;
+
+  return {
+    order: promptOrderIndex >= 0 ? promptOrderIndex : fallbackOrder,
+    ...(placement?.kind === 'in_chat'
+      ? {
+          insertion: {
+            kind: 'in_chat' as const,
+            depth: placement.depth,
+            order: placement.order,
+          },
+        }
+      : {}),
+  };
+}
+
 // ── 主函数 ────────────────────────────────────────────
 
 /**
@@ -418,6 +444,26 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
           source: `worldbook:${depthEntry.entry.uid}@depth${depthEntry.depth}`,
           prunable: false,
         }],
+      });
+    }
+  }
+
+  const outletEntries = Object.entries(worldBookResults?.outletEntries ?? {});
+  if (outletEntries.length > 0) {
+    let fallbackOrder = sections.reduce((max, section) => Math.max(max, section.order), 0) + 1;
+    for (const [outletName, entries] of outletEntries) {
+      const entryMessages = worldBookEntriesToMessages(entries, preset.wiFormat, variables);
+      if (entryMessages.length === 0) {
+        continue;
+      }
+
+      const placement = resolveOutletSectionPlacement(preset, outletName, fallbackOrder++);
+      sections.push({
+        name: `worldInfoOutlet:${outletName}`,
+        order: placement.order,
+        pinned: true,
+        ...(placement.insertion ? { insertion: placement.insertion } : {}),
+        messages: entryMessages,
       });
     }
   }

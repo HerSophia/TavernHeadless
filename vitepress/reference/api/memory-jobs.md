@@ -6,7 +6,7 @@ outline: [2, 3]
 
 这组接口用来查看和管理记忆系统的后台作业。它们主要面向调试、运维和自动化工具，不属于普通聊天流程。
 
-记忆系统在对话过程中会自动产生后台作业——提取摘要、压缩长摘要、定期维护等。这些作业在后台排队执行，不阻塞对话。通过这组接口，你可以查看作业状态、手动重试失败的作业、或主动触发压缩和重建。
+记忆系统在对话过程中会自动产生后台作业——提取摘要、压缩长摘要、定期维护等。这些作业在后台排队执行，不阻塞对话。通过这组接口，你可以查看作业状态、手动重试失败的作业，或主动触发压缩与 `rebuild_scope` 维护入口。
 
 ## 基本概念
 
@@ -17,7 +17,7 @@ outline: [2, 3]
 | `ingest_turn` | 回合提交后自动触发，从对话内容中提取记忆 |
 | `compact_macro` | 把多条短摘要压缩成一条长摘要 |
 | `maintenance` | 定期维护：衰减排序、弃用过期记忆 |
-| `rebuild_scope` | 重建某个作用域的记忆状态 |
+| `rebuild_scope` | 当前是辅助维护入口：触发该 scope 的重整流程，并在需要时继续排入 `compact_macro` |
 
 ### 作业状态
 
@@ -209,13 +209,15 @@ GET /memory/scopes
 
 ---
 
-## 触发重建
+## 触发 `rebuild_scope`
 
 ```http
 POST /memory/scopes/:scope/:scopeId/rebuild
 ```
 
-手动为某个作用域排入一个重建作业。重建会重新处理该 scope 下的所有记忆。
+手动为某个作用域排入一个 `rebuild_scope` 作业。
+
+当前 Beta3 语义下，这个入口主要用于触发该 scope 的维护与 compaction 补偿流程，不应理解为“完整重建该 scope 下全部记忆真相”。
 
 这个接口要求服务端已经启用后台 worker。未启用时返回 `409`。
 
@@ -223,8 +225,8 @@ POST /memory/scopes/:scope/:scopeId/rebuild
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 | ---- | ---- | ---- | ---- | ---- |
-| `trigger_floor_id` | string | 否 | - | 作为重建起点的楼层 ID |
-| `force_compaction` | boolean | 否 | `true` | 重建后是否继续触发长摘要压缩 |
+| `trigger_floor_id` | string | 否 | - | 作为维护触发点的楼层 ID |
+| `force_compaction` | boolean | 否 | `true` | 是否继续显式触发长摘要压缩 |
 
 #### 错误
 

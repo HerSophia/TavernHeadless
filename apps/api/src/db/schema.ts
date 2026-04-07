@@ -18,7 +18,7 @@ export const accountUsers = sqliteTable(
   "account_user",
   {
     id: text("id").primaryKey(),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     name: text("name").notNull(),
     snapshotJson: text("snapshot_json").notNull(),
     status: text("status", { enum: ["active", "disabled", "deleted"] }).notNull().default("active"),
@@ -38,7 +38,7 @@ export const characters = sqliteTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     source: text("source").notNull().default("sillytavern"),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     status: text("status", { enum: ["active", "deleted"] }).notNull().default("active"),
     deletedAt: integer("deleted_at"),
     revision: integer("revision").notNull().default(0),
@@ -71,7 +71,7 @@ export const sessions = sqliteTable("session", {
   id: text("id").primaryKey(),
   title: text("title"),
   characterId: text("character_id").references(() => characters.id, { onDelete: "set null" }),
-  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
   characterVersionId: text("character_version_id").references(() => characterVersions.id, { onDelete: "set null" }),
   characterSnapshotJson: text("character_snapshot_json"),
   characterSyncPolicy: text("character_sync_policy", { enum: ["pin", "manual", "force"] }).notNull().default("pin"),
@@ -207,7 +207,7 @@ export const variables = sqliteTable(
   "variable",
   {
     id: text("id").primaryKey(),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     scope: text("scope", { enum: ["global", "chat", "floor", "branch", "page"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     key: text("key").notNull(),
@@ -249,7 +249,7 @@ export const memoryItems = sqliteTable(
     confidence: real("confidence").notNull().default(1),
     sourceFloorId: text("source_floor_id"),
     sourceMessageId: text("source_message_id"),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     status: text("status", { enum: ["active", "deprecated"] }).notNull().default("active"),
     lifecycleStatus: text("lifecycle_status", { enum: ["active", "compacted", "deprecated"] }).notNull().default("active"),
     sourceJobId: text("source_job_id"),
@@ -290,11 +290,12 @@ export const memoryEdges = sqliteTable(
     fromId: text("from_id").notNull().references(() => memoryItems.id, { onDelete: "cascade" }),
     toId: text("to_id").notNull().references(() => memoryItems.id, { onDelete: "cascade" }),
     relation: text("relation", { enum: ["supports", "contradicts", "updates", "derived_from", "compacts", "resolves"] }).notNull(),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     createdAt: integer("created_at").notNull(),
   },
   (table) => ({
     accountIdx: index("memory_edge_account_idx").on(table.accountId),
+    accountFromToRelationUnique: uniqueIndex("memory_edge_account_from_to_relation_uq").on(table.accountId, table.fromId, table.toId, table.relation),
   })
 );
 
@@ -484,7 +485,7 @@ export const presets = sqliteTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     source: text("source").notNull().default("sillytavern"),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     dataJson: text("data_json").notNull(),
     version: integer("version").notNull().default(1),
     createdAt: integer("created_at").notNull(),
@@ -501,7 +502,7 @@ export const worldbooks = sqliteTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     source: text("source").notNull().default("sillytavern"),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     dataJson: text("data_json").notNull(),
     version: integer("version").notNull().default(1),
     createdAt: integer("created_at").notNull(),
@@ -555,7 +556,7 @@ export const regexProfiles = sqliteTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     source: text("source").notNull().default("sillytavern"),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     dataJson: text("data_json").notNull(),
     version: integer("version").notNull().default(1),
     createdAt: integer("created_at").notNull(),
@@ -620,7 +621,7 @@ export const llmProfiles = sqliteTable(
   {
     id: text("id").primaryKey(),
     presetName: text("preset_name").notNull(),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     provider: text("provider", { enum: ["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"] }).notNull(),
     modelId: text("model_id").notNull(),
     baseUrl: text("base_url"),
@@ -643,7 +644,7 @@ export const llmProfileBindings = sqliteTable(
   {
     id: text("id").primaryKey(),
     scope: text("scope", { enum: ["global", "session"] }).notNull(),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     scopeId: text("scope_id").notNull(),
     instanceSlot: text("instance_slot").notNull().default("*"),
     paramsJson: text("params_json"),
@@ -661,7 +662,7 @@ export const llmInstanceConfigs = sqliteTable(
   "llm_instance_config",
   {
     id: text("id").primaryKey(),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     scope: text("scope", { enum: ["global", "session"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     instanceSlot: text("instance_slot", { enum: ["*", "narrator", "director", "verifier", "memory"] }).notNull(),
@@ -750,12 +751,15 @@ export const toolDefinitions = sqliteTable(
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     handlerType: text("handler_type", { enum: ["script", "prompt", "delegate"] }).notNull().default("script"),
     handlerJson: text("handler_json").notNull().default('{}'),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
   (table) => ({
-    nameSourceUnique: uniqueIndex("tool_definition_name_source_source_id_uq").on(table.name, table.source, table.sourceId),
+    nameSourceWithSourceIdUnique: uniqueIndex("tool_definition_account_name_source_source_id_not_null_uq")
+      .on(table.accountId, table.name, table.source, table.sourceId)
+      .where(sql`${table.sourceId} IS NOT NULL`),
+    nameSourceWithoutSourceIdUnique: uniqueIndex("tool_definition_account_name_source_null_source_id_uq").on(table.accountId, table.name, table.source).where(sql`${table.sourceId} IS NULL`),
     accountSourceIdx: index("tool_definition_account_source_idx").on(table.accountId, table.source),
   })
 );
@@ -767,7 +771,7 @@ export const mcpServerConfigs = sqliteTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
-    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }).default("default-admin"),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     transport: text("transport", { enum: ["stdio", "http"] }).notNull(),
     configJson: text("config_json").notNull(),
     secretConfigEncrypted: text("secret_config_encrypted"),

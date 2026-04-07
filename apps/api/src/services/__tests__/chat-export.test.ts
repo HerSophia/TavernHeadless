@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { nanoid } from 'nanoid';
 import { eq } from 'drizzle-orm';
 
+import { MissingAccountContextError } from '../../accounts/account-context.js';
 import { createDatabase, type AppDb } from '../../db/client.js';
 import { accounts, sessions, floors, messagePages, memoryEdges, memoryItems, messages, variables } from '../../db/schema.js';
 import { DEFAULT_ADMIN_ACCOUNT_ID } from '../../accounts/constants.js';
@@ -117,6 +118,22 @@ function seedMinimalSession(db: AppDb): SeedResult {
   return { sessionId, floorId, page1Id, page2Id, msg1Id, msg2Id };
 }
 
+function serializeThChatForAccount(
+  db: AppDb,
+  sessionId: string,
+  options: Partial<Parameters<typeof serializeSessionToThChat>[2]> = {},
+) {
+  return serializeSessionToThChat(db, sessionId, { accountId: ACCOUNT_ID, ...options });
+}
+
+function serializeStJsonlForAccount(
+  db: AppDb,
+  sessionId: string,
+  options: Partial<Parameters<typeof serializeSessionToStJsonl>[2]> = {},
+) {
+  return serializeSessionToStJsonl(db, sessionId, { accountId: ACCOUNT_ID, ...options });
+}
+
 // ── tests ─────────────────────────────────────────
 
 describe('serializeSessionToThChat', () => {
@@ -135,7 +152,7 @@ describe('serializeSessionToThChat', () => {
 
   it('produces correct envelope fields', () => {
     const { sessionId } = seedMinimalSession(db);
-    const result = serializeSessionToThChat(db, sessionId);
+    const result = serializeThChatForAccount(db, sessionId);
 
     expect(result.spec).toBe(TH_CHAT_SPEC);
     expect(result.spec_version).toBe(TH_CHAT_SPEC_VERSION);
@@ -145,7 +162,7 @@ describe('serializeSessionToThChat', () => {
 
   it('maps session fields correctly', () => {
     const { sessionId } = seedMinimalSession(db);
-    const result = serializeSessionToThChat(db, sessionId);
+    const result = serializeThChatForAccount(db, sessionId);
 
     expect(result.data.title).toBe('Test Chat');
     expect(result.data.status).toBe('active');
@@ -156,7 +173,7 @@ describe('serializeSessionToThChat', () => {
 
   it('nests floor → page → message tree', () => {
     const { sessionId, floorId, page1Id, msg1Id } = seedMinimalSession(db);
-    const result = serializeSessionToThChat(db, sessionId);
+    const result = serializeThChatForAccount(db, sessionId);
 
     expect(result.data.floors).toHaveLength(1);
     const floor = result.data.floors[0]!;
@@ -174,7 +191,7 @@ describe('serializeSessionToThChat', () => {
 
   it('includes _original_id on all entities', () => {
     const { sessionId, floorId, page1Id, page2Id, msg1Id, msg2Id } = seedMinimalSession(db);
-    const result = serializeSessionToThChat(db, sessionId);
+    const result = serializeThChatForAccount(db, sessionId);
 
     const ids = new Set<string>();
     for (const f of result.data.floors) {
@@ -194,15 +211,14 @@ describe('serializeSessionToThChat', () => {
     expect(ids.has(msg2Id)).toBe(true);
   });
 
-  it('omits superseded floors from thchat export', () => {
+  it('preserves superseded floor history in thchat export', () => {
     const { sessionId, floorId } = seedMinimalSession(db);
+    const replacementFloorId = nanoid();
 
     db.update(floors)
-      .set({ supersededAt: NOW + 1, updatedAt: NOW + 1 })
+      .set({ supersededAt: NOW + 1, supersededByFloorId: replacementFloorId, updatedAt: NOW + 1 })
       .where(eq(floors.id, floorId))
       .run();
-
-    const replacementFloorId = nanoid();
     const replacementPageId = nanoid();
     const replacementMessageId = nanoid();
 
@@ -245,15 +261,31 @@ describe('serializeSessionToThChat', () => {
       createdAt: NOW + 2,
     }).run();
 
-    const result = serializeSessionToThChat(db, sessionId);
+    const result = serializeThChatForAccount(db, sessionId);
 
-    expect(result.data.floors).toHaveLength(1);
-    expect(result.data.floors[0]!._original_id).toBe(replacementFloorId);
-    expect(result.data.floors[0]!.pages[0]!.messages[0]!.content).toBe('Replacement live reply');
+    expect(result.data.floors).toHaveLength(2);
+    expect(result.data.floors[0]).toMatchObject({
+      _original_id: floorId,
+      superseded_at: NOW + 1,
+      superseded_by_floor_id_ref: replacementFloorId,
+    });
+    expect(result.data.floors[0]!.pages[0]!.messages[0]!.content).toBe('Hello World');
+    expect(result.data.floors[1]).toMatchObject({
+      _original_id: replacementFloorId,
+      superseded_at: null,
+      superseded_by_floor_id_ref: null,
+    });
+    expect(result.data.floors[1]!.pages[0]!.messages[0]!.content).toBe('Replacement live reply');
   });
 
   it('throws on non-existent session', () => {
-    expect(() => serializeSessionToThChat(db, 'nonexistent')).toThrow('Session not found');
+    expect(() => serializeThChatForAccount(db, 'nonexistent')).toThrow('Session not found');
+  });
+
+  it('rejects missing account context in multi-account mode', () => {
+    const { sessionId } = seedMinimalSession(db);
+
+    expect(() => serializeSessionToThChat(db, sessionId, { accountMode: 'multi' })).toThrow(MissingAccountContextError);
   });
 
   it('excludes variables when includeVariables=false', () => {
@@ -262,6 +294,7 @@ describe('serializeSessionToThChat', () => {
     // 插入一个变量
     db.insert(variables).values({
       id: nanoid(),
+      accountId: ACCOUNT_ID,
       scope: 'chat',
       scopeId: sessionId,
       key: 'test_var',
@@ -269,10 +302,10 @@ describe('serializeSessionToThChat', () => {
       updatedAt: NOW,
     }).run();
 
-    const withVars = serializeSessionToThChat(db, sessionId, { includeVariables: true });
+    const withVars = serializeThChatForAccount(db, sessionId, { includeVariables: true });
     expect(withVars.data.variables).toHaveLength(1);
 
-    const withoutVars = serializeSessionToThChat(db, sessionId, { includeVariables: false });
+    const withoutVars = serializeThChatForAccount(db, sessionId, { includeVariables: false });
     expect(withoutVars.data.variables).toBeUndefined();
   });
 
@@ -317,7 +350,7 @@ describe('serializeSessionToThChat', () => {
       },
     ]).run();
 
-    const result = serializeSessionToThChat(db, sessionId, { accountId: ACCOUNT_ID, includeVariables: true });
+    const result = serializeThChatForAccount(db, sessionId, { includeVariables: true });
     expect(result.data.variables).toEqual([
       { scope: 'chat', scope_id_ref: null, key: 'local_var', value: 42, updated_at: NOW },
       {
@@ -395,7 +428,7 @@ describe('serializeSessionToThChat', () => {
       createdAt: NOW + 10,
     }).run();
 
-    const result = serializeSessionToThChat(db, sessionId, { includeMemories: true });
+    const result = serializeThChatForAccount(db, sessionId, { includeMemories: true });
 
     expect(result.data.memories).toEqual({
       items: expect.arrayContaining([
@@ -425,7 +458,7 @@ describe('serializeSessionToStJsonl', () => {
 
   it('outputs correct header line', () => {
     const { sessionId } = seedMinimalSession(db);
-    const jsonl = serializeSessionToStJsonl(db, sessionId);
+    const jsonl = serializeStJsonlForAccount(db, sessionId);
     const lines = jsonl.split('\n');
     const header = JSON.parse(lines[0]!);
 
@@ -436,7 +469,7 @@ describe('serializeSessionToStJsonl', () => {
 
   it('outputs message lines with correct fields', () => {
     const { sessionId } = seedMinimalSession(db);
-    const jsonl = serializeSessionToStJsonl(db, sessionId);
+    const jsonl = serializeStJsonlForAccount(db, sessionId);
     const lines = jsonl.split('\n');
 
     expect(lines.length).toBeGreaterThanOrEqual(2);
@@ -450,12 +483,65 @@ describe('serializeSessionToStJsonl', () => {
 
   it('merges multi-version pages into swipes', () => {
     const { sessionId } = seedMinimalSession(db);
-    const jsonl = serializeSessionToStJsonl(db, sessionId);
+    const jsonl = serializeStJsonlForAccount(db, sessionId);
     const lines = jsonl.split('\n');
     const msg = JSON.parse(lines[1]!);
 
     expect(msg.swipes).toEqual(['Hello World', 'Hi there']);
     expect(msg.swipe_id).toBe(0); // version 1 is active
+  });
+
+  it('omits superseded floors from st jsonl export', () => {
+    const { sessionId, floorId } = seedMinimalSession(db);
+    const replacementFloorId = nanoid();
+    const replacementPageId = nanoid();
+
+    db.update(floors)
+      .set({ supersededAt: NOW + 1, supersededByFloorId: replacementFloorId, updatedAt: NOW + 1 })
+      .where(eq(floors.id, floorId))
+      .run();
+
+    db.insert(floors).values({
+      id: replacementFloorId,
+      sessionId,
+      floorNo: 0,
+      branchId: 'main',
+      parentFloorId: floorId,
+      state: 'committed',
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: NOW + 2,
+      updatedAt: NOW + 2,
+    }).run();
+
+    db.insert(messagePages).values({
+      id: replacementPageId,
+      floorId: replacementFloorId,
+      pageNo: 0,
+      pageKind: 'output',
+      isActive: true,
+      version: 1,
+      checksum: null,
+      createdAt: NOW + 2,
+      updatedAt: NOW + 2,
+    }).run();
+
+    db.insert(messages).values({
+      id: nanoid(),
+      pageId: replacementPageId,
+      seq: 0,
+      role: 'assistant',
+      content: 'Replacement live reply',
+      contentFormat: 'text',
+      tokenCount: 4,
+      isHidden: false,
+      source: null,
+      createdAt: NOW + 2,
+    }).run();
+
+    const jsonl = serializeStJsonlForAccount(db, sessionId);
+    expect(jsonl).toContain('Replacement live reply');
+    expect(jsonl).not.toContain('Hello World');
   });
 
   it('only outputs main branch committed floors', () => {
@@ -502,7 +588,7 @@ describe('serializeSessionToStJsonl', () => {
       createdAt: NOW,
     }).run();
 
-    const jsonl = serializeSessionToStJsonl(db, sessionId);
+    const jsonl = serializeStJsonlForAccount(db, sessionId);
     const lines = jsonl.split('\n');
 
     // header + 1 msg from main branch only
@@ -511,12 +597,12 @@ describe('serializeSessionToStJsonl', () => {
   });
 
   it('throws on non-existent session', () => {
-    expect(() => serializeSessionToStJsonl(db, 'nonexistent')).toThrow('Session not found');
+    expect(() => serializeStJsonlForAccount(db, 'nonexistent')).toThrow('Session not found');
   });
 
   it('throws when the session belongs to another account', () => {
     const { sessionId } = seedMinimalSession(db);
 
-    expect(() => serializeSessionToStJsonl(db, sessionId, { accountId: 'account-b' })).toThrow('Session not found');
+    expect(() => serializeStJsonlForAccount(db, sessionId, { accountId: 'account-b' })).toThrow('Session not found');
   });
 });

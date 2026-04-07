@@ -3,14 +3,18 @@ import { nanoid } from "nanoid";
 import type { VariableScope, VariableEntry } from "@tavern/shared";
 import type { VariableRepository, VariableRepositoryOptions } from "@tavern/core";
 
+import type { AccountContextOptions } from "../accounts/account-context.js";
+import { resolveAccountIdOrThrow } from "../accounts/account-context.js";
 import type { AppDb, DbExecutor } from "../db/client.js";
-import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js";
 import { variables } from "../db/schema.js";
 
 type VariableRow = typeof variables.$inferSelect;
 
-function resolveAccountId(options?: VariableRepositoryOptions): string {
-  return options?.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
+function resolveAccountId(
+  accountContext: AccountContextOptions,
+  options?: VariableRepositoryOptions,
+): string {
+  return resolveAccountIdOrThrow(options?.accountId, accountContext);
 }
 
 function toEntry(row: VariableRow): VariableEntry {
@@ -25,7 +29,10 @@ function toEntry(row: VariableRow): VariableEntry {
 }
 
 export class DrizzleVariableRepository implements VariableRepository {
-  constructor(private readonly db: AppDb | DbExecutor) {}
+  constructor(
+    private readonly db: AppDb | DbExecutor,
+    private readonly accountContext: AccountContextOptions = {},
+  ) {}
 
   async findByKey(
     scope: VariableScope,
@@ -33,7 +40,7 @@ export class DrizzleVariableRepository implements VariableRepository {
     key: string,
     options?: VariableRepositoryOptions,
   ): Promise<VariableEntry | null> {
-    const accountId = resolveAccountId(options);
+    const accountId = resolveAccountId(this.accountContext, options);
 
     const [row] = await this.db
       .select()
@@ -55,7 +62,7 @@ export class DrizzleVariableRepository implements VariableRepository {
     scopeId: string,
     options?: VariableRepositoryOptions,
   ): Promise<VariableEntry[]> {
-    const accountId = resolveAccountId(options);
+    const accountId = resolveAccountId(this.accountContext, options);
 
     const rows = await this.db
       .select()
@@ -78,7 +85,7 @@ export class DrizzleVariableRepository implements VariableRepository {
     value: unknown,
     options?: VariableRepositoryOptions,
   ): Promise<VariableEntry> {
-    const accountId = resolveAccountId(options);
+    const accountId = resolveAccountId(this.accountContext, options);
     const now = Date.now();
     const valueJson = JSON.stringify(value);
 
@@ -107,7 +114,7 @@ export class DrizzleVariableRepository implements VariableRepository {
   }
 
   async deleteById(id: string, options?: VariableRepositoryOptions): Promise<boolean> {
-    const accountId = resolveAccountId(options);
+    const accountId = resolveAccountId(this.accountContext, options);
 
     const deleted = await this.db
       .delete(variables)
@@ -123,7 +130,7 @@ export class DrizzleVariableRepository implements VariableRepository {
     key: string,
     options?: VariableRepositoryOptions,
   ): Promise<boolean> {
-    const accountId = resolveAccountId(options);
+    const accountId = resolveAccountId(this.accountContext, options);
 
     const deleted = await this.db
       .delete(variables)

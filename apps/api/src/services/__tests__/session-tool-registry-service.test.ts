@@ -111,21 +111,24 @@ describe("SessionToolRegistryService", () => {
 
   async function insertMcpConfig(overrides: Partial<typeof mcpServerConfigs.$inferInsert> = {}) {
     const now = Date.now();
-    await db.insert(mcpServerConfigs).values({
+    const values: typeof mcpServerConfigs.$inferInsert = {
       id: "mcp-1",
       name: "Runtime MCP",
-      transport: "http",
+      accountId: overrides.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID,
+      transport: "http" as const,
       configJson: JSON.stringify({ http: { url: "http://localhost:8123" } }),
       toolPrefix: null,
       enabled: 1,
       connectTimeoutMs: 5_000,
       callTimeoutMs: 30_000,
       toolRefreshIntervalMs: 0,
-      defaultSideEffectLevel: "irreversible",
+      defaultSideEffectLevel: "irreversible" as const,
       createdAt: now,
       updatedAt: now,
       ...overrides,
-    });
+    };
+
+    await db.insert(mcpServerConfigs).values(values);
   }
 
   it("builds a session-scoped runtime registry with custom, preset, character, and MCP tools", async () => {
@@ -141,6 +144,7 @@ describe("SessionToolRegistryService", () => {
       mcpManager: createMockMcpManager([
         makeTool({ name: "mcp_lookup" }),
       ]),
+      enableUnsafeScriptHandler: true,
     });
 
     const runtime = await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
@@ -217,6 +221,7 @@ describe("SessionToolRegistryService", () => {
     const service = new SessionToolRegistryService(db, {
       baseRegistry,
       mcpManager: manager,
+      enableUnsafeScriptHandler: true,
     });
 
     const liveRuntime = await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
@@ -241,7 +246,10 @@ describe("SessionToolRegistryService", () => {
     await insertSession();
     await insertDefinition({ name: "roll_dice", source: "custom", sourceId: null });
 
-    const service = new SessionToolRegistryService(db, { baseRegistry });
+    const service = new SessionToolRegistryService(db, {
+      baseRegistry,
+      enableUnsafeScriptHandler: true,
+    });
 
     try {
       await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
@@ -273,6 +281,7 @@ describe("SessionToolRegistryService", () => {
         makeTool({ name: "custom_lookup" }),
         makeTool({ name: "mcp_only" }),
       ]),
+      enableUnsafeScriptHandler: true,
     });
 
     const runtime = await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
@@ -298,6 +307,28 @@ describe("SessionToolRegistryService", () => {
           name: "mcp_only",
           source: "mcp",
           availability: "available",
+        }),
+      ]),
+    );
+  });
+
+  it("marks script definitions unavailable and excludes them from the callable runtime when unsafe execution is disabled", async () => {
+    await insertSession();
+    await insertDefinition({ name: "custom_lookup", source: "custom", sourceId: null });
+
+    const service = new SessionToolRegistryService(db, { baseRegistry });
+
+    const runtime = await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
+    const allTools = await runtime.registry.listAll();
+
+    expect(allTools.some((tool) => tool.name === "custom_lookup")).toBe(false);
+    expect(runtime.catalog.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "custom_lookup",
+          source: "custom",
+          availability: "unavailable",
+          availabilityReason: expect.stringContaining("ENABLE_UNSAFE_SCRIPT_HANDLER"),
         }),
       ]),
     );

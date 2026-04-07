@@ -19,7 +19,7 @@
   "info": {
     "description": "Backend API for TavernHeadless core engine",
     "title": "TavernHeadless API",
-    "version": "0.2.0-beta.2"
+    "version": "0.2.0-beta.3"
   },
   "openapi": "3.0.3",
   "paths": {

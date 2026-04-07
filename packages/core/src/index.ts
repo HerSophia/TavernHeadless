@@ -205,6 +205,8 @@ export type {
   MemoryInjectionOptions,
   MemoryInjectionResult,
   MemoryAccessOptions,
+  MemoryScopeContext,
+  MemoryScopeRef,
 } from './memory/index.js';
 export { MemoryStore } from './memory/index.js';
 export { MemoryConsolidator } from './memory/index.js';

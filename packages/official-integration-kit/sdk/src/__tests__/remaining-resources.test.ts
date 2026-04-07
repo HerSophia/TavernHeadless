@@ -12,12 +12,39 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("sdk remaining resources", () => {
-  it("imports characters with default create_session and title fallback", async () => {
+  it("imports characters with backend-aligned create_session default and optional title", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
         data: {
-          character: {},
-          character_id: "char-1",
+          character: {
+            name: "Luna",
+          },
+          create_session: true,
+          session: {
+            character_binding: {
+              character_id: "char-1",
+              character_version_id: "charver-1",
+              snapshot_summary: {
+                has_greeting: true,
+                name: "Luna",
+              },
+              sync_policy: "pin",
+            },
+            created_at: 1,
+            id: "session-1",
+            metadata: null,
+            model_name: null,
+            model_params: null,
+            model_provider: null,
+            preset_id: null,
+            prompt_mode: null,
+            regex_profile_id: null,
+            status: "active",
+            title: "Luna",
+            updated_at: 2,
+            user_binding: null,
+            worldbook_profile_id: null,
+          },
         },
       }),
     );
@@ -27,11 +54,38 @@ describe("sdk remaining resources", () => {
       client.imports.character({
         accountId: "acc-1",
         payload: { spec: "card" },
-        title: "Fallback Name",
       }),
     ).resolves.toEqual({
+      character: { name: "Luna" },
       characterId: "char-1",
-      name: "Fallback Name",
+      characterVersionId: "charver-1",
+      createSession: true,
+      name: "Luna",
+      session: {
+        characterBinding: {
+          characterId: "char-1",
+          characterVersionId: "charver-1",
+          snapshotSummary: {
+            hasGreeting: true,
+            name: "Luna",
+          },
+          syncPolicy: "pin",
+        },
+        createdAt: 1,
+        id: "session-1",
+        metadata: null,
+        modelName: null,
+        modelParams: null,
+        modelProvider: null,
+        presetId: null,
+        promptMode: null,
+        regexProfileId: null,
+        status: "active",
+        title: "Luna",
+        updatedAt: 2,
+        userBinding: null,
+        worldbookProfileId: null,
+      },
       source: "sillytavern",
     });
 
@@ -39,13 +93,12 @@ describe("sdk remaining resources", () => {
     expect(url).toBe("http://localhost:3000/import/character");
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify({
-      create_session: false,
+      create_session: true,
       payload: { spec: "card" },
-      title: "Fallback Name",
     }));
   });
 
-  it("throws when character import payload misses character_id", async () => {
+  it("throws when character import payload cannot resolve a character id", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
         data: {
@@ -57,9 +110,7 @@ describe("sdk remaining resources", () => {
 
     await expect(
       client.imports.character({
-        createSession: true,
         payload: { spec: "card" },
-        title: "Fallback Name",
       }),
     ).rejects.toThrow("Character import returned an invalid payload");
 
@@ -67,7 +118,6 @@ describe("sdk remaining resources", () => {
     expect(init?.body).toBe(JSON.stringify({
       create_session: true,
       payload: { spec: "card" },
-      title: "Fallback Name",
     }));
   });
 

@@ -3,11 +3,14 @@ import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
+import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "../accounts/constants.js";
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { accounts } from "../db/schema";
 import { parseWithSchema, sendError } from "../lib/http";
 import { getRequestAuthContext } from "../plugins/auth";
+
+const ACCOUNT_WRITE_DISABLED_MESSAGE = "Account write operations are unavailable in single account mode";
 
 const createAccountSchema = z.object({
   id: z.string().trim().min(1).max(120).optional(),
@@ -145,8 +148,21 @@ const createBodyJsonSchema = {
 } as const;
 
 
-export async function registerAccountRoutes(app: FastifyInstance, connection: DatabaseConnection): Promise<void> {
+type RegisterAccountRoutesOptions = {
+  accountMode?: AccountMode;
+  defaultAccountId?: string;
+};
+
+
+export async function registerAccountRoutes(
+  app: FastifyInstance,
+  connection: DatabaseConnection,
+  options: RegisterAccountRoutesOptions = {}
+): Promise<void> {
   const db = connection.db;
+  const accountMode = options.accountMode ?? "multi";
+  const defaultAccountId = options.defaultAccountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
+  const singleModeReadonly = accountMode === "single";
 
   app.get(
     "/accounts",
@@ -165,6 +181,11 @@ export async function registerAccountRoutes(app: FastifyInstance, connection: Da
       const auth = getRequestAuthContext(request);
       if (auth.role !== "admin") {
         return sendError(reply, 403, "account_forbidden", "Only admin can list accounts");
+      }
+
+      if (singleModeReadonly) {
+        const [defaultAccount] = await db.select().from(accounts).where(eq(accounts.id, defaultAccountId)).limit(1);
+        return reply.send({ data: defaultAccount ? [toAccountResponse(defaultAccount)] : [] });
       }
 
       const rows = await db.select().from(accounts).orderBy(desc(accounts.updatedAt));
@@ -192,6 +213,10 @@ export async function registerAccountRoutes(app: FastifyInstance, connection: Da
       const auth = getRequestAuthContext(request);
       if (auth.role !== "admin") {
         return sendError(reply, 403, "account_forbidden", "Only admin can create accounts");
+      }
+
+      if (singleModeReadonly) {
+        return sendError(reply, 409, "account_mode_restricted", ACCOUNT_WRITE_DISABLED_MESSAGE);
       }
 
       const parsed = parseWithSchema(createAccountSchema, request.body, reply);
@@ -255,6 +280,10 @@ export async function registerAccountRoutes(app: FastifyInstance, connection: Da
       const parsed = parseWithSchema(idParamsSchema, request.params, reply);
       if (!parsed.ok) return;
 
+      if (singleModeReadonly && parsed.data.id !== defaultAccountId) {
+        return sendError(reply, 404, "account_not_found", "Account not found");
+      }
+
       const [row] = await db.select().from(accounts).where(eq(accounts.id, parsed.data.id)).limit(1);
       if (!row) {
         return sendError(reply, 404, "account_not_found", "Account not found");
@@ -287,6 +316,10 @@ export async function registerAccountRoutes(app: FastifyInstance, connection: Da
       const auth = getRequestAuthContext(request);
       if (auth.role !== "admin") {
         return sendError(reply, 403, "account_forbidden", "Only admin can update accounts");
+      }
+
+      if (singleModeReadonly) {
+        return sendError(reply, 409, "account_mode_restricted", ACCOUNT_WRITE_DISABLED_MESSAGE);
       }
 
       const paramsParsed = parseWithSchema(idParamsSchema, request.params, reply);
@@ -337,6 +370,10 @@ export async function registerAccountRoutes(app: FastifyInstance, connection: Da
       const auth = getRequestAuthContext(request);
       if (auth.role !== "admin") {
         return sendError(reply, 403, "account_forbidden", "Only admin can delete accounts");
+      }
+
+      if (singleModeReadonly) {
+        return sendError(reply, 409, "account_mode_restricted", ACCOUNT_WRITE_DISABLED_MESSAGE);
       }
 
       const parsed = parseWithSchema(idParamsSchema, request.params, reply);

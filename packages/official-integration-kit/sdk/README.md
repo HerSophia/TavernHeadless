@@ -447,9 +447,9 @@ console.log(jobs.jobs[0]?.jobType);
 console.log(scopes.scopes[0]?.revision);
 ```
 
-`factKey` 只承接 `type: "fact"` 的结构化键，`content` 仍然保留为展示和注入内容。`summaryTier` 和 `lifecycleStatus` 对应 Memory V2 的公开字段；其中 `status` 仍保留兼容层面的粗粒度状态，而 `lifecycleStatus` 会进一步区分 `compacted`。
+`factKey` 只承接 `type: "fact"` 的结构化键，`content` 的公开契约只承诺文本或 `{ text: string }` 包装。`summaryTier` 和 `lifecycleStatus` 对应 Memory V2 的公开字段；其中 `status` 仍保留兼容层面的粗粒度状态，而 `lifecycleStatus` 会进一步区分 `compacted`。
 
-`memoryJobs` 和 `memoryScopes` 分别对应后台任务观测面与 scope 状态观测面。`memoryScopes.rebuild()`、`memoryScopes.compact()` 需要服务端已经启用 background worker。
+`memoryJobs` 和 `memoryScopes` 分别对应后台任务观测面与 scope 状态观测面。`memoryScopes.rebuild()` 当前对应 `rebuild_scope` 维护入口，它主要用于触发该 scope 的维护与 compaction 补偿流程；`memoryScopes.compact()` 则显式触发长摘要压缩。这两组接口都要求服务端已经启用 background worker。
 
 `variables.resolveContext()` 对应后端的 `GET /variables/resolve`，会返回当前 `global/chat/branch/floor/page` 可见变量的最终胜出结果，并可选附带各层原始快照。
 
@@ -470,6 +470,24 @@ const worldbookEntries = await client.worldbookEntries.list({
   accountId: "account-1",
   worldbookId: "worldbook-1",
 });
+```
+
+`pages.create()` 和 `pages.update()` 不再接受 `isActive`。如果要切换当前激活版本，应显式调用 `pages.activate()`。
+
+```ts
+const session = await client.sessions.create({
+  accountId: "account-1",
+  title: "黎明前的酒馆",
+  promptMode: "native",
+});
+
+const importedCharacter = await client.imports.character({
+  accountId: "account-1",
+  payload: cardJson,
+  createSession: false,
+});
+
+console.log(session?.id, importedCharacter.characterVersionId);
 ```
 
 ### 导出
@@ -565,7 +583,7 @@ const executions = await client.tools.listExecutions({
 
 公开审计模型已经是 `tool_execution_record`，因此新的查询应优先使用 `listExecutions()`；`tool_call_record` 和 `listCallRecords()` 只用于兼容旧查询面。兼容状态现在也可能返回 `queued` / `running`。
 
-如果你在生成请求里显式传 `toolMode`，当前运行时只支持 `inline`。`standalone` 和 `both` 还不受支持，服务端会返回结构化配置错误，而不是悄悄降级。
+如果你在生成请求里显式传 `toolMode`，当前公开配置仍只有 `inline`。`standalone` 和 `both` 还不受支持，服务端会返回结构化配置错误，而不是悄悄降级；但在 `inline` 回合内部，部分 allowlisted 工具仍可能先返回 deferred receipt，再通过 `runtimeJobId` 对应的后台任务继续执行。
 
 ### MCP
 
@@ -603,9 +621,15 @@ console.log(server.http?.headersMasked);
 
 如果请求包含 secret 且服务端未配置 `APP_SECRETS_MASTER_KEY`，SDK 会收到后端返回的 `503 secret_unavailable`。
 
-`getServerStatus()` 和 `listStatuses()` 会保留 `reconnectRequired`、`lastTimeoutAt` 这些运行时字段。
+`listServers()` 和 `getServer()` 现在还会返回可选的 `liveStatus`。它直接对应服务端的 `live_status`，用来说明这个配置是否已经进入 live runtime manager。
 
-当服务端返回 `mcp_call_uncertain_timeout` 时，含义是这次调用结果**不确定**，并且连接需要重建；它不是普通的确定性失败。
+`getServerStatus()` 和 `listStatuses()` 会继续保留 `reconnectRequired`、`lastTimeoutAt`，并在新服务端上额外带出可选的 `attached`、`reason` 字段，用来区分：
+
+- 配置被禁用
+- MCP runtime manager 未启用
+- 数据库里是 enabled，但 runtime 尚未挂载
+
+当服务端返回 `mcp_call_uncertain_timeout` 时，含义是这次调用结果不确定，并且连接需要重建；它不是普通的确定性失败。
 
 ## 错误处理
 

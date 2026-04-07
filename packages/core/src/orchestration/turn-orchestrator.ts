@@ -427,13 +427,24 @@ export class TurnOrchestrator {
     input: TurnInput,
   ): Promise<MemoryInjectionResult> {
     try {
+      const providedScopeContext = input.memoryOptions?.scopeContext;
+      const resolvedAccountId = input.accountId
+        ?? input.memoryOptions?.accountId
+        ?? providedScopeContext?.accountId;
       const memoryOptions = input.memoryOptions
-        ? { ...input.memoryOptions, accountId: input.accountId ?? input.memoryOptions.accountId }
+        ? {
+            ...input.memoryOptions,
+            accountId: resolvedAccountId,
+            scopeContext: {
+              ...(resolvedAccountId ? { accountId: resolvedAccountId } : {}),
+              sessionId: providedScopeContext?.sessionId ?? input.sessionId,
+              ...(providedScopeContext?.floorId ?? input.floorId
+                ? { floorId: providedScopeContext?.floorId ?? input.floorId }
+                : {}),
+            },
+          }
         : undefined;
-      return await this.deps.memoryStore.prepareInjection(
-        input.sessionId,
-        memoryOptions!,
-      );
+      return await this.deps.memoryStore.prepareInjection(input.sessionId, memoryOptions!);
     } catch (error) {
       throw new TurnError(
         `Memory retrieval failed: ${error instanceof Error ? error.message : String(error)}`,

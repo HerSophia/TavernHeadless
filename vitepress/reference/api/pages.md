@@ -58,7 +58,7 @@ POST /pages
 | ------ | ---- | ---- |
 | `400` | `validation_error` | 请求体校验失败，包括仍发送 `is_active` |
 | `404` | `not_found` | 所属 floor 不存在 |
-| `409` | `conflict` | 页唯一性等约束冲突 |
+| `409` | `page_conflict` | 重复 `(floor_id, page_no, version)`，或命中同一 `(floor_id, page_no)` 的 active 槽位唯一约束 |
 
 ## 列出消息页
 
@@ -99,6 +99,14 @@ PATCH /pages/:id
 - 公开请求体不再接受 `is_active`
 - 如果需要切换当前激活版本，必须使用 `PATCH /pages/:id/activate`
 - 旧客户端如果继续发送 `is_active`，会收到 `400 validation_error`
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败 |
+| `404` | `not_found` | 消息页不存在 |
+| `409` | `page_conflict` | 更新后会命中页版本唯一性或 active 槽位唯一性约束 |
 
 ## 删除消息页
 

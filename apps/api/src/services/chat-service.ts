@@ -56,6 +56,7 @@ import {
   FloorStateMachine,
   isAutoReplaySafe,
   LLMTimeoutError,
+  MemoryScopeResolver,
   ToolReplayBlockedError,
   ToolRegistry,
   UnsupportedToolModeError,
@@ -65,13 +66,15 @@ import type { AppDb, DbExecutor } from "../db/client.js";
 import {
   applyRegexScripts,
   REGEX_PLACEMENT,
+  type RegexExecutionChannel,
 } from "@tavern/adapters-sillytavern";
 import { sessions, floors, messagePages, messages } from "../db/schema.js";
 import {
   SessionToolRegistryService,
   SessionToolRegistryServiceError,
 } from "./session-tool-registry-service.js";
-import { DEFAULT_ADMIN_ACCOUNT_ID } from "../accounts/constants.js";
+import type { AccountContextOptions } from "../accounts/account-context.js";
+import { resolveAccountIdOrThrow } from "../accounts/account-context.js";
 import { normalizeNonNegativeInt, normalizePositiveInt } from "../lib/utils.js";
 import { executeWithRetry, isSqliteBusyError } from "../lib/retry.js";
 import { DrizzleFloorRepository } from "../adapters/drizzle-floor-repository.js";
@@ -90,7 +93,7 @@ import {
 } from "./generation-guard-service.js";
 import { TurnCommitService, type TurnCommitMemoryReceipt } from "./turn-commit-service.js";
 import type { FloorRunService } from "./floor-run-service.js";
-import { OwnedMessageRepository, OwnedSessionRepository } from "./owned-resource-repositories.js";
+import { OwnedFloorRepository, OwnedMessageRepository, OwnedSessionRepository } from "./owned-resource-repositories.js";
 import { PromptResourceLoader } from "./prompt-resource-loader.js";
 import { resolveAssistantPrefillStrategy } from "../lib/llm-provider-discovery.js";
 import { VariableService } from "./variable-service.js";
@@ -424,6 +427,8 @@ export interface ChatServiceOptions {
    * narrator 默认 provider 类型。
    */
   defaultNarratorProviderType?: ProviderType;
+  accountMode?: AccountContextOptions["accountMode"];
+  defaultAccountId?: string;
 }
 
 // ── ChatService ───────────────────────────────────────
@@ -433,6 +438,7 @@ export class ChatService {
   private readonly historyLoader: ChatHistoryLoader;
   private readonly messagePersistence: ChatMessagePersistence;
   private readonly memoryStore?: MemoryStore;
+  private readonly memoryScopeResolver = new MemoryScopeResolver();
   private readonly memoryInjectionDecay?: MemoryInjectionOptions["decay"];
   private readonly enableMemoryConsolidationByDefault: boolean;
   private readonly enableAsyncMemoryIngest: boolean;
@@ -451,6 +457,7 @@ export class ChatService {
   private readonly generationCoordinator: GenerationCoordinator;
   private readonly executionPolicy: TurnExecutionPolicy;
   private readonly defaultNarratorProviderType?: ProviderType;
+  private readonly accountContext: AccountContextOptions;
 
   constructor(
     private readonly db: AppDb,
@@ -481,11 +488,17 @@ export class ChatService {
     this.turnCommitService = options.turnCommitService
       ?? new TurnCommitService(db, this.messagePersistence, this.eventBus, {
         enableAsyncMemoryIngest: this.enableAsyncMemoryIngest,
+        accountMode: options.accountMode,
+        defaultAccountId: options.defaultAccountId,
       });
     this.generationCoordinator = options.generationCoordinator
       ?? options.generationGuard
       ?? new InMemoryGenerationCoordinator();
     this.defaultNarratorProviderType = options.defaultNarratorProviderType;
+    this.accountContext = {
+      accountMode: options.accountMode,
+      defaultAccountId: options.defaultAccountId,
+    };
   }
 
   /**
@@ -508,17 +521,10 @@ export class ChatService {
     sessionId: string,
     request: RespondRequest,
     runtimeOptions: RespondRuntimeOptions = {},
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
+    accountId?: string,
   ): Promise<RespondResult> {
-    // ── 1. 验证会话 ──
-    const session = await this.getSession(sessionId, accountId);
-    if (!session) {
-      throw new ChatServiceError("session_not_found", `Session '${sessionId}' not found`);
-    }
-
-    if (session.status === "archived") {
-      throw new ChatServiceError("session_archived", "Cannot respond to an archived session");
-    }
+    const resolvedAccountId = this.resolveAccountId(accountId);
+    await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot respond to an archived session");
 
     const branchId = normalizeBranchId(request.branchId);
 
@@ -527,7 +533,8 @@ export class ChatService {
       branchId,
       runtimeOptions.abortSignal,
       async (generationRuntime) => {
-        const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+        const session = await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot respond to an archived session");
+        const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, resolvedAccountId);
         this.assertNarratorSlotEnabled(resolvedTurnModels);
         const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
 
@@ -539,13 +546,15 @@ export class ChatService {
         );
         const history = await this.historyLoader.loadHistory(sessionId, branchId, branchContext.nextFloorNo);
 
-        // ── 2b. 记忆检索 ──
-        const memorySummary = await this.retrieveMemorySummary(sessionId, accountId);
-
         // ── 3. 创建新楼层 ──
         const nextFloorNo = branchContext.nextFloorNo;
         const now = Date.now();
-        const { floorId, userMessageRef } = this.createDraftFloorWithUserMessage({
+        const floorId = nanoid();
+
+        // ── 2b. 记忆检索 ──
+        const memorySummary = await this.retrieveMemorySummary(sessionId, resolvedAccountId, floorId);
+        const { userMessageRef } = this.createDraftFloorWithUserMessage({
+          floorId,
           sessionId,
           floorNo: nextFloorNo,
           branchId,
@@ -558,7 +567,7 @@ export class ChatService {
 
         await this.initializeFloorRun(sessionId, floorId, "respond", now);
         const persistedUserMessage = await this.applyPersistedUserInputRegex({
-          accountId,
+          accountId: resolvedAccountId,
           sessionId,
           branchId,
           floorId,
@@ -566,6 +575,7 @@ export class ChatService {
           session,
           sessionInfo,
           rawUserMessage: request.message,
+          regexChannel: "persist",
           persistedMessageId: userMessageRef.messageId,
         });
 
@@ -583,7 +593,7 @@ export class ChatService {
 
           const assembled = await assemblePrompt(
             this.db,
-            accountId,
+            resolvedAccountId,
             sessionInfo,
             history,
             persistedUserMessage,
@@ -617,12 +627,13 @@ export class ChatService {
           const toolRuntime = await this.resolveTurnToolingForFloor({
             floorId,
             sessionId,
-            accountId,
+            accountId: resolvedAccountId,
             config: turnConfig,
           });
           const consolidationContext = await this.buildConsolidationContext(
             sessionId,
-            accountId,
+            resolvedAccountId,
+            floorId,
             persistedUserMessage,
             turnConfig
           );
@@ -632,7 +643,7 @@ export class ChatService {
             branchId,
             floorId,
             pageId: userMessageRef.pageId,
-            accountId,
+            accountId: resolvedAccountId,
             messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
             generationParams,
             config: turnConfig,
@@ -652,7 +663,7 @@ export class ChatService {
             floorId,
             sessionId,
             branchId,
-            accountId,
+            accountId: resolvedAccountId,
             turnInput,
             promptSnapshot,
             resolvedTurnModels,
@@ -693,8 +704,9 @@ export class ChatService {
   async dryRun(
     sessionId: string,
     request: DryRunRequest,
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
+    accountId?: string,
   ): Promise<DryRunResult> {
+    accountId = this.resolveAccountId(accountId);
     const session = await this.getSession(sessionId, accountId);
     if (!session) {
       throw new ChatServiceError("session_not_found", `Session '${sessionId}' not found`);
@@ -718,6 +730,7 @@ export class ChatService {
       session,
       sessionInfo,
       rawUserMessage: request.message,
+      regexChannel: "persist",
     });
 
     const assembled = await assemblePrompt(
@@ -797,27 +810,15 @@ export class ChatService {
   async regenerate(
     sessionId: string,
     request: RegenerateRequest = {},
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
+    accountId?: string,
   ): Promise<RegenerateResult> {
-    // ── 1. 验证会话 ──
-    const session = await this.getSession(sessionId, accountId);
-    if (!session) {
-      throw new ChatServiceError("session_not_found", `Session '${sessionId}' not found`);
-    }
-
-    if (session.status === "archived") {
-      throw new ChatServiceError("session_archived", "Cannot regenerate in an archived session");
-    }
+    const resolvedAccountId = this.resolveAccountId(accountId);
+    await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot regenerate in an archived session");
+    const initialTargetFloor = await this.requireRegenerationTarget(sessionId);
 
     return this.runWithGenerationCoordinator(sessionId, "main", undefined, async (generationRuntime) => {
-      // ── 2. 找到最后一个 committed 楼层 ──
-      const targetFloor = await this.historyLoader.getLastCommittedFloor(sessionId);
-      if (!targetFloor) {
-        throw new ChatServiceError(
-          "no_floor_to_regenerate",
-          "No committed floor found to regenerate"
-        );
-      }
+      const session = await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot regenerate in an archived session");
+      const targetFloor = await this.revalidateRegenerationTarget(sessionId, initialTargetFloor.id);
 
       // ── 3. 提取用户消息 ──
       const existingUserMessage = await this.getUserMessageFromFloor(targetFloor.id);
@@ -832,14 +833,14 @@ export class ChatService {
       // ── 4. 加载该楼层之前的历史 ──
       const history = await this.historyLoader.loadHistoryBeforeFloor(sessionId, targetFloor.floorNo);
 
-      // ── 4b. 记忆检索 ──
-      const memorySummary = await this.retrieveMemorySummary(sessionId, accountId);
-
-      const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
+      const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, resolvedAccountId);
       this.assertNarratorSlotEnabled(resolvedTurnModels);
 
       const newFloorId = nanoid();
       const now = Date.now();
+
+      // ── 4b. 记忆检索 ──
+      const memorySummary = await this.retrieveMemorySummary(sessionId, resolvedAccountId, newFloorId);
       const { userMessageRef } = this.createDraftFloorWithUserMessage({
         floorId: newFloorId,
         sessionId,
@@ -875,7 +876,7 @@ export class ChatService {
 
       const assembled = await assemblePrompt(
         this.db,
-        accountId,
+        resolvedAccountId,
         sessionInfo,
         history,
         userMessage,
@@ -908,12 +909,13 @@ export class ChatService {
       const toolRuntime = await this.resolveTurnToolingForFloor({
         floorId: newFloorId,
         sessionId,
-        accountId,
+        accountId: resolvedAccountId,
         config: turnConfig,
       });
       const consolidationContext = await this.buildConsolidationContext(
         sessionId,
-        accountId,
+        resolvedAccountId,
+        newFloorId,
         userMessage,
         turnConfig
       );
@@ -923,7 +925,7 @@ export class ChatService {
         branchId: targetFloor.branchId,
         floorId: newFloorId,
         pageId: userMessageRef.pageId,
-        accountId,
+        accountId: resolvedAccountId,
         messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
         generationParams,
         config: turnConfig,
@@ -942,7 +944,7 @@ export class ChatService {
         floorId: newFloorId,
         sessionId,
         branchId: targetFloor.branchId,
-        accountId,
+        accountId: resolvedAccountId,
         turnInput,
         promptSnapshot,
         resolvedTurnModels,
@@ -974,46 +976,19 @@ export class ChatService {
   async retryFloor(
     floorId: string,
     request: RetryFloorRequest = {},
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
+    accountId?: string,
   ): Promise<RetryFloorResult> {
-    const [targetFloor] = await this.db
-      .select({
-        id: floors.id,
-        sessionId: floors.sessionId,
-        floorNo: floors.floorNo,
-        branchId: floors.branchId,
-        state: floors.state,
-      })
-      .from(floors)
-      .innerJoin(sessions, eq(floors.sessionId, sessions.id))
-      .where(and(eq(floors.id, floorId), eq(sessions.accountId, accountId)))
-      .limit(1);
-
-    if (!targetFloor) {
-      throw new ChatServiceError("floor_not_found", `Floor '${floorId}' not found`);
-    }
-
-    if (targetFloor.state !== "failed") {
-      throw new ChatServiceError(
-        "invalid_state",
-        `Floor '${floorId}' must be in failed state to retry`
-      );
-    }
-
-    const session = await this.getSession(targetFloor.sessionId, accountId);
-    if (!session) {
-      throw new ChatServiceError("session_not_found", `Session '${targetFloor.sessionId}' not found`);
-    }
-
-    if (session.status === "archived") {
-      throw new ChatServiceError("session_archived", "Cannot retry in an archived session");
-    }
+    const resolvedAccountId = this.resolveAccountId(accountId);
+    const initialTargetFloor = await this.requireRetryTargetFloor(floorId, resolvedAccountId);
+    await this.requireActiveSession(initialTargetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session");
 
     return this.runWithGenerationCoordinator(
-      targetFloor.sessionId,
-      targetFloor.branchId,
+      initialTargetFloor.sessionId,
+      initialTargetFloor.branchId,
       undefined,
       async (generationRuntime) => {
+        const targetFloor = await this.revalidateRetryTargetFloor(floorId, resolvedAccountId, initialTargetFloor);
+        const session = await this.requireActiveSession(targetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session");
         await this.assertRetryReplayConfirmed(targetFloor.id, request);
 
         const userMessageRef = await this.getUserMessageFromFloor(targetFloor.id);
@@ -1027,9 +1002,9 @@ export class ChatService {
           targetFloor.floorNo,
           targetFloor.branchId
         );
-        const memorySummary = await this.retrieveMemorySummary(targetFloor.sessionId, accountId);
+        const memorySummary = await this.retrieveMemorySummary(targetFloor.sessionId, resolvedAccountId, targetFloor.id);
         const now = Date.now();
-        const resolvedTurnModels = await this.resolveTurnModelsForSession(targetFloor.sessionId, accountId);
+        const resolvedTurnModels = await this.resolveTurnModelsForSession(targetFloor.sessionId, resolvedAccountId);
         this.assertNarratorSlotEnabled(resolvedTurnModels);
 
         this.db.transaction((tx) => {
@@ -1053,7 +1028,7 @@ export class ChatService {
 
         const assembled = await assemblePrompt(
           this.db,
-          accountId,
+          resolvedAccountId,
           sessionInfo,
           history,
           userMessage,
@@ -1090,12 +1065,13 @@ export class ChatService {
         const toolRuntime = await this.resolveTurnToolingForFloor({
           floorId: targetFloor.id,
           sessionId: targetFloor.sessionId,
-          accountId,
+          accountId: resolvedAccountId,
           config: turnConfig,
         });
         const consolidationContext = await this.buildConsolidationContext(
           targetFloor.sessionId,
-          accountId,
+          resolvedAccountId,
+          targetFloor.id,
           userMessage,
           turnConfig
         );
@@ -1105,7 +1081,7 @@ export class ChatService {
           branchId: targetFloor.branchId,
           floorId: targetFloor.id,
           pageId: userMessageRef.pageId,
-          accountId,
+          accountId: resolvedAccountId,
           messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
           generationParams,
           config: turnConfig,
@@ -1124,7 +1100,7 @@ export class ChatService {
           floorId: targetFloor.id,
           sessionId: targetFloor.sessionId,
           branchId: targetFloor.branchId,
-          accountId,
+          accountId: resolvedAccountId,
           turnInput,
           promptSnapshot,
           resolvedTurnModels,
@@ -1157,22 +1133,17 @@ export class ChatService {
   async editAndRegenerate(
     messageId: string,
     request: EditAndRegenerateRequest,
-    accountId: string = DEFAULT_ADMIN_ACCOUNT_ID
+    accountId?: string,
   ): Promise<EditAndRegenerateResult> {
-    const source = await this.resolveEditableMessage(messageId, accountId);
-
-    const session = await this.getSession(source.sessionId, accountId);
-    if (!session) {
-      throw new ChatServiceError("session_not_found", `Session '${source.sessionId}' not found`);
-    }
-
-    if (session.status === "archived") {
-      throw new ChatServiceError("session_archived", "Cannot edit message in an archived session");
-    }
+    const resolvedAccountId = this.resolveAccountId(accountId);
+    const initialSource = await this.resolveEditableMessage(messageId, resolvedAccountId);
+    await this.requireActiveSession(initialSource.sessionId, resolvedAccountId, "Cannot edit message in an archived session");
 
     const newBranchId = request.branchId ? normalizeBranchId(request.branchId) : `branch-${nanoid(8)}`;
 
-    return this.runWithGenerationCoordinator(source.sessionId, newBranchId, undefined, async (generationRuntime) => {
+    return this.runWithGenerationCoordinator(initialSource.sessionId, newBranchId, undefined, async (generationRuntime) => {
+      const source = await this.revalidateEditableMessageTarget(messageId, resolvedAccountId, initialSource);
+      const session = await this.requireActiveSession(source.sessionId, resolvedAccountId, "Cannot edit message in an archived session");
       const [branchExists] = await this.db
         .select({ id: floors.id })
         .from(floors)
@@ -1194,7 +1165,7 @@ export class ChatService {
 
       const now = Date.now();
       const newFloorId = nanoid();
-      const resolvedTurnModels = await this.resolveTurnModelsForSession(source.sessionId, accountId);
+      const resolvedTurnModels = await this.resolveTurnModelsForSession(source.sessionId, resolvedAccountId);
       this.assertNarratorSlotEnabled(resolvedTurnModels);
       const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
       const { userMessageRef } = this.createDraftFloorWithUserMessage({
@@ -1210,7 +1181,7 @@ export class ChatService {
       });
 
       const persistedUserMessage = await this.applyPersistedUserInputRegex({
-        accountId,
+        accountId: resolvedAccountId,
         sessionId: source.sessionId,
         branchId: newBranchId,
         floorId: newFloorId,
@@ -1219,6 +1190,7 @@ export class ChatService {
         sessionInfo,
         rawUserMessage: request.content,
         persistedMessageId: userMessageRef.messageId,
+        regexChannel: "edit",
       });
 
       const response = await this.generateForFloor({
@@ -1230,7 +1202,7 @@ export class ChatService {
         userMessageRef,
         history,
         request,
-        accountId,
+        accountId: resolvedAccountId,
         abortSignal: generationRuntime.abortSignal,
         runType: "edit_and_regenerate",
       });
@@ -1799,8 +1771,95 @@ export class ChatService {
     };
   }
 
-  private async getSession(sessionId: string, accountId: string = DEFAULT_ADMIN_ACCOUNT_ID) {
-    return new OwnedSessionRepository(this.db).getById(accountId, sessionId);
+  private resolveAccountId(accountId?: string): string {
+    return resolveAccountIdOrThrow(accountId, this.accountContext);
+  }
+
+  private async getSession(sessionId: string, accountId?: string) {
+    return new OwnedSessionRepository(this.db).getById(this.resolveAccountId(accountId), sessionId);
+  }
+
+  private async requireActiveSession(
+    sessionId: string,
+    accountId: string,
+    archivedMessage: string,
+  ): Promise<typeof sessions.$inferSelect> {
+    const session = await this.getSession(sessionId, accountId);
+    if (!session) {
+      throw new ChatServiceError("session_not_found", `Session '${sessionId}' not found`);
+    }
+
+    if (session.status === "archived") {
+      throw new ChatServiceError("session_archived", archivedMessage);
+    }
+
+    return session;
+  }
+
+  private async requireRegenerationTarget(sessionId: string): Promise<typeof floors.$inferSelect> {
+    const targetFloor = await this.historyLoader.getLastCommittedFloor(sessionId);
+    if (!targetFloor) {
+      throw new ChatServiceError(
+        "no_floor_to_regenerate",
+        "No committed floor found to regenerate"
+      );
+    }
+
+    return targetFloor;
+  }
+
+  private async revalidateRegenerationTarget(
+    sessionId: string,
+    expectedFloorId: string,
+  ): Promise<typeof floors.$inferSelect> {
+    const targetFloor = await this.requireRegenerationTarget(sessionId);
+    if (targetFloor.id !== expectedFloorId) {
+      throw new ChatServiceError(
+        "generation_target_stale",
+        "Latest committed floor changed while the regenerate request was waiting to run"
+      );
+    }
+
+    return targetFloor;
+  }
+
+  private async requireRetryTargetFloor(
+    floorId: string,
+    accountId: string,
+  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "state">> {
+    const targetFloor = new OwnedFloorRepository(this.db).getById(accountId, floorId);
+    if (!targetFloor) {
+      throw new ChatServiceError("floor_not_found", `Floor '${floorId}' not found`);
+    }
+
+    if (targetFloor.state !== "failed") {
+      throw new ChatServiceError(
+        "invalid_state",
+        `Floor '${floorId}' must be in failed state to retry`
+      );
+    }
+
+    return targetFloor;
+  }
+
+  private async revalidateRetryTargetFloor(
+    floorId: string,
+    accountId: string,
+    expected: Pick<typeof floors.$inferSelect, "sessionId" | "floorNo" | "branchId">,
+  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "state">> {
+    const targetFloor = await this.requireRetryTargetFloor(floorId, accountId);
+    if (
+      targetFloor.sessionId !== expected.sessionId
+      || targetFloor.floorNo !== expected.floorNo
+      || targetFloor.branchId !== expected.branchId
+    ) {
+      throw new ChatServiceError(
+        "generation_target_stale",
+        "Retry target changed while the request was waiting to run"
+      );
+    }
+
+    return targetFloor;
   }
 
   private async resolveEditableMessage(
@@ -1846,6 +1905,29 @@ export class ChatService {
     };
   }
 
+  private async revalidateEditableMessageTarget(
+    messageId: string,
+    accountId: string,
+    expected: {
+      floorId: string;
+      floorNo: number;
+      branchId: string;
+      sessionId: string;
+    },
+  ): Promise<{
+    messageId: string;
+    floorId: string;
+    floorNo: number;
+    branchId: string;
+    sessionId: string;
+  }> {
+    const source = await this.resolveEditableMessage(messageId, accountId);
+    if (source.floorId !== expected.floorId || source.floorNo !== expected.floorNo || source.branchId !== expected.branchId || source.sessionId !== expected.sessionId) {
+      throw new ChatServiceError("generation_target_stale", "Edit target changed while the request was waiting to run");
+    }
+    return source;
+  }
+
   private async generateForFloor(args: {
     floorId: string;
     sessionId: string;
@@ -1859,7 +1941,7 @@ export class ChatService {
     abortSignal?: AbortSignal;
     runType: FloorRunType;
   }): Promise<RetryFloorResult> {
-    const memorySummary = await this.retrieveMemorySummary(args.sessionId, args.accountId);
+    const memorySummary = await this.retrieveMemorySummary(args.sessionId, args.accountId, args.floorId);
     await this.initializeFloorRun(args.sessionId, args.floorId, args.runType);
     try {
 
@@ -1917,6 +1999,7 @@ export class ChatService {
     const consolidationContext = await this.buildConsolidationContext(
       args.sessionId,
       args.accountId,
+      args.floorId,
       args.userMessage,
       turnConfig
     );
@@ -2053,6 +2136,7 @@ export class ChatService {
     session: Pick<typeof sessions.$inferSelect, "characterSnapshotJson" | "userSnapshotJson" | "metadataJson">;
     sessionInfo: SessionPromptInfo;
     rawUserMessage: string;
+    regexChannel: RegexExecutionChannel;
     persistedMessageId?: string;
   }): Promise<string> {
     const resourceLoader = new PromptResourceLoader(this.db);
@@ -2079,7 +2163,8 @@ export class ChatService {
       regexProfile.scripts,
       REGEX_PLACEMENT.USER_INPUT,
       {
-        channel: "persist",
+        channel: args.regexChannel,
+        depth: 0,
         substituteFindParams: substituteRegexParams,
         substituteReplaceParams: substituteRegexParams,
       },
@@ -2174,10 +2259,16 @@ export class ChatService {
   private async retrieveMemorySummary(
     sessionId: string,
     accountId: string,
+    floorId?: string,
   ): Promise<string | undefined> {
     if (!this.memoryStore) return undefined;
 
     try {
+      const scopeContext = {
+        accountId,
+        sessionId,
+        ...(floorId ? { floorId } : {}),
+      };
       const injection = await this.memoryStore.prepareInjection(
         sessionId,
         this.enableDualSummaryInjection
@@ -2189,6 +2280,7 @@ export class ChatService {
               includeTypes: ["open_loop", "fact", "summary"],
               strategy: "dual_summary",
               decay: this.memoryInjectionDecay,
+              scopeContext,
             }
           : {
               accountId,
@@ -2200,6 +2292,7 @@ export class ChatService {
               typeOrder: ["open_loop", "fact", "summary"],
               typeMaxItems: { open_loop: 6, fact: 10, summary: 8 },
               decay: this.memoryInjectionDecay,
+              scopeContext,
             },
       );
 
@@ -2499,6 +2592,7 @@ export class ChatService {
   private async buildConsolidationContext(
     sessionId: string,
     accountId: string,
+    floorId: string,
     currentFloorContent: string,
     config?: TurnConfig,
   ): Promise<TurnInput["consolidationContext"] | undefined> {
@@ -2516,10 +2610,10 @@ export class ChatService {
     }
 
     try {
+      const scopeRefs = this.memoryScopeResolver.resolveVisibleRefs({ accountId, sessionId, floorId });
       const [recentSummaryItems, existingFacts] = await Promise.all([
         this.memoryStore.query({
-          scope: "chat",
-          scopeId: sessionId,
+          scopeRefs,
           accountId,
           type: "summary",
           status: "active",
@@ -2529,8 +2623,7 @@ export class ChatService {
           limit: 20,
         }),
         this.memoryStore.query({
-          scope: "chat",
-          scopeId: sessionId,
+          scopeRefs,
           accountId,
           type: "fact",
           status: "active",
@@ -2549,8 +2642,8 @@ export class ChatService {
     } catch (error) {
       await this.emitBestEffortEvent("memory.consolidation_context_failed", {
         sessionId,
-        scope: "chat",
-        scopeId: sessionId,
+        scope: "floor",
+        scopeId: floorId,
         error: error instanceof Error ? error : new Error(String(error)),
       });
 

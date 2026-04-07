@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nanoid } from "nanoid";
 import { eq, asc } from "drizzle-orm";
 
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import {
   sessions,
@@ -205,6 +206,7 @@ describe("E2E Chat with PromptAssembler", () => {
     await database.db.insert(sessions).values({
       id,
       title: "E2E Test",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       characterSnapshotJson: opts.character ? JSON.stringify(opts.character) : null,
       status: "active",
       presetId: opts.presetId ?? null,
@@ -224,6 +226,7 @@ describe("E2E Chat with PromptAssembler", () => {
     await database.db.insert(presets).values({
       id,
       name: "Test Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
       createdAt: Date.now(),
@@ -240,6 +243,7 @@ describe("E2E Chat with PromptAssembler", () => {
     await database.db.insert(worldbooks).values({
       id,
       name: "Test Worldbook",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify(globalSettings),
       createdAt: now,
@@ -276,6 +280,7 @@ describe("E2E Chat with PromptAssembler", () => {
     await database.db.insert(regexProfiles).values({
       id,
       name: "Test Regex",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify(SAMPLE_REGEX_DATA),
       createdAt: Date.now(),
@@ -548,6 +553,7 @@ describe("E2E Chat with PromptAssembler", () => {
     await database.db.insert(presets).values({
       id: presetId,
       name: "Retry Variable Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
       dataJson: JSON.stringify(variablePresetData),
       createdAt: now,
@@ -598,10 +604,10 @@ describe("E2E Chat with PromptAssembler", () => {
     });
 
     await database.db.insert(variables).values([
-      { id: nanoid(), scope: "chat", scopeId: sessionId, key: "mood", valueJson: JSON.stringify("calm"), updatedAt: now },
-      { id: nanoid(), scope: "floor", scopeId: failedFloorId, key: "mood", valueJson: JSON.stringify("grim"), updatedAt: now + 1 },
-      { id: nanoid(), scope: "page", scopeId: inputPageId, key: "item", valueJson: JSON.stringify("torch"), updatedAt: now + 2 },
-      { id: nanoid(), scope: "page", scopeId: inputPageId, key: "char", valueJson: JSON.stringify("Shadow"), updatedAt: now + 3 },
+      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "chat", scopeId: sessionId, key: "mood", valueJson: JSON.stringify("calm"), updatedAt: now },
+      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "floor", scopeId: failedFloorId, key: "mood", valueJson: JSON.stringify("grim"), updatedAt: now + 1 },
+      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "page", scopeId: inputPageId, key: "item", valueJson: JSON.stringify("torch"), updatedAt: now + 2 },
+      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "page", scopeId: inputPageId, key: "char", valueJson: JSON.stringify("Shadow"), updatedAt: now + 3 },
     ]);
 
     await chatService.retryFloor(failedFloorId);
@@ -686,6 +692,7 @@ describe("E2E Chat with PromptAssembler", () => {
     await database.db.insert(sessions).values({
       id: sessionId,
       title: "Greeting Test",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       characterSnapshotJson: JSON.stringify({ name: "Guide", greeting: greetingText }),
       status: "active",
       metadataJson: null,

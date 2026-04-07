@@ -206,6 +206,45 @@ describe("floor routes", () => {
     expect(missingResponse.json<ErrorResponse>().error.code).toBe("not_found");
   });
 
+  it("rejects cross-session parent floors on create and update", async () => {
+    const sessionA = await createSession("Session A");
+    const sessionB = await createSession("Session B");
+    const parentInA = await createFloor({ sessionId: sessionA, floorNo: 0, branchId: "main", state: "committed" });
+    const floorInB = await createFloor({ sessionId: sessionB, floorNo: 0, branchId: "main", state: "draft" });
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/floors",
+      payload: {
+        session_id: sessionB,
+        floor_no: 1,
+        branch_id: "main",
+        parent_floor_id: parentInA.id,
+      },
+    });
+
+    expect(createResponse.statusCode, createResponse.body).toBe(409);
+    expect(createResponse.json<ErrorResponse>().error.code).toBe("floor_parent_session_mismatch");
+
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: `/floors/${floorInB.id}`,
+      payload: {
+        parent_floor_id: parentInA.id,
+      },
+    });
+
+    expect(patchResponse.statusCode, patchResponse.body).toBe(409);
+    expect(patchResponse.json<ErrorResponse>().error.code).toBe("floor_parent_session_mismatch");
+
+    const getResponse = await app.inject({
+      method: "GET",
+      url: `/floors/${floorInB.id}`,
+    });
+    expect(getResponse.statusCode).toBe(200);
+    expect(getResponse.json<ItemResponse<FloorDto>>().data.parent_floor_id).toBeNull();
+  });
+
   it("deletes floors and returns 404 for a missing floor", async () => {
     const sessionId = await createSession();
     const floor = await createFloor({ sessionId, floorNo: 0, branchId: "main", state: "committed" });

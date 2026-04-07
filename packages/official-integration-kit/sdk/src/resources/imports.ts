@@ -1,12 +1,49 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import type { ChatTransferFormat } from "./chat-transfer-jobs.js";
-import { readNumber, readOptionalString, readRecord, readString } from "./utils.js";
+import type { SessionCharacterBinding, SessionRecord, SessionUserBinding } from "./sessions.js";
+import { readBoolean, readNullableString, readNumber, readOptionalString, readRecord, readString } from "./utils.js";
 
 export type ImportedResource = {
   id: string;
   name: string;
   source: string;
 };
+
+export type ImportedCharacter = {
+  character: Record<string, unknown>;
+  characterId: string;
+  characterVersionId: string | null;
+  createSession: boolean;
+  name: string;
+  session?: SessionRecord;
+  source: string;
+};
+
+type ImportedChatBase = {
+  floorCount: number;
+  importSource: string;
+  messageCount: number;
+  sessionId: string;
+  skippedLines: number;
+  title: string;
+};
+
+export type ImportedJsonlChat = ImportedChatBase & {
+  format: "sillytavern_jsonl";
+  importSource: "sillytavern_jsonl";
+  swipeCount: number;
+};
+
+export type ImportedThChat = ImportedChatBase & {
+  format: "thchat";
+  importSource: "thchat";
+  memoryEdgeCount: number;
+  memoryItemCount: number;
+  pageCount: number;
+  variableCount: number;
+};
+
+export type ImportedChat = ImportedJsonlChat | ImportedThChat;
 
 type ImportChatJobFormat = Extract<ChatTransferFormat, "thchat" | "sillytavern_jsonl">;
 
@@ -17,29 +54,12 @@ export type ImportChatJob = {
   status: "pending";
 };
 
-export type ImportedCharacter = {
-  characterId: string;
-  name: string;
-  source: string;
-};
-
 export type ImportedRegexProfile = ImportedResource & {
   scriptCount: number;
 };
 
-export type ImportedChat = {
-  floorCount: number;
-  format: string;
-  importSource: string;
-  messageCount: number;
-  sessionId: string;
-  skippedLines: number;
-  swipeCount: number;
-  title: string;
-};
-
 export type ImportsResource = {
-  character(options: { accountId?: AccountIdHint; createSession?: boolean; payload: Record<string, unknown>; title: string }): Promise<ImportedCharacter>;
+  character(options: { accountId?: AccountIdHint; createSession?: boolean; payload: Record<string, unknown>; title?: string }): Promise<ImportedCharacter>;
   chat(options: { accountId?: AccountIdHint; characterId?: string; data: string; title?: string }): Promise<ImportedChat>;
   chatJob(options: { accountId?: AccountIdHint; characterId?: string; data: string; title?: string }): Promise<ImportChatJob>;
   preset(options: { accountId?: AccountIdHint; data: Record<string, unknown>; name: string }): Promise<ImportedResource>;
@@ -52,7 +72,7 @@ export function createImportsResource(client: TransportClient): ImportsResource 
     async character(options): Promise<ImportedCharacter> {
       const response = await client.fetchJson<Record<string, unknown>>("/import/character", {
         body: {
-          create_session: options.createSession ?? false,
+          create_session: options.createSession ?? true,
           payload: options.payload,
           title: options.title,
         },
@@ -60,17 +80,22 @@ export function createImportsResource(client: TransportClient): ImportsResource 
         method: "POST",
       });
 
-      const data = readRecord(response.body)?.data;
-      const record = readRecord(data);
-      const characterId = readOptionalString(record?.character_id);
-      const characterRecord = readRecord(record?.character);
+      const record = readRecord(readRecord(response.body)?.data);
+      const characterRecord = readRecord(record?.character) ?? {};
+      const session = mapImportedCharacterSession(record?.session);
+      const characterId = readOptionalString(record?.character_id) ?? session?.characterBinding?.characterId;
+      const characterVersionId = readOptionalString(record?.character_version_id) ?? session?.characterBinding?.characterVersionId ?? null;
       if (!characterId) {
         throw new Error("Character import returned an invalid payload");
       }
 
       return {
+        character: characterRecord,
         characterId,
-        name: readString(characterRecord?.name, options.title),
+        characterVersionId,
+        createSession: readBoolean(record?.create_session, true),
+        name: readString(characterRecord.name, options.title ?? session?.title ?? "Imported Character"),
+        ...(session ? { session } : {}),
         source: "sillytavern",
       };
     },
@@ -91,15 +116,34 @@ export function createImportsResource(client: TransportClient): ImportsResource 
         throw new Error("Chat import returned an invalid payload");
       }
 
+      const format = readString(data?.format);
+      const title = readString(data?.title, options.title ?? "Imported Chat");
+
+      if (format === "thchat") {
+        return {
+          floorCount: readNumber(data?.floor_count),
+          format: "thchat",
+          importSource: "thchat",
+          memoryEdgeCount: readNumber(data?.memory_edge_count),
+          memoryItemCount: readNumber(data?.memory_item_count),
+          messageCount: readNumber(data?.message_count),
+          pageCount: readNumber(data?.page_count),
+          sessionId,
+          skippedLines: readNumber(data?.skipped_lines),
+          title,
+          variableCount: readNumber(data?.variable_count),
+        };
+      }
+
       return {
         floorCount: readNumber(data?.floor_count),
-        format: readString(data?.format),
-        importSource: readString(data?.import_source),
+        format: "sillytavern_jsonl",
+        importSource: "sillytavern_jsonl",
         messageCount: readNumber(data?.message_count),
         sessionId,
         skippedLines: readNumber(data?.skipped_lines),
         swipeCount: readNumber(data?.swipe_count),
-        title: readString(data?.title, options.title ?? "Imported Chat"),
+        title,
       };
     },
     async chatJob(options): Promise<ImportChatJob> {
@@ -204,4 +248,59 @@ function mapImportedResource(
 
 function mapImportChatJobFormat(value: unknown): ImportChatJobFormat | null {
   return value === "thchat" || value === "sillytavern_jsonl" ? value : null;
+}
+
+function mapImportedCharacterSession(value: unknown): SessionRecord | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  return {
+    characterBinding: mapSessionCharacterBinding(record.character_binding),
+    createdAt: readNumber(record.created_at),
+    id: readString(record.id),
+    metadata: record.metadata ?? null,
+    modelName: readNullableString(record.model_name),
+    modelParams: record.model_params ?? null,
+    modelProvider: readNullableString(record.model_provider),
+    presetId: readNullableString(record.preset_id),
+    promptMode: readNullableString(record.prompt_mode),
+    regexProfileId: readNullableString(record.regex_profile_id),
+    status: readString(record.status),
+    title: readNullableString(record.title),
+    updatedAt: readNumber(record.updated_at),
+    userBinding: mapSessionUserBinding(record.user_binding),
+    worldbookProfileId: readNullableString(record.worldbook_profile_id),
+  };
+}
+
+function mapSessionCharacterBinding(value: unknown): SessionCharacterBinding | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const snapshotSummary = readRecord(record.snapshot_summary);
+  return {
+    characterId: readNullableString(record.character_id),
+    characterVersionId: readNullableString(record.character_version_id),
+    snapshotSummary: snapshotSummary
+      ? { hasGreeting: readBoolean(snapshotSummary.has_greeting), name: readString(snapshotSummary.name) }
+      : null,
+    syncPolicy: readString(record.sync_policy, "pin") as SessionCharacterBinding["syncPolicy"],
+  };
+}
+
+function mapSessionUserBinding(value: unknown): SessionUserBinding | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const snapshotSummary = readRecord(record.snapshot_summary);
+  return {
+    snapshotSummary: snapshotSummary ? { name: readString(snapshotSummary.name) } : null,
+    userId: readNullableString(record.user_id),
+  };
 }

@@ -742,6 +742,7 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
     case "invalid_tool_mode":
       return { statusCode: 400, code: error.code, message: error.message };
     case "invalid_state":
+    case "generation_target_stale":
     case "branch_exists":
       return { statusCode: 409, code: error.code, message: error.message };
     case "generation_cancelled":

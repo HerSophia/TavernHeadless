@@ -49,13 +49,22 @@ export function createDatabase(
     sqlite.pragma("journal_mode = WAL");
   }
 
-  sqlite.pragma("foreign_keys = ON");
   sqlite.pragma(`busy_timeout = ${DEFAULT_BUSY_TIMEOUT_MS}`);
 
   const db = drizzle(sqlite, { schema });
-  migrate(db, {
-    migrationsFolder: resolveMigrationsPath(migrationsPath)
-  });
+
+  // Drizzle 的 SQLite migrator 会把整组 migration 放进单个事务。
+  // 对于 0034 这类通过重建表来移除默认值的 migration，
+  // 必须在进入事务前关闭 foreign_keys，否则文件内的 PRAGMA 不会生效。
+  sqlite.pragma("foreign_keys = OFF");
+
+  try {
+    migrate(db, {
+      migrationsFolder: resolveMigrationsPath(migrationsPath)
+    });
+  } finally {
+    sqlite.pragma("foreign_keys = ON");
+  }
 
   return {
     db,

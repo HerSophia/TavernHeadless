@@ -1,15 +1,10 @@
-import type { MemoryScope } from '@tavern/shared';
+import { MEMORY_SCOPES, type MemoryScope } from '@tavern/shared';
 
-export interface MemoryScopeResolutionContext {
-  accountId?: string;
-  sessionId?: string;
-  floorId?: string;
-}
+import type { MemoryScopeContext, MemoryScopeRef } from './types.js';
 
-export interface ResolvedMemoryScopeRef {
-  scope: MemoryScope;
-  scopeId: string;
-}
+export type MemoryScopeResolutionContext = MemoryScopeContext;
+
+export type ResolvedMemoryScopeRef = MemoryScopeRef;
 
 function normalizeScopeId(value: string | undefined): string | undefined {
   const normalized = value?.trim();
@@ -63,5 +58,32 @@ export class MemoryScopeResolver {
       scope,
       scopeId: this.resolve(scope, context, fallbackScopeId),
     };
+  }
+
+  resolveVisibleRefs(
+    context: MemoryScopeResolutionContext,
+    scopes: readonly MemoryScope[] = MEMORY_SCOPES,
+  ): ResolvedMemoryScopeRef[] {
+    const resolved: ResolvedMemoryScopeRef[] = [];
+
+    for (const scope of scopes) {
+      if (scope === 'global') {
+        const accountId = normalizeScopeId(context.accountId);
+        if (accountId) {
+          resolved.push({ scope, scopeId: accountId });
+        }
+        continue;
+      }
+
+      const scopeId = scope === 'chat'
+        ? normalizeScopeId(context.sessionId)
+        : normalizeScopeId(context.floorId);
+
+      if (scopeId) {
+        resolved.push({ scope, scopeId });
+      }
+    }
+
+    return resolved;
   }
 }

@@ -92,7 +92,11 @@ describe("Tool Routes", () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
+    ({ app } = await buildApp({
+      databasePath: ":memory:",
+      logger: false,
+      enableUnsafeScriptHandler: true,
+    }));
   });
 
   afterEach(async () => {
@@ -168,6 +172,22 @@ describe("Tool Routes", () => {
     // Confirm deleted
     const gone = await app.inject({ method: "GET", url: `/tools/definitions/${created.id}` });
     expect(gone.statusCode).toBe(404);
+  });
+
+  it("maps duplicate tool definition identity to a stable 409 error", async () => {
+    const first = await createDefinition(app, {
+      name: "duplicate_tool",
+      source: "custom",
+    });
+    expect(first.statusCode, first.body).toBe(201);
+
+    const duplicate = await createDefinition(app, {
+      name: "duplicate_tool",
+      source: "custom",
+    });
+
+    expect(duplicate.statusCode, duplicate.body).toBe(409);
+    expect(duplicate.json<ErrorResponse>().error.code).toBe("tool_definition_conflict");
   });
 
   it("lists definitions with pagination and filtering", async () => {

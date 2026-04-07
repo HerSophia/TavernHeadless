@@ -330,10 +330,14 @@ describe('TurnOrchestrator', () => {
 
     const result = await orchestrator.executeTurn(input);
 
-    expect(deps.memoryStore.prepareInjection).toHaveBeenCalledWith('session-1', {
+    expect(deps.memoryStore.prepareInjection).toHaveBeenCalledWith('session-1', expect.objectContaining({
       maxTokens: 200,
       minImportance: 0.3,
-    });
+      scopeContext: {
+        sessionId: 'session-1',
+        floorId: 'floor-1',
+      },
+    }));
     expect(result.memoryInjection).toBeDefined();
   });
 

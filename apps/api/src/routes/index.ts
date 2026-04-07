@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 
 import type { DatabaseConnection } from "../db/client";
 import type { SessionToolRegistryService } from "../services/session-tool-registry-service.js";
+import type { McpConnectionManager } from "../mcp/mcp-connection-manager.js";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 import { registerCharacterRoutes } from "./characters";
 import { registerFloorRoutes } from "./floors";
@@ -24,6 +25,7 @@ import { registerUserRoutes } from "./users";
 import { registerToolRoutes } from "./tools";
 import { registerMcpConfigRoutes } from "./mcp";
 import { registerExportRoutes } from "./exports";
+import type { AccountMode } from "../accounts/constants.js";
 
 export interface CrudRoutesOptions {
   variableEventBus?: CoreEventBus;
@@ -31,6 +33,9 @@ export interface CrudRoutesOptions {
   memoryJobs?: MemoryJobRoutesOptions;
   chatTransferJobs?: ChatTransferJobRoutesOptions & { importMaxBytes?: number; exportSyncMaxMessages?: number; exportArtifactTtlMs?: number };
   mutationRuntime?: MutationRuntime;
+  mcpManager?: McpConnectionManager;
+  enableUnsafeScriptHandler?: boolean;
+  accountMode?: AccountMode;
 }
 
 export async function registerCrudRoutes(
@@ -38,7 +43,9 @@ export async function registerCrudRoutes(
   connection: DatabaseConnection,
   options: CrudRoutesOptions = {}
 ): Promise<void> {
-  await registerAccountRoutes(app, connection);
+  await registerAccountRoutes(app, connection, {
+    accountMode: options.accountMode,
+  });
   await registerSessionRoutes(app, connection);
   await registerSessionRuntimeToolRoutes(app, {
     sessionToolRegistryService: options.sessionToolRegistryService,
@@ -55,12 +62,19 @@ export async function registerCrudRoutes(
   await registerMemoryRoutes(app, connection);
   await registerMemoryJobRoutes(app, connection, options.memoryJobs);
   await registerImportRoutes(app, connection, options.chatTransferJobs);
-  await registerLlmProfileRoutes(app, connection, { mutationRuntime: options.mutationRuntime });
+  await registerLlmProfileRoutes(app, connection, {
+    mutationRuntime: options.mutationRuntime,
+    accountMode: options.accountMode,
+  });
   await registerLlmInstanceRoutes(app, connection, { mutationRuntime: options.mutationRuntime });
   await registerChatTransferJobRoutes(app, connection, options.chatTransferJobs);
   await registerWorldbookEntryRoutes(app, connection);
   await registerPresetEntryRoutes(app, connection);
-  await registerToolRoutes(app, connection);
-  await registerMcpConfigRoutes(app, connection);
+  await registerToolRoutes(app, connection, {
+    enableUnsafeScriptHandler: options.enableUnsafeScriptHandler,
+  });
+  await registerMcpConfigRoutes(app, connection, {
+    mcpManager: options.mcpManager,
+  });
   await registerExportRoutes(app, connection, options.chatTransferJobs);
 }

@@ -180,6 +180,19 @@ describe('thChatFloorSchema', () => {
     const result = thChatFloorSchema.safeParse(floor);
     expect(result.success).toBe(false);
   });
+
+  it('accepts optional superseded floor linkage fields', () => {
+    const result = thChatFloorSchema.safeParse(makeMinimalFloor({
+      superseded_at: 1700000000100,
+      superseded_by_floor_id_ref: 'floor_002',
+    }));
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.superseded_at).toBe(1700000000100);
+      expect(result.data.superseded_by_floor_id_ref).toBe('floor_002');
+    }
+  });
 });
 
 // ── thChatPageSchema ───────────────────────────────

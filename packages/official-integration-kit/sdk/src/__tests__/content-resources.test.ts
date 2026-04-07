@@ -57,7 +57,6 @@ describe("sdk content resources", () => {
       pages.create({
         checksum: "sum-1",
         floorId: "floor-1",
-        isActive: true,
         pageKind: "output",
         pageNo: 2,
         version: 3,
@@ -160,7 +159,6 @@ describe("sdk content resources", () => {
     expect(createInit?.body).toBe(JSON.stringify({
       checksum: "sum-1",
       floor_id: "floor-1",
-      is_active: true,
       page_kind: "output",
       page_no: 2,
       version: 3,

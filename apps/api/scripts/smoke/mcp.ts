@@ -107,17 +107,61 @@ export async function smokeMcp(ctx: SmokeContext): Promise<void> {
       assert(Array.isArray(mcpRuntimeProbe.body?.data), "MCP statuses should be an array");
     });
 
-    await runStep("GET /mcp/servers/:id/status (not in manager => 404)", () =>
-      api.request("GET", `/mcp/servers/${mcpServerId}/status`, undefined, [404])
-    );
+    await runStep("GET /mcp/servers/:id/status", async () => {
+      const res = await api.request<{
+        data: {
+          server_id: string;
+          server_name: string;
+          transport: string;
+          state: string;
+          attached: boolean;
+          reason: string | null;
+        };
+      }>("GET", `/mcp/servers/${mcpServerId}/status`, undefined, [200]);
 
-    await runStep("POST /mcp/servers/:id/disconnect (not in manager => 404)", () =>
-      api.request("POST", `/mcp/servers/${mcpServerId}/disconnect`, undefined, [404])
-    );
+      assert(res.body?.data?.server_id === mcpServerId, "MCP runtime status should return the requested server id");
+      assert(res.body?.data?.server_name === `${runId}-mcp-renamed`, "MCP runtime status should reflect the latest config name");
+      assert(res.body?.data?.transport === "stdio", "MCP runtime status transport should be stdio");
+      assert(res.body?.data?.attached === true, "Enabled MCP server should remain visible in runtime status");
+      assert(res.body?.data?.reason === null, "Attached MCP runtime status should not report a detached reason");
+      assert(
+        ["disconnected", "connecting", "connected", "reconnect_required", "error"].includes(res.body?.data?.state ?? ""),
+        "MCP runtime status should expose a known connection state"
+      );
+    });
 
-    await runStep("GET /mcp/servers/:id/tools (not in manager => 404)", () =>
-      api.request("GET", `/mcp/servers/${mcpServerId}/tools`, undefined, [404])
-    );
+    await runStep("GET /mcp/servers/:id/tools", async () => {
+      const res = await api.request<
+        | { data: unknown[] }
+        | { error?: { code?: string; message?: string } }
+      >("GET", `/mcp/servers/${mcpServerId}/tools`, undefined, [200, 409, 503]);
+
+      if (res.status === 200) {
+        assert(Array.isArray((res.body as { data?: unknown[] } | null)?.data), "Connected MCP server should return a tool list");
+        return;
+      }
+
+      const errorCode = (res.body as { error?: { code?: string } } | null)?.error?.code;
+      assert(
+        errorCode === "mcp_runtime_not_attached" || errorCode === "mcp_runtime_unavailable",
+        "Unavailable MCP tool listing should return a stable runtime error code"
+      );
+    });
+
+    await runStep("POST /mcp/servers/:id/disconnect", async () => {
+      const res = await api.request<
+        | { data: { server_id: string; state: string } }
+        | { error?: { code?: string; message?: string } }
+      >("POST", `/mcp/servers/${mcpServerId}/disconnect`, undefined, [200, 409]);
+
+      if (res.status === 200) {
+        assert((res.body as { data?: { server_id?: string } } | null)?.data?.server_id === mcpServerId, "Disconnect response should reference the requested MCP server");
+        return;
+      }
+
+      const errorCode = (res.body as { error?: { code?: string } } | null)?.error?.code;
+      assert(errorCode === "mcp_runtime_not_attached", "Detached MCP disconnect should return mcp_runtime_not_attached");
+    });
   } else {
     console.log("  ⏭  MCP runtime routes not available (ENABLE_MCP != true), skipping runtime steps.");
   }

@@ -288,6 +288,39 @@ describe('assembleCompat', () => {
       expect(depthSection!.pinned).toBe(true);
     });
 
+    it('injects outlet entries using the matching preset marker placement', () => {
+      const entry = makeEntry({
+        uid: 4,
+        content: 'Outlet lore',
+        position: WI_POSITION.OUTLET,
+        outletName: 'LoreOutlet',
+      });
+      const worldBookResults: TriggerResult = {
+        activated: [entry],
+        before: [],
+        after: [],
+        atDepth: [],
+        outletEntries: { LoreOutlet: [entry] },
+      };
+
+      const ir = assembleCompat({
+        preset: makePreset({
+          prompts: [
+            ...makePreset().prompts,
+            { identifier: 'LoreOutlet', name: 'Lore Outlet', marker: true, enabled: true, behavior: { placement: { kind: 'in_chat', depth: 1, order: 5 } } },
+          ],
+          promptOrder: [...makePreset().promptOrder, 'LoreOutlet'],
+        }),
+        chatHistory: [{ role: 'user', content: 'Hi' }],
+        worldBookResults,
+      });
+
+      const outletSection = ir.sections.find((section) => section.name === 'worldInfoOutlet:LoreOutlet');
+      expect(outletSection).toBeDefined();
+      expect(outletSection?.insertion).toEqual({ kind: 'in_chat', depth: 1, order: 5 });
+      expect(outletSection?.messages[0]?.content).toBe('Outlet lore');
+    });
+
     it('handles no world book results', () => {
       const ir = assembleCompat({
         preset: makePreset(),

@@ -117,6 +117,7 @@ async function seedVariable(args: {
 }): Promise<void> {
   await args.database.db.insert(variables).values({
     id: nanoid(),
+    accountId: DEFAULT_ACCOUNT_ID,
     scope: args.scope,
     scopeId: args.scopeId,
     key: args.key,
@@ -246,6 +247,7 @@ describe("TurnCommitService", () => {
     await database.db.insert(memoryItems).values([
       {
         id: updatedFactId,
+        accountId: DEFAULT_ACCOUNT_ID,
         scope: "chat",
         scopeId: sessionId,
         type: "fact",
@@ -261,6 +263,7 @@ describe("TurnCommitService", () => {
       },
       {
         id: deprecatedFactId,
+        accountId: DEFAULT_ACCOUNT_ID,
         scope: "chat",
         scopeId: sessionId,
         type: "fact",
@@ -276,6 +279,7 @@ describe("TurnCommitService", () => {
       },
       {
         id: duplicateMoodFactId,
+        accountId: DEFAULT_ACCOUNT_ID,
         scope: "chat",
         scopeId: sessionId,
         type: "fact",

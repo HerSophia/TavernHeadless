@@ -1544,6 +1544,18 @@ export interface paths {
                                     url: string;
                                 };
                                 id: string;
+                                live_status: {
+                                    attached: boolean;
+                                    connected_at: number | null;
+                                    error: string | null;
+                                    last_timeout_at: number | null;
+                                    reason: ("disabled" | "manager_unavailable" | "not_attached") | null;
+                                    reconnect_required: boolean;
+                                    /** @enum {string} */
+                                    state: "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
+                                    tool_count: number;
+                                    tools_refreshed_at: number | null;
+                                };
                                 name: string;
                                 stdio?: {
                                     args?: string[];
@@ -1620,9 +1632,11 @@ export interface paths {
                     content: {
                         "application/json": {
                             data?: {
+                                attached?: boolean;
                                 connected_at?: number | null;
                                 error?: string | null;
                                 last_timeout_at?: number | null;
+                                reason?: ("disabled" | "manager_unavailable" | "not_attached") | null;
                                 reconnect_required?: boolean;
                                 server_id?: string;
                                 server_name?: string;
@@ -1637,6 +1651,23 @@ export interface paths {
                 };
                 /** @description Default Response */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -1723,9 +1754,11 @@ export interface paths {
                     content: {
                         "application/json": {
                             data?: {
+                                attached?: boolean;
                                 connected_at?: number | null;
                                 error?: string | null;
                                 last_timeout_at?: number | null;
+                                reason?: ("disabled" | "manager_unavailable" | "not_attached") | null;
                                 reconnect_required?: boolean;
                                 server_id?: string;
                                 server_name?: string;
@@ -1740,6 +1773,23 @@ export interface paths {
                 };
                 /** @description Default Response */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -1790,9 +1840,11 @@ export interface paths {
                     content: {
                         "application/json": {
                             data?: {
+                                attached?: boolean;
                                 connected_at?: number | null;
                                 error?: string | null;
                                 last_timeout_at?: number | null;
+                                reason?: ("disabled" | "manager_unavailable" | "not_attached") | null;
                                 reconnect_required?: boolean;
                                 server_id?: string;
                                 server_name?: string;
@@ -1999,6 +2051,23 @@ export interface paths {
                     };
                 };
                 /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
                 500: {
                     headers: {
                         [name: string]: unknown;
@@ -2067,9 +2136,11 @@ export interface paths {
                     content: {
                         "application/json": {
                             data?: {
+                                attached?: boolean;
                                 connected_at?: number | null;
                                 error?: string | null;
                                 last_timeout_at?: number | null;
+                                reason?: ("disabled" | "manager_unavailable" | "not_attached") | null;
                                 reconnect_required?: boolean;
                                 server_id?: string;
                                 server_name?: string;
@@ -2172,7 +2243,9 @@ export interface paths {
                         "application/json": {
                             data: {
                                 confidence: number;
-                                content: unknown;
+                                content: string | {
+                                    text: string;
+                                };
                                 coverage_end_floor_no?: number | null;
                                 coverage_start_floor_no?: number | null;
                                 created_at: number;
@@ -2241,7 +2314,9 @@ export interface paths {
                 content: {
                     "application/json": {
                         confidence?: number;
-                        content: unknown;
+                        content: string | {
+                            text: string;
+                        };
                         fact_key?: string | null;
                         importance?: number;
                         /** @enum {string} */
@@ -2310,7 +2385,9 @@ export interface paths {
                              */
                             data: {
                                 confidence: number;
-                                content: unknown;
+                                content: string | {
+                                    text: string;
+                                };
                                 coverage_end_floor_no?: number | null;
                                 coverage_start_floor_no?: number | null;
                                 created_at: number;
@@ -2448,7 +2525,9 @@ export interface paths {
                              */
                             data: {
                                 confidence: number;
-                                content: unknown;
+                                content: string | {
+                                    text: string;
+                                };
                                 coverage_end_floor_no?: number | null;
                                 coverage_start_floor_no?: number | null;
                                 created_at: number;
@@ -2566,7 +2645,9 @@ export interface paths {
                 content: {
                     "application/json": {
                         confidence?: number;
-                        content?: unknown;
+                        content?: string | {
+                            text: string;
+                        };
                         fact_key?: string | null;
                         importance?: number;
                         /** @enum {string} */
@@ -2635,7 +2716,9 @@ export interface paths {
                              */
                             data: {
                                 confidence: number;
-                                content: unknown;
+                                content: string | {
+                                    text: string;
+                                };
                                 coverage_end_floor_no?: number | null;
                                 coverage_start_floor_no?: number | null;
                                 created_at: number;
@@ -8793,13 +8876,15 @@ export interface operations {
                             /** @enum {string} */
                             format: "thchat" | "sillytavern_jsonl";
                             import_source?: string;
+                            memory_edge_count?: number;
+                            memory_item_count?: number;
                             message_count: number;
+                            page_count?: number;
                             session_id: string;
                             skipped_lines?: number;
                             swipe_count?: number;
                             title: string;
-                        } & {
-                            [key: string]: unknown;
+                            variable_count?: number;
                         };
                     };
                 };
@@ -10859,6 +10944,18 @@ export interface operations {
                                 url: string;
                             };
                             id: string;
+                            live_status: {
+                                attached: boolean;
+                                connected_at: number | null;
+                                error: string | null;
+                                last_timeout_at: number | null;
+                                reason: ("disabled" | "manager_unavailable" | "not_attached") | null;
+                                reconnect_required: boolean;
+                                /** @enum {string} */
+                                state: "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
+                                tool_count: number;
+                                tools_refreshed_at: number | null;
+                            };
                             name: string;
                             stdio?: {
                                 args?: string[];
@@ -10959,6 +11056,18 @@ export interface operations {
                                 url: string;
                             };
                             id: string;
+                            live_status: {
+                                attached: boolean;
+                                connected_at: number | null;
+                                error: string | null;
+                                last_timeout_at: number | null;
+                                reason: ("disabled" | "manager_unavailable" | "not_attached") | null;
+                                reconnect_required: boolean;
+                                /** @enum {string} */
+                                state: "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
+                                tool_count: number;
+                                tools_refreshed_at: number | null;
+                            };
                             name: string;
                             stdio?: {
                                 args?: string[];
@@ -11134,6 +11243,18 @@ export interface operations {
                                 url: string;
                             };
                             id: string;
+                            live_status: {
+                                attached: boolean;
+                                connected_at: number | null;
+                                error: string | null;
+                                last_timeout_at: number | null;
+                                reason: ("disabled" | "manager_unavailable" | "not_attached") | null;
+                                reconnect_required: boolean;
+                                /** @enum {string} */
+                                state: "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
+                                tool_count: number;
+                                tools_refreshed_at: number | null;
+                            };
                             name: string;
                             stdio?: {
                                 args?: string[];
@@ -11277,6 +11398,18 @@ export interface operations {
                                 url: string;
                             };
                             id: string;
+                            live_status: {
+                                attached: boolean;
+                                connected_at: number | null;
+                                error: string | null;
+                                last_timeout_at: number | null;
+                                reason: ("disabled" | "manager_unavailable" | "not_attached") | null;
+                                reconnect_required: boolean;
+                                /** @enum {string} */
+                                state: "disconnected" | "connecting" | "connected" | "reconnect_required" | "error";
+                                tool_count: number;
+                                tools_refreshed_at: number | null;
+                            };
                             name: string;
                             stdio?: {
                                 args?: string[];
@@ -11508,7 +11641,9 @@ export interface operations {
                                  */
                                 data?: {
                                     confidence: number;
-                                    content: unknown;
+                                    content: string | {
+                                        text: string;
+                                    };
                                     coverage_end_floor_no?: number | null;
                                     coverage_start_floor_no?: number | null;
                                     created_at: number;
@@ -12346,6 +12481,7 @@ export interface operations {
                 "application/json": {
                     checksum?: string;
                     floor_id: string;
+                    is_active?: unknown;
                     /** @enum {string} */
                     page_kind: "input" | "output" | "mixed";
                     page_no: number;
@@ -12556,6 +12692,7 @@ export interface operations {
                 "application/json": {
                     checksum?: string;
                     floor_id?: string;
+                    is_active?: unknown;
                     /** @enum {string} */
                     page_kind?: "input" | "output" | "mixed";
                     page_no?: number;
@@ -15132,7 +15269,7 @@ export interface operations {
                             enabled: boolean;
                             handler: unknown;
                             /** @enum {string} */
-                            handler_type: "script" | "prompt" | "delegate";
+                            handler_type: "script";
                             id: string;
                             name: string;
                             parameters: Record<string, never>;
@@ -15189,7 +15326,7 @@ export interface operations {
                     enabled?: boolean;
                     handler?: Record<string, never>;
                     /** @enum {string} */
-                    handler_type?: "script" | "prompt" | "delegate";
+                    handler_type?: "script";
                     name: string;
                     parameters?: Record<string, never>;
                     /** @enum {string} */
@@ -15215,7 +15352,7 @@ export interface operations {
                             enabled: boolean;
                             handler: unknown;
                             /** @enum {string} */
-                            handler_type: "script" | "prompt" | "delegate";
+                            handler_type: "script";
                             id: string;
                             name: string;
                             parameters: Record<string, never>;
@@ -15231,6 +15368,23 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15273,7 +15427,7 @@ export interface operations {
                             enabled: boolean;
                             handler: unknown;
                             /** @enum {string} */
-                            handler_type: "script" | "prompt" | "delegate";
+                            handler_type: "script";
                             id: string;
                             name: string;
                             parameters: Record<string, never>;
@@ -15367,7 +15521,7 @@ export interface operations {
                     enabled?: boolean;
                     handler?: Record<string, never>;
                     /** @enum {string} */
-                    handler_type?: "script" | "prompt" | "delegate";
+                    handler_type?: "script";
                     name?: string;
                     parameters?: Record<string, never>;
                     /** @enum {string} */
@@ -15393,7 +15547,7 @@ export interface operations {
                             enabled: boolean;
                             handler: unknown;
                             /** @enum {string} */
-                            handler_type: "script" | "prompt" | "delegate";
+                            handler_type: "script";
                             id: string;
                             name: string;
                             parameters: Record<string, never>;
@@ -15409,6 +15563,23 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15474,7 +15645,7 @@ export interface operations {
                             enabled: boolean;
                             handler: unknown;
                             /** @enum {string} */
-                            handler_type: "script" | "prompt" | "delegate";
+                            handler_type: "script";
                             id: string;
                             name: string;
                             parameters: Record<string, never>;
@@ -15490,6 +15661,23 @@ export interface operations {
             };
             /** @description Default Response */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

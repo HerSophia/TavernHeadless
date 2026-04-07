@@ -19,7 +19,7 @@
   "info": {
     "description": "Backend API for TavernHeadless core engine",
     "title": "TavernHeadless API",
-    "version": "0.2.0-beta.2"
+    "version": "0.2.0-beta.3"
   },
   "openapi": "3.0.3",
   "paths": {
@@ -7042,7 +7042,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "data": {
-                      "additionalProperties": true,
+                      "additionalProperties": false,
                       "properties": {
                         "floor_count": {
                           "minimum": 0,
@@ -7058,7 +7058,19 @@
                         "import_source": {
                           "type": "string"
                         },
+                        "memory_edge_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "memory_item_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "message_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "page_count": {
                           "minimum": 0,
                           "type": "integer"
                         },
@@ -7075,6 +7087,10 @@
                         },
                         "title": {
                           "type": "string"
+                        },
+                        "variable_count": {
+                          "minimum": 0,
+                          "type": "integer"
                         }
                       },
                       "required": [
@@ -11835,6 +11851,73 @@
                           "id": {
                             "type": "string"
                           },
+                          "live_status": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "attached": {
+                                "type": "boolean"
+                              },
+                              "connected_at": {
+                                "nullable": true,
+                                "type": "integer"
+                              },
+                              "error": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "last_timeout_at": {
+                                "nullable": true,
+                                "type": "integer"
+                              },
+                              "reason": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "disabled",
+                                      "manager_unavailable",
+                                      "not_attached"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "reconnect_required": {
+                                "type": "boolean"
+                              },
+                              "state": {
+                                "enum": [
+                                  "disconnected",
+                                  "connecting",
+                                  "connected",
+                                  "reconnect_required",
+                                  "error"
+                                ],
+                                "type": "string"
+                              },
+                              "tool_count": {
+                                "type": "integer"
+                              },
+                              "tools_refreshed_at": {
+                                "nullable": true,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "attached",
+                              "reason",
+                              "state",
+                              "tool_count",
+                              "connected_at",
+                              "tools_refreshed_at",
+                              "error",
+                              "reconnect_required",
+                              "last_timeout_at"
+                            ],
+                            "type": "object"
+                          },
                           "name": {
                             "type": "string"
                           },
@@ -11894,7 +11977,8 @@
                           "tool_refresh_interval_ms",
                           "default_side_effect_level",
                           "created_at",
-                          "updated_at"
+                          "updated_at",
+                          "live_status"
                         ],
                         "type": "object"
                       },
@@ -12108,6 +12192,73 @@
                         "id": {
                           "type": "string"
                         },
+                        "live_status": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "attached": {
+                              "type": "boolean"
+                            },
+                            "connected_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "error": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "last_timeout_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "disabled",
+                                    "manager_unavailable",
+                                    "not_attached"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reconnect_required": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "disconnected",
+                                "connecting",
+                                "connected",
+                                "reconnect_required",
+                                "error"
+                              ],
+                              "type": "string"
+                            },
+                            "tool_count": {
+                              "type": "integer"
+                            },
+                            "tools_refreshed_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "attached",
+                            "reason",
+                            "state",
+                            "tool_count",
+                            "connected_at",
+                            "tools_refreshed_at",
+                            "error",
+                            "reconnect_required",
+                            "last_timeout_at"
+                          ],
+                          "type": "object"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -12167,7 +12318,8 @@
                         "tool_refresh_interval_ms",
                         "default_side_effect_level",
                         "created_at",
-                        "updated_at"
+                        "updated_at",
+                        "live_status"
                       ],
                       "type": "object"
                     }
@@ -12420,6 +12572,73 @@
                         "id": {
                           "type": "string"
                         },
+                        "live_status": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "attached": {
+                              "type": "boolean"
+                            },
+                            "connected_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "error": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "last_timeout_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "disabled",
+                                    "manager_unavailable",
+                                    "not_attached"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reconnect_required": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "disconnected",
+                                "connecting",
+                                "connected",
+                                "reconnect_required",
+                                "error"
+                              ],
+                              "type": "string"
+                            },
+                            "tool_count": {
+                              "type": "integer"
+                            },
+                            "tools_refreshed_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "attached",
+                            "reason",
+                            "state",
+                            "tool_count",
+                            "connected_at",
+                            "tools_refreshed_at",
+                            "error",
+                            "reconnect_required",
+                            "last_timeout_at"
+                          ],
+                          "type": "object"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -12479,7 +12698,8 @@
                         "tool_refresh_interval_ms",
                         "default_side_effect_level",
                         "created_at",
-                        "updated_at"
+                        "updated_at",
+                        "live_status"
                       ],
                       "type": "object"
                     }
@@ -12699,6 +12919,73 @@
                         "id": {
                           "type": "string"
                         },
+                        "live_status": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "attached": {
+                              "type": "boolean"
+                            },
+                            "connected_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "error": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "last_timeout_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "disabled",
+                                    "manager_unavailable",
+                                    "not_attached"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reconnect_required": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "disconnected",
+                                "connecting",
+                                "connected",
+                                "reconnect_required",
+                                "error"
+                              ],
+                              "type": "string"
+                            },
+                            "tool_count": {
+                              "type": "integer"
+                            },
+                            "tools_refreshed_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "attached",
+                            "reason",
+                            "state",
+                            "tool_count",
+                            "connected_at",
+                            "tools_refreshed_at",
+                            "error",
+                            "reconnect_required",
+                            "last_timeout_at"
+                          ],
+                          "type": "object"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -12758,7 +13045,8 @@
                         "tool_refresh_interval_ms",
                         "default_side_effect_level",
                         "created_at",
-                        "updated_at"
+                        "updated_at",
+                        "live_status"
                       ],
                       "type": "object"
                     }
@@ -12962,6 +13250,9 @@
                   "properties": {
                     "data": {
                       "properties": {
+                        "attached": {
+                          "type": "boolean"
+                        },
                         "connected_at": {
                           "nullable": true,
                           "type": "integer"
@@ -12973,6 +13264,21 @@
                         "last_timeout_at": {
                           "nullable": true,
                           "type": "integer"
+                        },
+                        "reason": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "disabled",
+                                "manager_unavailable",
+                                "not_attached"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "reconnect_required": {
                           "type": "boolean"
@@ -13014,6 +13320,39 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -13140,6 +13479,9 @@
                   "properties": {
                     "data": {
                       "properties": {
+                        "attached": {
+                          "type": "boolean"
+                        },
                         "connected_at": {
                           "nullable": true,
                           "type": "integer"
@@ -13151,6 +13493,21 @@
                         "last_timeout_at": {
                           "nullable": true,
                           "type": "integer"
+                        },
+                        "reason": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "disabled",
+                                "manager_unavailable",
+                                "not_attached"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "reconnect_required": {
                           "type": "boolean"
@@ -13223,6 +13580,39 @@
               }
             },
             "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
           }
         },
         "summary": "Disconnect MCP server",
@@ -13252,6 +13642,9 @@
                   "properties": {
                     "data": {
                       "properties": {
+                        "attached": {
+                          "type": "boolean"
+                        },
                         "connected_at": {
                           "nullable": true,
                           "type": "integer"
@@ -13263,6 +13656,21 @@
                         "last_timeout_at": {
                           "nullable": true,
                           "type": "integer"
+                        },
+                        "reason": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "disabled",
+                                "manager_unavailable",
+                                "not_attached"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "reconnect_required": {
                           "type": "boolean"
@@ -13576,6 +13984,73 @@
                         "id": {
                           "type": "string"
                         },
+                        "live_status": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "attached": {
+                              "type": "boolean"
+                            },
+                            "connected_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "error": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "last_timeout_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "reason": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "disabled",
+                                    "manager_unavailable",
+                                    "not_attached"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "reconnect_required": {
+                              "type": "boolean"
+                            },
+                            "state": {
+                              "enum": [
+                                "disconnected",
+                                "connecting",
+                                "connected",
+                                "reconnect_required",
+                                "error"
+                              ],
+                              "type": "string"
+                            },
+                            "tool_count": {
+                              "type": "integer"
+                            },
+                            "tools_refreshed_at": {
+                              "nullable": true,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "attached",
+                            "reason",
+                            "state",
+                            "tool_count",
+                            "connected_at",
+                            "tools_refreshed_at",
+                            "error",
+                            "reconnect_required",
+                            "last_timeout_at"
+                          ],
+                          "type": "object"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -13635,7 +14110,8 @@
                         "tool_refresh_interval_ms",
                         "default_side_effect_level",
                         "created_at",
-                        "updated_at"
+                        "updated_at",
+                        "live_status"
                       ],
                       "type": "object"
                     }
@@ -13768,6 +14244,39 @@
             },
             "description": "Default Response"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
           "500": {
             "content": {
               "application/json": {
@@ -13852,6 +14361,9 @@
                     "data": {
                       "items": {
                         "properties": {
+                          "attached": {
+                            "type": "boolean"
+                          },
                           "connected_at": {
                             "nullable": true,
                             "type": "integer"
@@ -13863,6 +14375,21 @@
                           "last_timeout_at": {
                             "nullable": true,
                             "type": "integer"
+                          },
+                          "reason": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "disabled",
+                                  "manager_unavailable",
+                                  "not_attached"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "reconnect_required": {
                             "type": "boolean"
@@ -14207,7 +14734,27 @@
                             "minimum": 0,
                             "type": "number"
                           },
-                          "content": {},
+                          "content": {
+                            "anyOf": [
+                              {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "text": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "text"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
                           "coverage_end_floor_no": {
                             "anyOf": [
                               {
@@ -14485,7 +15032,27 @@
                     "minimum": 0,
                     "type": "number"
                   },
-                  "content": {},
+                  "content": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "text": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "text"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
                   "fact_key": {
                     "anyOf": [
                       {
@@ -14616,7 +15183,27 @@
                           "minimum": 0,
                           "type": "number"
                         },
-                        "content": {},
+                        "content": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "text": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "text"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
                         "coverage_end_floor_no": {
                           "anyOf": [
                             {
@@ -15028,7 +15615,27 @@
                           "minimum": 0,
                           "type": "number"
                         },
-                        "content": {},
+                        "content": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "text": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "text"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
                         "coverage_end_floor_no": {
                           "anyOf": [
                             {
@@ -15276,7 +15883,27 @@
                     "minimum": 0,
                     "type": "number"
                   },
-                  "content": {},
+                  "content": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "text": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "text"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
                   "fact_key": {
                     "anyOf": [
                       {
@@ -15401,7 +16028,27 @@
                           "minimum": 0,
                           "type": "number"
                         },
-                        "content": {},
+                        "content": {
+                          "anyOf": [
+                            {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "text": {
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "text"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
                         "coverage_end_floor_no": {
                           "anyOf": [
                             {
@@ -15991,7 +16638,27 @@
                                     "minimum": 0,
                                     "type": "number"
                                   },
-                                  "content": {},
+                                  "content": {
+                                    "anyOf": [
+                                      {
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "text": {
+                                            "minLength": 1,
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "text"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    ]
+                                  },
                                   "coverage_end_floor_no": {
                                     "anyOf": [
                                       {
@@ -20481,6 +21148,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "is_active": {
+                    "not": {}
+                  },
                   "page_kind": {
                     "enum": [
                       "input",
@@ -20967,6 +21637,9 @@
                   "floor_id": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "is_active": {
+                    "not": {}
                   },
                   "page_kind": {
                     "enum": [
@@ -30065,9 +30738,7 @@
                           "handler": {},
                           "handler_type": {
                             "enum": [
-                              "script",
-                              "prompt",
-                              "delegate"
+                              "script"
                             ],
                             "type": "string"
                           },
@@ -30245,9 +30916,7 @@
                   },
                   "handler_type": {
                     "enum": [
-                      "script",
-                      "prompt",
-                      "delegate"
+                      "script"
                     ],
                     "type": "string"
                   },
@@ -30320,9 +30989,7 @@
                         "handler": {},
                         "handler_type": {
                           "enum": [
-                            "script",
-                            "prompt",
-                            "delegate"
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -30394,6 +31061,39 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {
@@ -30556,9 +31256,7 @@
                         "handler": {},
                         "handler_type": {
                           "enum": [
-                            "script",
-                            "prompt",
-                            "delegate"
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -30706,9 +31404,7 @@
                   },
                   "handler_type": {
                     "enum": [
-                      "script",
-                      "prompt",
-                      "delegate"
+                      "script"
                     ],
                     "type": "string"
                   },
@@ -30779,9 +31475,7 @@
                         "handler": {},
                         "handler_type": {
                           "enum": [
-                            "script",
-                            "prompt",
-                            "delegate"
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -30853,6 +31547,39 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {
@@ -30982,9 +31709,7 @@
                         "handler": {},
                         "handler_type": {
                           "enum": [
-                            "script",
-                            "prompt",
-                            "delegate"
+                            "script"
                           ],
                           "type": "string"
                         },
@@ -31056,6 +31781,39 @@
             "description": "Default Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
             "content": {
               "application/json": {
                 "schema": {

@@ -15,6 +15,9 @@ outline: [2, 3]
 > 它们主要用于后台作业观察、调试、运维和自动化集成，不是普通聊天页面的日常调用接口。
 > 正常聊天仍以 `Chat`、`Sessions`、`Floors` 等主链路资源为准。
 
+聊天主链在读取记忆时，会按当前可见范围合并 `global`、`chat`、`floor` 三层候选条目，
+再继续应用既有的 importance / balanced / dual-summary 选择与裁剪规则。
+
 ---
 
 ## Memory Item 对象
@@ -26,7 +29,7 @@ outline: [2, 3]
 | `scope_id` | string | 关联资源 ID |
 | `type` | string | 类型：`fact` / `summary` / `open_loop` |
 | `summary_tier` | string \| null | 仅 `type=summary` 时有意义：`micro` / `macro` |
-| `content` | any | 记忆内容（任意 JSON） |
+| `content` | string \| `{ text: string }` | 记忆文本内容。公开契约只承诺纯文本，`{ text }` 是稳定包装写法 |
 | `fact_key` | string \| null | 结构化事实键。仅对 `type=fact` 有意义 |
 | `importance` | number | 重要度，0-1 |
 | `confidence` | number | 置信度，0-1 |
@@ -48,6 +51,7 @@ outline: [2, 3]
 - `fact_key` 会按后端规则规范化并以小写形式存储。
 - `status` 仍保留给兼容调用方；`lifecycle_status` 才是 Memory V2 的细粒度生命周期字段。
 - `summary_tier` 只用于 `type: "summary"`。非摘要类型写入时会被忽略或清空。
+- 引擎当前按文本模型处理 `content`。不要依赖任意 JSON 结构被稳定保存和注入。
 
 ---
 
@@ -65,7 +69,7 @@ POST /memories
 | `scope_id` | string | 是 | 关联 ID |
 | `type` | string | 是 | 记忆类型 |
 | `summary_tier` | string | 否 | `type=summary` 时可传：`micro` / `macro` |
-| `content` | any | 是 | 记忆内容（任意 JSON） |
+| `content` | string \| `{ text: string }` | 是 | 记忆文本内容 |
 | `fact_key` | string \| null | 否 | 结构化事实键，仅对 `type=fact` 有意义 |
 | `importance` | number | 否 | 重要度，默认 `0.5` |
 | `confidence` | number | 否 | 置信度，默认 `1` |
@@ -82,7 +86,7 @@ POST /memories
 
 | 状态码 | 说明 |
 | ------ | ---- |
-| `400` | 请求体校验失败 |
+| `400` | 请求体校验失败，包括传入非文本 `content` |
 | `409` | 状态组合不合法或其他冲突 |
 
 ---
@@ -165,6 +169,7 @@ PATCH /memories/:id
 
 - `status` 会推导 `lifecycle_status`；但如果你只更新 `lifecycle_status`，服务端不会自动改写 `status`，即使把 `lifecycle_status` 设为 `deprecated` 也是如此。
 - 当类型变成非 `summary`，或只传了非摘要类型却仍传 `summary_tier`，服务端会清空 `summary_tier`。
+- `content` 仍只接受文本或 `{ text: string }` 包装。其他 JSON 结构会直接返回 `400`。
 
 ### 错误
 
@@ -317,12 +322,15 @@ POST /memory-edges
 | `to_id` | string | 是 |
 | `relation` | string | 是 |
 
+`from_id` 和 `to_id` 都必须指向当前账号下已存在的记忆条目。
+
 #### 错误
 
 | 状态码 | 说明 |
 | ------ | ---- |
 | `400` | 请求体校验失败 |
-| `409` | 唯一约束等冲突，例如重复创建相同关系边 |
+| `404` | `from_id` 或 `to_id` 不存在，或不属于当前账号 |
+| `409` | `memory_edge_conflict`，例如重复创建相同关系边 |
 
 ### 列出记忆边
 
@@ -373,7 +381,8 @@ PATCH /memory-edges/:id
 | 状态码 | 说明 |
 | ------ | ---- |
 | `400` | 请求体校验失败 |
-| `404` | 记忆边不存在 |
+| `404` | 记忆边不存在，或其 `from_id` / `to_id` 已不再属于当前账号 |
+| `409` | `memory_edge_conflict`，例如更新后与现有同账号边重复 |
 
 ### 删除记忆边
 

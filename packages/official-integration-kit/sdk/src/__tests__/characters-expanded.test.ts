@@ -131,6 +131,6 @@ describe("sdk characters expanded resource", () => {
     const requestUrl = new URL(url as string);
     expect(requestUrl.pathname).toBe("/characters");
     expect(requestUrl.searchParams.get("keyword")).toBe("Her");
-    expect(requestUrl.searchParams.get("status")).toBe("active");
+    expect(requestUrl.searchParams.get("status")).toBeNull();
   });
 });

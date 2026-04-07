@@ -7,6 +7,8 @@ export type {
   MemoryInjectionOptions,
   MemoryInjectionResult,
   MemoryAccessOptions,
+  MemoryScopeContext,
+  MemoryScopeRef,
   MemoryFactAddOperation,
   MemoryFactUpdateOperation,
   MemoryFactDeprecateOperation,

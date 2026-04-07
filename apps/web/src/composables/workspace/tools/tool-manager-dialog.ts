@@ -74,7 +74,7 @@ export type WorkspaceToolManagerDialogState = {
 };
 
 export const workspaceToolManagerSlots = ["narrator", "director", "verifier", "memory"] as const;
-export const workspaceToolHandlerTypes: WorkspaceToolHandlerType[] = ["script", "prompt", "delegate"];
+export const workspaceToolHandlerTypes: WorkspaceToolHandlerType[] = ["script"];
 export const workspaceToolSideEffectLevels: WorkspaceToolSideEffectLevel[] = ["none", "sandbox", "irreversible"];
 export const workspaceToolSources: WorkspaceToolDefinitionSource[] = ["custom", "preset", "character"];
 

@@ -38,4 +38,26 @@ describe('MemoryScopeResolver', () => {
     expect(() => resolver.resolve('chat', {})).toThrow(MemoryScopeResolutionError);
     expect(() => resolver.resolve('floor', {})).toThrow(MemoryScopeResolutionError);
   });
+
+  it('resolves visible refs in global chat floor order', () => {
+    const resolver = new MemoryScopeResolver();
+
+    expect(resolver.resolveVisibleRefs({
+      accountId: 'account-1',
+      sessionId: 'session-1',
+      floorId: 'floor-1',
+    })).toEqual([
+      { scope: 'global', scopeId: 'account-1' },
+      { scope: 'chat', scopeId: 'session-1' },
+      { scope: 'floor', scopeId: 'floor-1' },
+    ]);
+  });
+
+  it('skips missing refs when resolving visible scopes', () => {
+    const resolver = new MemoryScopeResolver();
+
+    expect(resolver.resolveVisibleRefs({ sessionId: 'session-1' })).toEqual([
+      { scope: 'chat', scopeId: 'session-1' },
+    ]);
+  });
 });

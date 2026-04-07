@@ -351,6 +351,39 @@ describe("page routes", () => {
     expect((await app.inject({ method: "GET", url: `/pages/${pageB.id}` })).statusCode).toBe(404);
   });
 
+  it("maps page uniqueness conflicts to stable 409 errors", async () => {
+    const sessionId = await createSession();
+    const floorId = await createFloor({ sessionId, floorNo: 3, branchId: "main" });
+
+    const primaryPage = await createPage({ floorId, pageNo: 1, pageKind: "output", version: 1 });
+    const otherActivePage = await createPage({ floorId, pageNo: 2, pageKind: "output", version: 2 });
+
+    const duplicateCreateResponse = await app.inject({
+      method: "POST",
+      url: "/pages",
+      payload: {
+        floor_id: floorId,
+        page_no: 1,
+        page_kind: "output",
+        version: 1,
+      },
+    });
+
+    expect(duplicateCreateResponse.statusCode, duplicateCreateResponse.body).toBe(409);
+    expect(duplicateCreateResponse.json<ErrorResponse>().error.code).toBe("page_conflict");
+
+    const duplicateActiveSlotPatchResponse = await app.inject({
+      method: "PATCH",
+      url: `/pages/${otherActivePage.id}`,
+      payload: {
+        page_no: primaryPage.page_no,
+      },
+    });
+
+    expect(duplicateActiveSlotPatchResponse.statusCode, duplicateActiveSlotPatchResponse.body).toBe(409);
+    expect(duplicateActiveSlotPatchResponse.json<ErrorResponse>().error.code).toBe("page_conflict");
+  });
+
   it("locks committed floors for CRUD but still allows output activation within the same slot", async () => {
     const sessionId = await createSession();
     const floorId = await createFloor({ sessionId, floorNo: 3, branchId: "main" });

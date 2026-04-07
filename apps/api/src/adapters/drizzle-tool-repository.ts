@@ -4,7 +4,7 @@
  * 工具调用记录与自定义工具定义的持久化层。
  */
 
-import { eq, and, desc, asc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, sql, isNull, ne } from "drizzle-orm";
 import type { AppDb } from "../db/client.js";
 import { floors, messagePages, sessions, toolCallRecords, toolDefinitions } from "../db/schema.js";
 import type { ToolCallRecord, ToolCallStatus } from "@tavern/core";
@@ -51,7 +51,7 @@ export interface ToolDefinitionInsert {
   source: 'preset' | 'character' | 'custom';
   sourceId?: string | null;
   enabled?: boolean;
-  handlerType: 'script' | 'prompt' | 'delegate';
+  handlerType: 'script';
   handlerJson: string;
   accountId: string;
   createdAt: number;
@@ -206,6 +206,7 @@ export class DrizzleToolRepository {
       .from(toolDefinitions)
       .where(and(
         eq(toolDefinitions.id, id),
+        eq(toolDefinitions.handlerType, 'script'),
         eq(toolDefinitions.accountId, accountId),
       ))
       .limit(1);
@@ -220,7 +221,7 @@ export class DrizzleToolRepository {
     definitions: ToolDefinitionRow[];
     total: number;
   }> {
-    const conditions = [eq(toolDefinitions.accountId, query.accountId)];
+    const conditions = [eq(toolDefinitions.accountId, query.accountId), eq(toolDefinitions.handlerType, 'script')];
     if (query.source) {
       conditions.push(eq(toolDefinitions.source, query.source as 'preset' | 'character' | 'custom'));
     }
@@ -252,6 +253,32 @@ export class DrizzleToolRepository {
       definitions,
       total: countRow?.count ?? 0,
     };
+  }
+
+  /**
+   * 按唯一身份查找工具定义。
+   */
+  async findDefinitionByIdentity(query: {
+    accountId: string;
+    name: string;
+    source: ToolDefinitionInsert["source"];
+    sourceId: string | null;
+    excludeId?: string;
+  }): Promise<ToolDefinitionRow | null> {
+    const conditions = [
+      eq(toolDefinitions.accountId, query.accountId),
+      eq(toolDefinitions.name, query.name),
+      eq(toolDefinitions.source, query.source),
+      eq(toolDefinitions.handlerType, "script"),
+      query.sourceId === null ? isNull(toolDefinitions.sourceId) : eq(toolDefinitions.sourceId, query.sourceId),
+    ];
+
+    if (query.excludeId) {
+      conditions.push(ne(toolDefinitions.id, query.excludeId));
+    }
+
+    const [row] = await this.db.select().from(toolDefinitions).where(and(...conditions)).limit(1);
+    return row ?? null;
   }
 
   /**

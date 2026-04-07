@@ -178,8 +178,11 @@ const blob = await response.blob();
 | `variables` | `VariablesResource` | [Variables](/reference/api/variables) |
 | `memories` | `MemoriesResource` | [Memories](/reference/api/memories) |
 | `memoryEdges` | `MemoryEdgesResource` | [Memories](/reference/api/memories) |
+| `memoryJobs` | `MemoryJobsResource` | [记忆后台作业](/reference/api/memory-jobs) |
+| `memoryScopes` | `MemoryScopesResource` | [Memories](/reference/api/memories) |
 | `imports` | `ImportsResource` | [Imports](/reference/api/imports) |
 | `exports` | `ExportsResource` | [Exports](/reference/api/exports) |
+| `chatTransferJobs` | `ChatTransferJobsResource` | [Exports](/reference/api/exports)、[Imports](/reference/api/imports) |
 | `presets` | `PresetsResource` | [Presets](/reference/api/presets) |
 | `presetEntries` | `PresetEntriesResource` | [Presets](/reference/api/presets) |
 | `worldbooks` | `WorldbooksResource` | [Worldbooks](/reference/api/worldbooks) |
@@ -192,9 +195,18 @@ const blob = await response.blob();
 | `branches` | `BranchesResource` | [Sessions](/reference/api/sessions) |
 | `health` | `HealthResource` | [API 总览](/reference/api)、[见下方](#health) |
 
-`sessions` 上同时挂载了 CRUD 方法和对话生成方法（`respond` / `respondStream` / `respondDryRun` / `regenerate`）。其中 `respond` / `respondStream` 会保留 `summaries` 和 `finalState`，`respondDryRun` 会返回对齐真实提交快照的 `promptSnapshot`。
+`sessions` 上同时挂载了 CRUD 方法和对话生成方法（`respond` / `respondStream` / `respondDryRun` / `regenerate`）。其中 `respond` / `respondStream` 会保留 `summaries` 和 `finalState`，`respondDryRun` 会返回对齐真实提交快照的 `promptSnapshot`。`sessions.create()` / `sessions.update()` 也会直接返回完整的 session payload。
 
-`tools.listCallRecords()` 当前仍是兼容查询面，对应公开路由 `/tools/call-records`。在 API 对外公开新的 execution records 路由之前，SDK 不会提前新增新的 execution records 查询方法。
+`tools.listExecutions()` 对应新的主执行审计路由；`tools.listCallRecords()` 仍保留为兼容查询面。`imports.chat()` 会按 `format` 区分 `.thchat` 与 `sillytavern_jsonl` 的返回结构，`imports.character()` 会保留 `characterVersionId` 和可选 `session`。
+
+```ts
+const session = await client.sessions.create({ title: "黎明前的酒馆", promptMode: "native" });
+const imported = await client.imports.character({ payload: cardJson, createSession: false });
+const executions = await client.tools.listExecutions({ sessionId: session?.id ?? "session-1" });
+
+console.log(imported.characterVersionId);
+console.log(executions.records[0]?.runtimeJobId);
+```
 
 ---
 
