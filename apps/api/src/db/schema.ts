@@ -246,6 +246,7 @@ export const clientDataDomains = sqliteTable(
     displayName: text("display_name"),
     description: text("description"),
     status: text("status", { enum: ["active", "suspended", "deleted"] }).notNull().default("active"),
+    version: integer("version").notNull().default(1),
     quotaMaxEntries: integer("quota_max_entries").notNull().default(10_000),
     quotaMaxBytes: integer("quota_max_bytes").notNull().default(10_485_760),
     currentEntryCount: integer("current_entry_count").notNull().default(0),
@@ -276,6 +277,7 @@ export const clientDataCollections = sqliteTable(
     description: text("description"),
     defaultExpiresTtlMs: integer("default_expires_ttl_ms"),
     maxItemSizeBytes: integer("max_item_size_bytes"),
+    version: integer("version").notNull().default(1),
     metadataJson: text("metadata_json"),
     itemCount: integer("item_count").notNull().default(0),
     byteCount: integer("byte_count").notNull().default(0),
@@ -310,6 +312,59 @@ export const clientDataItems = sqliteTable(
       table.updatedAt,
     ),
     expiresIdx: index("client_data_item_expires_idx").on(table.expiresAt).where(sql`${table.expiresAt} IS NOT NULL`),
+  })
+);
+
+export const clientDataDomainGrants = sqliteTable(
+  "client_data_domain_grant",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    domainId: text("domain_id").notNull().references(() => clientDataDomains.id, { onDelete: "cascade" }),
+    granteeOwnerType: text("grantee_owner_type", { enum: ["application", "plugin"] }).notNull(),
+    granteeOwnerId: text("grantee_owner_id").notNull(),
+    canRead: integer("can_read", { mode: "boolean" }).notNull().default(false),
+    canWrite: integer("can_write", { mode: "boolean" }).notNull().default(false),
+    canDelete: integer("can_delete", { mode: "boolean" }).notNull().default(false),
+    canList: integer("can_list", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    expiresAt: integer("expires_at"),
+  },
+  (table) => ({
+    domainGranteeUnique: uniqueIndex("client_data_domain_grant_unique_uq").on(
+      table.domainId,
+      table.granteeOwnerType,
+      table.granteeOwnerId,
+    ),
+    accountGranteeIdx: index("client_data_domain_grant_account_grantee_idx").on(
+      table.accountId,
+      table.granteeOwnerType,
+      table.granteeOwnerId,
+    ),
+  })
+);
+
+export const clientDataAuditLogs = sqliteTable(
+  "client_data_audit_log",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    domainId: text("domain_id").references(() => clientDataDomains.id, { onDelete: "set null" }),
+    ownerType: text("owner_type", { enum: ["application", "plugin"] }),
+    ownerId: text("owner_id"),
+    actorType: text("actor_type").notNull(),
+    actorId: text("actor_id"),
+    action: text("action").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id"),
+    requestId: text("request_id"),
+    metadataJson: text("metadata_json"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    accountCreatedIdx: index("client_data_audit_log_account_created_idx").on(table.accountId, table.createdAt),
+    domainCreatedIdx: index("client_data_audit_log_domain_created_idx").on(table.domainId, table.createdAt),
   })
 );
 

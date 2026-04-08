@@ -32,11 +32,9 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 
 `AUTH_MODE=off` 只应用于本地开发。当前服务会在 `NODE_ENV=production && AUTH_MODE=off` 时直接拒绝启动。
 
-`api_key` 模式下，可在 `AUTH_API_KEYS` 中配置多个 key，逗号分隔。
-若同时启用 `ACCOUNT_MODE=multi`，还必须配置 `AUTH_API_KEY_ACCOUNTS`，把每个 key 映射到具体账号。
+`api_key` 模式下，可在 `AUTH_API_KEYS` 中配置多个 key，逗号分隔。若同时启用 `ACCOUNT_MODE=multi`，还必须配置 `AUTH_API_KEY_ACCOUNTS`，把每个 key 映射到具体账号。
 
-`jwt` 模式下，需要设置 `AUTH_JWT_SECRET`。
-若同时启用 `ACCOUNT_MODE=multi`，JWT 还必须携带账号 claim，默认字段名为 `account_id`，也可以通过 `AUTH_JWT_ACCOUNT_CLAIM` 改名。
+`jwt` 模式下，需要设置 `AUTH_JWT_SECRET`。若同时启用 `ACCOUNT_MODE=multi`，JWT 还必须携带账号 claim，默认字段名为 `account_id`，也可以通过 `AUTH_JWT_ACCOUNT_CLAIM` 改名。
 
 多账号隔离时，`ACCOUNT_MODE=multi`，各资源自动按账号隔离；该模式不能与 `AUTH_MODE=off` 一起使用。
 
@@ -112,15 +110,12 @@ WebSocket 也遵循相同边界：
 | `403` | 账号被禁用，或缺少系统级能力 |
 | `404` | 资源不存在，或资源存在但不属于当前账号 |
 | `409` | 冲突（如账号内重名、乐观锁失败） |
+| `410` | 资源逻辑上已删除 |
 | `413` | 请求体过大 |
-| `500` | 服务端错误（如 `secret_invalid_format`） |
+| `500` | 服务端错误 |
 | `502` | 上游 LLM 服务错误 |
-| `503` | 服务不可用或暂时繁忙（如 `secret_unavailable`、`resource_busy`、`commit_busy`、`generation_queue_timeout`） |
+| `503` | 服务不可用或暂时繁忙 |
 | `504` | 上游生成超时 |
-
-对于已经建立的 SSE 聊天流，运行期失败会通过 `event: error` 事件返回，而不是再切换 HTTP 状态码。此时应读取 `error.code`，例如 `generation_timeout`、`commit_busy`、`generation_queue_timeout`。资源写入路径上的 `resource_busy` 不会复用聊天链路的 `commit_busy`。
-
-默认配置下，同一会话分支的并发生成请求会直接返回 `generation_conflict`（409）。`generation_queue_timeout` 仅在服务端启用排队模式时出现。错误码的完整分类说明见[官方集成层 - 错误映射](/guide/integration-kit#错误映射)。
 
 ## 分页
 
@@ -132,36 +127,6 @@ WebSocket 也遵循相同边界：
 | `offset` | integer | `0` | 偏移量 |
 | `sort_order` | string | `desc` | 排序方向，`asc` 或 `desc` |
 | `sort_by` | string | 因资源而异 | 排序字段，详见各资源文档 |
-
-响应的 `meta` 字段中，`has_more` 指示后续是否还有更多数据。
-
-如果某个列表端点没有复用这套通用分页基类，或默认值与这里不同，会在对应资源页单独写明。
-
-## 时间戳
-
-所有时间戳字段均为 **Unix 毫秒时间戳**（integer），字段名通常为 `created_at`、`updated_at`。
-
-## 资源版本与乐观锁
-
-`preset`、`worldbook`、`regex profile` 这几类可编辑资源现在都会返回 `version` 字段。
-
-- 列表接口会返回当前 `version`
-- 详情接口会返回当前 `version`
-- 更新成功响应也会返回新的 `version`
-
-更新这些资源时，新的并发控制字段是 `expected_version`。
-
-- 推荐新接入统一使用 `expected_version`
-- 现有主资源 `PUT` 路由仍可继续传 `expected_updated_at` 作为兼容令牌
-- `DELETE /presets/:id` 与 `DELETE /worldbooks/:id` 只使用 query string `expected_version`，不使用 `DELETE` body
-- preset / worldbook 的条目写入接口也支持 `expected_version`
-- 当版本不匹配时，会返回 `409`，例如 `preset_conflict`、`worldbook_conflict`、`regex_profile_conflict`
-- 当资源写入遇到 SQLite 忙状态时，会返回 `503 resource_busy`
-- `resource_busy` 属于资源写入语义，和聊天提交链路的 `commit_busy` 是两类不同错误
-
-聊天 dry-run 的 `prompt_snapshot` 与落库的 `prompt_snapshot` 记录也会保存 `preset_version`、`worldbook_version`、`regex_profile_version`，用于说明当轮生成实际冻结使用的资源版本。
-
-dry-run 的 `assembly` 还会返回本轮提示词组装的运行结果（生成意图、预填充状态、世界书命中条目等）。完整字段说明见 [Chat dry-run 响应](/reference/api/chat)。
 
 ## 资源目录
 
@@ -177,7 +142,7 @@ dry-run 的 `assembly` 还会返回本轮提示词组装的运行结果（生成
 | Variables | 五级变量系统 | [Variables](./api/variables) |
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
-| Exports | 资源导出（聊天、预设、世界书、正则、角色卡） | [Exports](./api/exports) |
+| Exports | 资源导出 | [Exports](./api/exports) |
 | Chat Transfer Jobs | 异步聊天导入导出作业观测、控制与产物下载 | [Chat Transfer Jobs](./api/chat-transfer-jobs) |
 | Presets | 预设管理、编辑器视图、条目级 CRUD | [Presets](./api/presets) |
 | Worldbooks | 世界书管理 | [Worldbooks](./api/worldbooks) |
@@ -185,12 +150,28 @@ dry-run 的 `assembly` 还会返回本轮提示词组装的运行结果（生成
 | LLM Profiles | LLM 配置管理、模型发现与测试 | [LLM Profiles](./api/llm-profiles) |
 | LLM Instances | LLM 实例配置 | [LLM Instances](./api/llm-instances) |
 | Tools | 工具定义、execution journal、调用记录与会话权限 | [Tools](./api/tools) |
-| MCP Servers | MCP 服务器管理（配置/连接/工具查询） | [MCP Servers](./api/mcp) |
+| MCP Servers | MCP 服务器管理 | [MCP Servers](./api/mcp) |
 | Accounts | 账号管理 | [Accounts](./api/accounts) |
+| Client Data | 客户端专属数据域、导入导出、授权与审计 | [Client Data](./api/client-data) |
 
-> 说明：`memory jobs / memory scopes / chat transfer jobs` 这一类后台作业观察与管理路由，属于高级开发者特性。
-> 它们主要服务于开发调试、运维排障、自动化脚本和平台集成，不属于普通聊天主流程接口。
-> 普通用户交互仍应优先使用同步聊天、同步导入、同步导出等主路径接口。
+## 高级 API 资源
+
+下面这些资源主要面向开发调试、运维排障、自动化脚本和平台集成，不属于普通聊天主流程接口：
+
+- [Memory Jobs](./api/memory-jobs)
+- [Chat Transfer Jobs](./api/chat-transfer-jobs)
+- [Tools](./api/tools)
+- [MCP Servers](./api/mcp)
+- [Client Data](./api/client-data)
+
+其中 `Client Data` 是一个独立的高级系统功能。它用于：
+
+- 按 `application` 或 `plugin` 拥有者隔离存储客户端专属数据
+- 为插件 owner 建立细粒度 grant 权限
+- 提供治理动作审计日志
+- 支持导入、导出、恢复、配额与并发控制
+
+如果接入方只需要普通聊天能力，不需要优先接入这组资源。
 
 ## 官方集成层
 
@@ -198,22 +179,7 @@ dry-run 的 `assembly` 还会返回本轮提示词组装的运行结果（生成
 
 当前官方集成层包含两个包：
 
-- `@tavern/sdk`：负责 API 调用、默认请求头、统一错误和 SSE。
-- `@tavern/client-helpers`：负责 usage、timeline、流式状态、变量快照整理和错误展示映射。
-
-其中，`@tavern/sdk` 当前已经覆盖：
-
-- 会话与内容结构：`sessions`、`messages`、`floors`、`pages`、`branches`
-- 角色、资料与配置：`characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles`
-- 导入、导出与模型配置：`imports`、`exports`、`chatTransferJobs`、`llmProfiles`、`llmInstances`
-- 账号、变量与记忆：`accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes`
-- 工具与运行集成：`tools`、`mcp`
-
-变量系统相关的接入现在建议直接使用：
-
-- `client.variables.resolveContext(...)` 读取当前上下文可见变量快照
-- `flattenVariableSnapshot(...)` 和 `sortVariableInspectorRows(...)` 整理 inspector 行数据
-
-如果 API 路由、OpenAPI、SSE 事件或其他接入方可见语义发生变化，应同步检查官方包与文档，而不是只在某一个前端里做局部适配。
+- `@tavern/sdk`：负责 API 调用、默认请求头、统一错误和 SSE
+- `@tavern/client-helpers`：负责 usage、timeline、流式状态、变量快照整理和错误展示映射
 
 详细说明请参考：[官方集成层](/guide/integration-kit)

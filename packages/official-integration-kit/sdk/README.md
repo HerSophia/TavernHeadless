@@ -72,11 +72,11 @@ const client = createTavernClient({
 });
 ```
 
-这个函数支持返回 `Promise`，所以异步取 token 也没问题。
+这个函数支持返回 `Promise`，所以异步取 token 也没有问题。
 
 如果服务端启用了多账号：
 
-- `AUTH_MODE=jwt` 时，应当使用**已经带有目标账号 claim** 的 JWT；默认 claim 字段名是 `account_id`，可由服务端通过 `AUTH_JWT_ACCOUNT_CLAIM` 改名
+- `AUTH_MODE=jwt` 时，应当使用已经带有目标账号 claim 的 JWT；默认 claim 字段名是 `account_id`，可由服务端通过 `AUTH_JWT_ACCOUNT_CLAIM` 改名
 - `AUTH_MODE=api_key` 时，应当由服务端通过 `AUTH_API_KEY_ACCOUNTS` 把 API Key 绑定到账号
 - SDK 各资源方法里的 `accountId` 参数，以及 `buildAccountHeaders()` 生成的 `x-account-id` 头，都只是兼容头提示，不能替代服务端认证，也不会直接切换账号
 
@@ -129,6 +129,7 @@ const exported = await client.clientData.domains.export({
   domainId: domain.id,
 });
 
+console.log(domain.version);
 console.log(item.item.version);
 console.log(exported.collections[0]?.items[0]?.valueJson);
 ```
@@ -139,6 +140,10 @@ console.log(exported.collections[0]?.items[0]?.valueJson);
 - `clientData.domains.list`
 - `clientData.domains.getDetail`
 - `clientData.domains.update`
+- `clientData.domains.updateQuota`
+- `clientData.domains.restore`
+- `clientData.domains.import`
+- `clientData.domains.importAsNew`
 - `clientData.domains.remove`
 - `clientData.domains.removeByOwner`
 - `clientData.domains.export`
@@ -149,12 +154,56 @@ console.log(exported.collections[0]?.items[0]?.valueJson);
 - `clientData.collections.remove`
 - `clientData.items.list`
 - `clientData.items.getDetail`
+- `clientData.items.getByKey`
 - `clientData.items.upsert`
 - `clientData.items.upsertBatch`
 - `clientData.items.remove`
 - `clientData.items.removeBatch`
 
 请求协议仍与后端保持一致，使用 `snake_case`。SDK 返回值继续做 `camelCase` 映射。
+
+#### Client Data 第二期新增能力
+
+- domain / collection metadata `version`
+- `ifVersion` 并发控制
+- `restorableUntil`
+- domain quota 更新
+- deleted domain restore
+- import into existing domain
+- import as new domain
+- conflict policy:
+  - `fail`
+  - `overwrite`
+  - `skip`
+- `items.getByKey(...)`
+- `items.list(...)` 结构化过滤参数：
+  - `itemKeyPrefix`
+  - `updatedAfter`
+  - `updatedBefore`
+  - `expiresAfter`
+  - `expiresBefore`
+  - `expired`
+
+#### caller owner 头
+
+第二期 grant 模型要求接入方在需要插件级隔离时显式传递 caller owner：
+
+```ts
+const client = createTavernClient({
+  baseUrl: "http://localhost:3000",
+  getHeaders: () => ({
+    authorization: "Bearer <token>",
+    "x-client-owner-type": "plugin",
+    "x-client-owner-id": "chat-annotator",
+  }),
+});
+```
+
+说明：
+
+- 未传 caller owner 时，服务端保持第一期兼容行为，继续按 `account_id + domain_id` 控制
+- 传了非法 caller owner 头时，服务端会返回 `400 client_data_caller_owner_invalid`
+- grant / audit 管理接口要求 caller owner 必须是 domain owner；否则返回 `403 client_data_domain_grant_manage_forbidden`
 
 ### 列出会话，然后生成一次回复
 
@@ -229,43 +278,27 @@ console.log(result.finalState);
 console.log(result.memory);
 ```
 
-`respondStream()` 内部已经处理好 SSE 解析，你只管写回调就行。
+`respondStream()` 内部已经处理好 SSE 解析，你只管写回调即可。
 
-除了 `start`、`chunk`、`summary`、`tool`、`done`、`error` 这些事件，流里现在还会带 `run` 事件。它表示当前楼层这一轮生成的运行快照，例如：
+## 设计边界
 
-- 当前阶段 `phase`
-- 当前展示阶段`publicPhase`
-- 当前尝试号 `attemptNo`
-- 候选输出 `pendingOutput`
+适合放进 SDK 的内容：
 
-这组字段适合前端在流式过程中恢复候选输出，而不是只靠本地拼接 chunk。
+- HTTP 请求
+- 默认请求头
+- 资源分组方法
+- SSE 解析
+- 错误对象
+- 与后端一一对应的高层 API
 
-### 查询楼层运行快照
+不适合放进 SDK 的内容：
 
-```ts
-const floorRun = await client.floors.getRun({ floorId: "floor-1" });
-const activeRun = await client.sessions.getActiveRun({ sessionId: "session-1" });
+- Vue / React 绑定
+- 状态管理
+- timeline 视图整理
+- 页面专用数据转换
+- UI 层错误文案
 
-console.log(floorRun.run?.phase);
-console.log(activeRun.activeRun?.publicPhase);
+## 当前状态
 
-const committedResult = await client.floors.getResult({ floorId: "floor-1" });
-
-console.log(committedResult.generatedText);
-console.log(committedResult.summaries);
-console.log(committedResult.outputPageId);
-console.log(committedResult.assistantMessageId);
-console.log(committedResult.totalTokens);
-```
-
-`getRun()` 用于读取运行中的业务进度快照。`getResult()` 用于读取已经 committed 的结构化结果快照。前者解决运行过程恢复，后者解决最终结果读取。
-
-### 生成前 dry-run 与 `promptSnapshot`
-
-```ts
-const preview = await client.sessions.respondDryRun({
-  accountId: "account-1",
-  sessionId: "session-1",
-  debugOptions: {
-    includeWorldbookMatches: true,
-  },
+当前 `@tavern/sdk` 已经覆盖会话、内容结构、变量、记忆、导入、导出、LLM Profiles、LLM Instances、Tools、MCP、Client Data 等主要接入域。Client Data 第二期已补齐 grant / audit 之前的核心资源调用面，grant / audit 的高层 SDK 封装将在后续阶段继续扩展。
