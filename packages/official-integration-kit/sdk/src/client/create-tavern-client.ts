@@ -4,6 +4,8 @@ import { createAccountsResource, type AccountsResource } from "../resources/acco
 import { createBranchesResource, type BranchesResource } from "../resources/branches.js";
 import { createCharactersResource, type CharactersResource } from "../resources/characters.js";
 import { createChatTransferJobsResource, type ChatTransferJobsResource } from "../resources/chat-transfer-jobs.js";
+import { createClientDataResource, type ClientDataResource } from "../resources/client-data.js";
+
 import { createExportsResource, type ExportsResource } from "../resources/exports.js";
 import { createFloorsResource, type FloorsResource } from "../resources/floors.js";
 import { createHealthResource, type HealthResource } from "../resources/health.js";
@@ -31,6 +33,8 @@ import { createTransportClient, type TavernClientOptions } from "./transport.js"
 export type TavernClient = ApiClient & {
   accounts: AccountsResource;
   branches: BranchesResource;
+  clientData: ClientDataResource;
+
   characters: CharactersResource;
   chatTransferJobs: ChatTransferJobsResource;
   exports: ExportsResource;
@@ -64,6 +68,8 @@ export function createTavernClient(options: TavernClientOptions): TavernClient {
 
   return {
     ...transport,
+    clientData: createClientDataResource(transport),
+
     accounts: createAccountsResource(transport),
     branches: createBranchesResource(transport),
     characters: createCharactersResource(transport),

@@ -43,6 +43,15 @@
  * - MEMORY_WORKER_CANDIDATE_SCAN_LIMIT: 可选，MemoryWorker 单轮候选扫描上限（默认 32）
  * - ENABLE_MCP: 是否启用 MCP 工具集成（默认 false）
  * - ENABLE_UNSAFE_SCRIPT_HANDLER: 是否允许不安全的 script handler 创建与执行（默认 false，仅限受信环境）
+ * - ENABLE_CLIENT_DATA: 是否启用客户端专属数据域（默认 false）
+ * - CLIENT_DATA_EXPIRATION_INTERVAL_MS: 过期条目清理间隔（毫秒，默认 300000）
+ * - CLIENT_DATA_DOMAIN_PURGE_GRACE_PERIOD_MS: 已删除域的硬删除宽限期（毫秒，默认 604800000）
+ * - CLIENT_DATA_DEFAULT_MAX_ITEM_SIZE_BYTES: 默认单条目最大字节数（默认 1048576）
+ * - CLIENT_DATA_DEFAULT_QUOTA_MAX_ENTRIES: 默认域级最大条目数（默认 10000）
+ * - CLIENT_DATA_DEFAULT_QUOTA_MAX_BYTES: 默认域级最大字节数（默认 10485760）
+ * - CLIENT_DATA_MAX_DOMAINS_PER_ACCOUNT: 单账号最大域数（默认 64）
+ * - CLIENT_DATA_MAX_TOTAL_ENTRIES_PER_ACCOUNT: 单账号客户端数据总条目数（默认 100000）
+ * - CLIENT_DATA_MAX_TOTAL_BYTES_PER_ACCOUNT: 单账号客户端数据总字节数（默认 104857600）
  * - AUTH_MODE: 认证模式（off | api_key | jwt，默认 off）
  * - AUTH_API_KEYS: API Key 模式下的 key 列表（逗号分隔）
  * - AUTH_API_KEY_ACCOUNTS: 多账号 + API Key 模式下的账号映射（key:account_id，逗号分隔）
@@ -151,6 +160,19 @@ export interface AppConfig {
   enableMcp: boolean;
   /** 是否允许不安全的 script handler 创建与执行 */
   enableUnsafeScriptHandler: boolean;
+  /** 是否启用客户端专属数据域 */
+  enableClientData: boolean;
+  /** 客户端数据维护配置 */
+  clientData: {
+    expirationIntervalMs: number;
+    domainPurgeGracePeriodMs: number;
+    defaultMaxItemSizeBytes: number;
+    defaultQuotaMaxEntries: number;
+    defaultQuotaMaxBytes: number;
+    maxDomainsPerAccount: number;
+    maxTotalEntriesPerAccount: number;
+    maxTotalBytesPerAccount: number;
+  };
 }
 
 // ── 加载函数 ──────────────────────────────────────────
@@ -184,6 +206,17 @@ export function loadConfig(): AppConfig {
   const cors = parseCorsConfig(process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN, process.env.CORS_CREDENTIALS);
   const enableMcp = process.env.ENABLE_MCP === "true";
   const enableUnsafeScriptHandler = process.env.ENABLE_UNSAFE_SCRIPT_HANDLER === "true";
+  const enableClientData = process.env.ENABLE_CLIENT_DATA === "true";
+  const clientData = {
+    expirationIntervalMs: parsePositiveInt(process.env.CLIENT_DATA_EXPIRATION_INTERVAL_MS) ?? 300_000,
+    domainPurgeGracePeriodMs: parsePositiveInt(process.env.CLIENT_DATA_DOMAIN_PURGE_GRACE_PERIOD_MS) ?? 604_800_000,
+    defaultMaxItemSizeBytes: parsePositiveInt(process.env.CLIENT_DATA_DEFAULT_MAX_ITEM_SIZE_BYTES) ?? 1_048_576,
+    defaultQuotaMaxEntries: parsePositiveInt(process.env.CLIENT_DATA_DEFAULT_QUOTA_MAX_ENTRIES) ?? 10_000,
+    defaultQuotaMaxBytes: parsePositiveInt(process.env.CLIENT_DATA_DEFAULT_QUOTA_MAX_BYTES) ?? 10_485_760,
+    maxDomainsPerAccount: parsePositiveInt(process.env.CLIENT_DATA_MAX_DOMAINS_PER_ACCOUNT) ?? 64,
+    maxTotalEntriesPerAccount: parsePositiveInt(process.env.CLIENT_DATA_MAX_TOTAL_ENTRIES_PER_ACCOUNT) ?? 100_000,
+    maxTotalBytesPerAccount: parsePositiveInt(process.env.CLIENT_DATA_MAX_TOTAL_BYTES_PER_ACCOUNT) ?? 104_857_600,
+  };
   const memoryInjectionDecay = parseMemoryInjectionDecay(
     process.env.MEMORY_INJECTION_DECAY_HALF_LIFE_DAYS,
     process.env.MEMORY_INJECTION_DECAY_MIN_FACTOR,
@@ -247,6 +280,8 @@ export function loadConfig(): AppConfig {
   if (!apiKey) {
     return {
       port,
+      enableClientData,
+      clientData,
       databasePath,
       enableWebSocket,
       chatHistoryMaxFloors,
@@ -353,6 +388,8 @@ export function loadConfig(): AppConfig {
     cors,
     enableMcp,
     enableUnsafeScriptHandler,
+    enableClientData,
+    clientData,
   };
 }
 

@@ -2,6 +2,7 @@ import type { CoreEventBus } from "@tavern/core";
 import type { FastifyInstance } from "fastify";
 
 import type { DatabaseConnection } from "../db/client";
+import type { ClientDataConfig } from "../client-data/client-data-service.js";
 import type { SessionToolRegistryService } from "../services/session-tool-registry-service.js";
 import type { McpConnectionManager } from "../mcp/mcp-connection-manager.js";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
@@ -25,6 +26,7 @@ import { registerUserRoutes } from "./users";
 import { registerToolRoutes } from "./tools";
 import { registerMcpConfigRoutes } from "./mcp";
 import { registerExportRoutes } from "./exports";
+import { registerClientDataRoutes } from "../client-data/client-data-routes.js";
 import type { AccountMode } from "../accounts/constants.js";
 
 export interface CrudRoutesOptions {
@@ -36,6 +38,8 @@ export interface CrudRoutesOptions {
   mcpManager?: McpConnectionManager;
   enableUnsafeScriptHandler?: boolean;
   accountMode?: AccountMode;
+  enableClientData?: boolean;
+  clientData?: ClientDataConfig;
 }
 
 export async function registerCrudRoutes(
@@ -77,4 +81,10 @@ export async function registerCrudRoutes(
     mcpManager: options.mcpManager,
   });
   await registerExportRoutes(app, connection, options.chatTransferJobs);
+
+  if (options.enableClientData && options.clientData) {
+    await registerClientDataRoutes(app, connection, {
+      clientData: options.clientData,
+    });
+  }
 }
