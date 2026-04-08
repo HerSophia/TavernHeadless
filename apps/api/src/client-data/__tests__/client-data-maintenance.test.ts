@@ -86,7 +86,7 @@ describe("client data maintenance", () => {
       now,
     });
 
-    expect(result).toEqual({ deleted: 1, scanned: 1 });
+    expect(result).toEqual({ deleted: 1, scanned: 1, skipped: 0 });
 
     const remainingItems = await database.db.select().from(clientDataItems);
     expect(remainingItems).toHaveLength(0);
@@ -126,7 +126,7 @@ describe("client data maintenance", () => {
       now,
     });
 
-    expect(result).toEqual({ deleted: 1, scanned: 1 });
+    expect(result).toEqual({ deleted: 1, scanned: 1, skipped: 0 });
 
     const remainingDomains = await database.db.select().from(clientDataDomains);
     expect(remainingDomains).toHaveLength(0);

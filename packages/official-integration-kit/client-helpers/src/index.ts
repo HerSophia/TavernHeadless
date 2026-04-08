@@ -2,6 +2,17 @@ export { mapApiErrorToUiState, type UiStateError } from "./errors/map-api-error-
 export { getActivePage } from "./selectors/get-active-page.js";
 export { getDisplayPage } from "./selectors/get-display-page.js";
 export {
+  buildApplicationOwner,
+  buildPluginOwner,
+  groupItemsByCollection,
+  organizeCollectionItems,
+  resolveItemByPath,
+  toClientDataMap,
+  type ClientDataCollectionItemsMap,
+  type ClientDataOwner,
+  type ClientDataValueMap,
+} from "./client-data/index.js";
+export {
   createInitialRespondStreamState,
   reduceRespondStream,
 } from "./stream/reduce-respond-stream.js";

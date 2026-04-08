@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { TavernApiError } from "@tavern/sdk";
+import { TavernApiError, type ClientDataItemRecord, type TavernClient } from "@tavern/sdk";
 
 import * as clientHelpers from "../index.js";
 import { mapApiErrorToUiState } from "../errors/map-api-error-to-ui-state.js";
@@ -12,10 +12,20 @@ import { buildTimelineMessages } from "../timeline/build-timeline-messages.js";
 import { flattenVariableSnapshot, formatVariablePreview, sortVariableInspectorRows } from "../variables/index.js";
 import { resolveUsage } from "../usage/resolve-usage.js";
 import { summarizeRuntimeToolCatalog } from "../tools/summarize-runtime-tool-catalog.js";
+import {
+  buildApplicationOwner,
+  buildPluginOwner,
+  groupItemsByCollection,
+  organizeCollectionItems,
+  resolveItemByPath,
+  toClientDataMap,
+} from "../client-data/index.js";
 
 describe("client-helpers public exports", () => {
   it("exposes the expected runtime helpers", () => {
     expect(clientHelpers).toMatchObject({
+      buildApplicationOwner: expect.any(Function),
+      buildPluginOwner: expect.any(Function),
       buildTimelineMessages: expect.any(Function),
       createInitialRespondStreamState: expect.any(Function),
       getActivePage: expect.any(Function),
@@ -23,11 +33,15 @@ describe("client-helpers public exports", () => {
       mapApiErrorToUiState: expect.any(Function),
       flattenVariableSnapshot: expect.any(Function),
       formatVariablePreview: expect.any(Function),
+      groupItemsByCollection: expect.any(Function),
       groupToolEventsByExecution: expect.any(Function),
+      organizeCollectionItems: expect.any(Function),
       reduceRespondStream: expect.any(Function),
+      resolveItemByPath: expect.any(Function),
       resolveUsage: expect.any(Function),
       summarizeRuntimeToolCatalog: expect.any(Function),
       sortVariableInspectorRows: expect.any(Function),
+      toClientDataMap: expect.any(Function),
     });
   });
 
@@ -35,6 +49,113 @@ describe("client-helpers public exports", () => {
     expect(clientHelpers.flattenVariableSnapshot).toBe(flattenVariableSnapshot);
     expect(clientHelpers.formatVariablePreview).toBe(formatVariablePreview);
     expect(clientHelpers.sortVariableInspectorRows).toBe(sortVariableInspectorRows);
+  });
+});
+
+describe("client data helpers", () => {
+  const items: ClientDataItemRecord[] = [
+    {
+      id: "item-1",
+      domainId: "domain-1",
+      collectionId: "collection-a",
+      itemKey: "theme",
+      valueJson: { mode: "dark" },
+      byteSize: 16,
+      version: 1,
+      expiresAt: null,
+      createdAt: 10,
+      updatedAt: 20,
+    },
+    {
+      id: "item-2",
+      domainId: "domain-1",
+      collectionId: "collection-a",
+      itemKey: "locale",
+      valueJson: "en-US",
+      byteSize: 8,
+      version: 1,
+      expiresAt: null,
+      createdAt: 11,
+      updatedAt: 21,
+    },
+    {
+      id: "item-3",
+      domainId: "domain-1",
+      collectionId: "collection-b",
+      itemKey: "layout",
+      valueJson: "compact",
+      byteSize: 10,
+      version: 1,
+      expiresAt: null,
+      createdAt: 12,
+      updatedAt: 22,
+    },
+  ];
+
+  it("builds plugin and application owner descriptors", () => {
+    expect(buildPluginOwner("plugin-1")).toEqual({ ownerType: "plugin", ownerId: "plugin-1" });
+    expect(buildApplicationOwner("app-1")).toEqual({ ownerType: "application", ownerId: "app-1" });
+  });
+
+  it("groups items by collection id", () => {
+    expect(groupItemsByCollection(items)).toEqual({
+      "collection-a": [items[0], items[1]],
+      "collection-b": [items[2]],
+    });
+  });
+
+  it("organizes items into collection sections", () => {
+    expect(organizeCollectionItems(items)).toEqual([
+      { collectionId: "collection-a", items: [items[0], items[1]] },
+      { collectionId: "collection-b", items: [items[2]] },
+    ]);
+  });
+
+  it("converts items into a collection keyed value map", () => {
+    expect(toClientDataMap(items, [
+      { id: "collection-a", collectionName: "settings" },
+      { id: "collection-b", collectionName: "layout" },
+    ])).toEqual({
+      settings: {
+        theme: { mode: "dark" },
+        locale: "en-US",
+      },
+      layout: {
+        layout: "compact",
+      },
+    });
+  });
+
+  it("falls back to collection id when collection names are not provided", () => {
+    expect(toClientDataMap(items)).toEqual({
+      "collection-a": {
+        theme: { mode: "dark" },
+        locale: "en-US",
+      },
+      "collection-b": {
+        layout: "compact",
+      },
+    });
+  });
+
+  it("resolves item by path through sdk resource", async () => {
+    const expected = items[0];
+    const getByKey = vi.fn().mockResolvedValue(expected);
+    const client = {
+      clientData: {
+        items: {
+          getByKey,
+        },
+      },
+    } as unknown as Pick<TavernClient, "clientData">;
+
+    await expect(resolveItemByPath(client, "domain-1", "settings", "theme", { accountId: "acc-1" })).resolves.toEqual(expected);
+    expect(getByKey).toHaveBeenCalledWith({
+      accountId: "acc-1",
+      domainId: "domain-1",
+      collectionName: "settings",
+      itemKey: "theme",
+    });
   });
 });
 
@@ -186,7 +307,7 @@ describe("buildTimelineMessages", () => {
         pageCount: 0,
         state: "completed",
         tokenIn: 0,
-        tokenOut: 0,
+        tokenOut:0,
       },
       {
         activePage: {
@@ -515,7 +636,7 @@ describe("mapApiErrorToUiState", () => {
     ["generation_conflict", 500, "conflict", true],
     ["generation_queue_timeout", 200, "server", true],
     ["generation_timeout", 200, "server", true],
-    ["commit_busy", 200, "server", true],
+ ["commit_busy", 200, "server", true],
     ["commit_conflict", 500, "conflict", true],
     ["preset_conflict", 409, "conflict", true],
     ["worldbook_conflict", 409, "conflict", true],

@@ -2,7 +2,15 @@ import { Buffer } from "node:buffer";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { parseJsonField, stringifyJsonField } from "../lib/http.js";
-import { ClientDataRepository, type ClientDataCollectionRecord, type ClientDataDomainRecord, type ClientDataItemRecord } from "./client-data-repository.js";
+import {
+  ClientDataRepository,
+  type ClientDataAuditLogRecord,
+  type ClientDataCollectionRecord,
+  type ClientDataDomainGrantRecord,
+  type ClientDataDomainRecord,
+  type ClientDataItemRecord,
+} from "./client-data-repository.js";
+import type { ClientDataCallerOwner } from "./client-data-auth.js";
 
 export interface ClientDataConfig {
   defaultMaxItemSizeBytes: number;
@@ -11,6 +19,7 @@ export interface ClientDataConfig {
   maxDomainsPerAccount: number;
   maxTotalEntriesPerAccount: number;
   maxTotalBytesPerAccount: number;
+  domainPurgeGracePeriodMs?: number;
 }
 
 export interface ClientDataDomainDetail extends ClientDataDomainRecord {
@@ -18,7 +27,73 @@ export interface ClientDataDomainDetail extends ClientDataDomainRecord {
     entryCount: number;
     byteCount: number;
   };
+  restorableUntil: number | null;
 }
+
+export interface ClientDataExportSnapshot {
+  domain: {
+    id: string;
+    ownerType: "application" | "plugin";
+    ownerId: string;
+    domainName: string;
+    displayName: string | null;
+    description: string | null;
+    createdAt: number;
+  };
+  collections: ClientDataImportCollectionSnapshot[];
+  exportedAt: number;
+}
+
+export interface ClientDataImportCollectionSnapshot {
+  collectionName: string;
+  description: string | null;
+  defaultExpiresTtlMs: number | null;
+  maxItemSizeBytes: number | null;
+  metadataJson: unknown;
+  items: ClientDataImportItemSnapshot[];
+}
+
+export interface ClientDataImportItemSnapshot {
+  itemKey: string;
+  valueJson: unknown;
+  version?: number;
+  expiresAt: number | null;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface ClientDataImportPayload {
+  domain: {
+    ownerType: "application" | "plugin";
+    ownerId: string;
+    domainName: string;
+    displayName?: string | null;
+    description?: string | null;
+  };
+  collections: ClientDataImportCollectionSnapshot[];
+}
+
+export interface ClientDataImportResult {
+  domain: ClientDataDomainRecord;
+  collections: ClientDataCollectionRecord[];
+  summary: {
+    collectionsCreated: number;
+    itemsCreated: number;
+    itemsUpdated: number;
+    itemsSkipped: number;
+    importedItemCount: number;
+    importedByteCount: number;
+    conflictPolicy: "fail" | "overwrite" | "skip";
+  };
+}
+
+export interface ClientDataAuditActor {
+  actorType: string;
+  actorId: string | null;
+}
+
+const MAX_IMPORT_ITEMS = 1_000;
+const MAX_IMPORT_PAYLOAD_BYTES = 10 * 1024 * 1024;
 
 export class ClientDataService {
   private readonly repository: ClientDataRepository;
@@ -38,18 +113,42 @@ export class ClientDataService {
     domainName: string;
     displayName?: string;
     description?: string;
+    actor?: ClientDataAuditActor;
+    requestId?: string | null;
   }): ClientDataDomainRecord {
     const existingDomainCount = this.repository.countActiveDomainsByAccount(input.accountId);
     if (existingDomainCount >= this.config.maxDomainsPerAccount) {
       throw new ClientDataServiceError(409, "client_data_account_domain_limit_exceeded", "Client data domain limit exceeded for account");
     }
 
-    return this.repository.createDomain({
-      ...input,
+    const created = this.repository.createDomain({
+      accountId: input.accountId,
+      ownerType: input.ownerType,
+      ownerId: input.ownerId,
+      domainName: input.domainName,
+      displayName: input.displayName,
+      description: input.description,
       quotaMaxEntries: this.config.defaultQuotaMaxEntries,
       quotaMaxBytes: this.config.defaultQuotaMaxBytes,
       now: this.now(),
     });
+
+    this.appendAuditLog({
+      accountId: created.accountId,
+      domain: created,
+      actor: input.actor,
+      action: "domain.create",
+      targetType: "domain",
+      targetId: created.id,
+      requestId: input.requestId ?? null,
+      metadata: {
+        owner_type: created.ownerType,
+        owner_id: created.ownerId,
+        domain_name: created.domainName,
+      },
+    });
+
+    return created;
   }
 
   listDomains(input: {
@@ -73,6 +172,7 @@ export class ClientDataService {
         entryCount: domain.currentEntryCount,
         byteCount: domain.currentByteCount,
       },
+      restorableUntil: domain.deletedAt === null ? null : domain.deletedAt + (this.config.domainPurgeGracePeriodMs ?? 0),
     };
   }
 
@@ -81,64 +181,323 @@ export class ClientDataService {
     domainId: string;
     displayName?: string | null;
     description?: string | null;
+    ifVersion?: number;
+    actor?: ClientDataAuditActor;
+    requestId?: string | null;
   }): ClientDataDomainRecord {
-    this.requireReadableDomain(this.requireOwnedDomain(input.accountId, input.domainId));
+    const domain = this.requireReadableDomain(this.requireOwnedDomain(input.accountId, input.domainId));
     const updated = this.repository.updateDomain({
       domainId: input.domainId,
       displayName: input.displayName,
       description: input.description,
+      ifVersion: input.ifVersion,
+      now: this.now(),
+    });
+    if (!updated) {
+      if (input.ifVersion !== undefined) {
+        throw new ClientDataServiceError(409, "client_data_version_conflict", "Client data domain version conflict");
+      }
+      throw new ClientDataServiceError(404, "not_found", "Client data domain not found");
+    }
+
+    this.appendAuditLog({
+      accountId: updated.accountId,
+      domain: updated,
+      actor: input.actor,
+      action: "domain.update",
+      targetType: "domain",
+      targetId: updated.id,
+      requestId: input.requestId ?? null,
+      metadata: {
+        previous_display_name: domain.displayName,
+        previous_description: domain.description,
+        display_name: updated.displayName,
+        description: updated.description,
+        if_version: input.ifVersion ?? null,
+      },
+    });
+
+    return updated;
+  }
+
+  updateDomainQuota(input: {
+    accountId: string;
+    role: "admin" | "user";
+    domainId: string;
+    quotaMaxEntries: number;
+    quotaMaxBytes: number;
+    actor?: ClientDataAuditActor;
+    requestId?: string | null;
+  }): ClientDataDomainRecord {
+    if (input.role !== "admin") {
+      throw new ClientDataServiceError(403, "client_data_domain_quota_forbidden", "Only admin can update client data domain quota");
+    }
+    const domain = this.requireOwnedDomain(input.accountId, input.domainId);
+    if (input.quotaMaxEntries < domain.currentEntryCount || input.quotaMaxBytes < domain.currentByteCount) {
+      throw new ClientDataServiceError(409, "client_data_domain_quota_below_usage", "Client data domain quota cannot be lower than current usage");
+    }
+    const updated = this.repository.updateDomainQuota({
+      domainId: input.domainId,
+      quotaMaxEntries: input.quotaMaxEntries,
+      quotaMaxBytes: input.quotaMaxBytes,
       now: this.now(),
     });
     if (!updated) {
       throw new ClientDataServiceError(404, "not_found", "Client data domain not found");
     }
+
+    this.appendAuditLog({
+      accountId: updated.accountId,
+      domain: updated,
+      actor: input.actor,
+      action: "domain.quota.update",
+      targetType: "domain",
+      targetId: updated.id,
+      requestId: input.requestId ?? null,
+      metadata: {
+        previous_quota_max_entries: domain.quotaMaxEntries,
+        previous_quota_max_bytes: domain.quotaMaxBytes,
+        quota_max_entries: updated.quotaMaxEntries,
+        quota_max_bytes: updated.quotaMaxBytes,
+      },
+    });
+
     return updated;
   }
 
-  deleteDomain(accountId: string, domainId: string): ClientDataDomainRecord {
+  deleteDomain(accountId: string, domainId: string, actor?: ClientDataAuditActor, requestId?: string | null): ClientDataDomainRecord {
     this.requireOwnedDomain(accountId, domainId);
     const deleted = this.repository.softDeleteDomain(domainId, this.now());
     if (!deleted) {
       throw new ClientDataServiceError(404, "not_found", "Client data domain not found");
     }
+
+    this.appendAuditLog({
+      accountId: deleted.accountId,
+      domain: deleted,
+      actor,
+      action: "domain.delete",
+      targetType: "domain",
+      targetId: deleted.id,
+      requestId: requestId ?? null,
+      metadata: {
+        status: deleted.status,
+        deleted_at: deleted.deletedAt,
+      },
+    });
+
     return deleted;
   }
 
-  deleteDomainsByOwner(input: { accountId: string; ownerType: "application" | "plugin"; ownerId: string }): ClientDataDomainRecord[] {
-    return this.repository.softDeleteDomainsByOwner({ ...input, now: this.now() });
+  restoreDomain(accountId: string, domainId: string, actor?: ClientDataAuditActor, requestId?: string | null): ClientDataDomainRecord {
+    const domain = this.requireOwnedDomain(accountId, domainId);
+    if (domain.status !== "deleted" || domain.deletedAt === null) {
+      throw new ClientDataServiceError(409, "client_data_domain_restore_invalid_state", "Client data domain is not restorable");
+    }
+    const gracePeriodMs = this.config.domainPurgeGracePeriodMs ?? 0;
+    if (gracePeriodMs <= 0 || this.now() > domain.deletedAt + gracePeriodMs) {
+      throw new ClientDataServiceError(409, "client_data_domain_restore_expired", "Client data domain restore grace period has expired");
+    }
+    if (this.repository.hasActiveDomainWithOwnerName({
+      accountId: domain.accountId,
+      ownerType: domain.ownerType,
+      ownerId: domain.ownerId,
+      domainName: domain.domainName,
+      excludeDomainId: domain.id,
+    })) {
+      throw new ClientDataServiceError(409, "client_data_domain_restore_conflict", "Client data domain restore conflicts with an existing active domain");
+    }
+    const restored = this.repository.restoreDomain({ domainId: domain.id, now: this.now() });
+    if (!restored) {
+      throw new ClientDataServiceError(404, "not_found", "Client data domain not found");
+    }
+
+    this.appendAuditLog({
+      accountId: restored.accountId,
+      domain: restored,
+      actor,
+      action: "domain.restore",
+      targetType: "domain",
+      targetId: restored.id,
+      requestId: requestId ?? null,
+      metadata: {
+        previous_deleted_at: domain.deletedAt,
+      },
+    });
+
+    return restored;
   }
 
-  exportDomain(accountId: string, domainId: string) {
+  deleteDomainsByOwner(input: { accountId: string; ownerType: "application" | "plugin"; ownerId: string; actor?: ClientDataAuditActor; requestId?: string | null }): ClientDataDomainRecord[] {
+    const deleted = this.repository.softDeleteDomainsByOwner({
+      accountId: input.accountId,
+      ownerType: input.ownerType,
+      ownerId: input.ownerId,
+      now: this.now(),
+    });
+    if (deleted.length > 0) {
+      this.appendAuditLog({
+        accountId: input.accountId,
+        domain: null,
+        ownerType: input.ownerType,
+        ownerId: input.ownerId,
+        actor: input.actor,
+        action: "domain.owner.bulk_delete",
+        targetType: "owner",
+        targetId: input.ownerId,
+        requestId: input.requestId ?? null,
+        metadata: {
+          owner_type: input.ownerType,
+          owner_id: input.ownerId,
+          deleted_domain_ids: deleted.map((domain) => domain.id),
+        },
+      });
+    }
+    return deleted;
+  }
+
+  exportDomain(accountId: string, domainId: string, actor?: ClientDataAuditActor, requestId?: string | null): ClientDataExportSnapshot {
     const domain = this.requireReadableDomain(this.requireOwnedDomain(accountId, domainId));
     const collections = this.repository.listItemsForExport(domain.id).map((entry) => ({
-      collection_name: entry.collection.collectionName,
+      collectionName: entry.collection.collectionName,
       description: entry.collection.description,
-      default_expires_ttl_ms: entry.collection.defaultExpiresTtlMs,
-      max_item_size_bytes: entry.collection.maxItemSizeBytes,
-      metadata_json: parseJsonField(entry.collection.metadataJson),
+      defaultExpiresTtlMs: entry.collection.defaultExpiresTtlMs,
+      maxItemSizeBytes: entry.collection.maxItemSizeBytes,
+      metadataJson: parseJsonField(entry.collection.metadataJson),
       items: entry.items.map((item) => ({
-        item_key: item.itemKey,
-        value_json: parseJsonField(item.valueJson),
+        itemKey: item.itemKey,
+        valueJson: parseJsonField(item.valueJson),
         version: item.version,
-        expires_at: item.expiresAt,
-        created_at: item.createdAt,
-        updated_at: item.updatedAt,
+        expiresAt: item.expiresAt,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
       })),
     }));
 
-    return {
+    const snapshot = {
       domain: {
         id: domain.id,
-        owner_type: domain.ownerType,
-        owner_id: domain.ownerId,
-        domain_name: domain.domainName,
-        display_name: domain.displayName,
+        ownerType: domain.ownerType,
+        ownerId: domain.ownerId,
+        domainName: domain.domainName,
+        displayName: domain.displayName,
         description: domain.description,
-        created_at: domain.createdAt,
+        createdAt: domain.createdAt,
       },
       collections,
-      exported_at: this.now(),
+      exportedAt: this.now(),
     };
+
+    this.appendAuditLog({
+      accountId: domain.accountId,
+      domain,
+      actor,
+      action: "domain.export",
+      targetType: "domain",
+      targetId: domain.id,
+      requestId: requestId ?? null,
+      metadata: {
+        collection_count: collections.length,
+      },
+    });
+
+    return snapshot;
+  }
+
+  importIntoDomain(input: {
+    accountId: string;
+    domainId: string;
+    conflictPolicy: "fail" | "overwrite" | "skip";
+    payload: ClientDataImportPayload;
+    actor?: ClientDataAuditActor;
+    requestId?: string | null;
+  }): ClientDataImportResult {
+    validateImportPayload(input.payload);
+
+    return this.executeTransaction((tx) => {
+      const service = new ClientDataService(tx, this.config, this.now);
+      const domain = service.requireWritableDomain(service.requireOwnedDomain(input.accountId, input.domainId));
+      const sourceDomain = input.payload.domain;
+      if (
+        sourceDomain.ownerType !== domain.ownerType
+        || sourceDomain.ownerId !== domain.ownerId
+        || sourceDomain.domainName !== domain.domainName
+      ) {
+        throw new ClientDataServiceError(409, "client_data_import_domain_mismatch", "Client data import payload domain does not match target domain");
+      }
+      const result = service.applyImportToDomain({
+        accountId: input.accountId,
+        domain,
+        conflictPolicy: input.conflictPolicy,
+        payload: input.payload,
+      });
+      service.appendAuditLog({
+        accountId: result.domain.accountId,
+        domain: result.domain,
+        actor: input.actor,
+        action: "domain.import",
+        targetType: "domain",
+        targetId: result.domain.id,
+        requestId: input.requestId ?? null,
+        metadata: {
+          conflict_policy: result.summary.conflictPolicy,
+          collections_created: result.summary.collectionsCreated,
+          items_created: result.summary.itemsCreated,
+          items_updated: result.summary.itemsUpdated,
+          items_skipped: result.summary.itemsSkipped,
+        },
+      });
+      return result;
+    });
+  }
+
+  importAsNewDomain(input: {
+    accountId: string;
+    conflictPolicy: "fail" | "overwrite" | "skip";
+    payload: ClientDataImportPayload;
+    actor?: ClientDataAuditActor;
+    requestId?: string | null;
+  }): ClientDataImportResult {
+    validateImportPayload(input.payload);
+
+    return this.executeTransaction((tx) => {
+      const service = new ClientDataService(tx, this.config, this.now);
+      const payloadDomain = input.payload.domain;
+      const domain = service.createDomain({
+        accountId: input.accountId,
+        ownerType: payloadDomain.ownerType,
+        ownerId: payloadDomain.ownerId,
+        domainName: payloadDomain.domainName,
+        displayName: payloadDomain.displayName ?? undefined,
+        description: payloadDomain.description ?? undefined,
+        actor: input.actor,
+        requestId: input.requestId ?? null,
+      });
+      const result = service.applyImportToDomain({
+        accountId: input.accountId,
+        domain,
+        conflictPolicy: input.conflictPolicy,
+        payload: input.payload,
+      });
+      service.appendAuditLog({
+        accountId: result.domain.accountId,
+        domain: result.domain,
+        actor: input.actor,
+        action: "domain.import",
+        targetType: "domain",
+        targetId: result.domain.id,
+        requestId: input.requestId ?? null,
+        metadata: {
+          conflict_policy: result.summary.conflictPolicy,
+          collections_created: result.summary.collectionsCreated,
+          items_created: result.summary.itemsCreated,
+          items_updated: result.summary.itemsUpdated,
+          items_skipped: result.summary.itemsSkipped,
+          import_mode: "new_domain",
+        },
+      });
+      return result;
+    });
   }
 
   createCollection(input: {
@@ -183,6 +542,7 @@ export class ClientDataService {
     defaultExpiresTtlMs?: number | null;
     maxItemSizeBytes?: number | null;
     metadataJson?: unknown;
+    ifVersion?: number;
   }): ClientDataCollectionRecord {
     this.requireWritableDomain(this.requireOwnedDomain(input.accountId, input.domainId));
     this.requireOwnedCollection(input.domainId, input.collectionId);
@@ -192,9 +552,13 @@ export class ClientDataService {
       defaultExpiresTtlMs: input.defaultExpiresTtlMs,
       maxItemSizeBytes: input.maxItemSizeBytes,
       metadataJson: input.metadataJson === undefined ? undefined : stringifyJsonField(input.metadataJson),
+      ifVersion: input.ifVersion,
       now: this.now(),
     });
     if (!updated) {
+      if (input.ifVersion !== undefined) {
+        throw new ClientDataServiceError(409, "client_data_version_conflict", "Client data collection version conflict");
+      }
       throw new ClientDataServiceError(404, "not_found", "Client data collection not found");
     }
     return updated;
@@ -216,6 +580,12 @@ export class ClientDataService {
     accountId: string;
     domainId: string;
     collectionId?: string;
+    itemKeyPrefix?: string;
+    updatedAfter?: number;
+    updatedBefore?: number;
+    expiresAfter?: number;
+    expiresBefore?: number;
+    expired?: boolean;
     limit: number;
     offset: number;
     sortBy: "updated_at" | "created_at" | "item_key";
@@ -228,6 +598,13 @@ export class ClientDataService {
     return this.repository.listItems({
       domainId: domain.id,
       collectionId: input.collectionId,
+      itemKeyPrefix: input.itemKeyPrefix,
+      updatedAfter: input.updatedAfter,
+      updatedBefore: input.updatedBefore,
+      expiresAfter: input.expiresAfter,
+      expiresBefore: input.expiresBefore,
+      expired: input.expired,
+      now: this.now(),
       limit: input.limit,
       offset: input.offset,
       sortBy: input.sortBy,
@@ -239,6 +616,24 @@ export class ClientDataService {
     this.requireReadableDomain(this.requireOwnedDomain(accountId, domainId));
     const item = this.repository.getItemById(itemId);
     if (!item || item.domainId !== domainId) {
+      throw new ClientDataServiceError(404, "not_found", "Client data item not found");
+    }
+    return item;
+  }
+
+  getItemByKey(input: {
+    accountId: string;
+    domainId: string;
+    collectionName: string;
+    itemKey: string;
+  }): ClientDataItemRecord {
+    const domain = this.requireReadableDomain(this.requireOwnedDomain(input.accountId, input.domainId));
+    const collection = this.repository.getCollectionByDomainName(domain.id, input.collectionName);
+    if (!collection) {
+      throw new ClientDataServiceError(404, "not_found", "Client data collection not found");
+    }
+    const item = this.repository.getItemByCollectionKey(collection.id, input.itemKey);
+    if (!item) {
       throw new ClientDataServiceError(404, "not_found", "Client data item not found");
     }
     return item;
@@ -428,6 +823,212 @@ export class ClientDataService {
     return deleted;
   }
 
+  listDomainGrants(input: {
+    accountId: string;
+    domainId: string;
+    callerOwner: ClientDataCallerOwner | null;
+  }): ClientDataDomainGrantRecord[] {
+    const domain = this.requireManagedDomain(input.accountId, input.domainId, input.callerOwner);
+    return this.repository.listDomainGrants(domain.id);
+  }
+
+  createDomainGrant(input: {
+    accountId: string;
+    domainId: string;
+    callerOwner: ClientDataCallerOwner | null;
+    granteeOwnerType: "application" | "plugin";
+    granteeOwnerId: string;
+    canRead: boolean;
+    canWrite: boolean;
+    canDelete: boolean;
+    canList: boolean;
+    expiresAt?: number | null;
+    actor?: ClientDataAuditActor;
+    requestId?: string | null;
+  }): ClientDataDomainGrantRecord {
+    const domain = this.requireManagedDomain(input.accountId, input.domainId, input.callerOwner);
+    if (input.granteeOwnerType === domain.ownerType && input.granteeOwnerId === domain.ownerId) {
+      throw new ClientDataServiceError(409, "client_data_domain_grant_owner_redundant", "Domain owner does not require an explicit grant");
+    }
+
+    const created = this.repository.createDomainGrant({
+      accountId: input.accountId,
+      domainId: domain.id,
+      granteeOwnerType: input.granteeOwnerType,
+      granteeOwnerId: input.granteeOwnerId,
+      canRead: input.canRead,
+      canWrite: input.canWrite,
+      canDelete: input.canDelete,
+      canList: input.canList,
+      expiresAt: input.expiresAt,
+      now: this.now(),
+    });
+
+    this.appendAuditLog({
+      accountId: domain.accountId,
+      domain,
+      actor: input.actor,
+      action: "grant.create",
+      targetType: "grant",
+      targetId: created.id,
+      requestId: input.requestId ?? null,
+      metadata: {
+        grantee_owner_type: created.granteeOwnerType,
+        grantee_owner_id: created.granteeOwnerId,
+        can_read: created.canRead,
+        can_write: created.canWrite,
+        can_delete: created.canDelete,
+        can_list: created.canList,
+        expires_at: created.expiresAt,
+      },
+    });
+
+    return created;
+  }
+
+  updateDomainGrant(input: {
+    accountId: string;
+    domainId: string;
+    grantId: string;
+    callerOwner: ClientDataCallerOwner | null;
+    canRead?: boolean;
+    canWrite?: boolean;
+    canDelete?: boolean;
+    canList?: boolean;
+    expiresAt?: number | null;
+    actor?: ClientDataAuditActor;
+    requestId?: string | null;
+  }): ClientDataDomainGrantRecord {
+    const domain = this.requireManagedDomain(input.accountId, input.domainId, input.callerOwner);
+    const existing = this.requireOwnedGrant(domain.id, input.grantId);
+    const updated = this.repository.updateDomainGrant({
+      grantId: input.grantId,
+      canRead: input.canRead,
+      canWrite: input.canWrite,
+      canDelete: input.canDelete,
+      canList: input.canList,
+      expiresAt: input.expiresAt,
+      now: this.now(),
+    });
+    if (!updated) {
+      throw new ClientDataServiceError(404, "not_found", "Client data domain grant not found");
+    }
+
+    this.appendAuditLog({
+      accountId: domain.accountId,
+      domain,
+      actor: input.actor,
+      action: "grant.update",
+      targetType: "grant",
+      targetId: updated.id,
+      requestId: input.requestId ?? null,
+      metadata: {
+        previous: existing,
+        current: updated,
+      },
+    });
+
+    return updated;
+  }
+
+  deleteDomainGrant(input: {
+    accountId: string;
+    domainId: string;
+    grantId: string;
+    callerOwner: ClientDataCallerOwner | null;
+    actor?: ClientDataAuditActor;
+    requestId?: string | null;
+  }): ClientDataDomainGrantRecord {
+    const domain = this.requireManagedDomain(input.accountId, input.domainId, input.callerOwner);
+    this.requireOwnedGrant(domain.id, input.grantId);
+    const deleted = this.repository.deleteDomainGrant(input.grantId);
+    if (!deleted) {
+      throw new ClientDataServiceError(404, "not_found", "Client data domain grant not found");
+    }
+
+    this.appendAuditLog({
+      accountId: domain.accountId,
+      domain,
+      actor: input.actor,
+      action: "grant.delete",
+      targetType: "grant",
+      targetId: deleted.id,
+      requestId: input.requestId ?? null,
+      metadata: {
+        grantee_owner_type: deleted.granteeOwnerType,
+        grantee_owner_id: deleted.granteeOwnerId,
+      },
+    });
+
+    return deleted;
+  }
+
+  listAuditLogs(input: {
+    accountId: string;
+    domainId: string;
+    callerOwner: ClientDataCallerOwner | null;
+    actorType?: string;
+    action?: string;
+    limit: number;
+    offset: number;
+    sortOrder: "asc" | "desc";
+  }): { rows: ClientDataAuditLogRecord[]; total: number } {
+    const domain = this.requireManagedDomain(input.accountId, input.domainId, input.callerOwner);
+    return this.repository.listAuditLogs({
+      domainId: domain.id,
+      actorType: input.actorType,
+      action: input.action,
+      limit: input.limit,
+      offset: input.offset,
+      sortOrder: input.sortOrder,
+    });
+  }
+
+  authorizeDomainAccess(input: {
+    accountId: string;
+    domainId: string;
+    callerOwner: ClientDataCallerOwner | null;
+    permission: "read" | "write" | "delete" | "list";
+  }): ClientDataDomainRecord {
+    const domain = this.requireOwnedDomain(input.accountId, input.domainId);
+    if (!input.callerOwner) {
+      return input.permission === "write" || input.permission === "delete"
+        ? this.requireWritableDomain(domain)
+        : this.requireReadableDomain(domain);
+    }
+
+    if (domain.ownerType === input.callerOwner.ownerType && domain.ownerId === input.callerOwner.ownerId) {
+      return input.permission === "write" || input.permission === "delete"
+        ? this.requireWritableDomain(domain)
+        : this.requireReadableDomain(domain);
+    }
+
+    const grant = this.repository.findGrantForOwner({
+      domainId: domain.id,
+      granteeOwnerType: input.callerOwner.ownerType,
+      granteeOwnerId: input.callerOwner.ownerId,
+      now: this.now(),
+    });
+    if (!grant) {
+      throw new ClientDataServiceError(403, "client_data_domain_forbidden", "Client data domain access is not granted for caller owner");
+    }
+
+    const allowed = input.permission === "read"
+      ? grant.canRead
+      : input.permission === "write"
+        ? grant.canWrite
+        : input.permission === "delete"
+          ? grant.canDelete
+          : grant.canList;
+    if (!allowed) {
+      throw new ClientDataServiceError(403, "client_data_domain_forbidden", "Client data domain access is not granted for caller owner");
+    }
+
+    return input.permission === "write" || input.permission === "delete"
+      ? this.requireWritableDomain(domain)
+      : this.requireReadableDomain(domain);
+  }
+
   requireOwnedDomain(accountId: string, domainId: string): ClientDataDomainRecord {
     const domain = this.repository.getDomainById(domainId);
     if (!domain || domain.accountId !== accountId) {
@@ -457,6 +1058,209 @@ export class ClientDataService {
       throw new ClientDataServiceError(404, "not_found", "Client data collection not found");
     }
     return collection;
+  }
+
+  private requireManagedDomain(
+    accountId: string,
+    domainId: string,
+    callerOwner: ClientDataCallerOwner | null,
+  ): ClientDataDomainRecord {
+    const domain = this.requireOwnedDomain(accountId, domainId);
+    if (!callerOwner) {
+      return domain;
+    }
+    if (domain.ownerType === callerOwner.ownerType && domain.ownerId === callerOwner.ownerId) {
+      return domain;
+    }
+    throw new ClientDataServiceError(403, "client_data_domain_grant_manage_forbidden", "Only domain owner can manage grants or audit logs");
+  }
+
+  private requireOwnedGrant(domainId: string, grantId: string): ClientDataDomainGrantRecord {
+    const grant = this.repository.getDomainGrantById(grantId);
+    if (!grant || grant.domainId !== domainId) {
+      throw new ClientDataServiceError(404, "not_found", "Client data domain grant not found");
+    }
+    return grant;
+  }
+
+  private applyImportToDomain(input: {
+    accountId: string;
+    domain: ClientDataDomainRecord;
+    conflictPolicy: "fail" | "overwrite" | "skip";
+    payload: ClientDataImportPayload;
+  }): ClientDataImportResult {
+    const accountUsage = this.repository.getAccountUsageTotals(input.accountId);
+    const collections: ClientDataCollectionRecord[] = [];
+    let collectionsCreated = 0;
+    let itemsCreated = 0;
+    let itemsUpdated = 0;
+    let itemsSkipped = 0;
+    let importedItemCount = 0;
+    let importedByteCount = 0;
+    let accountEntries = accountUsage.totalEntries;
+    let accountBytes = accountUsage.totalBytes;
+    let domainEntries = input.domain.currentEntryCount;
+    let domainBytes = input.domain.currentByteCount;
+
+    for (const collectionInput of input.payload.collections) {
+      let collection = this.repository.getCollectionByDomainName(input.domain.id, collectionInput.collectionName);
+      if (!collection) {
+        collection = this.repository.createCollection({
+          domainId: input.domain.id,
+          collectionName: collectionInput.collectionName,
+          description: collectionInput.description ?? undefined,
+          defaultExpiresTtlMs: collectionInput.defaultExpiresTtlMs,
+          maxItemSizeBytes: collectionInput.maxItemSizeBytes,
+          metadataJson: stringifyJsonField(collectionInput.metadataJson),
+          now: this.now(),
+        });
+        collectionsCreated += 1;
+      }
+
+      if (
+        collectionInput.description !== collection.description
+        || collectionInput.defaultExpiresTtlMs !== collection.defaultExpiresTtlMs
+        || collectionInput.maxItemSizeBytes !== collection.maxItemSizeBytes
+        || stringifyJsonField(collectionInput.metadataJson) !== collection.metadataJson
+      ) {
+        const updatedCollection = this.repository.updateCollection({
+          collectionId: collection.id,
+          description: collectionInput.description,
+          defaultExpiresTtlMs: collectionInput.defaultExpiresTtlMs,
+          maxItemSizeBytes: collectionInput.maxItemSizeBytes,
+          metadataJson: stringifyJsonField(collectionInput.metadataJson),
+          now: this.now(),
+        });
+        if (!updatedCollection) {
+          throw new ClientDataServiceError(500, "internal_error", "Failed to update imported client data collection metadata");
+        }
+        collection = updatedCollection;
+      }
+
+      const maxItemSizeBytes = collection.maxItemSizeBytes ?? this.config.defaultMaxItemSizeBytes;
+
+      for (const itemInput of collectionInput.items) {
+        const itemValueJson = JSON.stringify(itemInput.valueJson);
+        const byteSize = Buffer.byteLength(itemValueJson, "utf-8");
+        if (byteSize > maxItemSizeBytes) {
+          throw new ClientDataServiceError(409, "client_data_item_too_large", "Client data item exceeds size limit");
+        }
+
+        const existing = this.repository.getItemByCollectionKey(collection.id, itemInput.itemKey);
+        if (existing && input.conflictPolicy === "fail") {
+          throw new ClientDataServiceError(409, "client_data_import_conflict", "Client data import conflict detected");
+        }
+        if (existing && input.conflictPolicy === "skip") {
+          itemsSkipped += 1;
+          continue;
+        }
+
+        if (!existing) {
+          if (domainEntries + 1 > input.domain.quotaMaxEntries) {
+            throw new ClientDataServiceError(409, "client_data_domain_entries_quota_exceeded", "Client data domain entry quota exceeded");
+          }
+          if (domainBytes + byteSize > input.domain.quotaMaxBytes) {
+            throw new ClientDataServiceError(409, "client_data_domain_bytes_quota_exceeded", "Client data domain byte quota exceeded");
+          }
+          if (accountEntries + 1 > this.config.maxTotalEntriesPerAccount) {
+            throw new ClientDataServiceError(409, "client_data_account_entries_quota_exceeded", "Client data account entry quota exceeded");
+          }
+          if (accountBytes + byteSize > this.config.maxTotalBytesPerAccount) {
+            throw new ClientDataServiceError(409, "client_data_account_bytes_quota_exceeded", "Client data account byte quota exceeded");
+          }
+
+          this.repository.createItem({
+            domainId: input.domain.id,
+            collectionId: collection.id,
+            itemKey: itemInput.itemKey,
+            valueJson: itemValueJson,
+            byteSize,
+            expiresAt: itemInput.expiresAt,
+            now: this.now(),
+          });
+          this.repository.updateCollectionCounters(collection.id, 1, byteSize, this.now());
+          this.repository.updateDomainCounters(input.domain.id, 1, byteSize, this.now());
+          accountEntries += 1;
+          accountBytes += byteSize;
+          domainEntries += 1;
+          domainBytes += byteSize;
+          importedItemCount += 1;
+          importedByteCount += byteSize;
+          itemsCreated += 1;
+          continue;
+        }
+
+        const deltaBytes = byteSize - existing.byteSize;
+        if (domainBytes + deltaBytes > input.domain.quotaMaxBytes) {
+          throw new ClientDataServiceError(409, "client_data_domain_bytes_quota_exceeded", "Client data domain byte quota exceeded");
+        }
+        if (accountBytes + deltaBytes > this.config.maxTotalBytesPerAccount) {
+          throw new ClientDataServiceError(409, "client_data_account_bytes_quota_exceeded", "Client data account byte quota exceeded");
+        }
+
+        const updated = this.repository.updateItem({
+          itemId: existing.id,
+          valueJson: itemValueJson,
+          byteSize,
+          expiresAt: itemInput.expiresAt,
+          now: this.now(),
+        });
+        if (!updated) {
+          throw new ClientDataServiceError(500, "internal_error", "Failed to update imported client data item");
+        }
+        this.repository.updateCollectionCounters(collection.id, 0, deltaBytes, this.now());
+        this.repository.updateDomainCounters(input.domain.id, 0, deltaBytes, this.now());
+        accountBytes += deltaBytes;
+        domainBytes += deltaBytes;
+        importedItemCount += 1;
+        importedByteCount += byteSize;
+        itemsUpdated += 1;
+      }
+
+      collections.push(this.requireOwnedCollection(input.domain.id, collection.id));
+    }
+
+    return {
+      domain: this.requireOwnedDomain(input.accountId, input.domain.id),
+      collections,
+      summary: {
+        collectionsCreated,
+        itemsCreated,
+        itemsUpdated,
+        itemsSkipped,
+        importedItemCount,
+        importedByteCount,
+        conflictPolicy: input.conflictPolicy,
+      },
+    };
+  }
+
+  private appendAuditLog(input: {
+    accountId: string;
+    domain: ClientDataDomainRecord | null;
+    ownerType?: "application" | "plugin" | null;
+    ownerId?: string | null;
+    actor?: ClientDataAuditActor;
+    action: string;
+    targetType: string;
+    targetId?: string | null;
+    requestId?: string | null;
+    metadata?: unknown;
+  }): void {
+    this.repository.appendAuditLog({
+      accountId: input.accountId,
+      domainId: input.domain?.id ?? null,
+      ownerType: input.domain?.ownerType ?? input.ownerType ?? null,
+      ownerId: input.domain?.ownerId ?? input.ownerId ?? null,
+      actorType: input.actor?.actorType ?? "account",
+      actorId: input.actor?.actorId ?? null,
+      action: input.action,
+      targetType: input.targetType,
+      targetId: input.targetId ?? null,
+      requestId: input.requestId ?? null,
+      metadataJson: input.metadata === undefined ? null : stringifyJsonField(input.metadata),
+      createdAt: this.now(),
+    });
   }
 
   private executeTransaction<T>(action: (tx: DbExecutor) => T): T {
@@ -494,4 +1298,32 @@ function resolveExpiresAt(expiresAt: number | null | undefined, defaultExpiresTt
 
 function sumByteSize(items: ClientDataItemRecord[]): number {
   return items.reduce((sum, item) => sum + item.byteSize, 0);
+}
+
+function validateImportPayload(payload: ClientDataImportPayload): void {
+  if (payload.domain.ownerId.trim().length === 0 || payload.domain.domainName.trim().length === 0) {
+    throw new ClientDataServiceError(400, "validation_error", "Client data import payload domain is invalid");
+  }
+
+  const payloadBytes = Buffer.byteLength(JSON.stringify(payload), "utf-8");
+  if (payloadBytes > MAX_IMPORT_PAYLOAD_BYTES) {
+    throw new ClientDataServiceError(400, "client_data_import_payload_too_large", "Client data import payload exceeds size limit");
+  }
+
+  let itemCount = 0;
+  for (const collection of payload.collections) {
+    if (collection.collectionName.trim().length === 0 || collection.collectionName.length > 128) {
+      throw new ClientDataServiceError(400, "validation_error", "collection_name must be between 1 and 128 characters");
+    }
+    for (const item of collection.items) {
+      itemCount += 1;
+      if (item.itemKey.trim().length === 0 || item.itemKey.length > 256) {
+        throw new ClientDataServiceError(400, "validation_error", "item_key must be between 1 and 256 characters");
+      }
+    }
+  }
+
+  if (itemCount > MAX_IMPORT_ITEMS) {
+    throw new ClientDataServiceError(400, "client_data_import_item_limit_exceeded", "Client data import item count exceeds limit");
+  }
 }

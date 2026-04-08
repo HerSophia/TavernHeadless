@@ -70,7 +70,6 @@ import {
 
 import { ToolWorker } from "./services/tool-worker.js";
 
-
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
 const API_VERSION: string = _pkgJson.version ?? "unknown";
 
@@ -102,55 +101,25 @@ function toValidationDetails(error: { validation?: FastifyValidationIssue[] }) {
 export type BuildAppOptions = {
   databasePath?: string;
   logger?: boolean;
-  /** 提供 LLM 配置后自动启用聊天路由 */
   orchestration?: OrchestrationConfig;
-  /**
-   * 是否启用 WebSocket 推送。
-   * - undefined（默认）：当 orchestration 启用时自动启用
-   * - true：强制启用（需要 orchestration）
-   * - false：强制禁用
-   */
   enableWebSocket?: boolean;
-  /** 可选：限制进入 prompt 的历史楼层数（最近 N 层） */
   chatHistoryMaxFloors?: number;
-  /** 是否启用记忆系统（摘要注入 + 持久化），默认 false */
   enableMemory?: boolean;
-  /**
-   * 可选：记忆注入衰减配置。
-   * 仅在 enableMemory=true 且 chat routes 启用时生效。
-   */
   memoryInjectionDecay?: MemoryInjectionOptions["decay"];
-  /**
-   * 可选：记忆后台维护任务（deprecate / purge）。
-   * 仅在 enableMemory=true 时生效。
-   */
   memoryMaintenance?: {
-    /** 运行间隔（ms） */
     intervalMs: number;
-    /** 批处理大小（默认 500） */
     batchSize?: number;
-    /** 清理策略（不设置则全部跳过） */
     policy?: MemoryMaintenancePolicy;
-    /** 可选：仅统计，不执行写入/删除 */
     dryRun?: boolean;
   };
-  /** 是否启用 SSE 流式聊天端点（/sessions/:id/respond/stream），默认 false */
   enableSseChat?: boolean;
-  /** 是否启用 Prompt Dry-run 端点（/sessions/:id/respond/dry-run），默认 false */
   enablePromptDryRun?: boolean;
-  /** 是否默认启用 MemoryConsolidator（可被请求级 turn config 覆盖） */
   enableMemoryConsolidation?: boolean;
-  /** 是否启用异步记忆入队主路径（Phase 2 切换开关） */
   enableAsyncMemoryIngest?: boolean;
-  /** 是否启用 macro summary 压缩（Phase 4 切换开关） */
   enableMacroCompaction?: boolean;
-  /** 是否启用 micro/macro 双层摘要注入（Phase 4 切换开关） */
   enableDualSummaryInjection?: boolean;
-  /** 是否启用 deferred irreversible tool runtime 入口（Phase 1 切换开关） */
   enableDeferredIrreversibleTools?: boolean;
-  /** 允许 deferred 执行的 MCP 工具白名单，格式为 serverId/toolName */
   deferredIrreversibleMcpTools?: string[];
-  /** 可选：MemoryWorker 运行参数 */
   memoryWorker?: {
     pollIntervalMs?: number;
     leaseTtlMs?: number;
@@ -159,49 +128,22 @@ export type BuildAppOptions = {
     maxRetryDelayMs?: number;
     candidateScanLimit?: number;
   };
-  /** 服务端默认生成超时（毫秒） */
   llmDefaultTimeoutMs?: number;
-  /** 聊天 transfer 产物目录 */
   chatTransferArtifactDir?: string;
-  /** 聊天导入最大字节数 */
   chatImportMaxBytes?: number;
-  /** 同步聊天导出消息阈值 */
   chatExportSyncMaxMessages?: number;
-  /** 聊天导出产物 TTL（毫秒） */
   chatExportArtifactTtlMs?: number;
-  /**
-   * 生成协调器实现。
-   * 默认使用单实例内存协调器。
-   * 若后续需要共享锁或共享队列，可从这里注入自定义实现。
-   */
   generationCoordinator?: GenerationCoordinator;
-  /**
-   * 同一 session + branch 的生成并发策略。
-   * 默认保持 reject。
-   */
   generationQueueMode?: GenerationExecutionMode;
-  /**
-   * queue 模式下的排队等待超时（毫秒）。
-   * 默认沿用 ChatService 的 5000。
-   */
   generationQueueTimeoutMs?: number;
-  /** commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数 */
   turnCommitMaxRetries?: number;
-  /** commit 重试基础退避时间（毫秒） */
   turnCommitRetryBaseDelayMs?: number;
-  /** 认证配置（默认 off） */
   auth?: AuthConfig;
-  /** 账号模式（默认 single） */
   accountMode?: AccountMode;
-  /** CORS 配置 */
   cors?: CorsConfig;
-  /** 是否启用 MCP 工具集成（默认 false） */
   enableMcp?: boolean;
-  /** 是否允许不安全的 script handler 创建与执行（默认 false） */
   enableUnsafeScriptHandler?: boolean;
-  /** 是否启用客户端专属数据域 */
   enableClientData?: boolean;
-  /** 客户端数据配置 */
   clientData?: {
     expirationIntervalMs: number;
     domainPurgeGracePeriodMs: number;
@@ -217,11 +159,8 @@ export type BuildAppOptions = {
 export type BuildAppResult = {
   app: FastifyInstance;
   database: DatabaseConnection["db"];
-  /** 如果启用了 orchestration，返回上下文（EventBus 等） */
   orchestrationContext?: OrchestrationContext;
-  /** 如果启用了 WebSocket，返回 WsBridge 实例 */
   wsBridge?: WsBridge;
-  /** 如果启用了 MCP，返回连接管理器 */
   mcpManager?: McpConnectionManager;
 };
 
@@ -287,15 +226,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
   let memoryMaintenanceTimer: NodeJS.Timeout | undefined;
   let memoryWorker: MemoryWorker | undefined;
-    if (clientDataExpirationTimer) {
-      clearInterval(clientDataExpirationTimer);
-      clientDataExpirationTimer = undefined;
-    }
-    if (clientDataDomainPurgeTimer) {
-      clearInterval(clientDataDomainPurgeTimer);
-      clientDataDomainPurgeTimer = undefined;
-    }
-
   let mutationWorker: MutationWorker | undefined;
   let toolWorker: ToolWorker | undefined;
 
@@ -303,6 +233,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     if (memoryMaintenanceTimer) {
       clearInterval(memoryMaintenanceTimer);
       memoryMaintenanceTimer = undefined;
+    }
+    if (clientDataExpirationTimer) {
+      clearInterval(clientDataExpirationTimer);
+      clientDataExpirationTimer = undefined;
+    }
+    if (clientDataDomainPurgeTimer) {
+      clearInterval(clientDataDomainPurgeTimer);
+      clientDataDomainPurgeTimer = undefined;
     }
     if (mutationWorker) {
       await mutationWorker.stop();
@@ -460,7 +398,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     }
   );
 
-  // ── 开发用：内嵌 API 测试页面 ──
   app.get(
     "/test",
     {
@@ -506,11 +443,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     floorRunService = new FloorRunService(database.db, orchestrationContext.eventBus);
   }
 
-  // ── 可选：MCP 工具集成 ──
   const mcpService = new McpService(database.db);
   const mcpBackfill = await mcpService.backfillLegacySecretStorage();
   if (mcpBackfill.migrated > 0 || mcpBackfill.skipped > 0) {
-    app.log.info(mcpBackfill, 'MCP secret storage backfill completed');
+    app.log.info(mcpBackfill, "MCP secret storage backfill completed");
   }
 
   let mcpManager: McpConnectionManager | undefined;
@@ -532,18 +468,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       );
     }
 
-    // 注册 MCP 运行时路由
     await registerMcpRuntimeRoutes(app, mcpManager, database);
 
-    // 应用关闭时断开所有 MCP 连接
-    app.addHook('onClose', async () => {
+    app.addHook("onClose", async () => {
       await mcpManager!.shutdown();
     });
 
     app.log.info({
       serverCount: resolvedMcpConfigs.configs.length,
       failedServerCount: resolvedMcpConfigs.failures.length,
-    }, 'MCP integration enabled');
+    }, "MCP integration enabled");
   }
 
   if (options.orchestration && orchestrationContext) {
@@ -616,189 +550,76 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     clientData: options.clientData,
   });
 
-  // ── 可选：聊天业务路由 ──
   if (options.orchestration && orchestrationContext) {
-    const activeOrchestrationContext = orchestrationContext;
-
-    const llmProfileService = new LlmProfileService(database.db, {
-      accountMode,
-      defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
-    });
     const llmInstanceService = new LlmInstanceService(database.db);
-
-    const toolRegistry = baseToolRegistry ?? new ToolRegistry();
-
-    // 默认协调器仍为单实例内存实现。
-    // queueMode 只影响当前进程内的互斥 / 排队行为，
-    // 不提供跨实例共享锁或共享队列。
-    const generationCoordinator = options.generationCoordinator ?? new InMemoryGenerationCoordinator();
-
-    const turnCommitService = new TurnCommitService(
-      database.db,
-      new ChatMessagePersistence(database.db, activeOrchestrationContext.tokenCounter),
-      activeOrchestrationContext.eventBus,
-      {
-        enableAsyncMemoryIngest: options.enableMemory === true && options.enableAsyncMemoryIngest === true,
-        floorRunService,
-        mutationRuntime: mutationRuntimeComponents?.runtime,
-        accountMode,
-        defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
-        toolRuntimeJobBridge: toolRuntimeComponents?.bridge,
-      },
-    );
-
-    const shouldStartMemoryWorker = options.enableMemory === true && (
-      options.enableAsyncMemoryIngest === true
-      || options.enableMacroCompaction === true
-      || options.memoryMaintenance !== undefined
-    );
-
-    if (shouldStartMemoryWorker) {
-      memoryWorker = new MemoryWorker(
-        database.db,
-        activeOrchestrationContext.memoryStore,
-        activeOrchestrationContext.memoryIngestProcessor,
-        activeOrchestrationContext.memoryCompactionProcessor,
-        activeOrchestrationContext.eventBus,
-        {
-          ...options.memoryWorker,
-          logger: app.log,
-          enableMacroCompaction: options.enableMacroCompaction === true,
-        },
-      );
-      memoryWorker.start();
-    }
-
-    if (options.enableMemory === true && options.memoryMaintenance && memoryWorker) {
-      const maintenance = options.memoryMaintenance;
-      const intervalMs = Math.max(10_000, maintenance.intervalMs);
-      const batchSize = maintenance.batchSize;
-      const policy = maintenance.policy;
-      const dryRun = maintenance.dryRun === true;
-      const memoryJobScheduler = new MemoryJobScheduler({
-        eventBus: activeOrchestrationContext.eventBus,
-      });
-
-      const enqueueMaintenanceJobs = async () => {
-        try {
-          const scheduledAt = Date.now();
-          const scheduleBucket = Math.floor(scheduledAt / intervalMs);
-          const scopes = await listMemoryMaintenanceScopes(database.db);
-
-          const result = database.db.transaction((tx) => scopes.map((scopeRef) => memoryJobScheduler.enqueueMaintenance(tx, {
-            accountId: scopeRef.accountId,
-            scope: scopeRef.scope,
-            scopeId: scopeRef.scopeId,
-            scheduleBucket,
-            scheduledAt,
-            batchSize,
-            dryRun,
-            policy,
-          })));
-
-          app.log.info({
-            scopeCount: scopes.length,
-            enqueued: result.filter((entry) => entry.created).length,
-            scheduleBucket,
-          }, "Memory maintenance jobs enqueued");
-        } catch (error) {
-          app.log.error({ error }, "Memory maintenance enqueue failed");
-        }
-      };
-
-      memoryMaintenanceTimer = setInterval(() => {
-        void enqueueMaintenanceJobs();
-      }, intervalMs);
-      void enqueueMaintenanceJobs();
-    }
+    const llmProfileService = new LlmProfileService(database.db, {
+      masterKey: process.env.APP_SECRETS_MASTER_KEY,
+    });
+    const effectiveGenerationCoordinator = options.generationCoordinator ?? new InMemoryGenerationCoordinator();
 
     const chatService = new ChatService(
       database.db,
-      activeOrchestrationContext.orchestrator,
-      activeOrchestrationContext.tokenCounter,
+      orchestrationContext.orchestrator,
+      orchestrationContext.tokenCounter,
       {
         historyMaxFloors: options.chatHistoryMaxFloors,
-        memoryStore: options.enableMemory ? activeOrchestrationContext.memoryStore : undefined,
+        memoryStore: options.enableMemory ? orchestrationContext.memoryStore : undefined,
         memoryInjectionDecay: options.memoryInjectionDecay,
         enableMemoryConsolidationByDefault: options.enableMemoryConsolidation,
         enableAsyncMemoryIngest: options.enableAsyncMemoryIngest,
         enableDualSummaryInjection: options.enableDualSummaryInjection,
-        floorRunService,
-        turnCommitService,
-        resolveTurnModels: async (sessionId, accountId) => {
+        resolveTurnModels: async (sessionId: string, accountId: string) => {
           try {
-            const [profileMap, instanceSlots] = await Promise.all([
-              llmProfileService.resolveActiveProfiles(sessionId, accountId),
-              llmInstanceService.resolveConfigs(accountId, sessionId),
-            ]);
-            const result: ResolvedTurnModels = {};
-            const instanceMap = new Map(instanceSlots.map((item) => [item.slot, item] as const));
+            const resolvedSlots = await llmInstanceService.resolveConfigs(accountId, sessionId);
+            const activeProfiles = await llmProfileService.resolveActiveProfiles(sessionId, accountId);
+            const result: Record<string, unknown> = {};
 
-            for (const slot of ["narrator", "director", "verifier", "memory"] as const) {
-              const resolvedProfile = profileMap[slot];
-              const resolvedInstance = instanceMap.get(slot);
-              const generationParams = mergeTurnGenerationParams(
-                resolvedProfile?.params,
-                resolvedInstance?.params,
-              );
-              const presetId = resolvedInstance?.presetId ?? undefined;
-              const enabled = resolvedInstance?.enabled ?? true;
-
-              if (resolvedProfile) {
-                if (enabled) {
-                  const providerId = `llm-profile-${resolvedProfile.profileId}-turn-${nanoid(8)}`;
-                  const languageModel = activeOrchestrationContext.providerRegistry.createModel(
-                    {
-                      id: providerId,
-                      type: resolvedProfile.provider,
-                      apiKey: resolvedProfile.apiKey,
-                      baseURL: resolvedProfile.baseUrl ?? undefined,
-                    },
-                    resolvedProfile.modelId,
-                  );
-
-                  result[slot] = {
-                    model: { providerId, modelId: resolvedProfile.modelId, languageModel },
-                    source: resolvedProfile.source === "session" ? "session_profile" : "global_profile",
-                    profileId: resolvedProfile.profileId,
-                    providerType: resolvedProfile.provider,
-                    generationParams,
-                    enabled,
-                    presetId,
-                  };
-                  continue;
-                }
-
-                result[slot] = {
-                  source: resolvedProfile.source === "session" ? "session_profile" : "global_profile",
-                  profileId: resolvedProfile.profileId,
-                  providerType: resolvedProfile.provider,
-                  generationParams,
-                  enabled,
-                  presetId,
+            for (const slot of resolvedSlots) {
+              const activeProfile = activeProfiles[slot.slot as keyof typeof activeProfiles];
+              if (slot.enabled !== true) {
+                result[slot.slot] = {
+                  enabled: false,
+                  source: slot.source,
+                  presetId: slot.presetId ?? undefined,
+                  generationParams: slot.params ?? undefined,
                 };
                 continue;
               }
 
-              if (
-                resolvedInstance
-                && (
-                  resolvedInstance.enabled === false
-                  || presetId !== undefined
-                  || generationParams !== undefined
-                  || resolvedInstance.source !== "default"
-                )
-              ) {
-                result[slot] = {
+              if (!activeProfile) {
+                result[slot.slot] = {
+                  enabled: slot.enabled,
                   source: "env",
-                  generationParams,
-                  enabled,
-                  presetId,
+                  presetId: slot.presetId ?? undefined,
+                  generationParams: slot.params ?? undefined,
                 };
+                continue;
               }
+
+              const providerId = `llm-profile-${activeProfile.profileId}-turn-${nanoid(8)}`;
+              const languageModel = orchestrationContext.providerRegistry.createModel({
+                id: providerId,
+                type: activeProfile.provider,
+                apiKey: activeProfile.apiKey,
+                baseURL: activeProfile.baseUrl ?? undefined,
+              }, activeProfile.modelId);
+
+              result[slot.slot] = {
+                ...activeProfile,
+                enabled: slot.enabled,
+                presetId: slot.presetId ?? undefined,
+                source: activeProfile.source === "session" ? "session_profile" : "global_profile",
+                generationParams: { ...(activeProfile.params ?? {}), ...(slot.params ?? {}) },
+                providerType: activeProfile.provider,
+                model: {
+                  providerId,
+                  modelId: activeProfile.modelId,
+                  languageModel,
+                },
+              };
             }
 
-            return result;
+            return result as any;
           } catch (error) {
             if (error instanceof LlmProfileServiceError) {
               throw new ChatServiceError(error.code, error.message, error);
@@ -806,28 +627,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
             throw error;
           }
         },
-        onTurnModelUsed: async (resolvedModel, accountId) => {
-          if (!resolvedModel.profileId) {
-            return;
+        onTurnModelUsed: async (model, accountId) => {
+          if (model.profileId) {
+            await llmProfileService.touchLastUsed(model.profileId, accountId);
           }
-          await llmProfileService.touchLastUsed(resolvedModel.profileId, accountId);
         },
-        generationCoordinator,
+        floorRunService: floorRunService!,
+        sessionToolRegistryService,
+        generationCoordinator: effectiveGenerationCoordinator,
+        eventBus: orchestrationContext.eventBus,
         executionPolicy: {
           queueMode: options.generationQueueMode,
           queueTimeoutMs: options.generationQueueTimeoutMs,
           executionTimeoutMs: options.llmDefaultTimeoutMs,
-          commitRetry: {
-            maxRetries: options.turnCommitMaxRetries,
-            baseDelayMs: options.turnCommitRetryBaseDelayMs,
-          },
+          commitRetry: { maxRetries: options.turnCommitMaxRetries, baseDelayMs: options.turnCommitRetryBaseDelayMs },
         },
-        defaultNarratorProviderType: options.orchestration.providers.find(
-          (provider) => provider.id === options.orchestration?.defaultModel.providerId,
-        )?.type,
-        toolRegistry,
-        sessionToolRegistryService,
-        eventBus: activeOrchestrationContext.eventBus,
         accountMode,
         defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
       }
@@ -838,99 +652,135 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       enablePromptDryRun: options.enablePromptDryRun,
     });
 
-    // ── 可选：WebSocket 实时推送 ──
-    if (options.enableWebSocket !== false) {
-      wsBridge = await registerWsPlugin(app, {
-        eventBus: activeOrchestrationContext.eventBus,
-        db: database.db,
-      });
+    const shouldEnableWs = options.enableWebSocket ?? Boolean(options.orchestration);
+    if (shouldEnableWs) {
+      wsBridge = await registerWsPlugin(app, { eventBus: orchestrationContext.eventBus, db: database.db });
     }
+
   }
 
-  if (options.enableMemory === true && options.memoryMaintenance && !memoryMaintenanceTimer) {
-    const maintenance = options.memoryMaintenance;
-    const service = new MemoryMaintenanceService(database.db);
-    const intervalMs = Math.max(10_000, maintenance.intervalMs);
-    const batchSize = maintenance.batchSize;
-    const policy = maintenance.policy;
-    const dryRun = maintenance.dryRun === true;
+  if (options.enableMemory === true && options.memoryMaintenance) {
+    const maintenanceService = new MemoryMaintenanceService(database.db);
+    const intervalMs = Math.max(10_000, options.memoryMaintenance.intervalMs);
+    const batchSize = options.memoryMaintenance.batchSize ?? 500;
+    const dryRun = options.memoryMaintenance.dryRun ?? false;
+    let maintenanceRunning = false;
 
-    let running = false;
+    const runMaintenance = async () => {
+        if (maintenanceRunning) {
+          return;
+        }
+        maintenanceRunning = true;
+        try {
+          const scopes = await listMemoryMaintenanceScopes(database.db);
+          if (scopes.length === 0) {
+            return;
+          }
+          let totalDeprecated = 0;
+          let totalPurged = 0;
+          let touchedScopeCount = 0;
+          for (const scope of scopes) {
+            const summary = await maintenanceService.run({
+              batchSize,
+              dryRun,
+              policy: options.memoryMaintenance?.policy,
+              scope,
+            });
+            totalDeprecated += summary.deprecated.total;
+            totalPurged += summary.purged;
+            if (summary.deprecated.total > 0 || summary.purged > 0) {
+              touchedScopeCount += 1;
+            }
+          }
+          app.log.info({
+            dry_run: dryRun,
+            scope_count: scopes.length,
+            deprecated: totalDeprecated,
+            purged: totalPurged,
+            touched_scope_count: touchedScopeCount,
+          }, "memory maintenance completed");
+        } catch (error) {
+          app.log.error({ err: error }, "memory maintenance failed");
+        } finally {
+          maintenanceRunning = false;
+        }
+    };
 
-    const runOnce = async () => {
-      if (running) {
-        return;
-      }
+    void runMaintenance();
+    memoryMaintenanceTimer = setInterval(() => {
+      void runMaintenance();
+    }, intervalMs);
+  }
 
   if (options.enableClientData === true && options.clientData) {
     const clientDataConfig = options.clientData;
-    const expirationIntervalMs = Math.max(10_000, options.clientData.expirationIntervalMs);
-    const domainPurgeGracePeriodMs = options.clientData.domainPurgeGracePeriodMs;
+    const expirationIntervalMs = Math.max(10_000, clientDataConfig.expirationIntervalMs);
+    const domainPurgeGracePeriodMs = clientDataConfig.domainPurgeGracePeriodMs;
     let expirationRunning = false;
     let purgeRunning = false;
 
-    const runExpiredItemCleanupOnce = async () => {
+    const runExpirationCleanup = async () => {
       if (expirationRunning) {
+        app.log.debug({ feature: "client-data", task: "expiration-cleanup" }, "client data expiration cleanup skipped because previous run is still active");
         return;
       }
       expirationRunning = true;
       try {
-        const result = await cleanExpiredClientDataItems(database.db, clientDataConfig, {
-          batchSize: 500,
-        });
-        app.log.info({ result }, "Client data expired item cleanup completed");
+        const result = await cleanExpiredClientDataItems(database.db, clientDataConfig, { batchSize: 500 });
+        app.log.info({
+          feature: "client-data",
+          task: "expiration-cleanup",
+          scanned: result.scanned,
+          deleted: result.deleted,
+          skipped: result.skipped,
+        }, "client data expiration cleanup completed");
       } catch (error) {
-        app.log.error({ error }, "Client data expired item cleanup failed");
+        app.log.error({ err: error, feature: "client-data", task: "expiration-cleanup" }, "client data expiration cleanup failed");
       } finally {
         expirationRunning = false;
       }
     };
 
-    const runDeletedDomainPurgeOnce = async () => {
+    const runDeletedDomainPurge = async () => {
       if (purgeRunning) {
+        app.log.debug({ feature: "client-data", task: "domain-purge" }, "client data domain purge skipped because previous run is still active");
         return;
       }
       purgeRunning = true;
       try {
-        const result = await purgeDeletedClientDataDomains(database.db, {
-          gracePeriodMs: domainPurgeGracePeriodMs,
-        });
-        app.log.info({ result }, "Client data deleted domain purge completed");
+        const result = await purgeDeletedClientDataDomains(database.db, { gracePeriodMs: domainPurgeGracePeriodMs });
+        app.log.info({
+          feature: "client-data",
+          task: "domain-purge",
+          scanned: result.scanned,
+          deleted: result.deleted,
+          skipped: result.skipped,
+          grace_period_ms: domainPurgeGracePeriodMs,
+        }, "client data deleted domain purge completed");
       } catch (error) {
-        app.log.error({ error }, "Client data deleted domain purge failed");
+        app.log.error({ err: error, feature: "client-data", task: "domain-purge" }, "client data deleted domain purge failed");
       } finally {
         purgeRunning = false;
       }
     };
 
+    void runExpirationCleanup();
+    void runDeletedDomainPurge();
+
     clientDataExpirationTimer = setInterval(() => {
-      void runExpiredItemCleanupOnce();
+      void runExpirationCleanup();
     }, expirationIntervalMs);
+
     clientDataDomainPurgeTimer = setInterval(() => {
-      void runDeletedDomainPurgeOnce();
+      void runDeletedDomainPurge();
     }, expirationIntervalMs);
-
-    void runExpiredItemCleanupOnce();
-    void runDeletedDomainPurgeOnce();
   }
 
-      running = true;
-      try {
-        const result = await service.run({ batchSize, policy, dryRun });
-        app.log.info({ result }, "Memory maintenance completed");
-      } catch (error) {
-        app.log.error({ error }, "Memory maintenance failed");
-      } finally {
-        running = false;
-      }
-    };
-
-    memoryMaintenanceTimer = setInterval(() => {
-      void runOnce();
-    }, intervalMs);
-    void runOnce();
-  }
-
-
-  return { app, database: database.db, orchestrationContext, wsBridge, mcpManager };
+  return {
+    app,
+    database: database.db,
+    orchestrationContext,
+    wsBridge,
+    mcpManager,
+  };
 }

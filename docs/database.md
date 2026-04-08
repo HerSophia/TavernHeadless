@@ -7,7 +7,7 @@
 - ORM: Drizzle ORM
 - 迁移目录: `apps/api/drizzle/`
 - 当前基础迁移: `0000_initial_schema.sql`
-- 当前最新迁移: `0037_client_data_domain.sql`
+- 当前最新迁移: `0038_client_data_domain_phase2.sql`
 
 ## `account`
 
@@ -155,18 +155,14 @@
 
 索引：
 
-- 部分唯一索引 `floor_session_no_branch_live_uq(session_id, floor_no, branch_id)`
-  `WHERE superseded_at IS NULL`
+- 部分唯一索引 `floor_session_no_branch_live_uq(session_id, floor_no, branch_id)` `WHERE superseded_at IS NULL`
 - 普通索引 `floor_session_branch_state_no_idx(session_id, branch_id, state, floor_no)`
-- 部分索引
-  `floor_session_branch_live_state_no_idx(session_id, branch_id, state, floor_no)`
-  `WHERE superseded_at IS NULL`
+- 部分索引 `floor_session_branch_live_state_no_idx(session_id, branch_id, state, floor_no)` `WHERE superseded_at IS NULL`
 
 说明：
 
 - `superseded_at IS NULL` 表示 live floor
-- `superseded_at IS NOT NULL` 表示该楼层已经被后续 regenerate 替代，
-  但记录仍保留用于审计与追溯
+- `superseded_at IS NOT NULL` 表示该楼层已经被后续 regenerate 替代，但记录仍保留用于审计与追溯
 
 ## `message_page`
 
@@ -192,13 +188,11 @@
 
 - 唯一索引 `message_page_floor_no_version_uq(floor_id, page_no, version)`
 - 普通索引 `message_page_floor_active_no_idx(floor_id, is_active, page_no)`
-- 部分唯一索引 `message_page_floor_no_active_uq(floor_id, page_no)`
-  `WHERE is_active = 1`
+- 部分唯一索引 `message_page_floor_no_active_uq(floor_id, page_no)` `WHERE is_active = 1`
 
 说明：
 
-- active 不变量是“每个 `(floor_id, page_no)` 槽位最多一个 active version”，
-  不是“每个 floor 最多一个 active page”
+- active 不变量是“每个 `(floor_id, page_no)` 槽位最多一个 active version”，不是“每个 floor 最多一个 active page”
 - 因此 input 槽位和 output 槽位可以同时 active
 
 ## `message`
@@ -255,6 +249,7 @@
 | `display_name` | `TEXT` | `NULL` | 展示名称 |
 | `description` | `TEXT` | `NULL` | 描述 |
 | `status` | `TEXT` | `NOT NULL`, default `active` | 数据域状态 |
+| `version` | `INTEGER` | `NOT NULL`, default `1` | 元数据版本号 |
 | `quota_max_entries` | `INTEGER` | `NOT NULL` | 域级最大条目数 |
 | `quota_max_bytes` | `INTEGER` | `NOT NULL` | 域级最大字节数 |
 | `current_entry_count` | `INTEGER` | `NOT NULL`, default `0` | 当前条目数 |
@@ -271,8 +266,7 @@
 索引：
 
 - 唯一索引 `client_data_domain_owner_name_uq(account_id, owner_type, owner_id, domain_name)`
-- 普通索引
-  `client_data_domain_account_owner_status_idx(account_id, owner_type, owner_id, status)`
+- 普通索引 `client_data_domain_account_owner_status_idx(account_id, owner_type, owner_id, status)`
 
 ## `client_data_collection`
 
@@ -286,6 +280,7 @@
 | `description` | `TEXT` | `NULL` | 描述 |
 | `default_expires_ttl_ms` | `INTEGER` | `NULL` | 默认过期 TTL（ms） |
 | `max_item_size_bytes` | `INTEGER` | `NULL` | 集合级单项大小上限 |
+| `version` | `INTEGER` | `NOT NULL`, default `1` | 元数据版本号 |
 | `metadata_json` | `TEXT` | `NULL` | 集合元信息 JSON |
 | `item_count` | `INTEGER` | `NOT NULL`, default `0` | 当前条目数 |
 | `byte_count` | `INTEGER` | `NOT NULL`, default `0` | 当前字节数 |
@@ -309,7 +304,7 @@
 | `item_key` | `TEXT` | `NOT NULL` | 条目键 |
 | `value_json` | `TEXT` | `NOT NULL` | 条目值 JSON |
 | `byte_size` | `INTEGER` | `NOT NULL` | 存储字节数 |
-| `version` | `INTEGER` | `NOT NULL`, default `1` | 版本号 |
+| `version` | `INTEGER` | `NOT NULL`, default `1` | 条目版本号 |
 | `expires_at` | `INTEGER` | `NULL` | 过期时间（ms） |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
@@ -317,6 +312,58 @@
 索引：
 
 - 唯一索引 `client_data_item_collection_key_uq(collection_id, item_key)`
-- 普通索引
-  `client_data_item_domain_collection_updated_idx(domain_id, collection_id, updated_at)`
-- 普通索引 `client_data_item_expires_idx(expires_at)`
+- 普通索引 `client_data_item_domain_collection_updated_idx(domain_id, collection_id, updated_at)`
+- 部分索引 `client_data_item_expires_idx(expires_at)` `WHERE expires_at IS NOT NULL`
+
+## `client_data_domain_grant`
+
+客户端数据域授权表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 授权记录 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `domain_id` | `TEXT` | `NOT NULL`, FK -> `client_data_domain.id` | 所属数据域 |
+| `grantee_owner_type` | `TEXT` | `NOT NULL` | 被授权 owner 类型 |
+| `grantee_owner_id` | `TEXT` | `NOT NULL` | 被授权 owner ID |
+| `can_read` | `INTEGER` | `NOT NULL`, default `0` | 读权限（布尔） |
+| `can_write` | `INTEGER` | `NOT NULL`, default `0` | 写权限（布尔） |
+| `can_delete` | `INTEGER` | `NOT NULL`, default `0` | 删除权限（布尔） |
+| `can_list` | `INTEGER` | `NOT NULL`, default `0` | 列表权限（布尔） |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+| `expires_at` | `INTEGER` | `NULL` | 授权过期时间（ms） |
+
+枚举约束：
+
+- `grantee_owner_type`: `application | plugin`
+
+索引：
+
+- 唯一索引 `client_data_domain_grant_unique_uq(domain_id, grantee_owner_type, grantee_owner_id)`
+- 普通索引 `client_data_domain_grant_account_grantee_idx(account_id, grantee_owner_type, grantee_owner_id)`
+
+## `client_data_audit_log`
+
+客户端数据域治理审计日志表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 审计日志 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `domain_id` | `TEXT` | `NULL`, FK -> `client_data_domain.id` | 关联数据域 |
+| `owner_type` | `TEXT` | `NULL` | 数据域 owner 类型 |
+| `owner_id` | `TEXT` | `NULL` | 数据域 owner ID |
+| `actor_type` | `TEXT` | `NOT NULL` | 操作者类型 |
+| `actor_id` | `TEXT` | `NULL` | 操作者 ID |
+| `action` | `TEXT` | `NOT NULL` | 操作名称 |
+| `target_type` | `TEXT` | `NOT NULL` | 目标类型 |
+| `target_id` | `TEXT` | `NULL` | 目标 ID |
+| `request_id` | `TEXT` | `NULL` | 请求 ID |
+| `metadata_json` | `TEXT` | `NULL` | 审计元数据 JSON |
+| `created_at` | `INTEGER` | `NOT NULL` | 记录时间戳（ms） |
+
+索引：
+
+- 普通索引 `client_data_audit_log_account_created_idx(account_id, created_at)`
+- 普通索引 `client_data_audit_log_domain_created_idx(domain_id, created_at)`

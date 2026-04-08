@@ -1,8 +1,14 @@
-import { and, asc, count, desc, eq, inArray, isNull, isNotNull, lt, sql, sum } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, isNotNull, like, lte, lt, not, or, sql, sum } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
-import { clientDataCollections, clientDataDomains, clientDataItems } from "../db/schema.js";
+import {
+  clientDataAuditLogs,
+  clientDataCollections,
+  clientDataDomainGrants,
+  clientDataDomains,
+  clientDataItems,
+} from "../db/schema.js";
 
 export type ClientDataDb = AppDb | DbExecutor;
 
@@ -15,6 +21,7 @@ export interface ClientDataDomainRecord {
   displayName: string | null;
   description: string | null;
   status: "active" | "suspended" | "deleted";
+  version: number;
   quotaMaxEntries: number;
   quotaMaxBytes: number;
   currentEntryCount: number;
@@ -31,6 +38,7 @@ export interface ClientDataCollectionRecord {
   description: string | null;
   defaultExpiresTtlMs: number | null;
   maxItemSizeBytes: number | null;
+  version: number;
   metadataJson: string | null;
   itemCount: number;
   byteCount: number;
@@ -51,6 +59,37 @@ export interface ClientDataItemRecord {
   updatedAt: number;
 }
 
+export interface ClientDataDomainGrantRecord {
+  id: string;
+  accountId: string;
+  domainId: string;
+  granteeOwnerType: "application" | "plugin";
+  granteeOwnerId: string;
+  canRead: boolean;
+  canWrite: boolean;
+  canDelete: boolean;
+  canList: boolean;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number | null;
+}
+
+export interface ClientDataAuditLogRecord {
+  id: string;
+  accountId: string;
+  domainId: string | null;
+  ownerType: "application" | "plugin" | null;
+  ownerId: string | null;
+  actorType: string;
+  actorId: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  requestId: string | null;
+  metadataJson: string | null;
+  createdAt: number;
+}
+
 export interface ClientDataDomainListOptions {
   accountId: string;
   ownerType?: "application" | "plugin";
@@ -65,9 +104,25 @@ export interface ClientDataDomainListOptions {
 export interface ClientDataItemListOptions {
   domainId: string;
   collectionId?: string;
+  itemKeyPrefix?: string;
+  updatedAfter?: number;
+  updatedBefore?: number;
+  expiresAfter?: number;
+  expiresBefore?: number;
+  expired?: boolean;
+  now?: number;
   limit: number;
   offset: number;
   sortBy: "updated_at" | "created_at" | "item_key";
+  sortOrder: "asc" | "desc";
+}
+
+export interface ClientDataAuditLogListOptions {
+  domainId: string;
+  actorType?: string;
+  action?: string;
+  limit: number;
+  offset: number;
   sortOrder: "asc" | "desc";
 }
 
@@ -93,6 +148,7 @@ export class ClientDataRepository {
       domainName: input.domainName,
       displayName: input.displayName ?? null,
       description: input.description ?? null,
+      version: 1,
       quotaMaxEntries: input.quotaMaxEntries,
       quotaMaxBytes: input.quotaMaxBytes,
       createdAt: input.now,
@@ -154,10 +210,12 @@ export class ClientDataRepository {
     domainId: string;
     displayName?: string | null;
     description?: string | null;
+    ifVersion?: number;
     now: number;
   }): ClientDataDomainRecord | null {
-    const values: Partial<typeof clientDataDomains.$inferInsert> = {
+    const values: Record<string, unknown> = {
       updatedAt: input.now,
+      version: sql`${clientDataDomains.version} + 1`,
     };
 
     if (input.displayName !== undefined) {
@@ -167,7 +225,29 @@ export class ClientDataRepository {
       values.description = input.description;
     }
 
-    const row = this.db.update(clientDataDomains).set(values).where(eq(clientDataDomains.id, input.domainId)).returning().get();
+    const filters = [eq(clientDataDomains.id, input.domainId)];
+    if (input.ifVersion !== undefined) {
+      filters.push(eq(clientDataDomains.version, input.ifVersion));
+    }
+
+    const row = this.db.update(clientDataDomains).set(values).where(
+      filters.length === 1 ? filters[0]! : and(...filters)
+    ).returning().get();
+    return row ? toDomainRecord(row) : null;
+  }
+
+  updateDomainQuota(input: {
+    domainId: string;
+    quotaMaxEntries: number;
+    quotaMaxBytes: number;
+    now: number;
+  }): ClientDataDomainRecord | null {
+    const row = this.db.update(clientDataDomains).set({
+      quotaMaxEntries: input.quotaMaxEntries,
+      quotaMaxBytes: input.quotaMaxBytes,
+      updatedAt: input.now,
+      version: sql`${clientDataDomains.version} + 1`,
+    }).where(eq(clientDataDomains.id, input.domainId)).returning().get();
     return row ? toDomainRecord(row) : null;
   }
 
@@ -176,6 +256,7 @@ export class ClientDataRepository {
       status: "deleted",
       deletedAt: now,
       updatedAt: now,
+      version: sql`${clientDataDomains.version} + 1`,
     }).where(eq(clientDataDomains.id, domainId)).returning().get();
     return row ? toDomainRecord(row) : null;
   }
@@ -190,6 +271,7 @@ export class ClientDataRepository {
       status: "deleted",
       deletedAt: input.now,
       updatedAt: input.now,
+      version: sql`${clientDataDomains.version} + 1`,
     }).where(and(
       eq(clientDataDomains.accountId, input.accountId),
       eq(clientDataDomains.ownerType, input.ownerType),
@@ -198,6 +280,40 @@ export class ClientDataRepository {
     )).returning().all();
 
     return rows.map(toDomainRecord);
+  }
+
+  restoreDomain(input: {
+    domainId: string;
+    now: number;
+  }): ClientDataDomainRecord | null {
+    const row = this.db.update(clientDataDomains).set({
+      status: "active",
+      deletedAt: null,
+      updatedAt: input.now,
+      version: sql`${clientDataDomains.version} + 1`,
+    }).where(and(
+      eq(clientDataDomains.id, input.domainId),
+      eq(clientDataDomains.status, "deleted"),
+      isNotNull(clientDataDomains.deletedAt),
+    )).returning().get();
+    return row ? toDomainRecord(row) : null;
+  }
+
+  hasActiveDomainWithOwnerName(input: {
+    accountId: string;
+    ownerType: "application" | "plugin";
+    ownerId: string;
+    domainName: string;
+    excludeDomainId?: string;
+  }): boolean {
+    const rows = this.db.select({ id: clientDataDomains.id }).from(clientDataDomains).where(and(
+      eq(clientDataDomains.accountId, input.accountId),
+      eq(clientDataDomains.ownerType, input.ownerType),
+      eq(clientDataDomains.ownerId, input.ownerId),
+      eq(clientDataDomains.domainName, input.domainName),
+      isNull(clientDataDomains.deletedAt),
+    )).all();
+    return rows.some((row) => row.id !== input.excludeDomainId);
   }
 
   countActiveDomainsByAccount(accountId: string): number {
@@ -240,6 +356,7 @@ export class ClientDataRepository {
       description: input.description ?? null,
       defaultExpiresTtlMs: input.defaultExpiresTtlMs ?? null,
       maxItemSizeBytes: input.maxItemSizeBytes ?? null,
+      version: 1,
       metadataJson: input.metadataJson ?? null,
       createdAt: input.now,
       updatedAt: input.now,
@@ -271,17 +388,24 @@ export class ClientDataRepository {
     defaultExpiresTtlMs?: number | null;
     maxItemSizeBytes?: number | null;
     metadataJson?: string | null;
+    ifVersion?: number;
     now: number;
   }): ClientDataCollectionRecord | null {
-    const values: Partial<typeof clientDataCollections.$inferInsert> = {
+    const values: Record<string, unknown> = {
       updatedAt: input.now,
+      version: sql`${clientDataCollections.version} + 1`,
     };
     if (input.description !== undefined) values.description = input.description;
     if (input.defaultExpiresTtlMs !== undefined) values.defaultExpiresTtlMs = input.defaultExpiresTtlMs;
     if (input.maxItemSizeBytes !== undefined) values.maxItemSizeBytes = input.maxItemSizeBytes;
     if (input.metadataJson !== undefined) values.metadataJson = input.metadataJson;
 
-    const row = this.db.update(clientDataCollections).set(values).where(eq(clientDataCollections.id, input.collectionId)).returning().get();
+    const filters = [eq(clientDataCollections.id, input.collectionId)];
+    if (input.ifVersion !== undefined) {
+      filters.push(eq(clientDataCollections.version, input.ifVersion));
+    }
+
+    const row = this.db.update(clientDataCollections).set(values).where(filters.length === 1 ? filters[0]! : and(...filters)).returning().get();
     return row ? toCollectionRecord(row) : null;
   }
 
@@ -294,6 +418,27 @@ export class ClientDataRepository {
     const filters = [eq(clientDataItems.domainId, options.domainId)];
     if (options.collectionId) {
       filters.push(eq(clientDataItems.collectionId, options.collectionId));
+    }
+    if (options.itemKeyPrefix) {
+      filters.push(like(clientDataItems.itemKey, `${escapeLikePattern(options.itemKeyPrefix)}%`));
+    }
+    if (options.updatedAfter !== undefined) {
+      filters.push(gte(clientDataItems.updatedAt, options.updatedAfter));
+    }
+    if (options.updatedBefore !== undefined) {
+      filters.push(lte(clientDataItems.updatedAt, options.updatedBefore));
+    }
+    if (options.expiresAfter !== undefined) {
+      filters.push(and(isNotNull(clientDataItems.expiresAt), gte(clientDataItems.expiresAt, options.expiresAfter))!);
+    }
+    if (options.expiresBefore !== undefined) {
+      filters.push(and(isNotNull(clientDataItems.expiresAt), lte(clientDataItems.expiresAt, options.expiresBefore))!);
+    }
+    if (options.expired === true) {
+      filters.push(and(isNotNull(clientDataItems.expiresAt), lt(clientDataItems.expiresAt, options.now ?? Date.now()))!);
+    }
+    if (options.expired === false) {
+      filters.push(not(and(isNotNull(clientDataItems.expiresAt), lt(clientDataItems.expiresAt, options.now ?? Date.now()))!));
     }
     const whereClause = filters.length === 1 ? filters[0] : and(...filters);
     const orderBy = resolveItemOrderBy(options.sortBy, options.sortOrder);
@@ -425,6 +570,144 @@ export class ClientDataRepository {
     const row = this.db.delete(clientDataDomains).where(eq(clientDataDomains.id, domainId)).returning().get();
     return row ? toDomainRecord(row) : null;
   }
+
+  createDomainGrant(input: {
+    accountId: string;
+    domainId: string;
+    granteeOwnerType: "application" | "plugin";
+    granteeOwnerId: string;
+    canRead: boolean;
+    canWrite: boolean;
+    canDelete: boolean;
+    canList: boolean;
+    expiresAt?: number | null;
+    now: number;
+  }): ClientDataDomainGrantRecord {
+    const row = this.db.insert(clientDataDomainGrants).values({
+      id: nanoid(),
+      accountId: input.accountId,
+      domainId: input.domainId,
+      granteeOwnerType: input.granteeOwnerType,
+      granteeOwnerId: input.granteeOwnerId,
+      canRead: input.canRead,
+      canWrite: input.canWrite,
+      canDelete: input.canDelete,
+      canList: input.canList,
+      expiresAt: input.expiresAt ?? null,
+      createdAt: input.now,
+      updatedAt: input.now,
+    }).returning().get();
+    return toDomainGrantRecord(row);
+  }
+
+  listDomainGrants(domainId: string): ClientDataDomainGrantRecord[] {
+    return this.db.select().from(clientDataDomainGrants)
+      .where(eq(clientDataDomainGrants.domainId, domainId))
+      .orderBy(desc(clientDataDomainGrants.updatedAt))
+      .all()
+      .map(toDomainGrantRecord);
+  }
+
+  getDomainGrantById(grantId: string): ClientDataDomainGrantRecord | null {
+    const row = this.db.select().from(clientDataDomainGrants).where(eq(clientDataDomainGrants.id, grantId)).limit(1).get();
+    return row ? toDomainGrantRecord(row) : null;
+  }
+
+  updateDomainGrant(input: {
+    grantId: string;
+    canRead?: boolean;
+    canWrite?: boolean;
+    canDelete?: boolean;
+    canList?: boolean;
+    expiresAt?: number | null;
+    now: number;
+  }): ClientDataDomainGrantRecord | null {
+    const values: Record<string, unknown> = { updatedAt: input.now };
+    if (input.canRead !== undefined) values.canRead = input.canRead;
+    if (input.canWrite !== undefined) values.canWrite = input.canWrite;
+    if (input.canDelete !== undefined) values.canDelete = input.canDelete;
+    if (input.canList !== undefined) values.canList = input.canList;
+    if (input.expiresAt !== undefined) values.expiresAt = input.expiresAt;
+
+    const row = this.db.update(clientDataDomainGrants)
+      .set(values)
+      .where(eq(clientDataDomainGrants.id, input.grantId))
+      .returning()
+      .get();
+    return row ? toDomainGrantRecord(row) : null;
+  }
+
+  deleteDomainGrant(grantId: string): ClientDataDomainGrantRecord | null {
+    const row = this.db.delete(clientDataDomainGrants).where(eq(clientDataDomainGrants.id, grantId)).returning().get();
+    return row ? toDomainGrantRecord(row) : null;
+  }
+
+  findGrantForOwner(input: {
+    domainId: string;
+    granteeOwnerType: "application" | "plugin";
+    granteeOwnerId: string;
+    now: number;
+  }): ClientDataDomainGrantRecord | null {
+    const row = this.db.select().from(clientDataDomainGrants).where(and(
+      eq(clientDataDomainGrants.domainId, input.domainId),
+      eq(clientDataDomainGrants.granteeOwnerType, input.granteeOwnerType),
+      eq(clientDataDomainGrants.granteeOwnerId, input.granteeOwnerId),
+      or(isNull(clientDataDomainGrants.expiresAt), gte(clientDataDomainGrants.expiresAt, input.now)),
+    )).limit(1).get();
+    return row ? toDomainGrantRecord(row) : null;
+  }
+
+  appendAuditLog(input: {
+    accountId: string;
+    domainId?: string | null;
+    ownerType?: "application" | "plugin" | null;
+    ownerId?: string | null;
+    actorType: string;
+    actorId?: string | null;
+    action: string;
+    targetType: string;
+    targetId?: string | null;
+    requestId?: string | null;
+    metadataJson?: string | null;
+    createdAt: number;
+  }): ClientDataAuditLogRecord {
+    const row = this.db.insert(clientDataAuditLogs).values({
+      id: nanoid(),
+      accountId: input.accountId,
+      domainId: input.domainId ?? null,
+      ownerType: input.ownerType ?? null,
+      ownerId: input.ownerId ?? null,
+      actorType: input.actorType,
+      actorId: input.actorId ?? null,
+      action: input.action,
+      targetType: input.targetType,
+      targetId: input.targetId ?? null,
+      requestId: input.requestId ?? null,
+      metadataJson: input.metadataJson ?? null,
+      createdAt: input.createdAt,
+    }).returning().get();
+    return toAuditLogRecord(row);
+  }
+
+  listAuditLogs(options: ClientDataAuditLogListOptions): { rows: ClientDataAuditLogRecord[]; total: number } {
+    const filters = [eq(clientDataAuditLogs.domainId, options.domainId)];
+    if (options.actorType) {
+      filters.push(eq(clientDataAuditLogs.actorType, options.actorType));
+    }
+    if (options.action) {
+      filters.push(eq(clientDataAuditLogs.action, options.action));
+    }
+    const whereClause = filters.length === 1 ? filters[0] : and(...filters);
+    const orderBy = options.sortOrder === "asc" ? asc(clientDataAuditLogs.createdAt) : desc(clientDataAuditLogs.createdAt);
+
+    const rows = this.db.select().from(clientDataAuditLogs).where(whereClause).orderBy(orderBy).limit(options.limit).offset(options.offset).all();
+    const totalRow = this.db.select({ value: count() }).from(clientDataAuditLogs).where(whereClause).get();
+
+    return {
+      rows: rows.map(toAuditLogRecord),
+      total: totalRow?.value ?? 0,
+    };
+  }
 }
 
 function toDomainRecord(row: typeof clientDataDomains.$inferSelect): ClientDataDomainRecord {
@@ -437,6 +720,7 @@ function toDomainRecord(row: typeof clientDataDomains.$inferSelect): ClientDataD
     displayName: row.displayName ?? null,
     description: row.description ?? null,
     status: row.status,
+    version: row.version,
     quotaMaxEntries: row.quotaMaxEntries,
     quotaMaxBytes: row.quotaMaxBytes,
     currentEntryCount: row.currentEntryCount,
@@ -455,6 +739,7 @@ function toCollectionRecord(row: typeof clientDataCollections.$inferSelect): Cli
     description: row.description ?? null,
     defaultExpiresTtlMs: row.defaultExpiresTtlMs ?? null,
     maxItemSizeBytes: row.maxItemSizeBytes ?? null,
+    version: row.version,
     metadataJson: row.metadataJson ?? null,
     itemCount: row.itemCount,
     byteCount: row.byteCount,
@@ -478,6 +763,41 @@ function toItemRecord(row: typeof clientDataItems.$inferSelect): ClientDataItemR
   };
 }
 
+function toDomainGrantRecord(row: typeof clientDataDomainGrants.$inferSelect): ClientDataDomainGrantRecord {
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    domainId: row.domainId,
+    granteeOwnerType: row.granteeOwnerType,
+    granteeOwnerId: row.granteeOwnerId,
+    canRead: row.canRead,
+    canWrite: row.canWrite,
+    canDelete: row.canDelete,
+    canList: row.canList,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    expiresAt: row.expiresAt ?? null,
+  };
+}
+
+function toAuditLogRecord(row: typeof clientDataAuditLogs.$inferSelect): ClientDataAuditLogRecord {
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    domainId: row.domainId ?? null,
+    ownerType: row.ownerType ?? null,
+    ownerId: row.ownerId ?? null,
+    actorType: row.actorType,
+    actorId: row.actorId ?? null,
+    action: row.action,
+    targetType: row.targetType,
+    targetId: row.targetId ?? null,
+    requestId: row.requestId ?? null,
+    metadataJson: row.metadataJson ?? null,
+    createdAt: row.createdAt,
+  };
+}
+
 function resolveDomainOrderBy(sortBy: ClientDataDomainListOptions["sortBy"], sortOrder: ClientDataDomainListOptions["sortOrder"]) {
   const column = sortBy === "created_at"
     ? clientDataDomains.createdAt
@@ -486,6 +806,10 @@ function resolveDomainOrderBy(sortBy: ClientDataDomainListOptions["sortBy"], sor
       : clientDataDomains.updatedAt;
 
   return sortOrder === "asc" ? asc(column) : desc(column);
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
 function resolveItemOrderBy(sortBy: ClientDataItemListOptions["sortBy"], sortOrder: ClientDataItemListOptions["sortOrder"]) {
