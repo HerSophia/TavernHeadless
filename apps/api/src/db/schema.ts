@@ -235,6 +235,84 @@ export const variables = sqliteTable(
   })
 );
 
+export const clientDataDomains = sqliteTable(
+  "client_data_domain",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    ownerType: text("owner_type", { enum: ["application", "plugin"] }).notNull().default("application"),
+    ownerId: text("owner_id").notNull(),
+    domainName: text("domain_name").notNull(),
+    displayName: text("display_name"),
+    description: text("description"),
+    status: text("status", { enum: ["active", "suspended", "deleted"] }).notNull().default("active"),
+    quotaMaxEntries: integer("quota_max_entries").notNull().default(10_000),
+    quotaMaxBytes: integer("quota_max_bytes").notNull().default(10_485_760),
+    currentEntryCount: integer("current_entry_count").notNull().default(0),
+    currentByteCount: integer("current_byte_count").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    deletedAt: integer("deleted_at"),
+  },
+  (table) => ({
+    ownerNameUnique: uniqueIndex("client_data_domain_owner_name_uq")
+      .on(table.accountId, table.ownerType, table.ownerId, table.domainName)
+      .where(sql`${table.deletedAt} IS NULL`),
+    accountOwnerStatusIdx: index("client_data_domain_account_owner_status_idx").on(
+      table.accountId,
+      table.ownerType,
+      table.ownerId,
+      table.status,
+    ),
+  })
+);
+
+export const clientDataCollections = sqliteTable(
+  "client_data_collection",
+  {
+    id: text("id").primaryKey(),
+    domainId: text("domain_id").notNull().references(() => clientDataDomains.id, { onDelete: "cascade" }),
+    collectionName: text("collection_name").notNull(),
+    description: text("description"),
+    defaultExpiresTtlMs: integer("default_expires_ttl_ms"),
+    maxItemSizeBytes: integer("max_item_size_bytes"),
+    metadataJson: text("metadata_json"),
+    itemCount: integer("item_count").notNull().default(0),
+    byteCount: integer("byte_count").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    domainNameUnique: uniqueIndex("client_data_collection_domain_name_uq").on(table.domainId, table.collectionName),
+    domainUpdatedIdx: index("client_data_collection_domain_updated_idx").on(table.domainId, table.updatedAt),
+  })
+);
+
+export const clientDataItems = sqliteTable(
+  "client_data_item",
+  {
+    id: text("id").primaryKey(),
+    domainId: text("domain_id").notNull().references(() => clientDataDomains.id, { onDelete: "cascade" }),
+    collectionId: text("collection_id").notNull().references(() => clientDataCollections.id, { onDelete: "cascade" }),
+    itemKey: text("item_key").notNull(),
+    valueJson: text("value_json").notNull(),
+    byteSize: integer("byte_size").notNull(),
+    version: integer("version").notNull().default(1),
+    expiresAt: integer("expires_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    collectionKeyUnique: uniqueIndex("client_data_item_collection_key_uq").on(table.collectionId, table.itemKey),
+    domainCollectionUpdatedIdx: index("client_data_item_domain_collection_updated_idx").on(
+      table.domainId,
+      table.collectionId,
+      table.updatedAt,
+    ),
+    expiresIdx: index("client_data_item_expires_idx").on(table.expiresAt).where(sql`${table.expiresAt} IS NOT NULL`),
+  })
+);
+
 export const memoryItems = sqliteTable(
   "memory_item",
   {

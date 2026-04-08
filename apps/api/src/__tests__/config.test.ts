@@ -93,6 +93,21 @@ describe("loadConfig", () => {
     expect(config.enableUnsafeScriptHandler).toBe(false);
   });
 
+  it("defaults client data feature flags and limits", () => {
+    const config = loadConfig();
+    expect(config.enableClientData).toBe(false);
+    expect(config.clientData).toEqual({
+      expirationIntervalMs: 300_000,
+      domainPurgeGracePeriodMs: 604_800_000,
+      defaultMaxItemSizeBytes: 1_048_576,
+      defaultQuotaMaxEntries: 10_000,
+      defaultQuotaMaxBytes: 10_485_760,
+      maxDomainsPerAccount: 64,
+      maxTotalEntriesPerAccount: 100_000,
+      maxTotalBytesPerAccount: 104_857_600,
+    });
+  });
+
   it("reads Memory V2 feature flags", () => {
     vi.stubEnv("ENABLE_ASYNC_MEMORY_INGEST", "true");
     vi.stubEnv("ENABLE_MACRO_COMPACTION", "true");
@@ -112,6 +127,29 @@ describe("loadConfig", () => {
 
     const config = loadConfig();
     expect(config.enableUnsafeScriptHandler).toBe(true);
+  });
+
+  it("reads client data env values", () => {
+    vi.stubEnv("ENABLE_CLIENT_DATA", "true");
+    vi.stubEnv("CLIENT_DATA_EXPIRATION_INTERVAL_MS", "600000");
+    vi.stubEnv("CLIENT_DATA_DOMAIN_PURGE_GRACE_PERIOD_MS", "86400000");
+    vi.stubEnv("CLIENT_DATA_DEFAULT_MAX_ITEM_SIZE_BYTES", "2048");
+    vi.stubEnv("CLIENT_DATA_DEFAULT_QUOTA_MAX_ENTRIES", "200");
+    vi.stubEnv("CLIENT_DATA_DEFAULT_QUOTA_MAX_BYTES", "4096");
+    vi.stubEnv("CLIENT_DATA_MAX_DOMAINS_PER_ACCOUNT", "8");
+    vi.stubEnv("CLIENT_DATA_MAX_TOTAL_ENTRIES_PER_ACCOUNT", "2000");
+    vi.stubEnv("CLIENT_DATA_MAX_TOTAL_BYTES_PER_ACCOUNT", "8192");
+
+    const config = loadConfig();
+    expect(config.enableClientData).toBe(true);
+    expect(config.clientData.expirationIntervalMs).toBe(600_000);
+    expect(config.clientData.domainPurgeGracePeriodMs).toBe(86_400_000);
+    expect(config.clientData.defaultMaxItemSizeBytes).toBe(2_048);
+    expect(config.clientData.defaultQuotaMaxEntries).toBe(200);
+    expect(config.clientData.defaultQuotaMaxBytes).toBe(4_096);
+    expect(config.clientData.maxDomainsPerAccount).toBe(8);
+    expect(config.clientData.maxTotalEntriesPerAccount).toBe(2_000);
+    expect(config.clientData.maxTotalBytesPerAccount).toBe(8_192);
   });
 
   it("reads MemoryWorker tuning envs", () => {

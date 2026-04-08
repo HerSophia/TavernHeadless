@@ -1,0 +1,607 @@
+import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
+import { buildQueryString, compactObject, readArray, readBoolean, readNullableNumber, readNullableString, readNumber, readRecord, readString } from "./utils.js";
+
+export type ClientDataOwnerType = "application" | "plugin";
+export type ClientDataDomainStatus = "active" | "suspended" | "deleted";
+
+export type ClientDataDomainRecord = {
+  id: string;
+  ownerType: ClientDataOwnerType;
+  ownerId: string;
+  domainName: string;
+  displayName: string | null;
+  description: string | null;
+  status: ClientDataDomainStatus;
+  quotaMaxEntries: number;
+  quotaMaxBytes: number;
+  currentEntryCount: number;
+  currentByteCount: number;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+};
+
+export type ClientDataDomainDetail = ClientDataDomainRecord & {
+  quotaUsage: {
+    entryCount: number;
+    byteCount: number;
+  };
+};
+
+export type ClientDataCollectionRecord = {
+  id: string;
+  domainId: string;
+  collectionName: string;
+  description: string | null;
+  defaultExpiresTtlMs: number | null;
+  maxItemSizeBytes: number | null;
+  metadataJson: unknown;
+  itemCount: number;
+  byteCount: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ClientDataItemRecord = {
+  id: string;
+  domainId: string;
+  collectionId: string;
+  itemKey: string;
+  valueJson: unknown;
+  byteSize: number;
+  version: number;
+  expiresAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ClientDataDomainsListResult = {
+  data: ClientDataDomainRecord[];
+  meta: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+    sortBy: string;
+    sortOrder: "asc" | "desc";
+  };
+};
+
+export type ClientDataItemsListResult = {
+  data: ClientDataItemRecord[];
+  meta: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+    sortBy: string;
+    sortOrder: "asc" | "desc";
+  };
+};
+
+export type ClientDataExportResult = {
+  domain: {
+    id: string;
+    ownerType: ClientDataOwnerType;
+    ownerId: string;
+    domainName: string;
+    displayName: string | null;
+    description: string | null;
+    createdAt: number;
+  };
+  collections: Array<{
+    collectionName: string;
+    description: string | null;
+    defaultExpiresTtlMs: number | null;
+    maxItemSizeBytes: number | null;
+    metadataJson: unknown;
+    items: Array<{
+      itemKey: string;
+      valueJson: unknown;
+      version: number;
+      expiresAt: number | null;
+      createdAt: number;
+      updatedAt: number;
+    }>;
+  }>;
+  exportedAt: number;
+};
+
+export type ClientDataResource = {
+  domains: {
+    create(options: {
+      accountId?: AccountIdHint;
+      ownerType: ClientDataOwnerType;
+      ownerId: string;
+      domainName: string;
+      displayName?: string;
+      description?: string;
+    }): Promise<ClientDataDomainRecord>;
+    list(options?: {
+      accountId?: AccountIdHint;
+      ownerType?: ClientDataOwnerType;
+      ownerId?: string;
+      status?: ClientDataDomainStatus;
+      limit?: number;
+      offset?: number;
+      sortBy?: "updated_at" | "created_at" | "domain_name";
+      sortOrder?: "asc" | "desc";
+    }): Promise<ClientDataDomainsListResult>;
+    getDetail(options: { accountId?: AccountIdHint; domainId: string }): Promise<ClientDataDomainDetail>;
+    update(options: {
+      accountId?: AccountIdHint;
+      domainId: string;
+      displayName?: string | null;
+      description?: string | null;
+    }): Promise<ClientDataDomainRecord>;
+    remove(options: { accountId?: AccountIdHint; domainId: string }): Promise<boolean>;
+    removeByOwner(options: { accountId?: AccountIdHint; ownerType: ClientDataOwnerType; ownerId: string }): Promise<ClientDataDomainRecord[]>;
+    export(options: { accountId?: AccountIdHint; domainId: string }): Promise<ClientDataExportResult>;
+  };
+  collections: {
+    create(options: {
+      accountId?: AccountIdHint;
+      domainId: string;
+      collectionName: string;
+      description?: string;
+      defaultExpiresTtlMs?: number | null;
+      maxItemSizeBytes?: number | null;
+      metadataJson?: unknown;
+    }): Promise<ClientDataCollectionRecord>;
+    list(options: { accountId?: AccountIdHint; domainId: string }): Promise<ClientDataCollectionRecord[]>;
+    getDetail(options: { accountId?: AccountIdHint; domainId: string; collectionId: string }): Promise<ClientDataCollectionRecord>;
+    update(options: {
+      accountId?: AccountIdHint;
+      domainId: string;
+      collectionId: string;
+      description?: string | null;
+      defaultExpiresTtlMs?: number | null;
+      maxItemSizeBytes?: number | null;
+      metadataJson?: unknown;
+    }): Promise<ClientDataCollectionRecord>;
+    remove(options: { accountId?: AccountIdHint; domainId: string; collectionId: string }): Promise<boolean>;
+  };
+  items: {
+    list(options: {
+     accountId?: AccountIdHint;
+      domainId: string;
+      collectionId?: string;
+      limit?: number;
+      offset?: number;
+      sortBy?: "updated_at" | "created_at" | "item_key";
+      sortOrder?: "asc" | "desc";
+    }): Promise<ClientDataItemsListResult>;
+    getDetail(options: { accountId?: AccountIdHint; domainId: string; itemId: string }): Promise<ClientDataItemRecord>;
+    upsert(options: {
+      accountId?: AccountIdHint;
+      domainId: string;
+      collectionName: string;
+      itemKey: string;
+      valueJson: unknown;
+      expiresAt?: number | null;
+      ifVersion?: number;
+    }): Promise<{ action: string; collection: ClientDataCollectionRecord; item: ClientDataItemRecord }>;
+    upsertBatch(options: {
+      accountId?: AccountIdHint;
+      domainId: string;
+      items: Array<{
+        collectionName: string;
+        itemKey: string;
+        valueJson: unknown;
+        expiresAt?: number | null;
+        ifVersion?: number;
+      }>;
+    }): Promise<{ results: Array<{ action: string; collection: ClientDataCollectionRecord; item: ClientDataItemRecord }> }>;
+    remove(options: { accountId?: AccountIdHint; domainId: string; itemId: string }): Promise<boolean>;
+    removeBatch(options: { accountId?: AccountIdHint; domainId: string; itemIds?: string[]; collectionId?: string }): Promise<Array<{ id: string; collectionId: string; itemKey: string }>>;
+  };
+};
+
+export function createClientDataResource(client: TransportClient): ClientDataResource {
+  return {
+    domains: {
+      async create(options) {
+        const response = await client.fetchJson<Record<string, unknown>>("/client-data/domains", {
+          method: "POST",
+          headers: buildAccountHeaders(options.accountId),
+          body: compactObject({
+            owner_type: options.ownerType,
+            owner_id: options.ownerId,
+            domain_name: options.domainName,
+            display_name: options.displayName,
+            description: options.description,
+          }),
+        });
+        return requireDomain(readRecord(response.body)?.data, "Client data domain create returned an invalid payload");
+      },
+      async list(options = {}) {
+        const query = buildQueryString({
+          owner_type: options.ownerType,
+          owner_id: options.ownerId,
+          status: options.status,
+          limit: options.limit ?? 100,
+          offset: options.offset ?? 0,
+          sort_by: options.sortBy ?? "updated_at",
+          sort_order: options.sortOrder ?? "desc",
+        });
+        const pathname = query ? `/client-data/domains?${query}` : "/client-data/domains";
+        const response = await client.fetchJson<Record<string, unknown>>(pathname, {
+          method: "GET",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return {
+          data: readArray(readRecord(response.body)?.data).map(mapDomain).filter((item): item is ClientDataDomainRecord => item !== null),
+          meta: mapListMeta(readRecord(response.body)?.meta),
+        };
+      },
+      async getDetail(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}`, {
+          method: "GET",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return requireDomainDetail(readRecord(response.body)?.data, "Client data domain detail returned an invalid payload");
+      },
+      async update(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}`, {
+          method: "PATCH",
+          headers: buildAccountHeaders(options.accountId),
+          body: compactObject({
+            display_name: options.displayName,
+            description: options.description,
+          }),
+        });
+        return requireDomain(readRecord(response.body)?.data, "Client data domain update returned an invalid payload");
+      },
+      async remove(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}`, {
+          method: "DELETE",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return readBoolean(readRecord(readRecord(response.body)?.data)?.deleted, response.status === 200);
+      },
+      async removeByOwner(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/owners/${encodeURIComponent(options.ownerType)}/${encodeURIComponent(options.ownerId)}/domains`, {
+          method: "DELETE",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return readArray(readRecord(response.body)?.data).map(mapDomain).filter((item): item is ClientDataDomainRecord => item !== null);
+      },
+      async export(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/export`, {
+          method: "GET",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return requireExportResult(readRecord(response.body)?.data, "Client data export returned an invalid payload");
+      },
+    },
+    collections: {
+      async create(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/collections`, {
+          method: "POST",
+          headers: buildAccountHeaders(options.accountId),
+          body: compactObject({
+            collection_name: options.collectionName,
+            description: options.description,
+            default_expires_ttl_ms: options.defaultExpiresTtlMs,
+            max_item_size_bytes: options.maxItemSizeBytes,
+            metadata_json: options.metadataJson,
+          }),
+        });
+        return requireCollection(readRecord(response.body)?.data, "Client data collection create returned an invalid payload");
+      },
+      async list(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/collections`, {
+          method: "GET",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return readArray(readRecord(response.body)?.data).map(mapCollection).filter((item): item is ClientDataCollectionRecord => item !== null);
+      },
+      async getDetail(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/collections/${encodeURIComponent(options.collectionId)}`, {
+          method: "GET",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return requireCollection(readRecord(response.body)?.data, "Client data collection detail returned an invalid payload");
+      },
+      async update(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/collections/${encodeURIComponent(options.collectionId)}`, {
+          method: "PATCH",
+          headers: buildAccountHeaders(options.accountId),
+          body: compactObject({
+            description: options.description,
+            default_expires_ttl_ms: options.defaultExpiresTtlMs,
+            max_item_size_bytes: options.maxItemSizeBytes,
+            metadata_json: options.metadataJson,
+          }),
+        });
+        return requireCollection(readRecord(response.body)?.data, "Client data collection update returned an invalid payload");
+      },
+      async remove(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/collections/${encodeURIComponent(options.collectionId)}`, {
+          method: "DELETE",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return readBoolean(readRecord(readRecord(response.body)?.data)?.deleted, response.status === 200);
+      },
+    },
+    items: {
+      async list(options) {
+        const query = buildQueryString({
+          collection_id: options.collectionId,
+          limit: options.limit ?? 100,
+          offset: options.offset ?? 0,
+          sort_by: options.sortBy ?? "updated_at",
+          sort_order: options.sortOrder ?? "desc",
+  });
+        const pathname = query
+          ? `/client-data/domains/${encodeURIComponent(options.domainId)}/items?${query}`
+          : `/client-data/domains/${encodeURIComponent(options.domainId)}/items`;
+        const response = await client.fetchJson<Record<string, unknown>>(pathname, {
+          method: "GET",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return {
+          data: readArray(readRecord(response.body)?.data).map(mapItem).filter((item): item is ClientDataItemRecord => item !== null),
+          meta: mapListMeta(readRecord(response.body)?.meta),
+        };
+      },
+      async getDetail(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items/${encodeURIComponent(options.itemId)}`, {
+          method: "GET",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return requireItem(readRecord(response.body)?.data, "Client data item detail returned an invalid payload");
+      },
+      async upsert(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items`, {
+          method: "PUT",
+          headers: buildAccountHeaders(options.accountId),
+          body: compactObject({
+            collection_name: options.collectionName,
+            item_key: options.itemKey,
+            value_json: options.valueJson,
+            expires_at: options.expiresAt,
+            if_version: options.ifVersion,
+          }),
+        });
+        return requireItemMutation(readRecord(response.body)?.data, "Client data item upsert returned an invalid payload");
+      },
+      async upsertBatch(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items/batch`, {
+          method: "PUT",
+          headers: buildAccountHeaders(options.accountId),
+          body: {
+            items: options.items.map((item) => compactObject({
+              collection_name: item.collectionName,
+              item_key: item.itemKey,
+              value_json: item.valueJson,
+              expires_at: item.expiresAt,
+              if_version: item.ifVersion,
+            })),
+       },
+        });
+        const data = readRecord(readRecord(response.body)?.data);
+        return {
+          results: readArray(data?.results).map(mapItemMutation).filter((item): item is { action: string; collection: ClientDataCollectionRecord; item: ClientDataItemRecord } => item !== null),
+        };
+      },
+      async remove(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items/${encodeURIComponent(options.itemId)}`, {
+          method: "DELETE",
+          headers: buildAccountHeaders(options.accountId),
+        });
+        return readBoolean(readRecord(readRecord(response.body)?.data)?.deleted, response.status === 200);
+      },
+      async removeBatch(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items/delete-batch`, {
+          method: "POST",
+          headers: buildAccountHeaders(options.accountId),
+          body: compactObject({
+            item_ids: options.itemIds,
+            collection_id: options.collectionId,
+          }),
+        });
+        return readArray(readRecord(response.body)?.data).map((value) => {
+          const record = readRecord(value);
+          if (!record) {
+            return null;
+          }
+          return {
+            id: readString(record.id),
+            collectionId: readString(record.collection_id),
+            itemKey: readString(record.item_key),
+          };
+        }).filter((item): item is { id: string; collectionId: string; itemKey: string } => item !== null);
+      },
+    },
+  };
+}
+
+function mapListMeta(value: unknown) {
+  const record = readRecord(value);
+  return {
+    total: readNumber(record?.total),
+    limit: readNumber(record?.limit),
+    offset: readNumber(record?.offset),
+    hasMore: readBoolean(record?.has_more),
+    sortBy: readString(record?.sort_by),
+    sortOrder: readString(record?.sort_order, "desc") as "asc" | "desc",
+  };
+}
+
+function mapDomain(value: unknown): ClientDataDomainRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+  return {
+    id: readString(record.id),
+    ownerType: readString(record.owner_type) as ClientDataOwnerType,
+    ownerId: readString(record.owner_id),
+    domainName: readString(record.domain_name),
+    displayName: readNullableString(record.display_name),
+    description: readNullableString(record.description),
+    status: readString(record.status) as ClientDataDomainStatus,
+    quotaMaxEntries: readNumber(record.quota_max_entries),
+    quotaMaxBytes: readNumber(record.quota_max_bytes),
+    currentEntryCount: readNumber(record.current_entry_count),
+    currentByteCount: readNumber(record.current_byte_count),
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
+    deletedAt: readNullableNumber(record.deleted_at),
+  };
+}
+
+function mapDomainDetail(value: unknown): ClientDataDomainDetail | null {
+  const domain = mapDomain(value);
+  const record = readRecord(value);
+  const quotaUsage = readRecord(record?.quota_usage);
+  if (!domain) {
+    return null;
+  }
+  return {
+    ...domain,
+    quotaUsage: {
+      entryCount: readNumber(quotaUsage?.entry_count),
+      byteCount: readNumber(quotaUsage?.byte_count),
+    },
+  };
+}
+
+function mapCollection(value: unknown): ClientDataCollectionRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+  return {
+    id: readString(record.id),
+    domainId: readString(record.domain_id),
+    collectionName: readString(record.collection_name),
+    description: readNullableString(record.description),
+    defaultExpiresTtlMs: readNullableNumber(record.default_expires_ttl_ms),
+    maxItemSizeBytes: readNullableNumber(record.max_item_size_bytes),
+    metadataJson: record.metadata_json ?? null,
+    itemCount: readNumber(record.item_count),
+    byteCount: readNumber(record.byte_count),
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
+  };
+}
+
+function mapItem(value: unknown): ClientDataItemRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+  return {
+    id: readString(record.id),
+    domainId: readString(record.domain_id),
+    collectionId: readString(record.collection_id),
+    itemKey: readString(record.item_key),
+    valueJson: record.value_json ?? null,
+    byteSize: readNumber(record.byte_size),
+    version: readNumber(record.version),
+    expiresAt: readNullableNumber(record.expires_at),
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
+  };
+}
+
+function mapItemMutation(value: unknown) {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+  const collection = mapCollection(record.collection);
+  const item = mapItem(record.item);
+  if (!collection || !item) {
+    return null;
+  }
+  return {
+    action: readString(record.action),
+    collection,
+    item,
+  };
+}
+
+function requireDomain(value: unknown, message: string): ClientDataDomainRecord {
+  const payload = mapDomain(value);
+  if (!payload) {
+    throw new Error(message);
+  }
+  return payload;
+}
+
+function requireDomainDetail(value: unknown, message: string): ClientDataDomainDetail {
+  const payload = mapDomainDetail(value);
+  if (!payload) {
+    throw new Error(message);
+  }
+  return payload;
+}
+
+function requireCollection(value: unknown, message: string): ClientDataCollectionRecord {
+  const payload = mapCollection(value);
+  if (!payload) {
+    throw new Error(message);
+  }
+  return payload;
+}
+
+function requireItem(value: unknown, message: string): ClientDataItemRecord {
+  const payload = mapItem(value);
+  if (!payload) {
+    throw new Error(message);
+  }
+  return payload;
+}
+
+function requireItemMutation(value: unknown, message: string): { action: string; collection: ClientDataCollectionRecord; item: ClientDataItemRecord } {
+  const payload = mapItemMutation(value);
+  if (!payload) {
+    throw new Error(message);
+  }
+  return payload;
+}
+
+function requireExportResult(value: unknown, message: string): ClientDataExportResult {
+  const record = readRecord(value);
+  const domain = readRecord(record?.domain);
+  if (!record || !domain) {
+    throw new Error(message);
+  }
+  return {
+    domain: {
+      id: readString(domain.id),
+      ownerType: readString(domain.owner_type) as ClientDataOwnerType,
+      ownerId: readString(domain.owner_id),
+      domainName: readString(domain.domain_name),
+      displayName: readNullableString(domain.display_name),
+      description: readNullableString(domain.description),
+      createdAt: readNumber(domain.created_at),
+    },
+    collections: readArray(record.collections).map((value) => {
+      const collection = readRecord(value);
+      const items = readArray(collection?.items);
+      return {
+        collectionName: readString(collection?.collection_name),
+        description: readNullableString(collection?.description),
+        defaultExpiresTtlMs: readNullableNumber(collection?.default_expires_ttl_ms),
+        maxItemSizeBytes: readNullableNumber(collection?.max_item_size_bytes),
+        metadataJson: collection?.metadata_json ?? null,
+        items: items.map((itemValue) => {
+          const item = readRecord(itemValue);
+          return {
+            itemKey: readString(item?.item_key),
+            valueJson: item?.value_json ?? null,
+            version: readNumber(item?.version),
+            expiresAt: readNullableNumber(item?.expires_at),
+            createdAt: readNumber(item?.created_at),
+            updatedAt: readNumber(item?.updated_at),
+          };
+        }),
+      };
+    }),
+    exportedAt: readNumber(record.exported_at),
+  };
+}

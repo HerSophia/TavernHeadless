@@ -38,6 +38,19 @@ export {
   type ExportsResource,
 } from "./exports.js";
 export {
+  createClientDataResource,
+  type ClientDataCollectionRecord,
+  type ClientDataDomainDetail,
+  type ClientDataDomainRecord,
+  type ClientDataDomainsListResult,
+  type ClientDataExportResult,
+  type ClientDataItemRecord,
+  type ClientDataItemsListResult,
+  type ClientDataOwnerType,
+  type ClientDataResource,
+} from "./client-data.js";
+
+export {
   createFloorsResource,
   type FloorBranchResult,
   type FloorCommittedResultSnapshot,

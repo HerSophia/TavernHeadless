@@ -63,6 +63,11 @@ import { createDefaultMutationRuntimeComponents } from "./services/default-mutat
 import { createMutationRuntimeJobBridge } from "./services/mutation-runtime-job-bridge.js";
 import { MutationWorker } from "./services/mutation-worker.js";
 import { createDefaultToolRuntimeComponents } from "./services/default-tool-runtime.js";
+import {
+  cleanExpiredClientDataItems,
+  purgeDeletedClientDataDomains,
+} from "./client-data/client-data-maintenance.js";
+
 import { ToolWorker } from "./services/tool-worker.js";
 
 
@@ -194,10 +199,24 @@ export type BuildAppOptions = {
   enableMcp?: boolean;
   /** 是否允许不安全的 script handler 创建与执行（默认 false） */
   enableUnsafeScriptHandler?: boolean;
+  /** 是否启用客户端专属数据域 */
+  enableClientData?: boolean;
+  /** 客户端数据配置 */
+  clientData?: {
+    expirationIntervalMs: number;
+    domainPurgeGracePeriodMs: number;
+    defaultMaxItemSizeBytes: number;
+    defaultQuotaMaxEntries: number;
+    defaultQuotaMaxBytes: number;
+    maxDomainsPerAccount: number;
+    maxTotalEntriesPerAccount: number;
+    maxTotalBytesPerAccount: number;
+  };
 };
 
 export type BuildAppResult = {
   app: FastifyInstance;
+  database: DatabaseConnection["db"];
   /** 如果启用了 orchestration，返回上下文（EventBus 等） */
   orchestrationContext?: OrchestrationContext;
   /** 如果启用了 WebSocket，返回 WsBridge 实例 */
@@ -259,12 +278,24 @@ function mergeTurnGenerationParams(
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppResult> {
+  let clientDataExpirationTimer: NodeJS.Timeout | undefined;
+  let clientDataDomainPurgeTimer: NodeJS.Timeout | undefined;
+
   const app = Fastify({ logger: options.logger ?? true });
   const database = createDatabase(options.databasePath);
   const accountMode = options.accountMode ?? "single";
 
   let memoryMaintenanceTimer: NodeJS.Timeout | undefined;
   let memoryWorker: MemoryWorker | undefined;
+    if (clientDataExpirationTimer) {
+      clearInterval(clientDataExpirationTimer);
+      clientDataExpirationTimer = undefined;
+    }
+    if (clientDataDomainPurgeTimer) {
+      clearInterval(clientDataDomainPurgeTimer);
+      clientDataDomainPurgeTimer = undefined;
+    }
+
   let mutationWorker: MutationWorker | undefined;
   let toolWorker: ToolWorker | undefined;
 
@@ -581,6 +612,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     mcpManager,
     enableUnsafeScriptHandler: options.enableUnsafeScriptHandler,
     accountMode,
+    enableClientData: options.enableClientData,
+    clientData: options.clientData,
   });
 
   // ── 可选：聊天业务路由 ──
@@ -828,6 +861,59 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       if (running) {
         return;
       }
+
+  if (options.enableClientData === true && options.clientData) {
+    const clientDataConfig = options.clientData;
+    const expirationIntervalMs = Math.max(10_000, options.clientData.expirationIntervalMs);
+    const domainPurgeGracePeriodMs = options.clientData.domainPurgeGracePeriodMs;
+    let expirationRunning = false;
+    let purgeRunning = false;
+
+    const runExpiredItemCleanupOnce = async () => {
+      if (expirationRunning) {
+        return;
+      }
+      expirationRunning = true;
+      try {
+        const result = await cleanExpiredClientDataItems(database.db, clientDataConfig, {
+          batchSize: 500,
+        });
+        app.log.info({ result }, "Client data expired item cleanup completed");
+      } catch (error) {
+        app.log.error({ error }, "Client data expired item cleanup failed");
+      } finally {
+        expirationRunning = false;
+      }
+    };
+
+    const runDeletedDomainPurgeOnce = async () => {
+      if (purgeRunning) {
+        return;
+      }
+      purgeRunning = true;
+      try {
+        const result = await purgeDeletedClientDataDomains(database.db, {
+          gracePeriodMs: domainPurgeGracePeriodMs,
+        });
+        app.log.info({ result }, "Client data deleted domain purge completed");
+      } catch (error) {
+        app.log.error({ error }, "Client data deleted domain purge failed");
+      } finally {
+        purgeRunning = false;
+      }
+    };
+
+    clientDataExpirationTimer = setInterval(() => {
+      void runExpiredItemCleanupOnce();
+    }, expirationIntervalMs);
+    clientDataDomainPurgeTimer = setInterval(() => {
+      void runDeletedDomainPurgeOnce();
+    }, expirationIntervalMs);
+
+    void runExpiredItemCleanupOnce();
+    void runDeletedDomainPurgeOnce();
+  }
+
       running = true;
       try {
         const result = await service.run({ batchSize, policy, dryRun });
@@ -846,5 +932,5 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   }
 
 
-  return { app, orchestrationContext, wsBridge, mcpManager };
+  return { app, database: database.db, orchestrationContext, wsBridge, mcpManager };
 }
