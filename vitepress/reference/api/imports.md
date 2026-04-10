@@ -19,6 +19,38 @@ outline: [2, 3]
 > 它们主要用于长任务处理、自动化脚本、开发调试和运维排障。
 > 普通交互式导入优先使用同步 `POST /import/chat`。
 
+## 导入与宏执行边界
+
+导入接口只负责把 SillyTavern 生态资源转换并写入 TavernHeadless 的资源表。
+
+当前不会在导入阶段执行宏。
+
+这条边界对 Preset、Worldbook、Regex Profile、Character 导入都成立：
+
+```text
+导入时不展开 `{{...}}` 宏
+```
+
+- 见下方示例说明
+- 导入时不执行 `if` block
+- 导入时不执行任何写宏
+- 导入时不产生变量副作用
+
+例如，导入的 Preset 或角色文本中即使包含：
+
+```text
+{{setvar::mood::happy}}
+{{getvar::mood}}
+{{if {{flag}}}}YES{{else}}NO{{/if}}
+```
+
+这些内容也只会作为资源文本保存下来。
+
+只有在后续会话实际进行提示词装配，并走到 `compat_strict` 或 `compat_plus` 宏兼容路径时，相关宏才会进入求值流程。
+
+如果需要查看运行时宏边界，请参考 [Macros](./macros) 与 [Chat](./chat)。
+
+
 ## 导入 Preset
 
 ```http

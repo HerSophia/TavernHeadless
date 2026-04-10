@@ -252,6 +252,87 @@ POST /sessions/:id/respond/dry-run
 `prompt_snapshot.regex_pre_rule_names` 和 `prompt_snapshot.regex_post_rule_names` 当前表示本轮装配时启用并写入快照的规则名列表。
 它们适合做资源版本比对和调试展示，不应被解释为逐条精确命中或逐条实际执行结果。
 
+### 宏系统调试字段
+
+当当前会话的提示词里命中了 ST 宏兼容层时，`prompt_snapshot` 与 `assembly` 调试信息中还可能出现宏系统字段。
+
+当前稳定可见的字段包括：
+
+| 字段 | 位置 | 类型 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `macro_warnings` | `assembly` | array | 宏求值 warning 列表 |
+| `macro_used_names` | `assembly` | string[] | 本轮实际使用到的宏名 |
+| `macro_mutation_preview` | `assembly` | array | preview / dry-run 下的 would-write 列表 |
+| `macro_staged_mutations` | `assembly` | array | assemble 阶段冻结的 staged mutation |
+| `macro_traces` | `assembly` | array | 宏求值 trace 列表 |
+
+当前 `macro_traces` 中已经包含最小调试元数据，典型字段包括：
+
+- `macro_name`
+- `raw_text`
+- `resolved_text`
+- `phase`
+- `source_kind`
+- `selected_branch`
+
+其中：
+
+- `phase` 用于区分 `preview`、`dry_run`、`assemble`、`commit_consume` 等阶段
+- `source_kind` 用于区分 `macro`、`if`、`raw` 等来源
+- `selected_branch` 当前主要用于 `if` block，可能是 `then`、`else` 或 `raw`
+
+### 宏系统行为边界
+
+Prompt dry-run 与提示词调试场景对宏系统采用只读执行边界：
+
+- 只读宏会正常求值
+- 写宏只进入 preview mutation，不会写库
+- dry-run 不会触发 turn commit
+- staged mutation 只在 respond / regenerate 的 assemble 阶段冻结，并在 commit 阶段消费
+
+### `if` 条件块支持范围
+
+当前宏系统只支持最小 `if` 条件子集：
+
+- truthy / falsy
+- `==`
+- `!=`
+
+以下表达式当前不支持：
+
+- `>`
+- `<`
+- `>=`
+- `<=`
+- `and`
+- `or`
+- `not`
+- `contains`
+- `startsWith`
+
+遇到不支持表达式时：
+
+- 不会回退成普通 truthy 判断
+- 会保留原始 `if` block 文本
+- 会返回 `macro_condition_unsupported` warning
+
+### 变量宏与作用域兼容视图
+
+当前 ST 变量宏在运行时会区分 local / global 兼容视图，而不是共用同一张扁平 map：
+
+- `.name` / `getvar::name` / `hasvar::name` 读取 local 兼容视图
+- `$name` / `getglobalvar::name` / `hasglobalvar::name` 读取 global 兼容视图
+- `setvar`、`addvar`、`incvar`、`decvar`、`deletevar` 只写 local overlay
+- `setglobalvar`、`addglobalvar`、`incglobalvar`、`decglobalvar`、`deleteglobalvar` 只写 global overlay
+
+这意味着同轮 assemble 中：
+
+- local staged 值不会污染 global 读取结果
+- global staged 值也不会污染 local 读取结果
+
+如需完整说明，请参考 [Macros](./macros)。
+
+
 `assembly` 中的字段分两类：
 
 - **兼容边界**：`selected_prompt_order_character_id`、`unsupported_preset_fields`、`preset_warnings` 等，说明当前预设的哪些功能生效了、哪些被降级或忽略。

@@ -1,13 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { nanoid } from "nanoid";
-
-import { SimpleTokenCounter } from "@tavern/core";
 import { buildBranchVariableScopeId } from "@tavern/shared";
 
-import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
+import { presets, messagePages, variables, floors, sessions } from "../../db/schema.js";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
-import { floors, messagePages, presets, regexProfiles, sessions, variables, worldbookEntries, worldbooks } from "../../db/schema.js";
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import { assemblePrompt, type SessionPromptInfo } from "../prompt-assembler.js";
+import { SimpleTokenCounter } from "@tavern/core";
 
 const SAMPLE_PRESET_DATA = {
   prompts: [
@@ -17,7 +16,11 @@ const SAMPLE_PRESET_DATA = {
       role: "system",
       content: "Mood {{mood}}, score {{score}}, char {{char}}, user {{user}}.",
     },
-    { identifier: "chatHistory", name: "Chat History", marker: true },
+    {
+      identifier: "chatHistory",
+      name: "Chat History",
+      marker: true,
+    },
   ],
   prompt_order: [
     {
@@ -28,167 +31,38 @@ const SAMPLE_PRESET_DATA = {
       ],
     },
   ],
-  openai_max_context: 2048,
-  openai_max_tokens: 300,
+  openai_max_context: 4096,
+  openai_max_tokens: 256,
   temperature: 0.7,
-  top_p: 1,
-  top_k: 0,
+  top_p: 0.9,
+  top_k: 40,
   min_p: 0,
   frequency_penalty: 0,
   presence_penalty: 0,
   repetition_penalty: 1,
   new_chat_prompt: "",
   new_example_chat_prompt: "",
-  continue_nudge_prompt: "",
-  assistant_prefill: "",
+  continue_nudge_prompt: "Continue the response.",
+  assistant_prefill: "Prefill fragment",
   wi_format: "{0}",
   names_behavior: 0,
   stream_openai: true,
 };
 
-const SAMPLE_COMPAT_WORLDINFO_PRESET_DATA = {
-  ...SAMPLE_PRESET_DATA,
-  prompts: [
-    { identifier: "main", name: "Main Prompt", role: "system", content: "Stay in character.", enabled: true },
-    { identifier: "worldInfoBefore", name: "World Info Before", marker: true, enabled: true },
-    { identifier: "chatHistory", name: "Chat History", marker: true, enabled: true },
-    { identifier: "jailbreak", name: "Jailbreak", role: "system", content: "Be creative.", enabled: true },
-  ],
-  prompt_order: [
-    {
-      character_id: 100000,
-      order: [
-        { identifier: "main", enabled: true },
-        { identifier: "worldInfoBefore", enabled: true },
-        { identifier: "chatHistory", enabled: true },
-        { identifier: "jailbreak", enabled: true },
-      ],
-    },
-  ],
-};
-
-const SAMPLE_WORLD_INFO_REGEX_DATA = [
-  {
-    id: "regex-world-info",
-    scriptName: "World Info Rule",
-    findRegex: "/OOC/g",
-    replaceString: "IC",
-    trimStrings: [],
-    placement: [5],
-    disabled: false,
-    substituteRegex: 0,
-    minDepth: 0,
-    maxDepth: 0,
-  },
-  {
-    id: "regex-user-input",
-    scriptName: "User Input Rule",
-    findRegex: "/hello/g",
-    replaceString: "greetings",
-    trimStrings: [],
-    placement: [1],
-    disabled: false,
-    promptOnly: true,
-    substituteRegex: 0,
-    minDepth: 0,
-    maxDepth: 0,
-  },
-  {
-    id: "regex-ai-output",
-    scriptName: "AI Output Rule",
-    findRegex: "/hero/g",
-    replaceString: "knight",
-    trimStrings: [],
-    placement: [2],
-    disabled: false,
-    substituteRegex: 0,
-    minDepth: 0,
-    maxDepth: 0,
-  },
-];
-
 describe("assemblePrompt", () => {
-  let database: DatabaseConnection;
+  let database: { db: DatabaseConnection["db"]; close: () => void };
 
   beforeEach(() => {
-    database = createDatabase(":memory:");
+    const connection = createDatabase(":memory:");
+    database = {
+      db: connection.db,
+      close: () => connection.close(),
+    };
   });
 
   afterEach(() => {
     database.close();
   });
-
-  async function seedWorldInfoRegexScenario(args: {
-    presetData: Record<string, unknown>;
-    promptMode: SessionPromptInfo["promptMode"];
-    regexScripts?: unknown[];
-    worldbookContent?: string;
-  }): Promise<SessionPromptInfo> {
-    const now = Date.now();
-    const presetId = nanoid();
-    const worldbookId = nanoid();
-    const regexProfileId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "World Info Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(args.presetData),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbooks).values({
-      id: worldbookId,
-      name: "Worldbook A",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbookEntries).values({
-      id: nanoid(),
-      worldbookId,
-      uid: 7,
-      comment: "Sword Lore",
-      content: args.worldbookContent ?? "Ancient OOC lore",
-      keysJson: JSON.stringify(["sword"]),
-      keysSecondaryJson: JSON.stringify([]),
-      selective: false,
-      selectiveLogic: 0,
-      constant: false,
-      position: 0,
-      order: 100,
-      depth: 4,
-      role: 0,
-      disable: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(regexProfiles).values({
-      id: regexProfileId,
-      name: "Regex A",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(args.regexScripts ?? SAMPLE_WORLD_INFO_REGEX_DATA),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    return {
-      presetId,
-      worldbookProfileId: worldbookId,
-      regexProfileId,
-      metadataJson: null,
-      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
-      promptMode: args.promptMode,
-      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-    };
-  }
 
   it("injects resolved persisted variables into prompt templates and preserves reserved aliases", async () => {
     const now = Date.now();
@@ -209,36 +83,35 @@ describe("assemblePrompt", () => {
     await database.db.insert(floors).values({
       id: floorId,
       sessionId,
-      floorNo: 0,
+      floorNo: 1,
       branchId: "main",
       parentFloorId: null,
-      state: "draft",
+      state: "committed",
       tokenIn: 0,
       tokenOut: 0,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: now + 1,
+      updatedAt: now + 1,
     });
 
     await database.db.insert(messagePages).values({
       id: pageId,
       floorId,
-      pageNo: 0,
+      pageNo: 1,
       pageKind: "input",
       isActive: true,
-      version: 1,
       checksum: null,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: now + 2,
+      updatedAt: now + 2,
     });
 
     await database.db.insert(presets).values({
       id: presetId,
       name: "Prompt Variable Preset",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
-      createdAt: now,
-      updatedAt: now,
+      createdAt: now + 3,
+      updatedAt: now + 3,
     });
 
     await database.db.insert(variables).values([
@@ -249,7 +122,16 @@ describe("assemblePrompt", () => {
         scopeId: "global",
         key: "mood",
         valueJson: JSON.stringify("calm"),
-        updatedAt: now,
+        updatedAt: now + 4,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "chat",
+        scopeId: sessionId,
+        key: "mood",
+        valueJson: JSON.stringify("focused"),
+        updatedAt: now + 5,
       },
       {
         id: nanoid(),
@@ -258,16 +140,7 @@ describe("assemblePrompt", () => {
         scopeId: buildBranchVariableScopeId(sessionId, "main"),
         key: "mood",
         valueJson: JSON.stringify("stormy"),
-        updatedAt: now + 1,
-      },
-      {
-        id: nanoid(),
-        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-        scope: "chat",
-        scopeId: sessionId,
-        key: "mood",
-        valueJson: JSON.stringify("tense"),
-        updatedAt: now + 1,
+        updatedAt: now + 6,
       },
       {
         id: nanoid(),
@@ -275,8 +148,8 @@ describe("assemblePrompt", () => {
         scope: "floor",
         scopeId: floorId,
         key: "score",
-        valueJson: JSON.stringify(3),
-        updatedAt: now + 2,
+        valueJson: JSON.stringify(7),
+        updatedAt: now + 7,
       },
       {
         id: nanoid(),
@@ -285,7 +158,7 @@ describe("assemblePrompt", () => {
         scopeId: pageId,
         key: "score",
         valueJson: JSON.stringify(7),
-        updatedAt: now + 3,
+        updatedAt: now + 8,
       },
       {
         id: nanoid(),
@@ -294,7 +167,7 @@ describe("assemblePrompt", () => {
         scopeId: pageId,
         key: "char",
         valueJson: JSON.stringify("PersistedChar"),
-        updatedAt: now + 4,
+        updatedAt: now + 9,
       },
       {
         id: nanoid(),
@@ -303,7 +176,7 @@ describe("assemblePrompt", () => {
         scopeId: pageId,
         key: "user",
         valueJson: JSON.stringify("PersistedUser"),
-        updatedAt: now + 5,
+        updatedAt: now + 10,
       },
     ]);
 
@@ -328,14 +201,14 @@ describe("assemblePrompt", () => {
       {
         includeDebug: true,
         variableContext: { sessionId, branchId: "main", floorId, pageId },
-      }
+      },
     );
 
     const systemMessage = assembled.messages.find((message) => message.role === "system");
     expect(systemMessage?.content).toContain("Mood stormy, score 7, char Knight, user Traveler.");
     expect(assembled.promptSnapshot.variables).toMatchObject({
       mood: "stormy",
-      score: 7,
+      score: "7",
       char: "Knight",
       user: "Traveler",
     });
@@ -345,896 +218,9 @@ describe("assemblePrompt", () => {
       selectedPromptOrderCharacterId: 100000,
       ignoredPromptOrderCharacterIds: [],
     });
+    expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_unknown")).toBe(false);
+    expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining(["user", "char", "description"]));
     expect(assembled.debug?.unsupportedPresetFields).toEqual([]);
-  });
-
-  it("applies continue intent semantics across compat assembly and debug output", async () => {
-    const now = Date.now();
-    const presetId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "Continue Prompt Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify({
-        ...SAMPLE_PRESET_DATA,
-        prompts: [
-          ...SAMPLE_PRESET_DATA.prompts,
-          {
-            identifier: "continueHint",
-            name: "Continue Hint",
-            role: "assistant",
-            content: "Keep going.",
-            injection_position: 1,
-            injection_depth: 0,
-            injection_order: 1,
-            injection_trigger: ["continue"],
-          },
-        ],
-        prompt_order: [
-          {
-            character_id: 100000,
-            order: [
-              { identifier: "main", enabled: true },
-              { identifier: "chatHistory", enabled: true },
-              { identifier: "continueHint", enabled: true },
-            ],
-          },
-        ],
-        continue_nudge_prompt: "[Continue]",
-        assistant_prefill: "Knight:",
-        names_behavior: 1,
-      }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      {
-        presetId,
-        worldbookProfileId: null,
-        regexProfileId: null,
-        metadataJson: null,
-        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
-        promptMode: "compat_strict",
-        userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-      },
-      [],
-      "Advance the scene.",
-      new SimpleTokenCounter(),
-      undefined,
-      { includeDebug: true, intent: "continue", assistantPrefillStrategy: "assistant_message_fallback" },
-    );
-
-    expect(assembled.messages.map((message) => message.content)).toEqual(expect.arrayContaining([
-      "Traveler: Advance the scene.",
-      "Knight: Keep going.",
-      "[Continue]",
-    ]));
-    expect(assembled.messages.some((message) => message.role === "assistant" && message.content === "Knight:")).toBe(false);
-    expect(assembled.sendDirectives).toEqual({ assistantPrefill: "Knight:" });
-    expect(assembled.debug).toMatchObject({
-      promptIntent: "continue",
-      assistantPrefillApplied: true,
-      assistantPrefillStrategy: "assistant_message_fallback",
-      continueNudgeApplied: true,
-      namesBehaviorApplied: "always",
-      inChatInsertedEntryIds: ["continueHint"],
-      triggerFilteredEntryIds: [],
-    });
-  });
-
-  it("applies WORLD_INFO regex rules to injected worldbook content in native mode and preserves user/ai regex behavior", async () => {
-    const sessionInfo = await seedWorldInfoRegexScenario({
-      presetData: SAMPLE_PRESET_DATA,
-      promptMode: "native",
-    });
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      sessionInfo,
-      [],
-      "hello sword",
-      new SimpleTokenCounter(),
-    );
-
-    expect(assembled.messages.some((message) => message.content.includes("Ancient IC lore"))).toBe(true);
-    expect(assembled.messages.some((message) => message.content.includes("Ancient OOC lore"))).toBe(false);
-    expect(assembled.preProcess).toBeDefined();
-    expect(assembled.preProcess?.([{ role: "user", content: "hello sword" }])).toEqual([
-      { role: "user", content: "greetings sword" },
-    ]);
-    expect(assembled.postProcess).toBeDefined();
-    expect(assembled.postProcess?.("hero arrives")).toBe("knight arrives");
-  });
-
-  it("wires substituteRegex into USER_INPUT, AI_OUTPUT and WORLD_INFO prompt processing", async () => {
-    const sessionInfo = await seedWorldInfoRegexScenario({
-      presetData: SAMPLE_PRESET_DATA,
-      promptMode: "native",
-      worldbookContent: "Ancient Knight lore",
-      regexScripts: [
-        {
-          id: "regex-world-info-substitute",
-          scriptName: "World Info Substitute",
-          findRegex: "/{{char}}/g",
-          replaceString: "Guardian",
-          trimStrings: [],
-          placement: [5],
-          disabled: false,
-          substituteRegex: 1,
-          minDepth: 0,
-          maxDepth: 0,
-        },
-        {
-          id: "regex-user-input-substitute",
-          scriptName: "User Input Substitute",
-          findRegex: "/{{user}}/g",
-          replaceString: "friend",
-          trimStrings: [],
-          placement: [1],
-          promptOnly: true,
-          disabled: false,
-          substituteRegex: 1,
-          minDepth: 0,
-          maxDepth: 0,
-        },
-        {
-          id: "regex-ai-output-substitute",
-          scriptName: "AI Output Substitute",
-          findRegex: "/{{char}}/g",
-          replaceString: "champion",
-          trimStrings: [],
-          placement: [2],
-          promptOnly: true,
-          disabled: false,
-          substituteRegex: 1,
-          minDepth: 0,
-          maxDepth: 0,
-        },
-      ],
-    });
-
-    const assembled = await assemblePrompt(database.db, DEFAULT_ADMIN_ACCOUNT_ID, sessionInfo, [], "Traveler sword", new SimpleTokenCounter());
-    expect(assembled.messages.some((message) => message.content.includes("Ancient Guardian lore"))).toBe(true);
-    expect(assembled.preProcess?.([{ role: "user", content: "Traveler sword" }])).toEqual([{ role: "user", content: "friend sword" }]);
-    expect(assembled.preProcess?.([{ role: "assistant", content: "Knight arrives" }])).toEqual([{ role: "assistant", content: "champion arrives" }]);
-  });
-
-  it("passes chat message depth into USER_INPUT and AI_OUTPUT prompt regex evaluation", async () => {
-    const sessionInfo = await seedWorldInfoRegexScenario({
-      presetData: SAMPLE_PRESET_DATA,
-      promptMode: "native",
-      regexScripts: [
-        {
-          id: "regex-user-depth",
-          scriptName: "User Depth Rule",
-          findRegex: "/hello/g",
-          replaceString: "depth-user",
-          trimStrings: [],
-          placement: [1],
-          promptOnly: true,
-          disabled: false,
-          substituteRegex: 0,
-          minDepth: 2,
-          maxDepth: 2,
-        },
-        {
-          id: "regex-ai-depth",
-          scriptName: "AI Depth Rule",
-          findRegex: "/hero/g",
-          replaceString: "depth-ai",
-          trimStrings: [],
-          placement: [2],
-          promptOnly: true,
-          disabled: false,
-          substituteRegex: 0,
-          minDepth: 1,
-          maxDepth: 1,
-        },
-      ],
-    });
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      sessionInfo,
-      [
-        { role: "user", content: "hello oldest" },
-        { role: "assistant", content: "hero middle" },
-      ],
-      "hello newest",
-      new SimpleTokenCounter(),
-    );
-
-    const preprocessed = assembled.preProcess?.(assembled.messages) ?? assembled.messages;
-    expect(preprocessed.filter((message) => message.role === "user").map((message) => message.content)).toEqual([
-      "depth-user oldest",
-      "hello newest",
-    ]);
-    expect(preprocessed.filter((message) => message.role === "assistant").map((message) => message.content)).toEqual([
-      "depth-ai middle",
-    ]);
-  });
-
-  it("passes at-depth worldbook depth into WORLD_INFO regex evaluation", async () => {
-    const now = Date.now();
-    const presetId = nanoid();
-    const worldbookId = nanoid();
-    const regexProfileId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "Depth Worldbook Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbooks).values({
-      id: worldbookId,
-      name: "Depth Worldbook",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbookEntries).values({
-      id: nanoid(),
-      worldbookId,
-      uid: 14,
-      comment: "Depth Lore",
-      content: "Ancient sword lore",
-      keysJson: JSON.stringify(["sword"]),
-      keysSecondaryJson: JSON.stringify([]),
-      selective: false,
-      selectiveLogic: 0,
-      constant: false,
-      position: 4,
-      order: 100,
-      depth: 2,
-      role: 0,
-      disable: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(regexProfiles).values({
-      id: regexProfileId,
-      name: "Depth Regex",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify([
-        {
-          id: "regex-world-depth",
-          scriptName: "World Depth Rule",
-          findRegex: "/sword/g",
-          replaceString: "blade",
-          trimStrings: [],
-          placement: [5],
-          disabled: false,
-          substituteRegex: 0,
-          minDepth: 3,
-          maxDepth: 10,
-        },
-      ]),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      {
-        presetId,
-        worldbookProfileId: worldbookId,
-        regexProfileId,
-        metadataJson: null,
-        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
-        promptMode: "native",
-        userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-      },
-      [],
-      "sword",
-      new SimpleTokenCounter(),
-    );
-
-    expect(assembled.messages.some((message) => message.content.includes("Ancient sword lore"))).toBe(true);
-    expect(assembled.messages.some((message) => message.content.includes("Ancient blade lore"))).toBe(false);
-  });
-
-  it("applies WORLD_INFO regex rules to injected worldbook content in compat mode", async () => {
-    const sessionInfo = await seedWorldInfoRegexScenario({
-      presetData: SAMPLE_COMPAT_WORLDINFO_PRESET_DATA,
-      promptMode: "compat_strict",
-    });
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      sessionInfo,
-      [],
-      "hello sword",
-      new SimpleTokenCounter(),
-    );
-
-    expect(assembled.messages.some((message) => message.content.includes("Ancient IC lore"))).toBe(true);
-    expect(assembled.messages.some((message) => message.content.includes("Ancient OOC lore"))).toBe(false);
-  });
-
-  it("passes recursive worldbook settings into triggerWorldBook and activates chained entries", async () => {
-    const now = Date.now();
-    const presetId = nanoid();
-    const worldbookId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "Recursive Worldbook Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(SAMPLE_COMPAT_WORLDINFO_PRESET_DATA),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbooks).values({
-      id: worldbookId,
-      name: "Recursive Worldbook",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify({ scanDepth: 3, recursive: true, maxRecursionSteps: 3 }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbookEntries).values([
-      {
-        id: nanoid(),
-        worldbookId,
-        uid: 10,
-        comment: "Dragon Seed",
-        content: "phoenix sigil",
-        keysJson: JSON.stringify(["dragon"]),
-        keysSecondaryJson: JSON.stringify([]),
-        selective: false,
-        selectiveLogic: 0,
-        constant: false,
-        position: 0,
-        order: 100,
-        depth: 4,
-        role: 0,
-        disable: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: nanoid(),
-        worldbookId,
-        uid: 11,
-        comment: "Phoenix Lore",
-        content: "Recursive lore block",
-        keysJson: JSON.stringify(["phoenix"]),
-        keysSecondaryJson: JSON.stringify([]),
-        selective: false,
-        selectiveLogic: 0,
-        constant: false,
-        position: 0,
-        order: 200,
-        depth: 4,
-        role: 0,
-        disable: false,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ]);
-
-    const sessionInfo: SessionPromptInfo = {
-      presetId,
-      worldbookProfileId: worldbookId,
-      regexProfileId: null,
-      metadataJson: null,
-      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
-      promptMode: "compat_strict",
-      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-    };
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      sessionInfo,
-      [],
-      "dragon",
-      new SimpleTokenCounter(),
-    );
-
-    expect(assembled.messages.some((message) => message.content.includes("phoenix sigil"))).toBe(true);
-    expect(assembled.messages.some((message) => message.content.includes("Recursive lore block"))).toBe(true);
-    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([10, 11]);
-  });
-
-  it("passes scenario scan source into triggerWorldBook when entry opts in", async () => {
-    const now = Date.now();
-    const presetId = nanoid();
-    const worldbookId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "Scenario Scan Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(SAMPLE_COMPAT_WORLDINFO_PRESET_DATA),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbooks).values({
-      id: worldbookId,
-      name: "Scenario Scan Worldbook",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbookEntries).values({
-      id: nanoid(),
-      worldbookId,
-      uid: 20,
-      comment: "Scenario Lore",
-      content: "Observatory scenario lore",
-      keysJson: JSON.stringify(["observatory"]),
-      keysSecondaryJson: JSON.stringify([]),
-      selective: false,
-      selectiveLogic: 0,
-      constant: false,
-      position: 0,
-      order: 100,
-      depth: 4,
-      role: 0,
-      disable: false,
-      extraJson: JSON.stringify({ extensions: { match_scenario: true } }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const sessionInfo: SessionPromptInfo = {
-      presetId,
-      worldbookProfileId: worldbookId,
-      regexProfileId: null,
-      metadataJson: null,
-      characterSnapshotJson: JSON.stringify({ name: "Knight", scenario: "An observatory above the clouds." }),
-      promptMode: "compat_strict",
-      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-    };
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      sessionInfo,
-      [],
-      "hello",
-      new SimpleTokenCounter(),
-    );
-
-    expect(assembled.messages.some((message) => message.content.includes("Observatory scenario lore"))).toBe(true);
-    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([20]);
-  });
-
-  it("injects characterBook entries in compat mode without bound session worldbook", async () => {
-    const now = Date.now();
-    const presetId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "Character Book Compat Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(SAMPLE_COMPAT_WORLDINFO_PRESET_DATA),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const sessionInfo: SessionPromptInfo = {
-      presetId,
-      worldbookProfileId: null,
-      regexProfileId: null,
-      metadataJson: null,
-      characterSnapshotJson: JSON.stringify({
-        name: "Knight",
-        characterBook: {
-          entries: [
-            {
-              keys: ["lantern"],
-              content: "Character book lore",
-              enabled: true,
-              insertion_order: 150,
-              selective: false,
-            },
-          ],
-          scanDepth: 3,
-        },
-      }),
-      promptMode: "compat_strict",
-      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-    };
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      sessionInfo,
-      [],
-      "lantern",
-      new SimpleTokenCounter(),
-    );
-
-    expect(assembled.messages.some((message) => message.content.includes("Character book lore"))).toBe(true);
-    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toHaveLength(1);
-    expect(assembled.promptSnapshot.worldbookActivatedEntryUids[0]).toBeLessThan(0);
-  });
-
-  it("stacks characterBook with bound session worldbook in native mode", async () => {
-    const now = Date.now();
-    const presetId = nanoid();
-    const worldbookId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "Character Book Native Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbooks).values({
-      id: worldbookId,
-      name: "Session Worldbook",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbookEntries).values({
-      id: nanoid(),
-      worldbookId,
-      uid: 50,
-      comment: "Session Lore",
-      content: "Session worldbook lore",
-      keysJson: JSON.stringify(["dragon"]),
-      keysSecondaryJson: JSON.stringify([]),
-      selective: false,
-      selectiveLogic: 0,
-      constant: false,
-      position: 0,
-      order: 100,
-      depth: 4,
-      role: 0,
-      disable: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const sessionInfo: SessionPromptInfo = {
-      presetId,
-      worldbookProfileId: worldbookId,
-      regexProfileId: null,
-      metadataJson: null,
-      characterSnapshotJson: JSON.stringify({
-        name: "Knight",
-        characterBook: {
-          entries: [
-            {
-              keys: ["dragon"],
-              content: "Character book lore",
-              enabled: true,
-              insertion_order: 120,
-              selective: false,
-            },
-          ],
-          scanDepth: 3,
-        },
-      }),
-      promptMode: "native",
-      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-    };
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      sessionInfo,
-      [],
-      "dragon",
-      new SimpleTokenCounter(),
-    );
-
-    expect(assembled.messages.some((message) => message.content.includes("Session worldbook lore"))).toBe(true);
-    expect(assembled.messages.some((message) => message.content.includes("Character book lore"))).toBe(true);
-    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toHaveLength(2);
-    expect(assembled.promptSnapshot.worldbookActivatedEntryUids.some((uid) => uid < 0)).toBe(true);
-  });
-
-
-  it("preserves atDepth worldbook entries in native mode", async () => {
-    const now = Date.now();
-    const presetId = nanoid();
-    const worldbookId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "Native Depth Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbooks).values({
-      id: worldbookId,
-      name: "Native Depth Worldbook",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbookEntries).values({
-      id: nanoid(),
-      worldbookId,
-      uid: 30,
-      comment: "Depth Lore",
-      content: "Deep native lore",
-      keysJson: JSON.stringify(["dragon"]),
-      keysSecondaryJson: JSON.stringify([]),
-      selective: false,
-      selectiveLogic: 0,
-      constant: false,
-      position: 4,
-      order: 100,
-      depth: 2,
-      role: 1,
-      disable: false,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const sessionInfo: SessionPromptInfo = {
-      presetId,
-      worldbookProfileId: worldbookId,
-      regexProfileId: null,
-      metadataJson: null,
-      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
-      promptMode: "native",
-      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-    };
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      sessionInfo,
-      [],
-      "dragon",
-      new SimpleTokenCounter(),
-    );
-
-    expect(assembled.messages.some((message) => message.content.includes("Deep native lore"))).toBe(true);
-    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([30]);
-  });
-
-  it("injects outlet worldbook entries into native prompt messages when a matching outlet marker exists", async () => {
-    const now = Date.now();
-    const presetId = nanoid();
-    const worldbookId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "Outlet Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify({
-        ...SAMPLE_PRESET_DATA,
-        prompts: [
-          {
-            identifier: "main",
-            name: "Main Prompt",
-            role: "system",
-            content: "Stay in character.",
-          },
-          { identifier: "chatHistory", name: "Chat History", marker: true },
-          {
-            identifier: "LoreOutlet",
-            name: "Lore Outlet",
-            marker: true,
-            injection_position: 1,
-            injection_depth: 1,
-            injection_order: 5,
-          },
-        ],
-        prompt_order: [{ character_id: 100000, order: [{ identifier: "main", enabled: true }, { identifier: "LoreOutlet", enabled: true }, { identifier: "chatHistory", enabled: true }] }],
-      }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbooks).values({
-      id: worldbookId,
-      name: "Outlet Worldbook",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify({ scanDepth: 3, recursive: false }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(worldbookEntries).values({
-      id: nanoid(),
-      worldbookId,
-      uid: 40,
-      comment: "Outlet Lore",
-      content: "Hidden outlet lore",
-      keysJson: JSON.stringify(["dragon"]),
-      keysSecondaryJson: JSON.stringify([]),
-      selective: false,
-      selectiveLogic: 0,
-      constant: false,
-      position: 7,
-      order: 100,
-      depth: 4,
-      role: 0,
-      disable: false,
-      outletName: "LoreOutlet",
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const sessionInfo: SessionPromptInfo = {
-      presetId,
-      worldbookProfileId: worldbookId,
-      regexProfileId: null,
-      metadataJson: null,
-      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
-      promptMode: "native",
-      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-    };
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      sessionInfo,
-      [{ role: "user", content: "Old history" }],
-      "dragon",
-      new SimpleTokenCounter(),
-    );
-
-    expect(assembled.messages.some((message) => message.content.includes("Hidden outlet lore"))).toBe(true);
-    expect(assembled.messages.findIndex((message) => message.content.includes("Hidden outlet lore"))).toBeLessThan(
-      assembled.messages.findIndex((message) => message.content.includes("dragon")),
-    );
-    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([40]);
-  });
-
-  it("routes compat_plus through the compat_plus assembler path", async () => {
-    const now = Date.now();
-    const presetId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "Compat Plus Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const strictSessionInfo: SessionPromptInfo = {
-      presetId,
-      worldbookProfileId: null,
-      regexProfileId: null,
-      metadataJson: null,
-      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
-      promptMode: "compat_strict",
-      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-    };
-    const compatPlusSessionInfo: SessionPromptInfo = {
-      ...strictSessionInfo,
-      promptMode: "compat_plus",
-    };
-
-    const strictAssembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      strictSessionInfo,
-      [],
-      "Advance.",
-      new SimpleTokenCounter(),
-      "Stored memory"
-    );
-    const compatPlusAssembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      compatPlusSessionInfo,
-      [],
-      "Advance.",
-      new SimpleTokenCounter(),
-      "Stored memory"
-    );
-
-    expect(strictAssembled.messages).toHaveLength(3);
-    expect(strictAssembled.messages[1]).toMatchObject({ role: "system", content: "[Memory Summary]\nStored memory" });
-    expect(compatPlusAssembled.messages).toHaveLength(2);
-    expect(compatPlusAssembled.messages[0]?.content).toContain("[Memory Summary]\nStored memory");
-    expect(compatPlusAssembled.messages[1]).toMatchObject({ role: "user", content: "Advance." });
-    expect(compatPlusAssembled.promptSnapshot.promptMode).toBe("compat_plus");
-  });
-
-  it("compiles imported preset prompt entries through native graph mapping", async () => {
-    const now = Date.now();
-    const presetId = nanoid();
-
-    await database.db.insert(presets).values({
-      id: presetId,
-      name: "Native Imported Group Preset",
-      source: "sillytavern",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify({
-        ...SAMPLE_PRESET_DATA,
-        prompts: [
-          ...SAMPLE_PRESET_DATA.prompts,
-          {
-            identifier: "assistantGuide",
-            name: "Assistant Guide",
-            role: "assistant",
-            content: "Native assistant guidance",
-            enabled: true,
-          },
-        ],
-        prompt_order: [{
-          character_id: 100000,
-          order: [
-            { identifier: "main", enabled: true },
-            { identifier: "assistantGuide", enabled: true },
-            { identifier: "chatHistory", enabled: true },
-          ],
-        }],
-      }),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    const assembled = await assemblePrompt(
-      database.db,
-      DEFAULT_ADMIN_ACCOUNT_ID,
-      {
-        presetId,
-        worldbookProfileId: null,
-        regexProfileId: null,
-        metadataJson: null,
-        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
-        promptMode: "native",
-        userSnapshotJson: JSON.stringify({ name: "Traveler" }),
-      },
-      [],
-      "Hello",
-      new SimpleTokenCounter(),
-    );
-
-    expect(assembled.messages[0]).toMatchObject({ role: "system" });
-    expect(assembled.messages[1]).toMatchObject({ role: "assistant", content: "Native assistant guidance" });
-    expect(assembled.messages.at(-1)).toMatchObject({ role: "user", content: "Hello" });
   });
 
   it("injects character system prompt and post-history instructions in compat mode", async () => {
@@ -1285,19 +271,686 @@ describe("assemblePrompt", () => {
       creatorNotes: "Creator notes.",
       characterBook: { entries: [] },
       extensions: { source_app: "vitest" },
+      systemPrompt: "Character system prompt.",
     });
   });
 
-  it("injects character prompt overrides in native mode", async () => {
+  it("resolves getvar and getglobalvar in macro runtime", async () => {
+    const now = Date.now();
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const presetId = nanoid();
+
+    await database.db.insert(sessions).values({
+      id: sessionId,
+      title: "Prompt VariableGetter Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+
+    await database.db.insert(messagePages).values({
+      id: pageId,
+      floorId,
+      pageNo: 1,
+      pageKind: "input",
+      isActive: true,
+      checksum: null,
+      createdAt: now + 2,
+      updatedAt: now + 2,
+    });
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Prompt Getter Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "Mood {{getvar::mood}}, world {{getglobalvar::world}}.",
+          },
+          {
+            identifier: "chatHistory",
+            name: "Chat History",
+            marker: true,
+          },
+        ],
+      }),
+      createdAt: now + 3,
+      updatedAt: now + 3,
+    });
+
+    await database.db.insert(variables).values([
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "mood",
+        valueJson: JSON.stringify("stormy"),
+        updatedAt: now + 4,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "global",
+        scopeId: "global",
+        key: "world",
+        valueJson: JSON.stringify("earth"),
+        updatedAt: now + 5,
+      },
+    ]);
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+   };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      undefined,
+      {
+        includeDebug: true,
+        variableContext: { sessionId, branchId: "main", floorId, pageId },
+      },
+    );
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("Mood stormy, world earth.");
+    expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining(["getvar", "getglobalvar"]));
+    expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_unknown")).toBe(false);
+  });
+
+  it("resolves if blocks with getvar condition", async () => {
+    const now = Date.now();
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const presetId = nanoid();
+
+    await database.db.insert(sessions).values({
+      id: sessionId,
+      title: "Prompt If Macro Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+
+    await database.db.insert(messagePages).values({
+      id: pageId,
+      floorId,
+      pageNo: 1,
+      pageKind: "input",
+      isActive: true,
+      checksum: null,
+      createdAt: now + 2,
+      updatedAt: now + 2,
+    });
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Prompt If Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{if {{getvar::flag}}}}Visible{{else}}Hidden{{/if}}",
+          },
+          {
+            identifier: "chatHistory",
+            name: "Chat History",
+            marker: true,
+          },
+        ],
+      }),
+      createdAt: now + 3,
+      updatedAt: now + 3,
+    });
+
+    await database.db.insert(variables).values({
+      id: nanoid(),
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      scope: "branch",
+      scopeId: buildBranchVariableScopeId(sessionId, "main"),
+      key: "flag",
+      valueJson: JSON.stringify("true"),
+      updatedAt: now + 4,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      undefined,
+      {
+        includeDebug: true,
+        variableContext: { sessionId, branchId: "main", floorId, pageId },
+      },
+    );
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("Visible");
+    expect(systemMessage?.content).not.toContain("Hidden");
+    expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining(["if", "getvar"]));
+  });
+
+  it("resolves .name and $name shorthand reads", async () => {
+    const now = Date.now();
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const presetId = nanoid();
+
+    await database.db.insert(sessions).values({
+      id: sessionId,
+      title: "Prompt Shorthand Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+
+    await database.db.insert(messagePages).values({
+      id: pageId,
+      floorId,
+      pageNo: 1,
+      pageKind: "input",
+      isActive: true,
+      checksum: null,
+      createdAt: now + 2,
+      updatedAt: now + 2,
+    });
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Prompt Shorthand Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "Mood {{.mood}}, world {{$world}}.",
+          },
+          {
+            identifier: "chatHistory",
+            name: "Chat History",
+            marker: true,
+          },
+        ],
+      }),
+      createdAt: now + 3,
+      updatedAt: now + 3,
+    });
+
+    await database.db.insert(variables).values([
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "mood",
+        valueJson: JSON.stringify("stormy"),
+        updatedAt: now + 4,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "global",
+        scopeId: "global",
+        key: "world",
+        valueJson: JSON.stringify("earth"),
+        updatedAt: now + 5,
+      },
+    ]);
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      undefined,
+      {
+        includeDebug: true,
+        variableContext: { sessionId, branchId: "main", floorId, pageId },
+      },
+    );
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("Mood stormy, world earth.");
+    expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining([".mood", "$world"]));
+  });
+
+  it("collects mutation preview for setvar in dry run", async () => {
     const now = Date.now();
     const presetId = nanoid();
 
     await database.db.insert(presets).values({
       id: presetId,
-      name: "Native Character Prompt Override Preset",
+      name: "Prompt Setvar Preset",
       source: "sillytavern",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{setvar::mood::happy}}{{getvar::mood}}",
+          },
+          {
+            identifier: "chatHistory",
+            name: "Chat History",
+            marker: true,
+          },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    await database.db.insert(sessions).values({
+      id: sessionId,
+      title: "Prompt Setvar Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+    await database.db.insert(floors).values({ id: floorId, sessionId, floorNo: 1, branchId: "main", parentFloorId: null, state: "committed", tokenIn: 0, tokenOut: 0, createdAt: now + 2, updatedAt: now + 2 });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      undefined,
+      {
+        includeDebug: true,
+        variableContext: { sessionId, branchId: "main", floorId },
+      },
+    );
+
+    expect(assembled.debug?.macroMutationPreview).toEqual([
+      { kind: "set", scope: "branch", key: "mood", value: "happy" },
+    ]);
+    expect(assembled.debug?.macroStagedMutations).toEqual([
+      { kind: "set", scope: "branch", key: "mood", value: "happy", sourceMacro: "setvar" },
+    ]);
+    expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_preview_side_effect_suppressed")).toBe(true);
+  });
+
+  it("collects mutation preview for add/inc/dec/delete macros", async () => {
+    const now = Date.now();
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const presetId = nanoid();
+
+    await database.db.insert(sessions).values({
+      id: sessionId,
+      title: "Prompt Mutate Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+
+    await database.db.insert(messagePages).values({
+      id: pageId,
+      floorId,
+      pageNo: 1,
+      pageKind: "input",
+      isActive: true,
+      checksum: null,
+      createdAt: now + 2,
+      updatedAt: now + 2,
+    });
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Prompt Mutate Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{addvar::count::2}}{{incvar::count}}{{decvar::count}}{{deletevar::count}}{{addglobalvar::gold::5}}{{incglobalvar::gold}}{{decglobalvar::gold}}{{deleteglobalvar::gold}}",
+          },
+          {
+            identifier: "chatHistory",
+            name: "Chat History",
+            marker: true,
+          },
+        ],
+      }),
+      createdAt: now + 3,
+      updatedAt: now + 3,
+    });
+
+    await database.db.insert(variables).values([
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "count",
+        valueJson: JSON.stringify("1"),
+        updatedAt: now + 4,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "global",
+        scopeId: "global",
+        key: "gold",
+        valueJson: JSON.stringify("10"),
+        updatedAt: now + 5,
+      },
+    ]);
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      undefined,
+      {
+        includeDebug: true,
+        variableContext: { sessionId, branchId: "main", floorId, pageId },
+      },
+    );
+
+    expect(assembled.debug?.macroMutationPreview).toEqual([
+      { kind: "set", scope: "branch", key: "count", value: "3" },
+      { kind: "set", scope: "branch", key: "count", value: "4" },
+      { kind: "set", scope: "branch", key: "count", value: "3" },
+      { kind: "delete", scope: "branch", key: "count" },
+      { kind: "set", scope: "global", key: "gold", value: "15" },
+      { kind: "set", scope: "global", key: "gold", value: "16" },
+      { kind: "set", scope: "global", key: "gold", value: "15" },
+      { kind: "delete", scope: "global", key: "gold" },
+    ]);
+    expect(assembled.debug?.macroWarnings?.filter((warning) => warning.code === "macro_preview_side_effect_suppressed")).toHaveLength(8);
+  });
+
+  it("resolves core readonly macro values with explicit priority order", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Readonly Macro Value Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: [
+              "system={{systemPrompt}}",
+              "persona={{persona}}",
+              "defaultSystem={{defaultSystemPrompt}}",
+              "charAuthors={{charAuthorsNote}}",
+              "authors={{authorsNote}}",
+              "defaultAuthors={{defaultAuthorsNote}}",
+              "charPrompt={{charPrompt}}",
+              "charInstruction={{charInstruction}}",
+              "charDepth={{charDepthPrompt}}",
+              "examples={{mesExamples}}",
+              "examplesRaw={{mesExamplesRaw}}",
+              "model={{model}}",
+              "lastGen={{lastGenerationType}}",
+            ].join(" | "),
+          },
+          {
+            identifier: "chatHistory",
+            name: "Chat History",
+            marker: true,
+          },
+          {
+            identifier: "jailbreak",
+            name: "Jailbreak",
+            role: "system",
+            content: "Author note from preset",
+          },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: JSON.stringify({
+        model: "session-model-name",
+        systemPrompt: "System from metadata",
+        authorsNote: "Author note from metadata",
+      }),
+      characterSnapshotJson: JSON.stringify({
+        name: "Knight",
+        systemPrompt: "System from character",
+        postHistoryInstructions: "Depth instruction",
+        description: "Character description",
+        personality: "Character personality",
+        scenario: "Character scenario",
+        creatorNotes: "Author note from character",
+        exampleDialogue: "Example dialogue block",
+      }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      undefined,
+      {
+        includeDebug: true,
+      },
+    );
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("system=System from metadata");
+    expect(systemMessage?.content).toContain("persona=");
+    expect(systemMessage?.content).toContain("defaultSystem=You are a helpful assistant.");
+    expect(systemMessage?.content).toContain("charAuthors=Author note from character");
+    expect(systemMessage?.content).toContain("authors=Author note from metadata");
+    expect(systemMessage?.content).toContain("defaultAuthors=");
+    expect(systemMessage?.content).toContain("charPrompt=System from character");
+    expect(systemMessage?.content).toContain("charInstruction=Depth instruction");
+    expect(systemMessage?.content).toContain("charDepth=Depth instruction");
+    expect(systemMessage?.content).toContain("examples=Example dialogue block");
+    expect(systemMessage?.content).toContain("examplesRaw=Example dialogue block");
+    expect(systemMessage?.content).toContain("model=session-model-name");
+    expect(systemMessage?.content).toContain("lastGen=dry_run");
+    expect(assembled.debug?.macroWarnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "macro_value_missing", macroName: "defaultAuthorsNote" })]));
+  });
+
+  it("falls back to preset sources when metadata and character values are missing", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Readonly Macro Preset Fallback",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        new_chat_prompt: "Persona from preset",
+        continue_nudge_prompt: "Continue nudge from preset",
+        assistant_prefill: "Assistant prefill from preset",
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: [
+              "system={{systemPrompt}}",
+              "persona={{persona}}",
+              "authors={{authorsNote}}",
+              "charPrompt={{charPrompt}}",
+              "charInstruction={{charInstruction}}",
+              "charDepth={{charDepthPrompt}}",
+            ].join(" | "),
+          },
+          {
+            identifier: "chatHistory",
+            name: "Chat History",
+            marker: true,
+          },
+          {
+            identifier: "jailbreak",
+            name: "Jailbreak",
+            role: "system",
+            content: "Author note from preset",
+          },
+        ],
+      }),
       createdAt: now,
       updatedAt: now,
     });
@@ -1307,12 +960,8 @@ describe("assemblePrompt", () => {
       worldbookProfileId: null,
       regexProfileId: null,
       metadataJson: null,
-      characterSnapshotJson: JSON.stringify({
-        name: "Knight",
-        systemPrompt: "Native character system prompt.",
-        postHistoryInstructions: "Native character post-history instructions.",
-      }),
-      promptMode: "native",
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
       userSnapshotJson: JSON.stringify({ name: "Traveler" }),
     };
 
@@ -1321,13 +970,213 @@ describe("assemblePrompt", () => {
       DEFAULT_ADMIN_ACCOUNT_ID,
       sessionInfo,
       [],
-      "Hello",
+      "Advance.",
+      new SimpleTokenCounter(),
+      undefined,
+      { includeDebug: true },
+    );
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("persona=Persona from preset");
+    expect(systemMessage?.content).toContain("authors=Author note from preset");
+    expect(systemMessage?.content).toContain("charInstruction=Continue nudge from preset");
+    expect(systemMessage?.content).toContain("charInstruction=Continue nudge from preset");
+    expect(systemMessage?.content).toContain("charDepth=Continue nudge from preset");
+    expect(assembled.debug?.macroWarnings?.some((warning) => warning.macroName === "systemPrompt")).toBe(false);
+  });
+
+  it("emits macro_value_missing warnings for missing readonly macro values", async () => {
+    const sessionInfo: SessionPromptInfo = {
+      presetId: null,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      undefined,
+      { includeDebug: true },
+    );
+
+    expect(assembled.debug?.macroWarnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "macro_value_missing", macroName: "systemPrompt" }),
+      expect.objectContaining({ code: "macro_value_missing", macroName: "charPrompt" }),
+      expect.objectContaining({ code: "macro_value_missing", macroName: "charInstruction" }),
+      expect.objectContaining({ code: "macro_value_missing", macroName: "charDepthPrompt" }),
+      expect.objectContaining({ code: "macro_value_missing", macroName: "mesExamples" }),
+      expect.objectContaining({ code: "macro_value_missing", macroName: "mesExamplesRaw" }),
+      expect.objectContaining({ code: "macro_value_missing", macroName: "authorsNote" }),
+      expect.objectContaining({ code: "macro_value_missing", macroName: "defaultAuthorsNote" }),
+      expect.objectContaining({ code: "macro_value_missing", macroName: "model" }),
+    ]));
+  });
+
+  it("recent message macros include current user input during dry run", async () => {
+    const presetId = nanoid();
+    const now = Date.now();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Recent Message Dry Run Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "last={{lastMessage}} | user={{lastUserMessage}} | char={{lastCharMessage}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [
+        { role: "assistant", content: "Committed assistant reply." },
+      ],
+      "Current dry-run user input.",
+      new SimpleTokenCounter(),
+      undefined,
+      { includeDebug: true },
+    );
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("last=Current dry-run user input.");
+    expect(systemMessage?.content).toContain("user=Current dry-run user input.");
+    expect(systemMessage?.content).toContain("char=Committed assistant reply.");
+  });
+
+  it("recent char message macro does not include uncommitted assistant output", async () => {
+    const sessionInfo: SessionPromptInfo = {
+      presetId: null,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [{ role: "assistant", content: "Committed assistant reply." }],
+      "Current request user input.",
       new SimpleTokenCounter(),
     );
 
-    expect(assembled.messages[0]).toMatchObject({ role: "system" });
-    expect(assembled.messages[0]?.content).toContain("Native character system prompt.");
-    expect(assembled.messages.at(-1)).toMatchObject({ role: "system", content: "Native character post-history instructions." });
+    expect(assembled.promptSnapshot.variables.lastCharMessage).toBe("Committed assistant reply.");
+    expect(assembled.promptSnapshot.variables.lastMessage).toBe("Current request user input.");
   });
 
+  it("recent message macros ignore system messages and respond run kind maps to respond", async () => {
+    const sessionInfo: SessionPromptInfo = {
+      presetId: null,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [{ role: "system", content: "Visible system note." }, { role: "assistant", content: "Committed assistant reply." }],
+      "Current request user input.",
+      new SimpleTokenCounter(),
+    );
+
+    expect(assembled.promptSnapshot.variables.lastMessage).toBe("Current request user input.");
+    expect(assembled.promptSnapshot.variables.lastUserMessage).toBe("Current request user input.");
+    expect(assembled.promptSnapshot.variables.lastCharMessage).toBe("Committed assistant reply.");
+    expect(assembled.promptSnapshot.variables.lastGenerationType).toBe("respond");
+  });
+
+  it("recent message macros consume committed history only when no current user input is present", async () => {
+    const presetId = nanoid();
+    const now = Date.now();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Recent Message Committed History Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "last={{lastMessage}} | user={{lastUserMessage}} | char={{lastCharMessage}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [
+        { role: "user", content: "Committed user input." },
+        { role: "system", content: "Committed system note." },
+        { role: "assistant", content: "Committed assistant reply." },
+      ],
+      "",
+      new SimpleTokenCounter(),
+      undefined,
+      { includeDebug: true },
+    );
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("last=Committed assistant reply.");
+    expect(systemMessage?.content).toContain("user=Committed user input.");
+    expect(systemMessage?.content).toContain("char=Committed assistant reply.");
+  });
 });

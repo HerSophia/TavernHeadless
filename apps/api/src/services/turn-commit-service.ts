@@ -1,5 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type {
+  BufferedToolVariableMutation,
   CoreEventBus,
   ExecutedToolCallRecord,
   FloorEntity,
@@ -46,6 +47,9 @@ import { VARIABLE_MUTATION_KINDS } from "./variable-mutation-applier.js";
 import type { MutationRuntime } from "./runtime-mutation-types.js";
 import type { ToolRuntimeJobBridge } from "./tool-runtime-job-bridge.js";
 import type { FloorRunService } from "./floor-run-service.js";
+import type { StMacroStagedMutation } from "./st-macros/index.js";
+import { buildBranchVariableScopeId } from "@tavern/shared";
+import { DEFAULT_GLOBAL_SCOPE_ID } from "./variable-host-service.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -68,6 +72,7 @@ export interface TurnCommitInput {
   accountId: string;
   floorId: string;
   sessionId: string;
+  branchId?: string;
   execution: TurnExecutionResult;
   committedAt?: number;
   promptSnapshot?: PromptSnapshotRecord;
@@ -76,6 +81,7 @@ export interface TurnCommitInput {
   pendingToolJobs?: PendingToolJobRequest[];
   variableCommit?: VariableCommitOptions;
   memoryCommit?: MemoryCommitInput;
+  macroStagedMutations?: StMacroStagedMutation[];
 }
 
 export interface TurnCommitMemoryReceipt {
@@ -269,6 +275,28 @@ function createEmptyVariableCommitResult(input: TurnCommitInput): ReturnType<Var
   };
 }
 
+function toBufferedMutationFromMacro(
+  mutation: StMacroStagedMutation,
+  input: { sessionId: string; branchId: string },
+  committedAt: number,
+): BufferedToolVariableMutation | null {
+  if (mutation.kind === "delete") {
+    return null;
+  }
+
+  return {
+    runId: `st-macro:${input.sessionId}`,
+    generationAttemptNo: 1,
+    scope: mutation.scope,
+    scopeId: mutation.scope === "global"
+      ? DEFAULT_GLOBAL_SCOPE_ID
+      : buildBranchVariableScopeId(input.sessionId, input.branchId),
+    key: mutation.key,
+    value: mutation.value,
+    bufferedAt: committedAt,
+  };
+}
+
 export class TurnCommitService {
   private readonly variableCommitService: VariableCommitService;
   private readonly enableAsyncMemoryIngest: boolean;
@@ -353,8 +381,16 @@ export class TurnCommitService {
       input.toolExecutionRecords ?? input.execution.toolExecutionRecords ?? [];
     const actualToolExecutionRunIds = Array.from(
       new Set(actualToolExecutionRecords.map((record) => record.runId)));
-    const actualBufferedVariableMutations =
-      input.execution.bufferedVariableMutations ?? [];
+    const macroBufferedMutations = (input.macroStagedMutations ?? [])
+      .map((mutation) => toBufferedMutationFromMacro(mutation, {
+        sessionId: input.sessionId,
+        branchId: input.branchId ?? "main",
+      }, committedAt))
+      .filter((item): item is BufferedToolVariableMutation => item !== null);
+    const actualBufferedVariableMutations = [
+      ...(input.execution.bufferedVariableMutations ?? []),
+      ...macroBufferedMutations,
+    ];
     const pendingToolJobs =
       input.pendingToolJobs ?? input.execution.pendingToolJobs ?? [];
     const legacyToolCalls =
@@ -369,6 +405,24 @@ export class TurnCommitService {
       committedAt,
       accountId: input.accountId,
     });
+    for (const mutation of input.macroStagedMutations ?? []) {
+      if (mutation.kind !== "delete") {
+        continue;
+      }
+      this.variableCommitService.stageDeleteMutation(variableMutationBatch, {
+        runId: `st-macro:${input.sessionId}`,
+        generationAttemptNo: 1,
+        scope: mutation.scope,
+        scopeId: mutation.scope === "global"
+          ? DEFAULT_GLOBAL_SCOPE_ID
+          : buildBranchVariableScopeId(input.sessionId, input.branchId ?? "main"),
+        key: mutation.key,
+        committedAt,
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        branchId: input.branchId ?? "main",
+      });
+    }
     this.variableCommitService.stagePromotion(variableMutationBatch, {
       accountId: input.accountId,
       pageId: input.variableCommit?.pageId,
@@ -473,7 +527,7 @@ export class TurnCommitService {
           requestId: `turn-commit:${input.floorId}`,
         });
         const variableCommit = variableMutationApply.mutations.find(
-          (mutation) => mutation.envelope.kind === VARIABLE_MUTATION_KINDS.promotePageToFloor,
+          (mutation: (typeof variableMutationApply.mutations)[number]) => mutation.envelope.kind === VARIABLE_MUTATION_KINDS.promotePageToFloor,
         )?.result as ReturnType<VariableCommitService["promoteAll"]> | undefined
           ?? createEmptyVariableCommitResult(input);
 

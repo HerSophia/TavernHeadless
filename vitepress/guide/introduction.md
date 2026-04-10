@@ -132,6 +132,34 @@ page → floor → branch → chat → global
 
 楼层提交时，页级变量按策略提升到更高层级。提升到哪一层由系统编排器控制，不会自动发生。
 
+### ST 宏兼容层
+
+TavernHeadless 在 `compat_strict` 和 `compat_plus` 提示词路径中提供 SillyTavern 宏兼容层。
+
+当前可稳定使用的范围是 **ST Macro Compatibility (Core Profile)**。它的目标是兼容常见预设、角色卡、世界书和变量写法，不追求复刻全部历史细节。
+
+当前文档层面应当明确以下边界：
+
+```text
+支持基础宏语法：{{name}}、{{name arg}}、{{name::arg1::arg2}}
+支持常见 legacy 角括号别名：`<USER>`、`<BOT>`、`<CHAR>` 等
+支持常见只读宏：{{user}}、{{char}}、{{description}}、{{scenario}}、{{systemPrompt}} 等
+支持 ST 变量读取与写入宏：`getvar`、`getglobalvar`、`setvar`、`setglobalvar`、`addvar`、`incvar`、`deletevar`、`hasvar`、`hasglobalvar`
+支持最小 `if` 条件块子集：truthy / falsy、`==`、`!=`
+```
+
+当前实现还明确限制如下：
+
+- `if` 不支持 `>`、`<`、`>=`、`<=`、`and`、`or`、`not`、`contains`、`startsWith`
+- 遇到不支持的条件表达式时，运行时会保留原始 block，并返回 warning，而不是把它当作普通 truthy 文本
+- 带副作用的写宏不会在导入、预览或 dry-run 阶段直接写库，只会进入 preview 或 staged mutation 缓冲
+
+如果你需要查看接口返回中的宏调试字段，请参考：
+
+- [Chat API](../reference/api/chat)
+- [宏系统参考](../reference/api/macros)
+
+
 ### 提示词编排
 
 提示词系统负责把预设、世界书、变量、聊天记录、记忆等拼成一份完整的提示词，发给大模型。

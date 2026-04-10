@@ -83,6 +83,7 @@ export interface VariableDeleteMutationPayload {
   id: string
   accountId?: string
   scope: VariableScope
+  scopeId?: string
   key: string
   sessionId?: string
   branchId?: string
@@ -250,8 +251,12 @@ export class VariableMutationApplier implements RuntimeMutationApplier<unknown, 
     const deleted = request.context.tx
       .delete(variables)
       .where(and(
-        eq(variables.id, request.envelope.payload.id),
+        eq(variables.scope, request.envelope.payload.scope),
+        eq(variables.key, request.envelope.payload.key),
         eq(variables.accountId, request.envelope.payload.accountId ?? request.envelope.accountId),
+        ...(request.envelope.payload.scopeId
+          ? [eq(variables.scopeId, request.envelope.payload.scopeId)]
+          : []),
       ))
       .returning({ id: variables.id })
       .all()
@@ -259,7 +264,7 @@ export class VariableMutationApplier implements RuntimeMutationApplier<unknown, 
     if (deleted.length === 0) {
       throw new VariableServiceError(
         "variable_not_found",
-        `Variable '${request.envelope.payload.id}' not found`,
+        `Variable '${request.envelope.payload.scope}:${request.envelope.payload.scopeId ?? "*"}:${request.envelope.payload.key}' not found`,
       )
     }
 

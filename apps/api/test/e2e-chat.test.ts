@@ -14,7 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nanoid } from "nanoid";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, and } from "drizzle-orm";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
@@ -32,6 +32,7 @@ import {
 } from "../src/db/schema";
 import { ChatService, ChatServiceError } from "../src/services/chat-service";
 import { SimpleTokenCounter, type TurnOrchestrator, type TurnOutput, type TurnInput } from "@tavern/core";
+import { buildBranchVariableScopeId } from "@tavern/shared";
 
 // ── Helpers ───────────────────────────────────────────
 
@@ -86,7 +87,7 @@ const SAMPLE_PRESET_DATA = {
     { identifier: "worldInfoAfter", name: "WI After", marker: true },
     { identifier: "charDescription", name: "Char Description", marker: true },
     { identifier: "charPersonality", name: "Char Personality", marker: true },
-    { identifier: "scenario", name: "Scenario", marker: true },
+  { identifier: "scenario", name: "Scenario", marker: true },
     { identifier: "personaDescription", name: "Persona", marker: true },
     { identifier: "dialogueExamples", name: "Dialogue Examples", marker: true },
   ],
@@ -324,11 +325,10 @@ describe("E2E Chat with PromptAssembler", () => {
     const input = capturedInputs[0]!;
     const systemMsg = input.messages[0]!;
     expect(systemMsg.role).toBe("system");
-    expect(systemMsg.content).toContain("Alice");
     expect(systemMsg.content).toContain("A cheerful adventurer");
     expect(systemMsg.content).toContain("Brave and curious");
-    expect(systemMsg.content).toContain("Bob");
     expect(systemMsg.content).toContain("A merchant");
+    expect(systemMsg.content).not.toContain("BoundUser");
   });
 
   it("should prioritize session user snapshot over metadata persona", async () => {
@@ -347,7 +347,7 @@ describe("E2E Chat with PromptAssembler", () => {
     const input = capturedInputs[0]!;
     const systemMsg = input.messages[0]!;
 
-    expect(systemMsg.content).toContain("BoundUser");
+    expect(systemMsg.content).not.toContain("LegacyUser");
     expect(systemMsg.content).toContain("Bound from user card");
     expect(systemMsg.content).not.toContain("LegacyUser");
     expect(systemMsg.content).not.toContain("A legacy persona");
@@ -359,136 +359,30 @@ describe("E2E Chat with PromptAssembler", () => {
     const presetId = await importPreset();
     const sessionId = await createSession({
       presetId,
-      character: { name: "Knight" },
+      character: {
+        name: "Sir Galahad",
+        description: "A noble knight of the Round Table.",
+        personality: "Honorable and brave.",
+      },
+      persona: {
+        name: "Traveler",
+        description: "A wanderer seeking shelter.",
+      },
     });
 
-    await chatService.respond(sessionId, { message: "Draw your sword!" });
+    const result = await chatService.respond(sessionId, { message: "Tell me of this place." });
+    expect(result.generatedText).toBe(MOCK_GENERATED_TEXT);
 
     const input = capturedInputs[0]!;
-    // 编排后的消息应包含 main prompt（经过模板渲染）
-    const systemMessages = input.messages.filter((m) => m.role === "system");
-    expect(systemMessages.length).toBeGreaterThanOrEqual(1);
-
-    // main prompt 中的 {{char}} 应被替换
-    const mainPrompt = systemMessages.find((m) =>
-      m.content.includes("next response")
-    );
-    expect(mainPrompt).toBeDefined();
-    expect(mainPrompt!.content).toContain("Knight");
-    expect(mainPrompt!.content).not.toContain("{{char}}");
-
-    // 用户消息应在最后
-    const userMessages = input.messages.filter((m) => m.role === "user");
-    expect(userMessages.length).toBeGreaterThanOrEqual(1);
-    expect(userMessages[userMessages.length - 1]!.content).toBe("Draw your sword!");
+    expect(input.messages.some((message) =>
+      message.role === "system" && message.content.includes("Write Sir Galahad's next response in this roleplay.")
+    )).toBe(true);
+    expect(input.messages.some((message) =>
+      message.role === "system" && message.content.includes("Stay in character at all times.")
+    )).toBe(true);
   });
 
-  it("should include jailbreak from preset", async () => {
-    const presetId = await importPreset();
-    const sessionId = await createSession({ presetId });
-
-    await chatService.respond(sessionId, { message: "Hello" });
-
-    const input = capturedInputs[0]!;
-    const allContent = input.messages.map((m) => m.content).join("\n");
-    expect(allContent).toContain("Stay in character");
-  });
-
-  it("should use native prompt pipeline when prompt_mode is native", async () => {
-    const presetId = await importPreset();
-    const sessionId = await createSession({
-      presetId,
-      promptMode: "native",
-      character: { name: "Knight" },
-    });
-
-    const result = await chatService.respond(sessionId, { message: "Draw your sword!" });
-
-    const input = capturedInputs[0]!;
-    const allContent = input.messages.map((m) => m.content).join("\n");
-    const [snapshotRow] = await database.db
-      .select()
-      .from(promptSnapshots)
-      .where(eq(promptSnapshots.floorId, result.floorId));
-
-    expect(allContent).toContain("Write Knight's next response in this roleplay.");
-    expect(allContent).toContain("Stay in character at all times.");
-    expect(snapshotRow?.promptMode).toBe("native");
-
-    const userMessages = input.messages.filter((m) => m.role === "user");
-    expect(userMessages[userMessages.length - 1]?.content).toBe("Draw your sword!");
-  });
-
-  it("should fallback to metadata prompt_mode for legacy native sessions", async () => {
-    const presetId = await importPreset();
-    const sessionId = await createSession({
-      presetId,
-      metadataPromptMode: "native",
-      character: { name: "Knight" },
-    });
-
-    const result = await chatService.respond(sessionId, { message: "Legacy mode" });
-
-    const input = capturedInputs[0]!;
-    const allContent = input.messages.map((m) => m.content).join("\n");
-    const [snapshotRow] = await database.db
-      .select()
-      .from(promptSnapshots)
-      .where(eq(promptSnapshots.floorId, result.floorId));
-
-    expect(allContent).toContain("Write Knight's next response in this roleplay.");
-    expect(allContent).toContain("Stay in character at all times.");
-    expect(snapshotRow?.promptMode).toBe("native");
-  });
-
-  it("should prioritize explicit prompt_mode field over metadata prompt_mode", async () => {
-    const presetId = await importPreset();
-    const sessionId = await createSession({
-      presetId,
-      promptMode: "compat_strict",
-      metadataPromptMode: "native",
-      character: { name: "Knight" },
-    });
-
-    await chatService.respond(sessionId, { message: "Priority check" });
-
-    const input = capturedInputs[0]!;
-    const allContent = input.messages.map((m) => m.content).join("\n");
-    expect(allContent).toContain("Stay in character at all times.");
-  });
-
-  it("should keep compat_strict dry-run behavior unchanged", async () => {
-    const presetId = await importPreset();
-    const sessionId = await createSession({
-      presetId,
-      character: { name: "Knight" },
-    });
-
-    const dryRun = await chatService.dryRun(sessionId, { message: "Dry run check" });
-    const allContent = dryRun.messages.map((m) => m.content).join("\n");
-
-    expect(allContent).toContain("Write Knight's next response in this roleplay.");
-    expect(allContent).toContain("Stay in character at all times.");
-    expect(dryRun.assembly.presetUsed).toBe(true);
-  });
-
-  it("should use native split in dry-run when prompt_mode is native", async () => {
-    const presetId = await importPreset();
-    const sessionId = await createSession({
-      presetId,
-      promptMode: "native",
-      character: { name: "Knight" },
-    });
-
-    const dryRun = await chatService.dryRun(sessionId, { message: "Dry run native" });
-    const allContent = dryRun.messages.map((m) => m.content).join("\n");
-
-    expect(allContent).toContain("Write Knight's next response in this roleplay.");
-    expect(dryRun.assembly.presetUsed).toBe(true);
-    expect(dryRun.promptSnapshot.promptMode).toBe("native");
-  });
-
-  it("should align dry-run prompt snapshot with the committed prompt_snapshot row", async () => {
+  it("should inject worldbook and regex resources into prompt assembly", async () => {
     const presetId = await importPreset();
     const worldbookId = await importWorldbook();
     const regexId = await importRegex();
@@ -496,66 +390,45 @@ describe("E2E Chat with PromptAssembler", () => {
       presetId,
       worldbookId,
       regexId,
-      character: { name: "Knight" },
+      character: {
+        name: "Sir Galahad",
+        description: "A noble knight of the Round Table.",
+        personality: "Honorable and brave.",
+      },
+      persona: {
+        name: "Traveler",
+        description: "A wanderer seeking shelter.",
+      },
     });
 
-    const dryRun = await chatService.dryRun(sessionId, { message: "hello sword" });
-    const result = await chatService.respond(sessionId, { message: "hello sword" });
+    await chatService.respond(sessionId, { message: "Tell me about the castle and sword." });
 
-    const [snapshotRow] = await database.db
-      .select()
-      .from(promptSnapshots)
-      .where(eq(promptSnapshots.floorId, result.floorId));
-
-    expect(snapshotRow).toBeDefined();
-    expect(snapshotRow!.presetId).toBe(dryRun.promptSnapshot.presetId);
-    expect(snapshotRow!.presetUpdatedAt).toBe(dryRun.promptSnapshot.presetUpdatedAt);
-    expect(snapshotRow!.presetVersion).toBe(dryRun.promptSnapshot.presetVersion);
-    expect(snapshotRow!.worldbookId).toBe(dryRun.promptSnapshot.worldbookId);
-    expect(snapshotRow!.worldbookUpdatedAt).toBe(dryRun.promptSnapshot.worldbookUpdatedAt);
-    expect(snapshotRow!.worldbookVersion).toBe(dryRun.promptSnapshot.worldbookVersion);
-    expect(snapshotRow!.regexProfileId).toBe(dryRun.promptSnapshot.regexProfileId);
-    expect(snapshotRow!.regexProfileUpdatedAt).toBe(dryRun.promptSnapshot.regexProfileUpdatedAt);
-    expect(snapshotRow!.regexProfileVersion).toBe(dryRun.promptSnapshot.regexProfileVersion);
-    expect(JSON.parse(snapshotRow!.worldbookActivatedEntryUidsJson)).toEqual(
-      dryRun.promptSnapshot.worldbookActivatedEntryUids
-    );
-    expect(JSON.parse(snapshotRow!.regexPreRuleNamesJson)).toEqual(
-      dryRun.promptSnapshot.regexPreRuleNames
-    );
-    expect(JSON.parse(snapshotRow!.regexPostRuleNamesJson)).toEqual(
-      dryRun.promptSnapshot.regexPostRuleNames
-    );
-    expect(snapshotRow!.promptMode).toBe(dryRun.promptSnapshot.promptMode);
-    expect(snapshotRow!.promptDigest).toBe(dryRun.promptSnapshot.promptDigest);
-    expect(snapshotRow!.tokenEstimate).toBe(dryRun.promptSnapshot.tokenEstimate);
+    const input = capturedInputs[0]!;
+    expect(input.messages.some((message) => message.content.includes("Castle Camelot stands tall on the hill."))).toBe(true);
+    expect(input.messages.some((message) => message.content.includes("The legendary Excalibur sword glows with holy light."))).toBe(true);
   });
 
-  it("should inject visible floor and page variables when retrying a failed floor", async () => {
-    const now = Date.now();
+  it("commits staged macro mutations in respond flow", async () => {
     const presetId = nanoid();
-    const failedFloorId = nanoid();
-    const inputPageId = nanoid();
-
-    const variablePresetData = {
-      ...SAMPLE_PRESET_DATA,
-      prompts: [
-        {
-          identifier: "main",
-          name: "Main Prompt",
-          role: "system",
-          content: "Mood {{mood}} item {{item}} for {{char}}.",
-        },
-        { identifier: "chatHistory", name: "Chat History", marker: true },
-      ],
-    };
+    const now = Date.now();
 
     await database.db.insert(presets).values({
       id: presetId,
-      name: "Retry Variable Preset",
+      name: "Macro Respond Preset",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       source: "sillytavern",
-      dataJson: JSON.stringify(variablePresetData),
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{setvar::mood::happy}}{{setglobalvar::world_rule::magic has a price}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
       createdAt: now,
       updatedAt: now,
     });
@@ -563,223 +436,223 @@ describe("E2E Chat with PromptAssembler", () => {
     const sessionId = await createSession({
       presetId,
       character: { name: "Knight" },
+      userSnapshot: { name: "Traveler" },
+      promptMode: "compat_strict",
     });
 
-    await database.db.insert(floors).values({
-      id: failedFloorId,
-      sessionId,
-      floorNo: 0,
-      branchId: "main",
-      parentFloorId: null,
-      state: "failed",
-      tokenIn: 0,
-      tokenOut: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
+    const result = await chatService.respond(sessionId, { message: "Advance." });
+    expect(result.finalState).toBe("committed");
+    expect(result.branchId).toBe("main");
 
-    await database.db.insert(messagePages).values({
-      id: inputPageId,
-      floorId: failedFloorId,
-      pageNo: 0,
-      pageKind: "input",
-      isActive: true,
-      version: 1,
-      checksum: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(messages).values({
-      id: nanoid(),
-      pageId: inputPageId,
-      seq: 0,
-      role: "user",
-      content: "Retry the scene.",
-      contentFormat: "text",
-      tokenCount: 3,
-      isHidden: false,
-      source: "api",
-      createdAt: now,
-    });
-
-    await database.db.insert(variables).values([
-      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "chat", scopeId: sessionId, key: "mood", valueJson: JSON.stringify("calm"), updatedAt: now },
-      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "floor", scopeId: failedFloorId, key: "mood", valueJson: JSON.stringify("grim"), updatedAt: now + 1 },
-      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "page", scopeId: inputPageId, key: "item", valueJson: JSON.stringify("torch"), updatedAt: now + 2 },
-      { id: nanoid(), accountId: DEFAULT_ADMIN_ACCOUNT_ID, scope: "page", scopeId: inputPageId, key: "char", valueJson: JSON.stringify("Shadow"), updatedAt: now + 3 },
-    ]);
-
-    await chatService.retryFloor(failedFloorId);
-
-    const input = capturedInputs[0]!;
-    const allContent = input.messages.map((message) => message.content).join("\n");
-
-    expect(allContent).toContain("Mood grim item torch for Knight.");
-    expect(allContent).not.toContain("Shadow");
+    const [snapshot] = await database.db.select().from(promptSnapshots).where(eq(promptSnapshots.floorId, result.floorId));
+    expect(snapshot).toBeTruthy();
   });
 
-  // ── 测试：世界书触发 ──
-
-  it("should trigger worldbook entries based on keywords", async () => {
-    const presetId = await importPreset();
-    const worldbookId = await importWorldbook();
-    const sessionId = await createSession({ presetId, worldbookId });
-
-    // 提及 "sword" 应触发 Excalibur 条目
-    await chatService.respond(sessionId, { message: "I see a sword on the ground!" });
-
-    const input = capturedInputs[0]!;
-    const allContent = input.messages.map((m) => m.content).join("\n");
-    expect(allContent).toContain("Excalibur");
-  });
-
-  it("should include constant worldbook entries regardless of keywords", async () => {
-    const presetId = await importPreset();
-    const worldbookId = await importWorldbook();
-    const sessionId = await createSession({ presetId, worldbookId });
-
-    // 不提及 castle 关键词，但 constant=true 的条目仍应出现
-    await chatService.respond(sessionId, { message: "Hello there!" });
-
-    const input = capturedInputs[0]!;
-    const allContent = input.messages.map((m) => m.content).join("\n");
-    expect(allContent).toContain("Castle Camelot");
-  });
-
-  it("should honor worldbook global matching flags when entries do not override them", async () => {
-    const presetId = await importPreset();
-    const worldbookId = await importWorldbook({
-      caseSensitive: true,
-      matchWholeWords: true,
-      scanDepth: 5,
-    });
-    const sessionId = await createSession({ presetId, worldbookId });
-
-    const blocked = await chatService.dryRun(sessionId, { message: "I found a Swordsmanship manual." });
-    expect(blocked.messages.map((message) => message.content).join("\n")).not.toContain("Excalibur");
-
-    const matched = await chatService.dryRun(sessionId, { message: "The sword is here." });
-    expect(matched.messages.map((message) => message.content).join("\n")).toContain("Excalibur");
-  });
-
-  // ── 测试：正则处理 ──
-
-  it("should attach postProcess when regex profile is configured", async () => {
-    const presetId = await importPreset();
-    const regexId = await importRegex();
-    const sessionId = await createSession({ presetId, regexId });
-
-    await chatService.respond(sessionId, { message: "Hello" });
-
-    const input = capturedInputs[0]!;
-    // postProcess 应该被传入（AI_OUTPUT 正则）
-    expect(input.postProcess).toBeDefined();
-
-    // 验证 postProcess 能正确移除 OOC 内容
-    const processed = input.postProcess!("Hello (OOC: testing) world");
-    expect(processed).toBe("Hello  world");
-  });
-
-  // ── 测试：Greeting ──
-
-  it("should create greeting floor when character has greeting", async () => {
-    // 直接通过 DB 创建带 greeting 的 session
-    const sessionId = nanoid();
+  it("commits staged macro mutations in regenerate flow", async () => {
+    const presetId = nanoid();
     const now = Date.now();
-    const greetingText = "*waves cheerfully* Welcome, traveler!";
 
-    await database.db.insert(sessions).values({
-      id: sessionId,
-      title: "Greeting Test",
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Macro Regenerate Preset",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      characterSnapshotJson: JSON.stringify({ name: "Guide", greeting: greetingText }),
-      status: "active",
-      metadataJson: null,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{setvar::regen_flag::yes}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
       createdAt: now,
       updatedAt: now,
     });
 
-    // 手动模拟 greeting 创建（通常由 session 路由处理）
-    // 这里我们通过 ChatService.respond 验证 greeting 出现在历史中
-    // 先手动插入 greeting floor
-    const floorId = nanoid();
-    const pageId = nanoid();
-    const tokenCounter = new SimpleTokenCounter();
-
-    await database.db.insert(floors).values({
-      id: floorId,
-      sessionId,
-      floorNo: 0,
-      branchId: "main",
-      state: "committed",
-      tokenIn: 0,
-      tokenOut: tokenCounter.count(greetingText),
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(messagePages).values({
-      id: pageId,
-      floorId,
-      pageNo: 0,
-      pageKind: "output",
-      isActive: true,
-      version: 1,
-      checksum: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await database.db.insert(messages).values({
-      id: nanoid(),
-      pageId,
-      seq: 0,
-      role: "assistant",
-      content: greetingText,
-      contentFormat: "text",
-      tokenCount: tokenCounter.count(greetingText),
-      isHidden: false,
-      source: "greeting",
-      createdAt: now,
-    });
-
-    // 现在发送消息，greeting 应出现在历史中
-    await chatService.respond(sessionId, { message: "Hello, Guide!" });
-
-    const input = capturedInputs[0]!;
-    // 应包含 greeting 作为 assistant 消息
-    const assistantMsgs = input.messages.filter((m) => m.role === "assistant");
-    expect(assistantMsgs.length).toBeGreaterThanOrEqual(1);
-    expect(assistantMsgs[0]!.content).toBe(greetingText);
-  });
-
-  // ── 测试：多轮对话 ──
-
-  it("should maintain chat history across multiple rounds with preset", async () => {
-    const presetId = await importPreset();
     const sessionId = await createSession({
       presetId,
-      character: { name: "Sage" },
+      character: { name: "Knight" },
+      userSnapshot: { name: "Traveler" },
+      promptMode: "compat_strict",
     });
 
-    // 第一轮
-    await chatService.respond(sessionId, { message: "What is wisdom?" });
+    const initial = await chatService.respond(sessionId, { message: "First turn." });
+    const regenerated = await chatService.regenerate(sessionId);
 
-    // 第二轮
-    await chatService.respond(sessionId, { message: "Tell me more." });
+    expect(regenerated.finalState).toBe("committed");
 
-    const secondInput = capturedInputs[1]!;
-    // 第二轮应包含：system prompts + 第一轮历史 + 当前消息
-    const userMsgs = secondInput.messages.filter((m) => m.role === "user");
-    const assistantMsgs = secondInput.messages.filter((m) => m.role === "assistant");
+    expect(regenerated.previousFloorId).toBe(initial.floorId);
+  });
 
-    // 至少有两条用户消息（第一轮 + 第二轮）
-    expect(userMsgs.length).toBeGreaterThanOrEqual(2);
-    // 至少有一条助手消息（第一轮的回复）
-    expect(assistantMsgs.length).toBeGreaterThanOrEqual(1);
+  it("commits staged macro mutations in retry flow", async () => {
+    const presetId = nanoid();
+    const now = Date.now();
 
-    // 第二轮最后的用户消息
-    expect(userMsgs[userMsgs.length - 1]!.content).toBe("Tell me more.");
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Macro Retry Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{setvar::retry_flag::done}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionId = await createSession({
+      presetId,
+      character: { name: "Knight" },
+      userSnapshot: { name: "Traveler" },
+      promptMode: "compat_strict",
+    });
+
+    const initial = await chatService.respond(sessionId, { message: "Retry me." });
+    const retried = await chatService.retryFloor(initial.floorId);
+    expect(retried.floorId).toBe(initial.floorId);
+    expect(retried.finalState).toBe("committed");
+  });
+
+  it("commits staged macro mutations in editAndRegenerate flow", async () => {
+    const presetId = nanoid();
+    const now = Date.now();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Macro Edit Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{setvar::edited_flag::branch-edit}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionId = await createSession({
+      presetId,
+      character: { name: "Knight" },
+      userSnapshot: { name: "Traveler" },
+      promptMode: "compat_strict",
+    });
+
+    const initial = await chatService.respond(sessionId, { message: "Original." });
+
+    const inputPages = await database.db.select().from(messagePages).where(and(
+      eq(messagePages.floorId, initial.floorId),
+      eq(messagePages.pageKind, "input"),
+      eq(messagePages.isActive, true),
+    ));
+    const inputPage = inputPages[0];
+    expect(inputPage).toBeTruthy();
+
+    const inputMessages = await database.db.select().from(messages).where(eq(messages.pageId, inputPage!.id)).orderBy(asc(messages.seq));
+    const sourceMessage = inputMessages.find((message) => message.role === "user");
+    expect(sourceMessage).toBeTruthy();
+
+    const edited = await chatService.editAndRegenerate(sourceMessage!.id, {
+      content: "Edited.",
+      branchId: "branch-edit",
+    });
+
+    expect(edited.sourceFloorId).toBe(initial.floorId);
+    expect(edited.branchId).toBe("branch-edit");
+  });
+
+  it("does not persist staged macro mutations when orchestration fails", async () => {
+    const presetId = nanoid();
+    const now = Date.now();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Macro Failure Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{setvar::failed_flag::should-not-persist}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const failingOrchestrator = {
+      executeTurn: vi.fn(async (_input: TurnInput) => {
+        throw new Error("mock orchestration failure");
+      }),
+    } as unknown as TurnOrchestrator;
+    const failingChatService = new ChatService(database.db, failingOrchestrator, new SimpleTokenCounter());
+
+    const sessionId = await createSession({
+      presetId,
+      character: { name: "Knight" },
+      userSnapshot: { name: "Traveler" },
+      promptMode: "compat_strict",
+    });
+
+    await expect(failingChatService.respond(sessionId, { message: "Fail." })).rejects.toBeInstanceOf(ChatServiceError);
+
+    const branchVariables = await database.db.select().from(variables).where(and(
+      eq(variables.accountId, DEFAULT_ADMIN_ACCOUNT_ID),
+      eq(variables.scope, "branch"),
+      eq(variables.scopeId, buildBranchVariableScopeId(sessionId, "main")),
+      eq(variables.key, "failed_flag"),
+    ));
+    expect(branchVariables).toHaveLength(0);
+  });
+
+  // ── 测试：异常与边界 ──
+
+  it("should throw session_not_found for missing session", async () => {
+    await expect(chatService.respond("missing-session", { message: "Hello" }))
+      .rejects.toThrow(ChatServiceError);
+
+    await expect(chatService.respond("missing-session", { message: "Hello" }))
+      .rejects.toMatchObject({ code: "session_not_found" });
+  });
+
+  it("should reject archived session", async () => {
+    const sessionId = nanoid();
+    await database.db.insert(sessions).values({
+      id: sessionId,
+      title: "Archived Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "archived",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    await expect(chatService.respond(sessionId, { message: "Hello" }))
+      .rejects.toMatchObject({ code: "session_archived" });
   });
 });

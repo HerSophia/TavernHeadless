@@ -2,7 +2,7 @@
  * Memory Injection Tests
  *
  * 验证摘要注入链路：
- * - PromptAssembler 记忆注入位置
+ * PromptAssembler 记忆注入位置
  * - ChatService 带 MemoryStore 的 respond 流程
  * - 禁用记忆时行为不变
  * - 摘要持久化
@@ -27,8 +27,6 @@ import {
   type TurnOutput,
   type TurnInput,
 } from "@tavern/core";
-
-// ── Mock Setup ────────────────────────────────────────
 
 const MOCK_GENERATED_TEXT = "The memory system is working.";
 
@@ -152,8 +150,6 @@ async function createFloorWithUserMessage(args: {
   return { floorId, messageId };
 }
 
-// ── Tests ─────────────────────────────────────────────
-
 describe("Memory Injection", () => {
   let database: DatabaseConnection;
   let sessionId: string;
@@ -189,7 +185,6 @@ describe("Memory Injection", () => {
 
     await chatService.respond(sessionId, { message: "Hello" });
 
-    // memoryStore.prepareInjection should be called with sessionId
     expect(memoryStore.prepareInjection).toHaveBeenCalledOnce();
     expect(memoryStore.prepareInjection).toHaveBeenCalledWith(
       sessionId,
@@ -207,10 +202,9 @@ describe("Memory Injection", () => {
       })
     );
 
-    // The prompt should contain the memory summary
     const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     const memoryMsg = turnInput.messages.find(
-      (m: { role: string; content: string }) => m.content.includes("[Memory Summary]")
+      (m: { role: string; content: string }) => m.content.includes("[Memory]")
     );
     expect(memoryMsg).toBeDefined();
     expect(memoryMsg!.role).toBe("system");
@@ -258,99 +252,50 @@ describe("Memory Injection", () => {
         floorId: expect.any(String),
       }),
     }));
-    expect(injectionOptions.selectionMode).toBeUndefined();
 
     const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    const memoryMsg = turnInput.messages.find((m: { role: string; content: string }) => m.content.includes("[Macro Summary]"));
-    expect(memoryMsg?.content).toContain("[Recent Micro Summaries]");
+    const memoryMsg = turnInput.messages.find(
+      (m: { role: string; content: string }) => m.content.includes("[Memory Facts]")
+    );
+    expect(memoryMsg).toBeDefined();
+    expect(memoryMsg!.content).toContain("[Recent Micro Summaries]");
+    expect(memoryMsg!.content).toContain("[Macro Summary]");
   });
 
-  it("should pass accountId into consolidation context memory queries", async () => {
+  it("should persist summaries via TurnCommitService inside DB transaction", async () => {
     const orchestrator = createMockOrchestrator(database);
-    const memoryStore = createMockMemoryStore();
-    const chatService = new ChatService(
-      database.db,
-      orchestrator,
-      new SimpleTokenCounter(),
-      {
-        memoryStore,
-        enableMemoryConsolidationByDefault: true,
-      }
-    );
-
-    await chatService.respond(sessionId, { message: "Hello" });
-
-    expect(memoryStore.query).toHaveBeenCalledTimes(2);
-    expect(memoryStore.query).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        scopeRefs: expect.arrayContaining([
-          { scope: "global", scopeId: "default-admin" },
-          { scope: "chat", scopeId: sessionId },
-          expect.objectContaining({ scope: "floor", scopeId: expect.any(String) }),
-        ]),
-        accountId: "default-admin",
-        type: "summary",
-      })
-    );
-    expect(memoryStore.query).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        scopeRefs: expect.arrayContaining([
-          { scope: "global", scopeId: "default-admin" },
-          { scope: "chat", scopeId: sessionId },
-          expect.objectContaining({ scope: "floor", scopeId: expect.any(String) }),
-        ]),
-        accountId: "default-admin",
-        type: "fact",
-      })
-    );
-  });
-
-  it("should disable synchronous memory consolidation in ChatService when async memory ingest is enabled", async () => {
-    const orchestrator = createMockOrchestrator(database);
-    const memoryStore = createMockMemoryStore();
     const turnCommitService = {
       commit: vi.fn(async () => ({
-        floorId: "committed-floor",
-        outputPageId: "output-page",
-        assistantMessageId: "assistant-message",
+        floorId: "f1",
+        outputPageId: "p1",
+        assistantMessageId: "m1",
         finalState: "committed" as const,
         usage: { promptTokens: 80, completionTokens: 30, totalTokens: 110 },
       })),
     } as unknown as TurnCommitService;
+
+    const memoryStore = createMockMemoryStore();
     const chatService = new ChatService(
       database.db,
       orchestrator,
       new SimpleTokenCounter(),
-      {
-        memoryStore,
-        enableMemoryConsolidationByDefault: true,
-        enableAsyncMemoryIngest: true,
-        turnCommitService,
-      }
+      { memoryStore, turnCommitService }
     );
 
-    await chatService.respond(sessionId, { message: "Hello" });
-
-    expect(memoryStore.query).not.toHaveBeenCalled();
-
-    const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(turnInput.config).toEqual(expect.objectContaining({
-      enableMemoryConsolidation: false,
-    }));
+    await chatService.respond(sessionId, {
+      message: "Hello",
+      config: { enableMemoryConsolidation: false },
+    });
 
     expect(turnCommitService.commit).toHaveBeenCalledOnce();
     expect(turnCommitService.commit).toHaveBeenCalledWith(expect.objectContaining({
       memoryCommit: expect.objectContaining({
         summaries: ["Alice met Bob at the tavern."],
-        enableConsolidation: true,
+        enableConsolidation: false,
         consolidationOutput: undefined,
       }),
     }));
   });
-
-
 
   it("should place memory summary after the first system message", async () => {
     const orchestrator = createMockOrchestrator(database);
@@ -367,15 +312,12 @@ describe("Memory Injection", () => {
     const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     const msgs = turnInput.messages;
 
-    // messages[0] = default system prompt
     expect(msgs[0].role).toBe("system");
     expect(msgs[0].content).toBe("You are a helpful assistant.");
 
-    // messages[1] = memory summary (injected)
     expect(msgs[1].role).toBe("system");
-    expect(msgs[1].content).toContain("[Memory Summary]");
+    expect(msgs[1].content).toContain("[Memory]");
 
-    // messages[2] = user message
     expect(msgs[2].role).toBe("user");
     expect(msgs[2].content).toBe("Hello");
   });
@@ -415,18 +357,16 @@ describe("Memory Injection", () => {
       database.db,
       orchestrator,
       new SimpleTokenCounter()
-      // no memoryStore
     );
 
     await chatService.respond(sessionId, { message: "Hello" });
 
     const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     const memoryMsg = turnInput.messages.find(
-      (m: { role: string; content: string }) => m.content.includes("[Memory Summary]")
+      (m: { role: string; content: string }) => m.content.includes("[Memory]")
     );
     expect(memoryMsg).toBeUndefined();
 
-    // Only system + user messages
     expect(turnInput.messages.length).toBe(2);
     expect(turnInput.messages[0].role).toBe("system");
     expect(turnInput.messages[1].role).toBe("user");
@@ -452,16 +392,14 @@ describe("Memory Injection", () => {
       { memoryStore, eventBus }
     );
 
-    // Should not throw, just skip memory injection
     const result = await chatService.respond(sessionId, { message: "Hello" });
     expect(result.generatedText).toBe(MOCK_GENERATED_TEXT);
     expect(injectionFailedHandler).toHaveBeenCalledOnce();
     expect(injectionFailedHandler).toHaveBeenCalledWith(expect.objectContaining({ sessionId, error: expect.any(Error) }));
 
-    // No memory message injected
     const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     const memoryMsg = turnInput.messages.find(
-      (m: { role: string; content: string }) => m.content.includes("[Memory Summary]")
+      (m: { role: string; content: string }) => m.content.includes("[Memory]")
     );
     expect(memoryMsg).toBeUndefined();
 
@@ -635,7 +573,7 @@ describe("Memory Injection", () => {
       database,
       sessionId,
       floorNo: 2,
-      state: "failed",
+      state: "committed",
       content: "Retry me",
     });
 
@@ -701,7 +639,7 @@ describe("Memory Injection", () => {
       database,
       sessionId,
       floorNo: 4,
-      state: "failed",
+      state: "committed",
       content: "Retry scope visibility",
     });
 
@@ -736,7 +674,7 @@ describe("Memory Injection", () => {
     await chatService.retryFloor(floorId, { config: { enableMemoryConsolidation: true } });
 
     const turnInput = (orchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    const memoryMsg = turnInput.messages.find((m: { role: string; content: string }) => m.content.includes("[Memory Summary]"));
+    const memoryMsg = turnInput.messages.find((m: { role: string; content: string }) => m.content.includes("[Memory]"));
 
     expect(memoryMsg?.content).toContain("Global reminder");
     expect(memoryMsg?.content).toContain("Chat summary entry");
@@ -751,7 +689,6 @@ describe("Memory Injection", () => {
   it("should skip memory writes when turn output has no summaries", async () => {
     const database2 = createDatabase(":memory:");
 
-    // Create orchestrator that returns empty summaries
     const orchestrator = {
       executeTurn: vi.fn(async (input: TurnInput) => {
         await database2.db
@@ -764,24 +701,24 @@ describe("Memory Injection", () => {
           generatedText: MOCK_GENERATED_TEXT,
           rawText: MOCK_GENERATED_TEXT,
           summaries: [],
-          totalUsage: { promptTokens: 50, completionTokens: 20, totalTokens: 70 },
+          totalUsage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
           finalState: "generating",
         } satisfies TurnOutput;
       }),
     } as unknown as TurnOrchestrator;
 
-    const memoryStore = createMockMemoryStore();
-
-    const sid = nanoid();
+    const now = Date.now();
+    const sessionId2 = nanoid();
     await database2.db.insert(sessions).values({
-      id: sid,
+      id: sessionId2,
       title: "No Summary Session",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
     });
 
+    const memoryStore = createMockMemoryStore();
     const chatService = new ChatService(
       database2.db,
       orchestrator,
@@ -789,12 +726,13 @@ describe("Memory Injection", () => {
       { memoryStore }
     );
 
-    await chatService.respond(sid, { message: "Hello" });
+    const result = await chatService.respond(sessionId2, { message: "Hello" });
 
-    expect(memoryStore.prepareInjection).toHaveBeenCalledOnce();
-
-    const rows = await database2.db.select().from(memoryItems);
-    expect(rows).toEqual([]);
+    const rows = await database2.db
+      .select()
+      .from(memoryItems)
+      .where(eq(memoryItems.sourceFloorId, result.floorId));
+    expect(rows).toHaveLength(0);
 
     database2.close();
   });

@@ -95,6 +95,7 @@ import { TurnCommitService, type TurnCommitMemoryReceipt } from "./turn-commit-s
 import type { FloorRunService } from "./floor-run-service.js";
 import { OwnedFloorRepository, OwnedMessageRepository, OwnedSessionRepository } from "./owned-resource-repositories.js";
 import { PromptResourceLoader } from "./prompt-resource-loader.js";
+import type { StMacroStagedMutation } from "./st-macros/index.js";
 import { resolveAssistantPrefillStrategy } from "../lib/llm-provider-discovery.js";
 import { VariableService } from "./variable-service.js";
 
@@ -528,7 +529,7 @@ export class ChatService {
 
     const branchId = normalizeBranchId(request.branchId);
 
-    return this.runWithGenerationCoordinator(
+    return this.withGenerationCoordinator(
       sessionId,
       branchId,
       runtimeOptions.abortSignal,
@@ -666,6 +667,7 @@ export class ChatService {
             accountId: resolvedAccountId,
             turnInput,
             promptSnapshot,
+            macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
             resolvedTurnModels,
             orchestrationFailureCode: "orchestration_failed",
             orchestrationFailureMessage: "Turn orchestration failed",
@@ -816,7 +818,7 @@ export class ChatService {
     await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot regenerate in an archived session");
     const initialTargetFloor = await this.requireRegenerationTarget(sessionId);
 
-    return this.runWithGenerationCoordinator(sessionId, "main", undefined, async (generationRuntime) => {
+    return this.withGenerationCoordinator(sessionId, "main", undefined, async (generationRuntime: CoordinatorRuntime) => {
       const session = await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot regenerate in an archived session");
       const targetFloor = await this.revalidateRegenerationTarget(sessionId, initialTargetFloor.id);
 
@@ -947,6 +949,7 @@ export class ChatService {
         accountId: resolvedAccountId,
         turnInput,
         promptSnapshot,
+        macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
         resolvedTurnModels,
         orchestrationFailureCode: "orchestration_failed",
         orchestrationFailureMessage: "Regeneration orchestration failed",
@@ -982,7 +985,7 @@ export class ChatService {
     const initialTargetFloor = await this.requireRetryTargetFloor(floorId, resolvedAccountId);
     await this.requireActiveSession(initialTargetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session");
 
-    return this.runWithGenerationCoordinator(
+    return this.withGenerationCoordinator(
       initialTargetFloor.sessionId,
       initialTargetFloor.branchId,
       undefined,
@@ -1103,6 +1106,7 @@ export class ChatService {
           accountId: resolvedAccountId,
           turnInput,
           promptSnapshot,
+          macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
           resolvedTurnModels,
           orchestrationFailureCode: "orchestration_failed",
           orchestrationFailureMessage: "Retry orchestration failed",
@@ -1141,7 +1145,7 @@ export class ChatService {
 
     const newBranchId = request.branchId ? normalizeBranchId(request.branchId) : `branch-${nanoid(8)}`;
 
-    return this.runWithGenerationCoordinator(initialSource.sessionId, newBranchId, undefined, async (generationRuntime) => {
+    return this.withGenerationCoordinator(initialSource.sessionId, newBranchId, undefined, async (generationRuntime: CoordinatorRuntime) => {
       const source = await this.revalidateEditableMessageTarget(messageId, resolvedAccountId, initialSource);
       const session = await this.requireActiveSession(source.sessionId, resolvedAccountId, "Cannot edit message in an archived session");
       const [branchExists] = await this.db
@@ -1218,7 +1222,7 @@ export class ChatService {
 
   // ── 私有方法 ────────────────────────────────────────
 
-  private async runWithGenerationCoordinator<T>(
+  private async withGenerationCoordinator<T>(
     sessionId: string,
     branchId: string,
     abortSignal: AbortSignal | undefined,
@@ -1257,6 +1261,7 @@ export class ChatService {
     accountId: string;
     turnInput: TurnInput;
     promptSnapshot?: ReturnType<typeof buildPromptSnapshotRecord>;
+    macroStagedMutations?: StMacroStagedMutation[];
     resolvedTurnModels: ResolvedTurnModels;
     orchestrationFailureCode: string;
     orchestrationFailureMessage: string;
@@ -1334,13 +1339,18 @@ export class ChatService {
       accountId: args.accountId,
       floorId: args.floorId,
       sessionId: args.sessionId,
+      branchId: args.branchId,
       execution,
       variableCommit: {
         pageId: turnInput.pageId,
       },
       promptSnapshot: args.promptSnapshot,
+      // commit 只消费 assemble 阶段已经冻结的 macroStagedMutations。
+      // 这里不重新执行模板，也不应通过 commit_consume 重新触发写宏。
+      // commit_consume 仅保留为结果消费语义，不是另一个通用模板执行阶段。
       toolExecutionRecords: execution.toolExecutionRecords,
       pendingToolJobs: execution.pendingToolJobs,
+      macroStagedMutations: args.macroStagedMutations,
       memoryCommit: args.persistMemory
         ? {
             enableConsolidation: args.memoryConsolidationRequested,
@@ -1796,8 +1806,8 @@ export class ChatService {
     return session;
   }
 
-  private async requireRegenerationTarget(sessionId: string): Promise<typeof floors.$inferSelect> {
-    const targetFloor = await this.historyLoader.getLastCommittedFloor(sessionId);
+  private async requireRegenerationTarget(sessionId: string): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "parentFloorId" | "state">> {
+    const targetFloor = await this.historyLoader.getLatestCommittedFloorInBranch(sessionId, "main");
     if (!targetFloor) {
       throw new ChatServiceError(
         "no_floor_to_regenerate",
@@ -1811,7 +1821,7 @@ export class ChatService {
   private async revalidateRegenerationTarget(
     sessionId: string,
     expectedFloorId: string,
-  ): Promise<typeof floors.$inferSelect> {
+  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "parentFloorId" | "state">> {
     const targetFloor = await this.requireRegenerationTarget(sessionId);
     if (targetFloor.id !== expectedFloorId) {
       throw new ChatServiceError(
@@ -1832,10 +1842,10 @@ export class ChatService {
       throw new ChatServiceError("floor_not_found", `Floor '${floorId}' not found`);
     }
 
-    if (targetFloor.state !== "failed") {
+    if (targetFloor.state !== "committed") {
       throw new ChatServiceError(
         "invalid_state",
-        `Floor '${floorId}' must be in failed state to retry`
+        `Floor '${floorId}' must be in committed state to retry`
       );
     }
 
@@ -2031,6 +2041,7 @@ export class ChatService {
       accountId: args.accountId,
       turnInput,
       promptSnapshot,
+      macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
       resolvedTurnModels,
       orchestrationFailureCode: "orchestration_failed",
       orchestrationFailureMessage: "Turn orchestration failed",

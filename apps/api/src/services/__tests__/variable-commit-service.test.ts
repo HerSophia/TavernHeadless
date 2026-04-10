@@ -6,6 +6,12 @@ import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { floors, messagePages, sessions, variables } from "../../db/schema.js";
 import { VariableCommitService } from "../variable-commit-service.js";
+import { createEventBus } from "@tavern/core";
+
+type PromotedVariableEntry = {
+  key: string;
+  value: unknown;
+};
 
 async function seedSession(database: DatabaseConnection, sessionId: string, now: number): Promise<void> {
   await database.db.insert(sessions).values({
@@ -83,7 +89,12 @@ describe("VariableCommitService", () => {
 
   beforeEach(() => {
     database = createDatabase(":memory:");
-    service = new VariableCommitService();
+    service = new VariableCommitService({
+      db: database.db,
+      eventBus: createEventBus(),
+      defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      accountMode: "single",
+    });
   });
 
   afterEach(() => {
@@ -107,13 +118,14 @@ describe("VariableCommitService", () => {
     const result = database.db.transaction((tx) => {
       return service.promoteAll(
         {
+          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
           pageId,
           floorId,
           sessionId,
           policy: "replace",
           committedAt,
         },
-        tx
+        tx,
       );
     });
 
@@ -126,8 +138,8 @@ describe("VariableCommitService", () => {
       promotedCount: 2,
       skippedCount: 0,
     });
-    expect(result.promotedVariables.map((entry) => entry.key)).toEqual(["hp", "mood"]);
-    expect(result.promotedVariables.map((entry) => entry.value)).toEqual([120, "happy"]);
+    expect(result.promotedVariables.map((entry: PromotedVariableEntry) => entry.key)).toEqual(["hp", "mood"]);
+    expect(result.promotedVariables.map((entry: PromotedVariableEntry) => entry.value)).toEqual([120, "happy"]);
 
     const floorRows = await database.db
       .select()
@@ -135,7 +147,7 @@ describe("VariableCommitService", () => {
       .where(and(eq(variables.scope, "floor"), eq(variables.scopeId, floorId)));
 
     const byKey = new Map(
-      floorRows.map((row) => [row.key, JSON.parse(row.valueJson)])
+      floorRows.map((row) => [row.key, JSON.parse(row.valueJson)]),
     );
 
     expect(byKey.get("hp")).toBe(120);
@@ -159,13 +171,14 @@ describe("VariableCommitService", () => {
     const result = database.db.transaction((tx) => {
       return service.promoteAll(
         {
+          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
           pageId,
           floorId,
           sessionId,
           policy: "ifAbsent",
           committedAt,
         },
-        tx
+        tx,
       );
     });
 
@@ -194,7 +207,7 @@ describe("VariableCommitService", () => {
       .where(and(eq(variables.scope, "floor"), eq(variables.scopeId, floorId)));
 
     const byKey = new Map(
-      floorRows.map((row) => [row.key, JSON.parse(row.valueJson)])
+      floorRows.map((row) => [row.key, JSON.parse(row.valueJson)]),
     );
 
     expect(byKey.get("hp")).toBe(80);
@@ -212,10 +225,11 @@ describe("VariableCommitService", () => {
     const result = database.db.transaction((tx) => {
       return service.promoteAll(
         {
+          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
           floorId,
           sessionId,
         },
-        tx
+        tx,
       );
     });
 
@@ -249,12 +263,13 @@ describe("VariableCommitService", () => {
       database.db.transaction((tx) => {
         service.promoteAll(
           {
+            accountId: DEFAULT_ADMIN_ACCOUNT_ID,
             pageId,
             floorId,
             sessionId,
             committedAt,
           },
-          tx
+          tx,
         );
 
         throw new Error("force rollback");
