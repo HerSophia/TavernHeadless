@@ -71,7 +71,14 @@ export class ChatHistoryLoader {
     }
 
     const [lastFloor] = await this.db
-      .select({ id: floors.id, floorNo: floors.floorNo, parentFloorId: floors.parentFloorId, state: floors.state })
+      .select({
+        id: floors.id,
+        sessionId: floors.sessionId,
+        floorNo: floors.floorNo,
+        branchId: floors.branchId,
+        parentFloorId: floors.parentFloorId,
+        state: floors.state,
+      })
       .from(floors)
       .where(and(...conditions))
       .orderBy(desc(floors.floorNo), desc(floors.createdAt))

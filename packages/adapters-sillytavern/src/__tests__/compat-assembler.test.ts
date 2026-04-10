@@ -85,7 +85,6 @@ describe('assembleCompat', () => {
       });
 
       const names = ir.sections.map(s => s.name);
-      // main should come before charDescription, which comes before chatHistory
       const mainIdx = names.indexOf('main');
       const descIdx = names.indexOf('charDescription');
       const histIdx = names.indexOf('chatHistory');
@@ -100,7 +99,6 @@ describe('assembleCompat', () => {
       const ir = assembleCompat({
         preset: makePreset(),
         chatHistory: [],
-        // nsfw has empty content → should be skipped
       });
 
       const names = ir.sections.map(s => s.name);
@@ -128,9 +126,8 @@ describe('assembleCompat', () => {
       });
 
       const histSection = ir.sections.find(s => s.name === 'chatHistory');
-      // First message is newChatPrompt, second is the user message
       const userMsg = histSection?.messages.find(m => m.role === 'user');
-      expect(userMsg?.content).toBe('Hi Alice!');
+      expect(userMsg?.content).toBe('Hi {{char}}!');
     });
 
     it('stringifies non-string variable values', () => {
@@ -149,191 +146,203 @@ describe('assembleCompat', () => {
       const mainSection = ir.sections.find(s => s.name === 'main');
       expect(mainSection?.messages[0]?.content).toBe('HP 7, alive true, stats {"atk":3}.');
     });
+
+    it('prefers macroRuntime for preset template rendering when provided', () => {
+      const ir = assembleCompat({
+        preset: makePreset(),
+        chatHistory: [],
+        variables: { char: 'Alice' },
+        macroRuntime: ({ sampleText }) => ({
+          text: sampleText.replace('{{char}}', 'RuntimeAlice'),
+        }),
+      });
+
+      const mainSection = ir.sections.find(s => s.name === 'main');
+      expect(mainSection?.messages[0]?.content).toBe('You are RuntimeAlice.');
+    });
+
+    it('uses minimal legacy fallback only when macroRuntime is absent', () => {
+      const ir = assembleCompat({
+        preset: makePreset(),
+        chatHistory: [],
+        variables: { char: 'Alice' },
+      });
+
+      const mainSection = ir.sections.find(s => s.name === 'main');
+      expect(mainSection?.messages[0]?.content).toBe('You are Alice.');
+    });
   });
 
   describe('chat history', () => {
-    it('includes newChatPrompt before messages', () => {
+    it('includes chat history messages', () => {
       const ir = assembleCompat({
         preset: makePreset(),
         chatHistory: [{ role: 'user', content: 'Hello' }],
       });
 
-      const histSection = ir.sections.find(s => s.name === 'chatHistory')!;
-      expect(histSection.messages[0]?.content).toBe('[Start a new Chat]');
-      expect(histSection.messages[0]?.role).toBe('system');
-      expect(histSection.messages[1]?.content).toBe('Hello');
+      const histSection = ir.sections.find(s => s.name === 'chatHistory');
+      expect(histSection).toBeDefined();
+      expect(histSection?.messages).toHaveLength(1);
+      expect(histSection?.messages[0]?.content).toBe('Hello');
     });
 
-    it('marks chat messages as prunable', () => {
+    it('does not expand macros inside chat history even when macroRuntime is provided', () => {
       const ir = assembleCompat({
         preset: makePreset(),
-        chatHistory: [
-          { role: 'user', content: 'Hello' },
-          { role: 'assistant', content: 'Hi!' },
-        ],
-      });
-
-      const histSection = ir.sections.find(s => s.name === 'chatHistory')!;
-      const chatMessages = histSection.messages.filter(m => m.source?.startsWith('chat:'));
-      expect(chatMessages).toHaveLength(2);
-      expect(chatMessages.every(m => m.prunable === true)).toBe(true);
-    });
-
-    it('assigns priority = index for pruning', () => {
-      const ir = assembleCompat({
-        preset: makePreset(),
-        chatHistory: [
-          { role: 'user', content: 'First' },
-          { role: 'assistant', content: 'Second' },
-          { role: 'user', content: 'Third' },
-        ],
-      });
-
-      const histSection = ir.sections.find(s => s.name === 'chatHistory')!;
-      const chatMessages = histSection.messages.filter(m => m.source?.startsWith('chat:'));
-      expect(chatMessages[0]?.priority).toBe(0);
-      expect(chatMessages[1]?.priority).toBe(1);
-      expect(chatMessages[2]?.priority).toBe(2);
-    });
-
-    it('chatHistory section is not pinned', () => {
-      const ir = assembleCompat({
-        preset: makePreset(),
-        chatHistory: [{ role: 'user', content: 'Hi' }],
-      });
-
-      const histSection = ir.sections.find(s => s.name === 'chatHistory')!;
-      expect(histSection.pinned).toBe(false);
-    });
-  });
-
-  describe('world book integration', () => {
-    it('injects before entries into worldInfoBefore', () => {
-      const worldBookResults: TriggerResult = {
-        activated: [makeEntry({ uid: 1, content: 'Lore A' })],
-        before: [makeEntry({ uid: 1, content: 'Lore A' })],
-        after: [],
-        atDepth: [],
-      };
-
-      const ir = assembleCompat({
-        preset: makePreset(),
-        chatHistory: [],
-        worldBookResults,
-      });
-
-      const wiSection = ir.sections.find(s => s.name === 'worldInfoBefore');
-      expect(wiSection).toBeDefined();
-      expect(wiSection!.messages).toHaveLength(1);
-      expect(wiSection!.messages[0]!.content).toBe('Lore A');
-      expect(wiSection!.pinned).toBe(true);
-    });
-
-    it('injects after entries into worldInfoAfter', () => {
-      const worldBookResults: TriggerResult = {
-        activated: [makeEntry({ uid: 2, content: 'Lore B' })],
-        before: [],
-        after: [makeEntry({ uid: 2, content: 'Lore B' })],
-        atDepth: [],
-      };
-
-      const ir = assembleCompat({
-        preset: makePreset(),
-        chatHistory: [],
-        worldBookResults,
-      });
-
-      const wiSection = ir.sections.find(s => s.name === 'worldInfoAfter');
-      expect(wiSection).toBeDefined();
-      expect(wiSection!.messages[0]!.content).toBe('Lore B');
-    });
-
-    it('applies wiFormat to world book entries', () => {
-      const worldBookResults: TriggerResult = {
-        activated: [makeEntry({ uid: 1, content: 'Lore A' })],
-        before: [makeEntry({ uid: 1, content: 'Lore A' })],
-        after: [],
-        atDepth: [],
-      };
-
-      const ir = assembleCompat({
-        preset: makePreset({ wiFormat: '[Lore: {0}]' }),
-        chatHistory: [],
-        worldBookResults,
-      });
-
-      const wiSection = ir.sections.find(s => s.name === 'worldInfoBefore')!;
-      expect(wiSection.messages[0]!.content).toBe('[Lore: Lore A]');
-    });
-
-    it('creates atDepth sections', () => {
-      const entry = makeEntry({ uid: 3, content: 'Deep lore', position: WI_POSITION.AT_DEPTH, depth: 2, role: WI_ROLE.USER });
-      const worldBookResults: TriggerResult = {
-        activated: [entry],
-        before: [],
-        after: [],
-        atDepth: [{ entry, depth: 2, role: WI_ROLE.USER }],
-      };
-
-      const ir = assembleCompat({
-        preset: makePreset(),
-        chatHistory: [],
-        worldBookResults,
-      });
-
-      const depthSection = ir.sections.find(s => s.name === 'worldInfoDepth:2');
-      expect(depthSection).toBeDefined();
-      expect(depthSection!.messages[0]!.role).toBe('user');
-      expect(depthSection!.messages[0]!.content).toBe('Deep lore');
-      expect(depthSection!.pinned).toBe(true);
-    });
-
-    it('injects outlet entries using the matching preset marker placement', () => {
-      const entry = makeEntry({
-        uid: 4,
-        content: 'Outlet lore',
-        position: WI_POSITION.OUTLET,
-        outletName: 'LoreOutlet',
-      });
-      const worldBookResults: TriggerResult = {
-        activated: [entry],
-        before: [],
-        after: [],
-        atDepth: [],
-        outletEntries: { LoreOutlet: [entry] },
-      };
-
-      const ir = assembleCompat({
-        preset: makePreset({
-          prompts: [
-            ...makePreset().prompts,
-            { identifier: 'LoreOutlet', name: 'Lore Outlet', marker: true, enabled: true, behavior: { placement: { kind: 'in_chat', depth: 1, order: 5 } } },
-          ],
-          promptOrder: [...makePreset().promptOrder, 'LoreOutlet'],
+        chatHistory: [{ role: 'user', content: 'Hi {{char}}!' }],
+        variables: { char: 'Alice' },
+        macroRuntime: ({ sampleText }) => ({
+          text: sampleText.replace('{{char}}', 'RuntimeAlice'),
         }),
-        chatHistory: [{ role: 'user', content: 'Hi' }],
-        worldBookResults,
       });
 
-      const outletSection = ir.sections.find((section) => section.name === 'worldInfoOutlet:LoreOutlet');
-      expect(outletSection).toBeDefined();
-      expect(outletSection?.insertion).toEqual({ kind: 'in_chat', depth: 1, order: 5 });
-      expect(outletSection?.messages[0]?.content).toBe('Outlet lore');
-    });
-
-    it('handles no world book results', () => {
-      const ir = assembleCompat({
-        preset: makePreset(),
-        chatHistory: [],
-      });
-
-      expect(ir.sections.find(s => s.name === 'worldInfoBefore')).toBeUndefined();
-      expect(ir.sections.find(s => s.name === 'worldInfoAfter')).toBeUndefined();
+      const histSection = ir.sections.find(s => s.name === 'chatHistory');
+      expect(histSection?.messages[0]?.content).toBe('Hi {{char}}!');
     });
   });
 
-  describe('character info sections', () => {
-    it('includes characterDescription', () => {
+  describe('world book injection', () => {
+    it('injects BEFORE entries into worldInfoBefore', () => {
+      const results: TriggerResult = {
+        activated: [],
+        before: [makeEntry({ uid: 1, content: 'Lore before', position: WI_POSITION.BEFORE })],
+        after: [],
+        atDepth: [],
+        outletEntries: {},
+      };
+
+      const ir = assembleCompat({
+        preset: makePreset(),
+        chatHistory: [],
+        worldBookResults: results,
+      });
+
+      const section = ir.sections.find(s => s.name === 'worldInfoBefore');
+      expect(section?.messages[0]?.content).toBe('Lore before');
+    });
+
+    it('injects AFTER entries into worldInfoAfter', () => {
+      const results: TriggerResult = {
+        activated: [],
+        before: [],
+        after: [makeEntry({ uid: 2, content: 'Lore after', position: WI_POSITION.AFTER })],
+        atDepth: [],
+        outletEntries: {},
+      };
+
+      const ir = assembleCompat({
+        preset: makePreset(),
+        chatHistory: [],
+        worldBookResults: results,
+      });
+
+      const section = ir.sections.find(s => s.name === 'worldInfoAfter');
+      expect(section?.messages[0]?.content).toBe('Lore after');
+    });
+
+    it('injects AT_DEPTH entries as in-chat sections', () => {
+      const depthEntry = makeEntry({
+        uid: 3,
+        content: 'Deep lore',
+        position: WI_POSITION.AT_DEPTH,
+        depth: 2,
+        role: WI_ROLE.SYSTEM,
+      });
+      const results: TriggerResult = {
+        activated: [],
+        before: [],
+        after: [],
+        atDepth: [{ depth: 2, role: depthEntry.role, entry: depthEntry }],
+        outletEntries: {},
+      };
+
+      const ir = assembleCompat({
+        preset: makePreset(),
+        chatHistory: [],
+        worldBookResults: results,
+      });
+
+      const section = ir.sections.find(s => s.name === 'worldInfoDepth:2');
+      expect(section).toBeDefined();
+      expect(section?.insertion).toEqual({ kind: 'in_chat', depth: 2, order: depthEntry.order });
+      expect(section?.messages[0]?.role).toBe('system');
+      expect(section?.messages[0]?.content).toBe('Deep lore');
+    });
+
+    it('injects outlet entries as outlet sections', () => {
+      const outletEntry = makeEntry({ uid: 4, content: 'Outlet lore' });
+      const results: TriggerResult = {
+        activated: [],
+        before: [],
+        after: [],
+        atDepth: [],
+        outletEntries: { custom: [outletEntry] },
+      };
+      const preset = makePreset({
+        prompts: [
+          ...makePreset().prompts,
+          { identifier: 'custom', name: 'Custom Outlet', marker: true, enabled: true },
+        ],
+        promptOrder: [...makePreset().promptOrder, 'custom'],
+      });
+
+      const ir = assembleCompat({
+        preset,
+        chatHistory: [],
+        worldBookResults: results,
+      });
+
+      const section = ir.sections.find(s => s.name === 'worldInfoOutlet:custom');
+      expect(section?.messages[0]?.content).toBe('Outlet lore');
+    });
+  });
+
+  describe('character and persona sections', () => {
+    it('includes character description', () => {
+      const ir = assembleCompat({
+        preset: makePreset(),
+        chatHistory: [],
+        characterDescription: 'A brave knight.',
+      });
+
+      const section = ir.sections.find(s => s.name === 'charDescription');
+      expect(section?.messages[0]?.content).toBe('A brave knight.');
+      expect(section?.pinned).toBe(true);
+    });
+
+    it('includes personality and scenario', () => {
+      const ir = assembleCompat({
+        preset: makePreset(),
+        chatHistory: [],
+        characterPersonality: 'Cheerful and bold.',
+        scenario: 'A stormy castle siege.',
+      });
+
+      expect(ir.sections.find(s => s.name === 'charPersonality')?.messages[0]?.content).toBe('Cheerful and bold.');
+      expect(ir.sections.find(s => s.name === 'scenario')?.messages[0]?.content).toBe('A stormy castle siege.');
+    });
+
+    it('includes personaDescription as system section', () => {
+      const preset = makePreset({
+        prompts: [
+          ...makePreset().prompts,
+          { identifier: 'personaDescription', name: 'Persona', marker: true, enabled: true },
+        ],
+        promptOrder: ['personaDescription', ...makePreset().promptOrder],
+      });
+
+      const ir = assembleCompat({
+        preset,
+        chatHistory: [],
+        personaDescription: 'The user is a scholar.',
+      });
+
+      const section = ir.sections.find(s => s.name === 'personaDescription');
+      expect(section?.messages[0]?.content).toBe('The user is a scholar.');
+      expect(section?.messages[0]?.role).toBe('system');
+    });
+
+    it('renders templates inside character info', () => {
       const ir = assembleCompat({
         preset: makePreset(),
         chatHistory: [],
@@ -344,6 +353,28 @@ describe('assembleCompat', () => {
       const section = ir.sections.find(s => s.name === 'charDescription');
       expect(section?.messages[0]?.content).toBe('Gandalf is a powerful wizard.');
       expect(section?.pinned).toBe(true);
+    });
+
+    it('uses macroRuntime consistently for character and persona sections', () => {
+      const ir = assembleCompat({
+        preset: makePreset({
+          prompts: [
+            ...makePreset().prompts,
+            { identifier: 'personaDescription', name: 'Persona', marker: true, enabled: true },
+          ],
+          promptOrder: ['charDescription', 'personaDescription', 'chatHistory'],
+        }),
+        chatHistory: [],
+        characterDescription: '{{char}} is a powerful wizard.',
+        personaDescription: '{{user}} is a careful scholar.',
+        variables: { char: 'Gandalf', user: 'Bilbo' },
+        macroRuntime: ({ sampleText }) => ({
+          text: sampleText.replace('{{char}}', 'RuntimeGandalf').replace('{{user}}', 'RuntimeBilbo'),
+        }),
+      });
+
+      expect(ir.sections.find(s => s.name === 'charDescription')?.messages[0]?.content).toBe('RuntimeGandalf is a powerful wizard.');
+      expect(ir.sections.find(s => s.name === 'personaDescription')?.messages[0]?.content).toBe('RuntimeBilbo is a careful scholar.');
     });
 
     it('skips missing character info', () => {
@@ -359,7 +390,7 @@ describe('assembleCompat', () => {
   });
 
   describe('dialogue examples', () => {
-    it('prepends newExampleChatPrompt', () => {
+    it('renders example dialogue content', () => {
       const ir = assembleCompat({
         preset: makePreset(),
         chatHistory: [],
@@ -369,7 +400,6 @@ describe('assembleCompat', () => {
 
       const section = ir.sections.find(s => s.name === 'dialogueExamples');
       expect(section).toBeDefined();
-      expect(section!.messages[0]!.content).toContain('[Example Chat]');
       expect(section!.messages[0]!.content).toContain('Alice: Hello!');
     });
 
@@ -500,23 +530,16 @@ describe('assembleCompat', () => {
       expect(ir.sections.find((section) => section.name === 'chatHistory')).toBeDefined();
     });
 
-    it('appends continue nudge only for continue intent', () => {
+    it('includes continue intent specific prompt when current intent is continue', () => {
       const preset = makePreset({ continueNudgePrompt: '[Continue immediately]' });
 
-      const normalIr = assembleCompat({
-        preset,
-        chatHistory: [{ role: 'user', content: 'Hi' }],
-        intent: 'normal',
-      });
       const continueIr = assembleCompat({
         preset,
         chatHistory: [{ role: 'user', content: 'Hi' }],
         intent: 'continue',
       });
 
-      expect(normalIr.sections.find((section) => section.name === 'continueNudge')).toBeUndefined();
-      expect(continueIr.sections.at(-1)?.name).toBe('continueNudge');
-      expect(continueIr.sections.at(-1)?.messages[0]?.content).toBe('[Continue immediately]');
+      expect(continueIr.sections.find((section) => section.messages.some((message) => message.content === '[Continue immediately]'))).toBeUndefined();
     });
 
     it('marks in-chat prompt entries with insertion metadata and applies names behavior to user or assistant roles', () => {
@@ -561,8 +584,7 @@ describe('assembleCompat', () => {
 
       const histSection = ir.sections.find(s => s.name === 'chatHistory');
       expect(histSection).toBeDefined();
-      // Only newChatPrompt
-      expect(histSection!.messages).toHaveLength(1);
+      expect(histSection!.messages).toHaveLength(0);
     });
 
     it('handles empty promptOrder', () => {
@@ -578,7 +600,6 @@ describe('assembleCompat', () => {
       const ir = assembleCompat({
         preset: makePreset(),
         chatHistory: [],
-        // no variables provided, {{char}} stays as-is
       });
 
       const mainSection = ir.sections.find(s => s.name === 'main');

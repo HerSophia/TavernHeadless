@@ -487,6 +487,7 @@ export class VariableService {
       payload: {
         id: record.id,
         scope: record.scope,
+        scopeId: record.scopeId,
         key: record.key,
         sessionId,
         branchId,

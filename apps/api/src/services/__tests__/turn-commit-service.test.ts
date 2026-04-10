@@ -29,6 +29,7 @@ import {
 } from "../../db/schema.js";
 import { ChatMessagePersistence } from "../chat-message-persistence.js";
 import { TurnCommitService } from "../turn-commit-service.js";
+import { buildBranchVariableScopeId, type VariableScope } from "@tavern/shared";
 import {
   MEMORY_RUNTIME_SCOPE_TYPE,
   buildMemoryRuntimeScopeKey,
@@ -109,7 +110,7 @@ async function seedInputPage(args: {
 
 async function seedVariable(args: {
   database: DatabaseConnection;
-  scope: "global" | "chat" | "floor" | "page";
+  scope: VariableScope;
   scopeId: string;
   key: string;
   value: unknown;
@@ -1194,6 +1195,60 @@ describe("TurnCommitService", () => {
     );
   });
 
+
+  it("commits macro global set/delete mutations using their real scopes", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const now = 1_735_689_910_000;
+    const committedAt = now + 1_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+    await seedInputPage({ database, floorId, pageId, now });
+    await seedVariable({ database, scope: "global", scopeId: "global", key: "world_rule", value: "old", now });
+    await seedVariable({ database, scope: "branch", scopeId: buildBranchVariableScopeId(sessionId, "main"), key: "mood", value: "sad", now });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Assistant reply with macro commit.",
+      rawText: "Assistant reply with macro commit.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 9,
+        completionTokens: 6,
+        totalTokens: 15,
+      },
+    };
+
+    await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      branchId: "main",
+      execution,
+      committedAt,
+      variableCommit: {
+        pageId,
+      },
+      macroStagedMutations: [
+        { kind: "set", scope: "global", key: "world_rule", value: "magic has a price", sourceMacro: "setglobalvar" },
+        { kind: "delete", scope: "branch", key: "mood", sourceMacro: "deletevar" },
+      ],
+    });
+
+    const [globalVariable] = await database.db.select().from(variables).where(
+      and(eq(variables.scope, "global"), eq(variables.scopeId, "global"), eq(variables.key, "world_rule")),
+    );
+    expect(globalVariable).toBeTruthy();
+    expect(globalVariable && JSON.parse(globalVariable.valueJson)).toBe("magic has a price");
+
+    const [branchVariable] = await database.db.select().from(variables).where(
+      and(eq(variables.scope, "branch"), eq(variables.scopeId, buildBranchVariableScopeId(sessionId, "main")), eq(variables.key, "mood")),
+    );
+    expect(branchVariable).toBeUndefined();
+  });
 
   it("rolls back assistant persistence when the floor is not generating", async () => {
     const sessionId = nanoid();

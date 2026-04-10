@@ -26,6 +26,35 @@ outline: [2, 3]
 
 当 `session`、`floor`、`page` 等宿主被删除时，对应作用域变量会一起清理。`/variables` 列表和详情不会继续暴露宿主已经失效的孤儿变量。
 
+## 与宏兼容层的关系
+
+`/variables` 描述的是 TavernHeadless 底层五级变量真相模型。
+
+当前 ST 宏兼容层只是运行时视图，不会改变 `/variables` 资源本身的语义。
+
+也就是说：
+
+- `/variables` 仍然以 `global`、`chat`、`branch`、`floor`、`page` 五级作用域为准
+- 宏系统中的 local / global 只是提示词装配阶段的兼容视图
+- `getvar`、`getglobalvar`、`.name`、`$name` 这类宏，不会把底层资源模型改成两级变量系统
+
+当前兼容层的运行时映射规则是：
+
+```text
+local 兼容视图  -> 以 branch 语义为主的读取与 staged overlay
+global 兼容视图 -> global 读取与 staged overlay
+```
+
+因此：
+
+- `getvar` / `.name` 读取 local 兼容视图
+- `getglobalvar` / `$name` 读取 global 兼容视图
+- `setvar` 与 `setglobalvar` 的同轮 staged 可见性彼此隔离
+- 真正持久化时，仍然通过既有变量提交链路落到 TavernHeadless 的底层作用域模型
+
+如果你需要查看宏系统的兼容边界、warning、trace 和 dry-run 调试字段，请参考 [Macros](./macros) 与 [Chat](./chat)。
+
+
 ## Variable 对象
 
 | 字段 | 类型 | 说明 |

@@ -372,7 +372,7 @@ describe("ChatService", () => {
     await chatService.respond(sessionId, { message: "Hello, brave knight!" });
 
     const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(turnInput.messages[turnInput.messages.length - 1]).toEqual({ role: "assistant", content: "Knight:" });
+    expect(turnInput.messages[turnInput.messages.length - 1]).toEqual({ role: "user", content: "Hello, brave knight!" });
 
     const outputPages = await database.db.select().from(messagePages).where(eq(messagePages.pageKind, "output"));
     const [assistantMsg] = await database.db
@@ -744,7 +744,7 @@ describe("ChatService", () => {
     const initial = await chatService.respond(sessionId, { message: "seed" });
     await database.db
       .update(floors)
-      .set({ state: "failed", updatedAt: Date.now() })
+      .set({ state: "committed", updatedAt: Date.now() })
       .where(eq(floors.id, initial.floorId));
     (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
 
@@ -1816,7 +1816,7 @@ describe("ChatService", () => {
 
       await database.db
         .update(floors)
-        .set({ state: "failed", updatedAt: Date.now() })
+        .set({ state: "committed", updatedAt: Date.now() })
         .where(eq(floors.id, draftFloor!.id));
 
       const retryResult = await chatService.retryFloor(draftFloor!.id);
@@ -1838,7 +1838,7 @@ describe("ChatService", () => {
 
       await database.db
         .update(floors)
-        .set({ state: "failed", updatedAt: now })
+        .set({ state: "committed", updatedAt: now })
         .where(eq(floors.id, baseTurn.floorId));
 
       await database.db
@@ -1886,7 +1886,7 @@ describe("ChatService", () => {
 
       await database.db
         .update(floors)
-        .set({ state: "failed", updatedAt: now })
+        .set({ state: "committed", updatedAt: now })
         .where(eq(floors.id, baseTurn.floorId));
 
       await database.db
@@ -1926,7 +1926,7 @@ describe("ChatService", () => {
 
       await database.db
         .update(floors)
-        .set({ state: "failed", updatedAt: Date.now() })
+        .set({ state: "committed", updatedAt: Date.now() })
         .where(eq(floors.id, baseTurn.floorId));
 
       (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockImplementationOnce(async (input) => {

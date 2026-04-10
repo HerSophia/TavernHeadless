@@ -140,6 +140,8 @@ WebSocket 也遵循相同边界：
 | Characters | 角色卡管理、版本控制 | [Characters](./api/characters) |
 | Users | 用户卡管理 | [Users](./api/users) |
 | Variables | 五级变量系统 | [Variables](./api/variables) |
+| Macros | ST 宏兼容层、dry-run 调试字段与执行边界 | [Macros](./api/macros) |
+
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
 | Exports | 资源导出 | [Exports](./api/exports) |
@@ -160,6 +162,8 @@ WebSocket 也遵循相同边界：
 
 - [Memory Jobs](./api/memory-jobs)
 - [Chat Transfer Jobs](./api/chat-transfer-jobs)
+- [Macros](./api/macros)
+
 - [Tools](./api/tools)
 - [MCP Servers](./api/mcp)
 - [Client Data](./api/client-data)
