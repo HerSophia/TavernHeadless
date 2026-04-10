@@ -56,6 +56,13 @@ function getOpenApiSchemaExample(container: OpenApiContentContainer | undefined)
   return getOpenApiMediaExample(firstContent);
 }
 
+function getOpenApiResponseSchema(operation: OpenApiOperation | undefined, statusCode: string): Record<string, unknown> | undefined {
+  const response = readRecordNode(operation?.responses?.[statusCode]);
+  const content = readRecordNode(response?.content);
+  const media = readRecordNode(content?.["application/json"]);
+  return readRecordNode(media?.schema);
+}
+
 function getOpenApiResponseExample(operation: OpenApiOperation | undefined, statusCode: string): unknown {
   return getOpenApiSchemaExample(operation?.responses?.[statusCode]);
 }
@@ -596,8 +603,35 @@ describe("OpenAPI integration", () => {
       expect(Object.keys(body.paths)).toContain("/messages/{id}/edit-and-regenerate");
 
       const respondPath = body.paths["/sessions/{id}/respond"] as { post?: OpenApiOperation };
-      expect(getOpenApiSchemaExample(respondPath.post?.requestBody)).toMatchObject({ message: "Please continue the campfire scene." });
-      expect(getOpenApiResponseExample(respondPath.post, "200")).toMatchObject({ data: { branch_id: "main" } });
+      expect(getOpenApiSchemaExample(respondPath.post?.requestBody)).toMatchObject({
+        message: "Please continue the campfire scene.",
+        debug_options: {
+          include_prompt_snapshot: true,
+          include_runtime_trace: true,
+        },
+      });
+      expect(getOpenApiResponseExample(respondPath.post, "200")).toMatchObject({
+        data: {
+          branch_id: "main",
+          prompt_snapshot: { prompt_digest: expect.any(String) },
+          runtime_trace: { delivery: expect.any(Object) },
+        },
+      });
+      const respondResponseSchema = getOpenApiResponseSchema(respondPath.post, "200");
+      const respondResponseProperties = readRecordNode(respondResponseSchema?.properties);
+      const respondDataSchema = readRecordNode(respondResponseProperties?.data);
+      const respondDataProperties = readRecordNode(respondDataSchema?.properties);
+      const liveRuntimeTraceSchema = readRecordNode(respondDataProperties?.runtime_trace);
+      const liveRuntimeTraceProperties = readRecordNode(liveRuntimeTraceSchema?.properties);
+      expect(liveRuntimeTraceSchema?.additionalProperties).toBe(false);
+      expect(liveRuntimeTraceProperties).toHaveProperty("preset");
+      expect(liveRuntimeTraceProperties).toHaveProperty("worldbook");
+      expect(liveRuntimeTraceProperties).toHaveProperty("regex");
+      expect(liveRuntimeTraceProperties).toHaveProperty("budgets");
+      expect(liveRuntimeTraceProperties).toHaveProperty("structure");
+      expect(liveRuntimeTraceProperties).toHaveProperty("memory");
+      expect(liveRuntimeTraceProperties).toHaveProperty("delivery");
+      expect(liveRuntimeTraceProperties).not.toHaveProperty("visibility");
 
       const dryRunPath = body.paths["/sessions/{id}/respond/dry-run"] as {
         post?: OpenApiOperation;
@@ -605,6 +639,14 @@ describe("OpenAPI integration", () => {
       expect(dryRunPath.post?.responses).toHaveProperty("200");
       expect(dryRunPath.post?.responses).toHaveProperty("400");
       expect(getOpenApiSchemaExample(dryRunPath.post?.requestBody)).toMatchObject({ message: "Please continue the campfire scene." });
+      const dryRunResponseSchema = getOpenApiResponseSchema(dryRunPath.post, "200");
+      const dryRunResponseProperties = readRecordNode(dryRunResponseSchema?.properties);
+      const dryRunDataSchema = readRecordNode(dryRunResponseProperties?.data);
+      const dryRunDataProperties = readRecordNode(dryRunDataSchema?.properties);
+      const dryRunRuntimeTraceSchema = readRecordNode(dryRunDataProperties?.runtime_trace);
+      const dryRunRuntimeTraceProperties = readRecordNode(dryRunRuntimeTraceSchema?.properties);
+      expect(dryRunRuntimeTraceSchema?.additionalProperties).toBe(false);
+      expect(dryRunRuntimeTraceProperties).toHaveProperty("visibility");
     } finally {
       await chatApp.close();
     }

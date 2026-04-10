@@ -254,6 +254,28 @@ export {
   type WorldbookEntryRecord,
   type WorldbooksResource,
 } from "./resources/index.js";
+export type {
+  PromptLiveDebugOptions,
+  PromptRuntimeBudgetGroupTrace,
+  PromptRuntimeBudgetTrace,
+  PromptRuntimeDeliveryDegradeReason,
+  PromptRuntimeDeliveryTrace,
+  PromptRuntimeMemoryTrace,
+  PromptRuntimePresetTrace,
+  PromptRuntimeRegexTrace,
+  PromptRuntimeStructureTrace,
+  PromptRuntimeTrace,
+  PromptRuntimeVisibilityRange,
+  PromptRuntimeVisibilityTrace,
+  PromptRuntimeWorldbookFirstMatch,
+  PromptRuntimeWorldbookMatchActivation,
+  PromptRuntimeWorldbookMatchDetail,
+  PromptRuntimeWorldbookMatchInsertion,
+  PromptRuntimeWorldbookMatchSource,
+  PromptRuntimeWorldbookTrace,
+  PromptSnapshotMode,
+  PromptSnapshotPreview,
+} from "./prompt-runtime.js";
 export {
   readSseStream,
   type RespondStreamCallbacks,

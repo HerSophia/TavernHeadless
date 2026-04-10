@@ -11,6 +11,23 @@ import type { ChatMessage } from "@tavern/core";
 import type { AppDb } from "../db/client.js";
 import { floors, messagePages, messages } from "../db/schema.js";
 
+export interface FloorVisibilityRange {
+  startFloorNo: number;
+  endFloorNo: number;
+}
+
+export interface PromptVisibilityPolicy {
+  hiddenFloorRanges?: FloorVisibilityRange[];
+  visibleFloorRanges?: FloorVisibilityRange[];
+  hiddenFloorIds?: string[];
+  mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+}
+
+export interface PromptVisibilityTrace {
+  hiddenFloorRanges?: FloorVisibilityRange[];
+  filteredFloorNos?: number[];
+}
+
 export class ChatHistoryLoader {
   constructor(
     private readonly db: AppDb,
@@ -20,18 +37,20 @@ export class ChatHistoryLoader {
   async loadHistory(
     sessionId: string,
     branchId = "main",
-    beforeFloorNo?: number
+    beforeFloorNo?: number,
+    visibility?: PromptVisibilityPolicy,
   ): Promise<ChatMessage[]> {
-    const floorScope = await this.selectHistoryFloorScope(sessionId, branchId, beforeFloorNo);
+    const floorScope = await this.selectHistoryFloorScope(sessionId, branchId, beforeFloorNo, visibility);
     return this.loadMessagesFromFloorScope(floorScope);
   }
 
   async loadHistoryBeforeFloor(
     sessionId: string,
     floorNo: number,
-    branchId = "main"
+    branchId = "main",
+    visibility?: PromptVisibilityPolicy,
   ): Promise<ChatMessage[]> {
-    return this.loadHistory(sessionId, branchId, floorNo);
+    return this.loadHistory(sessionId, branchId, floorNo, visibility);
   }
 
   /**
@@ -99,12 +118,56 @@ export class ChatHistoryLoader {
     });
   }
 
+  async previewVisibility(
+    sessionId: string,
+    branchId = "main",
+    beforeFloorNo?: number,
+    visibility?: PromptVisibilityPolicy,
+  ): Promise<PromptVisibilityTrace> {
+    const baseRows = await this.selectHistoryFloorRows(sessionId, branchId, beforeFloorNo);
+    const visibleRows = applyPromptVisibilityPolicy(baseRows, visibility);
+    const visibleFloorNos = new Set(visibleRows.map((row) => row.floorNo));
+    const filteredFloorNos = baseRows
+      .filter((row) => !visibleFloorNos.has(row.floorNo))
+      .map((row) => row.floorNo);
+
+    return {
+      ...(visibility?.hiddenFloorRanges ? { hiddenFloorRanges: visibility.hiddenFloorRanges } : {}),
+      filteredFloorNos,
+    };
+  }
+
   // ── 私有方法 ────────────────────────────────────────
 
   private async selectHistoryFloorScope(
     sessionId: string,
     branchId: string,
-    beforeFloorNo?: number
+    beforeFloorNo?: number,
+    visibility?: PromptVisibilityPolicy,
+  ): Promise<Array<{ id: string; floorNo: number }>> {
+    const mainOrMergedRows = await this.selectHistoryFloorRows(sessionId, branchId, beforeFloorNo);
+
+    if (branchId === "main") {
+      const mainRows = mainOrMergedRows;
+      const visibleRows = applyPromptVisibilityPolicy(mainRows, visibility);
+      const limitedRows =
+        this.historyMaxFloors === undefined ? visibleRows : visibleRows.slice(0, this.historyMaxFloors);
+
+      return limitedRows.reverse();
+    }
+
+    const mergedRows = mainOrMergedRows;
+    const visibleRows = applyPromptVisibilityPolicy(mergedRows, visibility);
+    const limitedRows =
+      this.historyMaxFloors === undefined ? visibleRows : visibleRows.slice(-this.historyMaxFloors);
+
+    return limitedRows.map((row) => ({ id: row.id, floorNo: row.floorNo }));
+  }
+
+  private async selectHistoryFloorRows(
+    sessionId: string,
+    branchId: string,
+    beforeFloorNo?: number,
   ): Promise<Array<{ id: string; floorNo: number }>> {
     const baseConditions = [
       eq(floors.sessionId, sessionId),
@@ -117,16 +180,11 @@ export class ChatHistoryLoader {
     }
 
     if (branchId === "main") {
-      const mainRows = await this.db
+      return this.db
         .select({ id: floors.id, floorNo: floors.floorNo })
         .from(floors)
         .where(and(...baseConditions, eq(floors.branchId, "main")))
         .orderBy(desc(floors.floorNo));
-
-      const limitedRows =
-        this.historyMaxFloors === undefined ? mainRows : mainRows.slice(0, this.historyMaxFloors);
-
-      return limitedRows.reverse();
     }
 
     const branchRows = await this.db
@@ -154,11 +212,7 @@ export class ChatHistoryLoader {
       }
     }
 
-    const mergedRows = Array.from(mergedByFloorNo.values()).sort((a, b) => a.floorNo - b.floorNo);
-    const limitedRows =
-      this.historyMaxFloors === undefined ? mergedRows : mergedRows.slice(-this.historyMaxFloors);
-
-    return limitedRows.map((row) => ({ id: row.id, floorNo: row.floorNo }));
+    return Array.from(mergedByFloorNo.values()).sort((a, b) => a.floorNo - b.floorNo).map((row) => ({ id: row.id, floorNo: row.floorNo }));
   }
 
   private async loadMessagesFromFloorScope(
@@ -199,6 +253,48 @@ export class ChatHistoryLoader {
 }
 
 // ── 工具函数 ──────────────────────────────────────────
+
+function applyPromptVisibilityPolicy<T extends { id: string; floorNo: number }>(
+  rows: T[],
+  visibility?: PromptVisibilityPolicy,
+): T[] {
+  if (!visibility) {
+    return rows;
+  }
+
+  const hiddenFloorIds = new Set(visibility.hiddenFloorIds ?? []);
+  const mode = visibility.mode ?? "allow_all_except_hidden";
+
+  return rows.filter((row) => {
+    const inVisibleRanges = matchesFloorRanges(row.floorNo, visibility.visibleFloorRanges);
+    const inHiddenRanges = matchesFloorRanges(row.floorNo, visibility.hiddenFloorRanges);
+    const isHiddenById = hiddenFloorIds.has(row.id);
+
+    if (mode === "deny_all_except_visible") {
+      if (!inVisibleRanges) {
+        return false;
+      }
+      return !inHiddenRanges && !isHiddenById;
+    }
+
+    if (isHiddenById || inHiddenRanges) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function matchesFloorRanges(
+  floorNo: number,
+  ranges?: FloorVisibilityRange[],
+): boolean {
+  if (!ranges || ranges.length === 0) {
+    return false;
+  }
+
+  return ranges.some((range) => floorNo >= range.startFloorNo && floorNo <= range.endFloorNo);
+}
 
 /**
  * 将 DB 的消息角色映射为 LLM ChatMessage 角色。

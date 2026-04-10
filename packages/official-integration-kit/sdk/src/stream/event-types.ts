@@ -1,3 +1,4 @@
+import type { PromptRuntimeTrace, PromptSnapshotPreview } from "../prompt-runtime.js";
 import type { RespondFinalState, RespondMemoryReceipt } from "../resources/sessions.js";
 import type { ApiUsage } from "../types/usage.js";
 
@@ -82,6 +83,8 @@ export type TavernRespondDonePayload = {
   floorNo: number;
   generatedText?: string;
   memory?: RespondMemoryReceipt;
+  promptSnapshot?: PromptSnapshotPreview;
+  runtimeTrace?: PromptRuntimeTrace;
   summaries: string[];
   totalUsage: ApiUsage;
 };

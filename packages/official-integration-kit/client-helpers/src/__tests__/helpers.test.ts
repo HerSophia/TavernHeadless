@@ -404,6 +404,27 @@ describe("reduceRespondStream", () => {
         floorId: "floor-1",
         floorNo: 2,
         generatedText: "Hello",
+        memory: { mode: "sync", status: "applied", jobId: null },
+        promptSnapshot: {
+          presetId: "preset-1",
+          presetUpdatedAt: 1710000000000,
+          presetVersion: 3,
+          worldbookId: "worldbook-1",
+          worldbookUpdatedAt: 1710000001000,
+          worldbookVersion: 5,
+          regexProfileId: "regex-1",
+          regexProfileUpdatedAt: 1710000002000,
+          regexProfileVersion: 2,
+          worldbookActivatedEntryUids: [7],
+          regexPreRuleNames: ["pre-rule"],
+          regexPostRuleNames: [],
+          promptMode: "compat_strict",
+          promptDigest: "digest-1",
+          tokenEstimate: 42,
+        },
+        runtimeTrace: {
+          worldbook: { hitCount: 1 },
+        },
         summaries: ["summary-1"],
         totalUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
       },
@@ -414,6 +435,25 @@ describe("reduceRespondStream", () => {
     expect(state3.status).toBe("done");
     expect(state3.result?.finalState).toBe("committed");
     expect(state3.result?.generatedText).toBe("Hello");
+    expect(state3.result?.memory).toEqual({ mode: "sync", status: "applied", jobId: null });
+    expect(state3.result?.promptSnapshot).toEqual({
+      presetId: "preset-1",
+      presetUpdatedAt: 1710000000000,
+      presetVersion: 3,
+      worldbookId: "worldbook-1",
+      worldbookUpdatedAt: 1710000001000,
+      worldbookVersion: 5,
+      regexProfileId: "regex-1",
+      regexProfileUpdatedAt: 1710000002000,
+      regexProfileVersion: 2,
+      worldbookActivatedEntryUids: [7],
+      regexPreRuleNames: ["pre-rule"],
+      regexPostRuleNames: [],
+      promptMode: "compat_strict",
+      promptDigest: "digest-1",
+      tokenEstimate: 42,
+    });
+    expect(state3.result?.runtimeTrace).toEqual({ worldbook: { hitCount: 1 } });
     expect(state3.result?.summaries).toEqual(["summary-1"]);
     expect(state3.result?.totalTokens).toBe(15);
   });

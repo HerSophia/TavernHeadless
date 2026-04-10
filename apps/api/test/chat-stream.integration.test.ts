@@ -80,6 +80,40 @@ describe("POST /sessions/:id/respond/stream", () => {
         completionTokens: 5,
         totalTokens: 15,
       },
+      promptSnapshot: {
+        presetId: "preset-1",
+        presetUpdatedAt: 1710000000000,
+        presetVersion: 3,
+        worldbookId: "worldbook-1",
+        worldbookUpdatedAt: 1710000001000,
+        worldbookVersion: 5,
+        regexProfileId: "regex-1",
+        regexProfileUpdatedAt: 1710000002000,
+        regexProfileVersion: 2,
+        worldbookActivatedEntryUids: [7],
+        regexPreRuleNames: ["Input Rule"],
+        regexPostRuleNames: [],
+        promptMode: "compat_strict",
+        promptDigest: "digest-1",
+        tokenEstimate: 42,
+      },
+      runtimeTrace: {
+        delivery: {
+          assistantPrefillRequested: true,
+          assistantPrefillApplied: false,
+          assistantPrefillStrategy: "assistant_message_fallback",
+          allowAssistantPrefill: true,
+          requireLastUser: true,
+          noAssistant: false,
+          lastMessageRole: "user",
+          endsWithUser: true,
+          degraded: true,
+          degradeReasons: ["require_last_user"],
+        },
+        worldbook: {
+          hitCount: 1,
+        },
+      },
       finalState: "committed",
     };
 
@@ -101,6 +135,22 @@ describe("POST /sessions/:id/respond/stream", () => {
           },
           branchId: "main",
           sourceFloorId: "floor-source",
+          delivery: {
+            allowAssistantPrefill: false,
+            requireLastUser: true,
+            noAssistant: false,
+          },
+          structure: {
+            mode: "no_assistant",
+            mergeAdjacentSameRole: false,
+            assistantRewriteStrategy: "to_system",
+            preserveSystemMessages: true,
+          },
+          debugOptions: {
+            includePromptSnapshot: true,
+            includeRuntimeTrace: true,
+            includeWorldbookMatches: false,
+          },
         });
         expect(accountId).toBe("default-admin");
 
@@ -140,6 +190,17 @@ describe("POST /sessions/:id/respond/stream", () => {
         message: "hello",
         branch_id: "main",
         source_floor_id: "floor-source",
+        delivery: {
+          allow_assistant_prefill: false,
+          require_last_user: true,
+          no_assistant: false,
+        },
+        structure: {
+          mode: "no_assistant",
+          merge_adjacent_same_role: false,
+          assistant_rewrite_strategy: "to_system",
+          preserve_system_messages: true,
+        },
         generation_params: {
           temperature: 0.6,
           max_output_tokens: 128,
@@ -150,6 +211,11 @@ describe("POST /sessions/:id/respond/stream", () => {
           stop_sequences: ["DONE"],
           stream: true,
           reasoning_effort: "medium",
+        },
+        debug_options: {
+          include_prompt_snapshot: true,
+          include_runtime_trace: true,
+          include_worldbook_matches: false,
         },
       },
     });
@@ -170,6 +236,10 @@ describe("POST /sessions/:id/respond/stream", () => {
     expect(body).toContain('"summaries":["short summary"]');
     expect(body).toContain("event: done");
     expect(body).toContain('"generated_text":"Hello world"');
+    expect(body).toContain('"prompt_snapshot":{');
+    expect(body).toContain('"prompt_digest":"digest-1"');
+    expect(body).toContain('"runtime_trace":{');
+    expect(body).toContain('"assistant_prefill_requested":true');
   });
 
   it("streams error event when chat service fails", async () => {

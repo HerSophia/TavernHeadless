@@ -36,6 +36,8 @@ export interface IRSectionInsertion {
 
 export type IRSectionSemantic = 'chat_history';
 
+export type PromptBudgetGroup = 'history' | 'worldbook' | 'memory' | (string & {});
+
 /**
  * IR 分区：按逻辑分组的消息块
  *
@@ -48,6 +50,10 @@ export interface IRSection {
   messages: IRMessage[];
   /** 分区是否固定（固定分区不参与裁剪） */
   pinned?: boolean;
+  /** 可选：预算来源组（如 history / worldbook / memory） */
+  budgetGroup?: PromptBudgetGroup;
+  /** 可选：组内预算优先级（第一版仅保留字段，不参与复杂分配） */
+  budgetPriority?: number;
   /** 分区排序权重（数值小的排前面） */
   order: number;
   /** 可选：分区的插入语义 */
@@ -111,6 +117,10 @@ export interface AssembledPrompt {
     total: number;
     /** 各分区 token 占用 */
     bySection: Record<string, number>;
+    /** 各预算组 token 占用 */
+    byGroup: Record<string, number>;
+    /** 各预算组被裁剪的 token 占用 */
+    prunedByGroup: Record<string, number>;
     /** 留给回复的 token 数 */
     availableForReply: number;
   };
@@ -142,4 +152,104 @@ export interface PromptSnapshotRecord {
   promptDigest: string;
   tokenEstimate: number;
   createdAt: number;
+}
+
+// ── Prompt Runtime Trace ───────────────────────────────
+
+export interface PromptRuntimePresetTrace {
+  selectedPromptOrderCharacterId: number | null;
+  ignoredPromptOrderCharacterIds: number[];
+  unsupportedFields: string[];
+  ignoredFields: string[];
+  unresolvedMarkers: string[];
+  warnings: string[];
+  triggerFilteredEntryIds: string[];
+  inChatInsertedEntryIds: string[];
+  continueNudgeApplied: boolean;
+  continueNudgeText?: string;
+  namesBehaviorApplied?: 'off' | 'always';
+}
+
+export interface PromptRuntimeWorldbookTrace<TWorldbookMatch = unknown> {
+  hitCount: number;
+  matches?: TWorldbookMatch[];
+}
+
+export interface PromptRuntimeRegexTrace {
+  userInputRules: string[];
+  aiOutputRules: string[];
+  preprocessedUserMessage?: string;
+}
+
+export interface PromptRuntimeBudgetGroupTrace {
+  group: string;
+  tokenCount: number;
+  prunedTokenCount?: number;
+}
+
+export interface PromptRuntimeBudgetTrace {
+  byGroup: PromptRuntimeBudgetGroupTrace[];
+}
+
+export interface PromptRuntimeMemoryTrace {
+  summaryInjected: boolean;
+}
+
+type PromptRuntimeAssistantPrefillStrategy = 'provider_native' | 'assistant_message_fallback' | 'unsupported' | 'none';
+
+type PromptRuntimeStructureMode = 'default' | 'strict_alternating' | 'no_assistant';
+
+type PromptRuntimeStructureAssistantRewriteStrategy = 'to_system' | 'to_user_transcript';
+
+export interface PromptRuntimeStructureTrace {
+  mode: PromptRuntimeStructureMode;
+  mergeAdjacentSameRole: boolean;
+  assistantRewriteCount: number;
+  assistantRewriteStrategy?: PromptRuntimeStructureAssistantRewriteStrategy;
+  tailAssistantDetected: boolean;
+}
+
+export type PromptRuntimeDeliveryDegradeReason =
+  | 'assistant_prefill_disabled'
+  | 'assistant_prefill_unsupported'
+  | 'require_last_user'
+  | 'no_assistant_override';
+
+export interface PromptRuntimeDeliveryTrace {
+  assistantPrefillRequested: boolean;
+  assistantPrefillApplied: boolean;
+  assistantPrefillStrategy?: PromptRuntimeAssistantPrefillStrategy;
+  allowAssistantPrefill: boolean;
+  requireLastUser: boolean;
+  noAssistant: boolean;
+  lastMessageRole?: ChatRole | null;
+  endsWithUser: boolean;
+  degraded: boolean;
+  degradeReasons: PromptRuntimeDeliveryDegradeReason[];
+}
+
+export interface PromptRuntimeVisibilityRange {
+  startFloorNo: number;
+  endFloorNo: number;
+}
+
+export interface PromptRuntimeVisibilityTrace {
+  hiddenFloorRanges?: PromptRuntimeVisibilityRange[];
+  filteredFloorNos?: number[];
+}
+
+export interface PromptRuntimeTrace<TWorldbookMatch = unknown> {
+  preset?: PromptRuntimePresetTrace;
+  worldbook?: PromptRuntimeWorldbookTrace<TWorldbookMatch>;
+  regex?: PromptRuntimeRegexTrace;
+  budgets?: PromptRuntimeBudgetTrace;
+  memory?: PromptRuntimeMemoryTrace;
+  structure?: PromptRuntimeStructureTrace;
+  delivery?: PromptRuntimeDeliveryTrace;
+  visibility?: PromptRuntimeVisibilityTrace;
+}
+
+export interface PromptRuntimeDebugView<TWorldbookMatch = unknown> {
+  finalMessages?: ChatMessage[];
+  trace?: PromptRuntimeTrace<TWorldbookMatch>;
 }

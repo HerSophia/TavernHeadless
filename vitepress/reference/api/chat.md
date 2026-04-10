@@ -29,6 +29,10 @@ POST /sessions/:id/respond
 | `generation_params` | [GenerationParams](#generationparams-对象) | 否 | 生成参数覆盖 |
 | `branch_id` | string | 否 | 指定分支 ID |
 | `source_floor_id` | string | 否 | 从指定楼层开始（用于在中途插入） |
+| `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
+| `debug_options.include_prompt_snapshot` | boolean | 否 | 打开后在成功响应 `data` 中返回 `prompt_snapshot` |
+| `debug_options.include_runtime_trace` | boolean | 否 | 打开后在成功响应 `data` 中返回 `runtime_trace` |
+| `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开 `runtime_trace.worldbook.matches` |
 
 ### 响应 `200`
 
@@ -61,6 +65,12 @@ POST /sessions/:id/respond
 - `mode = "async"` 且 `status = "queued"`：记忆写入已进入后台队列，`job_id` 对应 `runtime_job.id`
 
 如果当前部署没有启用记忆持久化，这个字段可以省略。
+
+如果请求里显式打开 `debug_options.include_prompt_snapshot`，成功响应的 `data` 里还会附带 `prompt_snapshot`。
+
+如果请求里显式打开 `debug_options.include_runtime_trace`，成功响应的 `data` 里还会附带 `runtime_trace`。
+
+这两个字段默认都关闭。未打开时，同步成功响应保持兼容。
 
 ### 常见错误
 
@@ -113,6 +123,14 @@ data: {"summaries":["The group resumes the campfire planning scene."]}
 event: done
 data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"...","summaries":[...],"total_usage":{...},"memory":{"mode":"sync","status":"applied","job_id":null},"final_state":"committed"}
 ```
+
+如果请求里打开了 live debug 选项：
+
+- `prompt_snapshot` 与 `runtime_trace` 只会出现在 `done` payload 中
+- `start` / `run` / `chunk` / `tool` / `summary` / `error` 事件不变
+- 不会新增新的 SSE 事件类型
+
+第一版 live 路径不接受 request 级 `visibility` 覆盖，因此 live `runtime_trace` 不返回 `visibility`。
 
 当前 SSE 事件集包括：
 
@@ -356,6 +374,10 @@ POST /sessions/:id/regenerate
 | ---- | ---- | ---- | ---- |
 | `config` | TurnConfig | 否 | 回合配置覆盖 |
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
+| `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
+| `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
+| `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
+| `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开世界书命中详情 |
 
 ### 响应 `200`
 
@@ -380,6 +402,8 @@ POST /sessions/:id/regenerate
 
 其中 `previous_floor_id` 指向被替代的旧楼层。
 
+如果打开 `debug_options.include_prompt_snapshot` / `debug_options.include_runtime_trace`，成功响应 `data` 中会按需附带 `prompt_snapshot` / `runtime_trace`。
+
 如果服务端启用了 queue 模式，而请求在排队期间会话的最新 committed floor 已经变化，接口会返回 `409 generation_target_stale`。除此之外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
 
 ## 楼层重试
@@ -397,6 +421,10 @@ POST /floors/:id/retry
 | `config` | TurnConfig | 否 | 回合配置覆盖 |
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
 | `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
+| `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
+| `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
+| `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
+| `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开世界书命中详情 |
 
 当目标楼层包含需要人工确认的工具回放时，服务端会返回 `409 tool_replay_confirmation_required`。此时应把允许继续回放的 execution id 放入 `confirmed_execution_ids` 后重试。
 
@@ -421,6 +449,8 @@ POST /floors/:id/retry
 }
 ```
 
+如果打开 `debug_options.include_prompt_snapshot` / `debug_options.include_runtime_trace`，成功响应 `data` 中会按需附带 `prompt_snapshot` / `runtime_trace`。
+
 如果服务端启用了 queue 模式，而目标 floor 在等待期间的结构化上下文已经变化（例如 `branch_id` 或 `floor_no` 被修改），接口会返回 `409 generation_target_stale`。
 
 除楼层自身不存在或状态不允许外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
@@ -441,6 +471,10 @@ POST /messages/:id/edit-and-regenerate
 | `branch_id` | string | 否 | 指定分支 ID（可创建新分支） |
 | `config` | TurnConfig | 否 | 回合配置覆盖 |
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
+| `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
+| `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
+| `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
+| `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开世界书命中详情 |
 
 ### 响应 `200`
 
@@ -459,6 +493,8 @@ POST /messages/:id/edit-and-regenerate
   }
 }
 ```
+
+如果打开 `debug_options.include_prompt_snapshot` / `debug_options.include_runtime_trace`，成功响应 `data` 中会按需附带 `prompt_snapshot` / `runtime_trace`。
 
 如果服务端启用了 queue 模式，而源消息对应的 floor 上下文在等待期间已经变化，接口会返回 `409 generation_target_stale`。
 

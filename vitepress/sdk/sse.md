@@ -156,8 +156,14 @@ start → run? → (chunk | tool | run)* → summary? → done
 | `generatedText` | `string?` | 生成的完整文本 |
 | `summaries` | `string[]` | 最终摘要列表 |
 | `totalUsage` | [`ApiUsage`](#apiusage) | token 用量 |
+| `promptSnapshot` | `PromptSnapshotPreview?` | 只有在请求显式打开 `debugOptions.includePromptSnapshot` 时才返回 |
+| `runtimeTrace` | `PromptRuntimeTrace?` | 只有在请求显式打开 `debugOptions.includeRuntimeTrace` 时才返回 |
 
 `finalState === "committed"` 表示 assistant message、usage 和其他提交边界内的数据已经完成持久化。
+
+这两个调试字段只会出现在 `done` payload 中。
+
+本版不会新增新的 SSE 事件类型。
 
 ### TavernRespondStreamEvent
 

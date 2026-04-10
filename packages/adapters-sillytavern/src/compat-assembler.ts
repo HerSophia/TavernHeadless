@@ -276,6 +276,7 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
           sections.push({
             name: 'worldInfoBefore',
             order: currentOrder,
+            budgetGroup: 'worldbook',
             pinned: true,
             ...(toInsertion(promptEntry) ? { insertion: toInsertion(promptEntry) } : {}),
             messages: entryMessages,
@@ -289,6 +290,7 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
           sections.push({
             name: 'worldInfoAfter',
             order: currentOrder,
+            budgetGroup: 'worldbook',
             pinned: true,
             ...(toInsertion(promptEntry) ? { insertion: toInsertion(promptEntry) } : {}),
             messages: entryMessages,
@@ -383,6 +385,7 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
         sections.push({
           name: 'chatHistory',
           order: currentOrder,
+          budgetGroup: 'history',
           pinned: false,
           semantic: 'chat_history',
           messages: chatHistory.map((message, index) => ({
@@ -420,6 +423,7 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
       sections.push({
         name: `worldInfoDepth:${depthEntry.depth}`,
         order: orderIndex++,
+        budgetGroup: 'worldbook',
         pinned: true,
         insertion: {
           kind: 'in_chat',
@@ -442,6 +446,7 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
     sections.push({
       name: `worldInfoOutlet:${outletName}`,
       order: placement.order,
+      budgetGroup: 'worldbook',
       pinned: true,
       ...(placement.insertion ? { insertion: placement.insertion } : {}),
       messages: entries.map((entry) => ({

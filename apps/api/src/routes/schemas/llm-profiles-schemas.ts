@@ -219,6 +219,23 @@ export const updateBodyJsonSchema = {
   additionalProperties: false,
 } as const;
 
+export const profileListQueryJsonSchema = {
+  type: "object",
+  properties: {
+    include_deleted: { type: "boolean", default: false },
+    status: { type: "string", enum: ["active", "disabled", "deleted"] },
+  },
+  additionalProperties: false,
+} as const;
+
+export const runtimeQueryJsonSchema = {
+  type: "object",
+  properties: {
+    session_id: { type: "string", minLength: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
 export const generationParamsJsonSchemaProperties = {
   max_context_tokens: { type: "integer", minimum: 1 },
   max_output_tokens: { type: "integer", minimum: 1 },
@@ -233,13 +250,15 @@ export const generationParamsJsonSchemaProperties = {
   reasoning_effort: { type: "string", enum: ["low", "medium", "high"] },
 } as const;
 
-const nullableGenerationParamsJsonSchema = {
+export const llmGenerationParamsJsonSchema = {
+  type: "object",
+  properties: generationParamsJsonSchemaProperties,
+  additionalProperties: false,
+} as const;
+
+export const nullableLlmGenerationParamsJsonSchema = {
   anyOf: [
-    {
-      type: "object",
-      properties: generationParamsJsonSchemaProperties,
-      additionalProperties: false,
-    },
+    llmGenerationParamsJsonSchema,
     { type: "null" },
   ],
 } as const;
@@ -249,7 +268,7 @@ const activateBodyGlobalJsonSchema = {
   properties: {
     scope: { type: "string", enum: ["global"] },
     session_id: { type: "string", minLength: 1 },
-    params: nullableGenerationParamsJsonSchema,
+    params: nullableLlmGenerationParamsJsonSchema,
     instance_slot: { type: "string", enum: ["*", "narrator", "director", "verifier", "memory"] },
   },
   additionalProperties: false,
@@ -261,7 +280,7 @@ const activateBodySessionJsonSchema = {
   properties: {
     scope: { type: "string", enum: ["session"] },
     session_id: { type: "string", minLength: 1 },
-    params: nullableGenerationParamsJsonSchema,
+    params: nullableLlmGenerationParamsJsonSchema,
     instance_slot: { type: "string", enum: ["*", "narrator", "director", "verifier", "memory"] },
   },
   additionalProperties: false,
@@ -385,16 +404,7 @@ export const activateResponseJsonSchema = {
         scope: { type: "string", enum: ["global", "session"] },
         scope_id: { type: "string" },
         instance_slot: { type: "string" },
-        params: {
-          anyOf: [
-            {
-              type: "object",
-              properties: generationParamsJsonSchemaProperties,
-              additionalProperties: false,
-            },
-            { type: "null" },
-          ],
-        },
+        params: nullableLlmGenerationParamsJsonSchema,
         activated: { type: "boolean" },
       },
       additionalProperties: false,
@@ -442,11 +452,7 @@ export const deleteResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const runtimeParamsJsonSchema = {
-  type: "object",
-  properties: generationParamsJsonSchemaProperties,
-  additionalProperties: false,
-} as const;
+const runtimeParamsJsonSchema = llmGenerationParamsJsonSchema;
 
 const runtimeSlotJsonSchema = {
   type: "object",

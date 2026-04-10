@@ -3,9 +3,12 @@ import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema } from "./schemas/common.js";
+import { buildZodObjectSchema } from "./schemas/json-schema-zod.js";
 import { parseWithSchema, sendError } from "../lib/http";
 import { getRequestAuthContext } from "../plugins/auth";
 import type { LlmBindingGenerationParams } from "../lib/llm-params";
+import type { RuntimeParamsResponse } from "../lib/llm-provider-discovery.js";
+import { llmGenerationParamsJsonSchema } from "./schemas/llm-profiles-schemas.js";
 import {
   instanceConfigListResponseJsonSchema,
   instanceConfigResponseJsonSchema,
@@ -30,32 +33,26 @@ import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 const instanceSlotSchema = z.enum(["*", "narrator", "director", "verifier", "memory"]);
 const scopeSchema = z.enum(["global", "session"]);
 
-const generationParamsSchema = z.object({
-  max_context_tokens: z.number().int().min(1).optional(),
-  max_output_tokens: z.number().int().min(1).optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  top_k: z.number().int().min(0).optional(),
-  frequency_penalty: z.number().min(-2).max(2).optional(),
-  presence_penalty: z.number().min(-2).max(2).optional(),
-  stream: z.boolean().optional(),
-  timeout_ms: z.number().int().min(1).optional(),
-  max_retries: z.number().int().min(0).max(10).optional(),
-  reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
-}).strict();
+type ListQuery = {
+  scope?: z.infer<typeof scopeSchema>;
+  session_id?: string;
+};
 
-const listQuerySchema = z.object({
-  scope: scopeSchema.optional(),
-  session_id: z.string().min(1).optional(),
-});
+type ResolvedQuery = {
+  session_id?: string;
+};
 
-const resolvedQuerySchema = z.object({
-  session_id: z.string().min(1).optional(),
-});
+type SlotParams = {
+  slot: string;
+};
 
-const slotParamSchema = z.object({
-  slot: z.string().min(1),
-});
+const generationParamsSchema = buildZodObjectSchema<RuntimeParamsResponse>(llmGenerationParamsJsonSchema);
+
+const listQuerySchema = buildZodObjectSchema<ListQuery>(listQueryJsonSchema);
+
+const resolvedQuerySchema = buildZodObjectSchema<ResolvedQuery>(resolvedQueryJsonSchema);
+
+const slotParamSchema = buildZodObjectSchema<SlotParams>(slotParamsJsonSchema);
 
 const upsertBodySchema = z.object({
   scope: scopeSchema.default("global"),
@@ -68,9 +65,13 @@ const upsertBodySchema = z.object({
   { message: "session_id is required when scope is 'session'", path: ["session_id"] }
 );
 
-const deleteQuerySchema = z.object({
-  scope: scopeSchema.default("global"),
-  session_id: z.string().min(1).optional(),
+const deleteQuerySchema = buildZodObjectSchema<{
+  scope: z.infer<typeof scopeSchema>;
+  session_id?: string;
+}>(deleteQueryJsonSchema, {
+  defaultValues: {
+    scope: "global",
+  },
 });
 
 // ── Route registration ──
@@ -283,20 +284,6 @@ export async function registerLlmInstanceRoutes(
 
 // ── Serialization helpers ──
 
-type ApiGenerationParams = {
-  max_context_tokens?: number;
-  max_output_tokens?: number;
-  temperature?: number;
-  top_p?: number;
-  top_k?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  stream?: boolean;
-  timeout_ms?: number;
-  max_retries?: number;
-  reasoning_effort?: string;
-};
-
 function toApiConfig(config: LlmInstanceConfigItem) {
   return {
     id: config.id,
@@ -323,10 +310,10 @@ function toApiResolvedSlot(slot: ResolvedInstanceSlot) {
   };
 }
 
-function toApiParams(params: LlmBindingGenerationParams | null): ApiGenerationParams | null {
+function toApiParams(params: LlmBindingGenerationParams | null): RuntimeParamsResponse | null {
   if (!params) return null;
 
-  const mapped: ApiGenerationParams = {
+  const mapped: RuntimeParamsResponse = {
     max_context_tokens: params.maxContextTokens,
     max_output_tokens: params.maxOutputTokens,
     temperature: params.temperature,
@@ -342,7 +329,7 @@ function toApiParams(params: LlmBindingGenerationParams | null): ApiGenerationPa
 
   const compacted = Object.fromEntries(
     Object.entries(mapped).filter(([, v]) => v !== undefined)
-  ) as ApiGenerationParams;
+  ) as RuntimeParamsResponse;
 
   return Object.keys(compacted).length > 0 ? compacted : null;
 }

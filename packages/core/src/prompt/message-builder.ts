@@ -6,7 +6,7 @@ import type {
   IRMessage,
   IRSection,
 } from './types.js';
-import { TokenBudget } from './token-budget.js';
+import { TokenBudget, resolveSectionBudgetGroupName } from './token-budget.js';
 
 /** 拼装选项 */
 export interface MessageBuilderOptions {
@@ -21,6 +21,7 @@ export interface MessageBuilderOptions {
 interface FlattenedSectionMessage {
   sectionName: string;
   message: IRMessage;
+  budgetGroup: string;
 }
 
 /**
@@ -43,19 +44,20 @@ export class MessageBuilder {
    * 完整流程：estimate → prune → assemble
    */
   build(ir: PromptIR): AssembledPrompt {
-    const { ir: prunedIR, prunedCount } = this.tokenBudget.prune(ir);
-    return this.assemble(prunedIR, prunedCount);
+    const { ir: prunedIR, prunedCount, prunedTokensByGroup } = this.tokenBudget.prune(ir);
+    return this.assemble(prunedIR, prunedCount, prunedTokensByGroup);
   }
 
   /**
    * 将 IR 按分区排序 → 展开插入位 → 扁平化 → 可选合并 → 统计
    */
-  assemble(ir: PromptIR, prunedCount: number = 0): AssembledPrompt {
+  assemble(ir: PromptIR, prunedCount: number = 0, prunedTokensByGroup: Record<string, number> = {}): AssembledPrompt {
     const sortedSections = [...ir.sections].sort((a, b) => a.order - b.order);
     const expandedMessages = this.expandSections(sortedSections);
 
     const flatMessages: ChatMessage[] = [];
     const bySection: Record<string, number> = {};
+    const byGroup: Record<string, number> = {};
     let totalTokens = 0;
 
     for (const item of expandedMessages) {
@@ -65,6 +67,7 @@ export class MessageBuilder {
         content: item.message.content,
       });
       bySection[item.sectionName] = (bySection[item.sectionName] ?? 0) + tokens;
+      byGroup[item.budgetGroup] = (byGroup[item.budgetGroup] ?? 0) + tokens;
       totalTokens += tokens;
     }
 
@@ -90,6 +93,8 @@ export class MessageBuilder {
       tokenUsage: {
         total: finalTotal,
         bySection,
+        byGroup,
+        prunedByGroup: prunedTokensByGroup,
         availableForReply,
       },
       prunedCount,
@@ -104,6 +109,7 @@ export class MessageBuilder {
 
     for (let index = 0; index < relativeSections.length; index++) {
       const section = relativeSections[index]!;
+      const budgetGroup = resolveSectionBudgetGroupName(section);
       if (index === chatHistorySectionIndex) {
         expanded.push(...this.expandChatHistorySection(section, inChatSections));
         continue;
@@ -111,6 +117,7 @@ export class MessageBuilder {
 
       expanded.push(...section.messages.map((message) => ({
         sectionName: section.name,
+        budgetGroup,
         message,
       })));
     }
@@ -118,8 +125,10 @@ export class MessageBuilder {
     if (chatHistorySectionIndex < 0 && inChatSections.length > 0) {
       const fallbackSections = [...inChatSections].sort((left, right) => left.order - right.order);
       for (const section of fallbackSections) {
+        const budgetGroup = resolveSectionBudgetGroupName(section);
         expanded.push(...section.messages.map((message) => ({
           sectionName: section.name,
+          budgetGroup,
           message,
         })));
       }
@@ -129,6 +138,7 @@ export class MessageBuilder {
   }
 
   private expandChatHistorySection(section: IRSection, inChatSections: IRSection[]): FlattenedSectionMessage[] {
+    const historyBudgetGroup = resolveSectionBudgetGroupName(section);
     const prefixMessages = section.messages.filter((message) => typeof message.priority !== 'number');
     const historyMessages = section.messages.filter((message) => typeof message.priority === 'number');
     const historyLength = historyMessages.length;
@@ -166,14 +176,17 @@ export class MessageBuilder {
 
     const expanded: FlattenedSectionMessage[] = prefixMessages.map((message) => ({
       sectionName: section.name,
+      budgetGroup: historyBudgetGroup,
       message,
     }));
 
     for (let position = 0; position <= historyLength; position++) {
       const bucket = buckets.get(position) ?? [];
       for (const bucketSection of bucket) {
+        const budgetGroup = resolveSectionBudgetGroupName(bucketSection);
         expanded.push(...bucketSection.messages.map((message) => ({
           sectionName: bucketSection.name,
+          budgetGroup,
           message,
         })));
       }
@@ -181,6 +194,7 @@ export class MessageBuilder {
       if (position < historyLength) {
         expanded.push({
           sectionName: section.name,
+          budgetGroup: historyBudgetGroup,
           message: historyMessages[position]!,
         });
       }

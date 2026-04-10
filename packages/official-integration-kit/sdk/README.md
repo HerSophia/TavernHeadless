@@ -224,6 +224,11 @@ const result = await client.sessions.respond({
     temperature: 0.8,
     topP: 0.95,
   },
+  debugOptions: {
+    includePromptSnapshot: true,
+    includeRuntimeTrace: true,
+    includeWorldbookMatches: false,
+  },
 });
 
 console.log(result.generatedText);
@@ -231,6 +236,8 @@ console.log(result.summaries);
 console.log(result.finalState);
 console.log(result.memory);
 console.log(result.totalTokens);
+console.log(result.promptSnapshot);
+console.log(result.runtimeTrace);
 ```
 
 Chat 相关方法会保留后端返回的这些字段：
@@ -239,6 +246,8 @@ Chat 相关方法会保留后端返回的这些字段：
 - `summaries`
 - `finalState`
 - `memory`
+- `promptSnapshot`（按需）
+- `runtimeTrace`（按需）
 
 其中 `finalState === "committed"` 表示生成结果已经越过提交边界，相关持久化写入已经完成。
 
@@ -250,6 +259,11 @@ result.memory;
 // 或
 // { mode: "async", status: "queued", jobId: "memory-job:ingest_turn:floor-1" }
 ```
+
+如果你需要看 live 实际发送时的 prompt 摘要与 runtime trace，可以在请求里显式打开：
+
+- `debugOptions.includePromptSnapshot`
+- `debugOptions.includeRuntimeTrace`
 
 ### 流式回复
 
@@ -270,15 +284,24 @@ const result = await client.sessions.respondStream({
   onSummary(payload) {
     console.log(payload.summaries);
   },
+  debugOptions: {
+    includePromptSnapshot: true,
+    includeRuntimeTrace: true,
+    includeWorldbookMatches: false,
+  },
 });
 
 console.log(result.floorId);
 console.log(result.summaries);
 console.log(result.finalState);
 console.log(result.memory);
+console.log(result.promptSnapshot);
+console.log(result.runtimeTrace);
 ```
 
 `respondStream()` 内部已经处理好 SSE 解析，你只管写回调即可。
+
+当打开 live debug 选项时，`promptSnapshot` 与 `runtimeTrace` 只会出现在最终 `done` 结果里，不会新增新的 SSE 事件类型。
 
 ## 设计边界
 
