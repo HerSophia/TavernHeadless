@@ -1,5 +1,10 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { TavernApiError } from "../errors/tavern-api-error.js";
+import {
+  mapPromptDebugPayload,
+  mapPromptLiveDebugOptionsRequest,
+  type PromptLiveDebugOptions,
+} from "../prompt-runtime.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
 import type { RegenerateResult } from "./messages.js";
 import type { RespondGenerationParams, RespondMemoryReceipt, RespondTurnConfig } from "./sessions.js";
@@ -169,6 +174,7 @@ export type FloorsRetryOptions = {
   config?: RespondTurnConfig;
   floorId: string;
   generationParams?: RespondGenerationParams;
+  debugOptions?: PromptLiveDebugOptions;
 };
 
 export type FloorsResource = {
@@ -294,6 +300,7 @@ export function createFloorsResource(client: TransportClient): FloorsResource {
         body: compactObject({
           confirmed_execution_ids: options.confirmedExecutionIds,
           config: options.config,
+          debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
           generation_params: mapGenerationParams(options.generationParams),
         }),
         headers: buildAccountHeaders(options.accountId),
@@ -500,5 +507,6 @@ function mapRetryPayload(payload: Record<string, unknown> | null): RegenerateRes
     summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
+    ...mapPromptDebugPayload(data),
   };
 }

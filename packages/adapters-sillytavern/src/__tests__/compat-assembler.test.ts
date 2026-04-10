@@ -183,6 +183,7 @@ describe('assembleCompat', () => {
       const histSection = ir.sections.find(s => s.name === 'chatHistory');
       expect(histSection).toBeDefined();
       expect(histSection?.messages).toHaveLength(1);
+      expect(histSection?.budgetGroup).toBe('history');
       expect(histSection?.messages[0]?.content).toBe('Hello');
     });
 
@@ -218,6 +219,7 @@ describe('assembleCompat', () => {
       });
 
       const section = ir.sections.find(s => s.name === 'worldInfoBefore');
+      expect(section?.budgetGroup).toBe('worldbook');
       expect(section?.messages[0]?.content).toBe('Lore before');
     });
 
@@ -237,6 +239,7 @@ describe('assembleCompat', () => {
       });
 
       const section = ir.sections.find(s => s.name === 'worldInfoAfter');
+      expect(section?.budgetGroup).toBe('worldbook');
       expect(section?.messages[0]?.content).toBe('Lore after');
     });
 

@@ -58,6 +58,59 @@ describe("chat routes", () => {
         totalUsage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
         memory: { mode: "async", status: "queued", jobId: "memory-job:ingest_turn:floor-1" },
         finalState: "committed",
+        promptSnapshot: {
+          presetId: "preset-1",
+          presetUpdatedAt: 1710000000000,
+          presetVersion: 3,
+          worldbookId: "worldbook-1",
+          worldbookUpdatedAt: 1710000001000,
+          worldbookVersion: 5,
+          regexProfileId: "regex-1",
+          regexProfileUpdatedAt: 1710000002000,
+          regexProfileVersion: 2,
+          worldbookActivatedEntryUids: [7],
+          regexPreRuleNames: ["Input Rule"],
+          regexPostRuleNames: [],
+          promptMode: "compat_strict",
+          promptDigest: "digest-1",
+          tokenEstimate: 42,
+        },
+        runtimeTrace: {
+          worldbook: {
+            hitCount: 1,
+            matches: [
+              {
+                uid: 7,
+                comment: "Campfire Lore",
+                contentPreview: "The northern pass is watched by old sentries.",
+                order: 100,
+                source: {
+                  kind: "session_worldbook",
+                  worldbookId: "worldbook-1",
+                  worldbookName: "Campfire Worldbook",
+                },
+                insertion: { position: "before" },
+                activation: {
+                  mode: "triggered",
+                  recursionLevel: 0,
+                  firstMatch: null,
+                },
+              },
+            ],
+          },
+          delivery: {
+            assistantPrefillRequested: true,
+            assistantPrefillApplied: false,
+            assistantPrefillStrategy: "assistant_message_fallback",
+            allowAssistantPrefill: true,
+            requireLastUser: true,
+            noAssistant: false,
+            lastMessageRole: "user",
+            endsWithUser: true,
+            degraded: true,
+            degradeReasons: ["require_last_user"],
+          },
+        },
       })),
     });
 
@@ -70,6 +123,17 @@ describe("chat routes", () => {
         message: "hello",
         branch_id: "alt",
         source_floor_id: "floor-source",
+        delivery: {
+          allow_assistant_prefill: false,
+          require_last_user: true,
+          no_assistant: false,
+        },
+        structure: {
+          mode: "no_assistant",
+          merge_adjacent_same_role: false,
+          assistant_rewrite_strategy: "to_system",
+          preserve_system_messages: true,
+        },
         config: {
           enableDirector: true,
           enableVerifier: false,
@@ -87,6 +151,11 @@ describe("chat routes", () => {
           stop_sequences: ["<END>"],
           stream: true,
           reasoning_effort: "high",
+        },
+        debug_options: {
+          include_prompt_snapshot: true,
+          include_runtime_trace: true,
+          include_worldbook_matches: true,
         },
       },
     });
@@ -106,6 +175,59 @@ describe("chat routes", () => {
           job_id: "memory-job:ingest_turn:floor-1",
         },
         final_state: "committed",
+        prompt_snapshot: {
+          preset_id: "preset-1",
+          preset_updated_at: 1710000000000,
+          preset_version: 3,
+          worldbook_id: "worldbook-1",
+          worldbook_updated_at: 1710000001000,
+          worldbook_version: 5,
+          regex_profile_id: "regex-1",
+          regex_profile_updated_at: 1710000002000,
+          regex_profile_version: 2,
+          worldbook_activated_entry_uids: [7],
+          regex_pre_rule_names: ["Input Rule"],
+          regex_post_rule_names: [],
+          prompt_mode: "compat_strict",
+          prompt_digest: "digest-1",
+          token_estimate: 42,
+        },
+        runtime_trace: {
+          worldbook: {
+            hit_count: 1,
+            matches: [
+              {
+                uid: 7,
+                comment: "Campfire Lore",
+                content_preview: "The northern pass is watched by old sentries.",
+                order: 100,
+                source: {
+                  kind: "session_worldbook",
+                  worldbook_id: "worldbook-1",
+                  worldbook_name: "Campfire Worldbook",
+                },
+                insertion: { position: "before" },
+                activation: {
+                  mode: "triggered",
+                  recursion_level: 0,
+                  first_match: null,
+                },
+              },
+            ],
+          },
+          delivery: {
+            assistant_prefill_requested: true,
+            assistant_prefill_applied: false,
+            assistant_prefill_strategy: "assistant_message_fallback",
+            allow_assistant_prefill: true,
+            require_last_user: true,
+            no_assistant: false,
+            last_message_role: "user",
+            ends_with_user: true,
+            degraded: true,
+            degrade_reasons: ["require_last_user"],
+          },
+        },
       },
     });
 
@@ -133,6 +255,22 @@ describe("chat routes", () => {
         },
         branchId: "alt",
         sourceFloorId: "floor-source",
+        delivery: {
+          allowAssistantPrefill: false,
+          requireLastUser: true,
+          noAssistant: false,
+        },
+        structure: {
+          mode: "no_assistant",
+          mergeAdjacentSameRole: false,
+          assistantRewriteStrategy: "to_system",
+          preserveSystemMessages: true,
+        },
+        debugOptions: {
+          includePromptSnapshot: true,
+          includeRuntimeTrace: true,
+          includeWorldbookMatches: true,
+        },
       },
       {},
       "default-admin"
@@ -458,6 +596,17 @@ describe("chat routes", () => {
       method: "POST",
       url: "/sessions/s1/regenerate",
       payload: {
+        delivery: {
+          allow_assistant_prefill: false,
+          require_last_user: true,
+          no_assistant: true,
+        },
+        structure: {
+          mode: "no_assistant",
+          merge_adjacent_same_role: false,
+          assistant_rewrite_strategy: "to_system",
+          preserve_system_messages: true,
+        },
         generation_params: {
           temperature: 0.5,
           max_output_tokens: 64,
@@ -468,6 +617,11 @@ describe("chat routes", () => {
           stop_sequences: ["STOP"],
           stream: true,
           reasoning_effort: "low",
+        },
+        debug_options: {
+          include_prompt_snapshot: true,
+          include_runtime_trace: true,
+          include_worldbook_matches: false,
         },
       },
     });
@@ -488,6 +642,22 @@ describe("chat routes", () => {
           stopSequences: ["STOP"],
           stream: true,
           reasoningEffort: "low",
+        },
+        delivery: {
+          allowAssistantPrefill: false,
+          requireLastUser: true,
+          noAssistant: true,
+        },
+        structure: {
+          mode: "no_assistant",
+          mergeAdjacentSameRole: false,
+          assistantRewriteStrategy: "to_system",
+          preserveSystemMessages: true,
+        },
+        debugOptions: {
+          includePromptSnapshot: true,
+          includeRuntimeTrace: true,
+          includeWorldbookMatches: false,
         },
       },
       "default-admin"
@@ -590,6 +760,73 @@ describe("chat routes", () => {
     );
   });
 
+  it("maps delivery on /floors/:id/retry", async () => {
+    const chatService = createChatService({
+      retryFloor: vi.fn(async () => ({
+        floorId: "floor-failed",
+        floorNo: 4,
+        branchId: "main",
+        generatedText: "retry ok",
+        summaries: ["s"],
+        totalUsage: { promptTokens: 3, completionTokens: 4, totalTokens: 7 },
+        finalState: "committed",
+      })),
+    });
+
+    await mountChatRoutes(chatService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/floors/f1/retry",
+      payload: {
+        delivery: {
+          allow_assistant_prefill: false,
+          require_last_user: true,
+          no_assistant: true,
+        },
+        structure: {
+          mode: "no_assistant",
+          merge_adjacent_same_role: false,
+          assistant_rewrite_strategy: "to_system",
+          preserve_system_messages: true,
+        },
+        debug_options: {
+          include_prompt_snapshot: true,
+          include_runtime_trace: true,
+          include_worldbook_matches: false,
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(chatService.retryFloor).toHaveBeenCalledWith(
+      "f1",
+      {
+        config: undefined,
+        generationParams: undefined,
+        delivery: {
+          allowAssistantPrefill: false,
+          requireLastUser: true,
+          noAssistant: true,
+        },
+        structure: {
+          mode: "no_assistant",
+          mergeAdjacentSameRole: false,
+          assistantRewriteStrategy: "to_system",
+          preserveSystemMessages: true,
+        },
+        debugOptions: {
+          includePromptSnapshot: true,
+          includeRuntimeTrace: true,
+          includeWorldbookMatches: false,
+        },
+        confirmedExecutionIds: undefined,
+      },
+      "default-admin"
+    );
+  });
+
+
   it("maps confirmed_execution_ids and preserves replay confirmation details on /floors/:id/retry", async () => {
     const chatService = createChatService({
       retryFloor: vi.fn(async () => {
@@ -659,6 +896,23 @@ describe("chat routes", () => {
         summaries: [],
         totalUsage: { promptTokens: 2, completionTokens: 3, totalTokens: 5 },
         memory: { mode: "sync", status: "applied" },
+        promptSnapshot: {
+          presetId: null,
+          presetUpdatedAt: null,
+          presetVersion: null,
+          worldbookId: null,
+          worldbookUpdatedAt: null,
+          worldbookVersion: null,
+          regexProfileId: null,
+          regexProfileUpdatedAt: null,
+          regexProfileVersion: null,
+          worldbookActivatedEntryUids: [],
+          regexPreRuleNames: [],
+          regexPostRuleNames: [],
+          promptMode: "compat_strict",
+          promptDigest: "digest-edit",
+          tokenEstimate: 12,
+        },
         finalState: "committed",
       })),
     });
@@ -671,6 +925,17 @@ describe("chat routes", () => {
       payload: {
         content: "edited user line",
         branch_id: "edit-1",
+        delivery: {
+          allow_assistant_prefill: false,
+          require_last_user: true,
+          no_assistant: true,
+        },
+        structure: {
+          mode: "no_assistant",
+          merge_adjacent_same_role: false,
+          assistant_rewrite_strategy: "to_system",
+          preserve_system_messages: true,
+        },
         generation_params: {
           temperature: 0.4,
           max_output_tokens: 48,
@@ -681,6 +946,11 @@ describe("chat routes", () => {
           stop_sequences: ["HALT"],
           stream: true,
           reasoning_effort: "high",
+        },
+        debug_options: {
+          include_prompt_snapshot: true,
+          include_runtime_trace: true,
+          include_worldbook_matches: false,
         },
       },
     });
@@ -702,6 +972,23 @@ describe("chat routes", () => {
           job_id: null,
         },
         final_state: "committed",
+        prompt_snapshot: {
+          preset_id: null,
+          preset_updated_at: null,
+          preset_version: null,
+          worldbook_id: null,
+          worldbook_updated_at: null,
+          worldbook_version: null,
+          regex_profile_id: null,
+          regex_profile_updated_at: null,
+          regex_profile_version: null,
+          worldbook_activated_entry_uids: [],
+          regex_pre_rule_names: [],
+          regex_post_rule_names: [],
+          prompt_mode: "compat_strict",
+          prompt_digest: "digest-edit",
+          token_estimate: 12,
+        },
       },
     });
 
@@ -711,6 +998,17 @@ describe("chat routes", () => {
         content: "edited user line",
         branchId: "edit-1",
         config: undefined,
+        delivery: {
+          allowAssistantPrefill: false,
+          requireLastUser: true,
+          noAssistant: true,
+        },
+        structure: {
+          mode: "no_assistant",
+          mergeAdjacentSameRole: false,
+          assistantRewriteStrategy: "to_system",
+          preserveSystemMessages: true,
+        },
         generationParams: {
           temperature: 0.4,
           maxOutputTokens: 48,
@@ -721,6 +1019,11 @@ describe("chat routes", () => {
           stopSequences: ["HALT"],
           stream: true,
           reasoningEffort: "high",
+        },
+        debugOptions: {
+          includePromptSnapshot: true,
+          includeRuntimeTrace: true,
+          includeWorldbookMatches: false,
         },
       },
       "default-admin"

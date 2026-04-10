@@ -43,7 +43,7 @@ TavernHeadless 官方接入的语义层。
 | `resolveUsage` | 把各种格式的 usage 归一化成统一结构 |
 | `buildTimelineMessages` | 把楼层数据平展成时间线消息列表 |
 | `createInitialRespondStreamState` | 创建流式生成的初始状态 |
-| `reduceRespondStream` | 根据 SSE 事件累积流式状态 |
+| `reduceRespondStream` | 根据 SSE 事件累积流式状态，并在 `done` 到达后保留 `result.promptSnapshot` / `result.runtimeTrace` |
 | `groupToolEventsByExecution` | 把同一次工具执行的流式事件整理成历史组 |
 | `getDisplayPage` | 优先使用运行中的候选输出，否则回退到 active page |
 | `getActivePage` | 从楼层中选出当前活动页 |

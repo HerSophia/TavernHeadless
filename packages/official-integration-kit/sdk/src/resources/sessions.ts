@@ -1,5 +1,17 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { TavernApiError } from "../errors/tavern-api-error.js";
+import {
+  mapPromptDebugPayload,
+  mapPromptLiveDebugOptionsRequest,
+  type PromptLiveDebugOptions,
+  type PromptRuntimeTrace,
+  type PromptRuntimeWorldbookFirstMatch,
+  type PromptRuntimeWorldbookMatchActivation,
+  type PromptRuntimeWorldbookMatchDetail,
+  type PromptRuntimeWorldbookMatchInsertion,
+  type PromptRuntimeWorldbookMatchSource,
+  type PromptSnapshotPreview,
+} from "../prompt-runtime.js";
 import { readSseStream } from "../stream/read-sse.js";
 import type { RespondStreamCallbacks } from "../stream/event-types.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage, type ApiUsage } from "../types/usage.js";
@@ -149,6 +161,8 @@ export type RespondResult = {
   summaries: string[];
   totalTokens: number;
   totalUsage: ApiUsage;
+  promptSnapshot?: PromptSnapshotPreview;
+  runtimeTrace?: PromptRuntimeTrace;
 };
 
 export type SessionRegenerateResult = RespondResult & {
@@ -234,73 +248,12 @@ export type RespondDryRunMessage = {
   role: "system" | "user" | "assistant";
 };
 
-export type RespondDryRunWorldbookFirstMatch = {
-  charEnd: number;
-  charStart: number;
-  excerpt: string;
-  injectionIndex?: number;
-  matchedKey: string;
-  matchedKeyScope: "primary" | "secondary";
-  matchedKeyType: "plain" | "regex";
-  messageIndexFromLatest?: number;
-  sourceKind:
-    | "message"
-    | "persona_description"
-    | "character_description"
-    | "character_personality"
-    | "character_depth_prompt"
-    | "scenario"
-    | "creator_notes"
-    | "injection"
-    | "recursion_buffer";
-};
-
-export type RespondDryRunWorldbookMatchActivation = {
-  firstMatch: RespondDryRunWorldbookFirstMatch | null;
-  mode: "constant" | "triggered";
-  recursionLevel: number;
-};
-
-export type RespondDryRunWorldbookMatchInsertion = {
-  depth?: number;
-  outletName?: string;
-  position: "before" | "after" | "at_depth" | "outlet";
-  role?: "system" | "user" | "assistant";
-};
-
-export type RespondDryRunWorldbookMatchSource = {
-  kind: "session_worldbook" | "character_book";
-  worldbookId: string | null;
-  worldbookName: string;
-};
-
-export type RespondDryRunWorldbookMatchDetail = {
-  activation: RespondDryRunWorldbookMatchActivation;
-  comment: string;
-  contentPreview: string;
-  insertion: RespondDryRunWorldbookMatchInsertion;
-  order: number;
-  source: RespondDryRunWorldbookMatchSource;
-  uid: number;
-};
-
-export type RespondDryRunPromptSnapshot = {
-  presetId: string | null;
-  presetUpdatedAt: number | null;
-  presetVersion: number | null;
-  worldbookId: string | null;
-  worldbookUpdatedAt: number | null;
-  worldbookVersion: number | null;
-  regexProfileId: string | null;
-  regexProfileUpdatedAt: number | null;
-  regexProfileVersion: number | null;
-  worldbookActivatedEntryUids: number[];
-  regexPreRuleNames: string[];
-  regexPostRuleNames: string[];
-  promptMode: SessionPromptMode;
-  promptDigest: string;
-  tokenEstimate: number;
-};
+export type RespondDryRunWorldbookFirstMatch = PromptRuntimeWorldbookFirstMatch;
+export type RespondDryRunWorldbookMatchActivation = PromptRuntimeWorldbookMatchActivation;
+export type RespondDryRunWorldbookMatchInsertion = PromptRuntimeWorldbookMatchInsertion;
+export type RespondDryRunWorldbookMatchSource = PromptRuntimeWorldbookMatchSource;
+export type RespondDryRunWorldbookMatchDetail = PromptRuntimeWorldbookMatchDetail;
+export type RespondDryRunPromptSnapshot = PromptSnapshotPreview;
 
 export type RespondDryRunAssembly = {
   memorySummaryInjected: boolean;
@@ -406,6 +359,7 @@ export type SessionsRespondBaseOptions = {
   sessionId: string;
   sourceFloorId?: string;
   promptIntent?: PromptIntent;
+  debugOptions?: PromptLiveDebugOptions;
 };
 
 export type SessionsRespondOptions = SessionsRespondBaseOptions & {
@@ -432,6 +386,7 @@ export type SessionsRegenerateOptions = {
   config?: RespondTurnConfig;
   generationParams?: RespondGenerationParams;
   sessionId: string;
+  debugOptions?: PromptLiveDebugOptions;
 };
 
 export type SessionsSyncCharacterOptions = {
@@ -720,6 +675,7 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
       const response = await client.fetchJson<Record<string, unknown>>(`/sessions/${encodeURIComponent(options.sessionId)}/regenerate`, {
         body: compactObject({
           config: options.config,
+          debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
           generation_params: mapGenerationParams(options.generationParams),
         }),
         headers: buildAccountHeaders(options.accountId),
@@ -846,6 +802,8 @@ function mapDonePayload(payload: {
   summaries?: string[];
   totalUsage?: unknown;
   memory?: RespondMemoryReceipt;
+  promptSnapshot?: PromptSnapshotPreview;
+  runtimeTrace?: PromptRuntimeTrace;
 }): RespondResult {
   const totalUsage = toApiUsage(payload.totalUsage);
 
@@ -861,6 +819,8 @@ function mapDonePayload(payload: {
     summaries: payload.summaries ?? [],
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
+    promptSnapshot: payload.promptSnapshot,
+    runtimeTrace: payload.runtimeTrace,
   };
 }
 
@@ -914,6 +874,7 @@ function mapRespondRequestBody(options: SessionsRespondOptions | SessionsRespond
   return compactObject({
     branch_id: options.branchId,
     config: options.config,
+    debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
     generation_params: mapGenerationParams(options.generationParams),
     prompt_intent: options.promptIntent,
     message: options.message,
@@ -1182,6 +1143,7 @@ function mapRespondPayload(payload: Record<string, unknown> | null, errorMessage
     summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
+    ...mapPromptDebugPayload(data),
   };
 }
 
@@ -1212,6 +1174,7 @@ function mapRegeneratePayload(payload: Record<string, unknown> | null, errorMess
     summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
+    ...mapPromptDebugPayload(data),
   };
 }
 

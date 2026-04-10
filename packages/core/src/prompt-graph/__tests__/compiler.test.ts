@@ -54,6 +54,7 @@ describe('compilePromptGraph', () => {
     expect(ir.sections.map((section) => section.name)).toEqual(['System', 'History']);
     expect(ir.sections[0]?.messages[0]?.content).toBe('You are Luna helping Ari.');
     expect(ir.sections[1]?.messages.map((message) => message.content)).toEqual(['Hello Luna', 'Hi Ari']);
+    expect(ir.sections[1]?.budgetGroup).toBe('history');
     expect(ir.sections[1]?.pinned).toBe(false);
   });
 
@@ -124,6 +125,8 @@ describe('compilePromptGraph', () => {
     expect(ir.sections[0]?.messages[0]?.content).toBe('A precise guardian.');
     expect(ir.sections[1]?.messages[0]?.content).toBe('The user is Traveler: An observant visitor.');
     expect(ir.sections[2]?.messages[0]?.content).toBe('[Memory Summary]\n- Remembers the observatory ritual.');
+    expect(ir.sections[2]?.budgetGroup).toBe('memory');
+    expect(ir.sections[3]?.budgetGroup).toBe('worldbook');
     expect(ir.sections[3]?.messages[0]?.content).toBe('Lore about the observatory');
   });
 

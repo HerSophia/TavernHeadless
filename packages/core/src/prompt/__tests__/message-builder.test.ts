@@ -25,7 +25,7 @@ function makeIR(
 function section(
   name: string,
   messages: { role: 'system' | 'user' | 'assistant'; content: string; prunable?: boolean; priority?: number }[],
-  opts?: { pinned?: boolean; order?: number }
+  opts?: { pinned?: boolean; order?: number; budgetGroup?: string }
 ): IRSection {
   return {
     name,
@@ -36,6 +36,7 @@ function section(
       priority: m.priority,
     })),
     pinned: opts?.pinned,
+    budgetGroup: opts?.budgetGroup,
     order: opts?.order ?? 0,
   };
 }
@@ -117,6 +118,26 @@ describe('MessageBuilder', () => {
       expect(result.tokenUsage.bySection['sys']).toBe(5);
       expect(result.tokenUsage.bySection['chat']).toBe(5);
       expect(result.tokenUsage.availableForReply).toBe(990);
+    });
+
+    it('calculates token usage per budget group and falls back for untagged sections', () => {
+      const builder = new MessageBuilder(new CharTokenCounter());
+      const ir = makeIR([
+        section('sys', [
+          { role: 'system', content: 'hello' },
+        ], { order: 0 }),
+        section('worldbookBefore', [
+          { role: 'system', content: 'lore' },
+        ], { order: 1, budgetGroup: 'worldbook' }),
+        section('chatHistory', [
+          { role: 'user', content: 'hey' },
+        ], { order: 2, budgetGroup: 'history' }),
+      ]);
+
+      const result = builder.assemble(ir);
+
+      expect(result.tokenUsage.byGroup).toEqual({ 'section:sys': 5, worldbook: 4, history: 3 });
+      expect(result.tokenUsage.prunedByGroup).toEqual({});
     });
 
     it('inserts in-chat sections into chat history by depth and order', () => {
@@ -288,6 +309,30 @@ describe('MessageBuilder', () => {
       const result = builder.build(ir);
 
       expect(result.prunedCount).toBe(0);
+      expect(result.messages).toHaveLength(2);
+    });
+
+    it('builds pruned token usage by budget group', () => {
+      const builder = new MessageBuilder(new CharTokenCounter());
+      const ir = makeIR(
+        [
+          section('memory', [
+            { role: 'system', content: '0123456789', prunable: false },
+          ], { pinned: true, order: 0, budgetGroup: 'memory' }),
+          section('chatHistory', [
+            { role: 'user', content: '0123456789', priority: 10 },
+            { role: 'assistant', content: '0123456789', priority: 0 },
+          ], { order: 1, budgetGroup: 'history' }),
+        ],
+        25,
+        0
+      );
+
+      const result = builder.build(ir);
+
+      expect(result.prunedCount).toBe(1);
+      expect(result.tokenUsage.byGroup).toEqual({ memory: 10, history: 10 });
+      expect(result.tokenUsage.prunedByGroup).toEqual({ history: 10 });
       expect(result.messages).toHaveLength(2);
     });
   });

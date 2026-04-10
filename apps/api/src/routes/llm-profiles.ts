@@ -5,6 +5,7 @@ import type { AccountMode } from "../accounts/constants.js";
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { parseWithSchema, sendError } from "../lib/http";
+import { buildZodObjectSchema } from "./schemas/json-schema-zod.js";
 import { getRequestAuthContext } from "../plugins/auth";
 import { assertSafeUrl, UrlGuardError } from "../lib/url-guard";
 import {
@@ -19,6 +20,8 @@ import {
   runtimeSlots,
   createBodyJsonSchema,
   profileResponseJsonSchema,
+  profileListQueryJsonSchema,
+  runtimeQueryJsonSchema,
   profileListResponseJsonSchema,
   updateBodyJsonSchema,
   deleteResponseJsonSchema,
@@ -32,6 +35,7 @@ import {
   unbindQueryJsonSchema,
   unbindResponseJsonSchema,
   runtimeResponseJsonSchema,
+  llmGenerationParamsJsonSchema,
 } from "./schemas/llm-profiles-schemas.js";
 import {
   LlmProfileService,
@@ -45,43 +49,73 @@ const providerSchema = z.enum(["openai", "anthropic", "google", "deepseek", "xai
 const profileStatusSchema = z.enum(["active", "disabled", "deleted"]);
 const instanceSlotSchema = z.enum(["*", "narrator", "director", "verifier", "memory"]);
 const activateScopeSchema = z.enum(["global", "session"]);
-const generationParamsSchema = z.object({
-  max_context_tokens: z.number().int().min(1).optional(),
-  max_output_tokens: z.number().int().min(1).optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  top_k: z.number().int().min(0).optional(),
-  frequency_penalty: z.number().min(-2).max(2).optional(),
-  presence_penalty: z.number().min(-2).max(2).optional(),
-  stream: z.boolean().optional(),
-  timeout_ms: z.number().int().min(1).optional(),
-  max_retries: z.number().int().min(0).max(10).optional(),
-  reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
-});
 
-const runtimeQuerySchema = z.object({
-  session_id: z.string().trim().min(1).optional(),
+type IdParams = {
+  id: string;
+};
+
+type RuntimeQuery = {
+  session_id?: string;
+};
+
+type BindingSlotParams = {
+  slot: z.infer<typeof instanceSlotSchema>;
+};
+
+type CreateProfileBody = {
+  preset_name: string;
+  provider: z.infer<typeof providerSchema>;
+  model_id: string;
+  base_url?: string;
+  api_key_name?: string;
+  api_key: string;
+};
+
+type DiscoverModelsBody = {
+  api_key: string;
+  base_url?: string;
+  provider: z.infer<typeof providerSchema>;
+  allow_private_network?: boolean;
+};
+
+type TestModelBody = {
+  api_key: string;
+  base_url?: string;
+  model_id: string;
+  provider: z.infer<typeof providerSchema>;
+  reasoning_effort?: RuntimeParamsResponse["reasoning_effort"];
+  allow_private_network?: boolean;
+};
+
+const generationParamsSchema = buildZodObjectSchema<RuntimeParamsResponse>(llmGenerationParamsJsonSchema);
+
+const runtimeQuerySchema = buildZodObjectSchema<RuntimeQuery>(runtimeQueryJsonSchema, {
+  trimStringFields: ["session_id"],
 });
 
 const runtimeSourceSchema = z.enum(["env", "global_profile", "session_profile"]);
 const runtimeScopeSchema = z.enum(["global", "session"]);
 
-const idParamsSchema = z.object({
-  id: z.string().min(1),
+const idParamsSchema = buildZodObjectSchema<IdParams>(idParamsJsonSchema);
+
+const listQuerySchema = buildZodObjectSchema<{
+  include_deleted: boolean;
+  status?: z.infer<typeof profileStatusSchema>;
+}>(profileListQueryJsonSchema, {
+  coerceBooleanFields: ["include_deleted"],
+  defaultValues: {
+    include_deleted: false,
+  },
 });
 
-const listQuerySchema = z.object({
-  include_deleted: z.coerce.boolean().optional().default(false),
-  status: profileStatusSchema.optional(),
-});
-
-const createProfileSchema = z.object({
-  preset_name: z.string().trim().min(1).max(120),
-  provider: providerSchema,
-  model_id: z.string().trim().min(1).max(200),
-  base_url: z.string().trim().min(1).max(500).optional(),
-  api_key_name: z.string().trim().min(1).max(120).optional(),
-  api_key: z.string().trim().min(1).max(2048),
+const createProfileSchema = buildZodObjectSchema<CreateProfileBody>(createBodyJsonSchema, {
+  trimStringFields: [
+    "preset_name",
+    "model_id",
+    "base_url",
+    "api_key_name",
+    "api_key",
+  ],
 });
 
 const updateProfileSchema = z
@@ -108,9 +142,7 @@ const activateProfileSchema = z
     path: ["session_id"],
   });
 
-const bindingSlotParamsSchema = z.object({
-  slot: instanceSlotSchema,
-});
+const bindingSlotParamsSchema = buildZodObjectSchema<BindingSlotParams>(bindingSlotParamsJsonSchema);
 
 const unbindBindingSchema = z
   .object({
@@ -122,20 +154,12 @@ const unbindBindingSchema = z
     path: ["session_id"],
   });
 
-const discoverModelsSchema = z.object({
-  api_key: z.string().trim().min(1).max(2048),
-  base_url: z.string().trim().min(1).max(500).optional(),
-  provider: providerSchema,
-  allow_private_network: z.boolean().optional(),
+const discoverModelsSchema = buildZodObjectSchema<DiscoverModelsBody>(discoverModelsBodyJsonSchema, {
+  trimStringFields: ["api_key", "base_url"],
 });
 
-const testModelSchema = z.object({
-  api_key: z.string().trim().min(1).max(2048),
-  base_url: z.string().trim().min(1).max(500).optional(),
-  model_id: z.string().trim().min(1).max(200),
-  provider: providerSchema,
-  reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
-  allow_private_network: z.boolean().optional(),
+const testModelSchema = buildZodObjectSchema<TestModelBody>(testModelBodyJsonSchema, {
+  trimStringFields: ["api_key", "base_url", "model_id"],
 });
 
 
@@ -206,14 +230,7 @@ export async function registerLlmProfileRoutes(
         tags: ["llm-profiles"],
         summary: "List LLM profiles",
         operationId: "listLlmProfiles",
-        querystring: {
-          type: "object",
-          properties: {
-            include_deleted: { type: "boolean", default: false },
-            status: { type: "string", enum: ["active", "disabled", "deleted"] },
-          },
-          additionalProperties: false,
-        },
+        querystring: profileListQueryJsonSchema,
         response: {
           200: profileListResponseJsonSchema,
           400: errorResponseJsonSchema,
@@ -459,13 +476,7 @@ export async function registerLlmProfileRoutes(
         tags: ["llm-profiles"],
         summary: "Get runtime LLM info for all instance slots",
         operationId: "getLlmRuntimeProfiles",
-        querystring: {
-          type: "object",
-          properties: {
-            session_id: { type: "string", minLength: 1 },
-          },
-          additionalProperties: false,
-        },
+        querystring: runtimeQueryJsonSchema,
         response: {
           200: runtimeResponseJsonSchema,
           400: errorResponseJsonSchema,

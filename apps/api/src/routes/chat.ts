@@ -24,10 +24,12 @@ import {
 } from "../services/chat-service.js";
 import { ensureOptionalObjectBody, parseWithSchema, sendError } from "../lib/http.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
+import { buildZodObjectSchema } from "./schemas/json-schema-zod.js";
 import {
   sessionIdParamsJsonSchema,
   respondBodyJsonSchema,
   regenerateBodyJsonSchema,
+  promptIntentValues,
   editAndRegenerateBodyJsonSchema,
   respondSuccessResponseJsonSchema,
   regenerateSuccessResponseJsonSchema,
@@ -39,9 +41,108 @@ import {
 } from "./schemas/chat-schemas.js";
 import { findNativePipelineError } from "../lib/native-pipeline-error.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
-import type { WorldbookMatchDetail } from "../services/prompt-assembler.js";
+import type {
+  PromptRuntimeTrace,
+  PromptSnapshotPreview,
+  WorldbookMatchDetail,
+} from "../services/prompt-assembler.js";
 
 // ── Zod Schemas ───────────────────────────────────────
+
+type TurnConfigBody = {
+  enableTools?: boolean;
+  enableDirector?: boolean;
+  enableVerifier?: boolean;
+  enableMemoryConsolidation?: boolean;
+  verifierFailStrategy?: "warn" | "block" | "retry";
+  toolMode?: "inline" | "standalone" | "both";
+  maxRetries?: number;
+};
+
+type GenerationParamsBody = {
+  temperature?: number;
+  max_output_tokens?: number;
+  top_p?: number;
+  top_k?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  stop_sequences?: string[];
+  stream?: boolean;
+  reasoning_effort?: "low" | "medium" | "high";
+};
+
+type PromptDeliveryBody = {
+  allow_assistant_prefill?: boolean;
+  require_last_user?: boolean;
+  no_assistant?: boolean;
+};
+
+type PromptStructureBody = {
+  mode: "default" | "strict_alternating" | "no_assistant";
+  merge_adjacent_same_role?: boolean;
+  assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+  preserve_system_messages?: boolean;
+};
+
+type LiveDebugOptionsBody = {
+  include_prompt_snapshot?: boolean;
+  include_runtime_trace?: boolean;
+  include_worldbook_matches?: boolean;
+};
+
+type DryRunDebugOptionsBody = {
+  include_worldbook_matches?: boolean;
+};
+
+type FloorVisibilityRangeBody = {
+  start_floor_no: number;
+  end_floor_no: number;
+};
+
+type DryRunVisibilityBody = {
+  hidden_floor_ranges?: FloorVisibilityRangeBody[];
+  visible_floor_ranges?: FloorVisibilityRangeBody[];
+  hidden_floor_ids?: string[];
+  mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+};
+
+type RespondBody = {
+  message: string;
+  prompt_intent?: (typeof promptIntentValues)[number];
+  delivery?: PromptDeliveryBody;
+  structure?: PromptStructureBody;
+  debug_options?: LiveDebugOptionsBody;
+  config?: TurnConfigBody;
+  generation_params?: GenerationParamsBody;
+  branch_id?: string;
+  source_floor_id?: string;
+};
+
+type DryRunBody = {
+  message: string;
+  prompt_intent?: (typeof promptIntentValues)[number];
+  debug_options?: DryRunDebugOptionsBody;
+  visibility?: DryRunVisibilityBody;
+  structure?: PromptStructureBody;
+  delivery?: PromptDeliveryBody;
+};
+
+type RegenerateBody = {
+  delivery?: PromptDeliveryBody;
+  structure?: PromptStructureBody;
+  debug_options?: LiveDebugOptionsBody;
+  config?: TurnConfigBody;
+  generation_params?: GenerationParamsBody;
+};
+
+type EditAndRegenerateBody = RegenerateBody & {
+  content: string;
+  branch_id?: string;
+};
+
+type RetryFloorBody = RegenerateBody & {
+  confirmed_execution_ids?: string[];
+};
 
 const sessionIdParamsSchema = z.object({
   id: z.string().min(1),
@@ -55,66 +156,15 @@ const messageIdParamsSchema = z.object({
   id: z.string().min(1),
 });
 
-const turnConfigSchema = z.object({
-  enableTools: z.boolean().optional(),
-  enableDirector: z.boolean().optional(),
-  enableVerifier: z.boolean().optional(),
-  enableMemoryConsolidation: z.boolean().optional(),
-  verifierFailStrategy: z.enum(["warn", "block", "retry"]).optional(),
-  toolMode: z.enum(["inline", "standalone", "both"]).optional(),
-  maxRetries: z.number().int().min(0).max(5).optional(),
-}).strict();
+const respondBodySchema = buildZodObjectSchema<RespondBody>(respondBodyJsonSchema);
 
-const generationParamsSchema = z.object({
-  temperature: z.number().min(0).max(2).optional(),
-  max_output_tokens: z.number().int().min(1).optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  top_k: z.number().int().min(1).optional(),
-  frequency_penalty: z.number().optional(),
-  presence_penalty: z.number().optional(),
-  stop_sequences: z.array(z.string()).optional(),
-  stream: z.boolean().optional(),
-  reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
-}).strict();
+const dryRunBodySchema = buildZodObjectSchema<DryRunBody>(dryRunBodyJsonSchema);
 
-const respondBodySchema = z.object({
-  /** 用户消息文本 */
-  message: z.string().min(1, "Message cannot be empty"),
-  /** prompt 运行意图（可选） */
-  prompt_intent: z.enum(["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"]).optional(),
-  /** 回合配置覆盖（可选） */
-  config: turnConfigSchema.optional(),
-  /** 生成参数覆盖（可选） */
-  generation_params: generationParamsSchema.optional(),
-  branch_id: z.string().min(1).optional(),
-  source_floor_id: z.string().min(1).optional(),
-}).strict();
+const regenerateBodySchema = buildZodObjectSchema<RegenerateBody>(regenerateBodyJsonSchema);
 
-const dryRunDebugOptionsSchema = z.object({
-  include_worldbook_matches: z.boolean().optional(),
-}).strict().optional();
+const editAndRegenerateBodySchema = buildZodObjectSchema<EditAndRegenerateBody>(editAndRegenerateBodyJsonSchema);
 
-const dryRunBodySchema = z.object({
-  message: z.string().min(1, "Message cannot be empty"),
-  prompt_intent: z.enum(["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"]).optional(),
-  debug_options: dryRunDebugOptionsSchema,
-}).strict();
-
-const regenerateBodySchema = z.object({
-  /** 回合配置覆盖（可选） */
-  config: turnConfigSchema.optional(),
-  /** 生成参数覆盖（可选） */
-  generation_params: generationParamsSchema.optional(),
-}).strict();
-
-const editAndRegenerateBodySchema = regenerateBodySchema.extend({
-  content: z.string().min(1, "Content cannot be empty"),
-  branch_id: z.string().min(1).optional(),
-});
-
-const retryFloorBodySchema = regenerateBodySchema.extend({
-  confirmed_execution_ids: z.array(z.string().min(1)).optional(),
-});
+const retryFloorBodySchema = buildZodObjectSchema<RetryFloorBody>(retryFloorBodyJsonSchema);
 
 
 
@@ -178,9 +228,10 @@ export async function registerChatRoutes(
     const dryRunRequest: DryRunRequest = {
       message: parsedBody.data.message,
       promptIntent: parsedBody.data.prompt_intent,
-      ...(parsedBody.data.debug_options
-        ? { debugOptions: { includeWorldbookMatches: parsedBody.data.debug_options.include_worldbook_matches } }
-        : {}),
+      debugOptions: mapDryRunDebugOptionsRequest(parsedBody.data.debug_options),
+      visibility: mapDryRunVisibilityRequest(parsedBody.data.visibility),
+      structure: mapPromptStructureRequest(parsedBody.data.structure),
+      delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -193,23 +244,8 @@ export async function registerChatRoutes(
           token_estimate: result.tokenEstimate,
           available_for_reply: result.availableForReply,
           memory_summary: result.memorySummary ?? null,
-          prompt_snapshot: {
-            preset_id: result.promptSnapshot.presetId,
-            preset_updated_at: result.promptSnapshot.presetUpdatedAt,
-            preset_version: result.promptSnapshot.presetVersion,
-            worldbook_id: result.promptSnapshot.worldbookId,
-            worldbook_updated_at: result.promptSnapshot.worldbookUpdatedAt,
-            worldbook_version: result.promptSnapshot.worldbookVersion,
-            regex_profile_id: result.promptSnapshot.regexProfileId,
-            regex_profile_updated_at: result.promptSnapshot.regexProfileUpdatedAt,
-            regex_profile_version: result.promptSnapshot.regexProfileVersion,
-            worldbook_activated_entry_uids: result.promptSnapshot.worldbookActivatedEntryUids,
-            regex_pre_rule_names: result.promptSnapshot.regexPreRuleNames,
-            regex_post_rule_names: result.promptSnapshot.regexPostRuleNames,
-            prompt_mode: result.promptSnapshot.promptMode,
-            prompt_digest: result.promptSnapshot.promptDigest,
-            token_estimate: result.promptSnapshot.tokenEstimate,
-          },
+          prompt_snapshot: mapPromptSnapshotToSnakeCase(result.promptSnapshot),
+          ...mapOptionalRuntimeTraceResponseField(result.runtimeTrace),
           assembly: {
             mode: result.assembly.mode,
             prompt_intent: result.assembly.promptIntent,
@@ -279,6 +315,9 @@ export async function registerChatRoutes(
       branchId: parsedBody.data.branch_id,
       sourceFloorId: parsedBody.data.source_floor_id,
       promptIntent: parsedBody.data.prompt_intent,
+      structure: mapPromptStructureRequest(parsedBody.data.structure),
+      delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
+      debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -352,6 +391,7 @@ export async function registerChatRoutes(
         total_usage: mapUsageToSnakeCase(result.totalUsage),
         memory: mapMemoryToSnakeCase(result.memory),
         final_state: result.finalState,
+        ...mapOptionalPromptDebugResponseFields(result),
       });
       completed = true;
       reply.raw.end();
@@ -411,6 +451,9 @@ export async function registerChatRoutes(
       branchId: parsedBody.data.branch_id,
       sourceFloorId: parsedBody.data.source_floor_id,
       promptIntent: parsedBody.data.prompt_intent,
+      structure: mapPromptStructureRequest(parsedBody.data.structure),
+      delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
+      debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -427,6 +470,7 @@ export async function registerChatRoutes(
           total_usage: mapUsageToSnakeCase(result.totalUsage),
           memory: mapMemoryToSnakeCase(result.memory),
           final_state: result.finalState,
+          ...mapOptionalPromptDebugResponseFields(result),
         },
       });
     } catch (error) {
@@ -470,6 +514,9 @@ export async function registerChatRoutes(
       generationParams: parsedBody.data.generation_params
         ? mapGenerationParams(parsedBody.data.generation_params)
         : undefined,
+      structure: mapPromptStructureRequest(parsedBody.data.structure),
+      delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
+      debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -486,6 +533,7 @@ export async function registerChatRoutes(
           total_usage: mapUsageToSnakeCase(result.totalUsage),
           memory: mapMemoryToSnakeCase(result.memory),
           final_state: result.finalState,
+          ...mapOptionalPromptDebugResponseFields(result),
         },
       });
     } catch (error) {
@@ -522,8 +570,12 @@ export async function registerChatRoutes(
       generationParams: parsedBody.data.generation_params
         ? mapGenerationParams(parsedBody.data.generation_params)
         : undefined,
+      structure: mapPromptStructureRequest(parsedBody.data.structure),
+      delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
+      debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
       confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
     };
+
     const accountId = getRequestAuthContext(request).accountId;
 
     try {
@@ -539,6 +591,7 @@ export async function registerChatRoutes(
           total_usage: mapUsageToSnakeCase(result.totalUsage),
           memory: mapMemoryToSnakeCase(result.memory),
           final_state: result.finalState,
+          ...mapOptionalPromptDebugResponseFields(result),
         },
       });
     } catch (error) {
@@ -572,6 +625,9 @@ export async function registerChatRoutes(
       generationParams: parsedBody.data.generation_params
         ? mapGenerationParams(parsedBody.data.generation_params)
         : undefined,
+      structure: mapPromptStructureRequest(parsedBody.data.structure),
+      delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
+      debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -590,6 +646,7 @@ export async function registerChatRoutes(
           total_usage: mapUsageToSnakeCase(result.totalUsage),
           memory: mapMemoryToSnakeCase(result.memory),
           final_state: result.finalState,
+          ...mapOptionalPromptDebugResponseFields(result),
         },
       });
     } catch (error) {
@@ -602,7 +659,7 @@ export async function registerChatRoutes(
 
 /** 将 snake_case 的生成参数映射为 camelCase */
 function mapGenerationParams(
-  params: z.infer<typeof generationParamsSchema>
+  params: GenerationParamsBody
 ): RespondRequest["generationParams"] {
   return {
     temperature: params.temperature,
@@ -680,6 +737,223 @@ function writeSse(rawReply: import("http").ServerResponse, event: string, data: 
   } catch {
     // 客户端可能已断连，静默忽略。
   }
+}
+
+function mapPromptStructureRequest(
+  structure: PromptStructureBody | undefined,
+): RespondRequest["structure"] {
+  if (!structure) {
+    return undefined;
+  }
+
+  return {
+    mode: structure.mode,
+    mergeAdjacentSameRole: structure.merge_adjacent_same_role,
+    assistantRewriteStrategy: structure.assistant_rewrite_strategy,
+    preserveSystemMessages: structure.preserve_system_messages,
+  };
+}
+
+function mapPromptDeliveryRequest(
+  delivery: PromptDeliveryBody | undefined,
+): RespondRequest["delivery"] {
+  if (!delivery) {
+    return undefined;
+  }
+
+  return {
+    allowAssistantPrefill: delivery.allow_assistant_prefill,
+    requireLastUser: delivery.require_last_user,
+    noAssistant: delivery.no_assistant,
+  };
+}
+
+function mapLiveDebugOptionsRequest(
+  debugOptions: LiveDebugOptionsBody | undefined,
+): RespondRequest["debugOptions"] {
+  if (!debugOptions) {
+    return undefined;
+  }
+
+  const mapped = {
+    ...(debugOptions.include_prompt_snapshot !== undefined
+      ? { includePromptSnapshot: debugOptions.include_prompt_snapshot }
+      : {}),
+    ...(debugOptions.include_runtime_trace !== undefined
+      ? { includeRuntimeTrace: debugOptions.include_runtime_trace }
+      : {}),
+    ...(debugOptions.include_worldbook_matches !== undefined
+      ? { includeWorldbookMatches: debugOptions.include_worldbook_matches }
+      : {}),
+  };
+
+  return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+function mapDryRunDebugOptionsRequest(
+  debugOptions: DryRunDebugOptionsBody | undefined,
+): DryRunRequest["debugOptions"] {
+  if (!debugOptions) {
+    return undefined;
+  }
+
+  return {
+    includeWorldbookMatches: debugOptions.include_worldbook_matches,
+  };
+}
+
+function mapDryRunVisibilityRequest(
+  visibility: DryRunVisibilityBody | undefined,
+): DryRunRequest["visibility"] {
+  if (!visibility) {
+    return undefined;
+  }
+
+  return {
+    hiddenFloorRanges: visibility.hidden_floor_ranges?.map((range) => ({
+      startFloorNo: range.start_floor_no,
+      endFloorNo: range.end_floor_no,
+    })),
+    visibleFloorRanges: visibility.visible_floor_ranges?.map((range) => ({
+      startFloorNo: range.start_floor_no,
+      endFloorNo: range.end_floor_no,
+    })),
+    hiddenFloorIds: visibility.hidden_floor_ids,
+    mode: visibility.mode,
+  };
+}
+
+function mapPromptSnapshotToSnakeCase(promptSnapshot: PromptSnapshotPreview): Record<string, unknown> {
+  return {
+    preset_id: promptSnapshot.presetId,
+    preset_updated_at: promptSnapshot.presetUpdatedAt,
+    preset_version: promptSnapshot.presetVersion,
+    worldbook_id: promptSnapshot.worldbookId,
+    worldbook_updated_at: promptSnapshot.worldbookUpdatedAt,
+    worldbook_version: promptSnapshot.worldbookVersion,
+    regex_profile_id: promptSnapshot.regexProfileId,
+    regex_profile_updated_at: promptSnapshot.regexProfileUpdatedAt,
+    regex_profile_version: promptSnapshot.regexProfileVersion,
+    worldbook_activated_entry_uids: promptSnapshot.worldbookActivatedEntryUids,
+    regex_pre_rule_names: promptSnapshot.regexPreRuleNames,
+    regex_post_rule_names: promptSnapshot.regexPostRuleNames,
+    prompt_mode: promptSnapshot.promptMode,
+    prompt_digest: promptSnapshot.promptDigest,
+    token_estimate: promptSnapshot.tokenEstimate,
+  };
+}
+
+function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<string, unknown> {
+  return {
+    ...(runtimeTrace.preset
+      ? {
+          preset: {
+            selected_prompt_order_character_id: runtimeTrace.preset.selectedPromptOrderCharacterId,
+            ignored_prompt_order_character_ids: runtimeTrace.preset.ignoredPromptOrderCharacterIds,
+            unsupported_fields: runtimeTrace.preset.unsupportedFields,
+            ignored_fields: runtimeTrace.preset.ignoredFields,
+            unresolved_markers: runtimeTrace.preset.unresolvedMarkers,
+            warnings: runtimeTrace.preset.warnings,
+            trigger_filtered_entry_ids: runtimeTrace.preset.triggerFilteredEntryIds,
+            in_chat_inserted_entry_ids: runtimeTrace.preset.inChatInsertedEntryIds,
+            continue_nudge_applied: runtimeTrace.preset.continueNudgeApplied,
+            continue_nudge_text: runtimeTrace.preset.continueNudgeText ?? null,
+            names_behavior_applied: runtimeTrace.preset.namesBehaviorApplied ?? null,
+          },
+        }
+      : {}),
+    ...(runtimeTrace.worldbook
+      ? {
+          worldbook: {
+            hit_count: runtimeTrace.worldbook.hitCount,
+            ...(runtimeTrace.worldbook.matches
+              ? {
+                  matches: runtimeTrace.worldbook.matches.map(mapWorldbookMatchDetail),
+                }
+              : {}),
+          },
+        }
+      : {}),
+    ...(runtimeTrace.regex
+      ? {
+          regex: {
+            user_input_rules: runtimeTrace.regex.userInputRules,
+            ai_output_rules: runtimeTrace.regex.aiOutputRules,
+            preprocessed_user_message: runtimeTrace.regex.preprocessedUserMessage ?? null,
+          },
+        }
+      : {}),
+    ...(runtimeTrace.budgets
+      ? {
+          budgets: {
+            by_group: runtimeTrace.budgets.byGroup.map((item) => ({
+              group: item.group,
+              token_count: item.tokenCount,
+              ...(item.prunedTokenCount !== undefined ? { pruned_token_count: item.prunedTokenCount } : {}),
+            })),
+          },
+        }
+      : {}),
+    ...(runtimeTrace.structure
+      ? {
+          structure: {
+            mode: runtimeTrace.structure.mode,
+            merge_adjacent_same_role: runtimeTrace.structure.mergeAdjacentSameRole,
+            assistant_rewrite_count: runtimeTrace.structure.assistantRewriteCount,
+            assistant_rewrite_strategy: runtimeTrace.structure.assistantRewriteStrategy ?? null,
+            tail_assistant_detected: runtimeTrace.structure.tailAssistantDetected,
+          },
+        }
+      : {}),
+    ...(runtimeTrace.memory ? { memory: { summary_injected: runtimeTrace.memory.summaryInjected } } : {}),
+    ...(runtimeTrace.delivery
+      ? {
+          delivery: {
+            assistant_prefill_requested: runtimeTrace.delivery.assistantPrefillRequested,
+            assistant_prefill_applied: runtimeTrace.delivery.assistantPrefillApplied,
+            assistant_prefill_strategy: runtimeTrace.delivery.assistantPrefillStrategy ?? null,
+            allow_assistant_prefill: runtimeTrace.delivery.allowAssistantPrefill,
+            require_last_user: runtimeTrace.delivery.requireLastUser,
+            no_assistant: runtimeTrace.delivery.noAssistant,
+            last_message_role: runtimeTrace.delivery.lastMessageRole ?? null,
+            ends_with_user: runtimeTrace.delivery.endsWithUser,
+            degraded: runtimeTrace.delivery.degraded,
+            degrade_reasons: runtimeTrace.delivery.degradeReasons,
+          },
+        }
+      : {}),
+    ...(runtimeTrace.visibility
+      ? {
+          visibility: {
+            hidden_floor_ranges: runtimeTrace.visibility.hiddenFloorRanges?.map((range) => ({
+              start_floor_no: range.startFloorNo,
+              end_floor_no: range.endFloorNo,
+            })),
+            filtered_floor_nos: runtimeTrace.visibility.filteredFloorNos,
+          },
+        }
+      : {}),
+  };
+}
+
+function mapOptionalRuntimeTraceResponseField(runtimeTrace?: PromptRuntimeTrace): Record<string, unknown> {
+  return runtimeTrace
+    ? { runtime_trace: mapRuntimeTraceToSnakeCase(runtimeTrace) }
+    : {};
+}
+
+function mapOptionalPromptDebugResponseFields(
+  payload: {
+    promptSnapshot?: PromptSnapshotPreview;
+    runtimeTrace?: PromptRuntimeTrace;
+  },
+): Record<string, unknown> {
+  return {
+    ...(payload.promptSnapshot
+      ? { prompt_snapshot: mapPromptSnapshotToSnakeCase(payload.promptSnapshot) }
+      : {}),
+    ...mapOptionalRuntimeTraceResponseField(payload.runtimeTrace),
+  };
 }
 
 function mapWorldbookMatchDetail(match: WorldbookMatchDetail): Record<string, unknown> {

@@ -108,6 +108,7 @@ export function assembleCompatPlus(input: CompatPlusAssemblerInput): PromptIR {
   const memorySection: IRSection = {
     name: 'memory',
     order: memoryOrder,
+    budgetGroup: 'memory',
     pinned: true,
     messages: [{
       role: 'system',

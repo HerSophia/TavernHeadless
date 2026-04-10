@@ -383,6 +383,248 @@ describe("ChatService", () => {
     expect(assistantMsg?.content).toBe(MOCK_GENERATED_TEXT);
   });
 
+  it("keeps assistant prefill fallback on the live send path for continue intent", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Continue Prefill Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        prompts: [
+          { identifier: "main", name: "Main Prompt", role: "system", content: "Stay in character." },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+        prompt_order: [
+          {
+            character_id: 100000,
+            order: [
+              { identifier: "main", enabled: true },
+              { identifier: "chatHistory", enabled: true },
+            ],
+          },
+        ],
+        openai_max_context: 2048,
+        openai_max_tokens: 300,
+        temperature: 0.7,
+        top_p: 1,
+        top_k: 0,
+        min_p: 0,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        repetition_penalty: 1,
+        new_chat_prompt: "",
+        new_example_chat_prompt: "",
+        continue_nudge_prompt: "",
+        assistant_prefill: "Knight:",
+        wi_format: "{0}",
+        names_behavior: 0,
+        stream_openai: true,
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now })
+      .where(eq(sessions.id, sessionId));
+
+    await chatService.respond(sessionId, { message: "Continue the scene.", promptIntent: "continue" });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.messages[turnInput.messages.length - 1]).toEqual({ role: "assistant", content: "Knight:" });
+    expect(turnInput.messages[turnInput.messages.length - 2]).toEqual({ role: "user", content: "Continue the scene." });
+
+    const outputPages = await database.db.select().from(messagePages).where(eq(messagePages.pageKind, "output"));
+    const [assistantMsg] = await database.db
+      .select()
+      .from(messages)
+      .where(eq(messages.pageId, outputPages[0]!.id));
+
+    expect(assistantMsg?.content).toBe(MOCK_GENERATED_TEXT);
+  });
+
+  it("suppresses assistant prefill on the live send path when respond delivery requires last user", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Continue Prefill With Delivery Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        prompts: [
+          { identifier: "main", name: "Main Prompt", role: "system", content: "Stay in character." },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+        prompt_order: [
+          {
+            character_id: 100000,
+            order: [
+              { identifier: "main", enabled: true },
+              { identifier: "chatHistory", enabled: true },
+            ],
+          },
+        ],
+        openai_max_context: 2048,
+        openai_max_tokens: 300,
+        temperature: 0.7,
+        top_p: 1,
+        top_k: 0,
+        min_p: 0,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        repetition_penalty: 1,
+        new_chat_prompt: "",
+        new_example_chat_prompt: "",
+        continue_nudge_prompt: "",
+        assistant_prefill: "Knight:",
+        wi_format: "{0}",
+        names_behavior: 0,
+        stream_openai: true,
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now })
+      .where(eq(sessions.id, sessionId));
+
+    await chatService.respond(sessionId, {
+      message: "Continue the scene.",
+      promptIntent: "continue",
+      delivery: { requireLastUser: true },
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.messages[turnInput.messages.length - 1]).toEqual({ role: "user", content: "Continue the scene." });
+    expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "assistant" && message.content === "Knight:")).toBe(false);
+
+    const outputPages = await database.db.select().from(messagePages).where(eq(messagePages.pageKind, "output"));
+    const [assistantMsg] = await database.db
+      .select()
+      .from(messages)
+      .where(eq(messages.pageId, outputPages[0]!.id));
+
+    expect(assistantMsg?.content).toBe(MOCK_GENERATED_TEXT);
+  });
+
+  it("rewrites assistant history on the live send path when respond structure sets no_assistant", async () => {
+    await chatService.respond(sessionId, { message: "First turn" });
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    await chatService.respond(sessionId, {
+      message: "Second turn",
+      structure: { mode: "no_assistant" },
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
+    expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+  });
+
+  it("keeps live prompt debug payload disabled by default", async () => {
+    const result = await chatService.respond(sessionId, { message: "Hello without debug" });
+
+    expect(result.promptSnapshot).toBeUndefined();
+    expect(result.runtimeTrace).toBeUndefined();
+  });
+
+  it("returns live prompt snapshot and runtime trace when respond debug options are enabled", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Live Debug Prompt Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        prompts: [
+          { identifier: "main", name: "Main Prompt", role: "system", content: "Stay in character." },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+        prompt_order: [
+          {
+            character_id: 100000,
+            order: [
+              { identifier: "main", enabled: true },
+              { identifier: "chatHistory", enabled: true },
+            ],
+          },
+        ],
+        openai_max_context: 2048,
+        openai_max_tokens: 300,
+        temperature: 0.7,
+        top_p: 1,
+        top_k: 0,
+        min_p: 0,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        repetition_penalty: 1,
+        new_chat_prompt: "",
+        new_example_chat_prompt: "",
+        continue_nudge_prompt: "",
+        assistant_prefill: "Knight:",
+        wi_format: "{0}",
+        names_behavior: 0,
+        stream_openai: true,
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now })
+      .where(eq(sessions.id, sessionId));
+
+    await chatService.respond(sessionId, { message: "First turn" });
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    const result = await chatService.respond(sessionId, {
+      message: "Continue the scene.",
+      promptIntent: "continue",
+      structure: { mode: "no_assistant" },
+      delivery: { requireLastUser: true },
+      debugOptions: {
+        includePromptSnapshot: true,
+        includeRuntimeTrace: true,
+      },
+    });
+
+    expect(result.promptSnapshot).toBeDefined();
+    expect(result.promptSnapshot?.promptDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.promptSnapshot?.tokenEstimate).toBeGreaterThan(0);
+    expect(result.runtimeTrace?.visibility).toBeUndefined();
+    expect(result.runtimeTrace?.worldbook?.matches).toBeUndefined();
+    expect(result.runtimeTrace?.structure).toMatchObject({
+      mode: "no_assistant",
+    });
+    expect(result.runtimeTrace?.structure?.assistantRewriteCount).toBeGreaterThan(0);
+    expect(result.runtimeTrace?.delivery).toMatchObject({
+      assistantPrefillRequested: true,
+      assistantPrefillApplied: false,
+      requireLastUser: true,
+    });
+
+    const [snapshotRow] = await database.db
+      .select()
+      .from(promptSnapshots)
+      .where(eq(promptSnapshots.floorId, result.floorId));
+
+    expect(snapshotRow?.promptDigest).toBe(result.promptSnapshot?.promptDigest);
+    expect(snapshotRow?.tokenEstimate).toBe(result.promptSnapshot?.tokenEstimate);
+  });
+
   it("should forward runtime tool events during respond", async () => {
     const eventBus = createEventBus();
     const tokenCounter = new SimpleTokenCounter();
@@ -1525,6 +1767,21 @@ describe("ChatService", () => {
       expect(regenResult.generatedText).toBe(REGEN_TEXT);
     });
 
+    it("should apply delivery noAssistant on regenerate send path", async () => {
+      await chatService.respond(sessionId, { message: "First turn" });
+      await chatService.respond(sessionId, { message: "Second turn" });
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      await chatService.regenerate(sessionId, {
+        delivery: { noAssistant: true },
+      });
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
+      expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+    });
+
     it("should use the same generating commit boundary during regenerate", async () => {
       await chatService.respond(sessionId, { message: "Seed for regenerate" });
 
@@ -1831,6 +2088,23 @@ describe("ChatService", () => {
       expect(pages.some((page) => page.pageKind === "output")).toBe(true);
     });
 
+    it("should apply delivery noAssistant on retryFloor send path", async () => {
+      await chatService.respond(sessionId, { message: "First turn" });
+      const retriedTurn = await chatService.respond(sessionId, { message: "Retry delivery seed" });
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      await chatService.retryFloor(retriedTurn.floorId, {
+        delivery: { noAssistant: true },
+      });
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
+      expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+    });
+
+
+
     it("requires explicit confirmation before retrying a floor with unsafe prior tool executions", async () => {
       const baseTurn = await chatService.respond(sessionId, { message: "Retry guard" });
       const now = Date.now();
@@ -2024,6 +2298,33 @@ describe("ChatService", () => {
         .where(and(eq(messages.pageId, newInputPage!.id), eq(messages.role, "user")));
 
       expect(editedUserMessage?.content).toBe("Edited user line");
+    });
+
+    it("should apply delivery noAssistant on editAndRegenerate send path", async () => {
+      await chatService.respond(sessionId, { message: "First turn" });
+      const editableTurn = await chatService.respond(sessionId, { message: "Editable user line" });
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, editableTurn.floorId), eq(messagePages.pageKind, "input")));
+
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      await chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited without assistant",
+        branchId: "edit-no-assistant",
+        delivery: { noAssistant: true },
+      });
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
+      expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
     });
 
     it("should switch USER_INPUT regex execution to the edit channel during editAndRegenerate", async () => {

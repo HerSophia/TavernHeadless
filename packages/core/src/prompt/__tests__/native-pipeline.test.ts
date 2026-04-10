@@ -92,6 +92,9 @@ describe('assembleNativePrompt', () => {
     const afterSection = ir.sections.find((section) => section.name === 'worldbookAfter');
 
     expect(beforeSection?.messages[0]?.content).toBe('Before lore: Excalibur');
+    expect(beforeSection?.budgetGroup).toBe('worldbook');
+    expect(ir.sections.find((section) => section.name === 'chatHistory')?.budgetGroup).toBe('history');
+    expect(afterSection?.budgetGroup).toBe('worldbook');
     expect(afterSection?.messages[0]?.content).toBe('After lore: Excalibur');
   });
 
@@ -116,6 +119,7 @@ describe('assembleNativePrompt', () => {
 
     const depthSection = ir.sections.find((section) => section.name === 'worldbookDepth:2');
     expect(depthSection?.messages[0]?.role).toBe('user');
+    expect(depthSection?.budgetGroup).toBe('worldbook');
     expect(depthSection?.messages[0]?.content).toBe('Depth lore: Excalibur');
   });
 
@@ -140,6 +144,7 @@ describe('assembleNativePrompt', () => {
 
     const memorySection = ir.sections.find((section) => section.name === 'memorySummary');
     expect(memorySection?.messages[0]?.role).toBe('system');
+    expect(memorySection?.budgetGroup).toBe('memory');
     expect(memorySection?.messages[0]?.content).toContain('[Memory Summary]');
     expect(memorySection?.messages[0]?.content).toContain('Luna remembers the ritual.');
   });

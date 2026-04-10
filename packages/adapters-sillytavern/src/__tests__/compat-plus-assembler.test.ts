@@ -126,6 +126,7 @@ describe('assembleCompatPlus', () => {
       expect(memorySection!.messages).toHaveLength(1);
       expect(memorySection!.messages[0]!.content).toBe('[Memory]\n- (summary) Important fact');
       expect(memorySection!.messages[0]!.role).toBe('system');
+      expect(memorySection!.budgetGroup).toBe('memory');
       expect(memorySection!.messages[0]!.source).toBe('memory');
     });
 

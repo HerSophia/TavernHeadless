@@ -66,6 +66,36 @@ describe("LLM Profile Routes", () => {
     expect(listBody.data[0]?.api_key_masked).toContain("****");
   });
 
+  it("trims create and provider probe body string fields before validation", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "  Trimmed Profile  ",
+        provider: "openai",
+        model_id: "  gpt-4o-mini  ",
+        base_url: "  https://api.openai.com/v1  ",
+        api_key_name: "  trimmed-key-name  ",
+        api_key: "  sk-test-trimmed  ",
+      },
+    });
+
+    expect(createRes.statusCode).toBe(201);
+    expect((createRes.json() as {
+      data: {
+        preset_name: string;
+        model_id: string;
+        base_url: string | null;
+        api_key_name: string | null;
+      };
+    }).data).toMatchObject({
+      preset_name: "Trimmed Profile",
+      model_id: "gpt-4o-mini",
+      base_url: "https://api.openai.com/v1",
+      api_key_name: "trimmed-key-name",
+    });
+  });
+
   it("returns 409 when profile name is duplicated", async () => {
     await app.inject({
       method: "POST",
