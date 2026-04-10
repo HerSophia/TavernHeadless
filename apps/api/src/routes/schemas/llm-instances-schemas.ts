@@ -2,7 +2,7 @@
  * LLM Instance Config route JSON Schema & example constants.
  */
 
-import { generationParamsJsonSchemaProperties } from "./llm-profiles-schemas.js";
+import { nullableLlmGenerationParamsJsonSchema } from "./llm-profiles-schemas.js";
 
 // ── Slot enum ──
 
@@ -74,12 +74,7 @@ const instanceConfigJsonSchema = {
     instance_slot: { type: "string", enum: [...instanceSlotValues] },
     preset_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     enabled: { type: "boolean" },
-    params: {
-      anyOf: [
-        { type: "object", properties: generationParamsJsonSchemaProperties, additionalProperties: false },
-        { type: "null" },
-      ],
-    },
+    params: nullableLlmGenerationParamsJsonSchema,
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
   },
@@ -119,12 +114,7 @@ const resolvedSlotJsonSchema = {
     config_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     preset_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     enabled: { type: "boolean" },
-    params: {
-      anyOf: [
-        { type: "object", properties: generationParamsJsonSchemaProperties, additionalProperties: false },
-        { type: "null" },
-      ],
-    },
+    params: nullableLlmGenerationParamsJsonSchema,
   },
   additionalProperties: false,
 } as const;
@@ -167,12 +157,7 @@ export const resolvedQueryJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const nullableInstanceParamsJsonSchema = {
-  anyOf: [
-    { type: "object", properties: generationParamsJsonSchemaProperties, additionalProperties: false },
-    { type: "null" },
-  ],
-} as const;
+const nullableInstanceParamsJsonSchema = nullableLlmGenerationParamsJsonSchema;
 
 export const slotParamsJsonSchema = {
   type: "object",
@@ -180,6 +165,7 @@ export const slotParamsJsonSchema = {
   properties: {
     slot: {
       type: "string",
+      minLength: 1,
       description: "Allowed values: *, narrator, director, verifier, memory.",
     },
   },

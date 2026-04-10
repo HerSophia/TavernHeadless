@@ -1,5 +1,10 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { TavernApiError } from "../errors/tavern-api-error.js";
+import {
+  mapPromptDebugPayload,
+  mapPromptLiveDebugOptionsRequest,
+  type PromptLiveDebugOptions,
+} from "../prompt-runtime.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
 import type { RespondGenerationParams, RespondMemoryReceipt, RespondResult, RespondTurnConfig } from "./sessions.js";
 import {
@@ -131,6 +136,7 @@ export type MessagesEditAndRegenerateOptions = {
   content: string;
   generationParams?: RespondGenerationParams;
   messageId: string;
+  debugOptions?: PromptLiveDebugOptions;
 };
 
 export type MessagesResource = {
@@ -200,6 +206,7 @@ export function createMessagesResource(client: TransportClient): MessagesResourc
             branch_id: options.branchId,
             config: options.config,
             content: options.content,
+            debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
             generation_params: mapGenerationParams(options.generationParams),
           }),
           headers: buildAccountHeaders(options.accountId),
@@ -438,5 +445,6 @@ function mapRegeneratePayload(payload: Record<string, unknown> | null, errorMess
     summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
+    ...mapPromptDebugPayload(data),
   };
 }

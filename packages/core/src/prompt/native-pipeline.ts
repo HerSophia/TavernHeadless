@@ -206,6 +206,7 @@ export class TemplateNode implements NativePipelineNode {
         name: 'nativeSystem',
         order: 0,
         pinned: true,
+        budgetGroup: 'section:nativeSystem',
         messages: [{
           role: 'system',
           content: renderedSystem,
@@ -229,6 +230,7 @@ export class TemplateNode implements NativePipelineNode {
     sections.push({
       name: 'chatHistory',
       order: 2,
+      budgetGroup: 'history',
       pinned: false,
       messages: chatMessages,
     });
@@ -299,6 +301,7 @@ export class WorldbookResolveNode implements NativePipelineNode {
         depthSections.push({
           name: `worldbookDepth:${depth}`,
           order: 1000 + depth,
+          budgetGroup: 'worldbook',
           pinned: true,
           messages: [{
             role: entry.role ?? 'system',
@@ -325,6 +328,7 @@ export class WorldbookResolveNode implements NativePipelineNode {
       sections.push({
         name: 'worldbookBefore',
         order: 1,
+        budgetGroup: 'worldbook',
         pinned: true,
         messages: beforeMessages,
       });
@@ -334,6 +338,7 @@ export class WorldbookResolveNode implements NativePipelineNode {
       sections.push({
         name: 'worldbookAfter',
         order: 3,
+        budgetGroup: 'worldbook',
         pinned: true,
         messages: afterMessages,
       });
@@ -454,6 +459,7 @@ export class MemoryInjectNode implements NativePipelineNode {
     sections.push({
       name: 'memorySummary',
       order,
+      budgetGroup: 'memory',
       pinned: true,
       messages: [{
         role: 'system',

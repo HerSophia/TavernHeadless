@@ -172,6 +172,8 @@ function createSection(
   options: {
     insertion?: IRSection['insertion'];
     semantic?: IRSection['semantic'];
+    budgetGroup?: IRSection['budgetGroup'];
+    budgetPriority?: IRSection['budgetPriority'];
   } = {},
 ): IRSection | null {
   const filteredMessages = messages.filter((message) => message.content.trim().length > 0);
@@ -186,6 +188,8 @@ function createSection(
     messages: filteredMessages,
     ...(options.insertion ? { insertion: options.insertion } : {}),
     ...(options.semantic ? { semantic: options.semantic } : {}),
+    ...(options.budgetGroup ? { budgetGroup: options.budgetGroup } : {}),
+    ...(options.budgetPriority !== undefined ? { budgetPriority: options.budgetPriority } : {}),
   };
 }
 
@@ -299,6 +303,7 @@ function compileChatHistoryNode(
 
   return createSection(node.name, resolvePlacementOrder(group, node.placement), messages, false, {
     semantic: 'chat_history',
+    budgetGroup: 'history',
   });
 }
 
@@ -337,6 +342,7 @@ function compileWorldbookNode(
 
   return createSection(node.name, resolvePlacementOrder(group, node.placement), messages, true, {
     insertion,
+    budgetGroup: 'worldbook',
   });
 }
 
@@ -383,6 +389,7 @@ function compileMemoryNode(
     prunable: false,
   }], true, {
     insertion: toSectionInsertion(node.placement),
+    budgetGroup: 'memory',
   });
 }
 

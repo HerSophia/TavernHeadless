@@ -14,7 +14,7 @@ function makeIR(sections: IRSection[], maxTokens = 1000, reservedForReply = 200)
 function section(
   name: string,
   messages: { role: 'system' | 'user' | 'assistant'; content: string; prunable?: boolean; priority?: number }[],
-  opts?: { pinned?: boolean; order?: number }
+  opts?: { pinned?: boolean; order?: number; budgetGroup?: string }
 ): IRSection {
   return {
     name,
@@ -25,6 +25,7 @@ function section(
       priority: m.priority,
     })),
     pinned: opts?.pinned,
+    budgetGroup: opts?.budgetGroup,
     order: opts?.order ?? 0,
   };
 }
@@ -246,6 +247,31 @@ describe('TokenBudget', () => {
       expect(result.ir.sections[0]!.messages).toHaveLength(1);
       // Chat section: 1 message pruned
       expect(result.ir.sections[1]!.messages).toHaveLength(2);
+    });
+
+    it('tracks pruned tokens by budget group', () => {
+      const ir = makeIR(
+        [
+          section('memory', [
+            { role: 'system', content: '0123456789', prunable: false },
+          ], { order: 0, budgetGroup: 'memory' }),
+          section('chat', [
+            { role: 'user', content: '0123456789', priority: 10 },
+            { role: 'assistant', content: '0123456789', priority: 0 },
+          ], { order: 1, budgetGroup: 'history' }),
+        ],
+        25,
+        0
+      );
+
+      const result = budget.prune(ir);
+
+      expect(result.prunedCount).toBe(1);
+      expect(result.prunedTokensByGroup).toEqual({
+        history: 10,
+      });
+      expect(result.ir.sections[0]!.messages).toHaveLength(1);
+      expect(result.ir.sections[1]!.messages).toHaveLength(1);
     });
   });
 });

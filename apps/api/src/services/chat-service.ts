@@ -10,6 +10,7 @@
  * - 重新生成（Regenerate）
  */
 
+import { createHash } from "node:crypto";
 import { asc, eq, and, desc, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
@@ -17,12 +18,22 @@ import {
   buildPromptSnapshotPreview,
   buildPromptSnapshotRecord,
   createRegexMacroSubstituter,
+  materializePromptRuntimeMessages,
+  type AssembleResult,
   type SessionPromptInfo,
   type AssembleDebugInfo,
   type AssistantPrefillExecutionStrategy,
-  materializePromptSendMessages,
+  type MaterializePromptRuntimeMessagesResult,
+  type PromptSendDirectives,
+  type PromptDeliveryPolicy,
+  type PromptRuntimeTrace,
+  type PromptStructurePolicy,
   type PromptSnapshotPreview,
+
+  buildPromptRuntimeBudgetTrace,
+  buildPromptRuntimeTrace,
 } from "./prompt-assembler.js";
+import type { PromptVisibilityPolicy } from "./chat-history-loader.js";
 import type {
   TurnOrchestrator,
   TurnInput,
@@ -101,6 +112,12 @@ import { VariableService } from "./variable-service.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
+export interface PromptLiveDebugOptions {
+  includePromptSnapshot?: boolean;
+  includeRuntimeTrace?: boolean;
+  includeWorldbookMatches?: boolean;
+}
+
 /** /respond 请求体 */
 export interface RespondRequest {
   /** 用户消息文本 */
@@ -115,6 +132,12 @@ export interface RespondRequest {
   sourceFloorId?: string;
   /** 当前 prompt 运行意图 */
   promptIntent?: PromptRunIntent;
+  /** 消息结构覆盖 */
+  structure?: PromptStructurePolicy;
+  /** 发送约束覆盖 */
+  delivery?: PromptDeliveryPolicy;
+  /** live 调试返回选项 */
+  debugOptions?: PromptLiveDebugOptions;
 }
 
 /** /respond 响应体 */
@@ -135,6 +158,10 @@ export interface RespondResult {
   branchId: string;
   /** 记忆提交 / 入队回执（若当前会话启用了记忆持久化） */
   memory?: TurnCommitMemoryReceipt;
+  /** 可选的 prompt 快照预览 */
+  promptSnapshot?: PromptSnapshotPreview;
+  /** 可选的 prompt runtime trace */
+  runtimeTrace?: PromptRuntimeTrace;
 }
 
 /** /respond/dry-run 请求体 */
@@ -150,6 +177,12 @@ export interface DryRunRequest {
   promptIntent?: PromptRunIntent;
   /** dry-run 调试选项 */
   debugOptions?: DryRunDebugOptions;
+  /** dry-run 历史可见性覆盖 */
+  visibility?: PromptVisibilityPolicy;
+  /** dry-run 消息结构覆盖 */
+  structure?: PromptStructurePolicy;
+  /** dry-run 发送约束覆盖 */
+  delivery?: PromptDeliveryPolicy;
 }
 
 /** /respond/dry-run 响应体 */
@@ -169,6 +202,8 @@ export interface DryRunResult {
     /** 当前用户消息应用 USER_INPUT 正则后的预览 */
     preprocessedUserMessage?: string;
   };
+  /** Prompt Runtime 运行轨迹（第一版增量输出） */
+  runtimeTrace?: PromptRuntimeTrace;
 }
 
 /** /regenerate 请求体 */
@@ -177,6 +212,12 @@ export interface RegenerateRequest {
   config?: TurnConfig;
   /** 生成参数覆盖（可选） */
   generationParams?: Partial<GenerationParams>;
+  /** 消息结构覆盖 */
+  structure?: PromptStructurePolicy;
+  /** 发送约束覆盖 */
+  delivery?: PromptDeliveryPolicy;
+  /** live 调试返回选项 */
+  debugOptions?: PromptLiveDebugOptions;
 }
 
 /** /regenerate 响应体 */
@@ -197,6 +238,10 @@ export interface RegenerateResult {
   finalState: "committed";
   /** 记忆提交 / 入队回执（若当前会话启用了记忆持久化） */
   memory?: TurnCommitMemoryReceipt;
+  /** 可选的 prompt 快照预览 */
+  promptSnapshot?: PromptSnapshotPreview;
+  /** 可选的 prompt runtime trace */
+  runtimeTrace?: PromptRuntimeTrace;
 }
 
 /** /floors/:id/retry 请求体 */
@@ -205,6 +250,14 @@ export interface RetryFloorRequest {
   config?: TurnConfig;
   /** 生成参数覆盖（可选） */
   generationParams?: Partial<GenerationParams>;
+  /** 消息结构覆盖 */
+  structure?: PromptStructurePolicy;
+  /** 发送约束覆盖 */
+  delivery?: PromptDeliveryPolicy;
+
+  /** live 调试返回选项 */
+  debugOptions?: PromptLiveDebugOptions;
+
   /** 显式确认允许重放的历史执行记录 ID 列表 */
   confirmedExecutionIds?: string[];
 }
@@ -227,6 +280,10 @@ export interface RetryFloorResult {
   finalState: "committed";
   /** 记忆提交 / 入队回执（若当前会话启用了记忆持久化） */
   memory?: TurnCommitMemoryReceipt;
+  /** 可选的 prompt 快照预览 */
+  promptSnapshot?: PromptSnapshotPreview;
+  /** 可选的 prompt runtime trace */
+  runtimeTrace?: PromptRuntimeTrace;
 }
 
 interface ReplayBlockingExecutionDetail {
@@ -432,6 +489,17 @@ export interface ChatServiceOptions {
   defaultAccountId?: string;
 }
 
+function createPromptDigestPreview(messages: ChatMessage[]): string {
+  const hash = createHash("sha256");
+  for (const message of messages) {
+    hash.update(message.role);
+    hash.update("\u0000");
+    hash.update(message.content);
+    hash.update("\u0001");
+  }
+  return hash.digest("hex");
+}
+
 // ── ChatService ───────────────────────────────────────
 
 export class ChatService {
@@ -590,6 +658,7 @@ export class ChatService {
           await this.trackFloorRunPhase(floorId, "semantic_resolved");
           await this.trackFloorRunPhase(floorId, "prechecked");
           const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
+          const includeRuntimeTrace = request.debugOptions?.includeRuntimeTrace === true;
           const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
           const assembled = await assemblePrompt(
@@ -604,21 +673,33 @@ export class ChatService {
               maxContextTokensOverride,
               variableContext: { sessionId, branchId, floorId, pageId: userMessageRef.pageId },
               intent: request.promptIntent,
+              includeDebug: includeRuntimeTrace,
+              includeWorldbookMatchTrace: includeRuntimeTrace && request.debugOptions?.includeWorldbookMatches === true,
               assistantPrefillStrategy,
             }
           );
           await this.trackFloorRunPhase(floorId, "prompt_assembled");
 
-          const promptSnapshot = buildPromptSnapshotRecord({
+          const materialized = this.materializeTurnPromptMessages(
+            assembled.messages,
+            assembled.sendDirectives,
+            assistantPrefillStrategy,
+            request.structure,
+            request.delivery,
+          );
+          const promptDebug = this.buildLivePromptDebugArtifacts({
             floorId,
             sessionId,
-            snapshot: assembled.promptSnapshot,
+            userMessage: persistedUserMessage,
+            assembled,
+            materialized,
+            debugOptions: request.debugOptions,
           });
 
           const generationParams = this.buildGenerationParams({
             requestParams: request.generationParams,
             narratorParams,
-            availableForReply: assembled.tokenUsage.availableForReply,
+            availableForReply: promptDebug.availableForReply,
             stream: !!runtimeOptions.onChunk,
           });
 
@@ -645,7 +726,7 @@ export class ChatService {
             floorId,
             pageId: userMessageRef.pageId,
             accountId: resolvedAccountId,
-            messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
+            messages: materialized.messages,
             generationParams,
             config: turnConfig,
             consolidationContext,
@@ -666,7 +747,7 @@ export class ChatService {
             branchId,
             accountId: resolvedAccountId,
             turnInput,
-            promptSnapshot,
+            promptSnapshot: promptDebug.promptSnapshotRecord,
             macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
             resolvedTurnModels,
             orchestrationFailureCode: "orchestration_failed",
@@ -685,6 +766,8 @@ export class ChatService {
             finalState: commit.finalState,
             branchId,
             memory: commit.memory,
+            promptSnapshot: promptDebug.promptSnapshot,
+            runtimeTrace: promptDebug.runtimeTrace,
           };
         } catch (error) {
           await this.tryMarkRunFailed(floorId, error, "respond_failed");
@@ -718,7 +801,8 @@ export class ChatService {
       throw new ChatServiceError("session_archived", "Cannot dry-run in an archived session");
     }
 
-    const history = await this.historyLoader.loadHistory(sessionId);
+    const history = await this.historyLoader.loadHistory(sessionId, "main", undefined, request.visibility);
+    const visibilityTrace = await this.historyLoader.previewVisibility(sessionId, "main", undefined, request.visibility);
     const memorySummary = await this.retrieveMemorySummary(sessionId, accountId);
     const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
     const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
@@ -751,9 +835,30 @@ export class ChatService {
       }
     );
 
+    const materialized = materializePromptRuntimeMessages({
+      messages: assembled.messages,
+      sendDirectives: assembled.sendDirectives,
+      assistantPrefillStrategy,
+      structurePolicy: request.structure,
+      deliveryPolicy: request.delivery,
+      materializeAssistantPrefillFallback: false,
+    });
+    const maxPromptTokens = assembled.tokenUsage.total + assembled.tokenUsage.availableForReply;
+    const tokenEstimate = materialized.messages.reduce(
+      (sum, message) => sum + this.tokenCounter.count(message.content),
+      0,
+    );
+    const availableForReply = Math.max(0, maxPromptTokens - tokenEstimate);
+    const promptSnapshot = buildPromptSnapshotPreview(assembled.promptSnapshot);
+    promptSnapshot.promptDigest = createPromptDigestPreview(materialized.messages);
+    promptSnapshot.tokenEstimate = tokenEstimate;
     const preprocessedUserMessage = assembled.preProcess
       ? assembled.preProcess([{ role: "user", content: persistedUserMessage }])[0]?.content
       : persistedUserMessage;
+    const budgetTrace = buildPromptRuntimeBudgetTrace({
+      byGroup: assembled.tokenUsage.byGroup,
+      prunedByGroup: assembled.tokenUsage.prunedByGroup,
+    });
 
     const debug: AssembleDebugInfo = assembled.debug ?? {
       mode: "fallback",
@@ -781,12 +886,22 @@ export class ChatService {
     };
 
     return {
-      messages: assembled.messages,
-      tokenEstimate: assembled.tokenUsage.total,
-      availableForReply: assembled.tokenUsage.availableForReply,
+      messages: materialized.messages,
+      tokenEstimate,
+      availableForReply,
       memorySummary,
-      promptSnapshot: buildPromptSnapshotPreview(assembled.promptSnapshot),
+      promptSnapshot,
       assembly: { ...debug, preprocessedUserMessage },
+      runtimeTrace: {
+        ...(budgetTrace ? { budgets: budgetTrace } : {}),
+        ...buildPromptRuntimeTrace({ debug, preprocessedUserMessage }),
+        ...(materialized.structureTrace ? { structure: materialized.structureTrace } : {}),
+        delivery: materialized.deliveryTrace,
+        visibility: {
+          ...(visibilityTrace.hiddenFloorRanges ? { hiddenFloorRanges: visibilityTrace.hiddenFloorRanges } : {}),
+          filteredFloorNos: visibilityTrace.filteredFloorNos,
+        },
+      },
     };
   }
 
@@ -873,6 +988,7 @@ export class ChatService {
       const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
       await this.trackFloorRunPhase(newFloorId, "semantic_resolved");
       await this.trackFloorRunPhase(newFloorId, "prechecked");
+      const includeRuntimeTrace = request.debugOptions?.includeRuntimeTrace === true;
       const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
       const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
@@ -887,22 +1003,34 @@ export class ChatService {
         {
           maxContextTokensOverride,
           variableContext: { sessionId, branchId: targetFloor.branchId, floorId: newFloorId, pageId: userMessageRef.pageId },
+          includeDebug: includeRuntimeTrace,
+          includeWorldbookMatchTrace: includeRuntimeTrace && request.debugOptions?.includeWorldbookMatches === true,
           intent: "regenerate",
           assistantPrefillStrategy,
         }
       );
       await this.trackFloorRunPhase(newFloorId, "prompt_assembled");
 
-      const promptSnapshot = buildPromptSnapshotRecord({
+      const materialized = this.materializeTurnPromptMessages(
+        assembled.messages,
+        assembled.sendDirectives,
+        assistantPrefillStrategy,
+        request.structure,
+        request.delivery,
+      );
+      const promptDebug = this.buildLivePromptDebugArtifacts({
         floorId: newFloorId,
         sessionId,
-        snapshot: assembled.promptSnapshot,
+        userMessage,
+        assembled,
+        materialized,
+        debugOptions: request.debugOptions,
       });
 
       const generationParams = this.buildGenerationParams({
         requestParams: request.generationParams,
         narratorParams,
-        availableForReply: assembled.tokenUsage.availableForReply,
+        availableForReply: promptDebug.availableForReply,
       });
 
       const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config, resolvedTurnModels);
@@ -928,7 +1056,7 @@ export class ChatService {
         floorId: newFloorId,
         pageId: userMessageRef.pageId,
         accountId: resolvedAccountId,
-        messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
+        messages: materialized.messages,
         generationParams,
         config: turnConfig,
         consolidationContext,
@@ -948,7 +1076,7 @@ export class ChatService {
         branchId: targetFloor.branchId,
         accountId: resolvedAccountId,
         turnInput,
-        promptSnapshot,
+        promptSnapshot: promptDebug.promptSnapshotRecord,
         macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
         resolvedTurnModels,
         orchestrationFailureCode: "orchestration_failed",
@@ -967,6 +1095,8 @@ export class ChatService {
         totalUsage: commit.usage,
         finalState: commit.finalState,
         memory: commit.memory,
+        promptSnapshot: promptDebug.promptSnapshot,
+        runtimeTrace: promptDebug.runtimeTrace,
       };
       } catch (error) {
         await this.tryMarkRunFailed(newFloorId, error, "regenerate_failed");
@@ -1026,6 +1156,7 @@ export class ChatService {
 
         const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
         const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+        const includeRuntimeTrace = request.debugOptions?.includeRuntimeTrace === true;
         const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
         const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
 
@@ -1045,21 +1176,33 @@ export class ChatService {
               floorId: targetFloor.id,
               pageId: userMessageRef.pageId,
             },
+            includeDebug: includeRuntimeTrace,
+            includeWorldbookMatchTrace: includeRuntimeTrace && request.debugOptions?.includeWorldbookMatches === true,
             assistantPrefillStrategy,
           }
         );
         await this.trackFloorRunPhase(targetFloor.id, "prompt_assembled");
 
-        const promptSnapshot = buildPromptSnapshotRecord({
+        const materialized = this.materializeTurnPromptMessages(
+          assembled.messages,
+          assembled.sendDirectives,
+          assistantPrefillStrategy,
+          request.structure,
+          request.delivery,
+        );
+        const promptDebug = this.buildLivePromptDebugArtifacts({
           floorId: targetFloor.id,
           sessionId: targetFloor.sessionId,
-          snapshot: assembled.promptSnapshot,
+          userMessage,
+          assembled,
+          materialized,
+          debugOptions: request.debugOptions,
         });
 
         const generationParams = this.buildGenerationParams({
           requestParams: request.generationParams,
           narratorParams,
-          availableForReply: assembled.tokenUsage.availableForReply,
+          availableForReply: promptDebug.availableForReply,
         });
 
         const requestedTurnConfig = this.resolveRequestedTurnConfig(request.config, resolvedTurnModels);
@@ -1085,7 +1228,7 @@ export class ChatService {
           floorId: targetFloor.id,
           pageId: userMessageRef.pageId,
           accountId: resolvedAccountId,
-          messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
+          messages: materialized.messages,
           generationParams,
           config: turnConfig,
           consolidationContext,
@@ -1105,7 +1248,7 @@ export class ChatService {
           branchId: targetFloor.branchId,
           accountId: resolvedAccountId,
           turnInput,
-          promptSnapshot,
+          promptSnapshot: promptDebug.promptSnapshotRecord,
           macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
           resolvedTurnModels,
           orchestrationFailureCode: "orchestration_failed",
@@ -1124,6 +1267,8 @@ export class ChatService {
           totalUsage: commit.usage,
           memory: commit.memory,
           finalState: commit.finalState,
+          promptSnapshot: promptDebug.promptSnapshot,
+          runtimeTrace: promptDebug.runtimeTrace,
         };
         } catch (error) {
           await this.tryMarkRunFailed(targetFloor.id, error, "retry_turn_failed");
@@ -1961,6 +2106,7 @@ export class ChatService {
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
     await this.trackFloorRunPhase(args.floorId, "semantic_resolved");
     await this.trackFloorRunPhase(args.floorId, "prechecked");
+    const includeRuntimeTrace = args.request.debugOptions?.includeRuntimeTrace === true;
     const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
     const maxContextTokensOverride = this.resolveMaxContextTokensOverride(args.request.generationParams, narratorParams);
 
@@ -1980,21 +2126,33 @@ export class ChatService {
           floorId: args.floorId,
           pageId: args.userMessageRef.pageId,
         },
+        includeDebug: includeRuntimeTrace,
+        includeWorldbookMatchTrace: includeRuntimeTrace && args.request.debugOptions?.includeWorldbookMatches === true,
         assistantPrefillStrategy,
       }
     );
     await this.trackFloorRunPhase(args.floorId, "prompt_assembled");
 
-    const promptSnapshot = buildPromptSnapshotRecord({
+    const materialized = this.materializeTurnPromptMessages(
+      assembled.messages,
+      assembled.sendDirectives,
+      assistantPrefillStrategy,
+      args.request.structure,
+      args.request.delivery,
+    );
+    const promptDebug = this.buildLivePromptDebugArtifacts({
       floorId: args.floorId,
       sessionId: args.sessionId,
-      snapshot: assembled.promptSnapshot,
+      userMessage: args.userMessage,
+      assembled,
+      materialized,
+      debugOptions: args.request.debugOptions,
     });
 
     const generationParams = this.buildGenerationParams({
       requestParams: args.request.generationParams,
       narratorParams,
-      availableForReply: assembled.tokenUsage.availableForReply,
+      availableForReply: promptDebug.availableForReply,
     });
 
     const requestedTurnConfig = this.resolveRequestedTurnConfig(args.request.config, resolvedTurnModels);
@@ -2020,7 +2178,7 @@ export class ChatService {
       floorId: args.floorId,
       pageId: args.userMessageRef.pageId,
       accountId: args.accountId,
-      messages: materializePromptSendMessages(assembled.messages, assembled.sendDirectives, assistantPrefillStrategy),
+      messages: materialized.messages,
       generationParams,
       config: turnConfig,
       consolidationContext,
@@ -2040,7 +2198,7 @@ export class ChatService {
       branchId: args.branchId,
       accountId: args.accountId,
       turnInput,
-      promptSnapshot,
+      promptSnapshot: promptDebug.promptSnapshotRecord,
       macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
       resolvedTurnModels,
       orchestrationFailureCode: "orchestration_failed",
@@ -2069,6 +2227,8 @@ export class ChatService {
       totalUsage: commit.usage,
       memory: commit.memory,
       finalState: commit.finalState,
+      promptSnapshot: promptDebug.promptSnapshot,
+      runtimeTrace: promptDebug.runtimeTrace,
     };
     } catch (error) {
       await this.tryMarkRunFailed(args.floorId, error, "generate_for_floor_failed");
@@ -2437,6 +2597,86 @@ export class ChatService {
     return resolveAssistantPrefillStrategy(
       models.narrator?.providerType ?? this.defaultNarratorProviderType,
     );
+  }
+
+  private buildLivePromptDebugArtifacts(args: {
+    floorId: string;
+    sessionId: string;
+    userMessage: string;
+    assembled: AssembleResult;
+    materialized: MaterializePromptRuntimeMessagesResult;
+    debugOptions?: PromptLiveDebugOptions;
+  }): {
+    availableForReply: number;
+    promptSnapshotRecord: ReturnType<typeof buildPromptSnapshotRecord>;
+    promptSnapshot?: PromptSnapshotPreview;
+    runtimeTrace?: PromptRuntimeTrace;
+  } {
+    const maxPromptTokens = args.assembled.tokenUsage.total + args.assembled.tokenUsage.availableForReply;
+    const tokenEstimate = args.materialized.messages.reduce(
+      (sum, message) => sum + this.tokenCounter.count(message.content),
+      0,
+    );
+    const availableForReply = Math.max(0, maxPromptTokens - tokenEstimate);
+    const snapshot = {
+      ...args.assembled.promptSnapshot,
+      promptDigest: createPromptDigestPreview(args.materialized.messages),
+      tokenEstimate,
+    };
+    const promptSnapshotRecord = buildPromptSnapshotRecord({
+      floorId: args.floorId,
+      sessionId: args.sessionId,
+      snapshot,
+    });
+
+    let runtimeTrace: PromptRuntimeTrace | undefined;
+    if (args.debugOptions?.includeRuntimeTrace && args.assembled.debug) {
+      const preprocessedUserMessage = args.assembled.preProcess
+        ? args.assembled.preProcess([{ role: "user", content: args.userMessage }])[0]?.content
+        : args.userMessage;
+      const budgetTrace = buildPromptRuntimeBudgetTrace({
+        byGroup: args.assembled.tokenUsage.byGroup,
+        prunedByGroup: args.assembled.tokenUsage.prunedByGroup,
+      });
+      runtimeTrace = {
+        ...(budgetTrace ? { budgets: budgetTrace } : {}),
+        ...buildPromptRuntimeTrace({ debug: args.assembled.debug, preprocessedUserMessage }),
+        ...(args.materialized.structureTrace ? { structure: args.materialized.structureTrace } : {}),
+        delivery: args.materialized.deliveryTrace,
+      };
+    }
+
+    return {
+      availableForReply,
+      promptSnapshotRecord,
+      ...(args.debugOptions?.includePromptSnapshot
+        ? {
+            promptSnapshot: buildPromptSnapshotPreview(snapshot),
+          }
+        : {}),
+      ...(runtimeTrace
+        ? {
+            runtimeTrace,
+          }
+        : {}),
+    };
+  }
+
+  private materializeTurnPromptMessages(
+    messages: ChatMessage[],
+    sendDirectives: PromptSendDirectives,
+    assistantPrefillStrategy: AssistantPrefillExecutionStrategy,
+    structurePolicy?: PromptStructurePolicy,
+    deliveryPolicy?: PromptDeliveryPolicy,
+  ): MaterializePromptRuntimeMessagesResult {
+    return materializePromptRuntimeMessages({
+      messages,
+      sendDirectives,
+      assistantPrefillStrategy,
+      structurePolicy,
+      deliveryPolicy,
+      materializeAssistantPrefillFallback: true,
+    });
   }
 
   private async markTurnModelUsed(model: ResolvedTurnModel | undefined, accountId: string): Promise<void>;

@@ -322,6 +322,40 @@ describe("sdk messages expanded resource", () => {
           total_usage: {
             total_tokens: 33,
           },
+          prompt_snapshot: {
+            preset_id: "preset-1",
+            preset_updated_at: 1710000000000,
+            preset_version: 3,
+            worldbook_id: "worldbook-1",
+            worldbook_updated_at: 1710000001000,
+            worldbook_version: 5,
+            regex_profile_id: "regex-1",
+            regex_profile_updated_at: 1710000002000,
+            regex_profile_version: 2,
+            worldbook_activated_entry_uids: [7],
+            regex_pre_rule_names: ["pre-rule"],
+            regex_post_rule_names: [],
+            prompt_mode: "compat_strict",
+            prompt_digest: "digest-message",
+            token_estimate: 16,
+          },
+          runtime_trace: {
+            worldbook: {
+              hit_count: 1,
+            },
+            delivery: {
+              assistant_prefill_requested: true,
+              assistant_prefill_applied: false,
+              assistant_prefill_strategy: "assistant_message_fallback",
+              allow_assistant_prefill: true,
+              require_last_user: true,
+              no_assistant: false,
+              last_message_role: "user",
+              ends_with_user: true,
+              degraded: true,
+              degrade_reasons: ["require_last_user"],
+            },
+          },
         },
       }),
     );
@@ -337,6 +371,11 @@ describe("sdk messages expanded resource", () => {
         generationParams: {
           maxOutputTokens: 128,
           reasoningEffort: "medium",
+        },
+        debugOptions: {
+          includePromptSnapshot: true,
+          includeRuntimeTrace: true,
+          includeWorldbookMatches: false,
         },
         messageId: "msg-1",
       }),
@@ -359,6 +398,38 @@ describe("sdk messages expanded resource", () => {
         promptTokens: undefined,
         totalTokens: 33,
       },
+      promptSnapshot: {
+        presetId: "preset-1",
+        presetUpdatedAt: 1710000000000,
+        presetVersion: 3,
+        worldbookId: "worldbook-1",
+        worldbookUpdatedAt: 1710000001000,
+        worldbookVersion: 5,
+        regexProfileId: "regex-1",
+        regexProfileUpdatedAt: 1710000002000,
+        regexProfileVersion: 2,
+        worldbookActivatedEntryUids: [7],
+        regexPreRuleNames: ["pre-rule"],
+        regexPostRuleNames: [],
+        promptMode: "compat_strict",
+        promptDigest: "digest-message",
+        tokenEstimate: 16,
+      },
+      runtimeTrace: {
+        worldbook: { hitCount: 1 },
+        delivery: {
+          assistantPrefillRequested: true,
+          assistantPrefillApplied: false,
+          assistantPrefillStrategy: "assistant_message_fallback",
+          allowAssistantPrefill: true,
+          requireLastUser: true,
+          noAssistant: false,
+          lastMessageRole: "user",
+          endsWithUser: true,
+          degraded: true,
+          degradeReasons: ["require_last_user"],
+        },
+      },
     });
 
     const [, init] = fetchImpl.mock.calls[0]!;
@@ -368,6 +439,11 @@ describe("sdk messages expanded resource", () => {
         enableVerifier: true,
       },
       content: "Rewrite",
+      debug_options: {
+        include_prompt_snapshot: true,
+        include_runtime_trace: true,
+        include_worldbook_matches: false,
+      },
       generation_params: {
         max_output_tokens: 128,
         reasoning_effort: "medium",

@@ -1,3 +1,6 @@
+import {
+  mapPromptDebugPayload,
+} from "../prompt-runtime.js";
 import { TavernApiError } from "../errors/tavern-api-error.js";
 import { createResponseError } from "../errors/normalize-error.js";
 import { toApiUsage } from "../types/usage.js";
@@ -274,6 +277,7 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
       floorNo,
       generatedText: readOptionalString(payload?.generated_text),
       memory: readRespondMemoryReceipt(payload?.memory),
+      ...mapPromptDebugPayload(payload),
       summaries: readStringArray(payload?.summaries),
       totalUsage: toApiUsage(payload?.total_usage),
     };

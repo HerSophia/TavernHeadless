@@ -59,6 +59,8 @@ export interface AssemblyInfo {
   tokenUsage: {
     total: number;
     bySection: Record<string, number>;
+    byGroup?: Record<string, number>;
+    prunedByGroup?: Record<string, number>;
     availableForReply: number;
   };
   /** 被裁剪的消息数量 */

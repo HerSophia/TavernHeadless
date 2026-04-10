@@ -20,6 +20,8 @@ interface PruneCandidate {
   message: IRMessage;
   /** 全局位置序号（用于同 priority 时按位置排序） */
   globalIndex: number;
+  /** 预算来源组 */
+  budgetGroup: string;
 }
 
 /**
@@ -29,6 +31,16 @@ interface PruneCandidate {
  * 1. 为 IR 中的所有消息估算 token 数
  * 2. 根据总预算按优先级裁剪可裁剪消息
  */
+export function resolveSectionBudgetGroupName(section: IRSection): string {
+  const budgetGroup = typeof section.budgetGroup === 'string'
+    ? section.budgetGroup.trim()
+    : '';
+
+  return budgetGroup.length > 0
+    ? budgetGroup
+    : `section:${section.name}`;
+}
+
 export class TokenBudget {
   constructor(private readonly counter: TokenCounter) {}
 
@@ -58,7 +70,7 @@ export class TokenBudget {
    * 3. 按 priority 从大到小淘汰（数值大 = 优先淘汰）
    * 4. 同 priority 按全局位置从前到后淘汰（旧消息先淘汰）
    */
-  prune(ir: PromptIR): { ir: PromptIR; prunedCount: number } {
+  prune(ir: PromptIR): { ir: PromptIR; prunedCount: number; prunedTokensByGroup: Record<string, number> } {
     // 先确保所有消息都有 tokenCount
     const estimated = this.estimate(ir);
 
@@ -82,11 +94,13 @@ export class TokenBudget {
         if (!isPrunable) {
           fixedTokens += tokens;
         } else {
+          const budgetGroup = resolveSectionBudgetGroupName(section);
           candidates.push({
             sectionIndex: si,
             messageIndex: mi,
             message: msg,
             globalIndex,
+            budgetGroup,
           });
         }
 
@@ -108,6 +122,7 @@ export class TokenBudget {
     // 标记哪些消息被保留
     const pruneSet = new Set<string>(); // "sectionIndex:messageIndex"
     let usedTokens = 0;
+    const prunedTokensByGroup: Record<string, number> = {};
 
     for (const candidate of candidates) {
       const tokens = candidate.message.tokenCount ?? 0;
@@ -115,6 +130,7 @@ export class TokenBudget {
         usedTokens += tokens;
         // 保留
       } else {
+        prunedTokensByGroup[candidate.budgetGroup] = (prunedTokensByGroup[candidate.budgetGroup] ?? 0) + tokens;
         pruneSet.add(`${candidate.sectionIndex}:${candidate.messageIndex}`);
       }
     }
@@ -133,6 +149,7 @@ export class TokenBudget {
         sections: prunedSections,
       },
       prunedCount: pruneSet.size,
+      prunedTokensByGroup,
     };
   }
 }

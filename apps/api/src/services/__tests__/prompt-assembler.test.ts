@@ -5,7 +5,11 @@ import { buildBranchVariableScopeId } from "@tavern/shared";
 import { presets, messagePages, variables, floors, sessions } from "../../db/schema.js";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
-import { assemblePrompt, type SessionPromptInfo } from "../prompt-assembler.js";
+import {
+  assemblePrompt,
+  materializePromptRuntimeMessages,
+  type SessionPromptInfo,
+} from "../prompt-assembler.js";
 import { SimpleTokenCounter } from "@tavern/core";
 
 const SAMPLE_PRESET_DATA = {
@@ -1178,5 +1182,107 @@ describe("assemblePrompt", () => {
     expect(systemMessage?.content).toContain("last=Committed assistant reply.");
     expect(systemMessage?.content).toContain("user=Committed user input.");
     expect(systemMessage?.content).toContain("char=Committed assistant reply.");
+  });
+});
+
+describe("materializePromptRuntimeMessages", () => {
+  it("keeps current message shape in default mode", () => {
+    const result = materializePromptRuntimeMessages({
+      messages: [
+        { role: "system", content: "System rules." },
+        { role: "user", content: "Hello." },
+      ],
+      sendDirectives: {},
+      assistantPrefillStrategy: "none",
+      structurePolicy: { mode: "default" },
+      materializeAssistantPrefillFallback: false,
+    });
+
+    expect(result.messages).toEqual([
+      { role: "system", content: "System rules." },
+      { role: "user", content: "Hello." },
+    ]);
+    expect(result.structureTrace).toEqual({ mode: "default", mergeAdjacentSameRole: false, assistantRewriteCount: 0, tailAssistantDetected: false });
+    expect(result.deliveryTrace).toEqual({ assistantPrefillRequested: false, assistantPrefillApplied: false, assistantPrefillStrategy: "none", allowAssistantPrefill: true, requireLastUser: false, noAssistant: false, lastMessageRole: "user", endsWithUser: true, degraded: false, degradeReasons: [] });
+  });
+
+  it("rewrites assistant history to system and suppresses assistant fallback prefill in no_assistant mode", () => {
+    const result = materializePromptRuntimeMessages({
+      messages: [
+        { role: "system", content: "System rules." },
+        { role: "user", content: "Hello." },
+        { role: "assistant", content: "Reply." },
+      ],
+      sendDirectives: { assistantPrefill: "Prefill fragment" },
+      assistantPrefillStrategy: "assistant_message_fallback",
+      structurePolicy: { mode: "no_assistant" },
+    });
+
+    expect(result.messages).toEqual([
+      { role: "system", content: "System rules." },
+      { role: "user", content: "Hello." },
+      { role: "system", content: "Reply." },
+    ]);
+    expect(result.structureTrace).toEqual({ mode: "no_assistant", mergeAdjacentSameRole: false, assistantRewriteCount: 1, assistantRewriteStrategy: "to_system", tailAssistantDetected: false });
+    expect(result.assistantPrefillApplied).toBe(false);
+    expect(result.assistantPrefillStrategy).toBe("none");
+    expect(result.deliveryTrace).toEqual({ assistantPrefillRequested: true, assistantPrefillApplied: false, assistantPrefillStrategy: "none", allowAssistantPrefill: true, requireLastUser: false, noAssistant: false, lastMessageRole: "user", endsWithUser: true, degraded: false, degradeReasons: [] });
+  });
+
+  it("merges adjacent same-role messages and reports tail assistant in strict_alternating mode", () => {
+    const result = materializePromptRuntimeMessages({
+      messages: [
+        { role: "system", content: "System rules." },
+        { role: "user", content: "First question." },
+        { role: "user", content: "Second question." },
+        { role: "assistant", content: "Final reply." },
+      ],
+      sendDirectives: {},
+      assistantPrefillStrategy: "none",
+      structurePolicy: { mode: "strict_alternating" },
+      materializeAssistantPrefillFallback: false,
+    });
+
+    expect(result.messages).toEqual([{ role: "system", content: "System rules." }, { role: "user", content: "First question.\n\nSecond question." }, { role: "assistant", content: "Final reply." }]);
+    expect(result.structureTrace).toEqual({ mode: "strict_alternating", mergeAdjacentSameRole: true, assistantRewriteCount: 0, tailAssistantDetected: true });
+    expect(result.deliveryTrace).toEqual({ assistantPrefillRequested: false, assistantPrefillApplied: false, assistantPrefillStrategy: "none", allowAssistantPrefill: true, requireLastUser: false, noAssistant: false, lastMessageRole: "assistant", endsWithUser: false, degraded: false, degradeReasons: [] });
+  });
+
+  it("suppresses assistant fallback prefill when require_last_user is enabled", () => {
+    const result = materializePromptRuntimeMessages({
+      messages: [{ role: "user", content: "Hello." }],
+      sendDirectives: { assistantPrefill: "Prefill fragment" },
+      assistantPrefillStrategy: "assistant_message_fallback",
+      deliveryPolicy: { requireLastUser: true },
+    });
+
+    expect(result.messages).toEqual([{ role: "user", content: "Hello." }]);
+    expect(result.deliveryTrace).toEqual({ assistantPrefillRequested: true, assistantPrefillApplied: false, assistantPrefillStrategy: "none", allowAssistantPrefill: true, requireLastUser: true, noAssistant: false, lastMessageRole: "user", endsWithUser: true, degraded: true, degradeReasons: ["require_last_user"] });
+  });
+
+  it("suppresses assistant prefill when allow_assistant_prefill is disabled", () => {
+    const result = materializePromptRuntimeMessages({
+      messages: [{ role: "user", content: "Hello." }],
+      sendDirectives: { assistantPrefill: "Prefill fragment" },
+      assistantPrefillStrategy: "assistant_message_fallback",
+      deliveryPolicy: { allowAssistantPrefill: false },
+    });
+
+    expect(result.messages).toEqual([{ role: "user", content: "Hello." }]);
+    expect(result.deliveryTrace).toEqual({ assistantPrefillRequested: true, assistantPrefillApplied: false, assistantPrefillStrategy: "none", allowAssistantPrefill: false, requireLastUser: false, noAssistant: false, lastMessageRole: "user", endsWithUser: true, degraded: true, degradeReasons: ["assistant_prefill_disabled"] });
+  });
+
+  it("lets delivery no_assistant override ordinary structure preference", () => {
+    const result = materializePromptRuntimeMessages({
+      messages: [{ role: "user", content: "Hello." }, { role: "assistant", content: "Reply." }],
+      sendDirectives: { assistantPrefill: "Prefill fragment" },
+      assistantPrefillStrategy: "assistant_message_fallback",
+      structurePolicy: { mode: "strict_alternating" },
+      deliveryPolicy: { noAssistant: true },
+    });
+
+    expect(result.messages).toEqual([{ role: "user", content: "Hello." }, { role: "system", content: "Reply." }]);
+    expect(result.structureTrace).toEqual({ mode: "no_assistant", mergeAdjacentSameRole: true, assistantRewriteCount: 1, assistantRewriteStrategy: "to_system", tailAssistantDetected: false });
+    expect(result.deliveryTrace).toEqual({ assistantPrefillRequested: true, assistantPrefillApplied: false, assistantPrefillStrategy: "none", allowAssistantPrefill: true, requireLastUser: false, noAssistant: true, lastMessageRole: "user", endsWithUser: true, degraded: true, degradeReasons: ["no_assistant_override"] });
   });
 });

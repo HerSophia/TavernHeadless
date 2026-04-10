@@ -219,6 +219,62 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         ],
         preprocessedUserMessage: "hello",
       },
+      runtimeTrace: {
+        preset: {
+          selectedPromptOrderCharacterId: 100000,
+          ignoredPromptOrderCharacterIds: [200001],
+          unsupportedFields: [],
+          ignoredFields: ["top_level.openai_model"],
+          unresolvedMarkers: ["customMarker"],
+          warnings: ["检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。"],
+          triggerFilteredEntryIds: ["quietPrompt"],
+          inChatInsertedEntryIds: ["continueHint"],
+          continueNudgeApplied: true,
+          continueNudgeText: "[Continue]",
+          namesBehaviorApplied: "always",
+        },
+        worldbook: {
+          hitCount: 0,
+          matches: [],
+        },
+        regex: {
+          userInputRules: ["Input Rule"],
+          aiOutputRules: [],
+          preprocessedUserMessage: "hello",
+        },
+        budgets: {
+          byGroup: [
+            { group: "history", tokenCount: 24, prunedTokenCount: 8 },
+            { group: "memory", tokenCount: 12 },
+            { group: "worldbook", tokenCount: 16 },
+            { group: "section:main", tokenCount: 20 },
+          ],
+        },
+        structure: {
+          mode: "no_assistant",
+          mergeAdjacentSameRole: false,
+          assistantRewriteCount: 1,
+          assistantRewriteStrategy: "to_system",
+          tailAssistantDetected: false,
+        },
+        memory: { summaryInjected: true },
+        delivery: {
+          assistantPrefillRequested: true,
+          assistantPrefillApplied: true,
+          assistantPrefillStrategy: "assistant_message_fallback",
+          allowAssistantPrefill: true,
+          requireLastUser: false,
+          noAssistant: false,
+          lastMessageRole: "user",
+          endsWithUser: true,
+          degraded: false,
+          degradeReasons: [],
+        },
+        visibility: {
+          hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+          filteredFloorNos: [1, 2],
+        },
+      },
     };
 
     const chatService = createRouteChatService({
@@ -236,6 +292,24 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         debug_options: {
           include_worldbook_matches: true,
         },
+        visibility: {
+          hidden_floor_ranges: [
+            { start_floor_no: 1, end_floor_no: 2 },
+          ],
+          hidden_floor_ids: ["floor-hidden"],
+          mode: "allow_all_except_hidden",
+        },
+        structure: {
+          mode: "no_assistant",
+          merge_adjacent_same_role: false,
+          assistant_rewrite_strategy: "to_system",
+          preserve_system_messages: true,
+        },
+        delivery: {
+          allow_assistant_prefill: false,
+          require_last_user: true,
+          no_assistant: false,
+        },
       },
     });
 
@@ -245,6 +319,22 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       message: "hello",
       promptIntent: "continue",
       debugOptions: { includeWorldbookMatches: true },
+      visibility: {
+        hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+        hiddenFloorIds: ["floor-hidden"],
+        mode: "allow_all_except_hidden",
+      },
+      structure: {
+        mode: "no_assistant",
+        mergeAdjacentSameRole: false,
+        assistantRewriteStrategy: "to_system",
+        preserveSystemMessages: true,
+      },
+      delivery: {
+        allowAssistantPrefill: false,
+        requireLastUser: true,
+        noAssistant: false,
+      },
     }, "default-admin");
 
     const body = response.json() as { data: Record<string, unknown> };
@@ -322,6 +412,64 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         },
       ],
       preprocessed_user_message: "hello",
+    });
+    expect(body.data.runtime_trace).toMatchObject({
+      preset: {
+        selected_prompt_order_character_id: 100000,
+        ignored_prompt_order_character_ids: [200001],
+        unsupported_fields: [],
+        ignored_fields: ["top_level.openai_model"],
+        unresolved_markers: ["customMarker"],
+        warnings: ["检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。"],
+        trigger_filtered_entry_ids: ["quietPrompt"],
+        in_chat_inserted_entry_ids: ["continueHint"],
+        continue_nudge_applied: true,
+        continue_nudge_text: "[Continue]",
+        names_behavior_applied: "always",
+      },
+      worldbook: {
+        hit_count: 0,
+        matches: [],
+      },
+      regex: {
+        user_input_rules: ["Input Rule"],
+        ai_output_rules: [],
+        preprocessed_user_message: "hello",
+      },
+      budgets: {
+        by_group: [
+          { group: "history", token_count: 24, pruned_token_count: 8 },
+          { group: "memory", token_count: 12 },
+          { group: "worldbook", token_count: 16 },
+          { group: "section:main", token_count: 20 },
+        ],
+      },
+      structure: {
+        mode: "no_assistant",
+        merge_adjacent_same_role: false,
+        assistant_rewrite_count: 1,
+        assistant_rewrite_strategy: "to_system",
+        tail_assistant_detected: false,
+      },
+      memory: {
+        summary_injected: true,
+      },
+      delivery: {
+        assistant_prefill_requested: true,
+        assistant_prefill_applied: true,
+        assistant_prefill_strategy: "assistant_message_fallback",
+        allow_assistant_prefill: true,
+        require_last_user: false,
+        no_assistant: false,
+        last_message_role: "user",
+        ends_with_user: true,
+        degraded: false,
+        degrade_reasons: [],
+      },
+      visibility: {
+        hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
+        filtered_floor_nos: [1, 2],
+      },
     });
   });
 
@@ -498,6 +646,9 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       branchId: undefined,
       sourceFloorId: undefined,
       promptIntent: undefined,
+      structure: undefined,
+      delivery: undefined,
+      debugOptions: { includeWorldbookMatches: true },
     }, {}, "default-admin");
   });
 
@@ -603,6 +754,125 @@ describe("ChatService.dryRun", () => {
     expect(floorsAfter).toEqual(floorsBefore);
     expect(messagesAfter).toEqual(messagesBefore);
     expect(promptSnapshotsAfter).toEqual(promptSnapshotsBefore);
+  });
+
+  it("returns visibility trace when dry-run visibility override is provided", async () => {
+    const now = Date.now();
+    for (let floorNo = 1; floorNo <= 2; floorNo += 1) {
+      const floorId = nanoid();
+      const pageId = nanoid();
+      await database.db.insert(floors).values({
+        id: floorId,
+        sessionId,
+        floorNo,
+        branchId: "main",
+        parentFloorId: null,
+        state: "committed",
+        tokenIn: 0,
+        tokenOut: 0,
+        createdAt: now + floorNo,
+        updatedAt: now + floorNo,
+      });
+      await database.db.insert(messagePages).values({
+        id: pageId,
+        floorId,
+        pageNo: 0,
+        pageKind: "input",
+        isActive: true,
+        version: 1,
+        checksum: null,
+        createdAt: now + floorNo,
+        updatedAt: now + floorNo,
+      });
+    }
+
+    const result = await chatService.dryRun(sessionId, {
+      message: "hello dry run",
+      visibility: { hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }] },
+    });
+
+    expect(result.runtimeTrace?.visibility).toEqual({ hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }], filteredFloorNos: [1] });
+  });
+
+  it("returns delivery trace when dry-run delivery override is provided", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Delivery Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        assistant_prefill: "Knight:",
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now })
+      .where(eq(sessions.id, sessionId));
+
+    const result = await chatService.dryRun(sessionId, {
+      message: "hello dry run",
+      promptIntent: "continue",
+      delivery: { requireLastUser: true },
+    });
+
+    expect(result.runtimeTrace?.delivery).toEqual({ assistantPrefillRequested: true, assistantPrefillApplied: false, assistantPrefillStrategy: "none", allowAssistantPrefill: true, requireLastUser: true, noAssistant: false, lastMessageRole: "user", endsWithUser: true, degraded: true, degradeReasons: ["require_last_user"] });
+  });
+
+  it("returns structure trace and normalized messages when dry-run structure override is provided", async () => {
+    const now = Date.now();
+    const floorId = nanoid();
+    const pageId = nanoid();
+
+    await database.db.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.db.insert(messagePages).values({
+      id: pageId,
+      floorId,
+      pageNo: 0,
+      pageKind: "output",
+      isActive: true,
+      version: 1,
+      checksum: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.db.insert(messageTable).values({
+      id: nanoid(),
+      pageId,
+      seq: 0,
+      role: "assistant",
+      content: "history assistant",
+      contentFormat: "text",
+      tokenCount: 1,
+      isHidden: false,
+      source: "api",
+      createdAt: now,
+    });
+
+    const result = await chatService.dryRun(sessionId, { message: "hello dry run", structure: { mode: "no_assistant" } });
+
+    expect(result.messages.some((message) => message.role === "assistant")).toBe(false);
+    expect(result.messages.some((message) => message.role === "system" && message.content === "history assistant")).toBe(true);
+    expect(result.runtimeTrace?.structure).toEqual({ mode: "no_assistant", mergeAdjacentSameRole: false, assistantRewriteCount: 1, assistantRewriteStrategy: "to_system", tailAssistantDetected: false });
+    expect(result.promptSnapshot.tokenEstimate).toBe(result.tokenEstimate);
+    expect(result.promptSnapshot.promptDigest).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("returns prompt snapshot preview for loaded resources without persisting prompt_snapshot rows", async () => {
