@@ -43,11 +43,8 @@ import { findNativePipelineError } from "../lib/native-pipeline-error.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { applyCorsHeaders } from "../plugins/cors.js";
 import type { CorsConfig } from "../plugins/cors.js";
-import type {
-  PromptRuntimeTrace,
-  PromptSnapshotPreview,
-  WorldbookMatchDetail,
-} from "../services/prompt-assembler.js";
+import type { PromptRuntimeTrace, PromptSnapshotPreview } from "../services/prompt-assembler.js";
+import type { WorldbookMatchDetail } from "../services/prompt-assembler.js";
 
 // ── Zod Schemas ───────────────────────────────────────
 
