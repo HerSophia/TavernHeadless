@@ -39,6 +39,8 @@ import {
 } from "./schemas/chat-schemas.js";
 import { findNativePipelineError } from "../lib/native-pipeline-error.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
+import { applyCorsHeaders } from "../plugins/cors.js";
+import type { CorsConfig } from "../plugins/cors.js";
 import type { WorldbookMatchDetail } from "../services/prompt-assembler.js";
 
 // ── Zod Schemas ───────────────────────────────────────
@@ -131,6 +133,7 @@ const chatMutationErrorResponses = {
 interface RegisterChatRoutesOptions {
   enableSseChat?: boolean;
   enablePromptDryRun?: boolean;
+  cors?: CorsConfig;
 }
 
 // ── Route Registration ────────────────────────────────
@@ -148,6 +151,7 @@ export async function registerChatRoutes(
 ): Promise<void> {
   const enableSseChat = options.enableSseChat === true;
   const enablePromptDryRun = options.enablePromptDryRun === true;
+  const cors = options.cors ?? { origins: true, credentials: false };
 
   app.post("/sessions/:id/respond/dry-run", {
     schema: {
@@ -284,6 +288,7 @@ export async function registerChatRoutes(
 
     reply.hijack();
     reply.raw.statusCode = 200;
+    applyCorsHeaders(reply.raw, request.headers.origin, cors);
     reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
     reply.raw.setHeader("Connection", "keep-alive");

@@ -650,6 +650,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     await registerChatRoutes(app, chatService, {
       enableSseChat: options.enableSseChat,
       enablePromptDryRun: options.enablePromptDryRun,
+      cors: options.cors,
     });
 
     const shouldEnableWs = options.enableWebSocket ?? Boolean(options.orchestration);
