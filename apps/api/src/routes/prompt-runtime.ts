@@ -121,6 +121,14 @@ export async function registerPromptRuntimeRoutes(
         500: errorResponseJsonSchema,
       },
     },
+    preValidation: async (request, reply) => {
+      const parsedBody = parseWithSchema(promptRuntimePolicyPatchBodySchema, request.body, reply);
+      if (!parsedBody.ok) {
+        return reply;
+      }
+
+      (request as typeof request & { body: z.infer<typeof promptRuntimePolicyPatchBodySchema> }).body = parsedBody.data;
+    },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) {

@@ -67,10 +67,13 @@ describe("sdk prompt runtime resource", () => {
             source_map: {
               structure: {
                 mode: "session_policy",
+                merge_adjacent_same_role: "session_policy",
                 preserve_system_messages: "session_policy",
               },
               delivery: {
+                allow_assistant_prefill: "system_default",
                 require_last_user: "session_policy",
+                no_assistant: "system_default",
               },
             },
           },
@@ -243,10 +246,13 @@ describe("sdk prompt runtime resource", () => {
       sourceMap: {
         structure: {
           mode: "session_policy",
+          mergeAdjacentSameRole: "session_policy",
           preserveSystemMessages: "session_policy",
         },
         delivery: {
+          allowAssistantPrefill: "system_default",
           requireLastUser: "session_policy",
+          noAssistant: "system_default",
         },
       },
     });

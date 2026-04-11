@@ -1,8 +1,10 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 import { registerPromptRuntimeRoutes } from "../src/routes/prompt-runtime";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
+import { sendError } from "../src/lib/http.js";
 import {
   PromptRuntimeControlServiceError,
   type PromptRuntimeControlService,
@@ -36,6 +38,25 @@ describe("prompt runtime routes", () => {
   async function mountRoutes(service: PromptRuntimeControlServiceStub) {
     app = Fastify({ logger: false });
     await registerDevelopmentTestAuth(app);
+    app.setErrorHandler((error, _request, reply) => {
+      if (error instanceof ZodError) {
+        return sendError(reply, 400, "validation_error", "Request validation failed");
+      }
+
+      const fastifyValidationError = error as {
+        code?: string;
+        message: string;
+        statusCode?: number;
+      };
+
+      if (fastifyValidationError.code === "FST_ERR_VALIDATION") {
+        return sendError(reply, 400, "validation_error", "Request validation failed");
+      }
+
+      const errorMessage = error instanceof Error ? error.message : fastifyValidationError.message;
+
+      return sendError(reply, fastifyValidationError.statusCode ?? 500, fastifyValidationError.code ?? "internal_error", errorMessage);
+    });
     await registerPromptRuntimeRoutes(app, service as unknown as PromptRuntimeControlService);
   }
 
@@ -82,8 +103,11 @@ describe("prompt runtime routes", () => {
           structure: {
             mode: "session_policy",
             mergeAdjacentSameRole: "session_policy",
+            preserveSystemMessages: "system_default",
+            assistantRewriteStrategy: "system_default",
           },
           delivery: {
+            allowAssistantPrefill: "system_default",
             requireLastUser: "session_policy",
             noAssistant: "system_default",
           },
@@ -135,8 +159,11 @@ describe("prompt runtime routes", () => {
           structure: {
             mode: "session_policy",
             merge_adjacent_same_role: "session_policy",
+            preserve_system_messages: "system_default",
+            assistant_rewrite_strategy: "system_default",
           },
           delivery: {
+            allow_assistant_prefill: "system_default",
             require_last_user: "session_policy",
             no_assistant: "system_default",
           },

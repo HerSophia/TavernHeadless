@@ -98,8 +98,8 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `policy.debug` | [DebugPolicy](#debugpolicy) | 当前 debug 能力边界 |
 | `persistent_policy` | [PersistentPolicy](#persistentpolicy) | 可选。当前 session 已持久化的默认策略 |
 | `assets` | [AssetsView](#assetsview) | 当前 Prompt Assets 绑定 |
-| `warnings` | string[] | 控制面读取时产生的 warning |
-| `source_map` | object | 可选。当前第一版会返回部分策略来源，至少覆盖 `structure.mode`、`structure.merge_adjacent_same_role`、`delivery.require_last_user`、`delivery.no_assistant` |
+| `warnings` | string[] | 控制面读取时产生的 warning。当前至少会覆盖 invalid policy warning，以及 `delivery.no_assistant` 推导出 `structure.mode = no_assistant` 的派生 warning |
+| `source_map` | object | 可选。当前已覆盖完整的 structure / delivery 来源解释，包括 `structure.mode`、`structure.merge_adjacent_same_role`、`structure.preserve_system_messages`、`structure.assistant_rewrite_strategy`、`delivery.allow_assistant_prefill`、`delivery.require_last_user`、`delivery.no_assistant` |
 
 ### Capabilities
 
@@ -200,9 +200,12 @@ GET /sessions/:id/prompt-runtime
     "source_map": {
       "structure": {
         "mode": "session_policy",
-        "merge_adjacent_same_role": "session_policy"
+        "merge_adjacent_same_role": "session_policy",
+        "preserve_system_messages": "system_default",
+        "assistant_rewrite_strategy": "system_default"
       },
       "delivery": {
+        "allow_assistant_prefill": "system_default",
         "require_last_user": "session_policy",
         "no_assistant": "system_default"
       }

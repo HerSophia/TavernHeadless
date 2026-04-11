@@ -1,4 +1,5 @@
 import {
+  PROMPT_RUNTIME_POLICY_SOURCES,
   PROMPT_RUNTIME_SUPPORTED_ASSISTANT_REWRITE_STRATEGIES,
   PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES,
   PROMPT_RUNTIME_UNSUPPORTED_ROUTES,
@@ -59,6 +60,19 @@ const promptRuntimeAssetsExample = {
   },
 } as const;
 
+const promptRuntimeSourceMapExample = {
+  structure: {
+    mode: "session_policy",
+    merge_adjacent_same_role: "session_policy",
+    preserve_system_messages: "system_default",
+  },
+  delivery: {
+    allow_assistant_prefill: "system_default",
+    require_last_user: "session_policy",
+    no_assistant: "system_default",
+  },
+} as const;
+
 export const promptRuntimeResolvedStateExample = {
   policy: {
     structure: promptRuntimeResolvedStructureExample,
@@ -70,6 +84,7 @@ export const promptRuntimeResolvedStateExample = {
     delivery: promptRuntimePersistentDeliveryExample,
   },
   assets: promptRuntimeAssetsExample,
+  source_map: promptRuntimeSourceMapExample,
   warnings: [],
 } as const;
 
@@ -217,6 +232,46 @@ const promptRuntimeDebugPolicyJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const promptRuntimePolicySourceJsonSchema = {
+  type: "string",
+  enum: [...PROMPT_RUNTIME_POLICY_SOURCES],
+} as const;
+
+const promptRuntimeSourceMapJsonSchema = {
+  type: "object",
+  properties: {
+    structure: {
+      type: "object",
+      properties: {
+        mode: promptRuntimePolicySourceJsonSchema,
+        merge_adjacent_same_role: promptRuntimePolicySourceJsonSchema,
+        preserve_system_messages: promptRuntimePolicySourceJsonSchema,
+        assistant_rewrite_strategy: promptRuntimePolicySourceJsonSchema,
+      },
+      additionalProperties: false,
+    },
+    delivery: {
+      type: "object",
+      properties: {
+        allow_assistant_prefill: promptRuntimePolicySourceJsonSchema,
+        require_last_user: promptRuntimePolicySourceJsonSchema,
+        no_assistant: promptRuntimePolicySourceJsonSchema,
+      },
+      additionalProperties: false,
+    },
+    debug: {
+      type: "object",
+      properties: {
+        include_prompt_snapshot: promptRuntimePolicySourceJsonSchema,
+        include_runtime_trace: promptRuntimePolicySourceJsonSchema,
+        include_worldbook_matches: promptRuntimePolicySourceJsonSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
 const promptRuntimeAssetSummaryJsonSchema = {
   anyOf: [
     {
@@ -268,10 +323,7 @@ export const promptRuntimeResolvedStateJsonSchema = {
       type: "array",
       items: { type: "string" },
     },
-    source_map: {
-      type: "object",
-      additionalProperties: true,
-    },
+    source_map: promptRuntimeSourceMapJsonSchema,
   },
   additionalProperties: false,
 } as const;

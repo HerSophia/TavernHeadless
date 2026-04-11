@@ -66,6 +66,20 @@ function createMockOrchestrator(database: DatabaseConnection) {
   return { orchestrator, capturedInputs };
 }
 
+async function readStoredVariable(args: {
+  database: DatabaseConnection;
+  scope: "branch" | "global";
+  scopeId: string;
+  key: string;
+}): Promise<unknown | undefined> {
+  const [row] = await args.database.db.select().from(variables).where(and(
+    eq(variables.scope, args.scope),
+    eq(variables.scopeId, args.scopeId),
+    eq(variables.key, args.key),
+  ));
+  return row ? JSON.parse(row.valueJson) : undefined;
+}
+
 // ── 示例预设数据 ──────────────────────────────────────
 
 const SAMPLE_PRESET_DATA = {
@@ -153,6 +167,12 @@ const SAMPLE_WORLDBOOK_DATA = {
     },
   },
 };
+
+const LAST_GENERATION_TYPE_CAPTURE_MACRO = [
+  "{{if {{lastGenerationType}} == respond}}{{setglobalvar::last_generation_type::respond}}{{/if}}",
+  "{{if {{lastGenerationType}} == regenerate}}{{setglobalvar::last_generation_type::regenerate}}{{/if}}",
+  "{{if {{lastGenerationType}} == retry}}{{setglobalvar::last_generation_type::retry}}{{/if}}",
+].join("");
 
 const SAMPLE_REGEX_DATA = [
   {
@@ -424,7 +444,7 @@ describe("E2E Chat with PromptAssembler", () => {
             identifier: "main",
             name: "Main Prompt",
             role: "system",
-            content: "{{setvar::mood::happy}}{{setglobalvar::world_rule::magic has a price}}",
+            content: `{{setvar::mood::happy}}{{setglobalvar::world_rule::magic has a price}}${LAST_GENERATION_TYPE_CAPTURE_MACRO}`,
           },
           { identifier: "chatHistory", name: "Chat History", marker: true },
         ],
@@ -440,12 +460,22 @@ describe("E2E Chat with PromptAssembler", () => {
       promptMode: "compat_strict",
     });
 
-    const result = await chatService.respond(sessionId, { message: "Advance." });
+    const result = await chatService.respond(sessionId, {
+      message: "Advance.",
+      debugOptions: { includeRuntimeTrace: true },
+    });
     expect(result.finalState).toBe("committed");
     expect(result.branchId).toBe("main");
+    expect(result.runtimeTrace?.macro?.usedNames).toEqual(expect.arrayContaining(["lastGenerationType", "setglobalvar", "setvar"]));
 
     const [snapshot] = await database.db.select().from(promptSnapshots).where(eq(promptSnapshots.floorId, result.floorId));
     expect(snapshot).toBeTruthy();
+    expect(await readStoredVariable({
+      database,
+      scope: "global",
+      scopeId: "global",
+      key: "last_generation_type",
+    })).toBe("respond");
   });
 
   it("commits staged macro mutations in regenerate flow", async () => {
@@ -464,7 +494,7 @@ describe("E2E Chat with PromptAssembler", () => {
             identifier: "main",
             name: "Main Prompt",
             role: "system",
-            content: "{{setvar::regen_flag::yes}}",
+            content: `{{setvar::regen_flag::yes}}${LAST_GENERATION_TYPE_CAPTURE_MACRO}`,
           },
           { identifier: "chatHistory", name: "Chat History", marker: true },
         ],
@@ -486,6 +516,12 @@ describe("E2E Chat with PromptAssembler", () => {
     expect(regenerated.finalState).toBe("committed");
 
     expect(regenerated.previousFloorId).toBe(initial.floorId);
+    expect(await readStoredVariable({
+      database,
+      scope: "global",
+      scopeId: "global",
+      key: "last_generation_type",
+    })).toBe("regenerate");
   });
 
   it("commits staged macro mutations in retry flow", async () => {
@@ -504,7 +540,7 @@ describe("E2E Chat with PromptAssembler", () => {
             identifier: "main",
             name: "Main Prompt",
             role: "system",
-            content: "{{setvar::retry_flag::done}}",
+            content: `{{setvar::retry_flag::done}}${LAST_GENERATION_TYPE_CAPTURE_MACRO}`,
           },
           { identifier: "chatHistory", name: "Chat History", marker: true },
         ],
@@ -524,6 +560,12 @@ describe("E2E Chat with PromptAssembler", () => {
     const retried = await chatService.retryFloor(initial.floorId);
     expect(retried.floorId).toBe(initial.floorId);
     expect(retried.finalState).toBe("committed");
+    expect(await readStoredVariable({
+      database,
+      scope: "global",
+      scopeId: "global",
+      key: "last_generation_type",
+    })).toBe("retry");
   });
 
   it("commits staged macro mutations in editAndRegenerate flow", async () => {
@@ -542,7 +584,7 @@ describe("E2E Chat with PromptAssembler", () => {
             identifier: "main",
             name: "Main Prompt",
             role: "system",
-            content: "{{setvar::edited_flag::branch-edit}}",
+            content: `{{setvar::edited_flag::branch-edit}}${LAST_GENERATION_TYPE_CAPTURE_MACRO}`,
           },
           { identifier: "chatHistory", name: "Chat History", marker: true },
         ],
@@ -579,6 +621,12 @@ describe("E2E Chat with PromptAssembler", () => {
 
     expect(edited.sourceFloorId).toBe(initial.floorId);
     expect(edited.branchId).toBe("branch-edit");
+    expect(await readStoredVariable({
+      database,
+      scope: "global",
+      scopeId: "global",
+      key: "last_generation_type",
+    })).toBe("regenerate");
   });
 
   it("does not persist staged macro mutations when orchestration fails", async () => {

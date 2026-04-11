@@ -29173,6 +29173,18 @@
                         "preserve_system_messages": true
                       }
                     },
+                    "source_map": {
+                      "delivery": {
+                        "allow_assistant_prefill": "system_default",
+                        "no_assistant": "system_default",
+                        "require_last_user": "session_policy"
+                      },
+                      "structure": {
+                        "merge_adjacent_same_role": "session_policy",
+                        "mode": "session_policy",
+                        "preserve_system_messages": "system_default"
+                      }
+                    },
                     "warnings": []
                   }
                 },
@@ -29449,7 +29461,127 @@
                           "type": "object"
                         },
                         "source_map": {
-                          "additionalProperties": true,
+                          "additionalProperties": false,
+                          "properties": {
+                            "debug": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "include_prompt_snapshot": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "include_runtime_trace": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "include_worldbook_matches": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "delivery": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "allow_assistant_prefill": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "no_assistant": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "require_last_user": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "structure": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "assistant_rewrite_strategy": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "merge_adjacent_same_role": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "preserve_system_messages": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
                           "type": "object"
                         },
                         "warnings": {

@@ -20,7 +20,9 @@ export const PROMPT_RUNTIME_UNSUPPORTED_ROUTES = [
   "/floors/:id/prompt-runtime",
   "/messages/:id/prompt-runtime",
 ] as const;
+export const PROMPT_RUNTIME_POLICY_SOURCES = ["system_default", "asset_default", "session_policy", "request_override", "provider_constraint"] as const;
 export const INVALID_PROMPT_RUNTIME_POLICY_WARNING = "Session metadata contains an invalid prompt_runtime.policy object. The control plane ignored it.";
+export const DERIVED_NO_ASSISTANT_STRUCTURE_WARNING = "delivery.noAssistant forced the resolved structure.mode to no_assistant.";
 
 const promptStructurePolicySchema = z.object({
   mode: z.enum(PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES),
@@ -106,12 +108,7 @@ export interface PromptRuntimeSourceMap {
   };
 }
 
-export type PromptRuntimePolicySource =
-  | "system_default"
-  | "asset_default"
-  | "session_policy"
-  | "request_override"
-  | "provider_constraint";
+export type PromptRuntimePolicySource = typeof PROMPT_RUNTIME_POLICY_SOURCES[number];
 
 export interface PromptRuntimeResolvedState {
   policy: ResolvedPromptRuntimePolicy;
@@ -225,24 +222,26 @@ export class PromptRuntimeControlService {
     const assets = await this.buildAssetsView(session, accountId);
     const { persistentPolicy, warnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
     const resolvedPolicy = buildResolvedPromptRuntimePolicy(persistentPolicy);
+    const controlPlaneWarnings = buildPromptRuntimeWarnings(persistentPolicy, warnings);
 
     return {
       policy: resolvedPolicy,
       ...(persistentPolicy ? { persistentPolicy } : {}),
       assets,
-      sourceMap: buildPromptRuntimeSourceMap(persistentPolicy),
-      warnings,
+      sourceMap: buildPromptRuntimeSourceMap(persistentPolicy, resolvedPolicy),
+      warnings: controlPlaneWarnings,
     };
   }
 
   async getPolicy(sessionId: string, accountId: string): Promise<PromptRuntimePolicyView> {
     const session = await this.getOwnedSession(sessionId, accountId);
     const { persistentPolicy, warnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
+    const controlPlaneWarnings = buildPromptRuntimeWarnings(persistentPolicy, warnings);
 
     return {
       ...(persistentPolicy ? { persistentPolicy } : {}),
       resolvedPolicy: buildResolvedPromptRuntimePolicy(persistentPolicy),
-      warnings,
+      warnings: controlPlaneWarnings,
     };
   }
 
@@ -274,7 +273,7 @@ export class PromptRuntimeControlService {
     return {
       ...(nextPersistentPolicy ? { persistentPolicy: nextPersistentPolicy } : {}),
       resolvedPolicy: buildResolvedPromptRuntimePolicy(nextPersistentPolicy),
-      warnings: [],
+      warnings: buildPromptRuntimeWarnings(nextPersistentPolicy),
     };
   }
 
@@ -547,9 +546,15 @@ export function resolvePromptRuntimeStructurePolicy(
 
 function buildPromptRuntimeSourceMap(
   persistentPolicy?: PromptRuntimePersistentPolicy,
+  resolvedPolicy?: ResolvedPromptRuntimePolicy,
 ): PromptRuntimeSourceMap {
   const structureModeFromSession = persistentPolicy?.structure?.mode !== undefined
     || persistentPolicy?.delivery?.noAssistant === true;
+  const assistantRewriteStrategySource = resolvedPolicy?.structure.assistantRewriteStrategy
+    ? persistentPolicy?.structure?.assistantRewriteStrategy !== undefined
+      ? "session_policy"
+      : "system_default"
+    : undefined;
 
   return {
     structure: {
@@ -558,8 +563,19 @@ function buildPromptRuntimeSourceMap(
         persistentPolicy?.structure?.mergeAdjacentSameRole !== undefined || structureModeFromSession
           ? "session_policy"
           : "system_default",
+      preserveSystemMessages:
+        persistentPolicy?.structure?.preserveSystemMessages !== undefined
+          ? "session_policy"
+          : "system_default",
+      ...(assistantRewriteStrategySource
+        ? { assistantRewriteStrategy: assistantRewriteStrategySource }
+        : {}),
     },
     delivery: {
+      allowAssistantPrefill:
+        persistentPolicy?.delivery?.allowAssistantPrefill !== undefined
+          ? "session_policy"
+          : "system_default",
       requireLastUser:
         persistentPolicy?.delivery?.requireLastUser !== undefined
           ? "session_policy"
@@ -570,6 +586,22 @@ function buildPromptRuntimeSourceMap(
           : "system_default",
     },
   };
+}
+
+function buildPromptRuntimeWarnings(
+  persistentPolicy?: PromptRuntimePersistentPolicy,
+  metadataWarnings: string[] = [],
+): string[] {
+  const warnings = [...metadataWarnings];
+
+  if (
+    persistentPolicy?.delivery?.noAssistant === true
+    && persistentPolicy?.structure?.mode !== "no_assistant"
+  ) {
+    warnings.push(DERIVED_NO_ASSISTANT_STRUCTURE_WARNING);
+  }
+
+  return warnings;
 }
 
 export function readPromptRuntimePersistentPolicy(

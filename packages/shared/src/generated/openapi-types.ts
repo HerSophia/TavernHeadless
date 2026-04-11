@@ -15004,6 +15004,18 @@ export interface operations {
                      *             "preserve_system_messages": true
                      *           }
                      *         },
+                     *         "source_map": {
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": "system_default",
+                     *             "no_assistant": "system_default",
+                     *             "require_last_user": "session_policy"
+                     *           },
+                     *           "structure": {
+                     *             "merge_adjacent_same_role": "session_policy",
+                     *             "mode": "session_policy",
+                     *             "preserve_system_messages": "system_default"
+                     *           }
+                     *         },
                      *         "warnings": []
                      *       }
                      *     }
@@ -15064,7 +15076,32 @@ export interface operations {
                                 };
                             };
                             source_map?: {
-                                [key: string]: unknown;
+                                debug?: {
+                                    /** @enum {string} */
+                                    include_prompt_snapshot?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    include_runtime_trace?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    include_worldbook_matches?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                };
+                                delivery?: {
+                                    /** @enum {string} */
+                                    allow_assistant_prefill?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    no_assistant?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    require_last_user?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                };
+                                structure?: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    merge_adjacent_same_role?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    preserve_system_messages?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                };
                             };
                             warnings: string[];
                         };

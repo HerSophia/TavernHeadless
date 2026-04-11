@@ -9,6 +9,7 @@ import {
   DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
   DEFAULT_RESOLVED_PROMPT_RUNTIME_DELIVERY_POLICY,
   DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY,
+  DERIVED_NO_ASSISTANT_STRUCTURE_WARNING,
   INVALID_PROMPT_RUNTIME_POLICY_WARNING,
   PromptRuntimeControlService,
 } from "../prompt-runtime-control-service.js";
@@ -182,14 +183,56 @@ describe("PromptRuntimeControlService", () => {
         structure: {
           mode: "session_policy",
           mergeAdjacentSameRole: "session_policy",
+          preserveSystemMessages: "system_default",
         },
         delivery: {
+          allowAssistantPrefill: "system_default",
           requireLastUser: "session_policy",
           noAssistant: "system_default",
         },
       },
       warnings: [],
     });
+  });
+
+  it("surfaces source map entries for explicit structure and delivery session policy fields", async () => {
+    const sessionId = await insertSession({
+      metadata: {
+        prompt_runtime: {
+          policy: {
+            structure: {
+              mode: "no_assistant",
+              mergeAdjacentSameRole: true,
+              preserveSystemMessages: false,
+              assistantRewriteStrategy: "to_user_transcript",
+            },
+            delivery: {
+              allowAssistantPrefill: false,
+              requireLastUser: true,
+              noAssistant: true,
+            },
+          },
+        },
+      },
+    });
+
+    const service = new PromptRuntimeControlService(database.db);
+    const state = await service.getResolvedState(sessionId, DEFAULT_ADMIN_ACCOUNT_ID);
+
+    expect(state.sourceMap).toEqual({
+      structure: {
+        mode: "session_policy",
+        mergeAdjacentSameRole: "session_policy",
+        preserveSystemMessages: "session_policy",
+        assistantRewriteStrategy: "session_policy",
+      },
+      delivery: {
+        allowAssistantPrefill: "session_policy",
+        requireLastUser: "session_policy",
+        noAssistant: "session_policy",
+      },
+    });
+    expect(state.warnings).toEqual([]);
   });
 
   it("surfaces source map entries when delivery.noAssistant derives the resolved structure mode", async () => {
@@ -212,12 +255,16 @@ describe("PromptRuntimeControlService", () => {
       structure: {
         mode: "session_policy",
         mergeAdjacentSameRole: "session_policy",
+        preserveSystemMessages: "system_default",
+        assistantRewriteStrategy: "system_default",
       },
       delivery: {
+        allowAssistantPrefill: "system_default",
         requireLastUser: "system_default",
         noAssistant: "session_policy",
       },
     });
+    expect(state.warnings).toEqual([DERIVED_NO_ASSISTANT_STRUCTURE_WARNING]);
   });
 
   it("resolves delivery.noAssistant into a no_assistant structure default", async () => {
@@ -260,7 +307,7 @@ describe("PromptRuntimeControlService", () => {
           includeWorldbookMatches: false,
         },
       },
-      warnings: [],
+      warnings: [DERIVED_NO_ASSISTANT_STRUCTURE_WARNING],
     });
   });
 
@@ -314,7 +361,7 @@ describe("PromptRuntimeControlService", () => {
         },
         debug: DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
       },
-      warnings: [],
+      warnings: [DERIVED_NO_ASSISTANT_STRUCTURE_WARNING],
     });
 
     const persisted = await service.getPolicy(sessionId, DEFAULT_ADMIN_ACCOUNT_ID);
