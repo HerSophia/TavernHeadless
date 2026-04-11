@@ -54,9 +54,11 @@ import {
   type StMacroMutationPreview,
   type StMacroStagedMutation,
   type StMacroTraceEntry,
+  type StMacroJsonValue,
   type StMacroVariableSnapshot,
   type StMacroWarning,
 } from "./st-macros/index.js";
+import { stringifyStMacroValue } from "./st-macros/variable-path.js";
 
 export interface SessionPromptInfo {
   presetId: string | null;
@@ -797,8 +799,8 @@ async function resolvePromptVariables(args: {
 
   const localLayer = snapshot?.layers?.branch ?? snapshot?.layers?.chat;
   const variableSnapshot: StMacroVariableSnapshot = {
-    local: mapScopedVariableItemsToStringValues(localLayer?.items),
-    global: mapScopedVariableItemsToStringValues(snapshot?.layers?.global?.items),
+    local: mapScopedVariableItemsToValues(localLayer?.items),
+    global: mapScopedVariableItemsToValues(snapshot?.layers?.global?.items),
     plain: Object.fromEntries(
       Object.entries(ordinaryVariables).map(([key, value]) => [key, stringifyPromptVariableValue(value)]),
     ),
@@ -808,21 +810,17 @@ async function resolvePromptVariables(args: {
 }
 
 function stringifyPromptVariableValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-
-  return String(value);
+  return stringifyStMacroValue(value);
 }
 
-function mapScopedVariableItemsToStringValues(
+function mapScopedVariableItemsToValues(
   items: Array<{ key: string; value: unknown }> | undefined,
-): Record<string, string> {
+): Record<string, StMacroJsonValue> {
   if (!items || items.length === 0) {
     return {};
   }
 
-  return Object.fromEntries(items.map((item) => [item.key, stringifyPromptVariableValue(item.value)]));
+  return Object.fromEntries(items.map((item) => [item.key, item.value as StMacroJsonValue]));
 }
 
 function appendUniqueStrings(target: string[], values: string[]): void {

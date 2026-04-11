@@ -10,6 +10,17 @@ import type {
   StMacroVariableSnapshot,
   StMacroWarning,
 } from "./types.js";
+import {
+  evaluateIfConditionExpression,
+  parseIfConditionExpression,
+  type IfConditionSourceSegment,
+} from "./if-condition.js";
+import {
+  deleteScopedVariableValue,
+  readScopedVariableValue,
+  setScopedVariableValue,
+  stringifyStMacroValue,
+} from "./variable-path.js";
 
 interface StMacroTextNode {
   kind: "text";
@@ -272,46 +283,27 @@ function isTruthy(value: string): boolean {
   return normalized !== "false" && normalized !== "0" && normalized !== "off";
 }
 
-function normalizeComparisonOperand(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.length >= 2) {
-    const first = trimmed[0];
-    const last = trimmed[trimmed.length - 1];
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return trimmed.slice(1, -1);
+function buildIfConditionSourceSegments(nodes: StMacroNode[]): IfConditionSourceSegment[] {
+  return nodes.map((node) => {
+    if (node.kind === "macro") {
+      return {
+        kind: "macro",
+        rawText: node.rawText,
+      } satisfies IfConditionSourceSegment;
     }
-  }
-  return trimmed;
-}
 
-function detectUnsupportedIfCondition(conditionValue: string): string | null {
-  const trimmed = conditionValue.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
+    if (node.kind === "raw") {
+      return {
+        kind: "raw",
+        rawText: node.rawText,
+      } satisfies IfConditionSourceSegment;
+    }
 
-  const unsupportedOperator = trimmed.match(/(>=|<=|>|<|\band\b|\bor\b|\bnot\b|\bcontains\b|\bstartsWith\b)/i);
-  return unsupportedOperator?.[0] ?? null;
-}
-
-function evaluateIfCondition(conditionValue: string): { supported: boolean; result: boolean } {
-  const unsupported = detectUnsupportedIfCondition(conditionValue);
-  if (unsupported) {
-    return { supported: false, result: false };
-  }
-
-  const operatorMatch = conditionValue.match(/^(.*?)(==|!=)(.*)$/s);
-  if (!operatorMatch) {
-    return { supported: true, result: isTruthy(conditionValue) };
-  }
-
-  const [, leftRaw = "", operator = "", rightRaw = ""] = operatorMatch;
-  const left = normalizeComparisonOperand(leftRaw);
-  const right = normalizeComparisonOperand(rightRaw);
-  return {
-    supported: true,
-    result: operator === "==" ? left === right : left !== right,
-  };
+    return {
+      kind: "text",
+      rawText: node.rawText,
+    } satisfies IfConditionSourceSegment;
+  });
 }
 
 function parseNumber(value: string): number {
@@ -338,53 +330,10 @@ function createVariableOverlay(): StMacroVariableOverlay {
   };
 }
 
-function hasOwnValue(target: Record<string, string | undefined>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(target, key);
-}
-
-function readScopedVariable(
-  snapshot: Record<string, string>,
-  overlay: Record<string, string | undefined>,
-  key: string,
-): string {
-  if (hasOwnValue(overlay, key)) {
-    return overlay[key] ?? "";
-  }
-  return snapshot[key] ?? "";
-}
-
-function hasScopedVariable(
-  snapshot: Record<string, string>,
-  overlay: Record<string, string | undefined>,
-  key: string,
-): boolean {
-  if (hasOwnValue(overlay, key)) {
-    return overlay[key] !== undefined;
-  }
-  return Object.prototype.hasOwnProperty.call(snapshot, key);
-}
-
-function writeScopedVariable(
-  overlay: Record<string, string | undefined>,
-  key: string,
-  value: string,
-): void {
-  overlay[key] = value;
-}
-
-function deleteScopedVariable(
-  overlay: Record<string, string | undefined>,
-  key: string,
-): void {
-  overlay[key] = undefined;
-}
-
 function resolveNamedMacro(
   macroName: string,
   args: string[],
   values: Record<string, string>,
-  variableSnapshot: StMacroVariableSnapshot,
-  variableOverlay: StMacroVariableOverlay,
 ): string | undefined {
   if (args.length === 0) {
     const directValue = values[macroName];
@@ -394,39 +343,75 @@ function resolveNamedMacro(
     return directValue;
   }
 
-  if (macroName === "getvar" && args.length === 1) {
-    return readScopedVariable(variableSnapshot.local, variableOverlay.local, args[0] ?? "");
-  }
-
-  if (macroName === "getglobalvar" && args.length === 1) {
-    return readScopedVariable(variableSnapshot.global, variableOverlay.global, args[0] ?? "");
-  }
-
-  if (macroName === "hasvar" && args.length === 1) {
-    return hasScopedVariable(variableSnapshot.local, variableOverlay.local, args[0] ?? "") ? "true" : "false";
-  }
-
-  if (macroName === "hasglobalvar" && args.length === 1) {
-    return hasScopedVariable(variableSnapshot.global, variableOverlay.global, args[0] ?? "") ? "true" : "false";
-  }
-
   return undefined;
 }
 
-function resolveShorthandVariable(
-  macroName: string,
-  variableSnapshot: StMacroVariableSnapshot,
-  variableOverlay: StMacroVariableOverlay,
-): string | undefined {
-  if (macroName.startsWith(".")) {
-    return readScopedVariable(variableSnapshot.local, variableOverlay.local, macroName.slice(1));
+function resolveVariableReadMacro(args: {
+  macroName: string;
+  rawText: string;
+  normalizedArgs: string[];
+  variableSnapshot: StMacroVariableSnapshot;
+  variableOverlay: StMacroVariableOverlay;
+}): {
+  text: string;
+  warning?: StMacroWarning;
+  fallbackToRaw?: boolean;
+} | null {
+  const buildFailure = (reason: "parse_failed" | "type_invalid", message: string) => ({
+    text: args.rawText,
+    warning: {
+      code: reason === "parse_failed" ? "macro_parse_failed" : "macro_arg_type_invalid",
+      message,
+      macroName: args.macroName,
+      rawText: args.rawText,
+    } satisfies StMacroWarning,
+    fallbackToRaw: true,
+  });
+
+  const resolveScopedRead = (
+    scope: "local" | "global",
+    rawKey: string,
+    mode: "value" | "exists",
+  ) => {
+    const snapshot = scope === "local" ? args.variableSnapshot.local : args.variableSnapshot.global;
+    const overlay = scope === "local" ? args.variableOverlay.local : args.variableOverlay.global;
+    const readResult = readScopedVariableValue(snapshot, overlay, rawKey);
+    if (!readResult.ok) {
+      return buildFailure(readResult.reason, readResult.message);
+    }
+
+    return {
+      text: mode === "exists"
+        ? (readResult.exists ? "true" : "false")
+        : stringifyStMacroValue(readResult.value),
+    };
+  };
+
+  if (args.macroName === "getvar" && args.normalizedArgs.length === 1) {
+    return resolveScopedRead("local", args.normalizedArgs[0] ?? "", "value");
   }
 
-  if (macroName.startsWith("$")) {
-    return readScopedVariable(variableSnapshot.global, variableOverlay.global, macroName.slice(1));
+  if (args.macroName === "getglobalvar" && args.normalizedArgs.length === 1) {
+    return resolveScopedRead("global", args.normalizedArgs[0] ?? "", "value");
   }
 
-  return undefined;
+  if (args.macroName === "hasvar" && args.normalizedArgs.length === 1) {
+    return resolveScopedRead("local", args.normalizedArgs[0] ?? "", "exists");
+  }
+
+  if (args.macroName === "hasglobalvar" && args.normalizedArgs.length === 1) {
+    return resolveScopedRead("global", args.normalizedArgs[0] ?? "", "exists");
+  }
+
+  if (args.normalizedArgs.length === 0 && args.macroName.startsWith(".")) {
+    return resolveScopedRead("local", args.macroName.slice(1), "value");
+  }
+
+  if (args.normalizedArgs.length === 0 && args.macroName.startsWith("$")) {
+    return resolveScopedRead("global", args.macroName.slice(1), "value");
+  }
+
+  return null;
 }
 
 function createPreviewWarning(name: string): StMacroWarning {
@@ -447,6 +432,7 @@ function createDisallowedWarning(name: string, phase: StMacroRuntimeContext["pha
 
 function resolveWriteMacro(
   macroName: string,
+  rawText: string,
   args: string[],
   variableSnapshot: StMacroVariableSnapshot,
   variableOverlay: StMacroVariableOverlay,
@@ -456,6 +442,7 @@ function resolveWriteMacro(
   preview: StMacroMutationPreview | null;
   staged: StMacroStagedMutation | null;
   warning?: StMacroWarning;
+  fallbackToRaw?: boolean;
 } | null {
   const previewPhase = phase === "preview" || phase === "dry_run" || phase === "assemble";
 
@@ -466,11 +453,24 @@ function resolveWriteMacro(
     return createDisallowedWarning(name, phase);
   };
 
+  const buildFailure = (reason: "parse_failed" | "type_invalid", message: string) => ({
+    text: rawText,
+    preview: null,
+    staged: null,
+    warning: {
+      code: reason === "parse_failed" ? "macro_parse_failed" : "macro_arg_type_invalid",
+      message,
+      macroName,
+      rawText,
+    } satisfies StMacroWarning,
+    fallbackToRaw: true,
+  });
+
   const buildMutation = (
     kind: "set" | "delete",
     scope: "branch" | "global",
     key: string,
-    value?: string,
+    value?: StMacroMutationPreview["value"],
   ): { preview: StMacroMutationPreview; staged: StMacroStagedMutation } => ({
     preview: kind === "set"
       ? { kind, scope, key, value }
@@ -484,20 +484,38 @@ function resolveWriteMacro(
     ? { scope: "global" as const, snapshot: variableSnapshot.global, overlay: variableOverlay.global }
     : { scope: "branch" as const, snapshot: variableSnapshot.local, overlay: variableOverlay.local };
 
+  const applySetMutation = (
+    scope: "branch" | "global",
+    result: ReturnType<typeof setScopedVariableValue>,
+    text: string,
+  ) => {
+    if (!result.ok) {
+      return buildFailure(result.reason, result.message);
+    }
+    if (result.mutationKind === "none") {
+      return {
+        text,
+        preview: null,
+        staged: null,
+      };
+    }
+
+    const mutation = buildMutation(result.mutationKind, scope, result.key, result.value);
+    return {
+      text,
+      preview: mutation.preview,
+      staged: mutation.staged,
+      warning: previewPhase ? createPreviewWarning(macroName) : undefined,
+    };
+  };
+
   if ((macroName === "setvar" || macroName === "setglobalvar") && args.length === 2) {
     const blocked = ensureWritable(macroName);
     const target = scopeTarget(macroName === "setglobalvar");
     const key = args[0] ?? "";
     const value = args[1] ?? "";
     if (blocked) return { text: "", preview: null, staged: null, warning: blocked };
-    writeScopedVariable(target.overlay, key, value);
-    const mutation = buildMutation("set", target.scope, key, value);
-    return {
-      text: "",
-      preview: mutation.preview,
-      staged: mutation.staged,
-      warning: previewPhase ? createPreviewWarning(macroName) : undefined,
-    };
+    return applySetMutation(target.scope, setScopedVariableValue(target.snapshot, target.overlay, key, value), "");
   }
 
   if ((macroName === "addvar" || macroName === "addglobalvar") && args.length === 2) {
@@ -506,18 +524,15 @@ function resolveWriteMacro(
     const key = args[0] ?? "";
     const addValue = args[1] ?? "";
     if (blocked) return { text: "", preview: null, staged: null, warning: blocked };
-    const current = readScopedVariable(target.snapshot, target.overlay, key) || "0";
+    const currentResult = readScopedVariableValue(target.snapshot, target.overlay, key);
+    if (!currentResult.ok) {
+      return buildFailure(currentResult.reason, currentResult.message);
+    }
+    const current = stringifyStMacroValue(currentResult.value) || "0";
     const next = Number.isFinite(Number(current)) && Number.isFinite(Number(addValue))
       ? stringifyNumber(parseNumber(current) + parseNumber(addValue))
       : `${current}${addValue}`;
-    writeScopedVariable(target.overlay, key, next);
-    const mutation = buildMutation("set", target.scope, key, next);
-    return {
-      text: "",
-      preview: mutation.preview,
-      staged: mutation.staged,
-      warning: previewPhase ? createPreviewWarning(macroName) : undefined,
-    };
+    return applySetMutation(target.scope, setScopedVariableValue(target.snapshot, target.overlay, key, next), "");
   }
 
   if ((macroName === "incvar" || macroName === "incglobalvar") && args.length === 1) {
@@ -525,15 +540,12 @@ function resolveWriteMacro(
     const target = scopeTarget(macroName === "incglobalvar");
     const key = args[0] ?? "";
     if (blocked) return { text: "", preview: null, staged: null, warning: blocked };
-    const next = stringifyNumber(parseNumber(readScopedVariable(target.snapshot, target.overlay, key) || "0") + 1);
-    writeScopedVariable(target.overlay, key, next);
-    const mutation = buildMutation("set", target.scope, key, next);
-    return {
-      text: next,
-      preview: mutation.preview,
-      staged: mutation.staged,
-      warning: previewPhase ? createPreviewWarning(macroName) : undefined,
-    };
+    const currentResult = readScopedVariableValue(target.snapshot, target.overlay, key);
+    if (!currentResult.ok) {
+      return buildFailure(currentResult.reason, currentResult.message);
+    }
+    const next = stringifyNumber(parseNumber(stringifyStMacroValue(currentResult.value) || "0") + 1);
+    return applySetMutation(target.scope, setScopedVariableValue(target.snapshot, target.overlay, key, next), next);
   }
 
   if ((macroName === "decvar" || macroName === "decglobalvar") && args.length === 1) {
@@ -541,15 +553,12 @@ function resolveWriteMacro(
     const target = scopeTarget(macroName === "decglobalvar");
     const key = args[0] ?? "";
     if (blocked) return { text: "", preview: null, staged: null, warning: blocked };
-    const next = stringifyNumber(parseNumber(readScopedVariable(target.snapshot, target.overlay, key) || "0") - 1);
-    writeScopedVariable(target.overlay, key, next);
-    const mutation = buildMutation("set", target.scope, key, next);
-    return {
-      text: next,
-      preview: mutation.preview,
-      staged: mutation.staged,
-      warning: previewPhase ? createPreviewWarning(macroName) : undefined,
-    };
+    const currentResult = readScopedVariableValue(target.snapshot, target.overlay, key);
+    if (!currentResult.ok) {
+      return buildFailure(currentResult.reason, currentResult.message);
+    }
+    const next = stringifyNumber(parseNumber(stringifyStMacroValue(currentResult.value) || "0") - 1);
+    return applySetMutation(target.scope, setScopedVariableValue(target.snapshot, target.overlay, key, next), next);
   }
 
   if ((macroName === "deletevar" || macroName === "deleteglobalvar") && args.length === 1) {
@@ -557,8 +566,18 @@ function resolveWriteMacro(
     const target = scopeTarget(macroName === "deleteglobalvar");
     const key = args[0] ?? "";
     if (blocked) return { text: "", preview: null, staged: null, warning: blocked };
-    deleteScopedVariable(target.overlay, key);
-    const mutation = buildMutation("delete", target.scope, key);
+    const result = deleteScopedVariableValue(target.snapshot, target.overlay, key);
+    if (!result.ok) {
+      return buildFailure(result.reason, result.message);
+    }
+    if (result.mutationKind === "none") {
+      return {
+        text: "",
+        preview: null,
+        staged: null,
+      };
+    }
+    const mutation = buildMutation(result.mutationKind, target.scope, result.key, result.value);
     return {
       text: "",
       preview: mutation.preview,
@@ -741,17 +760,11 @@ export function evaluateStMacros(input: string, context: StMacroRuntimeContext):
           return node.rawText;
         }
         try {
-          for (const conditionNode of node.conditionNodes) {
-            if (conditionNode.kind === "macro") {
-              pushUnique(usedMacros, conditionNode.name);
-            }
-          }
-          const conditionValue = evaluateNodes(node.conditionNodes, depth + 1);
-          const conditionResult = evaluateIfCondition(conditionValue);
-          if (!conditionResult.supported) {
+          const parsedCondition = parseIfConditionExpression(buildIfConditionSourceSegments(node.conditionNodes));
+          if (!parsedCondition.ok) {
             warnings.push({
-              code: "macro_condition_unsupported",
-              message: "If condition expression is outside the current Beta3 supported subset.",
+              code: parsedCondition.reason === "unsupported" ? "macro_condition_unsupported" : "macro_parse_failed",
+              message: parsedCondition.message,
               macroName: "if",
               rawText: node.rawText,
             });
@@ -764,6 +777,28 @@ export function evaluateStMacros(input: string, context: StMacroRuntimeContext):
             });
             return node.rawText;
           }
+
+          const conditionResult = evaluateIfConditionExpression(parsedCondition.expression, {
+            resolveMacroOperand: (rawText: string) => evaluateNodes(parseMacroNodes(rawText), depth + 1),
+            isTruthy,
+          });
+          if (!conditionResult.ok) {
+            warnings.push({
+              code: "macro_arg_type_invalid",
+              message: conditionResult.message,
+              macroName: "if",
+              rawText: node.rawText,
+            });
+            pushTrace({
+              macroName: "if",
+              rawText: node.rawText,
+              resolvedText: node.rawText,
+              sourceKind: "if",
+              selectedBranch: "raw",
+            });
+            return node.rawText;
+          }
+
           const selectedBranch = conditionResult.result ? "then" : "else";
           const selectedNodes = conditionResult.result ? node.thenNodes : node.elseNodes;
           const resolvedBranch = evaluateNodes(selectedNodes, depth + 1);
@@ -792,7 +827,7 @@ export function evaluateStMacros(input: string, context: StMacroRuntimeContext):
       try {
         const normalizedArgs = node.args.map((arg) => evaluateNodes(arg.nodes, depth + 1));
 
-        const writeResult = resolveWriteMacro(node.name, normalizedArgs, variableSnapshot, variableOverlay, context.phase);
+        const writeResult = resolveWriteMacro(node.name, node.rawText, normalizedArgs, variableSnapshot, variableOverlay, context.phase);
         if (writeResult) {
           if ((writeResult.preview || writeResult.staged) && canRecordMutation()) {
             writeMutationCount += 1;
@@ -806,17 +841,48 @@ export function evaluateStMacros(input: string, context: StMacroRuntimeContext):
           if (writeResult.warning) {
             warnings.push(writeResult.warning);
           }
+          if (writeResult.fallbackToRaw) {
+            pushTrace({
+              macroName: node.name,
+              rawText: node.rawText,
+              resolvedText: node.rawText,
+              sourceKind: "macro",
+              selectedBranch: "raw",
+            });
+            return node.rawText;
+          }
           const resolvedText = createLimitedText(writeResult.text);
           pushTrace({
             macroName: node.name,
             rawText: node.rawText,
+
             resolvedText,
             sourceKind: "macro",
           });
           return resolvedText;
         }
 
-        const resolved = resolveNamedMacro(node.name, normalizedArgs, mutableValues, variableSnapshot, variableOverlay);
+        const variableReadResult = resolveVariableReadMacro({
+          macroName: node.name,
+          rawText: node.rawText,
+          normalizedArgs,
+          variableSnapshot,
+          variableOverlay,
+        });
+        if (variableReadResult) {
+          if (variableReadResult.warning) {
+            warnings.push(variableReadResult.warning);
+          }
+          if (variableReadResult.fallbackToRaw) {
+            pushTrace({ macroName: node.name, rawText: node.rawText, resolvedText: node.rawText, sourceKind: "macro", selectedBranch: "raw" });
+            return node.rawText;
+          }
+          const limitedResolved = createLimitedText(variableReadResult.text);
+          pushTrace({ macroName: node.name, rawText: node.rawText, resolvedText: limitedResolved, sourceKind: "macro" });
+          return limitedResolved;
+        }
+
+        const resolved = resolveNamedMacro(node.name, normalizedArgs, mutableValues);
         if (resolved !== undefined) {
           const limitedResolved = createLimitedText(resolved);
           pushTrace({
@@ -828,24 +894,10 @@ export function evaluateStMacros(input: string, context: StMacroRuntimeContext):
           return limitedResolved;
         }
 
-        if (normalizedArgs.length === 0) {
-          const shorthandResolved = resolveShorthandVariable(node.name, variableSnapshot, variableOverlay);
-          if (shorthandResolved !== undefined) {
-            const limitedResolved = createLimitedText(shorthandResolved);
-            pushTrace({
-              macroName: node.name,
-              rawText: node.rawText,
-              resolvedText: limitedResolved,
-              sourceKind: "macro",
-            });
-            return limitedResolved;
-          }
-        }
-
         if (normalizedArgs.length > 0) {
           warnings.push({
             code: "macro_arg_arity_invalid",
-            message: `Macro ${node.name} argument shape is outside the current Beta3 macro subset.`,
+            message: `Macro ${node.name} argument shape is outside the current supported macro subset.`,
             macroName: node.name,
             rawText: node.rawText,
           });

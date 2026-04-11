@@ -145,20 +145,22 @@ TavernHeadless 在 `compat_strict` 和 `compat_plus` 提示词路径中提供 Si
 支持常见 legacy 角括号别名：`<USER>`、`<BOT>`、`<CHAR>` 等
 支持常见只读宏：{{user}}、{{char}}、{{description}}、{{scenario}}、{{systemPrompt}} 等
 支持 ST 变量读取与写入宏：`getvar`、`getglobalvar`、`setvar`、`setglobalvar`、`addvar`、`incvar`、`deletevar`、`hasvar`、`hasglobalvar`
-支持最小 `if` 条件块子集：truthy / falsy、`==`、`!=`
+支持结构化变量路径访问：`{{getvar::资产.金币}}`、`{{.资产.金币}}`、`{{setvar::资产.金币::3}}`
+支持 `if` 条件块子集：truthy / falsy、`==`、`!=`、`>`、`<`、`>=`、`<=`、`and`、`or`、`not`、`contains`、`startsWith`、括号分组
 ```
 
 当前实现还明确限制如下：
 
-- `if` 不支持 `>`、`<`、`>=`、`<=`、`and`、`or`、`not`、`contains`、`startsWith`
-- 遇到不支持的条件表达式时，运行时会保留原始 block，并返回 warning，而不是把它当作普通 truthy 文本
+- `if` 的 `>`、`<`、`>=`、`<=` 只做数值比较
+- `if` 的 `contains`、`startsWith` 按区分大小写的字符串谓词处理
+- `if` 的 `and`、`or` 按短路语义求值，短路未求值一侧不会执行写宏
+- 遇到不支持语法、结构解析失败或数值比较类型不合法时，运行时会保留原始 block，并返回对应 warning，而不是把它当作普通 truthy 文本
 - 带副作用的写宏不会在导入、预览或 dry-run 阶段直接写库，只会进入 preview 或 staged mutation 缓冲
 
 如果你需要查看接口返回中的宏调试字段，请参考：
 
 - [Chat API](../reference/api/chat)
 - [宏系统参考](../reference/api/macros)
-
 
 ### 提示词编排
 

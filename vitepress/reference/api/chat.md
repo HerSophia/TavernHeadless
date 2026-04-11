@@ -72,6 +72,8 @@ POST /sessions/:id/respond
 
 如果本轮 prompt 组装实际命中了宏系统，`runtime_trace.macro` 会附带宏 warning、used names、mutation preview、staged mutations 和 trace。
 
+当 mutation value 是对象时，`runtime_trace.macro.mutation_preview` 和 `runtime_trace.macro.staged_mutations` 会返回稳定 JSON 字符串，而不是 `[object Object]`。
+
 这两个字段默认都关闭。未打开时，同步成功响应保持兼容。
 
 ### 常见错误
@@ -299,6 +301,7 @@ POST /sessions/:id/respond/dry-run
 
 - `phase` 用于区分 `preview`、`dry_run`、`assemble`、`commit_consume` 等阶段
 - `source_kind` 用于区分 `macro`、`if`、`raw` 等来源
+- `used_names` 记录的是本轮实际参与求值的宏名
 - `selected_branch` 当前主要用于 `if` block，可能是 `then`、`else` 或 `raw`
 
 ### 宏系统行为边界
@@ -314,14 +317,11 @@ Prompt dry-run 与提示词调试场景对宏系统采用只读执行边界：
 
 ### `if` 条件块支持范围
 
-当前宏系统只支持最小 `if` 条件子集：
+当前宏系统支持以下 `if` 条件子集：
 
 - truthy / falsy
 - `==`
 - `!=`
-
-以下表达式当前不支持：
-
 - `>`
 - `<`
 - `>=`
@@ -331,12 +331,24 @@ Prompt dry-run 与提示词调试场景对宏系统采用只读执行边界：
 - `not`
 - `contains`
 - `startsWith`
+- 括号分组
 
-遇到不支持表达式时：
+当前固定语义如下：
+
+- `==` / `!=`：两侧都能解析为有限数字时按数字比较，否则按字符串比较
+- `>` / `<` / `>=` / `<=`：只做数值比较
+- `contains` / `startsWith`：按区分大小写的字符串谓词处理
+- `and` / `or`：按短路语义求值
+- 未命中分支和短路未求值一侧不会执行写宏
+
+遇到以下情况时：
 
 - 不会回退成普通 truthy 判断
 - 会保留原始 `if` block 文本
-- 会返回 `macro_condition_unsupported` warning
+- 会返回对应 warning：
+  - 不支持语法 -> `macro_condition_unsupported`
+  - 结构无法解析 -> `macro_parse_failed`
+  - 数值比较类型不合法 -> `macro_arg_type_invalid`
 
 ### 变量宏与作用域兼容视图
 
@@ -347,13 +359,26 @@ Prompt dry-run 与提示词调试场景对宏系统采用只读执行边界：
 - `setvar`、`addvar`、`incvar`、`decvar`、`deletevar` 只写 local overlay
 - `setglobalvar`、`addglobalvar`、`incglobalvar`、`decglobalvar`、`deleteglobalvar` 只写 global overlay
 
+当前也支持结构化变量路径，例如：
+
+```text
+{{getvar::资产.金币}}
+{{.资产.金币}}
+{{setvar::资产.金币::3}}
+{{deletevar::资产.银币}}
+```
+
+兼容规则固定为：
+
+- 先按完整 flat key 查找
+- 找不到完整 key 时，再按路径语义读取或写入
+
 这意味着同轮 assemble 中：
 
 - local staged 值不会污染 global 读取结果
 - global staged 值也不会污染 local 读取结果
 
 如需完整说明，请参考 [Macros](./macros)。
-
 
 `assembly` 中的字段分两类：
 
