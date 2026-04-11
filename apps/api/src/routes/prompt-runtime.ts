@@ -9,6 +9,8 @@ import {
   promptRuntimeCapabilitiesResponseJsonSchema,
   promptRuntimePolicyViewResponseJsonSchema,
   promptRuntimePolicyPatchBodyJsonSchema,
+  promptRuntimePreviewBodyJsonSchema,
+  promptRuntimePreviewResponseJsonSchema,
   promptRuntimeResolvedStateResponseJsonSchema,
 } from "./schemas/prompt-runtime-schemas.js";
 import {
@@ -27,6 +29,11 @@ import {
   type ResolvedPromptRuntimePolicy,
   type ResolvedPromptStructurePolicy,
 } from "../services/prompt-runtime-control-service.js";
+import {
+  ChatServiceError,
+  type PromptRuntimePreviewRequest,
+  type PromptRuntimePreviewResult,
+} from "../services/chat-service.js";
 
 const sessionIdParamsSchema = z.object({
   id: z.string().min(1),
@@ -49,9 +56,36 @@ const promptRuntimePolicyPatchBodySchema = z.object({
   "At least one mutable field is required",
 );
 
+const promptRuntimePreviewVisibilitySchema = z.object({
+  hidden_floor_ranges: z.array(z.object({
+    start_floor_no: z.number().int(),
+    end_floor_no: z.number().int(),
+  }).strict()).optional(),
+  visible_floor_ranges: z.array(z.object({
+    start_floor_no: z.number().int(),
+    end_floor_no: z.number().int(),
+  }).strict()).optional(),
+  hidden_floor_ids: z.array(z.string().min(1)).optional(),
+  mode: z.enum(["allow_all_except_hidden", "deny_all_except_visible"]).optional(),
+}).strict();
+
+const promptRuntimePreviewBodySchema = z.object({
+  text: z.string().min(1),
+  branch_id: z.string().min(1).optional(),
+  source_floor_id: z.string().min(1).optional(),
+  visibility: promptRuntimePreviewVisibilitySchema.optional(),
+}).strict();
+
+interface RegisterPromptRuntimeRoutesOptions {
+  previewService?: {
+    previewPromptRuntimeText(sessionId: string, request: PromptRuntimePreviewRequest, accountId?: string): Promise<PromptRuntimePreviewResult>;
+  };
+}
+
 export async function registerPromptRuntimeRoutes(
   app: FastifyInstance,
   promptRuntimeControlService: PromptRuntimeControlService,
+  options: RegisterPromptRuntimeRoutesOptions = {},
 ): Promise<void> {
   app.get("/sessions/:id/prompt-runtime", {
     schema: {
@@ -175,6 +209,44 @@ export async function registerPromptRuntimeRoutes(
     }
   });
 
+  app.post("/sessions/:id/prompt-runtime/preview", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Preview prompt runtime macros for a single text segment",
+      operationId: "previewSessionPromptRuntime",
+      params: idParamsJsonSchema,
+      body: promptRuntimePreviewBodyJsonSchema,
+      response: {
+        200: promptRuntimePreviewResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    if (!options.previewService) {
+      return sendError(reply, 404, "not_found", "Prompt runtime preview endpoint is disabled");
+    }
+
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+    const parsedBody = parseWithSchema(promptRuntimePreviewBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    try {
+      const auth = getRequestAuthContext(request);
+      const result = await options.previewService.previewPromptRuntimeText(parsedParams.data.id, mapPreviewBodyToCamelCase(parsedBody.data), auth.accountId);
+      return reply.send({ data: mapPreviewResultToSnakeCase(result) });
+    } catch (error) {
+      return sendPromptRuntimePreviewServiceError(reply, error);
+    }
+  });
+
   app.get("/prompt-runtime/capabilities", {
     schema: {
       tags: ["prompt-runtime"],
@@ -231,6 +303,103 @@ function mapPolicyPatchBodyToCamelCase(body: z.infer<typeof promptRuntimePolicyP
           },
         }
       : {}),
+  };
+}
+
+function mapPreviewBodyToCamelCase(body: z.infer<typeof promptRuntimePreviewBodySchema>): PromptRuntimePreviewRequest {
+  return {
+    text: body.text,
+    ...(body.branch_id !== undefined ? { branchId: body.branch_id } : {}),
+    ...(body.source_floor_id !== undefined ? { sourceFloorId: body.source_floor_id } : {}),
+    ...(body.visibility !== undefined
+      ? {
+          visibility: {
+            ...(body.visibility.hidden_floor_ranges !== undefined
+              ? {
+                  hiddenFloorRanges: body.visibility.hidden_floor_ranges.map((range) => ({
+                    startFloorNo: range.start_floor_no,
+                    endFloorNo: range.end_floor_no,
+                  })),
+                }
+              : {}),
+            ...(body.visibility.visible_floor_ranges !== undefined
+              ? {
+                  visibleFloorRanges: body.visibility.visible_floor_ranges.map((range) => ({
+                    startFloorNo: range.start_floor_no,
+                    endFloorNo: range.end_floor_no,
+                  })),
+                }
+              : {}),
+            ...(body.visibility.hidden_floor_ids !== undefined ? { hiddenFloorIds: body.visibility.hidden_floor_ids } : {}),
+            ...(body.visibility.mode !== undefined ? { mode: body.visibility.mode } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+function mapPreviewResultToSnakeCase(result: PromptRuntimePreviewResult): Record<string, unknown> {
+  return {
+    text: result.text,
+    runtime_trace: mapPreviewRuntimeTraceToSnakeCase(result.runtimeTrace),
+  };
+}
+
+function mapPreviewRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimePreviewResult["runtimeTrace"]): Record<string, unknown> {
+  return {
+    ...(runtimeTrace.macro ? { macro: mapPreviewMacroTraceToSnakeCase(runtimeTrace.macro) } : {}),
+    ...(runtimeTrace.visibility
+      ? {
+          visibility: {
+            ...(runtimeTrace.visibility.hiddenFloorRanges
+              ? {
+                  hidden_floor_ranges: runtimeTrace.visibility.hiddenFloorRanges.map((range) => ({
+                    start_floor_no: range.startFloorNo,
+                    end_floor_no: range.endFloorNo,
+                  })),
+                }
+              : {}),
+            filtered_floor_nos: runtimeTrace.visibility.filteredFloorNos,
+          },
+        }
+      : {}),
+  };
+}
+
+function mapPreviewMacroTraceToSnakeCase(macro: NonNullable<PromptRuntimePreviewResult["runtimeTrace"]["macro"]>): Record<string, unknown> {
+  return {
+    warnings: macro.warnings.map((warning) => ({
+      code: warning.code,
+      message: warning.message,
+      ...(warning.macroName ? { macro_name: warning.macroName } : {}),
+      ...(warning.rawText ? { raw_text: warning.rawText } : {}),
+    })),
+    used_names: macro.usedNames,
+    mutation_preview: macro.mutationPreview.map((preview) => ({
+      kind: preview.kind,
+      scope: preview.scope,
+      key: preview.key,
+      ...(preview.value !== undefined ? { value: preview.value } : {}),
+    })),
+    staged_mutations: macro.stagedMutations.map((mutation) => ({
+      kind: mutation.kind,
+      scope: mutation.scope,
+      key: mutation.key,
+      ...(mutation.value !== undefined ? { value: mutation.value } : {}),
+      source_macro: mutation.sourceMacro,
+    })),
+    traces: macro.traces.map((trace) => mapPreviewMacroTraceEntryToSnakeCase(trace)),
+  };
+}
+
+function mapPreviewMacroTraceEntryToSnakeCase(trace: NonNullable<PromptRuntimePreviewResult["runtimeTrace"]["macro"]>["traces"][number]): Record<string, unknown> {
+  return {
+    macro_name: trace.macroName,
+    raw_text: trace.rawText,
+    resolved_text: trace.resolvedText,
+    ...(trace.phase ? { phase: trace.phase } : {}),
+    ...(trace.sourceKind ? { source_kind: trace.sourceKind } : {}),
+    ...(trace.selectedBranch ? { selected_branch: trace.selectedBranch } : {}),
   };
 }
 
@@ -412,6 +581,16 @@ function mapCapabilitiesToSnakeCase(capabilities: PromptRuntimeCapabilities): Re
         supports_visibility: capabilities.observability.dryRun.supportsVisibility,
         include_worldbook_matches: capabilities.observability.dryRun.includeWorldbookMatches,
       },
+      preview: {
+        enabled: capabilities.observability.preview.enabled,
+        returns_runtime_trace: capabilities.observability.preview.returnsRuntimeTrace,
+        supports_visibility: capabilities.observability.preview.supportsVisibility,
+        single_text_only: capabilities.observability.preview.singleTextOnly,
+        llm_call: capabilities.observability.preview.llmCall,
+        creates_floor: capabilities.observability.preview.createsFloor,
+        writes_prompt_snapshot: capabilities.observability.preview.writesPromptSnapshot,
+        commits_side_effects: capabilities.observability.preview.commitsSideEffects,
+      },
       stream: {
         enabled: capabilities.observability.stream.enabled,
         prompt_debug_payload: capabilities.observability.stream.promptDebugPayload,
@@ -428,6 +607,28 @@ function mapCapabilitiesToSnakeCase(capabilities: PromptRuntimeCapabilities): Re
     },
     unsupported: [...capabilities.unsupported],
   };
+}
+
+function sendPromptRuntimePreviewServiceError(
+  reply: Parameters<typeof sendError>[0],
+  error: unknown,
+) {
+  if (error instanceof ChatServiceError) {
+    switch (error.code) {
+      case "session_not_found":
+      case "source_floor_not_found":
+        return sendError(reply, 404, error.code, error.message);
+      case "session_archived":
+      case "invalid_state":
+      case "generation_target_stale":
+      case "branch_exists":
+        return sendError(reply, 409, error.code, error.message);
+      default:
+        return sendError(reply, 500, error.code, error.message);
+    }
+  }
+
+  throw error;
 }
 
 function sendPromptRuntimeControlServiceError(

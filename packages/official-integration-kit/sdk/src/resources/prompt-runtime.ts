@@ -1,4 +1,5 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
+import { mapPromptRuntimeTracePayload, type PromptRuntimeTrace, type PromptRuntimeVisibilityRange } from "../prompt-runtime.js";
 import {
   compactObject,
   readArray,
@@ -138,6 +139,16 @@ export type PromptRuntimeCapabilities = {
       worldbookMatchesRequiresOptIn: boolean;
       worldbookMatchesRequiresRuntimeTrace: boolean;
     };
+    preview: {
+      commitsSideEffects: boolean;
+      createsFloor: boolean;
+      enabled: boolean;
+      llmCall: boolean;
+      returnsRuntimeTrace: boolean;
+      singleTextOnly: boolean;
+      supportsVisibility: boolean;
+      writesPromptSnapshot: boolean;
+    };
     stream: {
       enabled: boolean;
       newSseEventFamily: boolean;
@@ -162,6 +173,27 @@ export type PromptRuntimeGetCapabilitiesOptions = {
   accountId?: AccountIdHint;
 };
 
+export type PromptRuntimePreviewVisibilityMode = "allow_all_except_hidden" | "deny_all_except_visible";
+
+export type PromptRuntimePreviewVisibility = {
+  hiddenFloorIds?: string[];
+  hiddenFloorRanges?: PromptRuntimeVisibilityRange[];
+  mode?: PromptRuntimePreviewVisibilityMode;
+  visibleFloorRanges?: PromptRuntimeVisibilityRange[];
+};
+
+export type PromptRuntimePreviewOptions = PromptRuntimeGetSessionOptions & {
+  branchId?: string;
+  sourceFloorId?: string;
+  text: string;
+  visibility?: PromptRuntimePreviewVisibility;
+};
+
+export type PromptRuntimePreviewResult = {
+  runtimeTrace: PromptRuntimeTrace;
+  text: string;
+};
+
 export type PromptRuntimePatchPolicyOptions = PromptRuntimeGetSessionOptions & (
   | {
       delivery?: PromptRuntimePersistentDeliveryPolicy | null;
@@ -179,6 +211,7 @@ export type PromptRuntimeResource = {
   getPolicy(options: PromptRuntimeGetPolicyOptions): Promise<PromptRuntimePolicyView>;
   getSession(options: PromptRuntimeGetSessionOptions): Promise<PromptRuntimeResolvedState>;
   patchPolicy(options: PromptRuntimePatchPolicyOptions): Promise<PromptRuntimePolicyView>;
+  previewText(options: PromptRuntimePreviewOptions): Promise<PromptRuntimePreviewResult>;
 };
 
 export function createPromptRuntimeResource(client: TransportClient): PromptRuntimeResource {
@@ -264,6 +297,28 @@ export function createPromptRuntimeResource(client: TransportClient): PromptRunt
 
       return payload;
     },
+    async previewText(options): Promise<PromptRuntimePreviewResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/preview`,
+        {
+          body: compactObject({
+            text: options.text,
+            branch_id: options.branchId,
+            source_floor_id: options.sourceFloorId,
+            visibility: mapPromptRuntimePreviewVisibilityRequest(options.visibility),
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+
+      const payload = mapPromptRuntimePreviewResult(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Prompt Runtime preview payload is missing");
+      }
+
+      return payload;
+    },
   };
 }
 
@@ -323,11 +378,12 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
   const macro = readRecord(record.macro);
   const live = readRecord(observability?.live);
   const dryRun = readRecord(observability?.dry_run);
+  const preview = readRecord(observability?.preview);
   const stream = readRecord(observability?.stream);
   const defaultsStructure = mapPromptRuntimeResolvedStructurePolicy(structure?.defaults);
   const defaultsDelivery = mapPromptRuntimeResolvedDeliveryPolicy(delivery?.defaults);
 
-  if (!structure || !delivery || !observability || !macro || !live || !dryRun || !stream || !defaultsStructure || !defaultsDelivery) {
+  if (!structure || !delivery || !observability || !macro || !live || !dryRun || !preview || !stream || !defaultsStructure || !defaultsDelivery) {
     return null;
   }
 
@@ -357,6 +413,16 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
         returnsAssembly: readBoolean(dryRun.returns_assembly, true),
         returnsRuntimeTrace: readBoolean(dryRun.returns_runtime_trace, true),
         supportsVisibility: readBoolean(dryRun.supports_visibility, true),
+      },
+      preview: {
+        commitsSideEffects: readBoolean(preview.commits_side_effects),
+        createsFloor: readBoolean(preview.creates_floor),
+        enabled: readBoolean(preview.enabled),
+        llmCall: readBoolean(preview.llm_call),
+        returnsRuntimeTrace: readBoolean(preview.returns_runtime_trace, true),
+        singleTextOnly: readBoolean(preview.single_text_only, true),
+        supportsVisibility: readBoolean(preview.supports_visibility, true),
+        writesPromptSnapshot: readBoolean(preview.writes_prompt_snapshot),
       },
       stream: {
         enabled: readBoolean(stream.enabled),
@@ -497,6 +563,47 @@ function mapPromptRuntimeDebugPolicy(value: unknown): PromptRuntimeDebugPolicy |
     includeWorldbookMatches: readBoolean(record.include_worldbook_matches),
   };
 }
+
+function mapPromptRuntimePreviewVisibilityRequest(
+  value?: PromptRuntimePreviewVisibility,
+): Record<string, unknown> | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const mapped = compactObject({
+    hidden_floor_ids: value.hiddenFloorIds,
+    hidden_floor_ranges: value.hiddenFloorRanges?.map((range) => ({
+      start_floor_no: range.startFloorNo,
+      end_floor_no: range.endFloorNo,
+    })),
+    mode: value.mode,
+    visible_floor_ranges: value.visibleFloorRanges?.map((range) => ({
+      start_floor_no: range.startFloorNo,
+      end_floor_no: range.endFloorNo,
+    })),
+  });
+
+  return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+function mapPromptRuntimePreviewResult(value: unknown): PromptRuntimePreviewResult | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const runtimeTrace = mapPromptRuntimeTracePayload(record.runtime_trace);
+  if (!runtimeTrace) {
+    return null;
+  }
+
+  return {
+    runtimeTrace,
+    text: readString(record.text),
+  };
+}
+
 
 function mapPromptRuntimeSourceMap(value: unknown): PromptRuntimeSourceMap | undefined {
   const record = readRecord(value);

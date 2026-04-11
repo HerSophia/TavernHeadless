@@ -20,7 +20,15 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
   // ── Sessions CRUD ────────────────────────────────────
 
   const session = await runStep("POST /sessions", () =>
-    api.request<{ data: { id: string } }>("POST", "/sessions", { title: `${runId}-session` }, [201])
+    api.request<{ data: { id: string } }>(
+      "POST",
+      "/sessions",
+      {
+        title: `${runId}-session`,
+        character_snapshot: { name: "Smoke Knight", primaryGreeting: "Hello there." },
+      },
+      [201]
+    )
   );
   const sessionId = must(session.body?.data?.id, "Missing session id");
   track("sessions", sessionId);
@@ -71,7 +79,7 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
       "/floors",
       {
         session_id: sessionId,
-        floor_no: 0,
+        floor_no: 1,
         branch_id: "main",
         state: "draft",
       },
@@ -86,7 +94,7 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
       "/floors",
       {
         session_id: sessionId,
-        floor_no: 1,
+        floor_no: 2,
         branch_id: "main",
         state: "committed",
       },
@@ -245,9 +253,10 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
       [200]
     )
   );
-  const firstFloor = timeline.body?.data?.floors?.[0];
-  assert(firstFloor?.page_count === 2, "Timeline page_count should be 2");
-  assert(firstFloor?.active_page?.id === pageV1Id, "Initial active page should be v1");
+  const contentFloor = timeline.body?.data?.floors?.find((entry) => entry.active_page?.id === pageV1Id);
+  assert(Boolean(contentFloor), "Timeline should include the smoke content floor");
+  assert(contentFloor?.page_count === 2, "Timeline page_count should be 2 for the smoke content floor");
+  assert(contentFloor?.active_page?.id === pageV1Id, "Initial active page should be v1 for the smoke content floor");
 
   await runStep("PATCH /pages/:id/activate", () =>
     api.request("PATCH", `/pages/${pageV2Id}/activate`, undefined, [200])
@@ -341,4 +350,5 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
   ctx.shared.floorId = floorId;
   ctx.shared.pageV1Id = pageV1Id;
   ctx.shared.pageV2Id = pageV2Id;
+  ctx.shared.committedBranchFloorId = committedBranchFloorId;
 }

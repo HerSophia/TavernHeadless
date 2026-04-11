@@ -48,6 +48,16 @@ describe("st-macros if block", () => {
     expect(result.text).toBe("PASS");
   });
 
+  it("supports explicit greater-than, less-than and less-or-equal comparisons", () => {
+    const result = evaluateStMacros("{{if {{score}} > 3}}A{{else}}B{{/if}}/{{if {{score}} < 10}}C{{else}}D{{/if}}/{{if {{score}} <= 7}}E{{else}}F{{/if}}", {
+      phase: "assemble",
+      values: { score: "7" },
+    });
+
+    expect(result.text).toBe("A/C/E");
+    expect(result.warnings).toEqual([]);
+  });
+
   it("supports logical operators and parentheses", () => {
     const result = evaluateStMacros("{{if ({{score}} >= 80) and not ({{rank}} == banned)}}YES{{else}}NO{{/if}}", {
       phase: "assemble",
@@ -64,6 +74,16 @@ describe("st-macros if block", () => {
     });
 
     expect(result.text).toBe("A/C");
+  });
+
+  it("supports combined richer if expressions without falling back to raw text", () => {
+    const result = evaluateStMacros("{{if ({{score}} >= 3 and {{title}} contains veteran) or not ({{title}} startsWith A)}}YES{{else}}NO{{/if}}", {
+      phase: "assemble",
+      values: { score: "3", title: "The veteran guard" },
+    });
+
+    expect(result.text).toBe("YES");
+    expect(result.warnings).toEqual([]);
   });
 
   it("does not execute write macros in false branch", () =>{

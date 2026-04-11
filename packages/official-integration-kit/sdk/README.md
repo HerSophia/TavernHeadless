@@ -325,10 +325,24 @@ const policy = await client.promptRuntime.patchPolicy({
   delivery: null,
 });
 
+const preview = await client.promptRuntime.previewText({
+  accountId: "account-1",
+  sessionId: "session-1",
+  branchId: "main",
+  text: "{{setvar::资产.金币::3}}{{getvar::资产}}",
+  visibility: {
+    mode: "allow_all_except_hidden",
+    hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+  },
+});
+
 const capabilities = await client.promptRuntime.getCapabilities();
 
 console.log(state.assets.characterCard?.name);
 console.log(policy.resolvedPolicy.structure.mode);
+console.log(preview.text);
+console.log(preview.runtimeTrace.macro?.stagedMutations); // []
+console.log(capabilities.observability.preview.enabled);
 console.log(capabilities.unsupported);
 ```
 
@@ -337,6 +351,7 @@ console.log(capabilities.unsupported);
 - `promptRuntime.getSession(...)`
 - `promptRuntime.getPolicy(...)`
 - `promptRuntime.patchPolicy(...)`
+- `promptRuntime.previewText(...)`
 - `promptRuntime.getAssets(...)`
 - `promptRuntime.getCapabilities(...)`
 
@@ -345,6 +360,8 @@ console.log(capabilities.unsupported);
 - 这是一组独立的高级 API 资源，不会创建第二条聊天执行链。
 - `characterCard` 仍然属于 Prompt Assets。
 - `patchPolicy(...)` 当前只允许写 `structure` 和 `delivery`。
+- `previewText(...)` 只做单段文本 preview，不走 LLM、不创建 floor、不写 `promptSnapshot`、不提交副作用。
+- `previewText(...)` 的宏诊断继续统一走 `runtimeTrace.macro`，并且 `runtimeTrace.macro.stagedMutations` 固定为空。
 - `delivery: null` 或 `structure: null` 会清空对应持久化 section。
 - 当前没有 `promptRuntime.macros(...)` 之类的专用 control plane 方法；宏边界继续通过统一观测面公开。
 

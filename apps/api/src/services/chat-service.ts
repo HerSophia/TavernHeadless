@@ -19,6 +19,7 @@ import {
   buildPromptSnapshotRecord,
   createRegexMacroSubstituter,
   materializePromptRuntimeMessages,
+  previewPromptMacroText,
   type AssembleResult,
   type SessionPromptInfo,
   type AssembleDebugInfo,
@@ -107,7 +108,7 @@ import { TurnCommitService, type TurnCommitMemoryReceipt } from "./turn-commit-s
 import type { FloorRunService } from "./floor-run-service.js";
 import { OwnedFloorRepository, OwnedMessageRepository, OwnedSessionRepository } from "./owned-resource-repositories.js";
 import { PromptResourceLoader } from "./prompt-resource-loader.js";
-import type { StMacroStagedMutation } from "./st-macros/index.js";
+import type { StMacroJsonValue, StMacroStagedMutation } from "./st-macros/index.js";
 import { resolveAssistantPrefillStrategy } from "../lib/llm-provider-discovery.js";
 import { VariableService } from "./variable-service.js";
 import {
@@ -115,6 +116,7 @@ import {
   mergePromptStructurePolicy,
   readPromptRuntimePersistentPolicy,
 } from "./prompt-runtime-control-service.js";
+import { BranchLocalVariableSnapshotService } from "./branch-local-variable-snapshot-service.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
@@ -210,6 +212,18 @@ export interface DryRunResult {
   };
   /** Prompt Runtime 运行轨迹（第一版增量输出） */
   runtimeTrace?: PromptRuntimeTrace;
+}
+
+export interface PromptRuntimePreviewRequest {
+  text: string;
+  branchId?: string;
+  sourceFloorId?: string;
+  visibility?: PromptVisibilityPolicy;
+}
+
+export interface PromptRuntimePreviewResult {
+  text: string;
+  runtimeTrace: PromptRuntimeTrace;
 }
 
 /** /regenerate 请求体 */
@@ -639,6 +653,18 @@ export class ChatService {
           userId: session.userId,
           userSnapshotJson: session.userSnapshotJson,
           now,
+          afterCreate: branchContext.inheritanceSource
+            ? (tx) => {
+                new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
+                  accountId: resolvedAccountId,
+                  sessionId,
+                  sourceFloorId: branchContext.inheritanceSource!.floorId,
+                  sourceBranchId: branchContext.inheritanceSource!.branchId,
+                  targetBranchId: branchId,
+                  createdAt: now,
+                });
+              }
+            : undefined,
         });
 
         await this.initializeFloorRun(sessionId, floorId, "respond", now);
@@ -907,6 +933,63 @@ export class ChatService {
         ...buildPromptRuntimeTrace({ debug, preprocessedUserMessage }),
         ...(materialized.structureTrace ? { structure: materialized.structureTrace } : {}),
         delivery: materialized.deliveryTrace,
+        visibility: {
+          ...(visibilityTrace.hiddenFloorRanges ? { hiddenFloorRanges: visibilityTrace.hiddenFloorRanges } : {}),
+          filteredFloorNos: visibilityTrace.filteredFloorNos,
+        },
+      },
+    };
+  }
+
+  async previewPromptRuntimeText(
+    sessionId: string,
+    request: PromptRuntimePreviewRequest,
+    accountId?: string,
+  ): Promise<PromptRuntimePreviewResult> {
+    const resolvedAccountId = this.resolveAccountId(accountId);
+    const session = await this.getSession(sessionId, resolvedAccountId);
+    if (!session) {
+      throw new ChatServiceError("session_not_found", `Session '${sessionId}' not found`);
+    }
+
+    if (session.status === "archived") {
+      throw new ChatServiceError("session_archived", "Cannot preview prompt runtime in an archived session");
+    }
+
+    const branchId = normalizeBranchId(request.branchId);
+    const branchContext = await this.resolveRespondBranchContext(sessionId, branchId, request.sourceFloorId);
+    const history = await this.historyLoader.loadHistory(sessionId, branchId, branchContext.nextFloorNo, request.visibility);
+    const visibilityTrace = await this.historyLoader.previewVisibility(sessionId, branchId, branchContext.nextFloorNo, request.visibility);
+    const memorySummary = await this.retrieveMemorySummary(sessionId, resolvedAccountId);
+    const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, resolvedAccountId);
+    const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+    const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
+    const variableState = await this.resolvePromptRuntimePreviewVariables({
+      accountId: resolvedAccountId,
+      sessionId,
+      branchId,
+      branchExists: branchContext.branchExists,
+      inheritanceSource: branchContext.inheritanceSource,
+    });
+
+    const preview = previewPromptMacroText({
+      session: sessionInfo,
+      text: request.text,
+      chatHistory: history.filter((message): message is { role: "user" | "assistant"; content: string } => (
+        message.role === "user" || message.role === "assistant"
+      )),
+      ordinaryVariables: variableState.ordinaryVariables,
+      localValues: variableState.localValues,
+      globalValues: variableState.globalValues,
+      memorySummary,
+      maxPrompt: narratorParams?.maxContextTokens,
+      runKind: "dry_run",
+    });
+
+    return {
+      text: preview.text,
+      runtimeTrace: {
+        ...preview.runtimeTrace,
         visibility: {
           ...(visibilityTrace.hiddenFloorRanges ? { hiddenFloorRanges: visibilityTrace.hiddenFloorRanges } : {}),
           filteredFloorNos: visibilityTrace.filteredFloorNos,
@@ -1341,6 +1424,16 @@ export class ChatService {
         userId: session.userId,
         userSnapshotJson: session.userSnapshotJson,
         now,
+        afterCreate: (tx) => {
+          new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
+            accountId: resolvedAccountId,
+            sessionId: source.sessionId,
+            sourceFloorId: source.floorId,
+            sourceBranchId: source.branchId,
+            targetBranchId: newBranchId,
+            createdAt: now,
+          });
+        },
       });
 
       const persistedUserMessage = await this.applyPersistedUserInputRegex({
@@ -1948,6 +2041,65 @@ export class ChatService {
     return new OwnedSessionRepository(this.db).getById(this.resolveAccountId(accountId), sessionId);
   }
 
+  private async resolvePromptRuntimePreviewVariables(args: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    branchExists: boolean;
+    inheritanceSource?: { floorId: string; branchId: string };
+  }): Promise<{
+    ordinaryVariables: Record<string, unknown>;
+    localValues: Record<string, StMacroJsonValue>;
+    globalValues: Record<string, StMacroJsonValue>;
+  }> {
+    const variableService = new VariableService(this.db);
+
+    if (args.branchExists) {
+      const snapshot = await variableService.resolveSnapshot({
+        accountId: args.accountId,
+        sessionId: args.sessionId,
+        branchId: args.branchId,
+        includeLayers: true,
+      });
+
+      return {
+        ordinaryVariables: Object.fromEntries(snapshot.resolved.map((item) => [item.key, item.value])),
+        localValues: mapPromptRuntimePreviewVariableItems((snapshot.layers?.branch ?? snapshot.layers?.chat)?.items),
+        globalValues: mapPromptRuntimePreviewVariableItems(snapshot.layers?.global?.items),
+      };
+    }
+
+    const snapshot = await variableService.resolveSnapshot({
+      accountId: args.accountId,
+      sessionId: args.sessionId,
+      includeLayers: true,
+    });
+    const globalValues = mapPromptRuntimePreviewVariableItems(snapshot.layers?.global?.items);
+
+    if (args.inheritanceSource) {
+      const localValues = toPromptRuntimePreviewJsonRecord(
+        new BranchLocalVariableSnapshotService(this.db).resolveSourceFloorLocalValues({
+          accountId: args.accountId,
+          sessionId: args.sessionId,
+          sourceFloorId: args.inheritanceSource.floorId,
+          sourceBranchId: args.inheritanceSource.branchId,
+        }).values,
+      );
+
+      return {
+        ordinaryVariables: { ...globalValues, ...localValues },
+        localValues,
+        globalValues,
+      };
+    }
+
+    return {
+      ordinaryVariables: Object.fromEntries(snapshot.resolved.map((item) => [item.key, item.value])),
+      localValues: mapPromptRuntimePreviewVariableItems(snapshot.layers?.chat?.items),
+      globalValues,
+    };
+  }
+
   private async requireActiveSession(
     sessionId: string,
     accountId: string,
@@ -2263,6 +2415,7 @@ export class ChatService {
     userSnapshotJson: string | null;
     now: number;
     prepare?: (tx: DbExecutor) => void;
+    afterCreate?: (tx: DbExecutor, floorId: string) => void;
   }): { floorId: string; userMessageRef: PersistedMessageRef } {
     const floorId = args.floorId ?? nanoid();
     const floorMetadataJson = buildFloorMetadataJson(args.userId, args.userSnapshotJson, args.now, args.userMessage);
@@ -2283,6 +2436,7 @@ export class ChatService {
         createdAt: args.now,
         updatedAt: args.now,
       }).run();
+      args.afterCreate?.(tx, floorId);
 
       return this.messagePersistence.saveUserMessageWithExecutor(tx, floorId, args.userMessage, args.now);
     });
@@ -3000,7 +3154,12 @@ export class ChatService {
     sessionId: string,
     branchId: string,
     sourceFloorId?: string
-  ): Promise<{ nextFloorNo: number; parentFloorId: string | null }> {
+  ): Promise<{
+    branchExists: boolean;
+    nextFloorNo: number;
+    parentFloorId: string | null;
+    inheritanceSource?: { floorId: string; branchId: string };
+  }> {
     const generatingFloorInBranch = await this.historyLoader.getLatestGeneratingFloorInBranch(sessionId, branchId);
 
     if (generatingFloorInBranch) {
@@ -3018,6 +3177,7 @@ export class ChatService {
 
     if (lastFloorInBranch) {
       return {
+        branchExists: true,
         nextFloorNo: lastFloorInBranch.floorNo + 1,
         parentFloorId: lastCommittedFloorInBranch?.id
           ?? lastFloorInBranch.parentFloorId
@@ -3025,11 +3185,11 @@ export class ChatService {
       };
     }
 
-    let sourceFloor: { id: string; floorNo: number } | null = null;
+    let sourceFloor: { id: string; floorNo: number; branchId: string } | null = null;
 
     if (sourceFloorId) {
       const [row] = await this.db
-        .select({ id: floors.id, floorNo: floors.floorNo })
+        .select({ id: floors.id, floorNo: floors.floorNo, branchId: floors.branchId })
         .from(floors)
         .where(
           and(
@@ -3051,7 +3211,7 @@ export class ChatService {
       sourceFloor = row;
     } else {
       const [latestMainFloor] = await this.db
-        .select({ id: floors.id, floorNo: floors.floorNo })
+        .select({ id: floors.id, floorNo: floors.floorNo, branchId: floors.branchId })
         .from(floors)
         .where(
           and(
@@ -3068,13 +3228,35 @@ export class ChatService {
     }
 
     return {
+      branchExists: false,
       nextFloorNo: (sourceFloor?.floorNo ?? -1) + 1,
       parentFloorId: sourceFloor?.id ?? null,
+      ...(sourceFloor
+        ? {
+            inheritanceSource: { floorId: sourceFloor.id, branchId: sourceFloor.branchId },
+          }
+        : {}),
     };
   }
 }
 
 // ── 工具函数 ──────────────────────────────────────────
+
+function mapPromptRuntimePreviewVariableItems(
+  items: Array<{ key: string; value: unknown }> | undefined,
+): Record<string, StMacroJsonValue> {
+  if (!items || items.length === 0) {
+    return {};
+  }
+
+  return toPromptRuntimePreviewJsonRecord(Object.fromEntries(items.map((item) => [item.key, item.value])));
+}
+
+function toPromptRuntimePreviewJsonRecord(values: Record<string, unknown>): Record<string, StMacroJsonValue> {
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [key, value as StMacroJsonValue]),
+  );
+}
 
 function buildFloorMetadataJson(
   userId: string | null,

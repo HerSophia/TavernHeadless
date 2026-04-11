@@ -5647,6 +5647,23 @@ export interface paths {
         patch: operations["patchSessionPromptRuntimePolicy"];
         trace?: never;
     };
+    "/sessions/{id}/prompt-runtime/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview prompt runtime macros for a single text segment */
+        post: operations["previewSessionPromptRuntime"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{id}/timeline": {
         parameters: {
             query?: never;
@@ -14462,6 +14479,16 @@ export interface operations {
                      *             "worldbook_matches_requires_opt_in": true,
                      *             "worldbook_matches_requires_runtime_trace": true
                      *           },
+                     *           "preview": {
+                     *             "commits_side_effects": false,
+                     *             "creates_floor": false,
+                     *             "enabled": true,
+                     *             "llm_call": false,
+                     *             "returns_runtime_trace": true,
+                     *             "single_text_only": true,
+                     *             "supports_visibility": true,
+                     *             "writes_prompt_snapshot": false
+                     *           },
                      *           "stream": {
                      *             "enabled": true,
                      *             "new_sse_event_family": false,
@@ -14482,7 +14509,6 @@ export interface operations {
                      *         },
                      *         "unsupported": [
                      *           "/sessions/:id/prompt-runtime/run",
-                     *           "/sessions/:id/prompt-runtime/preview",
                      *           "/sessions/:id/prompt-runtime/macros",
                      *           "/floors/:id/prompt-runtime",
                      *           "/messages/:id/prompt-runtime"
@@ -14543,6 +14569,23 @@ export interface operations {
                                     worldbook_matches_requires_opt_in: true;
                                     /** @enum {unknown} */
                                     worldbook_matches_requires_runtime_trace: true;
+                                };
+                                preview: {
+                                    /** @enum {unknown} */
+                                    commits_side_effects: false;
+                                    /** @enum {unknown} */
+                                    creates_floor: false;
+                                    enabled: boolean;
+                                    /** @enum {unknown} */
+                                    llm_call: false;
+                                    /** @enum {unknown} */
+                                    returns_runtime_trace: true;
+                                    /** @enum {unknown} */
+                                    single_text_only: true;
+                                    /** @enum {unknown} */
+                                    supports_visibility: true;
+                                    /** @enum {unknown} */
+                                    writes_prompt_snapshot: false;
                                 };
                                 stream: {
                                     enabled: boolean;
@@ -15507,6 +15550,280 @@ export interface operations {
             };
             /** @description Default Response */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    previewSessionPromptRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "branch_id": "main",
+                 *       "text": "{{setvar::资产.金币::3}}{{getvar::资产}}",
+                 *       "visibility": {
+                 *         "hidden_floor_ranges": [
+                 *           {
+                 *             "end_floor_no": 2,
+                 *             "start_floor_no": 1
+                 *           }
+                 *         ],
+                 *         "mode": "allow_all_except_hidden"
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    branch_id?: string;
+                    source_floor_id?: string;
+                    text: string;
+                    visibility?: {
+                        hidden_floor_ids?: string[];
+                        hidden_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                        /** @enum {string} */
+                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                        visible_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "runtime_trace": {
+                     *           "macro": {
+                     *             "mutation_preview": [
+                     *               {
+                     *                 "key": "资产",
+                     *                 "kind": "set",
+                     *                 "scope": "branch",
+                     *                 "value": "{\"金币\":3}"
+                     *               }
+                     *             ],
+                     *             "staged_mutations": [],
+                     *             "traces": [
+                     *               {
+                     *                 "macro_name": "setvar",
+                     *                 "phase": "preview",
+                     *                 "raw_text": "{{setvar::资产.金币::3}}",
+                     *                 "resolved_text": "",
+                     *                 "source_kind": "macro"
+                     *               },
+                     *               {
+                     *                 "macro_name": "getvar",
+                     *                 "phase": "preview",
+                     *                 "raw_text": "{{getvar::资产}}",
+                     *                 "resolved_text": "{\"金币\":3}",
+                     *                 "source_kind": "macro"
+                     *               }
+                     *             ],
+                     *             "used_names": [
+                     *               "setvar",
+                     *               "getvar"
+                     *             ],
+                     *             "warnings": [
+                     *               {
+                     *                 "code": "macro_preview_side_effect_suppressed",
+                     *                 "macro_name": "setvar",
+                     *                 "message": "Macro setvar side effect was previewed but not committed."
+                     *               }
+                     *             ]
+                     *           },
+                     *           "visibility": {
+                     *             "filtered_floor_nos": [
+                     *               1,
+                     *               2
+                     *             ],
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ]
+                     *           }
+                     *         },
+                     *         "text": "{\"金币\":3}"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            runtime_trace: {
+                                /**
+                                 * @example {
+                                 *       "mutation_preview": [
+                                 *         {
+                                 *           "key": "资产",
+                                 *           "kind": "set",
+                                 *           "scope": "branch",
+                                 *           "value": "{\"金币\":3}"
+                                 *         }
+                                 *       ],
+                                 *       "staged_mutations": [],
+                                 *       "traces": [
+                                 *         {
+                                 *           "macro_name": "setvar",
+                                 *           "phase": "preview",
+                                 *           "raw_text": "{{setvar::资产.金币::3}}",
+                                 *           "resolved_text": "",
+                                 *           "source_kind": "macro"
+                                 *         },
+                                 *         {
+                                 *           "macro_name": "getvar",
+                                 *           "phase": "preview",
+                                 *           "raw_text": "{{getvar::资产}}",
+                                 *           "resolved_text": "{\"金币\":3}",
+                                 *           "source_kind": "macro"
+                                 *         }
+                                 *       ],
+                                 *       "used_names": [
+                                 *         "setvar",
+                                 *         "getvar"
+                                 *       ],
+                                 *       "warnings": [
+                                 *         {
+                                 *           "code": "macro_preview_side_effect_suppressed",
+                                 *           "macro_name": "setvar",
+                                 *           "message": "Macro setvar side effect was previewed but not committed."
+                                 *         }
+                                 *       ]
+                                 *     }
+                                 */
+                                macro?: {
+                                    mutation_preview: {
+                                        key: string;
+                                        /** @enum {string} */
+                                        kind: "set" | "delete";
+                                        /** @enum {string} */
+                                        scope: "branch" | "global";
+                                        value?: string;
+                                    }[];
+                                    staged_mutations: {
+                                        key: string;
+                                        /** @enum {string} */
+                                        kind: "set" | "delete";
+                                        /** @enum {string} */
+                                        scope: "branch" | "global";
+                                        source_macro: string;
+                                        value?: string;
+                                    }[];
+                                    traces: {
+                                        macro_name: string;
+                                        phase?: string;
+                                        raw_text: string;
+                                        resolved_text: string;
+                                        /** @enum {string} */
+                                        selected_branch?: "then" | "else" | "raw";
+                                        /** @enum {string} */
+                                        source_kind?: "text" | "raw" | "macro" | "if";
+                                    }[];
+                                    used_names: string[];
+                                    warnings: {
+                                        code: string;
+                                        macro_name?: string;
+                                        message: string;
+                                        raw_text?: string;
+                                    }[];
+                                };
+                                visibility?: {
+                                    filtered_floor_nos: number[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
+                            };
+                            text: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -423,6 +423,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let mutationRuntimeComponents: ReturnType<typeof createDefaultMutationRuntimeComponents> | undefined;
   let toolRuntimeComponents: ReturnType<typeof createDefaultToolRuntimeComponents> | undefined;
   let floorRunService: FloorRunService | undefined;
+  let promptRuntimePreviewService: Pick<ChatService, "previewPromptRuntimeText"> | undefined;
 
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
@@ -555,10 +556,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   const promptRuntimeControlService = new PromptRuntimeControlService(database.db, {
     enableLiveEndpoints: Boolean(options.orchestration && orchestrationContext),
     enableDryRunEndpoint: Boolean(options.orchestration && orchestrationContext) && options.enablePromptDryRun === true,
+    enablePreviewEndpoint: Boolean(options.orchestration && orchestrationContext),
     enableStreamEndpoint: Boolean(options.orchestration && orchestrationContext) && options.enableSseChat === true,
   });
-
-  await registerPromptRuntimeRoutes(app, promptRuntimeControlService);
 
   if (options.orchestration && orchestrationContext) {
     const llmInstanceService = new LlmInstanceService(database.db);
@@ -657,6 +657,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       }
     );
 
+    promptRuntimePreviewService = chatService;
+
     await registerChatRoutes(app, chatService, {
       enableSseChat: options.enableSseChat,
       enablePromptDryRun: options.enablePromptDryRun,
@@ -669,6 +671,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     }
 
   }
+
+  await registerPromptRuntimeRoutes(app, promptRuntimeControlService, {
+    previewService: promptRuntimePreviewService,
+  });
+
 
   if (options.enableMemory === true && options.memoryMaintenance) {
     const maintenanceService = new MemoryMaintenanceService(database.db);
