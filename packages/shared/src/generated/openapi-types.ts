@@ -4177,6 +4177,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/prompt-runtime/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get prompt runtime capabilities and boundaries */
+        get: operations["getPromptRuntimeCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/regex-profiles": {
         parameters: {
             query?: never;
@@ -5576,6 +5593,58 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/prompt-runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get session prompt runtime resolved state */
+        get: operations["getSessionPromptRuntime"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/prompt-runtime/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get session prompt runtime asset bindings */
+        get: operations["getSessionPromptRuntimeAssets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/prompt-runtime/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get session prompt runtime persistent and resolved policy */
+        get: operations["getSessionPromptRuntimePolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch session prompt runtime persistent policy */
+        patch: operations["patchSessionPromptRuntimePolicy"];
         trace?: never;
     };
     "/sessions/{id}/timeline": {
@@ -14341,6 +14410,183 @@ export interface operations {
             };
         };
     };
+    getPromptRuntimeCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "delivery": {
+                     *           "defaults": {
+                     *             "allow_assistant_prefill": true,
+                     *             "no_assistant": false,
+                     *             "require_last_user": false
+                     *           }
+                     *         },
+                     *         "macro": {
+                     *           "built_in_read_only_values_persistable": false,
+                     *           "dedicated_macros_route": false,
+                     *           "diagnostics_surface": "unified_observability",
+                     *           "recent_message_respects_visibility": true,
+                     *           "run_kind_persistable": false,
+                     *           "st_compatibility_snapshots_persistable": false
+                     *         },
+                     *         "observability": {
+                     *           "dry_run": {
+                     *             "enabled": true,
+                     *             "include_worldbook_matches": true,
+                     *             "returns_assembly": true,
+                     *             "returns_runtime_trace": true,
+                     *             "supports_visibility": true
+                     *           },
+                     *           "live": {
+                     *             "default_off": true,
+                     *             "enabled": true,
+                     *             "include_prompt_snapshot": true,
+                     *             "include_runtime_trace": true,
+                     *             "include_worldbook_matches": true,
+                     *             "request_scoped_only": true,
+                     *             "visibility_request_supported": false,
+                     *             "worldbook_matches_requires_opt_in": true,
+                     *             "worldbook_matches_requires_runtime_trace": true
+                     *           },
+                     *           "stream": {
+                     *             "enabled": true,
+                     *             "new_sse_event_family": false,
+                     *             "prompt_debug_payload": "done_only"
+                     *           }
+                     *         },
+                     *         "structure": {
+                     *           "defaults": {
+                     *             "merge_adjacent_same_role": false,
+                     *             "mode": "default",
+                     *             "preserve_system_messages": true
+                     *           },
+                     *           "modes": [
+                     *             "default",
+                     *             "strict_alternating",
+                     *             "no_assistant"
+                     *           ]
+                     *         },
+                     *         "unsupported": [
+                     *           "/sessions/:id/prompt-runtime/run",
+                     *           "/sessions/:id/prompt-runtime/preview",
+                     *           "/sessions/:id/prompt-runtime/macros",
+                     *           "/floors/:id/prompt-runtime",
+                     *           "/messages/:id/prompt-runtime"
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            delivery: {
+                                defaults: {
+                                    allow_assistant_prefill: boolean;
+                                    no_assistant: boolean;
+                                    require_last_user: boolean;
+                                };
+                            };
+                            macro: {
+                                /** @enum {unknown} */
+                                built_in_read_only_values_persistable: false;
+                                /** @enum {unknown} */
+                                dedicated_macros_route: false;
+                                /** @enum {string} */
+                                diagnostics_surface: "unified_observability";
+                                /** @enum {unknown} */
+                                recent_message_respects_visibility: true;
+                                /** @enum {unknown} */
+                                run_kind_persistable: false;
+                                /** @enum {unknown} */
+                                st_compatibility_snapshots_persistable: false;
+                            };
+                            observability: {
+                                dry_run: {
+                                    enabled: boolean;
+                                    /** @enum {unknown} */
+                                    include_worldbook_matches: true;
+                                    /** @enum {unknown} */
+                                    returns_assembly: true;
+                                    /** @enum {unknown} */
+                                    returns_runtime_trace: true;
+                                    /** @enum {unknown} */
+                                    supports_visibility: true;
+                                };
+                                live: {
+                                    /** @enum {unknown} */
+                                    default_off: true;
+                                    enabled: boolean;
+                                    /** @enum {unknown} */
+                                    include_prompt_snapshot: true;
+                                    /** @enum {unknown} */
+                                    include_runtime_trace: true;
+                                    /** @enum {unknown} */
+                                    include_worldbook_matches: true;
+                                    /** @enum {unknown} */
+                                    request_scoped_only: true;
+                                    /** @enum {unknown} */
+                                    visibility_request_supported: false;
+                                    /** @enum {unknown} */
+                                    worldbook_matches_requires_opt_in: true;
+                                    /** @enum {unknown} */
+                                    worldbook_matches_requires_runtime_trace: true;
+                                };
+                                stream: {
+                                    enabled: boolean;
+                                    /** @enum {unknown} */
+                                    new_sse_event_family: false;
+                                    /** @enum {string} */
+                                    prompt_debug_payload: "done_only" | "unsupported";
+                                };
+                            };
+                            structure: {
+                                defaults: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    preserve_system_messages: boolean;
+                                };
+                                modes: ("default" | "strict_alternating" | "no_assistant")[];
+                            };
+                            unsupported: string[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     listImportedRegexProfiles: {
         parameters: {
             query?: never;
@@ -14678,6 +14924,569 @@ export interface operations {
             };
             /** @description Default Response */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getSessionPromptRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "assets": {
+                     *           "character_card": {
+                     *             "id": "char-hero",
+                     *             "name": "Hero"
+                     *           },
+                     *           "preset": {
+                     *             "id": "preset-story",
+                     *             "name": "Story Preset"
+                     *           },
+                     *           "regex_profile": {
+                     *             "id": "regex-safe",
+                     *             "name": "Safety Regex"
+                     *           },
+                     *           "worldbook": {
+                     *             "id": "wb-lore",
+                     *             "name": "Lorebook"
+                     *           }
+                     *         },
+                     *         "persistent_policy": {
+                     *           "delivery": {
+                     *             "require_last_user": true
+                     *           },
+                     *           "structure": {
+                     *             "mode": "strict_alternating"
+                     *           }
+                     *         },
+                     *         "policy": {
+                     *           "debug": {
+                     *             "include_prompt_snapshot": false,
+                     *             "include_runtime_trace": false,
+                     *             "include_worldbook_matches": false
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": true,
+                     *             "no_assistant": false,
+                     *             "require_last_user": true
+                     *           },
+                     *           "structure": {
+                     *             "merge_adjacent_same_role": true,
+                     *             "mode": "strict_alternating",
+                     *             "preserve_system_messages": true
+                     *           }
+                     *         },
+                     *         "warnings": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            assets: {
+                                character_card: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                                preset: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                                regex_profile: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                                worldbook: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                            };
+                            persistent_policy?: {
+                                delivery?: {
+                                    allow_assistant_prefill?: boolean;
+                                    no_assistant?: boolean;
+                                    require_last_user?: boolean;
+                                };
+                                structure?: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role?: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    preserve_system_messages?: boolean;
+                                };
+                            };
+                            policy: {
+                                debug: {
+                                    include_prompt_snapshot: boolean;
+                                    include_runtime_trace: boolean;
+                                    include_worldbook_matches: boolean;
+                                };
+                                delivery: {
+                                    allow_assistant_prefill: boolean;
+                                    no_assistant: boolean;
+                                    require_last_user: boolean;
+                                };
+                                structure: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    preserve_system_messages: boolean;
+                                };
+                            };
+                            source_map?: {
+                                [key: string]: unknown;
+                            };
+                            warnings: string[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getSessionPromptRuntimeAssets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "character_card": {
+                     *           "id": "char-hero",
+                     *           "name": "Hero"
+                     *         },
+                     *         "preset": {
+                     *           "id": "preset-story",
+                     *           "name": "Story Preset"
+                     *         },
+                     *         "regex_profile": {
+                     *           "id": "regex-safe",
+                     *           "name": "Safety Regex"
+                     *         },
+                     *         "worldbook": {
+                     *           "id": "wb-lore",
+                     *           "name": "Lorebook"
+                     *         }
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            character_card: {
+                                id: string;
+                                name: string | null;
+                            } | null;
+                            preset: {
+                                id: string;
+                                name: string | null;
+                            } | null;
+                            regex_profile: {
+                                id: string;
+                                name: string | null;
+                            } | null;
+                            worldbook: {
+                                id: string;
+                                name: string | null;
+                            } | null;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getSessionPromptRuntimePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "persistent_policy": {
+                     *           "delivery": {
+                     *             "require_last_user": true
+                     *           },
+                     *           "structure": {
+                     *             "mode": "strict_alternating"
+                     *           }
+                     *         },
+                     *         "resolved_policy": {
+                     *           "debug": {
+                     *             "include_prompt_snapshot": false,
+                     *             "include_runtime_trace": false,
+                     *             "include_worldbook_matches": false
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": true,
+                     *             "no_assistant": false,
+                     *             "require_last_user": true
+                     *           },
+                     *           "structure": {
+                     *             "merge_adjacent_same_role": true,
+                     *             "mode": "strict_alternating",
+                     *             "preserve_system_messages": true
+                     *           }
+                     *         },
+                     *         "warnings": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            persistent_policy?: {
+                                delivery?: {
+                                    allow_assistant_prefill?: boolean;
+                                    no_assistant?: boolean;
+                                    require_last_user?: boolean;
+                                };
+                                structure?: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role?: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    preserve_system_messages?: boolean;
+                                };
+                            };
+                            resolved_policy: {
+                                debug: {
+                                    include_prompt_snapshot: boolean;
+                                    include_runtime_trace: boolean;
+                                    include_worldbook_matches: boolean;
+                                };
+                                delivery: {
+                                    allow_assistant_prefill: boolean;
+                                    no_assistant: boolean;
+                                    require_last_user: boolean;
+                                };
+                                structure: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    preserve_system_messages: boolean;
+                                };
+                            };
+                            warnings: string[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    patchSessionPromptRuntimePolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "delivery": {
+                 *         "require_last_user": true
+                 *       },
+                 *       "structure": {
+                 *         "mode": "strict_alternating",
+                 *         "preserve_system_messages": true
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    delivery?: {
+                        allow_assistant_prefill?: boolean;
+                        no_assistant?: boolean;
+                        require_last_user?: boolean;
+                    } | null;
+                    structure?: {
+                        /** @enum {string} */
+                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                        merge_adjacent_same_role?: boolean;
+                        /** @enum {string} */
+                        mode: "default" | "strict_alternating" | "no_assistant";
+                        preserve_system_messages?: boolean;
+                    } | null;
+                } | unknown | unknown;
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "persistent_policy": {
+                     *           "delivery": {
+                     *             "require_last_user": true
+                     *           },
+                     *           "structure": {
+                     *             "mode": "strict_alternating"
+                     *           }
+                     *         },
+                     *         "resolved_policy": {
+                     *           "debug": {
+                     *             "include_prompt_snapshot": false,
+                     *             "include_runtime_trace": false,
+                     *             "include_worldbook_matches": false
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": true,
+                     *             "no_assistant": false,
+                     *             "require_last_user": true
+                     *           },
+                     *           "structure": {
+                     *             "merge_adjacent_same_role": true,
+                     *             "mode": "strict_alternating",
+                     *             "preserve_system_messages": true
+                     *           }
+                     *         },
+                     *         "warnings": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            persistent_policy?: {
+                                delivery?: {
+                                    allow_assistant_prefill?: boolean;
+                                    no_assistant?: boolean;
+                                    require_last_user?: boolean;
+                                };
+                                structure?: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role?: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    preserve_system_messages?: boolean;
+                                };
+                            };
+                            resolved_policy: {
+                                debug: {
+                                    include_prompt_snapshot: boolean;
+                                    include_runtime_trace: boolean;
+                                    include_worldbook_matches: boolean;
+                                };
+                                delivery: {
+                                    allow_assistant_prefill: boolean;
+                                    no_assistant: boolean;
+                                    require_last_user: boolean;
+                                };
+                                structure: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    preserve_system_messages: boolean;
+                                };
+                            };
+                            warnings: string[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

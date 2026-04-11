@@ -249,6 +249,8 @@ Chat 相关方法会保留后端返回的这些字段：
 - `promptSnapshot`（按需）
 - `runtimeTrace`（按需）
 
+如果本轮 prompt 组装实际命中了宏系统，`runtimeTrace.macro` 会继续附带宏 warning、used names、mutation preview、staged mutations 和 trace。
+
 其中 `finalState === "committed"` 表示生成结果已经越过提交边界，相关持久化写入已经完成。
 
 如果服务端在当前 turn 上启用了记忆持久化，`memory` 会额外说明记忆链路是同步完成还是已进入后台队列：
@@ -302,6 +304,49 @@ console.log(result.runtimeTrace);
 `respondStream()` 内部已经处理好 SSE 解析，你只管写回调即可。
 
 当打开 live debug 选项时，`promptSnapshot` 与 `runtimeTrace` 只会出现在最终 `done` 结果里，不会新增新的 SSE 事件类型。
+
+其中 `runtimeTrace.macro` 与同步接口保持同一套结构，便于复用同一份调试面代码。
+
+### 读取和更新 Prompt Runtime 默认策略
+
+```ts
+const state = await client.promptRuntime.getSession({
+  accountId: "account-1",
+  sessionId: "session-1",
+});
+
+const policy = await client.promptRuntime.patchPolicy({
+  accountId: "account-1",
+  sessionId: "session-1",
+  structure: {
+    mode: "strict_alternating",
+    preserveSystemMessages: true,
+  },
+  delivery: null,
+});
+
+const capabilities = await client.promptRuntime.getCapabilities();
+
+console.log(state.assets.characterCard?.name);
+console.log(policy.resolvedPolicy.structure.mode);
+console.log(capabilities.unsupported);
+```
+
+`promptRuntime` 当前覆盖：
+
+- `promptRuntime.getSession(...)`
+- `promptRuntime.getPolicy(...)`
+- `promptRuntime.patchPolicy(...)`
+- `promptRuntime.getAssets(...)`
+- `promptRuntime.getCapabilities(...)`
+
+需要注意：
+
+- 这是一组独立的高级 API 资源，不会创建第二条聊天执行链。
+- `characterCard` 仍然属于 Prompt Assets。
+- `patchPolicy(...)` 当前只允许写 `structure` 和 `delivery`。
+- `delivery: null` 或 `structure: null` 会清空对应持久化 section。
+- 当前没有 `promptRuntime.macros(...)` 之类的专用 control plane 方法；宏边界继续通过统一观测面公开。
 
 ## 设计边界
 

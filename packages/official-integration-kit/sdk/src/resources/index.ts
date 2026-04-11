@@ -249,6 +249,28 @@ export {
   type TimelinePage,
 } from "./sessions.js";
 export {
+  createPromptRuntimeResource,
+  type PromptRuntimeAssetSummary,
+  type PromptRuntimeAssetsView,
+  type PromptRuntimeAssistantRewriteStrategy,
+  type PromptRuntimeCapabilities,
+  type PromptRuntimeDebugPolicy,
+  type PromptRuntimeMacroDiagnosticsSurface,
+  type PromptRuntimePersistentDeliveryPolicy,
+  type PromptRuntimePersistentPolicy,
+  type PromptRuntimePersistentStructurePolicy,
+  type PromptRuntimePolicySource,
+  type PromptRuntimePolicyView,
+  type PromptRuntimeResolvedDeliveryPolicy,
+  type PromptRuntimeResolvedPolicy,
+  type PromptRuntimeResolvedState,
+  type PromptRuntimeResolvedStructurePolicy,
+  type PromptRuntimeResource,
+  type PromptRuntimeSourceMap,
+  type PromptRuntimeStreamPromptDebugPayloadMode,
+  type PromptRuntimeStructureMode,
+} from "./prompt-runtime.js";
+export {
   createToolsResource,
   type BuiltinToolRecord,
   type ToolCallRecord,

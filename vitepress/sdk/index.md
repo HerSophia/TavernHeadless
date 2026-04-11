@@ -36,11 +36,11 @@ const client = createTavernClient({
 
 ### 参数 `TavernClientOptions`
 
-| 字段 | 类型 | 必填 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `baseUrl` | `string` | 是 | 后端服务地址 |
-| `fetchImpl` | `typeof fetch` | 否 | 自定义 fetch 实现，默认使用全局 `fetch` |
-| `getHeaders` | `() => Record<string, string> \| undefined \| Promise<...>` | 否 | 每次请求前调用，返回要附加的请求头 |
+| 字段         | 类型                                                        | 必填 | 说明                                    |
+| ------------ | ----------------------------------------------------------- | ---- | --------------------------------------- |
+| `baseUrl`    | `string`                                                    | 是   | 后端服务地址                            |
+| `fetchImpl`  | `typeof fetch`                                              | 否   | 自定义 fetch 实现，默认使用全局 `fetch` |
+| `getHeaders` | `() => Record<string, string> \| undefined \| Promise<...>` | 否   | 每次请求前调用，返回要附加的请求头      |
 
 ### 返回值 `TavernClient`
 
@@ -108,24 +108,24 @@ console.log(res.body);
 
 上述方法的 `options` 参数结构一致：
 
-| 字段 | 类型 | 必填 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `path` | `Record<string, unknown>` | 否 | 路径参数 |
-| `query` | `Record<string, unknown>` | 否 | 查询参数 |
-| `body` | `object` | 否 | JSON 请求体 |
-| `headers` | `Record<string, string>` | 否 | 附加请求头 |
-| `signal` | `AbortSignal` | 否 | 中止信号 |
+| 字段      | 类型                      | 必填 | 说明        |
+| --------- | ------------------------- | ---- | ----------- |
+| `path`    | `Record<string, unknown>` | 否   | 路径参数    |
+| `query`   | `Record<string, unknown>` | 否   | 查询参数    |
+| `body`    | `object`                  | 否   | JSON 请求体 |
+| `headers` | `Record<string, string>`  | 否   | 附加请求头  |
+| `signal`  | `AbortSignal`             | 否   | 中止信号    |
 
 路径和请求体的类型基于 OpenAPI 定义推导，传入不存在的路径字符串会得到编译期错误。
 
 ### 返回值（通用）
 
-| 字段 | 类型 | 说明 |
-| ---- | ---- | ---- |
-| `body` | `T \| null` | 响应 JSON body（按 OpenAPI 类型推导） |
-| `headers` | `Headers` | 响应头 |
-| `raw` | `Response` | 原始 Response 对象 |
-| `status` | `number` | HTTP 状态码 |
+| 字段      | 类型        | 说明                                  |
+| --------- | ----------- | ------------------------------------- |
+| `body`    | `T \| null` | 响应 JSON body（按 OpenAPI 类型推导） |
+| `headers` | `Headers`   | 响应头                                |
+| `raw`     | `Response`  | 原始 Response 对象                    |
+| `status`  | `number`    | HTTP 状态码                           |
 
 ### fetchJson
 
@@ -138,14 +138,14 @@ const res = await client.fetchJson<{ data: unknown }>("/sessions/s1", {
 console.log(res.body, res.status);
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-| ---- | ---- | ---- | ---- |
-| `pathname` | `string` | 是 | 请求路径（第一个参数） |
-| `options.method` | `string` | 否 | HTTP 方法，默认 `GET`（有 body 时默认 `POST`） |
-| `options.body` | `unknown` | 否 | JSON 请求体 |
-| `options.headers` | `Record<string, string>` | 否 | 附加请求头 |
-| `options.accept` | `string` | 否 | Accept 头 |
-| `options.signal` | `AbortSignal` | 否 | 中止信号 |
+| 字段              | 类型                     | 必填 | 说明                                           |
+| ----------------- | ------------------------ | ---- | ---------------------------------------------- |
+| `pathname`        | `string`                 | 是   | 请求路径（第一个参数）                         |
+| `options.method`  | `string`                 | 否   | HTTP 方法，默认 `GET`（有 body 时默认 `POST`） |
+| `options.body`    | `unknown`                | 否   | JSON 请求体                                    |
+| `options.headers` | `Record<string, string>` | 否   | 附加请求头                                     |
+| `options.accept`  | `string`                 | 否   | Accept 头                                      |
+| `options.signal`  | `AbortSignal`            | 否   | 中止信号                                       |
 
 返回 `TransportJsonResult<T>`，字段与上方通用返回值一致。
 
@@ -166,34 +166,35 @@ const blob = await response.blob();
 
 `client` 上的全部资源属性：
 
-| 属性 | 类型 | 参考文档 |
-| ---- | ---- | ---- |
-| `sessions` | `SessionsResource` | [Sessions](/reference/api/sessions)、[Chat](/reference/api/chat) |
-| `floors` | `FloorsResource` | [Floors](/reference/api/floors) |
-| `pages` | `PagesResource` | [Pages](/reference/api/pages) |
-| `messages` | `MessagesResource` | [Messages](/reference/api/messages) |
-| `characters` | `CharactersResource` | [Characters](/reference/api/characters) |
-| `users` | `UsersResource` | [Users](/reference/api/users) |
-| `accounts` | `AccountsResource` | [Accounts](/reference/api/accounts) |
-| `variables` | `VariablesResource` | [Variables](/reference/api/variables) |
-| `memories` | `MemoriesResource` | [Memories](/reference/api/memories) |
-| `memoryEdges` | `MemoryEdgesResource` | [Memories](/reference/api/memories) |
-| `memoryJobs` | `MemoryJobsResource` | [记忆后台作业](/reference/api/memory-jobs) |
-| `memoryScopes` | `MemoryScopesResource` | [Memories](/reference/api/memories) |
-| `imports` | `ImportsResource` | [Imports](/reference/api/imports) |
-| `exports` | `ExportsResource` | [Exports](/reference/api/exports) |
+| 属性               | 类型                       | 参考文档                                                             |
+| ------------------ | -------------------------- | -------------------------------------------------------------------- |
+| `sessions`         | `SessionsResource`         | [Sessions](/reference/api/sessions)、[Chat](/reference/api/chat)     |
+| `promptRuntime`    | `PromptRuntimeResource`    | [Prompt Runtime](/reference/api/prompt-runtime)                      |
+| `floors`           | `FloorsResource`           | [Floors](/reference/api/floors)                                      |
+| `pages`            | `PagesResource`            | [Pages](/reference/api/pages)                                        |
+| `messages`         | `MessagesResource`         | [Messages](/reference/api/messages)                                  |
+| `characters`       | `CharactersResource`       | [Characters](/reference/api/characters)                              |
+| `users`            | `UsersResource`            | [Users](/reference/api/users)                                        |
+| `accounts`         | `AccountsResource`         | [Accounts](/reference/api/accounts)                                  |
+| `variables`        | `VariablesResource`        | [Variables](/reference/api/variables)                                |
+| `memories`         | `MemoriesResource`         | [Memories](/reference/api/memories)                                  |
+| `memoryEdges`      | `MemoryEdgesResource`      | [Memories](/reference/api/memories)                                  |
+| `memoryJobs`       | `MemoryJobsResource`       | [记忆后台作业](/reference/api/memory-jobs)                           |
+| `memoryScopes`     | `MemoryScopesResource`     | [Memories](/reference/api/memories)                                  |
+| `imports`          | `ImportsResource`          | [Imports](/reference/api/imports)                                    |
+| `exports`          | `ExportsResource`          | [Exports](/reference/api/exports)                                    |
 | `chatTransferJobs` | `ChatTransferJobsResource` | [Exports](/reference/api/exports)、[Imports](/reference/api/imports) |
-| `presets` | `PresetsResource` | [Presets](/reference/api/presets) |
-| `presetEntries` | `PresetEntriesResource` | [Presets](/reference/api/presets) |
-| `worldbooks` | `WorldbooksResource` | [Worldbooks](/reference/api/worldbooks) |
-| `worldbookEntries` | `WorldbookEntriesResource` | [Worldbooks](/reference/api/worldbooks) |
-| `regexProfiles` | `RegexProfilesResource` | [Regex Profiles](/reference/api/regex-profiles) |
-| `llmProfiles` | `LlmProfilesResource` | [LLM Profiles](/reference/api/llm-profiles) |
-| `llmInstances` | `LlmInstancesResource` | [LLM Instances](/reference/api/llm-instances) |
-| `tools` | `ToolsResource` | [Tools](/reference/api/tools) |
-| `mcp` | `McpResource` | [MCP Servers](/reference/api/mcp) |
-| `branches` | `BranchesResource` | [Sessions](/reference/api/sessions) |
-| `health` | `HealthResource` | [API 总览](/reference/api)、[见下方](#health) |
+| `presets`          | `PresetsResource`          | [Presets](/reference/api/presets)                                    |
+| `presetEntries`    | `PresetEntriesResource`    | [Presets](/reference/api/presets)                                    |
+| `worldbooks`       | `WorldbooksResource`       | [Worldbooks](/reference/api/worldbooks)                              |
+| `worldbookEntries` | `WorldbookEntriesResource` | [Worldbooks](/reference/api/worldbooks)                              |
+| `regexProfiles`    | `RegexProfilesResource`    | [Regex Profiles](/reference/api/regex-profiles)                      |
+| `llmProfiles`      | `LlmProfilesResource`      | [LLM Profiles](/reference/api/llm-profiles)                          |
+| `llmInstances`     | `LlmInstancesResource`     | [LLM Instances](/reference/api/llm-instances)                        |
+| `tools`            | `ToolsResource`            | [Tools](/reference/api/tools)                                        |
+| `mcp`              | `McpResource`              | [MCP Servers](/reference/api/mcp)                                    |
+| `branches`         | `BranchesResource`         | [Sessions](/reference/api/sessions)                                  |
+| `health`           | `HealthResource`           | [API 总览](/reference/api)、[见下方](#health)                        |
 
 `sessions` 上同时挂载了 CRUD 方法和对话生成方法（`respond` / `respondStream` / `respondDryRun` / `regenerate`）。其中 `respond` / `respondStream` 会保留 `summaries` 和 `finalState`，`respondDryRun` 会返回对齐真实提交快照的 `promptSnapshot`。`sessions.create()` / `sessions.update()` 也会直接返回完整的 session payload。
 
@@ -225,9 +226,9 @@ console.log(status.service, status.database);
 
 #### 返回值 `HealthStatus`
 
-| 字段 | 类型 | 说明 |
-| ---- | ---- | ---- |
-| `service` | `string \| null` | 服务状态 |
+| 字段       | 类型             | 说明       |
+| ---------- | ---------------- | ---------- |
+| `service`  | `string \| null` | 服务状态   |
 | `database` | `string \| null` | 数据库状态 |
 
 > 对应 HTTP 端点：[GET /health](/reference/api#健康检查)
@@ -251,8 +252,8 @@ const headers = buildAccountHeaders("account-1");
 // { "x-account-id": "account-1" }
 ```
 
-| 参数 | 类型 | 说明 |
-| ---- | ---- | ---- |
+| 参数        | 类型      | 说明                                         |
+| ----------- | --------- | -------------------------------------------- |
 | `accountId` | `string?` | 兼容用途的账号提示值；为空时返回 `undefined` |
 
 ### resolvePath
@@ -266,10 +267,10 @@ const url = resolvePath("http://localhost:3000", "/sessions");
 // "http://localhost:3000/sessions"
 ```
 
-| 参数 | 类型 | 说明 |
-| ---- | ---- | ---- |
-| `baseUrl` | `string` | 基础 URL |
-| `pathname` | `string` | 路径 |
+| 参数       | 类型     | 说明     |
+| ---------- | -------- | -------- |
+| `baseUrl`  | `string` | 基础 URL |
+| `pathname` | `string` | 路径     |
 
 ---
 

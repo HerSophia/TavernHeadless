@@ -11,6 +11,7 @@ import { sendError, zodIssues } from "./lib/http";
 import { registerCrudRoutes } from "./routes";
 import { isSqliteBusyError, ResourceBusyError } from "./lib/retry.js";
 import { registerChatRoutes } from "./routes/chat";
+import { registerPromptRuntimeRoutes } from "./routes/prompt-runtime";
 import { registerWsPlugin, type WsBridge } from "./ws";
 import {
   DrizzleFloorRepository,
@@ -68,6 +69,7 @@ import {
   purgeDeletedClientDataDomains,
 } from "./client-data/client-data-maintenance.js";
 
+import { PromptRuntimeControlService } from "./services/prompt-runtime-control-service.js";
 import { ToolWorker } from "./services/tool-worker.js";
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
@@ -549,6 +551,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     enableClientData: options.enableClientData,
     clientData: options.clientData,
   });
+
+  const promptRuntimeControlService = new PromptRuntimeControlService(database.db, {
+    enableLiveEndpoints: Boolean(options.orchestration && orchestrationContext),
+    enableDryRunEndpoint: Boolean(options.orchestration && orchestrationContext) && options.enablePromptDryRun === true,
+    enableStreamEndpoint: Boolean(options.orchestration && orchestrationContext) && options.enableSseChat === true,
+  });
+
+  await registerPromptRuntimeRoutes(app, promptRuntimeControlService);
 
   if (options.orchestration && orchestrationContext) {
     const llmInstanceService = new LlmInstanceService(database.db);
