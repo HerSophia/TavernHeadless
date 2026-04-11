@@ -1180,7 +1180,7 @@ function resolveRecentMessageMacroValues(args: {
 }
 
 export function evaluatePromptMacroValues(args: {
-  phase: "dry_run" | "assemble" | "commit_consume";
+  phase: "preview" | "dry_run" | "assemble" | "commit_consume";
   values: Record<string, string>;
   variableSnapshot?: StMacroVariableSnapshot;
   sampleText: string;
@@ -1194,6 +1194,66 @@ export function evaluatePromptMacroValues(args: {
     maxExpandedLength: DEFAULT_MACRO_MAX_EXPANDED_LENGTH,
     maxMutationCount: DEFAULT_MACRO_MAX_MUTATION_COUNT,
   });
+}
+
+export function previewPromptMacroText(args: {
+  session: SessionPromptInfo;
+  text: string;
+  chatHistory: Array<{ role: "user" | "assistant"; content: string }>;
+  ordinaryVariables: Record<string, unknown>;
+  localValues: Record<string, StMacroJsonValue>;
+  globalValues: Record<string, StMacroJsonValue>;
+  memorySummary?: string;
+  maxPrompt?: number;
+  runKind?: PromptMacroRunKind;
+}): {
+  text: string;
+  runtimeTrace: PromptRuntimeTrace;
+} {
+  const metadata = parseSessionMetadata(args.session.metadataJson);
+  const character = parseCharacterSnapshot(args.session.characterSnapshotJson);
+  const userSnapshot = parseUserSnapshot(args.session.userSnapshotJson ?? null);
+  const persona = userSnapshot ?? metadata.persona;
+
+  const macroValueBuild = buildStMacroValues({
+    session: args.session,
+    preset: null,
+    chatHistory: args.chatHistory,
+    character,
+    persona,
+    userSnapshot,
+    ordinaryVariables: args.ordinaryVariables,
+    variableSnapshot: {
+      local: { ...args.localValues },
+      global: { ...args.globalValues },
+      plain: Object.fromEntries(
+        Object.entries(args.ordinaryVariables).map(([key, value]) => [key, stringifyPromptVariableValue(value)]),
+      ),
+    },
+    memorySummary: args.memorySummary,
+    maxPrompt: normalizePositiveInt(args.maxPrompt) ?? DEFAULT_MAX_TOKENS,
+    runKind: args.runKind ?? "dry_run",
+  });
+  const evaluated = evaluatePromptMacroValues({
+    phase: "preview",
+    values: macroValueBuild.values,
+    variableSnapshot: macroValueBuild.variableSnapshot,
+    sampleText: args.text,
+  });
+  const macroTrace = buildPromptRuntimeMacroTrace({
+    warnings: [...macroValueBuild.warnings, ...evaluated.warnings],
+    usedNames: evaluated.usedMacros,
+    mutationPreview: evaluated.mutationPreview,
+    stagedMutations: [],
+    traces: evaluated.traces,
+  });
+
+  return {
+    text: evaluated.text,
+    runtimeTrace: {
+      ...(macroTrace ? { macro: macroTrace } : {}),
+    },
+  };
 }
 
 function buildFullHistory(

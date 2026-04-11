@@ -274,6 +274,13 @@
                         "when":  1763800000000,
                         "tag":  "0038_client_data_domain_phase2",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  39,
+                        "version":  "6",
+                        "when":  1763900000000,
+                        "tag":  "0039_branch_local_variable_snapshot",
+                        "breakpoints":  true
                     }
                 ]
 }

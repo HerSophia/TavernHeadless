@@ -24987,6 +24987,16 @@
                         "worldbook_matches_requires_opt_in": true,
                         "worldbook_matches_requires_runtime_trace": true
                       },
+                      "preview": {
+                        "commits_side_effects": false,
+                        "creates_floor": false,
+                        "enabled": true,
+                        "llm_call": false,
+                        "returns_runtime_trace": true,
+                        "single_text_only": true,
+                        "supports_visibility": true,
+                        "writes_prompt_snapshot": false
+                      },
                       "stream": {
                         "enabled": true,
                         "new_sse_event_family": false,
@@ -25007,7 +25017,6 @@
                     },
                     "unsupported": [
                       "/sessions/:id/prompt-runtime/run",
-                      "/sessions/:id/prompt-runtime/preview",
                       "/sessions/:id/prompt-runtime/macros",
                       "/floors/:id/prompt-runtime",
                       "/messages/:id/prompt-runtime"
@@ -25193,6 +25202,60 @@
                               ],
                               "type": "object"
                             },
+                            "preview": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "commits_side_effects": {
+                                  "enum": [
+                                    false
+                                  ]
+                                },
+                                "creates_floor": {
+                                  "enum": [
+                                    false
+                                  ]
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "llm_call": {
+                                  "enum": [
+                                    false
+                                  ]
+                                },
+                                "returns_runtime_trace": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
+                                "single_text_only": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
+                                "supports_visibility": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
+                                "writes_prompt_snapshot": {
+                                  "enum": [
+                                    false
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "enabled",
+                                "returns_runtime_trace",
+                                "supports_visibility",
+                                "single_text_only",
+                                "llm_call",
+                                "creates_floor",
+                                "writes_prompt_snapshot",
+                                "commits_side_effects"
+                              ],
+                              "type": "object"
+                            },
                             "stream": {
                               "additionalProperties": false,
                               "properties": {
@@ -25223,6 +25286,7 @@
                           "required": [
                             "live",
                             "dry_run",
+                            "preview",
                             "stream"
                           ],
                           "type": "object"
@@ -30624,6 +30688,582 @@
           }
         },
         "summary": "Patch session prompt runtime persistent policy",
+        "tags": [
+          "prompt-runtime"
+        ]
+      }
+    },
+    "/sessions/{id}/prompt-runtime/preview": {
+      "post": {
+        "operationId": "previewSessionPromptRuntime",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "branch_id": "main",
+                "text": "{{setvar::资产.金币::3}}{{getvar::资产}}",
+                "visibility": {
+                  "hidden_floor_ranges": [
+                    {
+                      "end_floor_no": 2,
+                      "start_floor_no": 1
+                    }
+                  ],
+                  "mode": "allow_all_except_hidden"
+                }
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "branch_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "source_floor_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "text": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "visibility": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "hidden_floor_ids": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "hidden_floor_ranges": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "end_floor_no": {
+                              "type": "integer"
+                            },
+                            "start_floor_no": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "start_floor_no",
+                            "end_floor_no"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "mode": {
+                        "enum": [
+                          "allow_all_except_hidden",
+                          "deny_all_except_visible"
+                        ],
+                        "type": "string"
+                      },
+                      "visible_floor_ranges": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "end_floor_no": {
+                              "type": "integer"
+                            },
+                            "start_floor_no": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "start_floor_no",
+                            "end_floor_no"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "runtime_trace": {
+                      "macro": {
+                        "mutation_preview": [
+                          {
+                            "key": "资产",
+                            "kind": "set",
+                            "scope": "branch",
+                            "value": "{\"金币\":3}"
+                          }
+                        ],
+                        "staged_mutations": [],
+                        "traces": [
+                          {
+                            "macro_name": "setvar",
+                            "phase": "preview",
+                            "raw_text": "{{setvar::资产.金币::3}}",
+                            "resolved_text": "",
+                            "source_kind": "macro"
+                          },
+                          {
+                            "macro_name": "getvar",
+                            "phase": "preview",
+                            "raw_text": "{{getvar::资产}}",
+                            "resolved_text": "{\"金币\":3}",
+                            "source_kind": "macro"
+                          }
+                        ],
+                        "used_names": [
+                          "setvar",
+                          "getvar"
+                        ],
+                        "warnings": [
+                          {
+                            "code": "macro_preview_side_effect_suppressed",
+                            "macro_name": "setvar",
+                            "message": "Macro setvar side effect was previewed but not committed."
+                          }
+                        ]
+                      },
+                      "visibility": {
+                        "filtered_floor_nos": [
+                          1,
+                          2
+                        ],
+                        "hidden_floor_ranges": [
+                          {
+                            "end_floor_no": 2,
+                            "start_floor_no": 1
+                          }
+                        ]
+                      }
+                    },
+                    "text": "{\"金币\":3}"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "runtime_trace": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "macro": {
+                              "additionalProperties": false,
+                              "example": {
+                                "mutation_preview": [
+                                  {
+                                    "key": "资产",
+                                    "kind": "set",
+                                    "scope": "branch",
+                                    "value": "{\"金币\":3}"
+                                  }
+                                ],
+                                "staged_mutations": [],
+                                "traces": [
+                                  {
+                                    "macro_name": "setvar",
+                                    "phase": "preview",
+                                    "raw_text": "{{setvar::资产.金币::3}}",
+                                    "resolved_text": "",
+                                    "source_kind": "macro"
+                                  },
+                                  {
+                                    "macro_name": "getvar",
+                                    "phase": "preview",
+                                    "raw_text": "{{getvar::资产}}",
+                                    "resolved_text": "{\"金币\":3}",
+                                    "source_kind": "macro"
+                                  }
+                                ],
+                                "used_names": [
+                                  "setvar",
+                                  "getvar"
+                                ],
+                                "warnings": [
+                                  {
+                                    "code": "macro_preview_side_effect_suppressed",
+                                    "macro_name": "setvar",
+                                    "message": "Macro setvar side effect was previewed but not committed."
+                                  }
+                                ]
+                              },
+                              "properties": {
+                                "mutation_preview": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "key": {
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "enum": [
+                                          "set",
+                                          "delete"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "branch",
+                                          "global"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "scope",
+                                      "key"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "staged_mutations": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "key": {
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "enum": [
+                                          "set",
+                                          "delete"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "branch",
+                                          "global"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "source_macro": {
+                                        "type": "string"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "scope",
+                                      "key",
+                                      "source_macro"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "traces": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "macro_name": {
+                                        "type": "string"
+                                      },
+                                      "phase": {
+                                        "type": "string"
+                                      },
+                                      "raw_text": {
+                                        "type": "string"
+                                      },
+                                      "resolved_text": {
+                                        "type": "string"
+                                      },
+                                      "selected_branch": {
+                                        "enum": [
+                                          "then",
+                                          "else",
+                                          "raw"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "source_kind": {
+                                        "enum": [
+                                          "text",
+                                          "raw",
+                                          "macro",
+                                          "if"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "macro_name",
+                                      "raw_text",
+                                      "resolved_text"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "used_names": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "warnings": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "code": {
+                                        "type": "string"
+                                      },
+                                      "macro_name": {
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "type": "string"
+                                      },
+                                      "raw_text": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "message"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "warnings",
+                                "used_names",
+                                "mutation_preview",
+                                "staged_mutations",
+                                "traces"
+                              ],
+                              "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "filtered_floor_nos": {
+                                  "items": {
+                                    "type": "integer"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "filtered_floor_nos"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "runtime_trace"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Preview prompt runtime macros for a single text segment",
         "tags": [
           "prompt-runtime"
         ]

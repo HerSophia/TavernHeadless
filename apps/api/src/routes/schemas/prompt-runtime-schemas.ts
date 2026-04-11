@@ -4,6 +4,7 @@ import {
   PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES,
   PROMPT_RUNTIME_UNSUPPORTED_ROUTES,
 } from "../../services/prompt-runtime-control-service.js";
+import { dryRunVisibilityJsonSchema, floorVisibilityRangeJsonSchema } from "./chat-schemas.js";
 
 const promptRuntimePersistentStructureExample = {
   mode: "strict_alternating",
@@ -20,6 +21,15 @@ export const promptRuntimePolicyPatchBodyExample = {
   },
   delivery: {
     require_last_user: true,
+  },
+} as const;
+
+export const promptRuntimePreviewBodyExample = {
+  text: "{{setvar::资产.金币::3}}{{getvar::资产}}",
+  branch_id: "main",
+  visibility: {
+    mode: "allow_all_except_hidden",
+    hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
   },
 } as const;
 
@@ -101,6 +111,32 @@ export const promptRuntimePolicyViewExample = {
   warnings: [],
 } as const;
 
+export const promptRuntimePreviewResponseExample = {
+  text: '{"金币":3}',
+  runtime_trace: {
+    macro: {
+      warnings: [
+        {
+          code: "macro_preview_side_effect_suppressed",
+          message: "Macro setvar side effect was previewed but not committed.",
+          macro_name: "setvar",
+        },
+      ],
+      used_names: ["setvar", "getvar"],
+      mutation_preview: [{ kind: "set", scope: "branch", key: "资产", value: '{"金币":3}' }],
+      staged_mutations: [],
+      traces: [
+        { macro_name: "setvar", raw_text: "{{setvar::资产.金币::3}}", resolved_text: "", phase: "preview", source_kind: "macro" },
+        { macro_name: "getvar", raw_text: "{{getvar::资产}}", resolved_text: '{"金币":3}', phase: "preview", source_kind: "macro" },
+      ],
+    },
+    visibility: {
+      hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
+      filtered_floor_nos: [1, 2],
+    },
+  },
+} as const;
+
 export const promptRuntimeCapabilitiesExample = {
   structure: {
     modes: [...PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES],
@@ -135,6 +171,16 @@ export const promptRuntimeCapabilitiesExample = {
       returns_runtime_trace: true,
       supports_visibility: true,
       include_worldbook_matches: true,
+    },
+    preview: {
+      enabled: true,
+      returns_runtime_trace: true,
+      supports_visibility: true,
+      single_text_only: true,
+      llm_call: false,
+      creates_floor: false,
+      writes_prompt_snapshot: false,
+      commits_side_effects: false,
     },
     stream: {
       enabled: true,
@@ -342,6 +388,88 @@ export const promptRuntimePolicyViewJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const promptRuntimePreviewMacroWarningJsonSchema = {
+  type: "object",
+  required: ["code", "message"],
+  properties: {
+    code: { type: "string" },
+    message: { type: "string" },
+    macro_name: { type: "string" },
+    raw_text: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const promptRuntimePreviewMacroMutationPreviewJsonSchema = {
+  type: "object",
+  required: ["kind", "scope", "key"],
+  properties: {
+    kind: { type: "string", enum: ["set", "delete"] },
+    scope: { type: "string", enum: ["branch", "global"] },
+    key: { type: "string" },
+    value: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const promptRuntimePreviewMacroStagedMutationJsonSchema = {
+  type: "object",
+  required: ["kind", "scope", "key", "source_macro"],
+  properties: {
+    kind: { type: "string", enum: ["set", "delete"] },
+    scope: { type: "string", enum: ["branch", "global"] },
+    key: { type: "string" },
+    value: { type: "string" },
+    source_macro: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const promptRuntimePreviewMacroTraceEntryJsonSchema = {
+  type: "object",
+  required: ["macro_name", "raw_text", "resolved_text"],
+  properties: {
+    macro_name: { type: "string" },
+    raw_text: { type: "string" },
+    resolved_text: { type: "string" },
+    phase: { type: "string" },
+    source_kind: { type: "string", enum: ["text", "raw", "macro", "if"] },
+    selected_branch: { type: "string", enum: ["then", "else", "raw"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const promptRuntimePreviewMacroJsonSchema = {
+  type: "object",
+  required: ["warnings", "used_names", "mutation_preview", "staged_mutations", "traces"],
+  properties: {
+    warnings: { type: "array", items: promptRuntimePreviewMacroWarningJsonSchema },
+    used_names: { type: "array", items: { type: "string" } },
+    mutation_preview: { type: "array", items: promptRuntimePreviewMacroMutationPreviewJsonSchema },
+    staged_mutations: { type: "array", items: promptRuntimePreviewMacroStagedMutationJsonSchema },
+    traces: { type: "array", items: promptRuntimePreviewMacroTraceEntryJsonSchema },
+  },
+  examples: [promptRuntimePreviewResponseExample.runtime_trace.macro],
+  additionalProperties: false,
+} as const;
+
+const promptRuntimePreviewRuntimeTraceJsonSchema = {
+  type: "object",
+  properties: {
+    macro: promptRuntimePreviewMacroJsonSchema,
+    visibility: {
+      type: "object",
+      required: ["filtered_floor_nos"],
+      properties: {
+        hidden_floor_ranges: { type: "array", items: floorVisibilityRangeJsonSchema },
+        filtered_floor_nos: { type: "array", items: { type: "integer" } },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
 export const promptRuntimeCapabilitiesJsonSchema = {
   type: "object",
   required: ["structure", "delivery", "observability", "macro", "unsupported"],
@@ -368,7 +496,7 @@ export const promptRuntimeCapabilitiesJsonSchema = {
     },
     observability: {
       type: "object",
-      required: ["live", "dry_run", "stream"],
+      required: ["live", "dry_run", "preview", "stream"],
       properties: {
         live: {
           type: "object",
@@ -411,6 +539,30 @@ export const promptRuntimeCapabilitiesJsonSchema = {
             returns_runtime_trace: { const: true },
             supports_visibility: { const: true },
             include_worldbook_matches: { const: true },
+          },
+          additionalProperties: false,
+        },
+        preview: {
+          type: "object",
+          required: [
+            "enabled",
+            "returns_runtime_trace",
+            "supports_visibility",
+            "single_text_only",
+            "llm_call",
+            "creates_floor",
+            "writes_prompt_snapshot",
+            "commits_side_effects",
+          ],
+          properties: {
+            enabled: { type: "boolean" },
+            returns_runtime_trace: { const: true },
+            supports_visibility: { const: true },
+            single_text_only: { const: true },
+            llm_call: { const: false },
+            creates_floor: { const: false },
+            writes_prompt_snapshot: { const: false },
+            commits_side_effects: { const: false },
           },
           additionalProperties: false,
         },
@@ -482,6 +634,37 @@ export const promptRuntimeAssetsResponseJsonSchema = {
     data: promptRuntimeAssetsViewJsonSchema,
   },
   examples: [{ data: promptRuntimeAssetsExample }],
+  additionalProperties: false,
+} as const;
+
+export const promptRuntimePreviewBodyJsonSchema = {
+  type: "object",
+  required: ["text"],
+  properties: {
+    text: { type: "string", minLength: 1 },
+    branch_id: { type: "string", minLength: 1 },
+    source_floor_id: { type: "string", minLength: 1 },
+    visibility: dryRunVisibilityJsonSchema,
+  },
+  examples: [promptRuntimePreviewBodyExample],
+  additionalProperties: false,
+} as const;
+
+export const promptRuntimePreviewResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["text", "runtime_trace"],
+      properties: {
+        text: { type: "string" },
+        runtime_trace: promptRuntimePreviewRuntimeTraceJsonSchema,
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [{ data: promptRuntimePreviewResponseExample }],
   additionalProperties: false,
 } as const;
 

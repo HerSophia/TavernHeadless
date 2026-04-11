@@ -6,6 +6,8 @@ outline: [2, 3]
 
 对话生成是 TavernHeadless 的核心功能。支持同步生成、SSE 流式生成、Prompt dry-run 调试、重新生成、楼层重试和编辑再生成。
 
+如果你只需要对一段文本做宏 preview，而不需要完整 prompt 组装，请改用 `POST /sessions/:id/prompt-runtime/preview`。它复用同一条宏主线，但不会创建 floor，也不会调用 LLM。
+
 ## 发送消息并生成回复
 
 ```http
@@ -171,6 +173,8 @@ POST /sessions/:id/respond/dry-run
 
 如果需要查看命中的世界书条目、来源、注入位置和首个命中位置，可以在请求体里打开 `debug_options.include_worldbook_matches`。
 
+如果只想对单段文本做宏 preview，而不需要 `messages`、`assembly` 和 `prompt_snapshot`，请使用 `POST /sessions/:id/prompt-runtime/preview`。preview 与 dry-run 共享同一条宏求值主线，但 preview 只返回单段文本和 `runtime_trace`。
+
 ### 请求体
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -311,6 +315,7 @@ Prompt dry-run 与提示词调试场景对宏系统采用只读执行边界：
 - 只读宏会正常求值
 - 写宏只进入 preview mutation，不会写库
 - dry-run 不会触发 turn commit
+- 单段文本 preview 也不会触发 turn commit，且 `runtime_trace.macro.staged_mutations` 固定为空
 - dry-run 与 live 都会基于真实主链汇总宏诊断
 - 对外调试时优先查看 `runtime_trace.macro`
 - staged mutation 只在 respond / regenerate 的 assemble 阶段冻结，并在 commit 阶段消费

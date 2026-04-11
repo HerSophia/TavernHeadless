@@ -57,6 +57,7 @@ global 兼容视图 -> global 读取与 staged overlay
 ```text
 {{getvar::资产.金币}}
 {{getglobalvar::账户.余额}}
+{{getvar::装备["剑.名"]}}
 {{setvar::资产.金币::3}}
 {{deletevar::资产.银币}}
 ```
@@ -65,6 +66,11 @@ global 兼容视图 -> global 读取与 staged overlay
 
 1. 兼容层总是先按完整 flat key 查找，找不到时才回退到路径语义。
 2. 路径写入持久化的是 root key 对应的 JSON 值，不会在底层额外生成 `资产.金币` 这样的变量键。
+
+补充说明：
+
+- 当宏读取到对象值时，对外文本结果和 `runtime_trace.macro.mutation_preview` / `staged_mutations` 中的 `value` 会稳定输出为 JSON 字符串。
+- 当 `POST /sessions/:id/prompt-runtime/preview` 对一个尚未物化的新分支同时传入 `branch_id` 和 `source_floor_id` 时，local 兼容视图会先继承 source floor 当时可见的 local 值，再进入 preview overlay。
 
 如果你需要查看宏系统的兼容边界、warning、trace 和 dry-run 调试字段，请参考 [Macros](./macros) 与 [Chat](./chat)。
 

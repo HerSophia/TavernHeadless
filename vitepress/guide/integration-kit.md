@@ -188,6 +188,28 @@ const resolved = await resolveItemByPath(client, domainId, "settings", "theme.da
 | 工具与运行集成 | `tools`、`mcp` |
 | 高级客户端数据系统 | `clientData` |
 
+## Prompt Runtime preview 示例
+
+```ts
+const preview = await client.promptRuntime.previewText({
+  accountId: "account-1",
+  sessionId: "session-1",
+  branchId: "main",
+  text: "{{setvar::资产.金币::3}}{{getvar::资产}}",
+  visibility: {
+    mode: "allow_all_except_hidden",
+    hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+  },
+});
+
+console.log(preview.text);
+console.log(preview.runtimeTrace.macro?.mutationPreview);
+console.log(preview.runtimeTrace.macro?.stagedMutations); // []
+```
+
+这个方法只做单段文本 preview。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`。宏诊断继续统一走 `runtimeTrace.macro`。
+
+
 ## `@tavern/client-helpers` 当前导出
 
 | 函数 | 用途 |

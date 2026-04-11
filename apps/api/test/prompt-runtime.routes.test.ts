@@ -9,6 +9,7 @@ import {
   PromptRuntimeControlServiceError,
   type PromptRuntimeControlService,
 } from "../src/services/prompt-runtime-control-service.js";
+import { ChatServiceError, type PromptRuntimePreviewRequest, type PromptRuntimePreviewResult } from "../src/services/chat-service.js";
 import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
 
 type PromptRuntimeControlServiceStub = {
@@ -17,6 +18,14 @@ type PromptRuntimeControlServiceStub = {
   getAssets: ReturnType<typeof vi.fn>;
   updatePolicy: ReturnType<typeof vi.fn>;
   getCapabilities: ReturnType<typeof vi.fn>;
+};
+
+type PromptRuntimePreviewServiceStub = {
+  previewPromptRuntimeText: ReturnType<typeof vi.fn<(
+    sessionId: string,
+    request: PromptRuntimePreviewRequest,
+    accountId?: string,
+  ) => Promise<PromptRuntimePreviewResult>>>;
 };
 
 function createPromptRuntimeControlService(
@@ -32,10 +41,22 @@ function createPromptRuntimeControlService(
   };
 }
 
+function createPromptRuntimePreviewService(
+  overrides: Partial<PromptRuntimePreviewServiceStub> = {},
+): PromptRuntimePreviewServiceStub {
+  return {
+    previewPromptRuntimeText: vi.fn(),
+    ...overrides,
+  };
+}
+
 describe("prompt runtime routes", () => {
   let app: FastifyInstance;
 
-  async function mountRoutes(service: PromptRuntimeControlServiceStub) {
+  async function mountRoutes(
+    service: PromptRuntimeControlServiceStub,
+    previewService?: PromptRuntimePreviewServiceStub,
+  ) {
     app = Fastify({ logger: false });
     await registerDevelopmentTestAuth(app);
     app.setErrorHandler((error, _request, reply) => {
@@ -57,7 +78,9 @@ describe("prompt runtime routes", () => {
 
       return sendError(reply, fastifyValidationError.statusCode ?? 500, fastifyValidationError.code ?? "internal_error", errorMessage);
     });
-    await registerPromptRuntimeRoutes(app, service as unknown as PromptRuntimeControlService);
+    await registerPromptRuntimeRoutes(app, service as unknown as PromptRuntimeControlService, {
+      previewService: previewService as unknown as { previewPromptRuntimeText: PromptRuntimePreviewServiceStub["previewPromptRuntimeText"] } | undefined,
+    });
   }
 
   afterEach(async () => {
@@ -424,6 +447,114 @@ describe("prompt runtime routes", () => {
     expect(controlService.getAssets).toHaveBeenCalledWith("s1", DEFAULT_ADMIN_ACCOUNT_ID);
   });
 
+  it("maps POST /sessions/:id/prompt-runtime/preview request and response", async () => {
+    const controlService = createPromptRuntimeControlService();
+    const previewService = createPromptRuntimePreviewService({
+      previewPromptRuntimeText: vi.fn(async () => ({
+        text: "3",
+        runtimeTrace: {
+          macro: {
+            warnings: [{ code: "macro_preview_side_effect_suppressed", message: "previewed", macroName: "setvar" }],
+            usedNames: ["setvar", "getvar"],
+            mutationPreview: [{ kind: "set", scope: "branch", key: "资产", value: '{"金币":3}' }],
+            stagedMutations: [],
+            traces: [
+              { macroName: "setvar", rawText: "{{setvar::资产.金币::3}}", resolvedText: "", phase: "preview", sourceKind: "macro" },
+              { macroName: "getvar", rawText: "{{getvar::资产.金币}}", resolvedText: "3", phase: "preview", sourceKind: "macro" },
+            ],
+          },
+          visibility: {
+            hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+            filteredFloorNos: [1, 2],
+          },
+        },
+      })),
+    });
+
+    await mountRoutes(controlService, previewService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/prompt-runtime/preview",
+      payload: {
+        text: "{{setvar::资产.金币::3}}{{getvar::资产.金币}}",
+        branch_id: "main",
+        source_floor_id: "floor-source",
+        visibility: {
+          mode: "allow_all_except_hidden",
+          hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      data: {
+        text: "3",
+        runtime_trace: {
+          macro: {
+            warnings: [{ code: "macro_preview_side_effect_suppressed", message: "previewed", macro_name: "setvar" }],
+            used_names: ["setvar", "getvar"],
+            mutation_preview: [{ kind: "set", scope: "branch", key: "资产", value: '{"金币":3}' }],
+            staged_mutations: [],
+            traces: [
+              { macro_name: "setvar", raw_text: "{{setvar::资产.金币::3}}", resolved_text: "", phase: "preview", source_kind: "macro" },
+              { macro_name: "getvar", raw_text: "{{getvar::资产.金币}}", resolved_text: "3", phase: "preview", source_kind: "macro" },
+            ],
+          },
+          visibility: {
+            hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
+            filtered_floor_nos: [1, 2],
+          },
+        },
+      },
+    });
+    expect(previewService.previewPromptRuntimeText).toHaveBeenCalledWith("s1", {
+      text: "{{setvar::资产.金币::3}}{{getvar::资产.金币}}",
+      branchId: "main",
+      sourceFloorId: "floor-source",
+      visibility: {
+        mode: "allow_all_except_hidden",
+        hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+      },
+    }, DEFAULT_ADMIN_ACCOUNT_ID);
+  });
+
+  it("returns 404 when prompt runtime preview endpoint is disabled", async () => {
+    const controlService = createPromptRuntimeControlService();
+
+    await mountRoutes(controlService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/prompt-runtime/preview",
+      payload: { text: "{{lastMessage}}" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: { code: "not_found", message: "Prompt runtime preview endpoint is disabled" } });
+  });
+
+  it("maps prompt runtime preview service errors to stable http errors", async () => {
+    const controlService = createPromptRuntimeControlService();
+    const previewService = createPromptRuntimePreviewService({
+      previewPromptRuntimeText: vi.fn(async () => {
+        throw new ChatServiceError("source_floor_not_found", "Source floor is missing");
+      }),
+    });
+
+    await mountRoutes(controlService, previewService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/prompt-runtime/preview",
+      payload: { text: "{{lastMessage}}", source_floor_id: "missing" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: { code: "source_floor_not_found", message: "Source floor is missing" } });
+  });
+
   it("maps GET /prompt-runtime/capabilities response to snake_case", async () => {
     const controlService = createPromptRuntimeControlService({
       getCapabilities: vi.fn(() => ({
@@ -460,6 +591,16 @@ describe("prompt runtime routes", () => {
             returnsRuntimeTrace: true,
             supportsVisibility: true,
             includeWorldbookMatches: true,
+          },
+          preview: {
+            enabled: true,
+            returnsRuntimeTrace: true,
+            supportsVisibility: true,
+            singleTextOnly: true,
+            llmCall: false,
+            createsFloor: false,
+            writesPromptSnapshot: false,
+            commitsSideEffects: false,
           },
           stream: {
             enabled: true,
@@ -522,6 +663,16 @@ describe("prompt runtime routes", () => {
             returns_runtime_trace: true,
             supports_visibility: true,
             include_worldbook_matches: true,
+          },
+          preview: {
+            enabled: true,
+            returns_runtime_trace: true,
+            supports_visibility: true,
+            single_text_only: true,
+            llm_call: false,
+            creates_floor: false,
+            writes_prompt_snapshot: false,
+            commits_side_effects: false,
           },
           stream: {
             enabled: true,

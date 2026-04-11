@@ -747,6 +747,26 @@ export const floorResultSnapshots = sqliteTable(
   })
 );
 
+export const branchLocalVariableSnapshots = sqliteTable(
+  "branch_local_variable_snapshot",
+  {
+    floorId: text("floor_id").primaryKey().references(() => floors.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    branchId: text("branch_id").notNull(),
+    valuesJson: text("values_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    accountSessionCreatedIdx: index("branch_local_var_snapshot_account_session_created_idx").on(
+      table.accountId, table.sessionId, table.createdAt
+    ),
+    accountSessionBranchCreatedIdx: index("branch_local_var_snapshot_account_session_branch_created_idx").on(
+      table.accountId, table.sessionId, table.branchId, table.createdAt
+    ),
+  })
+);
+
 // ── LLM Profile Vault ──────────────────────────────────
 
 export const llmProfiles = sqliteTable(
