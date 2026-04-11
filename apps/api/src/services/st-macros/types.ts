@@ -41,6 +41,14 @@ export interface StMacroWarning {
   rawText?: string;
 }
 
+export type StMacroJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | StMacroJsonValue[]
+  | { [key: string]: StMacroJsonValue };
+
 export interface StMacroMutationPreview {
   kind: "set" | "delete";
   scope: "branch" | "global";
@@ -62,14 +70,14 @@ export interface StMacroTraceEntry {
 }
 
 export interface StMacroVariableSnapshot {
-  local: Record<string, string>;
-  global: Record<string, string>;
+  local: Record<string, StMacroJsonValue>;
+  global: Record<string, StMacroJsonValue>;
   plain: Record<string, string>;
 }
 
 export interface StMacroVariableOverlay {
-  local: Record<string, string | undefined>;
-  global: Record<string, string | undefined>;
+  local: Record<string, StMacroJsonValue | undefined>;
+  global: Record<string, StMacroJsonValue | undefined>;
 }
 
 export interface StMacroEvalResult {

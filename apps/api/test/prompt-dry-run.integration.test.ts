@@ -21,6 +21,7 @@ import {
   worldbooks,
 } from "../src/db/schema";
 import { SimpleTokenCounter, type TurnOrchestrator } from "@tavern/core";
+import { buildBranchVariableScopeId } from "@tavern/shared";
 import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
 
 interface ChatServiceStub {
@@ -1241,6 +1242,117 @@ describe("ChatService.dryRun", () => {
     expect(result.runtimeTrace?.macro?.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "macro_preview_side_effect_suppressed", macroName: "setvar" })]));
     expect(result.runtimeTrace?.macro?.mutationPreview).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "set", scope: "branch", key: "mood", value: "happy" })]));
     expect(result.runtimeTrace?.macro?.traces).toEqual(expect.arrayContaining([expect.objectContaining({ macroName: "lastGenerationType", resolvedText: "dry_run" })]));
+  });
+
+  it("supports richer if conditions in real dry-run assembly", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Rich If Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{if ({{lastGenerationType}} == dry_run) and ({{getvar::score}} >= 80)}}PASS{{else}}FAIL{{/if}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    await database.db.insert(variables).values({
+      id: nanoid(),
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      scope: "branch",
+      scopeId: buildBranchVariableScopeId(sessionId, "main"),
+      key: "score",
+      valueJson: JSON.stringify(88),
+      updatedAt: now + 1,
+    });
+
+    const result = await chatService.dryRun(sessionId, { message: "hello rich macros" });
+    const allContent = result.messages.map((message) => message.content).join("\n");
+
+    expect(allContent).toContain("PASS");
+    expect(result.runtimeTrace?.macro?.usedNames).toEqual(expect.arrayContaining(["if", "lastGenerationType", "getvar"]));
+    expect(result.runtimeTrace?.macro?.warnings?.some((warning) => warning.code === "macro_condition_unsupported")).toBe(false);
+    expect(result.runtimeTrace?.macro?.traces).toEqual(expect.arrayContaining([expect.objectContaining({ macroName: "if", selectedBranch: "then", resolvedText: "PASS" })]));
+  });
+
+  it("surfaces structured path reads and root mutation preview in real dry-run assembly", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Structured Path Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "gold={{getvar::资产.金币}} silver={{setvar::资产.银币::5}}{{getvar::资产.银币}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    await database.db.insert(variables).values({
+      id: nanoid(),
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      scope: "branch",
+      scopeId: buildBranchVariableScopeId(sessionId, "main"),
+      key: "资产",
+      valueJson: JSON.stringify({ 金币: 3 }),
+      updatedAt: now + 1,
+    });
+
+    const result = await chatService.dryRun(sessionId, { message: "hello structured path macros" });
+    const allContent = result.messages.map((message) => message.content).join("\n");
+
+    expect(allContent).toContain("gold=3 silver=5");
+    expect(result.runtimeTrace?.macro?.usedNames).toEqual(expect.arrayContaining(["getvar", "setvar"]));
+    expect(result.runtimeTrace?.macro?.mutationPreview).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "set", scope: "branch", key: "资产", value: '{"金币":3,"银币":"5"}' }),
+    ]));
+    expect(result.runtimeTrace?.macro?.traces).toEqual(expect.arrayContaining([
+      expect.objectContaining({ macroName: "getvar", resolvedText: "3" }),
+      expect.objectContaining({ macroName: "getvar", resolvedText: "5" }),
+    ]));
   });
 
   it("does not load prompt resources owned by another account", async () => {

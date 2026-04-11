@@ -169,9 +169,9 @@ const SAMPLE_WORLDBOOK_DATA = {
 };
 
 const LAST_GENERATION_TYPE_CAPTURE_MACRO = [
-  "{{if {{lastGenerationType}} == respond}}{{setglobalvar::last_generation_type::respond}}{{/if}}",
-  "{{if {{lastGenerationType}} == regenerate}}{{setglobalvar::last_generation_type::regenerate}}{{/if}}",
-  "{{if {{lastGenerationType}} == retry}}{{setglobalvar::last_generation_type::retry}}{{/if}}",
+  "{{if ({{lastGenerationType}} == respond) and not ({{lastGenerationType}} == regenerate)}}{{setglobalvar::last_generation_type::respond}}{{/if}}",
+  "{{if {{lastGenerationType}} startsWith regen}}{{setglobalvar::last_generation_type::regenerate}}{{/if}}",
+  "{{if ({{lastGenerationType}} == retry) or ({{lastGenerationType}} == retry_turn)}}{{setglobalvar::last_generation_type::retry}}{{/if}}",
 ].join("");
 
 const SAMPLE_REGEX_DATA = [

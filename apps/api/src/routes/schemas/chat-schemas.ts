@@ -57,6 +57,40 @@ export const livePromptSnapshotExample = {
   token_estimate: 512,
 } as const;
 
+export const liveRuntimeTraceMacroExample = {
+  warnings: [
+    {
+      code: "macro_preview_side_effect_suppressed",
+      message: "Macro setvar side effect was previewed but not committed.",
+      macro_name: "setvar",
+    },
+  ],
+  used_names: ["if", "lastGenerationType", "setvar"],
+  mutation_preview: [{ kind: "set", scope: "branch", key: "mood", value: "steady" }],
+  staged_mutations: [{ kind: "set", scope: "branch", key: "mood", value: "steady", source_macro: "setvar" }],
+  traces: [
+    { macro_name: "lastGenerationType", raw_text: "{{lastGenerationType}}", resolved_text: "respond", phase: "assemble", source_kind: "macro" },
+    { macro_name: "if", raw_text: "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}", resolved_text: "YES", phase: "assemble", source_kind: "if", selected_branch: "then" },
+  ],
+} as const;
+
+export const dryRunRuntimeTraceMacroExample = {
+  warnings: [
+    {
+      code: "macro_preview_side_effect_suppressed",
+      message: "Macro setvar side effect was previewed but not committed.",
+      macro_name: "setvar",
+    },
+  ],
+  used_names: ["getvar", "setvar"],
+  mutation_preview: [{ kind: "set", scope: "branch", key: "资产", value: '{"金币":3,"银币":"5"}' }],
+  staged_mutations: [{ kind: "set", scope: "branch", key: "资产", value: '{"金币":3,"银币":"5"}', source_macro: "setvar" }],
+  traces: [
+    { macro_name: "getvar", raw_text: "{{getvar::资产.金币}}", resolved_text: "3", phase: "dry_run", source_kind: "macro" },
+    { macro_name: "setvar", raw_text: "{{setvar::资产.银币::5}}", resolved_text: "", phase: "dry_run", source_kind: "macro" },
+  ],
+} as const;
+
 export const liveRuntimeTraceExample = {
   preset: {
     selected_prompt_order_character_id: 100000,
@@ -95,6 +129,7 @@ export const liveRuntimeTraceExample = {
   memory: {
     summary_injected: true,
   },
+  macro: liveRuntimeTraceMacroExample,
   delivery: {
     assistant_prefill_requested: true,
     assistant_prefill_applied: false,
@@ -375,6 +410,7 @@ export const dryRunSuccessResponseExample = {
       memory: {
         summary_injected: true,
       },
+      macro: dryRunRuntimeTraceMacroExample,
       delivery: {
         assistant_prefill_requested: true,
         assistant_prefill_applied: true,
@@ -408,7 +444,7 @@ export const streamResponseExample = [
   'data: {"chunk":"The firelight wavers..."}',
   "",
   "event: done",
-  'data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"The firelight wavers as the next part of the story begins.","summaries":["The group resumes the campfire planning scene."],"total_usage":{"prompt_tokens":320,"completion_tokens":128,"total_tokens":448},"memory":{"mode":"sync","status":"applied","job_id":null},"final_state":"committed","prompt_snapshot":{"preset_id":"preset-1","preset_updated_at":1710000000000,"preset_version":3,"worldbook_id":"worldbook-1","worldbook_updated_at":1710000001000,"worldbook_version":5,"regex_profile_id":"regex-1","regex_profile_updated_at":1710000002000,"regex_profile_version":2,"worldbook_activated_entry_uids":[7],"regex_pre_rule_names":["trim_whitespace"],"regex_post_rule_names":[],"prompt_mode":"compat_strict","prompt_digest":"0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c","token_estimate":512},"runtime_trace":{"worldbook":{"hit_count":1},"delivery":{"assistant_prefill_requested":true,"assistant_prefill_applied":false,"assistant_prefill_strategy":"assistant_message_fallback","allow_assistant_prefill":true,"require_last_user":true,"no_assistant":false,"last_message_role":"user","ends_with_user":true,"degraded":true,"degrade_reasons":["require_last_user"]}}}',
+  'data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"The firelight wavers as the next part of the story begins.","summaries":["The group resumes the campfire planning scene."],"total_usage":{"prompt_tokens":320,"completion_tokens":128,"total_tokens":448},"memory":{"mode":"sync","status":"applied","job_id":null},"final_state":"committed","prompt_snapshot":{"preset_id":"preset-1","preset_updated_at":1710000000000,"preset_version":3,"worldbook_id":"worldbook-1","worldbook_updated_at":1710000001000,"worldbook_version":5,"regex_profile_id":"regex-1","regex_profile_updated_at":1710000002000,"regex_profile_version":2,"worldbook_activated_entry_uids":[7],"regex_pre_rule_names":["trim_whitespace"],"regex_post_rule_names":[],"prompt_mode":"compat_strict","prompt_digest":"0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c","token_estimate":512},"runtime_trace":{"worldbook":{"hit_count":1},"macro":{"warnings":[{"code":"macro_preview_side_effect_suppressed","message":"Macro setvar side effect was previewed but not committed.","macro_name":"setvar"}],"used_names":["if","lastGenerationType","setvar"],"mutation_preview":[{"kind":"set","scope":"branch","key":"mood","value":"steady"}],"staged_mutations":[{"kind":"set","scope":"branch","key":"mood","value":"steady","source_macro":"setvar"}],"traces":[{"macro_name":"lastGenerationType","raw_text":"{{lastGenerationType}}","resolved_text":"respond","phase":"assemble","source_kind":"macro"},{"macro_name":"if","raw_text":"{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}","resolved_text":"YES","phase":"assemble","source_kind":"if","selected_branch":"then"}]},"delivery":{"assistant_prefill_requested":true,"assistant_prefill_applied":false,"assistant_prefill_strategy":"assistant_message_fallback","allow_assistant_prefill":true,"require_last_user":true,"no_assistant":false,"last_message_role":"user","ends_with_user":true,"degraded":true,"degrade_reasons":["require_last_user"]}}}',
 ].join("\n");
 
 // ── JSON Schema constants ─────────────────────────────
@@ -729,6 +765,71 @@ const runtimeTraceMemoryJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const runtimeTraceMacroWarningJsonSchema = {
+  type: "object",
+  required: ["code", "message"],
+  properties: {
+    code: { type: "string" },
+    message: { type: "string" },
+    macro_name: { type: "string" },
+    raw_text: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceMacroMutationPreviewJsonSchema = {
+  type: "object",
+  required: ["kind", "scope", "key"],
+  properties: {
+    kind: { type: "string", enum: ["set", "delete"] },
+    scope: { type: "string", enum: ["branch", "global"] },
+    key: { type: "string" },
+    value: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceMacroStagedMutationJsonSchema = {
+  type: "object",
+  required: ["kind", "scope", "key", "source_macro"],
+  properties: {
+    kind: { type: "string", enum: ["set", "delete"] },
+    scope: { type: "string", enum: ["branch", "global"] },
+    key: { type: "string" },
+    value: { type: "string" },
+    source_macro: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceMacroTraceEntryJsonSchema = {
+  type: "object",
+  required: ["macro_name", "raw_text", "resolved_text"],
+  properties: {
+    macro_name: { type: "string" },
+    raw_text: { type: "string" },
+    resolved_text: { type: "string" },
+    phase: { type: "string" },
+    source_kind: { type: "string", enum: ["text", "raw", "macro", "if"] },
+    selected_branch: { type: "string", enum: ["then", "else", "raw"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceMacroJsonSchema = {
+  type: "object",
+  required: ["warnings", "used_names", "mutation_preview", "staged_mutations", "traces"],
+  properties: {
+    warnings: { type: "array", items: runtimeTraceMacroWarningJsonSchema },
+    used_names: { type: "array", items: { type: "string" } },
+    mutation_preview: { type: "array", items: runtimeTraceMacroMutationPreviewJsonSchema },
+    staged_mutations: { type: "array", items: runtimeTraceMacroStagedMutationJsonSchema },
+    traces: { type: "array", items: runtimeTraceMacroTraceEntryJsonSchema },
+  },
+  examples: [liveRuntimeTraceMacroExample],
+  additionalProperties: false,
+} as const;
+
 const runtimeTraceDeliveryJsonSchema = {
   type: "object",
   required: ["assistant_prefill_requested", "assistant_prefill_applied", "assistant_prefill_strategy", "allow_assistant_prefill", "require_last_user", "no_assistant", "last_message_role", "ends_with_user", "degraded", "degrade_reasons"],
@@ -780,6 +881,7 @@ const runtimeTraceBaseProperties = {
   budgets: runtimeTraceBudgetsJsonSchema,
   structure: runtimeTraceStructureJsonSchema,
   memory: runtimeTraceMemoryJsonSchema,
+  macro: runtimeTraceMacroJsonSchema,
   delivery: runtimeTraceDeliveryJsonSchema,
 } as const;
 

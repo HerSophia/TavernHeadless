@@ -52,6 +52,20 @@ global 兼容视图 -> global 读取与 staged overlay
 - `setvar` 与 `setglobalvar` 的同轮 staged 可见性彼此隔离
 - 真正持久化时，仍然通过既有变量提交链路落到 TavernHeadless 的底层作用域模型
 
+当前宏兼容层也支持对结构化 JSON 变量做路径访问，例如：
+
+```text
+{{getvar::资产.金币}}
+{{getglobalvar::账户.余额}}
+{{setvar::资产.金币::3}}
+{{deletevar::资产.银币}}
+```
+
+这里要注意两点：
+
+1. 兼容层总是先按完整 flat key 查找，找不到时才回退到路径语义。
+2. 路径写入持久化的是 root key 对应的 JSON 值，不会在底层额外生成 `资产.金币` 这样的变量键。
+
 如果你需要查看宏系统的兼容边界、warning、trace 和 dry-run 调试字段，请参考 [Macros](./macros) 与 [Chat](./chat)。
 
 

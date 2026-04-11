@@ -397,6 +397,106 @@ describe("assemblePrompt", () => {
     expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_unknown")).toBe(false);
   });
 
+  it("reads structured variable paths during prompt assembly", async () => {
+    const now = Date.now();
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const presetId = nanoid();
+
+    await database.db.insert(sessions).values({
+      id: sessionId,
+      title: "Prompt Structured Path Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+
+    await database.db.insert(messagePages).values({
+      id: pageId,
+      floorId,
+      pageNo: 1,
+      pageKind: "input",
+      isActive: true,
+      checksum: null,
+      createdAt: now + 2,
+      updatedAt: now + 2,
+    });
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Prompt Structured Path Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "gold {{getvar::资产.金币}}, silver {{.资产.银币}}, balance {{$账户.余额}}, has {{hasvar::资产.金币}}, missing {{hasvar::资产.铜币}}.",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now + 3,
+      updatedAt: now + 3,
+    });
+
+    await database.db.insert(variables).values([
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "资产",
+        valueJson: JSON.stringify({ 金币: 3, 银币: 5 }),
+        updatedAt: now + 4,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "global",
+        scopeId: "global",
+        key: "账户",
+        valueJson: JSON.stringify({ 余额: 100 }),
+        updatedAt: now + 5,
+      },
+    ]);
+
+    const assembled = await assemblePrompt(database.db, DEFAULT_ADMIN_ACCOUNT_ID, {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    }, [], "Advance.", new SimpleTokenCounter(), undefined, {
+      includeDebug: true,
+      variableContext: { sessionId, branchId: "main", floorId, pageId },
+    });
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("gold 3, silver 5, balance 100, has true, missing false.");
+    expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_parse_failed")).toBe(false);
+  });
+
   it("resolves if blocks with getvar condition", async () => {
     const now = Date.now();
     const sessionId = nanoid();
@@ -499,6 +599,118 @@ describe("assemblePrompt", () => {
     const systemMessage = assembled.messages.find((message) => message.role === "system");
     expect(systemMessage?.content).toContain("Visible");
     expect(systemMessage?.content).not.toContain("Hidden");
+    expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining(["if", "getvar"]));
+  });
+
+  it("evaluates richer if conditions in prompt assembly", async () => {
+    const now = Date.now();
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const presetId = nanoid();
+
+    await database.db.insert(sessions).values({
+      id: sessionId,
+      title: "Prompt Rich If Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+
+    await database.db.insert(messagePages).values({
+      id: pageId,
+      floorId,
+      pageNo: 1,
+      pageKind: "input",
+      isActive: true,
+      checksum: null,
+      createdAt: now + 2,
+      updatedAt: now + 2,
+    });
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Prompt Rich If Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{if ({{getvar::score}} >= 80) and not ({{getvar::rank}} == banned)}}Qualified{{else}}Rejected{{/if}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now + 3,
+      updatedAt: now + 3,
+    });
+
+    await database.db.insert(variables).values([
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "score",
+        valueJson: JSON.stringify(90),
+        updatedAt: now + 4,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "rank",
+        valueJson: JSON.stringify("knight"),
+        updatedAt: now + 5,
+      },
+    ]);
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      undefined,
+      {
+        includeDebug: true,
+        variableContext: { sessionId, branchId: "main", floorId, pageId },
+      },
+    );
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("Qualified");
+    expect(systemMessage?.content).not.toContain("Rejected");
     expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining(["if", "getvar"]));
   });
 
@@ -689,6 +901,79 @@ describe("assemblePrompt", () => {
     ]);
     expect(assembled.debug?.macroStagedMutations).toEqual([
       { kind: "set", scope: "branch", key: "mood", value: "happy", sourceMacro: "setvar" },
+    ]);
+    expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_preview_side_effect_suppressed")).toBe(true);
+  });
+
+  it("collects root object mutation preview for nested setvar in dry run", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const sessionId = nanoid();
+    const floorId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Prompt Structured Setvar Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "{{setvar::资产.金币::3}}{{getvar::资产.金币}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(sessions).values({
+      id: sessionId,
+      title: "Prompt Structured Setvar Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+
+    await database.db.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now + 2,
+      updatedAt: now + 2,
+    });
+
+    const assembled = await assemblePrompt(database.db, DEFAULT_ADMIN_ACCOUNT_ID, {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    }, [], "Advance.", new SimpleTokenCounter(), undefined, {
+      includeDebug: true,
+      variableContext: { sessionId, branchId: "main", floorId },
+    });
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("3");
+    expect(assembled.debug?.macroMutationPreview).toEqual([
+      { kind: "set", scope: "branch", key: "资产", value: { 金币: "3" } },
+    ]);
+    expect(assembled.debug?.macroStagedMutations).toEqual([
+      { kind: "set", scope: "branch", key: "资产", value: { 金币: "3" }, sourceMacro: "setvar" },
     ]);
     expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_preview_side_effect_suppressed")).toBe(true);
   });
