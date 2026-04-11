@@ -223,7 +223,7 @@ describe("assemblePrompt", () => {
       ignoredPromptOrderCharacterIds: [],
     });
     expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_unknown")).toBe(false);
-    expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining(["user", "char", "description"]));
+    expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining(["mood", "score", "char", "user"]));
     expect(assembled.debug?.unsupportedPresetFields).toEqual([]);
   });
 
@@ -331,7 +331,7 @@ describe("assemblePrompt", () => {
             identifier: "main",
             name: "Main Prompt",
             role: "system",
-            content: "Mood {{getvar::mood}}, world {{getglobalvar::world}}.",
+            content: "Mood {{getvar::mood}}, world {{getglobalvar::world}}, localWorld {{getvar::world}}, globalMood {{getglobalvar::mood}}.",
           },
           {
             identifier: "chatHistory",
@@ -390,7 +390,9 @@ describe("assemblePrompt", () => {
     );
 
     const systemMessage = assembled.messages.find((message) => message.role === "system");
-    expect(systemMessage?.content).toContain("Mood stormy, world earth.");
+    expect(systemMessage?.content).toContain("Mood stormy, world earth");
+    expect(systemMessage?.content).toContain("localWorld ");
+    expect(systemMessage?.content).toContain("globalMood .");
     expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining(["getvar", "getglobalvar"]));
     expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_unknown")).toBe(false);
   });
@@ -552,7 +554,7 @@ describe("assemblePrompt", () => {
             identifier: "main",
             name: "Main Prompt",
             role: "system",
-            content: "Mood {{.mood}}, world {{$world}}.",
+            content: "Mood {{.mood}}, world {{$world}}, localWorld {{.world}}, globalMood {{$mood}}.",
           },
           {
             identifier: "chatHistory",
@@ -611,7 +613,9 @@ describe("assemblePrompt", () => {
     );
 
     const systemMessage = assembled.messages.find((message) => message.role === "system");
-    expect(systemMessage?.content).toContain("Mood stormy, world earth.");
+    expect(systemMessage?.content).toContain("Mood stormy, world earth");
+    expect(systemMessage?.content).toContain("localWorld ");
+    expect(systemMessage?.content).toContain("globalMood .");
     expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining([".mood", "$world"]));
   });
 
@@ -912,6 +916,118 @@ describe("assemblePrompt", () => {
     expect(systemMessage?.content).toContain("model=session-model-name");
     expect(systemMessage?.content).toContain("lastGen=dry_run");
     expect(assembled.debug?.macroWarnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "macro_value_missing", macroName: "defaultAuthorsNote" })]));
+  });
+
+  it("does not let ordinary variables override readonly macro values", async () => {
+    const now = Date.now();
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const presetId = nanoid();
+
+    await database.db.insert(sessions).values({
+      id: sessionId,
+      title: "Readonly Collision Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+
+    await database.db.insert(messagePages).values({
+      id: pageId,
+      floorId,
+      pageNo: 1,
+      pageKind: "input",
+      isActive: true,
+      checksum: null,
+      createdAt: now + 2,
+      updatedAt: now + 2,
+    });
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Readonly Collision Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "readonly={{systemPrompt}} | local={{getvar::systemPrompt}} | lastGen={{lastGenerationType}} | localGen={{getvar::lastGenerationType}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now + 3,
+      updatedAt: now + 3,
+    });
+
+    await database.db.insert(variables).values([
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "systemPrompt",
+        valueJson: JSON.stringify("Shadow system"),
+        updatedAt: now + 4,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "lastGenerationType",
+        valueJson: JSON.stringify("shadow-run"),
+        updatedAt: now + 5,
+      },
+    ]);
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        presetId,
+        worldbookProfileId: null,
+        regexProfileId: null,
+        metadataJson: JSON.stringify({ systemPrompt: "Actual system" }),
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        promptMode: "compat_strict",
+        userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+      },
+      [],
+      "Advance.",
+      new SimpleTokenCounter(),
+      undefined,
+      { includeDebug: true, runKind: "dry_run", variableContext: { sessionId, branchId: "main", floorId, pageId } },
+    );
+
+    const systemMessage = assembled.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("readonly=Actual system");
+    expect(systemMessage?.content).toContain("local=Shadow system");
+    expect(systemMessage?.content).toContain("lastGen=dry_run");
+    expect(systemMessage?.content).toContain("localGen=shadow-run");
+    expect(assembled.debug?.macroWarnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "macro_readonly_name_conflict", macroName: "systemPrompt" }),
+      expect.objectContaining({ code: "macro_readonly_name_conflict", macroName: "lastGenerationType" }),
+    ]));
   });
 
   it("falls back to preset sources when metadata and character values are missing", async () => {

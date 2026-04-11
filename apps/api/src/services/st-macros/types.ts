@@ -31,6 +31,7 @@ export type StMacroWarningCode =
   | "macro_scoped_block_unclosed"
   | "macro_preview_side_effect_suppressed"
   | "macro_eval_phase_disallowed"
+  | "macro_readonly_name_conflict"
   | "macro_internal_error";
 
 export interface StMacroWarning {

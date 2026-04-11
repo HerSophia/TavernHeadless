@@ -133,6 +133,41 @@ export type PromptRuntimeMemoryTrace = {
   summaryInjected: boolean;
 };
 
+export type PromptRuntimeMacroWarning = {
+  code: string;
+  macroName?: string;
+  message: string;
+  rawText?: string;
+};
+
+export type PromptRuntimeMacroMutationPreview = {
+  key: string;
+  kind: "set" | "delete";
+  scope: "branch" | "global";
+  value?: string;
+};
+
+export type PromptRuntimeMacroStagedMutation = PromptRuntimeMacroMutationPreview & {
+  sourceMacro: string;
+};
+
+export type PromptRuntimeMacroTraceEntry = {
+  macroName: string;
+  phase?: string;
+  rawText: string;
+  resolvedText: string;
+  selectedBranch?: string;
+  sourceKind?: string;
+};
+
+export type PromptRuntimeMacroTrace = {
+  mutationPreview: PromptRuntimeMacroMutationPreview[];
+  stagedMutations: PromptRuntimeMacroStagedMutation[];
+  traces: PromptRuntimeMacroTraceEntry[];
+  usedNames: string[];
+  warnings: PromptRuntimeMacroWarning[];
+};
+
 export type PromptRuntimeDeliveryDegradeReason =
   | "assistant_prefill_disabled"
   | "assistant_prefill_unsupported"
@@ -165,6 +200,7 @@ export type PromptRuntimeVisibilityTrace = {
 export type PromptRuntimeTrace = {
   budgets?: PromptRuntimeBudgetTrace;
   delivery?: PromptRuntimeDeliveryTrace;
+  macro?: PromptRuntimeMacroTrace;
   memory?: PromptRuntimeMemoryTrace;
   preset?: PromptRuntimePresetTrace;
   regex?: PromptRuntimeRegexTrace;
@@ -250,6 +286,7 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
   const budgets = readRecord(record.budgets);
   const structure = readRecord(record.structure);
   const memory = readRecord(record.memory);
+  const macro = readRecord(record.macro);
   const delivery = readRecord(record.delivery);
   const visibility = readRecord(record.visibility);
 
@@ -321,6 +358,17 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
           },
         }
       : {}),
+    ...(macro
+      ? {
+          macro: {
+            warnings: readArray(macro.warnings).map(mapPromptRuntimeMacroWarning).filter((warning): warning is PromptRuntimeMacroWarning => warning !== null),
+            usedNames: mapStringArray(macro.used_names),
+            mutationPreview: readArray(macro.mutation_preview).map(mapPromptRuntimeMacroMutationPreview).filter((item): item is PromptRuntimeMacroMutationPreview => item !== null),
+            stagedMutations: readArray(macro.staged_mutations).map(mapPromptRuntimeMacroStagedMutation).filter((item): item is PromptRuntimeMacroStagedMutation => item !== null),
+            traces: readArray(macro.traces).map(mapPromptRuntimeMacroTraceEntry).filter((trace): trace is PromptRuntimeMacroTraceEntry => trace !== null),
+          },
+        }
+      : {}),
     ...(delivery
       ? {
           delivery: {
@@ -361,6 +409,65 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
   };
 
   return Object.keys(runtimeTrace).length > 0 ? runtimeTrace : undefined;
+}
+
+function mapPromptRuntimeMacroWarning(value: unknown): PromptRuntimeMacroWarning | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    code: readString(record.code),
+    macroName: readNullableString(record.macro_name) ?? undefined,
+    message: readString(record.message),
+    rawText: readNullableString(record.raw_text) ?? undefined,
+  };
+}
+
+function mapPromptRuntimeMacroMutationPreview(value: unknown): PromptRuntimeMacroMutationPreview | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const kind = readString(record.kind, "set");
+  const scope = readString(record.scope, "branch");
+  return {
+    key: readString(record.key),
+    kind: kind === "delete" ? "delete" : "set",
+    scope: scope === "global" ? "global" : "branch",
+    value: readNullableString(record.value) ?? undefined,
+  };
+}
+
+function mapPromptRuntimeMacroStagedMutation(value: unknown): PromptRuntimeMacroStagedMutation | null {
+  const preview = mapPromptRuntimeMacroMutationPreview(value);
+  const record = readRecord(value);
+  if (!preview || !record) {
+    return null;
+  }
+
+  return {
+    ...preview,
+    sourceMacro: readString(record.source_macro),
+  };
+}
+
+function mapPromptRuntimeMacroTraceEntry(value: unknown): PromptRuntimeMacroTraceEntry | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    macroName: readString(record.macro_name),
+    phase: readNullableString(record.phase) ?? undefined,
+    rawText: readString(record.raw_text),
+    resolvedText: readString(record.resolved_text),
+    selectedBranch: readNullableString(record.selected_branch) ?? undefined,
+    sourceKind: readNullableString(record.source_kind) ?? undefined,
+  };
 }
 
 function mapPromptRuntimeWorldbookMatchDetail(value: unknown): PromptRuntimeWorldbookMatchDetail | null {

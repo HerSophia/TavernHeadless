@@ -529,6 +529,67 @@ describe("ChatService", () => {
     expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
     expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
   });
+  it("applies session prompt runtime structure policy on the live respond path when request override is absent", async () => {
+    await chatService.respond(sessionId, { message: "First turn" });
+
+    await database.db
+      .update(sessions)
+      .set({
+        metadataJson: JSON.stringify({
+          prompt_runtime: {
+            policy: {
+              structure: {
+                mode: "no_assistant",
+              },
+            },
+          },
+        }),
+        updatedAt: Date.now(),
+      })
+      .where(eq(sessions.id, sessionId));
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    await chatService.respond(sessionId, {
+      message: "Second turn",
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
+    expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+  });
+
+  it("lets request delivery override session prompt runtime delivery defaults on respond", async () => {
+    await chatService.respond(sessionId, { message: "First turn" });
+
+    await database.db
+      .update(sessions)
+      .set({
+        metadataJson: JSON.stringify({
+          prompt_runtime: {
+            policy: {
+              delivery: {
+                noAssistant: true,
+              },
+            },
+          },
+        }),
+        updatedAt: Date.now(),
+      })
+      .where(eq(sessions.id, sessionId));
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    await chatService.respond(sessionId, {
+      message: "Second turn",
+      delivery: { noAssistant: false },
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "assistant" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+  });
+
+
 
   it("keeps live prompt debug payload disabled by default", async () => {
     const result = await chatService.respond(sessionId, { message: "Hello without debug" });
@@ -1720,6 +1781,8 @@ describe("ChatService", () => {
     });
 
     await service.respond(sessionId, {
+
+
       message: "Request timeout",
       generationParams: { timeoutMs: 12_000, maxRetries: 1 },
     });
@@ -1781,6 +1844,36 @@ describe("ChatService", () => {
       expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
       expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
     });
+    it("applies session prompt runtime delivery policy on regenerate when request override is absent", async () => {
+      await chatService.respond(sessionId, { message: "First turn" });
+      await chatService.respond(sessionId, { message: "Second turn" });
+
+      await database.db
+        .update(sessions)
+        .set({
+          metadataJson: JSON.stringify({
+            prompt_runtime: {
+              policy: {
+                delivery: {
+                  noAssistant: true,
+                },
+              },
+            },
+          }),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, sessionId));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      await chatService.regenerate(sessionId);
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
+      expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+    });
+
+
 
     it("should use the same generating commit boundary during regenerate", async () => {
       await chatService.respond(sessionId, { message: "Seed for regenerate" });
@@ -2059,6 +2152,8 @@ describe("ChatService", () => {
       expect(mockOrchestrator.executeTurn).toHaveBeenCalledTimes(1);
     });
 
+
+
     it("should retry a failed floor in place", async () => {
       (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("transient"));
 
@@ -2103,6 +2198,34 @@ describe("ChatService", () => {
       expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
     });
 
+    it("applies session prompt runtime delivery policy on retryFloor when request override is absent", async () => {
+      await chatService.respond(sessionId, { message: "First turn" });
+      const retriedTurn = await chatService.respond(sessionId, { message: "Retry delivery seed" });
+
+      await database.db
+        .update(sessions)
+        .set({
+          metadataJson: JSON.stringify({
+            prompt_runtime: {
+              policy: {
+                delivery: {
+                  noAssistant: true,
+                },
+              },
+            },
+          }),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, sessionId));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      await chatService.retryFloor(retriedTurn.floorId);
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
+      expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+    });
 
 
     it("requires explicit confirmation before retrying a floor with unsafe prior tool executions", async () => {
@@ -2326,6 +2449,49 @@ describe("ChatService", () => {
       expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
       expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
     });
+
+    it("applies session prompt runtime delivery policy on editAndRegenerate when request override is absent", async () => {
+      await chatService.respond(sessionId, { message: "First turn" });
+      const editableTurn = await chatService.respond(sessionId, { message: "Editable user line" });
+
+      await database.db
+        .update(sessions)
+        .set({
+          metadataJson: JSON.stringify({
+            prompt_runtime: {
+              policy: {
+                delivery: {
+                  noAssistant: true,
+                },
+              },
+            },
+          }),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, sessionId));
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, editableTurn.floorId), eq(messagePages.pageKind, "input")));
+
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      await chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited without assistant",
+        branchId: "edit-session-no-assistant",
+      });
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
+      expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+    });
+
 
     it("should switch USER_INPUT regex execution to the edit channel during editAndRegenerate", async () => {
       const regexProfileId = nanoid();
