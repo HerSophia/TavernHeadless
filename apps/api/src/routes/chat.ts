@@ -908,6 +908,33 @@ function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<st
         }
       : {}),
     ...(runtimeTrace.memory ? { memory: { summary_injected: runtimeTrace.memory.summaryInjected } } : {}),
+    ...(runtimeTrace.macro
+      ? {
+          macro: {
+            warnings: runtimeTrace.macro.warnings.map((warning) => ({
+              code: warning.code,
+              message: warning.message,
+              ...(warning.macroName ? { macro_name: warning.macroName } : {}),
+              ...(warning.rawText ? { raw_text: warning.rawText } : {}),
+            })),
+            used_names: runtimeTrace.macro.usedNames,
+            mutation_preview: runtimeTrace.macro.mutationPreview.map((preview) => ({
+              kind: preview.kind,
+              scope: preview.scope,
+              key: preview.key,
+              ...(preview.value !== undefined ? { value: preview.value } : {}),
+            })),
+            staged_mutations: runtimeTrace.macro.stagedMutations.map((mutation) => ({
+              kind: mutation.kind,
+              scope: mutation.scope,
+              key: mutation.key,
+              ...(mutation.value !== undefined ? { value: mutation.value } : {}),
+              source_macro: mutation.sourceMacro,
+            })),
+            traces: runtimeTrace.macro.traces.map((trace) => mapMacroTraceEntryToSnakeCase(trace)),
+          },
+        }
+      : {}),
     ...(runtimeTrace.delivery
       ? {
           delivery: {
@@ -955,6 +982,17 @@ function mapOptionalPromptDebugResponseFields(
       ? { prompt_snapshot: mapPromptSnapshotToSnakeCase(payload.promptSnapshot) }
       : {}),
     ...mapOptionalRuntimeTraceResponseField(payload.runtimeTrace),
+  };
+}
+
+function mapMacroTraceEntryToSnakeCase(trace: NonNullable<PromptRuntimeTrace["macro"]>["traces"][number]): Record<string, unknown> {
+  return {
+    macro_name: trace.macroName,
+    raw_text: trace.rawText,
+    resolved_text: trace.resolvedText,
+    ...(trace.phase ? { phase: trace.phase } : {}),
+    ...(trace.sourceKind ? { source_kind: trace.sourceKind } : {}),
+    ...(trace.selectedBranch ? { selected_branch: trace.selectedBranch } : {}),
   };
 }
 

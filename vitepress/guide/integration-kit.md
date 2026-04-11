@@ -181,6 +181,7 @@ const resolved = await resolveItemByPath(client, domainId, "settings", "theme.da
 | 分类 | 资源 |
 | ---- | ---- |
 | 会话与内容结构 | `health`、`sessions`、`messages`、`floors`、`pages`、`branches` |
+| 提示词运行时高级资源 | `promptRuntime` |
 | 角色、资料与配置 | `characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles` |
 | 导入、导出与模型 | `imports`、`exports`、`chatTransferJobs`、`llmProfiles`、`llmInstances` |
 | 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes` |

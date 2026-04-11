@@ -794,6 +794,77 @@ describe("ChatService.dryRun", () => {
     expect(result.runtimeTrace?.visibility).toEqual({ hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }], filteredFloorNos: [1] });
   });
 
+  it("keeps recent message macros aligned with visibility-filtered history", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const hiddenFloorId = nanoid();
+    const hiddenPageId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Visibility Macro Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "last={{lastMessage}} | user={{lastUserMessage}} | char={{lastCharMessage}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now })
+      .where(eq(sessions.id, sessionId));
+
+    await database.db.insert(floors).values({
+      id: hiddenFloorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+    await database.db.insert(messagePages).values({
+      id: hiddenPageId,
+      floorId: hiddenFloorId,
+      pageNo: 0,
+      pageKind: "output",
+      isActive: true,
+      version: 1,
+      checksum: null,
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+    await database.db.insert(messageTable).values({
+      id: nanoid(), pageId: hiddenPageId, seq: 0, role: "assistant", content: "hidden assistant", contentFormat: "text", tokenCount: 1, isHidden: false, source: "api", createdAt: now + 1,
+    });
+
+    const result = await chatService.dryRun(sessionId, {
+      message: "visible request",
+      visibility: { hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }] },
+    });
+
+    const systemMessage = result.messages.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("last=visible request");
+    expect(systemMessage?.content).toContain("user=visible request");
+    expect(systemMessage?.content).toContain("char=");
+    expect(systemMessage?.content).not.toContain("hidden assistant");
+  });
+
   it("returns delivery trace when dry-run delivery override is provided", async () => {
     const now = Date.now();
     const presetId = nanoid();
@@ -874,6 +945,77 @@ describe("ChatService.dryRun", () => {
     expect(result.promptSnapshot.tokenEstimate).toBe(result.tokenEstimate);
     expect(result.promptSnapshot.promptDigest).toMatch(/^[a-f0-9]{64}$/);
   });
+  it("applies session prompt runtime structure policy on dry-run when request override is absent", async () => {
+    const now = Date.now();
+    const floorId = nanoid();
+    const pageId = nanoid();
+
+    await database.db
+      .update(sessions)
+      .set({
+        metadataJson: JSON.stringify({
+          prompt_runtime: {
+            policy: {
+              structure: {
+                mode: "no_assistant",
+              },
+            },
+          },
+        }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    await database.db.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.db.insert(messagePages).values({
+      id: pageId,
+      floorId,
+      pageNo: 0,
+      pageKind: "output",
+      isActive: true,
+      version: 1,
+      checksum: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.db.insert(messageTable).values({
+      id: nanoid(),
+      pageId,
+      seq: 0,
+      role: "assistant",
+      content: "history assistant",
+      contentFormat: "text",
+      tokenCount: 1,
+      isHidden: false,
+      source: "api",
+      createdAt: now,
+    });
+
+    const result = await chatService.dryRun(sessionId, { message: "hello dry run" });
+
+    expect(result.messages.some((message) => message.role === "assistant")).toBe(false);
+    expect(result.messages.some((message) => message.role === "system" && message.content === "history assistant")).toBe(true);
+    expect(result.runtimeTrace?.structure).toEqual({
+      mode: "no_assistant",
+      mergeAdjacentSameRole: false,
+      assistantRewriteCount: 1,
+      assistantRewriteStrategy: "to_system",
+      tailAssistantDetected: false,
+    });
+  });
+
+
 
   it("returns prompt snapshot preview for loaded resources without persisting prompt_snapshot rows", async () => {
     const now = Date.now();
@@ -1054,6 +1196,51 @@ describe("ChatService.dryRun", () => {
 
     expect(allContent).toContain("Mood focused for Knight and Traveler.");
     expect(result.assembly.reservedVariableCollisions).toEqual(["char", "user"]);
+  });
+
+  it("surfaces macro diagnostics from real dry-run assembly in runtime trace", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Macro Trace Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "kind={{lastGenerationType}} {{setvar::mood::happy}}{{if {{lastGenerationType}} == dry_run}}OK{{/if}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    const result = await chatService.dryRun(sessionId, { message: "hello macros" });
+    const allContent = result.messages.map((message) => message.content).join("\n");
+
+    expect(allContent).toContain("kind=dry_run");
+    expect(allContent).toContain("OK");
+    expect(result.runtimeTrace?.macro?.usedNames).toEqual(expect.arrayContaining(["if", "lastGenerationType", "setvar"]));
+    expect(result.runtimeTrace?.macro?.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "macro_preview_side_effect_suppressed", macroName: "setvar" })]));
+    expect(result.runtimeTrace?.macro?.mutationPreview).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "set", scope: "branch", key: "mood", value: "happy" })]));
+    expect(result.runtimeTrace?.macro?.traces).toEqual(expect.arrayContaining([expect.objectContaining({ macroName: "lastGenerationType", resolvedText: "dry_run" })]));
   });
 
   it("does not load prompt resources owned by another account", async () => {

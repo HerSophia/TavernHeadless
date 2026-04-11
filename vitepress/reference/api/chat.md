@@ -70,6 +70,8 @@ POST /sessions/:id/respond
 
 如果请求里显式打开 `debug_options.include_runtime_trace`，成功响应的 `data` 里还会附带 `runtime_trace`。
 
+如果本轮 prompt 组装实际命中了宏系统，`runtime_trace.macro` 会附带宏 warning、used names、mutation preview、staged mutations 和 trace。
+
 这两个字段默认都关闭。未打开时，同步成功响应保持兼容。
 
 ### 常见错误
@@ -306,6 +308,8 @@ Prompt dry-run 与提示词调试场景对宏系统采用只读执行边界：
 - 只读宏会正常求值
 - 写宏只进入 preview mutation，不会写库
 - dry-run 不会触发 turn commit
+- dry-run 与 live 都会基于真实主链汇总宏诊断
+- 对外调试时优先查看 `runtime_trace.macro`
 - staged mutation 只在 respond / regenerate 的 assemble 阶段冻结，并在 commit 阶段消费
 
 ### `if` 条件块支持范围

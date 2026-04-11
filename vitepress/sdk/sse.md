@@ -163,6 +163,8 @@ start → run? → (chunk | tool | run)* → summary? → done
 
 这两个调试字段只会出现在 `done` payload 中。
 
+如果本轮 prompt 组装命中了宏系统，`runtimeTrace.macro` 会附带宏 warning、used names、mutation preview、staged mutations 和 trace。
+
 本版不会新增新的 SSE 事件类型。
 
 ### TavernRespondStreamEvent

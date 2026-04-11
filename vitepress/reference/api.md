@@ -8,27 +8,27 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 
 ## 基础信息
 
-| 项目 | 值 |
-| ---- | -- |
-| 基础 URL | `http://localhost:3000` |
-| OpenAPI 版本 | 3.0.3 |
-| API 版本 | `0.2.0-beta.3` |
-| OpenAPI JSON | `GET /openapi.json` |
-| Swagger UI | `GET /docs/` |
-| 中文文档 | `GET /docs-zh` |
-| 英文文档 | `GET /docs-en` |
-| Health | `GET /health` |
-| Version | `GET /version` |
+| 项目         | 值                      |
+| ------------ | ----------------------- |
+| 基础 URL     | `http://localhost:3000` |
+| OpenAPI 版本 | 3.0.3                   |
+| API 版本     | `0.2.0-beta.3`          |
+| OpenAPI JSON | `GET /openapi.json`     |
+| Swagger UI   | `GET /docs/`            |
+| 中文文档     | `GET /docs-zh`          |
+| 英文文档     | `GET /docs-en`          |
+| Health       | `GET /health`           |
+| Version      | `GET /version`          |
 
 ## 认证
 
 通过 `.env` 中的 `AUTH_MODE` 控制认证模式：
 
-| 模式 | 说明 | 请求头 |
-| ---- | ---- | ------ |
-| `off` | 无认证（默认） | 无需携带 |
-| `api_key` | API Key | `Authorization: Bearer <key>` 或 `x-api-key: <key>` |
-| `jwt` | JWT | `Authorization: Bearer <token>` |
+| 模式      | 说明           | 请求头                                              |
+| --------- | -------------- | --------------------------------------------------- |
+| `off`     | 无认证（默认） | 无需携带                                            |
+| `api_key` | API Key        | `Authorization: Bearer <key>` 或 `x-api-key: <key>` |
+| `jwt`     | JWT            | `Authorization: Bearer <token>`                     |
 
 `AUTH_MODE=off` 只应用于本地开发。当前服务会在 `NODE_ENV=production && AUTH_MODE=off` 时直接拒绝启动。
 
@@ -100,47 +100,48 @@ WebSocket 也遵循相同边界：
 
 常见 HTTP 状态码：
 
-| 状态码 | 含义 |
-| ------ | ---- |
-| `200` | 成功 |
-| `201` | 创建成功 |
-| `204` | 删除成功（无响应体） |
-| `400` | 请求参数错误 |
-| `401` | 未认证，或认证后的账号不存在 |
-| `403` | 账号被禁用，或缺少系统级能力 |
-| `404` | 资源不存在，或资源存在但不属于当前账号 |
-| `409` | 冲突（如账号内重名、乐观锁失败） |
-| `410` | 资源逻辑上已删除 |
-| `413` | 请求体过大 |
-| `500` | 服务端错误 |
-| `502` | 上游 LLM 服务错误 |
-| `503` | 服务不可用或暂时繁忙 |
-| `504` | 上游生成超时 |
+| 状态码 | 含义                                   |
+| ------ | -------------------------------------- |
+| `200`  | 成功                                   |
+| `201`  | 创建成功                               |
+| `204`  | 删除成功（无响应体）                   |
+| `400`  | 请求参数错误                           |
+| `401`  | 未认证，或认证后的账号不存在           |
+| `403`  | 账号被禁用，或缺少系统级能力           |
+| `404`  | 资源不存在，或资源存在但不属于当前账号 |
+| `409`  | 冲突（如账号内重名、乐观锁失败）       |
+| `410`  | 资源逻辑上已删除                       |
+| `413`  | 请求体过大                             |
+| `500`  | 服务端错误                             |
+| `502`  | 上游 LLM 服务错误                      |
+| `503`  | 服务不可用或暂时繁忙                   |
+| `504`  | 上游生成超时                           |
 
 ## 分页
 
 大多数复用通用分页基类的列表接口支持以下查询参数：
 
-| 参数 | 类型 | 默认值 | 说明 |
-| ---- | ---- | ------ | ---- |
-| `limit` | integer | `50` | 每页条数，最大 `100` |
-| `offset` | integer | `0` | 偏移量 |
-| `sort_order` | string | `desc` | 排序方向，`asc` 或 `desc` |
-| `sort_by` | string | 因资源而异 | 排序字段，详见各资源文档 |
+| 参数         | 类型    | 默认值     | 说明                      |
+| ------------ | ------- | ---------- | ------------------------- |
+| `limit`      | integer | `50`       | 每页条数，最大 `100`      |
+| `offset`     | integer | `0`        | 偏移量                    |
+| `sort_order` | string  | `desc`     | 排序方向，`asc` 或 `desc` |
+| `sort_by`    | string  | 因资源而异 | 排序字段，详见各资源文档  |
 
 ## 资源目录
 
-| 资源 | 说明 | 文档 |
-| ---- | ---- | ---- |
-| Sessions | 会话管理、时间线、分支 | [Sessions](./api/sessions) |
-| Chat | 对话生成、SSE 流、Dry-run | [Chat](./api/chat) |
-| Floors | 楼层管理、分支操作 | [Floors](./api/floors) |
-| Pages | 消息页管理、激活切换 | [Pages](./api/pages) |
-| Messages | 消息管理、批量操作 | [Messages](./api/messages) |
-| Characters | 角色卡管理、版本控制 | [Characters](./api/characters) |
-| Users | 用户卡管理 | [Users](./api/users) |
-| Variables | 五级变量系统 | [Variables](./api/variables) |
-| Macros | ST 宏兼容层、dry-run 调试字段与执行边界 | [Macros](./api/macros) |
+| 资源           | 说明                                                         | 文档                                   |
+| -------------- | ------------------------------------------------------------ | -------------------------------------- |
+| Sessions       | 会话管理、时间线、分支                                       | [Sessions](./api/sessions)             |
+| Chat           | 对话生成、SSE 流、Dry-run                                    | [Chat](./api/chat)                     |
+| Floors         | 楼层管理、分支操作                                           | [Floors](./api/floors)                 |
+| Pages          | 消息页管理、激活切换                                         | [Pages](./api/pages)                   |
+| Messages       | 消息管理、批量操作                                           | [Messages](./api/messages)             |
+| Characters     | 角色卡管理、版本控制                                         | [Characters](./api/characters)         |
+| Users          | 用户卡管理                                                   | [Users](./api/users)                   |
+| Variables      | 五级变量系统                                                 | [Variables](./api/variables)           |
+| Macros         | ST 宏兼容层、dry-run 调试字段与执行边界                      | [Macros](./api/macros)                 |
+| Prompt Runtime | session 级 prompt 策略、Prompt Assets 绑定与 capability 边界 | [Prompt Runtime](./api/prompt-runtime) |
 
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
@@ -163,6 +164,7 @@ WebSocket 也遵循相同边界：
 - [Memory Jobs](./api/memory-jobs)
 - [Chat Transfer Jobs](./api/chat-transfer-jobs)
 - [Macros](./api/macros)
+- [Prompt Runtime](./api/prompt-runtime)
 
 - [Tools](./api/tools)
 - [MCP Servers](./api/mcp)

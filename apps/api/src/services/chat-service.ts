@@ -23,6 +23,7 @@ import {
   type SessionPromptInfo,
   type AssembleDebugInfo,
   type AssistantPrefillExecutionStrategy,
+  type PromptMacroRunKind,
   type MaterializePromptRuntimeMessagesResult,
   type PromptSendDirectives,
   type PromptDeliveryPolicy,
@@ -109,6 +110,11 @@ import { PromptResourceLoader } from "./prompt-resource-loader.js";
 import type { StMacroStagedMutation } from "./st-macros/index.js";
 import { resolveAssistantPrefillStrategy } from "../lib/llm-provider-discovery.js";
 import { VariableService } from "./variable-service.js";
+import {
+  mergePromptDeliveryPolicy,
+  mergePromptStructurePolicy,
+  readPromptRuntimePersistentPolicy,
+} from "./prompt-runtime-control-service.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
@@ -606,6 +612,7 @@ export class ChatService {
         const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, resolvedAccountId);
         this.assertNarratorSlotEnabled(resolvedTurnModels);
         const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
+        const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request);
 
         // ── 2. 确定分支上下文 + 加载历史 ──
         const branchContext = await this.resolveRespondBranchContext(
@@ -674,6 +681,7 @@ export class ChatService {
               variableContext: { sessionId, branchId, floorId, pageId: userMessageRef.pageId },
               intent: request.promptIntent,
               includeDebug: includeRuntimeTrace,
+              runKind: this.resolvePromptRunKind("respond"),
               includeWorldbookMatchTrace: includeRuntimeTrace && request.debugOptions?.includeWorldbookMatches === true,
               assistantPrefillStrategy,
             }
@@ -684,8 +692,8 @@ export class ChatService {
             assembled.messages,
             assembled.sendDirectives,
             assistantPrefillStrategy,
-            request.structure,
-            request.delivery,
+            promptRuntimePolicies.structure,
+            promptRuntimePolicies.delivery,
           );
           const promptDebug = this.buildLivePromptDebugArtifacts({
             floorId,
@@ -801,6 +809,7 @@ export class ChatService {
       throw new ChatServiceError("session_archived", "Cannot dry-run in an archived session");
     }
 
+    const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request);
     const history = await this.historyLoader.loadHistory(sessionId, "main", undefined, request.visibility);
     const visibilityTrace = await this.historyLoader.previewVisibility(sessionId, "main", undefined, request.visibility);
     const memorySummary = await this.retrieveMemorySummary(sessionId, accountId);
@@ -828,8 +837,9 @@ export class ChatService {
       this.tokenCounter,
       memorySummary,
       {
-        includeDebug: true, maxContextTokensOverride, variableContext: { sessionId },
+        includeDebug: true, maxContextTokensOverride, variableContext: { sessionId, branchId: "main" },
         intent: request.promptIntent,
+        runKind: this.resolvePromptRunKind("dry_run"),
         includeWorldbookMatchTrace: request.debugOptions?.includeWorldbookMatches,
         assistantPrefillStrategy,
       }
@@ -839,8 +849,8 @@ export class ChatService {
       messages: assembled.messages,
       sendDirectives: assembled.sendDirectives,
       assistantPrefillStrategy,
-      structurePolicy: request.structure,
-      deliveryPolicy: request.delivery,
+      structurePolicy: promptRuntimePolicies.structure,
+      deliveryPolicy: promptRuntimePolicies.delivery,
       materializeAssistantPrefillFallback: false,
     });
     const maxPromptTokens = assembled.tokenUsage.total + assembled.tokenUsage.availableForReply;
@@ -936,6 +946,7 @@ export class ChatService {
     return this.withGenerationCoordinator(sessionId, "main", undefined, async (generationRuntime: CoordinatorRuntime) => {
       const session = await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot regenerate in an archived session");
       const targetFloor = await this.revalidateRegenerationTarget(sessionId, initialTargetFloor.id);
+      const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request);
 
       // ── 3. 提取用户消息 ──
       const existingUserMessage = await this.getUserMessageFromFloor(targetFloor.id);
@@ -1005,6 +1016,7 @@ export class ChatService {
           variableContext: { sessionId, branchId: targetFloor.branchId, floorId: newFloorId, pageId: userMessageRef.pageId },
           includeDebug: includeRuntimeTrace,
           includeWorldbookMatchTrace: includeRuntimeTrace && request.debugOptions?.includeWorldbookMatches === true,
+          runKind: this.resolvePromptRunKind("regenerate_page"),
           intent: "regenerate",
           assistantPrefillStrategy,
         }
@@ -1015,8 +1027,8 @@ export class ChatService {
         assembled.messages,
         assembled.sendDirectives,
         assistantPrefillStrategy,
-        request.structure,
-        request.delivery,
+        promptRuntimePolicies.structure,
+        promptRuntimePolicies.delivery,
       );
       const promptDebug = this.buildLivePromptDebugArtifacts({
         floorId: newFloorId,
@@ -1123,6 +1135,7 @@ export class ChatService {
         const targetFloor = await this.revalidateRetryTargetFloor(floorId, resolvedAccountId, initialTargetFloor);
         const session = await this.requireActiveSession(targetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session");
         await this.assertRetryReplayConfirmed(targetFloor.id, request);
+        const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request);
 
         const userMessageRef = await this.getUserMessageFromFloor(targetFloor.id);
         if (!userMessageRef) {
@@ -1178,6 +1191,7 @@ export class ChatService {
             },
             includeDebug: includeRuntimeTrace,
             includeWorldbookMatchTrace: includeRuntimeTrace && request.debugOptions?.includeWorldbookMatches === true,
+            runKind: this.resolvePromptRunKind("retry_turn"),
             assistantPrefillStrategy,
           }
         );
@@ -1187,8 +1201,8 @@ export class ChatService {
           assembled.messages,
           assembled.sendDirectives,
           assistantPrefillStrategy,
-          request.structure,
-          request.delivery,
+          promptRuntimePolicies.structure,
+          promptRuntimePolicies.delivery,
         );
         const promptDebug = this.buildLivePromptDebugArtifacts({
           floorId: targetFloor.id,
@@ -2103,6 +2117,7 @@ export class ChatService {
     const resolvedTurnModels = await this.resolveTurnModelsForSession(args.sessionId, args.accountId);
     this.assertNarratorSlotEnabled(resolvedTurnModels);
     const sessionInfo = this.buildSessionPromptInfo(args.session, resolvedTurnModels);
+    const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(args.session.metadataJson, args.request);
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
     await this.trackFloorRunPhase(args.floorId, "semantic_resolved");
     await this.trackFloorRunPhase(args.floorId, "prechecked");
@@ -2128,6 +2143,7 @@ export class ChatService {
         },
         includeDebug: includeRuntimeTrace,
         includeWorldbookMatchTrace: includeRuntimeTrace && args.request.debugOptions?.includeWorldbookMatches === true,
+        runKind: this.resolvePromptRunKind(args.runType),
         assistantPrefillStrategy,
       }
     );
@@ -2137,8 +2153,8 @@ export class ChatService {
       assembled.messages,
       assembled.sendDirectives,
       assistantPrefillStrategy,
-      args.request.structure,
-      args.request.delivery,
+      promptRuntimePolicies.structure,
+      promptRuntimePolicies.delivery,
     );
     const promptDebug = this.buildLivePromptDebugArtifacts({
       floorId: args.floorId,
@@ -2591,12 +2607,45 @@ export class ChatService {
     return {};
   }
 
+  private resolvePromptRunKind(runType: FloorRunType | "dry_run"): PromptMacroRunKind {
+    switch (runType) {
+      case "dry_run":
+        return "dry_run";
+      case "respond":
+        return "respond";
+      case "retry_turn":
+        return "retry";
+      case "regenerate_page":
+      case "edit_and_regenerate":
+        return "regenerate";
+      default:
+        return "respond";
+    }
+  }
+
   private resolveNarratorAssistantPrefillStrategy(
     models: ResolvedTurnModels,
   ): AssistantPrefillExecutionStrategy {
     return resolveAssistantPrefillStrategy(
       models.narrator?.providerType ?? this.defaultNarratorProviderType,
     );
+  }
+
+  private resolveEffectivePromptRuntimePolicies(
+    metadataJson: string | null,
+    request: {
+      structure?: PromptStructurePolicy;
+      delivery?: PromptDeliveryPolicy;
+    },
+  ): {
+    structure?: PromptStructurePolicy;
+    delivery?: PromptDeliveryPolicy;
+  } {
+    const { persistentPolicy } = readPromptRuntimePersistentPolicy(metadataJson);
+    return {
+      structure: mergePromptStructurePolicy(persistentPolicy?.structure, request.structure),
+      delivery: mergePromptDeliveryPolicy(persistentPolicy?.delivery, request.delivery),
+    };
   }
 
   private buildLivePromptDebugArtifacts(args: {

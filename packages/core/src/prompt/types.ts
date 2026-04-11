@@ -195,6 +195,41 @@ export interface PromptRuntimeMemoryTrace {
   summaryInjected: boolean;
 }
 
+export interface PromptRuntimeMacroWarning {
+  code: string;
+  message: string;
+  macroName?: string;
+  rawText?: string;
+}
+
+export interface PromptRuntimeMacroMutationPreview {
+  kind: 'set' | 'delete';
+  scope: 'branch' | 'global';
+  key: string;
+  value?: string;
+}
+
+export interface PromptRuntimeMacroStagedMutation extends PromptRuntimeMacroMutationPreview {
+  sourceMacro: string;
+}
+
+export interface PromptRuntimeMacroTraceEntry {
+  macroName: string;
+  rawText: string;
+  resolvedText: string;
+  phase?: string;
+  sourceKind?: string;
+  selectedBranch?: string;
+}
+
+export interface PromptRuntimeMacroTrace {
+  warnings: PromptRuntimeMacroWarning[];
+  usedNames: string[];
+  mutationPreview: PromptRuntimeMacroMutationPreview[];
+  stagedMutations: PromptRuntimeMacroStagedMutation[];
+  traces: PromptRuntimeMacroTraceEntry[];
+}
+
 type PromptRuntimeAssistantPrefillStrategy = 'provider_native' | 'assistant_message_fallback' | 'unsupported' | 'none';
 
 type PromptRuntimeStructureMode = 'default' | 'strict_alternating' | 'no_assistant';
@@ -244,6 +279,7 @@ export interface PromptRuntimeTrace<TWorldbookMatch = unknown> {
   regex?: PromptRuntimeRegexTrace;
   budgets?: PromptRuntimeBudgetTrace;
   memory?: PromptRuntimeMemoryTrace;
+  macro?: PromptRuntimeMacroTrace;
   structure?: PromptRuntimeStructureTrace;
   delivery?: PromptRuntimeDeliveryTrace;
   visibility?: PromptRuntimeVisibilityTrace;

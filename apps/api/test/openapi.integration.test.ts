@@ -118,6 +118,10 @@ describe("OpenAPI integration", () => {
     expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs/{id}/cancel");
     expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs/{id}/retry");
     expect(Object.keys(body.paths)).toContain("/chat-transfer-jobs/{id}/file");
+    expect(Object.keys(body.paths)).toContain("/sessions/{id}/prompt-runtime");
+    expect(Object.keys(body.paths)).toContain("/sessions/{id}/prompt-runtime/policy");
+    expect(Object.keys(body.paths)).toContain("/sessions/{id}/prompt-runtime/assets");
+    expect(Object.keys(body.paths)).toContain("/prompt-runtime/capabilities");
 
     const versionPath = body.paths["/version"] as { get?: OpenApiOperation };
     expect(versionPath.get?.security).toEqual([]);
@@ -253,6 +257,27 @@ describe("OpenAPI integration", () => {
     expect(messagesPath.post?.requestBody).toBeDefined();
     expect(messagesPath.post?.responses).toHaveProperty("201");
     expect(messagesPath.get?.operationId).toBe("listMessages");
+
+    const sessionPromptRuntimePath = body.paths["/sessions/{id}/prompt-runtime"] as {
+      get?: OpenApiOperation;
+    };
+    expect(sessionPromptRuntimePath.get?.operationId).toBe("getSessionPromptRuntime");
+    expect(sessionPromptRuntimePath.get?.responses).toHaveProperty("200");
+
+    const sessionPromptRuntimePolicyPath = body.paths["/sessions/{id}/prompt-runtime/policy"] as {
+      get?: OpenApiOperation;
+      patch?: OpenApiOperation;
+    };
+    expect(sessionPromptRuntimePolicyPath.get?.operationId).toBe("getSessionPromptRuntimePolicy");
+    expect(sessionPromptRuntimePolicyPath.patch?.operationId).toBe("patchSessionPromptRuntimePolicy");
+    expect(sessionPromptRuntimePolicyPath.patch?.requestBody).toBeDefined();
+    expect(sessionPromptRuntimePolicyPath.patch?.responses).toHaveProperty("200");
+
+    const promptRuntimeCapabilitiesPath = body.paths["/prompt-runtime/capabilities"] as {
+      get?: OpenApiOperation;
+    };
+    expect(promptRuntimeCapabilitiesPath.get?.operationId).toBe("getPromptRuntimeCapabilities");
+    expect(promptRuntimeCapabilitiesPath.get?.responses).toHaveProperty("200");
 
     const messageByIdPath = body.paths["/messages/{id}"] as {
       patch?: OpenApiOperation;

@@ -253,11 +253,13 @@ POST /sessions/:id/respond/dry-run
 
 当提示词装配命中了宏系统时，调试输出中可能看到：
 
-`assembly.macro_warnings`
-`assembly.macro_used_names`
-`assembly.macro_mutation_preview`
-`assembly.macro_staged_mutations`
-`assembly.macro_traces`
+`runtime_trace.macro.warnings`
+`runtime_trace.macro.used_names`
+`runtime_trace.macro.mutation_preview`
+`runtime_trace.macro.staged_mutations`
+`runtime_trace.macro.traces`
+
+服务内的 `assembly` 兼容层仍会保留相关字段，但当前对外更稳定的观测面是 `runtime_trace.macro`。
 
 这些字段用于调试和诊断，不应被当作独立资源的持久化契约。
 

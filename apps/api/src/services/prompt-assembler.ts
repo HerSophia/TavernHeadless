@@ -69,6 +69,8 @@ export interface SessionPromptInfo {
 }
 
 export type PromptMode = "compat_strict" | "compat_plus" | "native";
+
+export type PromptMacroRunKind = "dry_run" | "respond" | "regenerate" | "retry";
 export type CharacterSnapshot = SessionCharacterSnapshot;
 
 export interface PersonaInfo {
@@ -91,6 +93,25 @@ export interface SessionMetadata {
 
 const RESERVED_PROMPT_ALIAS_KEYS = ["char", "user"] as const;
 type ReservedPromptAlias = (typeof RESERVED_PROMPT_ALIAS_KEYS)[number];
+
+const READONLY_PROMPT_MACRO_KEYS = [
+  "systemPrompt",
+  "authorsNote",
+  "defaultAuthorsNote",
+  "charPrompt",
+  "charInstruction",
+  "charDepthPrompt",
+  "mesExamples",
+  "mesExamplesRaw",
+  "model",
+  "summary",
+  "lastMessage",
+  "lastUserMessage",
+  "lastCharMessage",
+  "lastGenerationType",
+] as const;
+
+type ReadonlyPromptMacroKey = (typeof READONLY_PROMPT_MACRO_KEYS)[number];
 
 export interface PromptSnapshotPreview {
   presetId: string | null;
@@ -229,7 +250,40 @@ export type PromptRuntimeDeliveryTrace = CorePromptRuntimeDeliveryTrace;
 
 export type PromptRuntimeVisibilityTrace = CorePromptRuntimeVisibilityTrace;
 
-export type PromptRuntimeTrace = CorePromptRuntimeTrace<WorldbookMatchDetail>;
+export interface PromptRuntimeMacroTrace {
+  warnings: Array<{
+    code: string;
+    message: string;
+    macroName?: string;
+    rawText?: string;
+  }>;
+  usedNames: string[];
+  mutationPreview: Array<{
+    kind: "set" | "delete";
+    scope: "branch" | "global";
+    key: string;
+    value?: string;
+  }>;
+  stagedMutations: Array<{
+    kind: "set" | "delete";
+    scope: "branch" | "global";
+    key: string;
+    value?: string;
+    sourceMacro: string;
+  }>;
+  traces: Array<{
+    macroName: string;
+    rawText: string;
+    resolvedText: string;
+    phase?: string;
+    sourceKind?: string;
+    selectedBranch?: string;
+  }>;
+}
+
+export interface PromptRuntimeTrace extends CorePromptRuntimeTrace<WorldbookMatchDetail> {
+  macro?: PromptRuntimeMacroTrace;
+}
 
 export interface AssembleResult {
   messages: ChatMessage[];
@@ -284,6 +338,7 @@ export interface AssemblePromptOptions {
   intent?: PromptRunIntent;
   assistantPrefillStrategy?: AssistantPrefillExecutionStrategy;
   includeWorldbookMatchTrace?: boolean;
+  runKind?: PromptMacroRunKind;
 }
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
@@ -315,20 +370,21 @@ export async function assemblePrompt(
   const userSnapshot = parseUserSnapshot(session.userSnapshotJson ?? null);
   const persona = userSnapshot ?? metadata.persona;
   const promptMode = resolvePromptMode(session, metadata);
-  const { variables, reservedVariableCollisions } = await resolvePromptVariables({
+  const { ordinaryVariables, variableSnapshot, reservedVariableCollisions } = await resolvePromptVariables({
     db,
     accountId,
     character,
     persona,
     context: options.variableContext,
   });
+  const runKind = resolvePromptRunKind(options);
 
   const fullHistory = buildFullHistory(chatHistory, userMessage);
   const compatHistory = fullHistory.filter((message) => message.role === "user" || message.role === "assistant");
   const recentMacroVisibleMessages = buildVisibleRecentMacroMessages({
     committedHistory: chatHistory,
     currentUserMessage: userMessage,
-    includeCurrentUserMessage: true,
+    includeCurrentUserMessage: shouldIncludeCurrentUserMessageInRecentMacros({ runKind, currentUserMessage: userMessage }),
   });
   const macroValueBuild = buildStMacroValues({
     session,
@@ -337,27 +393,49 @@ export async function assemblePrompt(
     character,
     persona,
     userSnapshot,
-    variables,
+    ordinaryVariables,
+    variableSnapshot,
     memorySummary,
     maxPrompt: normalizePositiveInt(options.maxContextTokensOverride) ?? DEFAULT_MAX_TOKENS,
-    runKind: options.includeDebug ? "dry_run" : "respond",
+    runKind,
   });
-  const macroValues = macroValueBuild.values;
-  const macroEval = evaluatePromptMacroValues({
-    phase: options.includeDebug ? "dry_run" : "assemble",
-    values: macroValues,
-    variableSnapshot: macroValueBuild.variableSnapshot,
-    sampleText: character?.systemPrompt ?? (options.includeDebug ? "{{user}}{{char}}{{description}}" : ""),
-  });
-  let aggregatedMacroWarnings = [...macroValueBuild.warnings, ...macroEval.warnings];
-  let aggregatedMacroUsedNames = [...macroEval.usedMacros];
-  let aggregatedMacroMutationPreview = [...macroEval.mutationPreview];
-  let aggregatedMacroStagedMutations = [...macroEval.stagedMutations];
-  let aggregatedMacroTraces = [...macroEval.traces];
-  const promptVariables = {
-    ...variables,
-    ...macroValues,
+  const macroPhase = runKind === "dry_run" ? "dry_run" : "assemble";
+  const promptVariables = macroValueBuild.values;
+  const aggregatedMacroWarnings = [...macroValueBuild.warnings];
+  const aggregatedMacroUsedNames: string[] = [];
+  const aggregatedMacroMutationPreview: StMacroMutationPreview[] = [];
+  const aggregatedMacroStagedMutations: StMacroStagedMutation[] = [];
+  const aggregatedMacroTraces: StMacroTraceEntry[] = [];
+
+  const collectMacroDiagnostics = (result: StMacroEvalResult): StMacroEvalResult => {
+    aggregatedMacroWarnings.push(...result.warnings);
+    appendUniqueStrings(aggregatedMacroUsedNames, result.usedMacros);
+    aggregatedMacroMutationPreview.push(...result.mutationPreview);
+    aggregatedMacroStagedMutations.push(...result.stagedMutations);
+    aggregatedMacroTraces.push(...result.traces);
+    return result;
   };
+
+  const evaluateRuntimeMacro = (args: {
+    phase: "dry_run" | "assemble" | "commit_consume";
+    values: Record<string, string>;
+    sampleText: string;
+  }): StMacroEvalResult => {
+    return collectMacroDiagnostics(evaluatePromptMacroValues({
+      phase: args.phase,
+      values: args.values,
+      variableSnapshot: macroValueBuild.variableSnapshot,
+      sampleText: args.sampleText,
+    }));
+  };
+
+  const evaluatedCharacterSystemPrompt = character?.systemPrompt?.trim()
+    ? evaluateRuntimeMacro({
+        phase: macroPhase,
+        values: promptVariables,
+        sampleText: character.systemPrompt,
+      }).text
+    : undefined;
 
   const promptSnapshot: PromptAssemblySnapshot = {
     createdAt: Date.now(),
@@ -368,14 +446,9 @@ export async function assemblePrompt(
     character: character
       ? {
           ...character,
-          ...(character.systemPrompt?.trim()
+          ...(evaluatedCharacterSystemPrompt !== undefined
             ? {
-                systemPrompt: evaluatePromptMacroValues({
-                  phase: options.includeDebug ? "dry_run" : "assemble",
-                  values: macroValues,
-                  variableSnapshot: macroValueBuild.variableSnapshot,
-                  sampleText: character.systemPrompt,
-                }).text,
+                systemPrompt: evaluatedCharacterSystemPrompt,
               }
             : {}),
         }
@@ -472,26 +545,11 @@ export async function assemblePrompt(
       variables: promptVariables,
       macroRuntime: ({ phase, values, sampleText }: { phase: "assemble"; values: Record<string, string>; sampleText: string }) =>
       {
-        const result = evaluatePromptMacroValues({
-          phase: options.includeDebug ? "dry_run" : phase,
+        return evaluateRuntimeMacro({
+          phase,
           values,
-          variableSnapshot: macroValueBuild.variableSnapshot,
           sampleText,
         });
-        if (options.includeDebug) {
-          aggregatedMacroWarnings = [...aggregatedMacroWarnings, ...result.warnings];
-          aggregatedMacroUsedNames = Array.from(new Set([...aggregatedMacroUsedNames, ...result.usedMacros]));
-          aggregatedMacroMutationPreview = [...aggregatedMacroMutationPreview, ...result.mutationPreview];
-          aggregatedMacroStagedMutations = [...aggregatedMacroStagedMutations, ...result.stagedMutations];
-          aggregatedMacroTraces = [...aggregatedMacroTraces, ...result.traces];
-          promptSnapshot.macroWarnings = aggregatedMacroWarnings;
-          promptSnapshot.macroUsedNames = aggregatedMacroUsedNames;
-          promptSnapshot.macroMutationPreview = aggregatedMacroMutationPreview;
-          promptSnapshot.macroStagedMutations = aggregatedMacroStagedMutations;
-          promptSnapshot.macroTraces = aggregatedMacroTraces;
-        }
-
-        return result;
       },
     };
     const useNativePipeline = promptSnapshot.promptMode === "native";
@@ -702,19 +760,26 @@ async function resolvePromptVariables(args: {
   character?: CharacterSnapshot;
   persona?: PersonaInfo;
   context?: PromptVariableContextInput;
-}): Promise<{ variables: Record<string, unknown>; reservedVariableCollisions: ReservedPromptAlias[] }> {
+}): Promise<{
+  ordinaryVariables: Record<string, unknown>;
+  variableSnapshot: StMacroVariableSnapshot;
+  reservedVariableCollisions: ReservedPromptAlias[];
+}> {
   const reservedVariableCollisions: ReservedPromptAlias[] = [];
   const variableService = new VariableService(args.db);
-  const resolvedVariables = args.context
-    ? Object.fromEntries((await variableService.resolveSnapshot({
+  const snapshot = args.context
+    ? await variableService.resolveSnapshot({
         accountId: args.accountId,
         sessionId: args.context.sessionId,
         branchId: args.context.branchId,
         floorId: args.context.floorId,
         pageId: args.context.pageId,
-      })).resolved.map((item) => [item.key, item.value]))
+        includeLayers: true,
+      })
+    : undefined;
+  const ordinaryVariables: Record<string, unknown> = snapshot
+    ? Object.fromEntries(snapshot.resolved.map((item) => [item.key, item.value]))
     : {};
-  const variables: Record<string, unknown> = { ...resolvedVariables };
 
   const reservedValues: Record<ReservedPromptAlias, unknown> = {
     char: args.character?.name,
@@ -724,14 +789,48 @@ async function resolvePromptVariables(args: {
   for (const key of RESERVED_PROMPT_ALIAS_KEYS) {
     const reservedValue = reservedValues[key];
     if (reservedValue !== undefined && reservedValue !== null && String(reservedValue).length > 0) {
-      if (Object.prototype.hasOwnProperty.call(variables, key)) {
+      if (Object.prototype.hasOwnProperty.call(ordinaryVariables, key)) {
         reservedVariableCollisions.push(key);
       }
-      variables[key] = reservedValue;
     }
   }
 
-  return { variables, reservedVariableCollisions };
+  const localLayer = snapshot?.layers?.branch ?? snapshot?.layers?.chat;
+  const variableSnapshot: StMacroVariableSnapshot = {
+    local: mapScopedVariableItemsToStringValues(localLayer?.items),
+    global: mapScopedVariableItemsToStringValues(snapshot?.layers?.global?.items),
+    plain: Object.fromEntries(
+      Object.entries(ordinaryVariables).map(([key, value]) => [key, stringifyPromptVariableValue(value)]),
+    ),
+  };
+
+  return { ordinaryVariables, variableSnapshot, reservedVariableCollisions };
+}
+
+function stringifyPromptVariableValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return String(value);
+}
+
+function mapScopedVariableItemsToStringValues(
+  items: Array<{ key: string; value: unknown }> | undefined,
+): Record<string, string> {
+  if (!items || items.length === 0) {
+    return {};
+  }
+
+  return Object.fromEntries(items.map((item) => [item.key, stringifyPromptVariableValue(item.value)]));
+}
+
+function appendUniqueStrings(target: string[], values: string[]): void {
+  for (const value of values) {
+    if (!target.includes(value)) {
+      target.push(value);
+    }
+  }
 }
 
 function buildFallbackMessages(
@@ -819,10 +918,11 @@ function buildStMacroValues(args: {
   character?: CharacterSnapshot;
   persona?: PersonaInfo;
   userSnapshot?: UserSnapshot;
-  variables: Record<string, unknown>;
+  ordinaryVariables: Record<string, unknown>;
+  variableSnapshot: StMacroVariableSnapshot;
   memorySummary?: string;
   maxPrompt: number;
-  runKind: "dry_run" | "respond" | "regenerate" | "retry";
+  runKind: PromptMacroRunKind;
 }): { values: Record<string, string>; variableSnapshot: StMacroVariableSnapshot; warnings: StMacroWarning[] } {
   const warnings: StMacroWarning[] = [];
 
@@ -861,18 +961,10 @@ function buildStMacroValues(args: {
   const recentMessages = resolveRecentMessageMacroValues({
     visibleMessages: args.chatHistory,
   });
+  const ordinaryStringVariables = Object.fromEntries(
+    Object.entries(args.ordinaryVariables).map(([key, value]) => [key, stringifyPromptVariableValue(value)]),
+  );
 
-  const toStringValue = (value: unknown): string => {
-    if (value === null || value === undefined) {
-      return "";
-    }
-
-    return String(value);
-  };
-
-  const narratorModelName = typeof args.variables.model === "string" && args.variables.model.trim().length > 0
-    ? args.variables.model.trim()
-    : undefined;
   const presetPromptByIdentifier = (identifier: string): string | undefined => {
     const prompt = args.preset?.preset.prompts.find((entry) => entry.identifier === identifier);
     return typeof prompt?.content === "string" && prompt.content.trim().length > 0 ? prompt.content.trim() : undefined;
@@ -903,7 +995,7 @@ function buildStMacroValues(args: {
         return typeof sessionModel === "string" && sessionModel.trim().length > 0 ? sessionModel.trim() : undefined;
       })()
     : undefined;
-  const resolvedModelName = narratorModelName ?? fallbackSessionModelName;
+  const resolvedModelName = fallbackSessionModelName;
 
   const resolvedSystemPrompt = resolveFirstNonEmpty(
     metadataText("systemPrompt"),
@@ -935,9 +1027,19 @@ function buildStMacroValues(args: {
     presetContinueNudgePrompt,
   );
 
-  const values: Record<string, string> = {
-    user: args.userSnapshot?.name ?? args.persona?.name ?? toStringValue(args.variables.user),
-    char: args.character?.name ?? toStringValue(args.variables.char),
+  for (const key of READONLY_PROMPT_MACRO_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(ordinaryStringVariables, key)) {
+      warnings.push({
+        code: "macro_readonly_name_conflict",
+        message: `Ordinary variable '${key}' collides with readonly macro '${key}'. The readonly macro value takes precedence.`,
+        macroName: key,
+      });
+    }
+  }
+
+  const readonlyValues: Record<string, string> = {
+    user: args.userSnapshot?.name ?? args.persona?.name ?? ordinaryStringVariables.user ?? "",
+    char: args.character?.name ?? ordinaryStringVariables.char ?? "",
     description: args.character?.description ?? "",
     personality: args.character?.personality ?? "",
     scenario: args.character?.scenario ?? "",
@@ -1002,31 +1104,33 @@ function buildStMacroValues(args: {
     lastGenerationType: args.runKind,
   };
 
-  for (const [key, value] of Object.entries(args.variables)) {
-    values[key] = value === null || value === undefined ? "" : String(value);
-  }
-
   const variableSnapshot: StMacroVariableSnapshot = {
-    local: {},
-    global: {},
-    plain: { ...values },
+    local: { ...args.variableSnapshot.local },
+    global: { ...args.variableSnapshot.global },
+    plain: { ...ordinaryStringVariables, ...readonlyValues },
   };
 
-  for (const [key, value] of Object.entries(args.variables)) {
-    const stringValue = value === null || value === undefined ? "" : String(value);
-    if (key.startsWith("$")) {
-      variableSnapshot.global[key.slice(1)] = stringValue;
-      continue;
-    }
-    if (key.startsWith(".")) {
-      variableSnapshot.local[key.slice(1)] = stringValue;
-      continue;
-    }
-    variableSnapshot.local[key] = stringValue;
-    variableSnapshot.global[key] = stringValue;
-  }
+  const values = { ...ordinaryStringVariables, ...readonlyValues };
 
   return { values, variableSnapshot, warnings };
+}
+
+function resolvePromptRunKind(options: AssemblePromptOptions): PromptMacroRunKind {
+  return options.runKind ?? (options.includeDebug ? "dry_run" : "respond");
+}
+
+function shouldIncludeCurrentUserMessageInRecentMacros(args: {
+  runKind: PromptMacroRunKind;
+  currentUserMessage?: string;
+}): boolean {
+  if (!args.currentUserMessage || args.currentUserMessage.trim().length === 0) {
+    return false;
+  }
+
+  return args.runKind === "dry_run"
+    || args.runKind === "respond"
+    || args.runKind === "regenerate"
+    || args.runKind === "retry";
 }
 
 function buildVisibleRecentMacroMessages(args: {
@@ -1038,7 +1142,8 @@ function buildVisibleRecentMacroMessages(args: {
   // 这里不负责从数据库加载历史，只负责把调用方已经选定的 committed history
   // 与当前入口可能附带的临时 user 输入组装成显式的可见消息集。
   // system message 不进入 recent message 候选。
-  // respond / dry-run 会追加当前 user 输入；regenerate / retry 若无新的临时 user 输入，则只消费 committed history。
+  // respond / dry-run 会追加当前 user 输入；regenerate / retry 会把当前 turn 的 user 输入显式补回，
+  // 但不会伪造尚未提交的 assistant 输出。
   const committedVisibleMessages = args.committedHistory
     .filter((message) => (message.role === "user" || message.role === "assistant") && message.content.trim().length > 0)
     .map((message) => ({
@@ -1671,11 +1776,79 @@ export function buildPromptRuntimeBudgetTrace(args: {
   };
 }
 
+function buildPromptRuntimeMacroTrace(args: {
+  warnings?: StMacroWarning[];
+  usedNames?: string[];
+  mutationPreview?: StMacroMutationPreview[];
+  stagedMutations?: StMacroStagedMutation[];
+  traces?: StMacroTraceEntry[];
+}): PromptRuntimeTrace["macro"] {
+  const warnings = args.warnings ?? [];
+  const usedNames = args.usedNames ?? [];
+  const mutationPreview = args.mutationPreview ?? [];
+  const stagedMutations = args.stagedMutations ?? [];
+  const traces = args.traces ?? [];
+
+  if (
+    warnings.length === 0
+    && usedNames.length === 0
+    && mutationPreview.length === 0
+    && stagedMutations.length === 0
+    && traces.length === 0
+  ) {
+    return undefined;
+  }
+
+  const mappedWarnings = warnings.map((warning) => ({
+    code: warning.code,
+    message: warning.message,
+    ...(warning.macroName ? { macroName: warning.macroName } : {}),
+    ...(warning.rawText ? { rawText: warning.rawText } : {}),
+  }));
+  const mappedMutationPreview = mutationPreview.map((item) => ({
+    kind: item.kind,
+    scope: item.scope,
+    key: item.key,
+    ...(item.value !== undefined ? { value: stringifyPromptVariableValue(item.value) } : {}),
+  }));
+  const mappedStagedMutations = stagedMutations.map((item) => ({
+    kind: item.kind,
+    scope: item.scope,
+    key: item.key,
+    ...(item.value !== undefined ? { value: stringifyPromptVariableValue(item.value) } : {}),
+    sourceMacro: item.sourceMacro,
+  }));
+  const mappedTraces = traces.map((trace) => ({
+    macroName: trace.macroName,
+    rawText: trace.rawText,
+    resolvedText: trace.resolvedText,
+    ...(trace.phase ? { phase: trace.phase } : {}),
+    ...(trace.sourceKind ? { sourceKind: trace.sourceKind } : {}),
+    ...(trace.selectedBranch ? { selectedBranch: trace.selectedBranch } : {}),
+  }));
+
+  return {
+    warnings: mappedWarnings,
+    usedNames,
+    mutationPreview: mappedMutationPreview,
+    stagedMutations: mappedStagedMutations,
+    traces: mappedTraces,
+  };
+}
+
 
 export function buildPromptRuntimeTrace(args: {
   debug: AssembleDebugInfo;
   preprocessedUserMessage?: string;
 }): PromptRuntimeTrace {
+  const macro = buildPromptRuntimeMacroTrace({
+    warnings: args.debug.macroWarnings,
+    usedNames: args.debug.macroUsedNames,
+    mutationPreview: args.debug.macroMutationPreview,
+    stagedMutations: args.debug.macroStagedMutations,
+    traces: args.debug.macroTraces,
+  });
+
   return {
     preset: {
       selectedPromptOrderCharacterId: args.debug.selectedPromptOrderCharacterId,
@@ -1702,6 +1875,7 @@ export function buildPromptRuntimeTrace(args: {
     memory: {
       summaryInjected: args.debug.memorySummaryInjected,
     },
+    ...(macro ? { macro } : {}),
     delivery: {
       assistantPrefillRequested: args.debug.assistantPrefillStrategy !== "none",
       assistantPrefillApplied: args.debug.assistantPrefillApplied,
