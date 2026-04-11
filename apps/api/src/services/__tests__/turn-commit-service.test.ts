@@ -14,6 +14,7 @@ import {
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import {
   accounts,
+  branchLocalVariableSnapshots,
   floorResultSnapshots,
   floors,
   memoryEdges,
@@ -1297,6 +1298,66 @@ describe("TurnCommitService", () => {
     expect(branchVariable && JSON.parse(branchVariable.valueJson)).toEqual({ 金币: "3", 银币: 5 });
   });
 
+  it("persists branch local variable snapshots with branch-over-chat visibility", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const now = 1_735_689_940_000;
+    const committedAt = now + 1_000;
+    const branchScopeId = buildBranchVariableScopeId(sessionId, "main");
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+    await seedInputPage({ database, floorId, pageId, now });
+    await seedVariable({ database, scope: "chat", scopeId: sessionId, key: "chat_only", value: "campfire", now });
+    await seedVariable({ database, scope: "chat", scopeId: sessionId, key: "shared", value: "chat-shared", now: now + 1 });
+    await seedVariable({ database, scope: "branch", scopeId: branchScopeId, key: "branch_only", value: { 金币: 3, 银币: 5 }, now: now + 2 });
+    await seedVariable({ database, scope: "branch", scopeId: branchScopeId, key: "shared", value: "branch-shared", now: now + 3 });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Assistant reply with branch local snapshot.",
+      rawText: "Assistant reply with branch local snapshot.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 11,
+        completionTokens: 7,
+        totalTokens: 18,
+      },
+    };
+
+    await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      branchId: "main",
+      execution,
+      committedAt,
+      variableCommit: {
+        pageId,
+      },
+    });
+
+    const [snapshotRow] = await database.db
+      .select()
+      .from(branchLocalVariableSnapshots)
+      .where(eq(branchLocalVariableSnapshots.floorId, floorId));
+
+    expect(snapshotRow).toMatchObject({
+      floorId,
+      accountId: DEFAULT_ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      createdAt: committedAt,
+    });
+    expect(snapshotRow && JSON.parse(snapshotRow.valuesJson)).toEqual({
+      chat_only: "campfire",
+      shared: "branch-shared",
+      branch_only: { 金币: 3, 银币: 5 },
+    });
+  });
+
   it("rolls back assistant persistence when the floor is not generating", async () => {
     const sessionId = nanoid();
     const floorId = nanoid();
@@ -1372,6 +1433,7 @@ describe("TurnCommitService", () => {
     const storedMessages = await database.db.select().from(messages);
     const legacyToolCallRows = await database.db.select().from(toolCallRecords);
     const promptSnapshotRows = await database.db.select().from(promptSnapshots);
+    const branchLocalSnapshotRows = await database.db.select().from(branchLocalVariableSnapshots);
     const executedToolCallRows = await database.db.select().from(toolExecutionRecords);
     const memoryItemRows = await database.db.select().from(memoryItems);
     const memoryEdgeRows = await database.db.select().from(memoryEdges);
@@ -1386,6 +1448,7 @@ describe("TurnCommitService", () => {
     expect(storedMessages).toEqual([]);
     expect(legacyToolCallRows).toEqual([]);
     expect(promptSnapshotRows).toEqual([]);
+    expect(branchLocalSnapshotRows).toEqual([]);
     expect(executedToolCallRows).toEqual([]);
     expect(promotedFloorVariables).toEqual([]);
     expect(memoryItemRows).toEqual([]);

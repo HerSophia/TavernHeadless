@@ -1355,6 +1355,142 @@ describe("ChatService.dryRun", () => {
     ]));
   });
 
+  it("prefers exact dotted keys, supports quoted-key path reads, and stringifies objects in real dry-run assembly", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Exact Dotted Key Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "flat={{getvar::资产.金币}} nested={{getvar::资产}} quoted={{getvar::装备[\"剑.名\"]}} has={{hasglobalvar::账户.余额}}/{{hasglobalvar::账户.透支}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    await database.db.insert(variables).values([
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "资产.金币",
+        valueJson: JSON.stringify("flat"),
+        updatedAt: now + 1,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "资产",
+        valueJson: JSON.stringify({ 金币: "nested" }),
+        updatedAt: now + 2,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: buildBranchVariableScopeId(sessionId, "main"),
+        key: "装备",
+        valueJson: JSON.stringify({ "剑.名": "霜刃" }),
+        updatedAt: now + 3,
+      },
+      {
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "global",
+        scopeId: "global",
+        key: "账户",
+        valueJson: JSON.stringify({ 余额: 8 }),
+        updatedAt: now + 4,
+      },
+    ]);
+
+    const result = await chatService.dryRun(sessionId, { message: "hello exact dotted key macros" });
+    const allContent = result.messages.map((message) => message.content).join("\n");
+
+    expect(allContent).toContain('flat=flat nested={"金币":"nested"} quoted=霜刃 has=true/false');
+    expect(result.runtimeTrace?.macro?.usedNames).toEqual(expect.arrayContaining(["getvar", "hasglobalvar"]));
+    expect(result.runtimeTrace?.macro?.warnings?.some((warning) => warning.code === "macro_parse_failed")).toBe(false);
+    expect(result.runtimeTrace?.macro?.warnings?.some((warning) => warning.code === "macro_arg_type_invalid")).toBe(false);
+  });
+
+  it("keeps invalid and type-invalid structured path reads raw in real dry-run assembly", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Invalid Path Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "bad={{getvar::资产..金币}} type={{getvar::资产.金币}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    await database.db.insert(variables).values({
+      id: nanoid(),
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      scope: "branch",
+      scopeId: buildBranchVariableScopeId(sessionId, "main"),
+      key: "资产",
+      valueJson: JSON.stringify("很多"),
+      updatedAt: now + 1,
+    });
+
+    const result = await chatService.dryRun(sessionId, { message: "hello invalid path macros" });
+    const allContent = result.messages.map((message) => message.content).join("\n");
+
+    expect(allContent).toContain("bad={{getvar::资产..金币}} type={{getvar::资产.金币}}");
+    expect(result.runtimeTrace?.macro?.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "macro_parse_failed", macroName: "getvar" }),
+      expect.objectContaining({ code: "macro_arg_type_invalid", macroName: "getvar" }),
+    ]));
+  });
+
   it("does not load prompt resources owned by another account", async () => {
     const now = Date.now();
     const otherAccountId = "acc-other";

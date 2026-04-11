@@ -8,6 +8,8 @@ outline: [2, 3]
 
 `client.sessions.respondStream()` 内部已调用此函数。在需要自行处理原始 SSE 响应时才需要直接使用。
 
+如果你只需要对单段文本做宏 preview，请使用 `client.promptRuntime.previewText()`。那个入口不走 SSE。
+
 ## readSseStream
 
 ```ts

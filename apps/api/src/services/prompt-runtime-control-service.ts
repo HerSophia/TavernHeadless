@@ -15,7 +15,6 @@ export const PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES = ["default", "strict_alte
 export const PROMPT_RUNTIME_SUPPORTED_ASSISTANT_REWRITE_STRATEGIES = ["to_system", "to_user_transcript"] as const satisfies readonly PromptStructureAssistantRewriteStrategy[];
 export const PROMPT_RUNTIME_UNSUPPORTED_ROUTES = [
   "/sessions/:id/prompt-runtime/run",
-  "/sessions/:id/prompt-runtime/preview",
   "/sessions/:id/prompt-runtime/macros",
   "/floors/:id/prompt-runtime",
   "/messages/:id/prompt-runtime",
@@ -151,6 +150,16 @@ export interface PromptRuntimeCapabilities {
       supportsVisibility: true;
       includeWorldbookMatches: true;
     };
+    preview: {
+      enabled: boolean;
+      returnsRuntimeTrace: true;
+      supportsVisibility: true;
+      singleTextOnly: true;
+      llmCall: false;
+      createsFloor: false;
+      writesPromptSnapshot: false;
+      commitsSideEffects: false;
+    };
     stream: {
       enabled: boolean;
       promptDebugPayload: "done_only" | "unsupported";
@@ -171,6 +180,7 @@ export interface PromptRuntimeCapabilities {
 export interface PromptRuntimeControlServiceOptions {
   enableLiveEndpoints?: boolean;
   enableDryRunEndpoint?: boolean;
+  enablePreviewEndpoint?: boolean;
   enableStreamEndpoint?: boolean;
 }
 
@@ -207,6 +217,7 @@ export class PromptRuntimeControlService {
   private readonly enableLiveEndpoints: boolean;
   private readonly enableDryRunEndpoint: boolean;
   private readonly enableStreamEndpoint: boolean;
+  private readonly enablePreviewEndpoint: boolean;
 
   constructor(
     private readonly db: AppDb,
@@ -214,6 +225,7 @@ export class PromptRuntimeControlService {
   ) {
     this.enableLiveEndpoints = options.enableLiveEndpoints === true;
     this.enableDryRunEndpoint = options.enableDryRunEndpoint === true;
+    this.enablePreviewEndpoint = options.enablePreviewEndpoint === true;
     this.enableStreamEndpoint = options.enableStreamEndpoint === true;
   }
 
@@ -304,6 +316,16 @@ export class PromptRuntimeControlService {
           returnsRuntimeTrace: true,
           supportsVisibility: true,
           includeWorldbookMatches: true,
+        },
+        preview: {
+          enabled: this.enablePreviewEndpoint,
+          returnsRuntimeTrace: true,
+          supportsVisibility: true,
+          singleTextOnly: true,
+          llmCall: false,
+          createsFloor: false,
+          writesPromptSnapshot: false,
+          commitsSideEffects: false,
         },
         stream: {
           enabled: this.enableStreamEndpoint,

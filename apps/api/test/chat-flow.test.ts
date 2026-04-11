@@ -39,6 +39,7 @@ import { sessions, floors, messagePages, messages, presets, promptSnapshots, reg
 import { eq, and, asc } from "drizzle-orm";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants";
 import { nanoid } from "nanoid";
+import { buildBranchVariableScopeId } from "@tavern/shared";
 
 // ── 辅助函数 ──────────────────────────────────────────
 
@@ -1792,6 +1793,52 @@ describe("ChatService", () => {
     expect(turnInput.generationParams.maxRetries).toBe(1);
   });
 
+  it("should preview macro mutations without creating floors or persisted writes", async () => {
+    const result = await chatService.previewPromptRuntimeText(sessionId, {
+      text: "{{setvar::mood::steady}}{{getvar::mood}}",
+    });
+
+    expect(result.text).toBe("steady");
+    expect(result.runtimeTrace.macro?.mutationPreview).toEqual([
+      { kind: "set", scope: "branch", key: "mood", value: "steady" },
+    ]);
+    expect(result.runtimeTrace.macro?.stagedMutations).toEqual([]);
+
+    const floorRows = await database.db.select().from(floors);
+    const promptSnapshotRows = await database.db.select().from(promptSnapshots);
+    const variableRows = await database.db
+      .select()
+      .from(variables)
+      .where(and(
+        eq(variables.scopeId, buildBranchVariableScopeId(sessionId, "main")),
+        eq(variables.key, "mood"),
+      ));
+
+    expect(floorRows).toHaveLength(0);
+    expect(promptSnapshotRows).toHaveLength(0);
+    expect(variableRows).toHaveLength(0);
+  });
+
+  it("should respect visibility when previewing recent message macros", async () => {
+    await chatService.respond(sessionId, { message: "First visible line" });
+    await chatService.respond(sessionId, { message: "Second hidden line" });
+
+    const fullPreview = await chatService.previewPromptRuntimeText(sessionId, {
+      text: "{{lastUserMessage}}",
+    });
+    const filteredPreview = await chatService.previewPromptRuntimeText(sessionId, {
+      text: "{{lastUserMessage}}",
+      visibility: {
+        mode: "allow_all_except_hidden",
+        hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+      },
+    });
+
+    expect(fullPreview.text).toBe("Second hidden line");
+    expect(filteredPreview.text).toBe("First visible line");
+    expect(filteredPreview.runtimeTrace.visibility?.filteredFloorNos).toEqual([1]);
+  });
+
   // ── regenerate 测试 ─────────────────────────────────
 
   describe("regenerate", () => {
@@ -2079,6 +2126,45 @@ describe("ChatService", () => {
       const branchCall = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[2]![0];
       const userMessages = branchCall.messages.filter((msg: { role: string }) => msg.role === "user");
       expect(userMessages.map((msg: { content: string }) => msg.content)).toEqual(["Root", "Alt timeline"]);
+    });
+
+    it("should materialize source floor local values when respond opens a new branch", async () => {
+      const now = Date.now();
+      await database.db.insert(variables).values({
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "chat",
+        scopeId: sessionId,
+        key: "mood",
+        valueJson: JSON.stringify("before-respond-branch"),
+        updatedAt: now,
+      });
+
+      const root = await chatService.respond(sessionId, { message: "Root" });
+
+      await database.db
+        .update(variables)
+        .set({ valueJson: JSON.stringify("after-respond-branch"), updatedAt: now + 10 })
+        .where(and(
+          eq(variables.accountId, DEFAULT_ADMIN_ACCOUNT_ID),
+          eq(variables.scope, "chat"),
+          eq(variables.scopeId, sessionId),
+          eq(variables.key, "mood"),
+        ));
+
+      const branchResult = await chatService.respond(sessionId, {
+        message: "Alt timeline",
+        branchId: "alt-local",
+        sourceFloorId: root.floorId,
+      });
+
+      const [branchedMood] = await database.db
+        .select({ valueJson: variables.valueJson })
+        .from(variables)
+        .where(and(eq(variables.accountId, DEFAULT_ADMIN_ACCOUNT_ID), eq(variables.scope, "branch"), eq(variables.scopeId, buildBranchVariableScopeId(sessionId, "alt-local")), eq(variables.key, "mood")));
+
+      expect(branchResult.branchId).toBe("alt-local");
+      expect(branchedMood && JSON.parse(branchedMood.valueJson)).toBe("before-respond-branch");
     });
 
     it("should continue from the latest committed branch floor when the branch tip is failed", async () => {
@@ -2423,6 +2509,202 @@ describe("ChatService", () => {
       expect(editedUserMessage?.content).toBe("Edited user line");
     });
 
+    it("should materialize legacy local fallback into a new branch when the source floor has no snapshot", async () => {
+      const now = Date.now();
+      const sourceFloorId = nanoid();
+      const inputPageId = nanoid();
+      const sourceMessageId = nanoid();
+      const mainBranchScopeId = buildBranchVariableScopeId(sessionId, "main");
+
+      await database.db.insert(floors).values({
+        id: sourceFloorId,
+        sessionId,
+        floorNo: 0,
+        branchId: "main",
+        parentFloorId: null,
+        state: "committed",
+        tokenIn: 0,
+        tokenOut: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await database.db.insert(messagePages).values({
+        id: inputPageId,
+        floorId: sourceFloorId,
+        pageNo: 0,
+        pageKind: "input",
+        isActive: true,
+        version: 1,
+        checksum: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await database.db.insert(messages).values({
+        id: sourceMessageId,
+        pageId: inputPageId,
+        seq: 0,
+        role: "user",
+        content: "Legacy editable line",
+        contentFormat: "text",
+        tokenCount: "Legacy editable line".length,
+        isHidden: false,
+        source: "api",
+        createdAt: now,
+      });
+      await database.db.insert(variables).values([
+        {
+          id: nanoid(),
+          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+          scope: "chat",
+          scopeId: sessionId,
+          key: "chat_seed",
+          valueJson: JSON.stringify("legacy-chat"),
+          updatedAt: now,
+        },
+        {
+          id: nanoid(),
+          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+          scope: "branch",
+          scopeId: mainBranchScopeId,
+          key: "branch_seed",
+          valueJson: JSON.stringify({ hp: 95 }),
+          updatedAt: now + 1,
+        },
+      ]);
+
+      await chatService.editAndRegenerate(sourceMessageId, {
+        content: "Legacy edited line",
+        branchId: "legacy-fallback",
+      });
+
+      const targetScopeId = buildBranchVariableScopeId(sessionId, "legacy-fallback");
+      const inheritedRows = await database.db
+        .select({ key: variables.key, valueJson: variables.valueJson })
+        .from(variables)
+        .where(and(
+          eq(variables.accountId, DEFAULT_ADMIN_ACCOUNT_ID),
+          eq(variables.scope, "branch"),
+          eq(variables.scopeId, targetScopeId),
+        ))
+        .orderBy(asc(variables.key));
+
+      expect(inheritedRows.map((row) => [row.key, JSON.parse(row.valueJson)])).toEqual([
+        ["branch_seed", { hp: 95 }],
+        ["chat_seed", "legacy-chat"],
+      ]);
+    });
+
+    it("should branch from the source floor snapshot instead of current chat values", async () => {
+      const now = Date.now();
+      await database.db.insert(variables).values({
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "chat",
+        scopeId: sessionId,
+        key: "mood",
+        valueJson: JSON.stringify("before-branch"),
+        updatedAt: now,
+      });
+
+      const baseTurn = await chatService.respond(sessionId, { message: "Original snapshot line" });
+
+      await database.db
+        .update(variables)
+        .set({ valueJson: JSON.stringify("after-branch"), updatedAt: now + 10 })
+        .where(and(eq(variables.scope, "chat"), eq(variables.scopeId, sessionId), eq(variables.key, "mood")));
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, baseTurn.floorId), eq(messagePages.pageKind, "input")));
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      await chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited from snapshot",
+        branchId: "snapshot-branch",
+      });
+
+      const [branchedMood] = await database.db
+        .select({ valueJson: variables.valueJson })
+        .from(variables)
+        .where(and(
+          eq(variables.accountId, DEFAULT_ADMIN_ACCOUNT_ID),
+          eq(variables.scope, "branch"),
+          eq(variables.scopeId, buildBranchVariableScopeId(sessionId, "snapshot-branch")),
+          eq(variables.key, "mood"),
+        ));
+
+      expect(branchedMood && JSON.parse(branchedMood.valueJson)).toBe("before-branch");
+    });
+
+    it("should inherit structured branch values into a new branch and keep them isolated", async () => {
+      const now = Date.now();
+      const mainBranchScopeId = buildBranchVariableScopeId(sessionId, "main");
+      await database.db.insert(variables).values({
+        id: nanoid(),
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "branch",
+        scopeId: mainBranchScopeId,
+        key: "资产",
+        valueJson: JSON.stringify({ 金币: 3, 银币: 5 }),
+        updatedAt: now,
+      });
+
+      const baseTurn = await chatService.respond(sessionId, { message: "Original structured line" });
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, baseTurn.floorId), eq(messagePages.pageKind, "input")));
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      await chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited structured line",
+        branchId: "structured-branch",
+      });
+
+      const targetScopeId = buildBranchVariableScopeId(sessionId, "structured-branch");
+      let [targetVariable] = await database.db
+        .select({ valueJson: variables.valueJson })
+        .from(variables)
+        .where(and(
+          eq(variables.accountId, DEFAULT_ADMIN_ACCOUNT_ID),
+          eq(variables.scope, "branch"),
+          eq(variables.scopeId, targetScopeId),
+          eq(variables.key, "资产"),
+        ));
+
+      expect(targetVariable && JSON.parse(targetVariable.valueJson)).toEqual({ 金币: 3, 银币: 5 });
+
+      await database.db
+        .update(variables)
+        .set({ valueJson: JSON.stringify({ 金币: 99 }), updatedAt: now + 10 })
+        .where(and(
+          eq(variables.accountId, DEFAULT_ADMIN_ACCOUNT_ID),
+          eq(variables.scope, "branch"),
+          eq(variables.scopeId, mainBranchScopeId),
+          eq(variables.key, "资产"),
+        ));
+
+      [targetVariable] = await database.db
+        .select({ valueJson: variables.valueJson })
+        .from(variables)
+        .where(and(
+          eq(variables.accountId, DEFAULT_ADMIN_ACCOUNT_ID),
+          eq(variables.scope, "branch"),
+          eq(variables.scopeId, targetScopeId),
+          eq(variables.key, "资产"),
+        ));
+
+      expect(targetVariable && JSON.parse(targetVariable.valueJson)).toEqual({ 金币: 3, 银币: 5 });
+    });
+
     it("should apply delivery noAssistant on editAndRegenerate send path", async () => {
       await chatService.respond(sessionId, { message: "First turn" });
       const editableTurn = await chatService.respond(sessionId, { message: "Editable user line" });
@@ -2584,6 +2866,16 @@ describe("ChatService", () => {
         .where(and(eq(floors.sessionId, sessionId), eq(floors.branchId, "edit-broken")));
 
       expect(branchedFloors).toHaveLength(0);
+
+      const branchedVariables = await database.db
+        .select()
+        .from(variables)
+        .where(and(
+          eq(variables.accountId, DEFAULT_ADMIN_ACCOUNT_ID),
+          eq(variables.scope, "branch"),
+          eq(variables.scopeId, buildBranchVariableScopeId(sessionId, "edit-broken")),
+        ));
+      expect(branchedVariables).toHaveLength(0);
     });
 
     it("should use the same generating commit boundary during editAndRegenerate", async () => {

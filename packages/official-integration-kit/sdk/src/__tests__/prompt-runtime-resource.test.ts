@@ -167,6 +167,16 @@ describe("sdk prompt runtime resource", () => {
                 supports_visibility: true,
                 include_worldbook_matches: true,
               },
+              preview: {
+                enabled: true,
+                returns_runtime_trace: true,
+                supports_visibility: true,
+                single_text_only: true,
+                llm_call: false,
+                creates_floor: false,
+                writes_prompt_snapshot: false,
+                commits_side_effects: false,
+              },
               stream: {
                 enabled: true,
                 prompt_debug_payload: "done_only",
@@ -347,6 +357,16 @@ describe("sdk prompt runtime resource", () => {
           supportsVisibility: true,
           includeWorldbookMatches: true,
         },
+        preview: {
+          enabled: true,
+          returnsRuntimeTrace: true,
+          supportsVisibility: true,
+          singleTextOnly: true,
+          llmCall: false,
+          createsFloor: false,
+          writesPromptSnapshot: false,
+          commitsSideEffects: false,
+        },
         stream: {
           enabled: true,
           promptDebugPayload: "done_only",
@@ -459,6 +479,120 @@ describe("sdk prompt runtime resource", () => {
         preserve_system_messages: true,
       },
       delivery: null,
+    });
+  });
+
+  it("maps preview requests and preview responses", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          text: '{"金币":3}/霜刃',
+          runtime_trace: {
+            macro: {
+              warnings: [
+                {
+                  code: "macro_preview_side_effect_suppressed",
+                  message: "Macro setvar side effect was previewed but not committed.",
+                  macro_name: "setvar",
+                },
+              ],
+              used_names: ["setvar", "getvar"],
+              mutation_preview: [
+                {
+                  kind: "set",
+                  scope: "branch",
+                  key: "资产",
+                  value: '{"金币":3}',
+                },
+              ],
+              staged_mutations: [],
+              traces: [
+                {
+                  macro_name: "setvar",
+                  raw_text: "{{setvar::资产.金币::3}}",
+                  resolved_text: "",
+                  phase: "preview",
+                  source_kind: "macro",
+                },
+              ],
+            },
+            visibility: {
+              hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
+              filtered_floor_nos: [1, 2],
+            },
+          },
+        },
+      }),
+    );
+
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const promptRuntime = createPromptRuntimeResource(transport);
+
+    await expect(
+      promptRuntime.previewText({
+        accountId: "acc-1",
+        sessionId: "session 1",
+        branchId: "alt-1",
+        sourceFloorId: "floor-1",
+        text: '{{setvar::资产.金币::3}}{{getvar::资产}}/{{getvar::装备["剑.名"]}}',
+        visibility: {
+          hiddenFloorIds: ["floor-hidden"],
+          hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+          mode: "allow_all_except_hidden",
+          visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+        },
+      }),
+    ).resolves.toEqual({
+      text: '{"金币":3}/霜刃',
+      runtimeTrace: {
+        macro: {
+          warnings: [
+            {
+              code: "macro_preview_side_effect_suppressed",
+              message: "Macro setvar side effect was previewed but not committed.",
+              macroName: "setvar",
+            },
+          ],
+          usedNames: ["setvar", "getvar"],
+          mutationPreview: [
+            {
+              kind: "set",
+              scope: "branch",
+              key: "资产",
+              value: '{"金币":3}',
+            },
+          ],
+          stagedMutations: [],
+          traces: [
+            {
+              macroName: "setvar",
+              rawText: "{{setvar::资产.金币::3}}",
+              resolvedText: "",
+              phase: "preview",
+              sourceKind: "macro",
+            },
+          ],
+        },
+        visibility: {
+          hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+          filteredFloorNos: [1, 2],
+        },
+      },
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/preview");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      text: '{{setvar::资产.金币::3}}{{getvar::资产}}/{{getvar::装备["剑.名"]}}',
+      branch_id: "alt-1",
+      source_floor_id: "floor-1",
+      visibility: {
+        hidden_floor_ids: ["floor-hidden"],
+        hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
+        mode: "allow_all_except_hidden",
+        visible_floor_ranges: [{ start_floor_no: 3, end_floor_no: 4 }],
+      },
     });
   });
 });

@@ -50,6 +50,7 @@ import type { FloorRunService } from "./floor-run-service.js";
 import type { StMacroStagedMutation } from "./st-macros/index.js";
 import { buildBranchVariableScopeId } from "@tavern/shared";
 import { DEFAULT_GLOBAL_SCOPE_ID } from "./variable-host-service.js";
+import { BranchLocalVariableSnapshotService } from "./branch-local-variable-snapshot-service.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -619,6 +620,14 @@ export class TurnCommitService {
             },
           })
           .run();
+
+        new BranchLocalVariableSnapshotService(tx).persistFloorLocalSnapshot({
+          accountId: input.accountId,
+          floorId: input.floorId,
+          sessionId: input.sessionId,
+          branchId: input.branchId ?? "main",
+          createdAt: committedAt,
+        });
 
         if (actualToolExecutionRunIds.length > 0) {
           tx

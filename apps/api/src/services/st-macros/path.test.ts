@@ -81,6 +81,24 @@ describe("st-macros variable path", () => {
     expect(result.text).toBe("true/false");
   });
 
+  it("returns empty string for missing nested reads and false for missing global path checks", () => {
+    const result = evaluateStMacros("{{getvar::资产.铜币}}/{{hasglobalvar::账户.透支}}", {
+      phase: "assemble",
+      values: {},
+      variableSnapshot: {
+        local: {
+          资产: { 金币: 3 },
+        },
+        global: {
+          账户: { 余额: 8 },
+        },
+        plain: {},
+      },
+    });
+
+    expect(result.text).toBe("/false");
+  });
+
   it("keeps invalid path reads raw and warns", () => {
     const result = evaluateStMacros("{{getvar::资产..金币}}", {
       phase: "assemble",
@@ -137,6 +155,20 @@ describe("st-macros variable path", () => {
     ]);
   });
 
+  it("keeps nested path writes visible to later reads in the same evaluation", () => {
+    const result = evaluateStMacros("{{setvar::资产.金币::3}}{{getvar::资产}}/{{getvar::资产.金币}}", {
+      phase: "assemble",
+      values: {},
+      variableSnapshot: {
+        local: {},
+        global: {},
+        plain: {},
+      },
+    });
+
+    expect(result.text).toBe('{"金币":"3"}/3');
+  });
+
   it("prefers exact dotted keys over path fallback during writes", () => {
     const result = evaluateStMacros("{{setvar::资产.金币::3}}{{getvar::资产.金币}}", {
       phase: "assemble",
@@ -176,6 +208,43 @@ describe("st-macros variable path", () => {
     expect(result.stagedMutations).toEqual([
       { kind: "set", scope: "branch", key: "资产", value: { 金币: 3 }, sourceMacro: "deletevar" },
     ]);
+  });
+
+  it("updates delete visibility for later reads and hasvar checks in the same evaluation", () => {
+    const result = evaluateStMacros("{{deletevar::资产.银币}}{{hasvar::资产.银币}}/{{getvar::资产.银币}}/{{getvar::资产.金币}}", {
+      phase: "assemble",
+      values: {},
+      variableSnapshot: {
+        local: {
+          资产: {
+            金币: 3,
+            银币: 5,
+          },
+        },
+        global: {},
+        plain: {},
+      },
+    });
+
+    expect(result.text).toBe("false//3");
+  });
+
+  it("supports hasglobalvar on nested paths", () => {
+    const result = evaluateStMacros("{{hasglobalvar::账户.余额}}/{{hasglobalvar::账户.透支}}", {
+      phase: "assemble",
+      values: {},
+      variableSnapshot: {
+        local: {},
+        global: {
+          账户: {
+            余额: 8,
+          },
+        },
+        plain: {},
+      },
+    });
+
+    expect(result.text).toBe("true/false");
   });
 
   it("keeps type-invalid nested writes raw and warns", () => {

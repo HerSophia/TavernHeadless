@@ -539,4 +539,33 @@ describe("PromptRuntimeControlService", () => {
     });
     expect(state.warnings).toEqual([INVALID_PROMPT_RUNTIME_POLICY_WARNING]);
   });
+
+  it("exposes preview capabilities without restoring the preview route to unsupported", () => {
+    const service = new PromptRuntimeControlService(database.db, {
+      enableLiveEndpoints: true,
+      enableDryRunEndpoint: true,
+      enablePreviewEndpoint: true,
+      enableStreamEndpoint: true,
+    });
+
+    expect(service.getCapabilities()).toEqual(expect.objectContaining({
+      observability: expect.objectContaining({
+        preview: {
+          enabled: true,
+          returnsRuntimeTrace: true,
+          supportsVisibility: true,
+          singleTextOnly: true,
+          llmCall: false,
+          createsFloor: false,
+          writesPromptSnapshot: false,
+          commitsSideEffects: false,
+        },
+      }),
+      macro: expect.objectContaining({
+        stCompatibilitySnapshotsPersistable: false,
+      }),
+    }));
+    expect(service.getCapabilities().unsupported).not.toContain("/sessions/:id/prompt-runtime/preview");
+    expect(service.getCapabilities().unsupported).toContain("/sessions/:id/prompt-runtime/macros");
+  });
 });

@@ -6,7 +6,9 @@ outline: [2, 3]
 
 Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前的 Prompt Assets 绑定、session 级默认策略，以及系统公开的运行边界。
 
-它是 control plane，不负责执行一轮聊天，也不会替代现有的 Chat 主链路。
+它仍然是 control plane，不负责执行一轮聊天，也不会替代现有的 Chat 主链路。
+
+当前它还提供一个**单段文本宏预览**入口：`POST /sessions/:id/prompt-runtime/preview`。这个入口继续复用现有的宏执行主线，只做单段文本的 preview，不会创建第二条执行链。
 
 > 这组接口属于高级 API 资源，主要面向调试、平台集成、自动化脚本和策略治理。如果只需要普通聊天能力，不需要优先接入。
 
@@ -17,12 +19,14 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 
 ## 设计边界
 
-当前 Prompt Runtime v2 先公开的是低风险 control plane。文档上应当明确以下边界：
+当前 Prompt Runtime 对外公开的是低风险 control plane，以及单段文本 preview 入口。文档上应当明确以下边界：
 
 - 不创建第二条执行链，真实运行仍走现有 `respond` / `regenerate` / `retry` / `edit-and-regenerate` 主链路。
 - `character_card` 仍然属于 Prompt Assets。
 - 当前不提供 `GET /sessions/:id/prompt-runtime/macros`。
-- 当前不提供 `GET /sessions/:id/prompt-runtime/run` 或 `GET /sessions/:id/prompt-runtime/preview`。
+- 当前不提供 `GET /sessions/:id/prompt-runtime/run`。
+- preview 只提供 `POST /sessions/:id/prompt-runtime/preview`，并且一次只处理一段 `text`。
+- preview 不走 LLM、不创建 floor、不写 `prompt_snapshot`、不提交副作用。
 - session 默认策略当前只允许持久化 `structure` 与 `delivery`。
 - 不持久化内建只读宏值，不持久化 ST `local/global` 兼容快照，也不持久化 `runKind`。
 - 宏诊断仍属于统一观测面，不单独拆成第二套 control plane 诊断接口。
@@ -122,6 +126,14 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `observability.dry_run.returns_runtime_trace` | boolean | dry-run 是否返回 `runtime_trace` |
 | `observability.dry_run.supports_visibility` | boolean | dry-run 是否支持 `visibility` |
 | `observability.dry_run.include_worldbook_matches` | boolean | dry-run 是否支持 `worldbook_matches` |
+| `observability.preview.enabled` | boolean | preview 能力是否可用 |
+| `observability.preview.returns_runtime_trace` | boolean | preview 是否返回 `runtime_trace` |
+| `observability.preview.supports_visibility` | boolean | preview 是否支持 `visibility` |
+| `observability.preview.single_text_only` | boolean | preview 是否限制为单段文本 |
+| `observability.preview.llm_call` | boolean | preview 是否会调用 LLM |
+| `observability.preview.creates_floor` | boolean | preview 是否会创建 floor |
+| `observability.preview.writes_prompt_snapshot` | boolean | preview 是否会写 `prompt_snapshot` |
+| `observability.preview.commits_side_effects` | boolean | preview 是否会提交副作用 |
 | `observability.stream.enabled` | boolean | SSE 路径是否存在 |
 | `observability.stream.prompt_debug_payload` | string | 当前为 `done_only` 或 `unsupported` |
 | `observability.stream.new_sse_event_family` | boolean | 是否新增独立 SSE 事件族 |
@@ -461,6 +473,151 @@ curl http://localhost:3000/sessions/session-1/prompt-runtime/assets \
   -H 'Authorization: Bearer <token>'
 ```
 
+## 预览单段文本的宏求值
+
+```http
+POST /sessions/:id/prompt-runtime/preview
+```
+
+对一段文本执行宏 preview，并返回预览后的文本与 `runtime_trace`。
+
+这个入口继续复用主线宏求值链，但边界固定为：
+
+- 只处理单段 `text`
+- 不走 LLM
+- 不创建 floor
+- 不写 `prompt_snapshot`
+- 不提交副作用
+- 宏诊断继续统一走 `runtime_trace.macro`
+
+### 路径参数
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 会话 ID |
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `text` | string | **是** | 需要 preview 的单段文本 |
+| `branch_id` | string | 否 | 指定 preview 使用的 branch |
+| `source_floor_id` | string | 否 | 当 `branch_id` 指向一个尚未物化的新分支时，可用它作为继承 source |
+| `visibility` | object | 否 | 最近消息可见范围过滤，与 dry-run 的 `visibility` 语义一致 |
+
+### 请求示例
+
+```json
+{
+  "text": "{{setvar::资产.金币::3}}{{getvar::资产}}",
+  "branch_id": "main",
+  "visibility": {
+    "mode": "allow_all_except_hidden",
+    "hidden_floor_ranges": [
+      {
+        "start_floor_no": 1,
+        "end_floor_no": 2
+      }
+    ]
+  }
+}
+```
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "text": "{\"金币\":3}",
+    "runtime_trace": {
+      "macro": {
+        "warnings": [
+          {
+            "code": "macro_preview_side_effect_suppressed",
+            "message": "Macro setvar side effect was previewed but not committed.",
+            "macro_name": "setvar"
+          }
+        ],
+        "used_names": ["setvar", "getvar"],
+        "mutation_preview": [
+          {
+            "kind": "set",
+            "scope": "branch",
+            "key": "资产",
+            "value": "{\"金币\":3}"
+          }
+        ],
+        "staged_mutations": [],
+        "traces": [
+          {
+            "macro_name": "setvar",
+            "raw_text": "{{setvar::资产.金币::3}}",
+            "resolved_text": "",
+            "phase": "preview",
+            "source_kind": "macro"
+          },
+          {
+            "macro_name": "getvar",
+            "raw_text": "{{getvar::资产}}",
+            "resolved_text": "{\"金币\":3}",
+            "phase": "preview",
+            "source_kind": "macro"
+          }
+        ]
+      },
+      "visibility": {
+        "hidden_floor_ranges": [
+          {
+            "start_floor_no": 1,
+            "end_floor_no": 2
+          }
+        ],
+        "filtered_floor_nos": [1, 2]
+      }
+    }
+  }
+}
+```
+
+### 兼容说明
+
+- 路径读取与写入继续遵守 **exact-key-first**：先按完整 flat key 读取，找不到时才回退到路径语义。
+- 支持 quoted key，例如：
+
+```text
+{{getvar::装备["剑.名"]}}
+```
+- 路径写入会持久化 root key 对应的 JSON 值，因此对象读取结果和 `mutation_preview.value` 会稳定输出为 JSON 字符串，而不是 `[object Object]`。
+- 当 `branch_id` 指向一个尚未物化的新分支，且同时提供 `source_floor_id` 时，preview 会先继承 source floor 当时可见的 local 兼容值，再在 preview overlay 中求值。
+- `runtime_trace.macro.staged_mutations` 在 preview 中固定为空；如果需要查看完整 prompt 组装结果，请使用 `POST /sessions/:id/respond/dry-run`。
+
+### 常见错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体不合法 |
+| `404` | `not_found` | 会话、source floor 或目标上下文不存在，或不属于当前账号 |
+| `409` | `source_floor_branch_mismatch` / `source_floor_future_branch` | `source_floor_id` 与目标分支上下文不一致 |
+| `500` | `internal_error` | 服务端内部错误 |
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/sessions/session-1/prompt-runtime/preview \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "{{setvar::资产.金币::3}}{{getvar::资产}}",
+    "branch_id": "main",
+    "visibility": {
+      "mode": "allow_all_except_hidden",
+      "hidden_floor_ranges": [
+        { "start_floor_no": 1, "end_floor_no": 2 }
+      ]
+    }
+  }'
+```
+
 ## 获取 Prompt Runtime 全局能力边界
 
 ```http
@@ -508,6 +665,16 @@ GET /prompt-runtime/capabilities
         "supports_visibility": true,
         "include_worldbook_matches": true
       },
+      "preview": {
+        "enabled": true,
+        "returns_runtime_trace": true,
+        "supports_visibility": true,
+        "single_text_only": true,
+        "llm_call": false,
+        "creates_floor": false,
+        "writes_prompt_snapshot": false,
+        "commits_side_effects": false
+      },
       "stream": {
         "enabled": true,
         "prompt_debug_payload": "done_only",
@@ -524,7 +691,6 @@ GET /prompt-runtime/capabilities
     },
     "unsupported": [
       "/sessions/:id/prompt-runtime/run",
-      "/sessions/:id/prompt-runtime/preview",
       "/sessions/:id/prompt-runtime/macros",
       "/floors/:id/prompt-runtime",
       "/messages/:id/prompt-runtime"
