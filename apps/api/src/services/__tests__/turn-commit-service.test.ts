@@ -1250,6 +1250,53 @@ describe("TurnCommitService", () => {
     expect(branchVariable).toBeUndefined();
   });
 
+  it("persists structured root objects from macro staged mutations", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const now = 1_735_689_930_000;
+    const committedAt = now + 1_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+    await seedInputPage({ database, floorId, pageId, now });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Assistant reply with structured macro commit.",
+      rawText: "Assistant reply with structured macro commit.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 10,
+        completionTokens: 6,
+        totalTokens: 16,
+      },
+    };
+
+    await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      branchId: "main",
+      execution,
+      committedAt,
+      variableCommit: {
+        pageId,
+      },
+      macroStagedMutations: [
+        { kind: "set", scope: "branch", key: "资产", value: { 金币: "3", 银币: 5 }, sourceMacro: "setvar" },
+      ],
+    });
+
+    const [branchVariable] = await database.db.select().from(variables).where(
+      and(eq(variables.scope, "branch"), eq(variables.scopeId, buildBranchVariableScopeId(sessionId, "main")), eq(variables.key, "资产")),
+    );
+
+    expect(branchVariable).toBeTruthy();
+    expect(branchVariable && JSON.parse(branchVariable.valueJson)).toEqual({ 金币: "3", 银币: 5 });
+  });
+
   it("rolls back assistant persistence when the floor is not generating", async () => {
     const sessionId = nanoid();
     const floorId = nanoid();
@@ -1297,6 +1344,9 @@ describe("TurnCommitService", () => {
         variableCommit: {
           pageId,
         },
+        macroStagedMutations: [
+          { kind: "set", scope: "branch", key: "资产", value: { 金币: "3" }, sourceMacro: "setvar" },
+        ],
         memoryCommit: {
           summaries: ["should roll back"],
           consolidationOutput: {
@@ -1340,5 +1390,11 @@ describe("TurnCommitService", () => {
     expect(promotedFloorVariables).toEqual([]);
     expect(memoryItemRows).toEqual([]);
     expect(memoryEdgeRows).toEqual([]);
+
+    const [structuredVariable] = await database.db.select().from(variables).where(
+      and(eq(variables.scope, "branch"), eq(variables.scopeId, buildBranchVariableScopeId(sessionId, "main")), eq(variables.key, "资产")),
+    );
+
+    expect(structuredVariable).toBeUndefined();
   });
 });

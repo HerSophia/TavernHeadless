@@ -57,13 +57,13 @@ describe("evaluateStMacros limits", () => {
     expect(result.stagedMutations).toHaveLength(1);
   });
 
-  it("keeps unsupported comparison syntax raw and emits warning", () => {
-    const result = evaluateStMacros("{{if {{flag}} >= 1}}YES{{else}}NO{{/if}}", {
+  it("keeps unsupported arithmetic syntax raw and emits warning", () => {
+    const result = evaluateStMacros("{{if {{flag}} + 1}}YES{{else}}NO{{/if}}", {
       phase: "assemble",
       values: { flag: "1" },
     });
 
-    expect(result.text).toBe("{{if {{flag}} >= 1}}YES{{else}}NO{{/if}}");
+    expect(result.text).toBe("{{if {{flag}} + 1}}YES{{else}}NO{{/if}}");
     expect(result.warnings).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "macro_condition_unsupported", macroName: "if" }),
     ]));
@@ -98,7 +98,7 @@ describe("evaluateStMacros limits", () => {
     ]));
   });
 
-  it("uses updated subset warning text for unsupported macro argument shape", () => {
+  it("uses updated warning text for unsupported macro argument shape", () => {
     const result = evaluateStMacros("{{random::a::b}}", {
       phase: "assemble",
       values: {},
@@ -107,7 +107,7 @@ describe("evaluateStMacros limits", () => {
     expect(result.warnings).toEqual(expect.arrayContaining([
       expect.objectContaining({
         code: "macro_arg_arity_invalid",
-        message: expect.stringContaining("outside the current Beta3 macro subset"),
+        message: expect.stringContaining("outside the current supported macro subset"),
       }),
     ]));
   });
