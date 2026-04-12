@@ -387,7 +387,7 @@ jobs:
       matrix:
         slice: [1, 2]
     steps:
-      - run: pnpm test:ci -- --shard=${{ matrix.slice }}/6
+      - run: pnpm exec vitest run --reporter=verbose --shard=${{ matrix.slice }}/6
 
   test-slices-2:
     needs: changes
@@ -397,7 +397,7 @@ jobs:
       matrix:
         slice: [3, 4]
     steps:
-      - run: pnpm test:ci -- --shard=${{ matrix.slice }}/6
+      - run: pnpm exec vitest run --reporter=verbose --shard=${{ matrix.slice }}/6
 
   test-slices-3:
     needs: changes
@@ -407,7 +407,7 @@ jobs:
       matrix:
         slice: [5, 6]
     steps:
-      - run: pnpm test:ci -- --shard=${{ matrix.slice }}/6
+      - run: pnpm exec vitest run --reporter=verbose --shard=${{ matrix.slice }}/6
 
   test-shard-1:
     name: Test (shard 1/3)
@@ -511,13 +511,15 @@ pnpm test:coverage
 
 本地如果要复现 GitHub 内部 test slice，可运行：
 
+由于 `pnpm test:ci -- --shard=...` 不会稳定透传 `--shard` 参数，这里直接调用 Vitest：
+
 ```bash
-pnpm test:ci -- --shard=1/6
-pnpm test:ci -- --shard=2/6
-pnpm test:ci -- --shard=3/6
-pnpm test:ci -- --shard=4/6
-pnpm test:ci -- --shard=5/6
-pnpm test:ci -- --shard=6/6
+pnpm exec vitest run --reporter=verbose --shard=1/6
+pnpm exec vitest run --reporter=verbose --shard=2/6
+pnpm exec vitest run --reporter=verbose --shard=3/6
+pnpm exec vitest run --reporter=verbose --shard=4/6
+pnpm exec vitest run --reporter=verbose --shard=5/6
+pnpm exec vitest run --reporter=verbose --shard=6/6
 ```
 
 ### 只改文档时的最小验证

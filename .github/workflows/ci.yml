@@ -161,7 +161,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: pnpm test:ci -- --shard=${{ matrix.slice }}/6
+        run: pnpm exec vitest run --reporter=verbose --shard=${{ matrix.slice }}/6
 
   test-slices-2:
     name: Test slice ${{ matrix.slice }}/6 (internal)
@@ -192,7 +192,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: pnpm test:ci -- --shard=${{ matrix.slice }}/6
+        run: pnpm exec vitest run --reporter=verbose --shard=${{ matrix.slice }}/6
 
   test-slices-3:
     name: Test slice ${{ matrix.slice }}/6 (internal)
@@ -223,7 +223,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: pnpm test:ci -- --shard=${{ matrix.slice }}/6
+        run: pnpm exec vitest run --reporter=verbose --shard=${{ matrix.slice }}/6
 
   test-shard-1:
     name: Test (shard 1/3)

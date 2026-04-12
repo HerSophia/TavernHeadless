@@ -107,12 +107,13 @@ pnpm test -- floor-state-machine
 pnpm test:coverage
 
 # 跑 GitHub 内部 test slice
-pnpm test:ci -- --shard=1/6
-pnpm test:ci -- --shard=2/6
-pnpm test:ci -- --shard=3/6
-pnpm test:ci -- --shard=4/6
-pnpm test:ci -- --shard=5/6
-pnpm test:ci -- --shard=6/6
+# 注意：这里直接调用 Vitest，避免 pnpm 脚本转发时丢失 --shard 参数
+pnpm exec vitest run --reporter=verbose --shard=1/6
+pnpm exec vitest run --reporter=verbose --shard=2/6
+pnpm exec vitest run --reporter=verbose --shard=3/6
+pnpm exec vitest run --reporter=verbose --shard=4/6
+pnpm exec vitest run --reporter=verbose --shard=5/6
+pnpm exec vitest run --reporter=verbose --shard=6/6
 
 # 只改文档时的最小验证
 pnpm docs:lint
