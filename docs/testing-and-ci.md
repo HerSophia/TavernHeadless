@@ -268,7 +268,7 @@ const mockMemory = createMockLLM({
 判断改动范围。
 如果判定为 docs-only PR，则：
 
-- `Lint` 只检查本次变更命中的文档文件
+- `Lint` 只检查本次变更命中的文档文件，命中问题时只告警，不阻断 CI
 - `Build` 跑 `pnpm docs:build`
 - `Typecheck`、`API Smoke` 与三个 `Test shard`
   走快速成功路径
@@ -280,7 +280,7 @@ coverage 只在 push 到 `main` 或手动触发时单独运行。
 
 1. `changes`：判断是否 docs-only PR。
 2. 每个实际执行的 job 独立安装依赖，并使用 pnpm 缓存。
-3. `lint`：docs-only PR 只检查命中的文档文件，其余改动跑完整 lint。
+3. `lint`：docs-only PR 只检查命中的文档文件，并以告警形式展示 markdownlint 结果；其余改动跑完整 lint。
 4. `typecheck`：docs-only PR 快速成功，其余改动跑完整类型检查。
 5. `build`：docs-only PR 跑 docs build，其余改动跑完整构建。
 6. `test`：Vitest 单元与集成测试，分成 3 个 shard 并行执行，
@@ -298,7 +298,7 @@ Changes ───┬─→ Lint
            ├─→ Test 3/3
            └─→ API Smoke
 
-docs-only PR：只实际执行 docs lint 与 docs build
+docs-only PR：docs lint 只告警，不阻断 CI；docs build 仍然阻断
 Coverage：仅在 push 到 main / workflow_dispatch 时运行
 ```
 
@@ -478,6 +478,8 @@ pnpm docs:build
 
 GitHub 上仍会显示 `Typecheck`、`API Smoke` 与三个 `Test shard`，
 但 docs-only PR 下这些检查会走轻量路径并快速成功。
+
+如果 docs lint 命中问题，CI 会保留告警信息，但不会因此失败。
 
 ### 跑 CI 覆盖率任务
 

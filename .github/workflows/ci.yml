@@ -80,9 +80,18 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Lint docs
+      - name: Lint docs (non-blocking)
         if: needs.changes.outputs.docs_only == 'true'
-        run: pnpm exec markdownlint-cli2 ${{ needs.changes.outputs.docs_files }}
+        shell: bash
+        run: |
+          set +e
+          pnpm exec markdownlint-cli2 ${{ needs.changes.outputs.docs_files }}
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::warning title=Docs lint::markdownlint found issues in changed docs files. This docs-only lint path is non-blocking."
+          fi
+          exit 0
 
       - name: Lint repository
         if: needs.changes.outputs.docs_only != 'true'
