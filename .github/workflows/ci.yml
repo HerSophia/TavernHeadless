@@ -95,7 +95,7 @@ jobs:
     steps:
       - name: Docs-only shortcut
         if: needs.changes.outputs.docs_only == 'true'
-        run: echo "Docs-only PR: typecheck skipped by design."
+        run: 'echo "Docs-only PR: typecheck skipped by design."'
 
       - name: Checkout
         if: needs.changes.outputs.docs_only != 'true'
@@ -134,7 +134,7 @@ jobs:
     steps:
       - name: Docs-only shortcut
         if: needs.changes.outputs.docs_only == 'true'
-        run: echo "Docs-only PR: test shard ${{ matrix.shard }}/3 skipped by design."
+        run: 'echo "Docs-only PR: test shard ${{ matrix.shard }}/3 skipped by design."'
 
       - name: Checkout
         if: needs.changes.outputs.docs_only != 'true'
@@ -242,7 +242,7 @@ jobs:
     steps:
       - name: Docs-only shortcut
         if: needs.changes.outputs.docs_only == 'true'
-        run: echo "Docs-only PR: API smoke skipped by design."
+        run: 'echo "Docs-only PR: API smoke skipped by design."'
 
       - name: Checkout
         if: needs.changes.outputs.docs_only != 'true'
