@@ -61,13 +61,13 @@ jobs:
         run: pnpm typecheck
 
   test:
-    name: Test (shard ${{ matrix.shard }}/2)
+    name: Test (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
 
     steps:
       - name: Checkout
@@ -87,7 +87,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: pnpm test:ci -- --shard=${{ matrix.shard }}/2
+        run: pnpm test:ci -- --shard=${{ matrix.shard }}/3
 
   build:
     name: Build
@@ -149,11 +149,6 @@ jobs:
     name: API Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs:
-      - lint
-      - typecheck
-      - test
-      - build
     env:
       PORT: "3000"
       AUTH_MODE: "off"

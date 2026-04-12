@@ -263,7 +263,8 @@ const mockMemory = createMockLLM({
 ## 7. CI 流水线
 
 使用 GitHub Actions。为了缩短 PR 等待时间，
-常规测试默认不带 coverage，并拆成 2 个 shard 并行执行。
+常规测试默认不带 coverage，并拆成 3 个 shard 并行执行。
+`api-smoke` 与其他 job 并行运行。
 coverage 只在 push 到 `main` 或手动触发时单独运行。
 
 ### 流水线步骤
@@ -272,19 +273,22 @@ coverage 只在 push 到 `main` 或手动触发时单独运行。
 2. `lint`：静态检查。
 3. `typecheck`：类型检查。
 4. `build`：构建检查。
-5. `test`：Vitest 单元与集成测试，分成 2 个 shard 并行执行，不带 coverage。
-6. `api-smoke`：启动 `@tavern/api` 并运行 `pnpm --filter @tavern/api smoke`。
+5. `test`：Vitest 单元与集成测试，分成 3 个 shard 并行执行，
+   不带 coverage。
+6. `api-smoke`：与其他 job 并行运行，启动 `@tavern/api`
+   并执行 `pnpm --filter @tavern/api smoke`。
 7. `coverage`：仅在 push 到 `main` 或手动触发时运行 `pnpm test:ci:coverage`。
 
 ```text
 Lint ───────┐
-Typecheck ──┼─→ API Smoke
+Typecheck ──┤
 Build ──────┤
-Test 1/2 ───┤
-Test 2/2 ───┘
+Test 1/3 ───┤
+Test 2/3 ───┤
+Test 3/3 ───┘
 
-push 到 main / workflow_dispatch 额外执行：
-Coverage
+API Smoke：与上述 job 并行执行
+Coverage：仅在 push 到 main / workflow_dispatch 时运行
 ```
 
 ### 触发条件
@@ -346,10 +350,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     steps:
       # checkout + setup pnpm + setup node + install
-      - run: pnpm test:ci -- --shard=${{ matrix.shard }}/2
+      - run: pnpm test:ci -- --shard=${{ matrix.shard }}/3
 
   coverage:
     if: >
@@ -362,7 +366,6 @@ jobs:
       - run: pnpm test:ci:coverage
 
   api-smoke:
-    needs: [lint, typecheck, build, test]
     runs-on: ubuntu-latest
     steps:
       # checkout + setup pnpm + setup node + install
@@ -433,8 +436,9 @@ pnpm test:coverage
 ### 跑 CI 分片测试
 
 ```bash
-pnpm test:ci -- --shard=1/2
-pnpm test:ci -- --shard=2/2
+pnpm test:ci -- --shard=1/3
+pnpm test:ci -- --shard=2/3
+pnpm test:ci -- --shard=3/3
 ```
 
 ### 跑 CI 覆盖率任务
