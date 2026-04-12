@@ -63,6 +63,13 @@ const LEGACY_ALIAS_MAP: Record<string, string> = {
   "<CHARIFNOTGROUP>": "{{char}}",
 };
 
+const VARIABLE_MACRO_ALIAS_MAP: Record<string, string> = {
+  varexists: "hasvar",
+  globalvarexists: "hasglobalvar",
+  flushvar: "deletevar",
+  flushglobalvar: "deleteglobalvar",
+};
+
 function normalizeLegacyAliases(input: string): string {
   let result = input;
   for (const [legacy, replacement] of Object.entries(LEGACY_ALIAS_MAP)) {
@@ -93,6 +100,73 @@ function splitArgs(rawInner: string): { name: string; args: string[] } {
     args: parts.slice(1),
   };
 }
+
+function normalizeMacroName(name: string): string {
+  return VARIABLE_MACRO_ALIAS_MAP[name] ?? name;
+}
+
+function looksLikeScopedMutationShorthand(rawInner: string): boolean {
+  const normalized = rawInner.trim();
+  if (!normalized.startsWith(".") && !normalized.startsWith("$")) {
+    return false;
+  }
+
+  return normalized.endsWith("++")
+    || normalized.endsWith("--")
+    || normalized.includes("=");
+}
+
+function parseScopedShorthandWrite(rawInner: string): { name: string; args: string[] } | null {
+  const normalized = rawInner.trim();
+
+  const localCounterMatch = /^\.([\s\S]*?)\s*(\+\+|--)$/u.exec(normalized);
+  if (localCounterMatch) {
+    const rawKey = localCounterMatch[1]?.trim() ?? "";
+    if (rawKey.length === 0) {
+      return null;
+    }
+
+    return {
+      name: localCounterMatch[2] === "++" ? "incvar" : "decvar",
+      args: [rawKey],
+    };
+  }
+
+  const assignmentMatch = /^([.$])([\s\S]*?)\s*=\s*([\s\S]*)$/u.exec(normalized);
+  if (!assignmentMatch) {
+    return null;
+  }
+
+  const scopePrefix = assignmentMatch[1];
+  const rawKey = assignmentMatch[2]?.trim() ?? "";
+  const rawValue = assignmentMatch[3] ?? "";
+  if (rawKey.length === 0) {
+    return null;
+  }
+
+  if (rawKey.endsWith("|") || rawKey.endsWith("?") || rawValue.startsWith("=")) {
+    return null;
+  }
+
+  return {
+    name: scopePrefix === "$" ? "setglobalvar" : "setvar",
+    args: [rawKey, rawValue.trim()],
+  };
+}
+
+function normalizeMacroInvocation(rawInner: string): { name: string; args: string[] } {
+  const shorthandWrite = parseScopedShorthandWrite(rawInner);
+  if (shorthandWrite) {
+    return shorthandWrite;
+  }
+
+  const parsed = splitArgs(rawInner);
+  return {
+    name: normalizeMacroName(parsed.name.trim()),
+    args: parsed.args,
+  };
+}
+
 
 function tokenizeMacros(input: string): StMacroToken[] {
   const tokens: StMacroToken[] = [];
@@ -257,7 +331,9 @@ function parseMacroNodes(source: string): StMacroNode[] {
       } satisfies StMacroTextNode;
     }
 
-    const name = token.name?.trim() ?? "";
+    const rawInner = token.raw.slice(2, -2);
+    const normalizedMacro = normalizeMacroInvocation(rawInner);
+    const name = normalizedMacro.name.trim();
     if (!name) {
       return {
         kind: "raw",
@@ -269,7 +345,7 @@ function parseMacroNodes(source: string): StMacroNode[] {
       kind: "macro",
       rawText: token.raw,
       name,
-      args: (token.args ?? []).map((arg) => ({
+      args: normalizedMacro.args.map((arg) => ({
         rawText: arg,
         nodes: parseMacroNodes(arg),
       })),
@@ -403,11 +479,19 @@ function resolveVariableReadMacro(args: {
     return resolveScopedRead("global", args.normalizedArgs[0] ?? "", "exists");
   }
 
-  if (args.normalizedArgs.length === 0 && args.macroName.startsWith(".")) {
+  if (
+    args.normalizedArgs.length === 0
+    && args.macroName.startsWith(".")
+    && !looksLikeScopedMutationShorthand(args.macroName)
+  ) {
     return resolveScopedRead("local", args.macroName.slice(1), "value");
   }
 
-  if (args.normalizedArgs.length === 0 && args.macroName.startsWith("$")) {
+  if (
+    args.normalizedArgs.length === 0
+    && args.macroName.startsWith("$")
+    && !looksLikeScopedMutationShorthand(args.macroName)
+  ) {
     return resolveScopedRead("global", args.macroName.slice(1), "value");
   }
 

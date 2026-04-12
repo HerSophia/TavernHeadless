@@ -1129,6 +1129,13 @@ describe("assemblePrompt", () => {
               "charDepth={{charDepthPrompt}}",
               "examples={{mesExamples}}",
               "examplesRaw={{mesExamplesRaw}}",
+              "userName={{userName}}",
+              "assistantName={{assistantName}}",
+              "runKind={{runKind}}",
+              "promptMode={{promptMode}}",
+              "isodate={{isodate}}",
+              "isotime={{isotime}}",
+              "isotimeAgain={{isotime}}",
               "model={{model}}",
               "lastGen={{lastGenerationType}}",
             ].join(" | "),
@@ -1198,6 +1205,12 @@ describe("assemblePrompt", () => {
     expect(systemMessage?.content).toContain("charDepth=Depth instruction");
     expect(systemMessage?.content).toContain("examples=Example dialogue block");
     expect(systemMessage?.content).toContain("examplesRaw=Example dialogue block");
+    expect(systemMessage?.content).toContain("userName=Traveler");
+    expect(systemMessage?.content).toContain("assistantName=Knight");
+    expect(systemMessage?.content).toContain("runKind=dry_run");
+    expect(systemMessage?.content).toContain("promptMode=compat_strict");
+    expect(systemMessage?.content).toMatch(/isodate=\d{4}-\d{2}-\d{2}/);
+    expect(systemMessage?.content).toMatch(/isotime=(\d{2}:\d{2}) \| isotimeAgain=\1/);
     expect(systemMessage?.content).toContain("model=session-model-name");
     expect(systemMessage?.content).toContain("lastGen=dry_run");
     expect(assembled.debug?.macroWarnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "macro_value_missing", macroName: "defaultAuthorsNote" })]));

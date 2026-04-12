@@ -459,7 +459,7 @@ describe("prompt runtime routes", () => {
             mutationPreview: [{ kind: "set", scope: "branch", key: "资产", value: '{"金币":3}' }],
             stagedMutations: [],
             traces: [
-              { macroName: "setvar", rawText: "{{setvar::资产.金币::3}}", resolvedText: "", phase: "preview", sourceKind: "macro" },
+              { macroName: "setvar", rawText: "{{.资产.金币=3}}", resolvedText: "", phase: "preview", sourceKind: "macro" },
               { macroName: "getvar", rawText: "{{getvar::资产.金币}}", resolvedText: "3", phase: "preview", sourceKind: "macro" },
             ],
           },
@@ -477,7 +477,7 @@ describe("prompt runtime routes", () => {
       method: "POST",
       url: "/sessions/s1/prompt-runtime/preview",
       payload: {
-        text: "{{setvar::资产.金币::3}}{{getvar::资产.金币}}",
+        text: "{{.资产.金币=3}}{{getvar::资产.金币}}",
         branch_id: "main",
         source_floor_id: "floor-source",
         visibility: {
@@ -498,7 +498,7 @@ describe("prompt runtime routes", () => {
             mutation_preview: [{ kind: "set", scope: "branch", key: "资产", value: '{"金币":3}' }],
             staged_mutations: [],
             traces: [
-              { macro_name: "setvar", raw_text: "{{setvar::资产.金币::3}}", resolved_text: "", phase: "preview", source_kind: "macro" },
+              { macro_name: "setvar", raw_text: "{{.资产.金币=3}}", resolved_text: "", phase: "preview", source_kind: "macro" },
               { macro_name: "getvar", raw_text: "{{getvar::资产.金币}}", resolved_text: "3", phase: "preview", source_kind: "macro" },
             ],
           },
@@ -510,7 +510,7 @@ describe("prompt runtime routes", () => {
       },
     });
     expect(previewService.previewPromptRuntimeText).toHaveBeenCalledWith("s1", {
-      text: "{{setvar::资产.金币::3}}{{getvar::资产.金币}}",
+      text: "{{.资产.金币=3}}{{getvar::资产.金币}}",
       branchId: "main",
       sourceFloorId: "floor-source",
       visibility: {

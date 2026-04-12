@@ -113,12 +113,12 @@ export async function smokeChat(ctx: SmokeContext): Promise<void> {
       }, [200, 201]);
     });
 
-    await runStep("POST /sessions/:id/prompt-runtime/preview (structured path + preview suppression)", async () => {
+    await runStep("POST /sessions/:id/prompt-runtime/preview (structured path + shorthand + alias + preview suppression)", async () => {
       const response = await api.request<{ data?: Record<string, unknown> }>(
         "POST",
         `/sessions/${sessionId}/prompt-runtime/preview`,
         {
-          text: "{{setvar::资产.银币::5}}{{getvar::资产}}/{{getvar::资产.金币}}/{{getvar::资产.银币}}/{{$账户.余额}}/{{if {{getvar::资产.金币}} >= 3}}RICH{{else}}POOR{{/if}}",
+          text: "{{.资产.银币=5}}{{getvar::资产}}/{{getvar::资产.金币}}/{{getvar::资产.银币}}/{{$账户.余额}}/{{varexists::资产.金币}}/{{if {{getvar::资产.金币}} >= 3}}RICH{{else}}POOR{{/if}}",
           branch_id: "main",
         },
         [200]
@@ -127,20 +127,52 @@ export async function smokeChat(ctx: SmokeContext): Promise<void> {
       const runtimeTrace = data?.runtime_trace as Record<string, unknown> | undefined;
       const macro = runtimeTrace?.macro as Record<string, unknown> | undefined;
       const warnings = Array.isArray(macro?.warnings) ? macro.warnings as Array<Record<string, unknown>> : [];
+      const traces = Array.isArray(macro?.traces) ? macro.traces as Array<Record<string, unknown>> : [];
       const mutationPreview = Array.isArray(macro?.mutation_preview) ? macro.mutation_preview as Array<Record<string, unknown>> : [];
       const stagedMutations = Array.isArray(macro?.staged_mutations) ? macro.staged_mutations as Array<Record<string, unknown>> : [];
       const previewText = typeof data?.text === "string" ? data.text : "";
       const previewParts = previewText.split("/");
 
-      assert(previewParts.length === 5, `Prompt Runtime preview structured path smoke returned unexpected text: ${previewText}`);
+      assert(previewParts.length === 6, `Prompt Runtime preview structured path smoke returned unexpected text: ${previewText}`);
       assert(JSON.stringify(JSON.parse(previewParts[0] ?? "{}")) === JSON.stringify({ 金币: 3, 银币: "5" }), "Prompt Runtime preview must stringify outward object reads as JSON");
       assert(previewParts[1] === "3", "Prompt Runtime preview must read structured local path values");
       assert(previewParts[2] === "5", "Prompt Runtime preview must expose same-evaluation write visibility");
       assert(previewParts[3] === "8", "Prompt Runtime preview must read structured global path values");
-      assert(previewParts[4] === "RICH", "Prompt Runtime preview must evaluate richer if with structured path reads");
+      assert(previewParts[4] === "true", "Prompt Runtime preview must normalize variable macro aliases to canonical behavior");
+      assert(previewParts[5] === "RICH", "Prompt Runtime preview must evaluate richer if with structured path reads");
       assert(warnings.some((warning) => warning.code === "macro_preview_side_effect_suppressed"), "Prompt Runtime preview must surface preview side-effect suppression warnings");
       assert(stagedMutations.length === 0, "Prompt Runtime preview must keep staged_mutations empty");
       assert(mutationPreview.some((entry) => entry.kind === "set" && entry.scope === "branch" && entry.key === "资产"), "Prompt Runtime preview must surface root mutation_preview for nested writes");
+      assert(traces.some((trace) => trace.macro_name === "setvar" && trace.raw_text === "{{.资产.银币=5}}"), "Prompt Runtime preview must keep shorthand raw_text while tracing canonical macro_name");
+      assert(traces.some((trace) => trace.macro_name === "hasvar" && trace.raw_text === "{{varexists::资产.金币}}"), "Prompt Runtime preview must keep alias raw_text while tracing canonical macro_name");
+    });
+
+    await runStep("POST /sessions/:id/prompt-runtime/preview (readonly macro expansion + global shorthand write)", async () => {
+      const response = await api.request<{ data?: Record<string, unknown> }>(
+        "POST",
+        `/sessions/${sessionId}/prompt-runtime/preview`,
+        {
+          text: "{{userName}}/{{assistantName}}/{{runKind}}/{{promptMode}}/{{isodate}}/{{isotime}}/{{isotime}}/{{$账户.透支=1}}{{getglobalvar::账户.透支}}",
+          branch_id: "main",
+        },
+        [200]
+      );
+      const data = response.body?.data;
+      const macro = (data?.runtime_trace as Record<string, unknown> | undefined)?.macro as Record<string, unknown> | undefined;
+      const mutationPreview = Array.isArray(macro?.mutation_preview) ? macro.mutation_preview as Array<Record<string, unknown>> : [];
+      const previewText = typeof data?.text === "string" ? data.text : "";
+      const previewParts = previewText.split("/");
+
+      assert(previewParts.length === 8, `Prompt Runtime preview readonly macro smoke returned unexpected text: ${previewText}`);
+      assert(previewParts[0] === "", "Prompt Runtime preview should leave userName empty when no user snapshot is bound");
+      assert(previewParts[1] === "Knight", `Prompt Runtime preview must expose assistantName from the session character snapshot, got: ${previewParts[1]}`);
+      assert(previewParts[2] === "dry_run", "Prompt Runtime preview must expose runKind as dry_run");
+      assert(previewParts[3] === "compat_strict", "Prompt Runtime preview must expose promptMode from the session context");
+      assert(/^\d{4}-\d{2}-\d{2}$/.test(previewParts[4] ?? ""), `Prompt Runtime preview must expose isodate in YYYY-MM-DD format, got: ${previewParts[4]}`);
+      assert(/^\d{2}:\d{2}$/.test(previewParts[5] ?? ""), `Prompt Runtime preview must expose isotime in HH:mm format, got: ${previewParts[5]}`);
+      assert(previewParts[5] === previewParts[6], "Prompt Runtime preview must freeze isotime within one evaluation");
+      assert(previewParts[7] === "1", "Prompt Runtime preview must expose global shorthand writes to later reads in the same evaluation");
+      assert(mutationPreview.some((entry) => entry.kind === "set" && entry.scope === "global" && entry.key === "账户"), "Prompt Runtime preview must surface root mutation_preview for global shorthand path writes");
     });
 
     await runStep("PUT /variables (prompt runtime exact dotted key setup)", () =>
