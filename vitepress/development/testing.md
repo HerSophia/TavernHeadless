@@ -60,22 +60,25 @@ outline: [2, 3]
 
 ## CI 流水线
 
-使用 GitHub Actions，每次 push 和 PR 都会触发。
+使用 GitHub Actions。为了缩短 PR 等待时间，
+常规测试默认不带 coverage，并拆成 3 个 shard 并行执行。
 
 ```text
-Install → Lint → Test → Typecheck → Build → API Smoke
+Lint / Typecheck / Build / Test (Shard 1/3, 2/3, 3/3)
+API Smoke 并行执行
+push 到 main / workflow_dispatch → 额外运行 Coverage
 ```
 
 ### 超时限制
 
 | 阶段 | 最大时间 |
 | ---- | ---- |
-| Install | 3 分钟 |
-| Lint | 3 分钟 |
-| Test | 10 分钟 |
-| Build | 5 分钟 |
+| Lint | 5 分钟 |
+| Typecheck | 10 分钟 |
+| Build | 10 分钟 |
+| Test（每个 shard） | 10 分钟 |
+| Coverage（仅 main/manual） | 15 分钟 |
 | API Smoke | 10 分钟 |
-| 整条流水线 | 25 分钟 |
 
 ## 本地开发怎么跑测试
 
@@ -91,6 +94,14 @@ pnpm test -- floor-state-machine
 
 # 看覆盖率
 pnpm test:coverage
+
+# 跑 CI 分片测试
+pnpm test:ci -- --shard=1/3
+pnpm test:ci -- --shard=2/3
+pnpm test:ci -- --shard=3/3
+
+# 跑 CI 覆盖率任务
+pnpm test:ci:coverage
 
 # 跑 CI 同款检查
 pnpm lint && pnpm typecheck && pnpm test:ci && pnpm build
