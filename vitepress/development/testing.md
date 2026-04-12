@@ -78,6 +78,7 @@ GitHub 上仍保留 3 个 `Test shard` 名称，
 Changes → Lint / Typecheck / Build / Test slices 1/6..6/6 → Test (shard 1/3, 2/3, 3/3)
 API Smoke 并行执行
 push 到 main / workflow_dispatch → 额外运行 Coverage
+Coverage 只输出精简日志与最小覆盖率摘要，不生成 HTML 报告
 ```
 
 ### 超时限制
@@ -120,8 +121,11 @@ pnpm docs:lint
 pnpm docs:build
 
 # 跑 CI 覆盖率任务
+# 只输出文本摘要和 coverage-summary.json，不生成 coverage/index.html
 pnpm test:ci:coverage
 
 # 跑 CI 同款检查
 pnpm lint && pnpm typecheck && pnpm test:ci && pnpm build
 ```
+
+如果需要本地查看 HTML 覆盖率报告，请继续使用 `pnpm test:coverage`。
