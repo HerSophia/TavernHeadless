@@ -101,13 +101,13 @@
 
 ### 硬性门槛（CI 不过就不能合并）
 
-| 包 | 行覆盖率 | 分支覆盖率 | 函数覆盖率 |
-| ---- | ---- | ---- | ---- |
-| `packages/core` | ≥ 80% | ≥ 70% | ≥ 85% |
-| `packages/adapters-sillytavern` | ≥ 75% | ≥ 65% | ≥ 80% |
-| `packages/shared` | ≥ 90% | ≥ 80% | ≥ 90% |
-| `apps/api` | ≥ 60% | ≥ 50% | ≥ 65% |
-| `apps/web` | 暂不要求 | 暂不要求 | 暂不要求 |
+| 包                              | 行覆盖率 | 分支覆盖率 | 函数覆盖率 |
+| ------------------------------- | -------- | ---------- | ---------- |
+| `packages/core`                 | ≥ 80%    | ≥ 70%      | ≥ 85%      |
+| `packages/adapters-sillytavern` | ≥ 75%    | ≥ 65%      | ≥ 80%      |
+| `packages/shared`               | ≥ 90%    | ≥ 80%      | ≥ 90%      |
+| `apps/api`                      | ≥ 60%    | ≥ 50%      | ≥ 65%      |
+| `apps/web`                      | 暂不要求 | 暂不要求   | 暂不要求   |
 
 ### 增量覆盖率（每个 PR）
 
@@ -124,15 +124,15 @@
 
 ## 4. 测试工具链
 
-| 用途 | 工具 | 为什么选它 |
-| ---- | ---- | ---- |
-| 测试框架 | Vitest | 和 Vite 生态一致，速度快，原生支持 TypeScript 和 ESM |
-| 断言库 | Vitest 内置（兼容 Chai） | 不需要额外装 |
-| Mock | Vitest 内置 `vi.fn()` / `vi.mock()` | 够用，不需要 sinon |
-| 覆盖率 | `@vitest/coverage-v8` | V8 原生覆盖率，准确且快 |
-| HTTP 测试 | Fastify `inject()` | 不需要起真实服务器，直接注入请求 |
-| 数据库测试 | better-sqlite3 `:memory:` | 每个测试用独立的内存数据库 |
-| 快照测试 | Vitest 内置 `toMatchSnapshot()` | 用于回归测试的期望输出对比 |
+| 用途       | 工具                                | 为什么选它                                           |
+| ---------- | ----------------------------------- | ---------------------------------------------------- |
+| 测试框架   | Vitest                              | 和 Vite 生态一致，速度快，原生支持 TypeScript 和 ESM |
+| 断言库     | Vitest 内置（兼容 Chai）            | 不需要额外装                                         |
+| Mock       | Vitest 内置 `vi.fn()` / `vi.mock()` | 够用，不需要 sinon                                   |
+| 覆盖率     | `@vitest/coverage-v8`               | V8 原生覆盖率，准确且快                              |
+| HTTP 测试  | Fastify `inject()`                  | 不需要起真实服务器，直接注入请求                     |
+| 数据库测试 | better-sqlite3 `:memory:`           | 每个测试用独立的内存数据库                           |
+| 快照测试   | Vitest 内置 `toMatchSnapshot()`     | 用于回归测试的期望输出对比                           |
 
 ---
 
@@ -204,15 +204,15 @@ describe('VariableResolver', () => {
 每个测试用例遵循 AAA 模式：
 
 ```typescript
-it('楼层状态从 draft 转到 generating 时记录时间戳', () => {
+it("楼层状态从 draft 转到 generating 时记录时间戳", () => {
   // Arrange - 准备
-  const floor = createFloor({ state: 'draft' });
+  const floor = createFloor({ state: "draft" });
 
   // Act - 执行
-  floor.transition('generating');
+  floor.transition("generating");
 
   // Assert - 验证
-  expect(floor.state).toBe('generating');
+  expect(floor.state).toBe("generating");
   expect(floor.updatedAt).toBeGreaterThan(floor.createdAt);
 });
 ```
@@ -231,7 +231,7 @@ it('楼层状态从 draft 转到 generating 时记录时间戳', () => {
 
 ```typescript
 // tests/helpers/mock-llm.ts
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 export function createMockLLM(options?: {
   response?: string;
@@ -247,13 +247,13 @@ export function createMockLLM(options?: {
 
 ```typescript
 const mockNarrator = createMockLLM({
-  response: '从前有座山，山上有座庙。<summary>叙述者开始讲故事</summary>',
+  response: "从前有座山，山上有座庙。<summary>叙述者开始讲故事</summary>",
 });
 
 const mockMemory = createMockLLM({
   response: JSON.stringify({
-    turn_summary: '叙述者开始讲故事',
-    facts_add: [{ key: '故事状态', value: '已开始', scope: 'chat' }],
+    turn_summary: "叙述者开始讲故事",
+    facts_add: [{ key: "故事状态", value: "已开始", scope: "chat" }],
   }),
 });
 ```
@@ -263,7 +263,11 @@ const mockMemory = createMockLLM({
 ## 7. CI 流水线
 
 使用 GitHub Actions。为了缩短 PR 等待时间，
-常规测试默认不带 coverage，并拆成 3 个 shard 并行执行。
+常规测试默认不带 coverage。
+为了兼容 `main` 上现有的 required checks，
+GitHub 上仍保留 3 个 `Test shard` 名称，
+但内部实际拆成 6 个 test slice 并行执行，
+再聚合回这 3 个 required checks。
 在 `pull_request -> main` 场景下，CI 会先执行 `changes`
 判断改动范围。
 如果判定为 docs-only PR，则：
@@ -283,19 +287,24 @@ coverage 只在 push 到 `main` 或手动触发时单独运行。
 3. `lint`：docs-only PR 只检查命中的文档文件，并以告警形式展示 markdownlint 结果；其余改动跑完整 lint。
 4. `typecheck`：docs-only PR 快速成功，其余改动跑完整类型检查。
 5. `build`：docs-only PR 跑 docs build，其余改动跑完整构建。
-6. `test`：Vitest 单元与集成测试，分成 3 个 shard 并行执行，
+6. `test-slices-*`：Vitest 单元与集成测试，内部拆成 6 个 slice 并行执行，
    不带 coverage。
-7. `api-smoke`：docs-only PR 快速成功；其余改动与其他 job 并行运行，启动 `@tavern/api`
+7. `test-shard-*`：把 6 个内部 slice 聚合为 3 个 required checks，
+   保持 `main` ruleset 兼容。
+8. `api-smoke`：docs-only PR 快速成功；其余改动与其他 job 并行运行，启动 `@tavern/api`
    并执行 `pnpm --filter @tavern/api smoke`。
-8. `coverage`：仅在 push 到 `main` 或手动触发时运行 `pnpm test:ci:coverage`。
+9. `coverage`：仅在 push 到 `main` 或手动触发时运行 `pnpm test:ci:coverage`。
 
 ```text
 Changes ───┬─→ Lint
            ├─→ Typecheck
            ├─→ Build
-           ├─→ Test 1/3
-           ├─→ Test 2/3
-           ├─→ Test 3/3
+           ├─→ Test slice 1/6 ─┐
+           ├─→ Test slice 2/6 ─┴─→ Test (shard 1/3)
+           ├─→ Test slice 3/6 ─┐
+           ├─→ Test slice 4/6 ─┴─→ Test (shard 2/3)
+           ├─→ Test slice 5/6 ─┐
+           ├─→ Test slice 6/6 ─┴─→ Test (shard 3/3)
            └─→ API Smoke
 
 docs-only PR：docs lint 只告警，不阻断 CI；docs build 仍然阻断
@@ -304,23 +313,23 @@ Coverage：仅在 push 到 main / workflow_dispatch 时运行
 
 ### 触发条件
 
-| 事件 | 跑什么 |
-| ---- | ---- |
-| push 到非 `main` 分支 | 常规检查 + API smoke |
-| PR 到 `main` | 常规检查 + API smoke；docs-only PR 走轻量路径 |
-| push 到 `main` | 常规检查 + API smoke + coverage |
-| 手动触发 | 常规检查 + API smoke + coverage |
+| 事件                  | 跑什么                                        |
+| --------------------- | --------------------------------------------- |
+| push 到非 `main` 分支 | 常规检查 + API smoke                          |
+| PR 到 `main`          | 常规检查 + API smoke；docs-only PR 走轻量路径 |
+| push 到 `main`        | 常规检查 + API smoke + coverage               |
+| 手动触发              | 常规检查 + API smoke + coverage               |
 
 ### 超时限制
 
-| 阶段 | 最大时间 |
-| ---- | ---- |
-| Lint | 5 分钟 |
-| Typecheck | 10 分钟 |
-| Build | 10 分钟 |
-| Test（每个 shard） | 10 分钟 |
-| Coverage（仅 main/manual） | 15 分钟 |
-| API Smoke | 10 分钟 |
+| 阶段                       | 最大时间 |
+| -------------------------- | -------- |
+| Lint                       | 5 分钟   |
+| Typecheck                  | 10 分钟  |
+| Build                      | 10 分钟  |
+| Test（每个 shard）         | 10 分钟  |
+| Coverage（仅 main/manual） | 15 分钟  |
+| API Smoke                  | 10 分钟  |
 
 如果某个 job 持续接近超时，应该先查明瓶颈，不应直接放宽限制。
 
@@ -370,22 +379,59 @@ jobs:
       - run: pnpm docs:build  # docs-only PR
       - run: pnpm build       # 其他 PR 与 push
 
-  test:
+  test-slices-1:
     needs: changes
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        slice: [1, 2]
     steps:
-      - run: echo "Docs-only PR: skipped"
-      - run: pnpm test:ci -- --shard=${{ matrix.shard }}/3
+      - run: pnpm exec vitest run --reporter=verbose --shard=${{ matrix.slice }}/6
+
+  test-slices-2:
+    needs: changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        slice: [3, 4]
+    steps:
+      - run: pnpm exec vitest run --reporter=verbose --shard=${{ matrix.slice }}/6
+
+  test-slices-3:
+    needs: changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        slice: [5, 6]
+    steps:
+      - run: pnpm exec vitest run --reporter=verbose --shard=${{ matrix.slice }}/6
+
+  test-shard-1:
+    name: Test (shard 1/3)
+    needs: [changes, test-slices-1]
+    steps:
+      - run: echo "aggregate internal slice results here"
+
+  test-shard-2:
+    name: Test (shard 2/3)
+    needs: [changes, test-slices-2]
+    steps:
+      - run: echo "aggregate internal slice results here"
+
+  test-shard-3:
+    name: Test (shard 3/3)
+    needs: [changes, test-slices-3]
+    steps:
+      - run: echo "aggregate internal slice results here"
 
   coverage:
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    needs: [lint, typecheck, build, test]
+    needs: [lint, typecheck, build, test-shard-1, test-shard-2, test-shard-3]
     runs-on: ubuntu-latest
     steps:
       # checkout + setup pnpm + setup node + install
@@ -463,10 +509,17 @@ pnpm test:coverage
 
 ### 跑 CI 分片测试
 
+本地如果要复现 GitHub 内部 test slice，可运行：
+
+由于 `pnpm test:ci -- --shard=...` 不会稳定透传 `--shard` 参数，这里直接调用 Vitest：
+
 ```bash
-pnpm test:ci -- --shard=1/3
-pnpm test:ci -- --shard=2/3
-pnpm test:ci -- --shard=3/3
+pnpm exec vitest run --reporter=verbose --shard=1/6
+pnpm exec vitest run --reporter=verbose --shard=2/6
+pnpm exec vitest run --reporter=verbose --shard=3/6
+pnpm exec vitest run --reporter=verbose --shard=4/6
+pnpm exec vitest run --reporter=verbose --shard=5/6
+pnpm exec vitest run --reporter=verbose --shard=6/6
 ```
 
 ### 只改文档时的最小验证
@@ -527,7 +580,6 @@ pnpm smoke:api
 ### Q：我想加新的测试工具 / 插件？
 
 先在 Issue 里讨论，说明为什么现有工具不够用。不要私自引入测试框架级别的新依赖。
-
 
 ### Q：我只改文档，为什么 PR 里仍然会显示 Typecheck、Test 和 API Smoke？
 
