@@ -268,7 +268,7 @@ const mockMemory = createMockLLM({
 判断改动范围。
 如果判定为 docs-only PR，则：
 
-- `Lint` 跑 `pnpm docs:lint`
+- `Lint` 只检查本次变更命中的文档文件
 - `Build` 跑 `pnpm docs:build`
 - `Typecheck`、`API Smoke` 与三个 `Test shard`
   走快速成功路径
@@ -280,7 +280,7 @@ coverage 只在 push 到 `main` 或手动触发时单独运行。
 
 1. `changes`：判断是否 docs-only PR。
 2. 每个实际执行的 job 独立安装依赖，并使用 pnpm 缓存。
-3. `lint`：docs-only PR 跑 docs lint，其余改动跑完整 lint。
+3. `lint`：docs-only PR 只检查命中的文档文件，其余改动跑完整 lint。
 4. `typecheck`：docs-only PR 快速成功，其余改动跑完整类型检查。
 5. `build`：docs-only PR 跑 docs build，其余改动跑完整构建。
 6. `test`：Vitest 单元与集成测试，分成 3 个 shard 并行执行，
@@ -353,7 +353,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # checkout + setup pnpm + setup node + install
-      - run: pnpm docs:lint   # docs-only PR
+      - run: pnpm exec markdownlint-cli2 <changed-doc-files>   # docs-only PR
       - run: pnpm lint        # 其他 PR 与 push
 
   typecheck:
