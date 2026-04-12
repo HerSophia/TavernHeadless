@@ -143,9 +143,11 @@ TavernHeadless 在 `compat_strict` 和 `compat_plus` 提示词路径中提供 Si
 ```text
 支持基础宏语法：{{name}}、{{name arg}}、{{name::arg1::arg2}}
 支持常见 legacy 角括号别名：`<USER>`、`<BOT>`、`<CHAR>` 等
-支持常见只读宏：{{user}}、{{char}}、{{description}}、{{scenario}}、{{systemPrompt}} 等
+支持常见只读宏：{{user}}、{{char}}、{{userName}}、{{assistantName}}、{{runKind}}、{{promptMode}}、{{isodate}}、{{isotime}}、{{description}}、{{scenario}}、{{systemPrompt}} 等
 支持 ST 变量读取与写入宏：`getvar`、`getglobalvar`、`setvar`、`setglobalvar`、`addvar`、`incvar`、`deletevar`、`hasvar`、`hasglobalvar`
-支持结构化变量路径访问：`{{getvar::资产.金币}}`、`{{.资产.金币}}`、`{{setvar::资产.金币::3}}`
+支持变量宏 alias：`varexists`、`globalvarexists`、`flushvar`、`flushglobalvar`
+支持结构化变量路径访问：`{{getvar::资产.金币}}`、`{{.资产.金币}}`、`{{setvar::资产.金币::3}}`、`{{.资产.金币=3}}`
+支持 shorthand 写入子集：`{{.name=value}}`、`{{$name=value}}`、`{{.name++}}`、`{{.name--}}`
 支持 `if` 条件块子集：truthy / falsy、`==`、`!=`、`>`、`<`、`>=`、`<=`、`and`、`or`、`not`、`contains`、`startsWith`、括号分组
 ```
 
@@ -157,6 +159,7 @@ TavernHeadless 在 `compat_strict` 和 `compat_plus` 提示词路径中提供 Si
 - 遇到不支持语法、结构解析失败或数值比较类型不合法时，运行时会保留原始 block，并返回对应 warning，而不是把它当作普通 truthy 文本
 - 带副作用的写宏不会在导入、预览或 dry-run 阶段直接写库，只会进入 preview 或 staged mutation 缓冲
 - 对外宏诊断统一走 `runtime_trace.macro`；`POST /sessions/:id/prompt-runtime/preview` 继续复用主线宏求值链，只做单段文本 preview，不会创建 floor，也不会调用 LLM
+- 当前仍不支持完整 shorthand 运算符族，例如 `{{$name++}}`、`{{$name--}}`、`||=`、`??=`、`==`
 
 如果你需要查看接口返回中的宏调试字段，请参考：
 

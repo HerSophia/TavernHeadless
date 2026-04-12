@@ -25,7 +25,7 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
       "/sessions",
       {
         title: `${runId}-session`,
-        character_snapshot: { name: "Smoke Knight", primaryGreeting: "Hello there." },
+        character_snapshot: { name: "Knight", primaryGreeting: "Hello there." },
       },
       [201]
     )

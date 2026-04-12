@@ -97,6 +97,8 @@ const RESERVED_PROMPT_ALIAS_KEYS = ["char", "user"] as const;
 type ReservedPromptAlias = (typeof RESERVED_PROMPT_ALIAS_KEYS)[number];
 
 const READONLY_PROMPT_MACRO_KEYS = [
+  "userName",
+  "assistantName",
   "systemPrompt",
   "authorsNote",
   "defaultAuthorsNote",
@@ -106,6 +108,10 @@ const READONLY_PROMPT_MACRO_KEYS = [
   "mesExamples",
   "mesExamplesRaw",
   "model",
+  "runKind",
+  "promptMode",
+  "isodate",
+  "isotime",
   "summary",
   "lastMessage",
   "lastUserMessage",
@@ -909,6 +915,18 @@ function createPromptDigest(messages: ChatMessage[]): string {
   return hash.digest("hex");
 }
 
+function padDateTimeSegment(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function formatMacroIsoDate(date: Date): string {
+  return `${date.getFullYear()}-${padDateTimeSegment(date.getMonth() + 1)}-${padDateTimeSegment(date.getDate())}`;
+}
+
+function formatMacroIsoTime(date: Date): string {
+  return `${padDateTimeSegment(date.getHours())}:${padDateTimeSegment(date.getMinutes())}`;
+}
+
 function buildStMacroValues(args: {
   session: SessionPromptInfo;
   preset: LoadedPromptPreset | null;
@@ -962,6 +980,11 @@ function buildStMacroValues(args: {
   const ordinaryStringVariables = Object.fromEntries(
     Object.entries(args.ordinaryVariables).map(([key, value]) => [key, stringifyPromptVariableValue(value)]),
   );
+  const resolvedPromptMode = resolvePromptMode(args.session, metadata);
+  const macroNow = new Date();
+  const resolvedUserName = args.userSnapshot?.name ?? args.persona?.name ?? ordinaryStringVariables.user ?? "";
+  const resolvedAssistantName = args.character?.name ?? ordinaryStringVariables.char ?? "";
+  const resolvedRunKind = args.runKind;
 
   const presetPromptByIdentifier = (identifier: string): string | undefined => {
     const prompt = args.preset?.preset.prompts.find((entry) => entry.identifier === identifier);
@@ -1036,8 +1059,10 @@ function buildStMacroValues(args: {
   }
 
   const readonlyValues: Record<string, string> = {
-    user: args.userSnapshot?.name ?? args.persona?.name ?? ordinaryStringVariables.user ?? "",
-    char: args.character?.name ?? ordinaryStringVariables.char ?? "",
+    user: resolvedUserName,
+    userName: resolvedUserName,
+    char: resolvedAssistantName,
+    assistantName: resolvedAssistantName,
     description: args.character?.description ?? "",
     personality: args.character?.personality ?? "",
     scenario: args.character?.scenario ?? "",
@@ -1094,12 +1119,16 @@ function buildStMacroValues(args: {
       value: resolvedModelName,
       warningMessage: "Macro model has no resolved value and fell back to empty string.",
     }),
+    runKind: resolvedRunKind,
+    promptMode: resolvedPromptMode,
+    isodate: formatMacroIsoDate(macroNow),
+    isotime: formatMacroIsoTime(macroNow),
     maxPrompt: String(args.maxPrompt),
     summary: args.memorySummary ?? "",
     lastMessage: recentMessages.lastMessage,
     lastUserMessage: recentMessages.lastUserMessage,
     lastCharMessage: recentMessages.lastCharMessage,
-    lastGenerationType: args.runKind,
+    lastGenerationType: resolvedRunKind,
   };
 
   const variableSnapshot: StMacroVariableSnapshot = {

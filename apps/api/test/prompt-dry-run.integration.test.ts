@@ -1355,6 +1355,62 @@ describe("ChatService.dryRun", () => {
     ]));
   });
 
+  it("surfaces shorthand path writes, global shorthand writes, and canonical alias names in real dry-run assembly", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Shorthand Macro Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          {
+            identifier: "main",
+            name: "Main Prompt",
+            role: "system",
+            content: "local={{.资产.金币=3}}{{getvar::资产.金币}} global={{$账户.余额=5}}{{getglobalvar::账户.余额}} exists={{varexists::资产.金币}}",
+          },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    const result = await chatService.dryRun(sessionId, { message: "hello shorthand macros" });
+    const allContent = result.messages.map((message) => message.content).join("\n");
+
+    expect(allContent).toContain("local=3 global=5 exists=true");
+    expect(result.runtimeTrace?.macro?.usedNames).toEqual(expect.arrayContaining([
+      "setvar",
+      "getvar",
+      "setglobalvar",
+      "getglobalvar",
+      "hasvar",
+    ]));
+    expect(result.runtimeTrace?.macro?.mutationPreview).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "set", scope: "branch", key: "资产", value: '{"金币":"3"}' }),
+      expect.objectContaining({ kind: "set", scope: "global", key: "账户", value: '{"余额":"5"}' }),
+    ]));
+    expect(result.runtimeTrace?.macro?.traces).toEqual(expect.arrayContaining([
+      expect.objectContaining({ macroName: "setvar", rawText: "{{.资产.金币=3}}", resolvedText: "" }),
+      expect.objectContaining({ macroName: "setglobalvar", rawText: "{{$账户.余额=5}}", resolvedText: "" }),
+      expect.objectContaining({ macroName: "hasvar", rawText: "{{varexists::资产.金币}}", resolvedText: "true" }),
+    ]));
+  });
+
   it("prefers exact dotted keys, supports quoted-key path reads, and stringifies objects in real dry-run assembly", async () => {
     const now = Date.now();
     const presetId = nanoid();

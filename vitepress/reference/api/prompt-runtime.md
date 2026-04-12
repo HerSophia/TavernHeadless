@@ -509,7 +509,7 @@ POST /sessions/:id/prompt-runtime/preview
 
 ```json
 {
-  "text": "{{setvar::资产.金币::3}}{{getvar::资产}}",
+  "text": "{{.资产.金币=3}}{{getvar::资产}}",
   "branch_id": "main",
   "visibility": {
     "mode": "allow_all_except_hidden",
@@ -551,7 +551,7 @@ POST /sessions/:id/prompt-runtime/preview
         "traces": [
           {
             "macro_name": "setvar",
-            "raw_text": "{{setvar::资产.金币::3}}",
+            "raw_text": "{{.资产.金币=3}}",
             "resolved_text": "",
             "phase": "preview",
             "source_kind": "macro"
@@ -589,6 +589,7 @@ POST /sessions/:id/prompt-runtime/preview
 ```
 - 路径写入会持久化 root key 对应的 JSON 值，因此对象读取结果和 `mutation_preview.value` 会稳定输出为 JSON 字符串，而不是 `[object Object]`。
 - 当 `branch_id` 指向一个尚未物化的新分支，且同时提供 `source_floor_id` 时，preview 会先继承 source floor 当时可见的 local 兼容值，再在 preview overlay 中求值。
+- preview 也支持 v3.3 的 shorthand 写入子集与稳定 alias；`raw_text` 保留原始写法，`macro_name` 继续记录 canonical 宏名。
 - `runtime_trace.macro.staged_mutations` 在 preview 中固定为空；如果需要查看完整 prompt 组装结果，请使用 `POST /sessions/:id/respond/dry-run`。
 
 ### 常见错误
@@ -607,7 +608,7 @@ curl -X POST http://localhost:3000/sessions/session-1/prompt-runtime/preview \
   -H 'Authorization: Bearer <token>' \
   -H 'Content-Type: application/json' \
   -d '{
-    "text": "{{setvar::资产.金币::3}}{{getvar::资产}}",
+    "text": "{{.资产.金币=3}}{{getvar::资产}}",
     "branch_id": "main",
     "visibility": {
       "mode": "allow_all_except_hidden",

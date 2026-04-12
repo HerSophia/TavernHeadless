@@ -55,6 +55,8 @@ outline: [2, 3]
 ```text
 {{user}}
 {{char}}
+{{userName}}
+{{assistantName}}
 {{description}}
 {{personality}}
 {{scenario}}
@@ -71,6 +73,10 @@ outline: [2, 3]
 {{mesExamplesRaw}}
 {{model}}
 {{maxPrompt}}
+{{runKind}}
+{{promptMode}}
+{{isodate}}
+{{isotime}}
 {{summary}}
 {{lastMessage}}
 {{lastUserMessage}}
@@ -88,7 +94,9 @@ outline: [2, 3]
 {{getvar::name}}
 {{getglobalvar::name}}
 {{hasvar::name}}
+{{varexists::name}}
 {{hasglobalvar::name}}
+{{globalvarexists::name}}
 {{.name}}
 {{$name}}
 ```
@@ -130,6 +138,8 @@ outline: [2, 3]
 {{decglobalvar::name}}
 {{deletevar::name}}
 {{deleteglobalvar::name}}
+{{flushvar::name}}
+{{flushglobalvar::name}}
 ```
 
 变量写入宏也支持结构化变量路径：
@@ -139,6 +149,10 @@ outline: [2, 3]
 {{setglobalvar::账户.余额::100}}
 {{addvar::资产.金币::2}}
 {{deletevar::资产.银币}}
+{{.资产.金币=3}}
+{{$账户.余额=100}}
+{{.计数++}}
+{{.计数--}}
 ```
 
 兼容规则固定为：
@@ -146,6 +160,10 @@ outline: [2, 3]
 - 先按完整 flat key 读取或写入
 - 找不到完整 key 时，才按路径语义处理
 - 路径写入最终持久化的是 root key 对应的 JSON 值，不会额外生成 `资产.金币` 这样的底层变量 key
+- `flushvar` / `flushglobalvar` 分别是 `deletevar` / `deleteglobalvar` 的稳定 alias
+- `varexists` / `globalvarexists` 分别是 `hasvar` / `hasglobalvar` 的稳定 alias
+- 当前只支持 shorthand 写入子集：`=`、local `++`、local `--`
+- 当前仍不支持：`$name++`、`$name--`、`||=`、`??=`、`==`
 
 ### `if` 条件块
 
@@ -352,6 +370,6 @@ POST /sessions/:id/prompt-runtime/preview
 - 完整 ST Macro 2.0 表达式语言
 - 所有第三方扩展宏
 - 所有历史 corner case
-- 所有 shorthand 赋值语法
+- 完整 shorthand 赋值 / 运算符族（当前只支持 `=` 与 local `++` / `--` 子集）
 
 如果后续兼容范围扩大，应同步更新本页、Chat API 文档，以及相关测试说明。
