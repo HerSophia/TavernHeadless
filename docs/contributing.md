@@ -364,8 +364,9 @@ refactor(web): migrate workspace api callers to sdk resources
 - 建议在验证部分列出 `pnpm docs:lint` 与 `pnpm docs:build`。
 - GitHub 上仍会显示 `Typecheck`、`API Smoke` 与三个
   `Test shard`。
-- 这些检查在 docs-only PR 下会走轻量路径并快速成功，
-  这是预期行为。
+- 这些检查在 docs-only PR 下会走轻量路径并快速成功。
+- docs lint 若命中 markdownlint 问题，会以告警形式展示，
+  但不会阻断 CI。
 
 ### Review 规则
 
@@ -527,6 +528,8 @@ pnpm docs:build
 合并到 `main` 的 PR 会先判断是否属于 docs-only 路径。
 如果命中 docs-only，GitHub 上仍会显示 `Typecheck`、`API Smoke`
 与三个 `Test shard`，但这些检查会按轻量路径快速成功。
+docs lint 命中问题时会显示告警，
+但不会单独阻断 PR。
 
 ### 提交 PR 前的通用检查
 
