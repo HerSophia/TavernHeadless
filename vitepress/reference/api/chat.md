@@ -371,12 +371,22 @@ Prompt dry-run 与提示词调试场景对宏系统采用只读执行边界：
 {{.资产.金币}}
 {{setvar::资产.金币::3}}
 {{deletevar::资产.银币}}
+{{.资产.金币=3}}
+{{$账户.余额=100}}
+{{.计数++}}
+{{.计数--}}
+{{varexists::资产.金币}}
+{{flushvar::资产.银币}}
 ```
 
 兼容规则固定为：
 
 - 先按完整 flat key 查找
 - 找不到完整 key 时，再按路径语义读取或写入
+- `varexists` / `globalvarexists` 分别归一化到 `hasvar` / `hasglobalvar`
+- `flushvar` / `flushglobalvar` 分别归一化到 `deletevar` / `deleteglobalvar`
+- 当前只支持 shorthand 写入子集：`.name=value`、`$name=value`、`.name++`、`.name--`
+- 当前仍不支持：`$name++`、`$name--`、`||=`、`??=`、`==`
 
 这意味着同轮 assemble 中：
 
