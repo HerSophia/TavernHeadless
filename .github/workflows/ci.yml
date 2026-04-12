@@ -10,10 +10,56 @@ on:
   workflow_dispatch:
 
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs: ${{ steps.classify.outputs.docs }}
+      code: ${{ steps.classify.outputs.code }}
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+
+    steps:
+      - name: Checkout filters
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        if: github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: .github/filters/ci-paths.yaml
+
+      - name: Classify change scope
+        id: classify
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            docs="${{ steps.filter.outputs.docs }}"
+            code="${{ steps.filter.outputs.code }}"
+          else
+            docs="false"
+            code="true"
+          fi
+
+          echo "docs=$docs" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+          if [ "$docs" = "true" ] && [ "$code" != "true" ]; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    needs: changes
 
     steps:
       - name: Checkout
@@ -32,22 +78,35 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
+      - name: Lint docs
+        if: needs.changes.outputs.docs_only == 'true'
+        run: pnpm docs:lint
+
+      - name: Lint repository
+        if: needs.changes.outputs.docs_only != 'true'
         run: pnpm lint
 
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: changes
 
     steps:
+      - name: Docs-only shortcut
+        if: needs.changes.outputs.docs_only == 'true'
+        run: 'echo "Docs-only PR: typecheck skipped by design."'
+
       - name: Checkout
+        if: needs.changes.outputs.docs_only != 'true'
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        if: needs.changes.outputs.docs_only != 'true'
         uses: pnpm/action-setup@v4
 
       - name: Setup Node
+        if: needs.changes.outputs.docs_only != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -55,28 +114,38 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install
+        if: needs.changes.outputs.docs_only != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
+        if: needs.changes.outputs.docs_only != 'true'
         run: pnpm typecheck
 
   test:
     name: Test (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
 
     steps:
+      - name: Docs-only shortcut
+        if: needs.changes.outputs.docs_only == 'true'
+        run: 'echo "Docs-only PR: test shard ${{ matrix.shard }}/3 skipped by design."'
+
       - name: Checkout
+        if: needs.changes.outputs.docs_only != 'true'
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        if: needs.changes.outputs.docs_only != 'true'
         uses: pnpm/action-setup@v4
 
       - name: Setup Node
+        if: needs.changes.outputs.docs_only != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -84,15 +153,18 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install
+        if: needs.changes.outputs.docs_only != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Test
+        if: needs.changes.outputs.docs_only != 'true'
         run: pnpm test:ci -- --shard=${{ matrix.shard }}/3
 
   build:
     name: Build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: changes
 
     steps:
       - name: Checkout
@@ -111,7 +183,12 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build
+      - name: Build docs
+        if: needs.changes.outputs.docs_only == 'true'
+        run: pnpm docs:build
+
+      - name: Build workspace
+        if: needs.changes.outputs.docs_only != 'true'
         run: pnpm build
 
   coverage:
@@ -149,6 +226,7 @@ jobs:
     name: API Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: changes
     env:
       PORT: "3000"
       AUTH_MODE: "off"
@@ -162,13 +240,20 @@ jobs:
       # No LLM_API_KEY — chat routes stay disabled; CRUD-only is fine for smoke.
 
     steps:
+      - name: Docs-only shortcut
+        if: needs.changes.outputs.docs_only == 'true'
+        run: 'echo "Docs-only PR: API smoke skipped by design."'
+
       - name: Checkout
+        if: needs.changes.outputs.docs_only != 'true'
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        if: needs.changes.outputs.docs_only != 'true'
         uses: pnpm/action-setup@v4
 
       - name: Setup Node
+        if: needs.changes.outputs.docs_only != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -176,14 +261,17 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install
+        if: needs.changes.outputs.docs_only != 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Start API server
+        if: needs.changes.outputs.docs_only != 'true'
         run: |
           pnpm --filter @tavern/api exec tsx src/index.ts > api.log 2>&1 &
           echo "API_PID=$!" >> "$GITHUB_ENV"
 
       - name: Wait for API health
+        if: needs.changes.outputs.docs_only != 'true'
         run: |
           for i in {1..60}; do
             if curl -fsS "http://127.0.0.1:3000/health" > /dev/null; then
@@ -198,15 +286,16 @@ jobs:
           exit 1
 
       - name: Run smoke tests
+        if: needs.changes.outputs.docs_only != 'true'
         run: pnpm --filter @tavern/api smoke
 
       - name: Stop API server
-        if: always()
+        if: always() && needs.changes.outputs.docs_only != 'true'
         run: |
           if [ -n "${API_PID:-}" ]; then
             kill "$API_PID" || true
           fi
 
       - name: Print API logs on failure
-        if: failure()
+        if: failure() && needs.changes.outputs.docs_only != 'true'
         run: cat api.log || true

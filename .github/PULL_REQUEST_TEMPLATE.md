@@ -10,16 +10,21 @@ Closes #
 
 ## How to test
 
-<!-- List the exact steps/commands used to verify this PR. -->
+<!-- Use the code path or the docs-only path as appropriate. -->
+<!-- Docs-only PRs still show the standard required checks in GitHub. -->
+<!-- Typecheck, API Smoke, and Test shards may complete via the lightweight path. -->
 
-- [ ] `pnpm lint`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm test:ci`
-- [ ] `pnpm build`
-- [ ] `pnpm smoke:api` (or explain why skipped)
+- [ ] Code path: `pnpm lint`
+- [ ] Code path: `pnpm typecheck`
+- [ ] Code path: `pnpm test:ci`
+- [ ] Code path: `pnpm build`
+- [ ] Docs-only path: `pnpm docs:lint`
+- [ ] Docs-only path: `pnpm docs:build`
+- [ ] `pnpm smoke:api` (required for non-docs PRs, or explain why skipped)
 
 ## Scope checklist
 
+- [ ] This PR is docs-only.
 - [ ] I only changed files related to this PR's scope.
 - [ ] I updated docs for any behavior/API/schema changes.
 - [ ] I added or updated tests for new behavior.

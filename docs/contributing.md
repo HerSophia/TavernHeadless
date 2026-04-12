@@ -358,6 +358,15 @@ refactor(web): migrate workspace api callers to sdk resources
 - 是否影响 OpenAPI 生成物
 - 是否需要迁移已有接入代码
 
+### 如果 PR 只改文档
+
+- 请在 PR 描述中明确写明这是 docs-only PR。
+- 建议在验证部分列出 `pnpm docs:lint` 与 `pnpm docs:build`。
+- GitHub 上仍会显示 `Typecheck`、`API Smoke` 与三个
+  `Test shard`。
+- 这些检查在 docs-only PR 下会走轻量路径并快速成功，
+  这是预期行为。
+
 ### Review 规则
 
 - 每个 PR 至少需要 1 人 approve 才能合并
@@ -511,10 +520,17 @@ pnpm --filter @tavern/sdk test
 建议至少运行：
 
 ```bash
+pnpm docs:lint
 pnpm docs:build
 ```
 
+合并到 `main` 的 PR 会先判断是否属于 docs-only 路径。
+如果命中 docs-only，GitHub 上仍会显示 `Typecheck`、`API Smoke`
+与三个 `Test shard`，但这些检查会按轻量路径快速成功。
+
 ### 提交 PR 前的通用检查
+
+一般代码 PR：
 
 ```bash
 pnpm lint
@@ -522,7 +538,7 @@ pnpm typecheck
 pnpm test:ci
 ```
 
-如果 PR 只改局部模块，也可以在说明里写清楚为什么采用更小范围的验证。
+如果 PR 只改局部模块或只改文档，也可以在说明里写清楚为什么采用更小范围的验证。
 
 ---
 
