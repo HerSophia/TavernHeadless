@@ -21,6 +21,7 @@ jobs:
       docs: ${{ steps.classify.outputs.docs }}
       code: ${{ steps.classify.outputs.code }}
       docs_only: ${{ steps.classify.outputs.docs_only }}
+      docs_files: ${{ steps.filter.outputs.docs_files }}
 
     steps:
       - name: Checkout filters
@@ -32,6 +33,7 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v4
         with:
+          list-files: shell
           filters: .github/filters/ci-paths.yaml
 
       - name: Classify change scope
@@ -80,7 +82,7 @@ jobs:
 
       - name: Lint docs
         if: needs.changes.outputs.docs_only == 'true'
-        run: pnpm docs:lint
+        run: pnpm exec markdownlint-cli2 ${{ needs.changes.outputs.docs_files }}
 
       - name: Lint repository
         if: needs.changes.outputs.docs_only != 'true'

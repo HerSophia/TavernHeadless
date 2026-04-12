@@ -65,7 +65,7 @@ outline: [2, 3]
 在 `pull_request -> main` 场景下，CI 会先判断是否属于 docs-only PR。
 如果命中 docs-only：
 
-- `Lint` 跑 `pnpm docs:lint`
+- `Lint` 只检查本次变更命中的文档文件
 - `Build` 跑 `pnpm docs:build`
 - `Typecheck`、`API Smoke` 与三个 `Test shard`
   走轻量路径并快速成功
