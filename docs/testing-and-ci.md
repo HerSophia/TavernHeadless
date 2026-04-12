@@ -119,6 +119,8 @@
 - PR 默认不跑 coverage，避免常规检查时间过长。
 - 需要 coverage 时，CI 会在 push 到 `main` 或手动触发时运行单独的 coverage job。
 - 本地跑 `pnpm test:coverage` 可以在 `coverage/` 目录下看 HTML 报告。
+- `pnpm test:ci:coverage` 只用于 CI 同款覆盖率检查。
+  它默认输出精简日志，并只生成文本摘要与 `json-summary`，不生成 HTML 报告。
 
 ---
 
@@ -293,7 +295,8 @@ coverage 只在 push 到 `main` 或手动触发时单独运行。
    保持 `main` ruleset 兼容。
 8. `api-smoke`：docs-only PR 快速成功；其余改动与其他 job 并行运行，启动 `@tavern/api`
    并执行 `pnpm --filter @tavern/api smoke`。
-9. `coverage`：仅在 push 到 `main` 或手动触发时运行 `pnpm test:ci:coverage`。
+9. `coverage`：仅在 push 到 `main` 或手动触发时运行 `pnpm test:ci:coverage`，
+   并只输出精简日志与最小覆盖率摘要，不生成 HTML 报告。
 
 ```text
 Changes ───┬─→ Lint
@@ -464,8 +467,8 @@ jobs:
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest",
     "test:ci": "vitest run --reporter=verbose",
-    "test:ci:coverage": "vitest run --coverage --reporter=verbose",
     "test:coverage": "vitest run --coverage",
+    "test:ci:coverage": "vitest run --coverage --reporter=dot --coverage.reporter=text-summary --coverage.reporter=json-summary",
     "smoke:api": "pnpm --filter @tavern/api smoke",
     "build": "pnpm -r --if-present build"
   }
@@ -539,6 +542,9 @@ GitHub 上仍会显示 `Typecheck`、`API Smoke` 与三个 `Test shard`，
 ```bash
 pnpm test:ci:coverage
 ```
+
+这个命令用于复现 CI 的覆盖率任务。
+它只输出文本摘要和 `coverage-summary.json`，不会生成 `coverage/index.html`。
 
 ### 跑 CI 同款检查（合并前建议跑一次）
 
