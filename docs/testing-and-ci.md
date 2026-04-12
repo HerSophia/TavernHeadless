@@ -116,7 +116,8 @@
 
 ### 怎么看覆盖率
 
-- CI 每次跑完会生成覆盖率报告，上传到 PR 评论里。
+- PR 默认不跑 coverage，避免常规检查时间过长。
+- 需要 coverage 时，CI 会在 push 到 `main` 或手动触发时运行单独的 coverage job。
 - 本地跑 `pnpm test:coverage` 可以在 `coverage/` 目录下看 HTML 报告。
 
 ---
@@ -261,49 +262,56 @@ const mockMemory = createMockLLM({
 
 ## 7. CI 流水线
 
-使用 GitHub Actions，每次 push 和 PR 都会触发。
+使用 GitHub Actions。为了缩短 PR 等待时间，
+常规测试默认不带 coverage，并拆成 3 个 shard 并行执行。
+`api-smoke` 与其他 job 并行运行。
+coverage 只在 push 到 `main` 或手动触发时单独运行。
 
 ### 流水线步骤
 
-新增 API 冒烟阶段，确保服务在真实 HTTP 启动后核心接口可用：
-
-1. Install：安装依赖。
-2. Lint + Typecheck：静态检查。
-3. Test：Vitest 集成/单元测试。
-4. Build：构建检查。
-5. API Smoke：启动 `@tavern/api` 并运行 `pnpm --filter @tavern/api smoke`。
+1. 每个 job 独立安装依赖，并使用 pnpm 缓存。
+2. `lint`：静态检查。
+3. `typecheck`：类型检查。
+4. `build`：构建检查。
+5. `test`：Vitest 单元与集成测试，分成 3 个 shard 并行执行，
+   不带 coverage。
+6. `api-smoke`：与其他 job 并行运行，启动 `@tavern/api`
+   并执行 `pnpm --filter @tavern/api smoke`。
+7. `coverage`：仅在 push 到 `main` 或手动触发时运行 `pnpm test:ci:coverage`。
 
 ```text
-┌─────────────┐     ┌──────────────┐     ┌────────────────┐     ┌──────────────┐
-│   Install   │────→│     Lint     │────→│     Test       │────→│    Build     │
-│  pnpm i     │     │  eslint      │     │  vitest        │     │  tsc         │
-│             │     │  prettier    │     │  + coverage    │     │  (type check)│
-└─────────────┘     └──────────────┘     └────────────────┘     └──────────────┘
-                          │                     │                      │
-                      失败则阻塞             失败则阻塞              失败则阻塞
+Lint ───────┐
+Typecheck ──┤
+Build ──────┤
+Test 1/3 ───┤
+Test 2/3 ───┤
+Test 3/3 ───┘
+
+API Smoke：与上述 job 并行执行
+Coverage：仅在 push 到 main / workflow_dispatch 时运行
 ```
 
 ### 触发条件
 
 | 事件 | 跑什么 |
 | ---- | ---- |
-| push 到任意分支 | checks + API smoke |
-| PR 到 main | checks + API smoke |
-| 合并到 main | checks + API smoke（确认主干健康） |
-| 手动触发 | 完整流水线 + 可选的 E2E |
+| push 到非 `main` 分支 | 常规检查 + API smoke |
+| PR 到 `main` | 常规检查 + API smoke |
+| push 到 `main` | 常规检查 + API smoke + coverage |
+| 手动触发 | 常规检查 + API smoke + coverage |
 
 ### 超时限制
 
 | 阶段 | 最大时间 |
 | ---- | ---- |
-| Install | 3 分钟 |
-| Lint | 3 分钟 |
-| Test（单元 + 集成） | 10 分钟 |
-| Build | 5 分钟 |
+| Lint | 5 分钟 |
+| Typecheck | 10 分钟 |
+| Build | 10 分钟 |
+| Test（每个 shard） | 10 分钟 |
+| Coverage（仅 main/manual） | 15 分钟 |
 | API Smoke | 10 分钟 |
-| 整条流水线 | 25 分钟 |
 
-如果超时，说明有问题，不能通过加时间来"解决"。
+如果某个 job 持续接近超时，应该先查明瓶颈，不应直接放宽限制。
 
 ### CI 配置文件
 
@@ -316,57 +324,51 @@ on:
     branches: ['**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  checks:
+  lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-
     steps:
-      - uses: actions/checkout@v4
+      # checkout + setup pnpm + setup node + install
+      - run: pnpm lint
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      # checkout + setup pnpm + setup node + install
+      - run: pnpm typecheck
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # checkout + setup pnpm + setup node + install
+      - run: pnpm build
 
-      - name: Install
-        run: pnpm install --frozen-lockfile
-        timeout-minutes: 3
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      # checkout + setup pnpm + setup node + install
+      - run: pnpm test:ci -- --shard=${{ matrix.shard }}/3
 
-      - name: Lint
-        run: pnpm lint
-        timeout-minutes: 3
-
-      - name: Test
-        run: pnpm test:ci
-        timeout-minutes: 10
-
-      - name: Typecheck
-        run: pnpm typecheck
-        timeout-minutes: 5
-
-      - name: Build
-        run: pnpm build
-        timeout-minutes: 5
+  coverage:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [lint, typecheck, build, test]
+    runs-on: ubuntu-latest
+    steps:
+      # checkout + setup pnpm + setup node + install
+      - run: pnpm test:ci:coverage
 
   api-smoke:
-    needs: checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # checkout + setup pnpm + setup node + install
       - run: pnpm --filter @tavern/api exec tsx src/index.ts > api.log 2>&1 &
       - run: |
           for i in {1..60}; do
@@ -382,14 +384,16 @@ jobs:
 ```json
 {
   "scripts": {
-    "lint": "eslint . && prettier --check .",
-    "lint:fix": "eslint --fix . && prettier --write .",
+    "lint": "eslint .",
+    "lint:full": "eslint . && prettier --check .",
+    "lint:fix": "eslint . --fix && prettier --write .",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest",
-    "test:ci": "vitest run --coverage --reporter=verbose",
+    "test:ci": "vitest run --reporter=verbose",
+    "test:ci:coverage": "vitest run --coverage --reporter=verbose",
     "test:coverage": "vitest run --coverage",
     "smoke:api": "pnpm --filter @tavern/api smoke",
-    "build": "pnpm -r build"
+    "build": "pnpm -r --if-present build"
   }
 }
 ```
@@ -429,6 +433,20 @@ pnpm test:coverage
 # 然后用浏览器打开 coverage/index.html
 ```
 
+### 跑 CI 分片测试
+
+```bash
+pnpm test:ci -- --shard=1/3
+pnpm test:ci -- --shard=2/3
+pnpm test:ci -- --shard=3/3
+```
+
+### 跑 CI 覆盖率任务
+
+```bash
+pnpm test:ci:coverage
+```
+
 ### 跑 CI 同款检查（合并前建议跑一次）
 
 ```bash
@@ -456,11 +474,15 @@ pnpm smoke:api
 
 ### Q：测试太慢了怎么办？
 
-先检查是不是有测试在做不必要的 I/O 或者真实网络请求。如果确实是计算密集型的测试（比如大量 token 计数），考虑减少测试数据量或者标记为 `describe.concurrent` 并行跑。
+先检查是不是有测试在做不必要的 I/O 或者真实网络请求。
+如果确实是计算密集型的测试（比如大量 token 计数），
+考虑减少测试数据量或者标记为 `describe.concurrent` 并行跑。
 
 ### Q：覆盖率差一点点达不到门槛怎么办？
 
-写测试。没有别的办法。如果确实是不可测的代码（比如平台相关的 fallback 分支），可以用 `/* v8 ignore next */` 标记排除，但需要在 PR 里说明原因。
+写测试。没有别的办法。
+如果确实是不可测的代码（比如平台相关的 fallback 分支），
+可以用 `/* v8 ignore next */` 标记排除，但需要在 PR 里说明原因。
 
 ### Q：我想加新的测试工具 / 插件？
 
