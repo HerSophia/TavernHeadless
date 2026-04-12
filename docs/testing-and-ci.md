@@ -264,30 +264,41 @@ const mockMemory = createMockLLM({
 
 使用 GitHub Actions。为了缩短 PR 等待时间，
 常规测试默认不带 coverage，并拆成 3 个 shard 并行执行。
+在 `pull_request -> main` 场景下，CI 会先执行 `changes`
+判断改动范围。
+如果判定为 docs-only PR，则：
+
+- `Lint` 跑 `pnpm docs:lint`
+- `Build` 跑 `pnpm docs:build`
+- `Typecheck`、`API Smoke` 与三个 `Test shard`
+  走快速成功路径
+
 `api-smoke` 与其他 job 并行运行。
 coverage 只在 push 到 `main` 或手动触发时单独运行。
 
 ### 流水线步骤
 
-1. 每个 job 独立安装依赖，并使用 pnpm 缓存。
-2. `lint`：静态检查。
-3. `typecheck`：类型检查。
-4. `build`：构建检查。
-5. `test`：Vitest 单元与集成测试，分成 3 个 shard 并行执行，
+1. `changes`：判断是否 docs-only PR。
+2. 每个实际执行的 job 独立安装依赖，并使用 pnpm 缓存。
+3. `lint`：docs-only PR 跑 docs lint，其余改动跑完整 lint。
+4. `typecheck`：docs-only PR 快速成功，其余改动跑完整类型检查。
+5. `build`：docs-only PR 跑 docs build，其余改动跑完整构建。
+6. `test`：Vitest 单元与集成测试，分成 3 个 shard 并行执行，
    不带 coverage。
-6. `api-smoke`：与其他 job 并行运行，启动 `@tavern/api`
+7. `api-smoke`：docs-only PR 快速成功；其余改动与其他 job 并行运行，启动 `@tavern/api`
    并执行 `pnpm --filter @tavern/api smoke`。
-7. `coverage`：仅在 push 到 `main` 或手动触发时运行 `pnpm test:ci:coverage`。
+8. `coverage`：仅在 push 到 `main` 或手动触发时运行 `pnpm test:ci:coverage`。
 
 ```text
-Lint ───────┐
-Typecheck ──┤
-Build ──────┤
-Test 1/3 ───┤
-Test 2/3 ───┤
-Test 3/3 ───┘
+Changes ───┬─→ Lint
+           ├─→ Typecheck
+           ├─→ Build
+           ├─→ Test 1/3
+           ├─→ Test 2/3
+           ├─→ Test 3/3
+           └─→ API Smoke
 
-API Smoke：与上述 job 并行执行
+docs-only PR：只实际执行 docs lint 与 docs build
 Coverage：仅在 push 到 main / workflow_dispatch 时运行
 ```
 
@@ -296,7 +307,7 @@ Coverage：仅在 push 到 main / workflow_dispatch 时运行
 | 事件 | 跑什么 |
 | ---- | ---- |
 | push 到非 `main` 分支 | 常规检查 + API smoke |
-| PR 到 `main` | 常规检查 + API smoke |
+| PR 到 `main` | 常规检查 + API smoke；docs-only PR 走轻量路径 |
 | push 到 `main` | 常规检查 + API smoke + coverage |
 | 手动触发 | 常规检查 + API smoke + coverage |
 
@@ -327,32 +338,47 @@ on:
   workflow_dispatch:
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: .github/filters/ci-paths.yaml
   lint:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       # checkout + setup pnpm + setup node + install
-      - run: pnpm lint
+      - run: pnpm docs:lint   # docs-only PR
+      - run: pnpm lint        # 其他 PR 与 push
 
   typecheck:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
-      # checkout + setup pnpm + setup node + install
+      - run: echo "Docs-only PR: skipped"
       - run: pnpm typecheck
 
   build:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
-      # checkout + setup pnpm + setup node + install
-      - run: pnpm build
+      - run: pnpm docs:build  # docs-only PR
+      - run: pnpm build       # 其他 PR 与 push
 
   test:
+    needs: changes
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
     steps:
-      # checkout + setup pnpm + setup node + install
+      - run: echo "Docs-only PR: skipped"
       - run: pnpm test:ci -- --shard=${{ matrix.shard }}/3
 
   coverage:
@@ -366,8 +392,10 @@ jobs:
       - run: pnpm test:ci:coverage
 
   api-smoke:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
+      - run: echo "Docs-only PR: skipped"
       # checkout + setup pnpm + setup node + install
       - run: pnpm --filter @tavern/api exec tsx src/index.ts > api.log 2>&1 &
       - run: |
@@ -441,6 +469,16 @@ pnpm test:ci -- --shard=2/3
 pnpm test:ci -- --shard=3/3
 ```
 
+### 只改文档时的最小验证
+
+```bash
+pnpm docs:lint
+pnpm docs:build
+```
+
+GitHub 上仍会显示 `Typecheck`、`API Smoke` 与三个 `Test shard`，
+但 docs-only PR 下这些检查会走轻量路径并快速成功。
+
 ### 跑 CI 覆盖率任务
 
 ```bash
@@ -487,3 +525,10 @@ pnpm smoke:api
 ### Q：我想加新的测试工具 / 插件？
 
 先在 Issue 里讨论，说明为什么现有工具不够用。不要私自引入测试框架级别的新依赖。
+
+
+### Q：我只改文档，为什么 PR 里仍然会显示 Typecheck、Test 和 API Smoke？
+
+这是为了兼容 `main` 分支当前的 required checks。
+docs-only PR 下，这些检查会保留原名称，
+但只执行轻量路径并快速成功。

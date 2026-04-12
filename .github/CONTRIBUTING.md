@@ -22,4 +22,9 @@ Quick checks before opening a PR:
 5. `pnpm smoke:api`
 6. If SDK or integration surfaces changed: `pnpm --filter @tavern/sdk typecheck`
 7. If SDK changes may affect the web app: `pnpm --filter @tavern/web typecheck`
-8. If only docs changed: `pnpm docs:build`
+8. If only docs changed: `pnpm docs:lint`
+9. If only docs changed: `pnpm docs:build`
+
+Docs-only PRs still show the standard required checks in GitHub.
+`Typecheck`, `API Smoke`, and the three `Test` shards may
+complete via the lightweight path.

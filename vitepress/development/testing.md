@@ -62,9 +62,16 @@ outline: [2, 3]
 
 使用 GitHub Actions。为了缩短 PR 等待时间，
 常规测试默认不带 coverage，并拆成 3 个 shard 并行执行。
+在 `pull_request -> main` 场景下，CI 会先判断是否属于 docs-only PR。
+如果命中 docs-only：
+
+- `Lint` 跑 `pnpm docs:lint`
+- `Build` 跑 `pnpm docs:build`
+- `Typecheck`、`API Smoke` 与三个 `Test shard`
+  走轻量路径并快速成功
 
 ```text
-Lint / Typecheck / Build / Test (Shard 1/3, 2/3, 3/3)
+Changes → Lint / Typecheck / Build / Test (Shard 1/3, 2/3, 3/3)
 API Smoke 并行执行
 push 到 main / workflow_dispatch → 额外运行 Coverage
 ```
@@ -99,6 +106,10 @@ pnpm test:coverage
 pnpm test:ci -- --shard=1/3
 pnpm test:ci -- --shard=2/3
 pnpm test:ci -- --shard=3/3
+
+# 只改文档时的最小验证
+pnpm docs:lint
+pnpm docs:build
 
 # 跑 CI 覆盖率任务
 pnpm test:ci:coverage
