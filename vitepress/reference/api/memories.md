@@ -15,8 +15,12 @@ outline: [2, 3]
 > 它们主要用于后台作业观察、调试、运维和自动化集成，不是普通聊天页面的日常调用接口。
 > 正常聊天仍以 `Chat`、`Sessions`、`Floors` 等主链路资源为准。
 
-聊天主链在读取记忆时，会按当前可见范围合并 `global`、`chat`、`floor` 三层候选条目，
-再继续应用既有的 importance / balanced / dual-summary 选择与裁剪规则。
+聊天主链在读取记忆时，会按当前可见范围合并候选条目：
+
+- 有 `branchId` 时：`global` → `branch` → `floor`
+- 没有 `branchId` 的旧调用方：`global` → `chat` → `floor`
+
+然后再继续应用既有的 importance / balanced / dual-summary 选择与裁剪规则。
 
 ---
 
@@ -25,8 +29,8 @@ outline: [2, 3]
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `id` | string | 记忆 ID |
-| `scope` | string | 作用域：`global` / `chat` / `floor` |
-| `scope_id` | string | 关联资源 ID |
+| `scope` | string | 作用域：`global` / `chat` / `branch` / `floor` |
+| `scope_id` | string | 关联资源 ID。`branch` scope 使用 `JSON.stringify([sessionId, branchId])` 编码 |
 | `type` | string | 类型：`fact` / `summary` / `open_loop` |
 | `summary_tier` | string \| null | 仅 `type=summary` 时有意义：`micro` / `macro` |
 | `content` | string \| `{ text: string }` | 记忆文本内容。公开契约只承诺纯文本，`{ text }` 是稳定包装写法 |
@@ -52,6 +56,8 @@ outline: [2, 3]
 - `status` 仍保留给兼容调用方；`lifecycle_status` 才是 Memory V2 的细粒度生命周期字段。
 - `summary_tier` 只用于 `type: "summary"`。非摘要类型写入时会被忽略或清空。
 - 引擎当前按文本模型处理 `content`。不要依赖任意 JSON 结构被稳定保存和注入。
+- 聊天主链默认把 branch 记忆作为当前分支的隔离记忆；`chat` scope 只表示显式的 session 级共享记忆。
+- 如果你手工调用 `/memories` 写 branch 记忆，应自行构造 `scope = "branch"` 与 `scope_id = JSON.stringify([sessionId, branchId])`。
 
 ---
 

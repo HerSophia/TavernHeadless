@@ -11,7 +11,7 @@ import {
   readString,
 } from "./utils.js";
 
-export type MemoryScope = "global" | "chat" | "floor";
+export type MemoryScope = "global" | "chat" | "branch" | "floor";
 export type MemoryType = "fact" | "summary" | "open_loop";
 export type MemoryStatus = "active" | "deprecated";
 export type MemorySummaryTier = "micro" | "macro";

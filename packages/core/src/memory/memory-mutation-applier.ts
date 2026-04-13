@@ -1,4 +1,7 @@
-import type { MemoryScope } from '@tavern/shared';
+import {
+  parseBranchMemoryScopeId,
+  type MemoryScope,
+} from '@tavern/shared';
 
 import type { CoreEventMap } from '../events/index.js';
 import type {
@@ -189,8 +192,13 @@ function resolveMemoryEventSessionId(
     return scopeId;
   }
 
-  const sessionId = context?.sessionId?.trim();
-  return sessionId && sessionId.length > 0 ? sessionId : undefined;
+  if (scope === 'branch') {
+    return parseBranchMemoryScopeId(scopeId)?.sessionId
+      ?? normalizeScopeValue(context?.sessionId)
+      ?? undefined;
+  }
+
+  return normalizeScopeValue(context?.sessionId) ?? undefined;
 }
 
 function buildMemoryEventContextPayload(args: {
@@ -215,11 +223,19 @@ function buildResolutionContext(
   context: MemoryScopeResolutionContext | undefined,
   sourceFloorId?: string,
 ): MemoryScopeResolutionContext {
+  const branchScopeRef = scope === 'branch' ? parseBranchMemoryScopeId(scopeId) : null;
   return {
     accountId: context?.accountId,
-    sessionId: context?.sessionId ?? (scope === 'chat' ? scopeId : undefined),
+    sessionId: context?.sessionId
+      ?? (scope === 'chat' ? scopeId : branchScopeRef?.sessionId),
+    branchId: context?.branchId ?? branchScopeRef?.branchId,
     floorId: context?.floorId ?? sourceFloorId ?? (scope === 'floor' ? scopeId : undefined),
   };
+}
+
+function normalizeScopeValue(value: string | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : null;
 }
 
 function scopeBucketKey(scope: MemoryScope, scopeId: string): string {

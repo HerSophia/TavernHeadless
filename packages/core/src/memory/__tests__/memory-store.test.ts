@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { buildBranchMemoryScopeId } from '@tavern/shared';
 import { MemoryStore } from '../memory-store.js';
 import type { MemoryRepository } from '../../ports/memory-repository.js';
 import type { CoreEventBus } from '../../events/index.js';
@@ -291,7 +292,7 @@ describe('MemoryStore', () => {
       expect(result.items[0]!.type).toBe('fact');
     });
 
-    it('merges visible global chat and floor scopes when scopeContext is provided', async () => {
+    it('merges visible global branch and floor scopes when branch scopeContext is provided', async () => {
       const { store, repo } = createStore();
 
       await repo.create({
@@ -304,10 +305,10 @@ describe('MemoryStore', () => {
         status: 'active',
       });
       await repo.create({
-        scope: 'chat',
-        scopeId: 'session-1',
+        scope: 'branch',
+        scopeId: buildBranchMemoryScopeId('session-1', 'main'),
         type: 'summary',
-        content: 'chat summary',
+        content: 'branch summary',
         importance: 0.8,
         confidence: 1.0,
         status: 'active',
@@ -324,10 +325,10 @@ describe('MemoryStore', () => {
 
       const result = await store.prepareInjection('session-1', {
         maxTokens: 10000,
-        scopeContext: { accountId: 'account-1', sessionId: 'session-1', floorId: 'floor-1' },
+        scopeContext: { accountId: 'account-1', sessionId: 'session-1', branchId: 'main', floorId: 'floor-1' },
       });
 
-      expect(result.items.map((item) => item.scope)).toEqual(['global', 'chat', 'floor']);
+      expect(result.items.map((item) => item.scope)).toEqual(['global', 'branch', 'floor']);
     });
 
     it('orders by importance (highest first)', async () => {

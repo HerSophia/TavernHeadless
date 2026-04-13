@@ -262,6 +262,26 @@ result.memory;
 // { mode: "async", status: "queued", jobId: "memory-job:ingest_turn:floor-1" }
 ```
 
+### 记忆 scope 说明
+
+`memories`、`memoryJobs`、`memoryScopes` 三组资源现在都接受四种记忆作用域：
+
+- `global`
+- `chat`
+- `branch`
+- `floor`
+
+其中：
+
+- 主聊天链默认把当前分支的记忆写入 `branch` scope。
+- `chat` scope 只表示显式的 session 级共享记忆。
+- `branch` scope 的 `scopeId` 不是单独的 `branchId`，而是 `JSON.stringify([sessionId, branchId])`。
+
+```ts
+const branchScopeId = JSON.stringify(["session-1", "main"]);
+const branchMemories = await client.memories.list({ scope: "branch", scopeId: branchScopeId });
+```
+
 如果你需要看 live 实际发送时的 prompt 摘要与 runtime trace，可以在请求里显式打开：
 
 - `debugOptions.includePromptSnapshot`
@@ -330,10 +350,23 @@ const preview = await client.promptRuntime.previewText({
   sessionId: "session-1",
   branchId: "main",
   text: "{{setvar::资产.金币::3}}{{getvar::资产}}",
+  budget: {
+    maxInputTokens: 4096,
+    reservedCompletionTokens: 1024,
+  },
+  sourceSelection: {
+    history: { mode: "windowed", maxMessages: 24 },
+    examples: { enabled: false },
+  },
   visibility: {
     mode: "allow_all_except_hidden",
     hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
   },
+});
+
+const explain = await client.promptRuntime.getFloorExplain({
+  accountId: "account-1",
+  floorId: "floor-12",
 });
 
 const capabilities = await client.promptRuntime.getCapabilities();
@@ -341,27 +374,39 @@ const capabilities = await client.promptRuntime.getCapabilities();
 console.log(state.assets.characterCard?.name);
 console.log(policy.resolvedPolicy.structure.mode);
 console.log(preview.text);
+console.log(preview.runtimeTrace.budgets?.trimReasons);
+console.log(preview.runtimeTrace.sourceSelection?.excludedSources);
 console.log(preview.runtimeTrace.macro?.stagedMutations); // []
+console.log(explain.promptSnapshot?.promptDigest);
+console.log(explain.resolvedPolicy); // 历史楼层未持久化时可能为 null
 console.log(capabilities.observability.preview.enabled);
+console.log(capabilities.observability.explain.enabled);
 console.log(capabilities.unsupported);
 ```
 
 `promptRuntime` 当前覆盖：
 
+- `promptRuntime.getAssets(...)`
+- `promptRuntime.getBranchPolicy(...)`
+- `promptRuntime.getCapabilities(...)`
+- `promptRuntime.getFloorExplain(...)`
 - `promptRuntime.getSession(...)`
 - `promptRuntime.getPolicy(...)`
+- `promptRuntime.patchBranchPolicy(...)`
 - `promptRuntime.patchPolicy(...)`
 - `promptRuntime.previewText(...)`
-- `promptRuntime.getAssets(...)`
-- `promptRuntime.getCapabilities(...)`
 
 需要注意：
 
 - 这是一组独立的高级 API 资源，不会创建第二条聊天执行链。
 - `characterCard` 仍然属于 Prompt Assets。
 - `patchPolicy(...)` 当前只允许写 `structure` 和 `delivery`。
+- `patchBranchPolicy(...)` 当前同样只允许写 `structure` 和 `delivery`，并且只面向已物化 branch。
 - `previewText(...)` 只做单段文本 preview，不走 LLM、不创建 floor、不写 `promptSnapshot`、不提交副作用。
+- `previewText(...)` 当前支持 request 级 `budget` / `sourceSelection` 覆盖；结构化解释结果位于 `runtimeTrace.budgets.trimReasons` 与 `runtimeTrace.sourceSelection.excludedSources`。
 - `previewText(...)` 的宏诊断继续统一走 `runtimeTrace.macro`，并且 `runtimeTrace.macro.stagedMutations` 固定为空。
+- `getFloorExplain(...)` 只读取 committed floor 的持久化真相，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。
+- 历史楼层如果没有持久化 `resolvedPolicy`、`trimReasons`、`excludedSources`，SDK 会把它们映射为 `null`，并保留 `diagnostics` / `limitations` 说明原因。
 - `delivery: null` 或 `structure: null` 会清空对应持久化 section。
 - 当前没有 `promptRuntime.macros(...)` 之类的专用 control plane 方法；宏边界继续通过统一观测面公开。
 

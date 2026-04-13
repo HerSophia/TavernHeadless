@@ -187,8 +187,43 @@ export interface PromptRuntimeBudgetGroupTrace {
   prunedTokenCount?: number;
 }
 
+export type PromptTrimReasonCode =
+  | 'budget_exceeded'
+  | 'group_limit_exceeded'
+  | 'provider_constraint'
+  | 'policy_disabled';
+
+export interface PromptTrimReason {
+  group: string;
+  reason: PromptTrimReasonCode;
+  detail?: string;
+  prunedTokenCount?: number;
+}
+
+export type PromptRuntimeSourceKind =
+  | 'history'
+  | 'summary'
+  | 'memory'
+  | 'worldbook'
+  | 'examples'
+  | 'authors_note';
+
+export type PromptSourceExclusionReasonCode =
+  | 'disabled_by_policy'
+  | 'budget_trimmed'
+  | 'provider_constraint'
+  | 'visibility_filtered'
+  | 'not_triggered';
+
+export interface PromptSourceExclusionReason {
+  source: PromptRuntimeSourceKind;
+  reason: PromptSourceExclusionReasonCode;
+  detail?: string;
+}
+
 export interface PromptRuntimeBudgetTrace {
   byGroup: PromptRuntimeBudgetGroupTrace[];
+  trimReasons?: PromptTrimReason[];
 }
 
 export interface PromptRuntimeMemoryTrace {
@@ -273,11 +308,16 @@ export interface PromptRuntimeVisibilityTrace {
   filteredFloorNos?: number[];
 }
 
+export interface PromptRuntimeSourceSelectionTrace {
+  excludedSources: PromptSourceExclusionReason[];
+}
+
 export interface PromptRuntimeTrace<TWorldbookMatch = unknown> {
   preset?: PromptRuntimePresetTrace;
   worldbook?: PromptRuntimeWorldbookTrace<TWorldbookMatch>;
   regex?: PromptRuntimeRegexTrace;
   budgets?: PromptRuntimeBudgetTrace;
+  sourceSelection?: PromptRuntimeSourceSelectionTrace;
   memory?: PromptRuntimeMemoryTrace;
   macro?: PromptRuntimeMacroTrace;
   structure?: PromptRuntimeStructureTrace;

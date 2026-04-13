@@ -1,7 +1,7 @@
 import type { CoreEventBus } from "@tavern/core";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import type { MemoryJobType, MemoryScope } from "@tavern/shared";
+import { MEMORY_SCOPES, buildBranchMemoryScopeId, parseBranchMemoryScopeId, type MemoryJobType, type MemoryScope } from "@tavern/shared";
 
 import type { DbExecutor } from "../db/client.js";
 import { RuntimeJobScheduler } from "./runtime-job-scheduler.js";
@@ -86,6 +86,24 @@ function parsePayload<T>(
   return parsed.data as T;
 }
 
+function normalizeMemoryScope(value: string | undefined): MemoryScope {
+  return value && MEMORY_SCOPES.includes(value as MemoryScope)
+    ? value as MemoryScope
+    : "chat";
+}
+
+function resolveMemoryRuntimeSessionId(scope: MemoryScope, scopeId: string, sessionId?: string): string | undefined {
+  if (scope === "chat") {
+    return scopeId;
+  }
+
+  if (scope === "branch") {
+    return parseBranchMemoryScopeId(scopeId)?.sessionId ?? sessionId;
+  }
+
+  return sessionId;
+}
+
 export interface MemoryJobSchedulerOptions {
   catalog?: ReturnType<typeof createMemoryRuntimeJobCatalog>;
   eventBus?: CoreEventBus;
@@ -109,11 +127,16 @@ export class MemoryJobScheduler {
     input: EnqueueIngestTurnJobInput,
   ): EnqueueMemoryJobResult {
     const payload = memoryIngestTurnJobPayloadSchema.parse(input);
+    const scope = payload.branchId ? "branch" : "chat";
+    const scopeId = payload.branchId
+      ? buildBranchMemoryScopeId(payload.sessionId, payload.branchId)
+      : payload.sessionId;
     const result = this.runtimeScheduler.enqueue(tx, {
       jobType: MEMORY_RUNTIME_JOB_TYPES.ingest_turn,
       accountId: payload.accountId,
       scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
-      scopeKey: buildMemoryRuntimeScopeKey("chat", payload.sessionId),
+      scopeKey: buildMemoryRuntimeScopeKey(scope, scopeId),
+      sessionId: payload.sessionId,
       floorId: payload.floorId,
       payload,
       availableAt: payload.committedAt,
@@ -136,6 +159,7 @@ export class MemoryJobScheduler {
       accountId: payload.accountId,
       scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
       scopeKey: buildMemoryRuntimeScopeKey(payload.scope, payload.scopeId),
+      sessionId: resolveMemoryRuntimeSessionId(payload.scope, payload.scopeId, payload.sessionId),
       floorId: payload.triggerFloorId ?? null,
       payload,
       availableAt: payload.committedAt,
@@ -158,6 +182,7 @@ export class MemoryJobScheduler {
       accountId: payload.accountId,
       scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
       scopeKey: buildMemoryRuntimeScopeKey(payload.scope, payload.scopeId),
+      sessionId: resolveMemoryRuntimeSessionId(payload.scope, payload.scopeId),
       payload,
       availableAt: payload.scheduledAt,
       maxAttempts: input.maxAttempts,
@@ -181,6 +206,7 @@ export class MemoryJobScheduler {
       accountId: payload.accountId,
       scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
       scopeKey: buildMemoryRuntimeScopeKey(payload.scope, payload.scopeId),
+      sessionId: resolveMemoryRuntimeSessionId(payload.scope, payload.scopeId),
       floorId: payload.triggerFloorId ?? null,
       payload,
       availableAt: payload.committedAt,
@@ -199,13 +225,16 @@ export class MemoryJobScheduler {
     }
 
     if (jobType === "compact_macro" && seed) {
-      const parts = seed.split(":");
-      if (parts.length >= 3) {
-        const [scope, scopeId, ...sourceSeedParts] = parts;
+      const firstSeparatorIndex = seed.indexOf(":");
+      const lastSeparatorIndex = seed.lastIndexOf(":");
+      if (firstSeparatorIndex > 0 && lastSeparatorIndex > firstSeparatorIndex) {
+        const scope = normalizeMemoryScope(seed.slice(0, firstSeparatorIndex));
+        const scopeId = seed.slice(firstSeparatorIndex + 1, lastSeparatorIndex);
+        const sourceSeed = seed.slice(lastSeparatorIndex + 1);
         return makeCompactMacroJobId(
-          (scope === "global" || scope === "chat" || scope === "floor" ? scope : "chat") as MemoryScope,
+          scope,
           scopeId ?? "scope",
-          sourceSeedParts.join(":") || seed,
+          sourceSeed || seed,
         );
       }
 
@@ -214,25 +243,29 @@ export class MemoryJobScheduler {
     }
 
     if (jobType === "maintenance" && seed) {
-      const [accountId, scope, scopeId, bucket] = seed.split(":", 4);
+      const firstSeparatorIndex = seed.indexOf(":");
+      const secondSeparatorIndex = firstSeparatorIndex >= 0 ? seed.indexOf(":", firstSeparatorIndex + 1) : -1;
+      const lastSeparatorIndex = seed.lastIndexOf(":");
+      const accountId = firstSeparatorIndex > 0 ? seed.slice(0, firstSeparatorIndex) : "";
       if (!accountId || accountId.trim().length === 0) {
         return `memory-job:${jobType}:${seed}`;
       }
 
       return makeMaintenanceJobId(
         accountId,
-        (scope === "global" || scope === "chat" || scope === "floor" ? scope : "chat") as MemoryScope,
-        scopeId ?? "scope",
-        Number(bucket ?? 0),
+        normalizeMemoryScope(secondSeparatorIndex > firstSeparatorIndex ? seed.slice(firstSeparatorIndex + 1, secondSeparatorIndex) : undefined),
+        secondSeparatorIndex >= 0 && lastSeparatorIndex > secondSeparatorIndex ? seed.slice(secondSeparatorIndex + 1, lastSeparatorIndex) : "scope",
+        Number(lastSeparatorIndex >= 0 ? seed.slice(lastSeparatorIndex + 1) : 0),
       );
     }
 
     if (jobType === "rebuild_scope" && seed) {
-      const [scope, scopeId, ...seedParts] = seed.split(":");
+      const firstSeparatorIndex = seed.indexOf(":");
+      const lastSeparatorIndex = seed.lastIndexOf(":");
       return makeRebuildScopeJobId(
-        (scope === "global" || scope === "chat" || scope === "floor" ? scope : "chat") as MemoryScope,
-        scopeId ?? "scope",
-        seedParts.join(":") || seed,
+        normalizeMemoryScope(firstSeparatorIndex > 0 ? seed.slice(0, firstSeparatorIndex) : undefined),
+        firstSeparatorIndex >= 0 && lastSeparatorIndex > firstSeparatorIndex ? seed.slice(firstSeparatorIndex + 1, lastSeparatorIndex) : "scope",
+        lastSeparatorIndex >= 0 ? seed.slice(lastSeparatorIndex + 1) || seed : seed,
       );
     }
 

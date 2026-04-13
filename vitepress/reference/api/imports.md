@@ -451,6 +451,12 @@ POST /import/chat
 - 当请求显式提供 `character_id` 时，系统会复用常规 session 绑定语义，选择该角色当前最新 active 版本，并把该版本的快照写入导入后的 session
 - 当 `.thchat` 请求同时提供 `character_id` 时，文件内嵌的 `character_snapshot` 与 `character_sync_policy` 不再作为并行真相保留；导入后的 session 会使用解析出的绑定快照，并将 `character_sync_policy` 固定为 `pin`
 
+### 当前分支快照限制
+
+- 当前 ST JSONL 导入和 v1 `.thchat` 导入都会恢复普通变量条目，但不会为每个 imported floor 伪造 `branch_local_variable_snapshot`
+- 这是因为现有导入格式只携带最终持久化变量行，不携带 source floor 当时精确的 local 兼容视图，服务端不能安全反推出该快照
+- 因此，后续如果要从 imported / legacy floor 发起新的分支继承，例如对尚未物化的新 branch 调用 `POST /sessions/:id/prompt-runtime/preview` 并传入 `source_floor_id`，或在 `respond` / `edit-and-regenerate` 中从该 floor 分叉，服务端可能返回 `409 branch_local_snapshot_missing`
+
 ### 错误
 
 | 状态码 | code | 说明 |

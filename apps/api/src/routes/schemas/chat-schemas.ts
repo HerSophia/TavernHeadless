@@ -13,6 +13,11 @@ export const promptAssistantPrefillStrategyValues = ["provider_native", "assista
 export const promptMessageRoleValues = ["system", "user", "assistant"] as const;
 export const promptDeliveryDegradeReasonValues = ["assistant_prefill_disabled", "assistant_prefill_unsupported", "require_last_user", "no_assistant_override"] as const;
 export const dryRunVisibilityModeValues = ["allow_all_except_hidden", "deny_all_except_visible"] as const;
+export const promptBudgetFieldValues = ["maxInputTokens", "reservedCompletionTokens"] as const;
+export const promptSourceSelectionHistoryModeValues = ["full", "windowed"] as const;
+export const promptTrimReasonCodeValues = ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"] as const;
+export const promptSourceExclusionReasonValues = ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"] as const;
+export const promptSourceKindValues = ["history", "memory", "worldbook", "examples"] as const;
 
 // ── Example constants ─────────────────────────────────
 
@@ -189,6 +194,16 @@ export const dryRunBodyExample = {
     allow_assistant_prefill: false,
     require_last_user: true,
     no_assistant: false,
+  },
+  budget: {
+    max_input_tokens: 4096,
+    reserved_completion_tokens: 1024,
+  },
+  source_selection: {
+    history: { mode: "windowed", max_messages: 24 },
+    memory: { enabled: true },
+    worldbook: { enabled: true },
+    examples: { enabled: false },
   },
 } as const;
 
@@ -536,6 +551,33 @@ export const promptStructureJsonSchema = {
   additionalProperties: false,
 } as const;
 
+export const promptBudgetJsonSchema = {
+  type: "object",
+  properties: {
+    max_input_tokens: { type: "integer", minimum: 1 },
+    reserved_completion_tokens: { type: "integer", minimum: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
+export const promptSourceSelectionJsonSchema = {
+  type: "object",
+  properties: {
+    history: {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: promptSourceSelectionHistoryModeValues },
+        max_messages: { type: "integer", minimum: 1 },
+      },
+      additionalProperties: false,
+    },
+    memory: { type: "object", properties: { enabled: { type: "boolean" } }, additionalProperties: false },
+    worldbook: { type: "object", properties: { enabled: { type: "boolean" } }, additionalProperties: false },
+    examples: { type: "object", properties: { enabled: { type: "boolean" } }, additionalProperties: false },
+  },
+  additionalProperties: false,
+} as const;
+
 export const dryRunDebugOptionsJsonSchema = {
   type: "object",
   properties: dryRunDebugOptionsProperties,
@@ -729,6 +771,18 @@ const runtimeTraceBudgetGroupJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const runtimeTraceTrimReasonJsonSchema = {
+  type: "object",
+  required: ["group", "reason"],
+  properties: {
+    group: { type: "string" },
+    reason: { type: "string", enum: promptTrimReasonCodeValues },
+    detail: { type: "string" },
+    pruned_token_count: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
 const runtimeTraceBudgetsJsonSchema = {
   type: "object",
   required: ["by_group"],
@@ -737,6 +791,30 @@ const runtimeTraceBudgetsJsonSchema = {
       type: "array",
       items: runtimeTraceBudgetGroupJsonSchema,
     },
+    trim_reasons: {
+      type: "array",
+      items: runtimeTraceTrimReasonJsonSchema,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceSourceExclusionReasonJsonSchema = {
+  type: "object",
+  required: ["source", "reason"],
+  properties: {
+    source: { type: "string", enum: promptSourceKindValues },
+    reason: { type: "string", enum: promptSourceExclusionReasonValues },
+    detail: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceSourceSelectionJsonSchema = {
+  type: "object",
+  required: ["excluded_sources"],
+  properties: {
+    excluded_sources: { type: "array", items: runtimeTraceSourceExclusionReasonJsonSchema },
   },
   additionalProperties: false,
 } as const;
@@ -880,6 +958,7 @@ const runtimeTraceBaseProperties = {
   regex: runtimeTraceRegexJsonSchema,
   budgets: runtimeTraceBudgetsJsonSchema,
   structure: runtimeTraceStructureJsonSchema,
+  source_selection: runtimeTraceSourceSelectionJsonSchema,
   memory: runtimeTraceMemoryJsonSchema,
   macro: runtimeTraceMacroJsonSchema,
   delivery: runtimeTraceDeliveryJsonSchema,
@@ -947,6 +1026,8 @@ export const dryRunBodyJsonSchema = {
     visibility: dryRunVisibilityJsonSchema,
     structure: promptStructureJsonSchema,
     delivery: promptDeliveryJsonSchema,
+    budget: promptBudgetJsonSchema,
+    source_selection: promptSourceSelectionJsonSchema,
   },
   examples: [dryRunBodyExample],
   additionalProperties: false,

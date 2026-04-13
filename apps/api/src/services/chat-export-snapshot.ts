@@ -1,5 +1,11 @@
 import { and, asc, count, eq, inArray } from "drizzle-orm";
-import { buildBranchVariableScopeId, type BranchVariableScopeRef } from "@tavern/shared";
+import {
+  buildBranchMemoryScopeId,
+  buildBranchVariableScopeId,
+  parseBranchMemoryScopeId,
+  type BranchMemoryScopeRef,
+  type BranchVariableScopeRef,
+} from "@tavern/shared";
 
 import type { AccountContextOptions } from "../accounts/account-context.js";
 import { resolveAccountIdOrThrow } from "../accounts/account-context.js";
@@ -82,9 +88,10 @@ export interface ExportSnapshotVariable {
 
 export interface ExportSnapshotMemoryItem {
   id: string;
-  scope: "chat" | "floor";
+  scope: "chat" | "branch" | "floor";
   scopeId: string;
   type: "fact" | "summary" | "open_loop";
+  scopeRef?: BranchMemoryScopeRef;
   summaryTier: "micro" | "macro" | null;
   content: unknown;
   importance: number;
@@ -305,15 +312,18 @@ export function captureSessionExportSnapshot(
 
     let snapshotMemories: SessionExportSnapshot["memories"] | undefined;
     if (includeMemories) {
-      const chatAndFloorIds = [sessionId, ...floorIds];
-      const itemRows = chatAndFloorIds.length > 0
+      const branchScopeIds = Array.from(new Set(floorRows.map((row) => row.branchId))).map((branchId) =>
+        buildBranchMemoryScopeId(sessionId, branchId),
+      );
+      const memoryScopeIds = [sessionId, ...branchScopeIds, ...floorIds];
+      const itemRows = memoryScopeIds.length > 0
         ? tx
             .select()
             .from(memoryItems)
             .where(and(
               eq(memoryItems.accountId, accountId),
-              inArray(memoryItems.scope, ["chat", "floor"]),
-              inArray(memoryItems.scopeId, chatAndFloorIds),
+              inArray(memoryItems.scope, ["chat", "branch", "floor"]),
+              inArray(memoryItems.scopeId, memoryScopeIds),
             ))
             .all()
         : [];
@@ -329,10 +339,13 @@ export function captureSessionExportSnapshot(
       snapshotMemories = {
         items: itemRows.map((row) => ({
           id: row.id,
-          scope: row.scope as "chat" | "floor",
+          scope: row.scope as "chat" | "branch" | "floor",
           scopeId: row.scopeId,
           type: row.type,
           summaryTier: row.summaryTier,
+          ...(row.scope === "branch" && parseBranchMemoryScopeId(row.scopeId)
+            ? { scopeRef: parseBranchMemoryScopeId(row.scopeId)! }
+            : {}),
           content: parseJsonField(row.contentJson),
           importance: row.importance,
           confidence: row.confidence,

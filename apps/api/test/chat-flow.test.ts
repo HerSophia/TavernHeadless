@@ -560,6 +560,48 @@ describe("ChatService", () => {
     expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
   });
 
+  it("applies branch prompt runtime policy overlay on the live respond path for a materialized branch", async () => {
+    await chatService.respond(sessionId, { message: "First turn" });
+
+    await database.db
+      .update(sessions)
+      .set({
+        metadataJson: JSON.stringify({
+          prompt_runtime: {
+            branchPolicies: {
+              "alt-branch": {
+                delivery: {
+                  noAssistant: true,
+                },
+              },
+            },
+          },
+        }),
+        updatedAt: Date.now(),
+      })
+      .where(eq(sessions.id, sessionId));
+
+    const now = Date.now();
+    await database.db.insert(floors).values({
+      id: nanoid(),
+      sessionId,
+      floorNo: 1,
+      branchId: "alt-branch",
+      parentFloorId: null,
+      state: "committed",
+      metadataJson: null,
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+    await chatService.respond(sessionId, { message: "Branch turn", branchId: "alt-branch" });
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
+  });
+
   it("lets request delivery override session prompt runtime delivery defaults on respond", async () => {
     await chatService.respond(sessionId, { message: "First turn" });
 
@@ -1839,6 +1881,32 @@ describe("ChatService", () => {
     expect(filteredPreview.runtimeTrace.visibility?.filteredFloorNos).toEqual([1]);
   });
 
+  it("should fail preview on a new branch when the source floor snapshot is missing", async () => {
+    const sourceFloorId = nanoid();
+    const now = Date.now();
+
+    await database.db.insert(floors).values({
+      id: sourceFloorId,
+      sessionId,
+      floorNo: 0,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expect(
+      chatService.previewPromptRuntimeText(sessionId, {
+        text: "{{getvar::mood}}",
+        branchId: "alt-preview",
+        sourceFloorId,
+      }),
+    ).rejects.toMatchObject({ code: "branch_local_snapshot_missing" });
+  });
+
   // ── regenerate 测试 ─────────────────────────────────
 
   describe("regenerate", () => {
@@ -2126,6 +2194,94 @@ describe("ChatService", () => {
       const branchCall = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[2]![0];
       const userMessages = branchCall.messages.filter((msg: { role: string }) => msg.role === "user");
       expect(userMessages.map((msg: { content: string }) => msg.content)).toEqual(["Root", "Alt timeline"]);
+    });
+
+    it("should load history from the source branch when a new branch forks from a non-main floor", async () => {
+      const root = await chatService.respond(sessionId, { message: "Root" });
+      await chatService.respond(sessionId, { message: "Main continues" });
+      await chatService.respond(sessionId, {
+        message: "Alt timeline",
+        branchId: "alt-1",
+        sourceFloorId: root.floorId,
+      });
+      const altFollowup = await chatService.respond(sessionId, {
+        message: "Alt followup",
+        branchId: "alt-1",
+      });
+
+      const nestedBranch = await chatService.respond(sessionId, {
+        message: "Nested branch",
+        branchId: "alt-2",
+        sourceFloorId: altFollowup.floorId,
+      });
+
+      const orchestratorCalls = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls;
+      const nestedCall = orchestratorCalls[orchestratorCalls.length - 1]![0];
+      const userMessages = nestedCall.messages.filter((msg: { role: string }) => msg.role === "user");
+
+      expect(nestedBranch.branchId).toBe("alt-2");
+      expect(userMessages.map((msg: { content: string }) => msg.content)).toEqual([
+        "Root",
+        "Alt timeline",
+        "Alt followup",
+        "Nested branch",
+      ]);
+    });
+
+    it("should preview history from the source branch when the target branch is not yet materialized", async () => {
+      const root = await chatService.respond(sessionId, { message: "Root" });
+      await chatService.respond(sessionId, { message: "Main continues" });
+      await chatService.respond(sessionId, {
+        message: "Alt timeline",
+        branchId: "alt-1",
+        sourceFloorId: root.floorId,
+      });
+      const altFollowup = await chatService.respond(sessionId, {
+        message: "Alt followup",
+        branchId: "alt-1",
+      });
+
+      const preview = await chatService.previewPromptRuntimeText(sessionId, {
+        text: "{{lastUserMessage}}",
+        branchId: "alt-2",
+        sourceFloorId: altFollowup.floorId,
+      });
+
+      expect(preview.text).toBe("Alt followup");
+    });
+
+    it("should fail respond when the source floor snapshot is missing", async () => {
+      const sourceFloorId = nanoid();
+      const now = Date.now();
+
+      await database.db.insert(floors).values({
+        id: sourceFloorId,
+        sessionId,
+        floorNo: 0,
+        branchId: "main",
+        parentFloorId: null,
+        state: "committed",
+        tokenIn: 0,
+        tokenOut: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await expect(
+        chatService.respond(sessionId, {
+          message: "Alt timeline",
+          branchId: "alt-missing-snapshot",
+          sourceFloorId,
+        }),
+      ).rejects.toMatchObject({ code: "branch_local_snapshot_missing" });
+
+      const branchedFloors = await database.db
+        .select({ id: floors.id })
+        .from(floors)
+        .where(and(eq(floors.sessionId, sessionId), eq(floors.branchId, "alt-missing-snapshot")));
+
+      expect(branchedFloors).toHaveLength(0);
+      expect(mockOrchestrator.executeTurn).not.toHaveBeenCalled();
     });
 
     it("should materialize source floor local values when respond opens a new branch", async () => {
@@ -2509,7 +2665,7 @@ describe("ChatService", () => {
       expect(editedUserMessage?.content).toBe("Edited user line");
     });
 
-    it("should materialize legacy local fallback into a new branch when the source floor has no snapshot", async () => {
+    it("should fail editAndRegenerate when the source floor snapshot is missing", async () => {
       const now = Date.now();
       const sourceFloorId = nanoid();
       const inputPageId = nanoid();
@@ -2572,10 +2728,12 @@ describe("ChatService", () => {
         },
       ]);
 
-      await chatService.editAndRegenerate(sourceMessageId, {
-        content: "Legacy edited line",
-        branchId: "legacy-fallback",
-      });
+      await expect(
+        chatService.editAndRegenerate(sourceMessageId, {
+          content: "Legacy edited line",
+          branchId: "legacy-fallback",
+        }),
+      ).rejects.toMatchObject({ code: "branch_local_snapshot_missing" });
 
       const targetScopeId = buildBranchVariableScopeId(sessionId, "legacy-fallback");
       const inheritedRows = await database.db
@@ -2588,10 +2746,7 @@ describe("ChatService", () => {
         ))
         .orderBy(asc(variables.key));
 
-      expect(inheritedRows.map((row) => [row.key, JSON.parse(row.valueJson)])).toEqual([
-        ["branch_seed", { hp: 95 }],
-        ["chat_seed", "legacy-chat"],
-      ]);
+      expect(inheritedRows).toEqual([]);
     });
 
     it("should branch from the source floor snapshot instead of current chat values", async () => {

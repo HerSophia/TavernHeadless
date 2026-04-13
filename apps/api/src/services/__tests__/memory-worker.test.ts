@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { buildBranchMemoryScopeId } from "@tavern/shared";
 import {
   MemoryStore,
   SimpleTokenCounter,
@@ -38,6 +39,10 @@ import {
 
 const DEFAULT_ACCOUNT_ID = "default-admin";
 
+function mainBranchMemoryScopeId(sessionId: string): string {
+  return buildBranchMemoryScopeId(sessionId, "main");
+}
+
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -72,7 +77,7 @@ function toLegacyMemoryScopeState(row: typeof runtimeScopeStates.$inferSelect) {
 
 async function getRuntimeMemoryScopeState(
   database: DatabaseConnection,
-  scope: "global" | "chat" | "floor",
+  scope: "global" | "chat" | "branch" | "floor",
   scopeId: string,
 ) {
   const [row] = await database.db.select().from(runtimeScopeStates).where(and(
@@ -277,8 +282,8 @@ describe("MemoryWorker", () => {
       {
         id: nanoid(),
         accountId: DEFAULT_ACCOUNT_ID,
-        scope: "chat",
-        scopeId: sessionId,
+        scope: "branch",
+        scopeId: mainBranchMemoryScopeId(sessionId),
         type: "summary",
         summaryTier: "micro",
         contentJson: JSON.stringify("Alice had started to distrust Bob."),
@@ -294,8 +299,8 @@ describe("MemoryWorker", () => {
       {
         id: nanoid(),
         accountId: DEFAULT_ACCOUNT_ID,
-        scope: "chat",
-        scopeId: sessionId,
+        scope: "branch",
+        scopeId: mainBranchMemoryScopeId(sessionId),
         type: "fact",
         contentJson: JSON.stringify("vault_key_owner: unknown"),
         factKey: "vault_key_owner",
@@ -314,6 +319,7 @@ describe("MemoryWorker", () => {
       jobScheduler.enqueueIngestTurn(tx, {
         accountId: DEFAULT_ACCOUNT_ID,
         sessionId,
+        branchId: "main",
         floorId,
         floorNo: 3,
         assistantMessageId: conversation.assistantMessageId,
@@ -327,7 +333,7 @@ describe("MemoryWorker", () => {
     const process = vi.fn(async () => ({
       output: makeIngestOutput({
         microSummary: "Alice confirms that Bob still keeps the vault key.",
-        factsAdd: [{ factKey: "vault_key_owner", value: "Bob still holds the vault key.", scope: "chat", importance: 0.8 }],
+        factsAdd: [{ factKey: "vault_key_owner", value: "Bob still holds the vault key.", importance: 0.8 }],
       }),
       usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
     }));
@@ -358,8 +364,8 @@ describe("MemoryWorker", () => {
       recentSummaries: [expect.objectContaining({ content: "Alice had started to distrust Bob." })],
       existingFacts: [expect.objectContaining({ factKey: "vault_key_owner", content: "vault_key_owner: unknown" })],
       existingOpenLoops: [],
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: mainBranchMemoryScopeId(sessionId),
       sourceFloorId: floorId,
     }));
 
@@ -372,8 +378,8 @@ describe("MemoryWorker", () => {
     const summaryRow = createdRows.find((row) => row.type === "summary");
     const factRow = createdRows.find((row) => row.type === "fact");
     expect(summaryRow).toMatchObject({
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: mainBranchMemoryScopeId(sessionId),
       type: "summary",
       summaryTier: "micro",
       lifecycleStatus: "active",
@@ -384,8 +390,8 @@ describe("MemoryWorker", () => {
     expect(JSON.parse(summaryRow!.contentJson)).toBe("Alice confirms that Bob still keeps the vault key.");
     expect(summaryRow!.tokenCountEstimate).toBeGreaterThan(0);
     expect(factRow).toMatchObject({
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: mainBranchMemoryScopeId(sessionId),
       type: "fact",
       factKey: "vault_key_owner",
       lifecycleStatus: "active",
@@ -393,11 +399,11 @@ describe("MemoryWorker", () => {
     });
     expect(JSON.parse(factRow!.contentJson)).toBe("vault_key_owner: Bob still holds the vault key.");
 
-    const scopeState = await getRuntimeMemoryScopeState(database, "chat", sessionId);
+    const scopeState = await getRuntimeMemoryScopeState(database, "branch", mainBranchMemoryScopeId(sessionId));
     expect(scopeState).toMatchObject({
       accountId: DEFAULT_ACCOUNT_ID,
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: mainBranchMemoryScopeId(sessionId),
       revision: 1,
       leaseOwner: null,
       leaseUntil: null,
@@ -407,8 +413,8 @@ describe("MemoryWorker", () => {
     const [job] = await getRuntimeMemoryJobs(database);
     expect(job).toMatchObject({
       status: "succeeded",
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: mainBranchMemoryScopeId(sessionId),
       floorId,
       basedOnRevision: 0,
       attemptCount: 1,
@@ -419,16 +425,16 @@ describe("MemoryWorker", () => {
     expect(memoryCreatedHandler).toHaveBeenCalledTimes(2);
     expect(memoryCreatedHandler).toHaveBeenCalledWith(expect.objectContaining({
       sessionId,
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: mainBranchMemoryScopeId(sessionId),
       floorId,
       sourceJobId: `memory-job:ingest_turn:${floorId}`,
     }));
     expect(memoryConsolidatedHandler).toHaveBeenCalledOnce();
     expect(memoryConsolidatedHandler).toHaveBeenCalledWith(expect.objectContaining({
       sessionId,
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: mainBranchMemoryScopeId(sessionId),
       floorId,
       sourceJobId: `memory-job:ingest_turn:${floorId}`,
       jobType: "ingest_turn",
@@ -459,8 +465,8 @@ describe("MemoryWorker", () => {
       seededMicroIds.map((id, index) => ({
         id,
         accountId: DEFAULT_ACCOUNT_ID,
-        scope: "chat" as const,
-        scopeId: sessionId,
+        scope: "branch" as const,
+        scopeId: mainBranchMemoryScopeId(sessionId),
         type: "summary" as const,
         summaryTier: "micro" as const,
         contentJson: JSON.stringify(`Historical micro summary ${index + 1}`),
@@ -482,6 +488,7 @@ describe("MemoryWorker", () => {
       jobScheduler.enqueueIngestTurn(tx, {
         accountId: DEFAULT_ACCOUNT_ID,
         sessionId,
+        branchId: "main",
         floorId,
         floorNo: 12,
         assistantMessageId: conversation.assistantMessageId,
@@ -517,8 +524,8 @@ describe("MemoryWorker", () => {
     expect(compactJobs).toHaveLength(1);
     expect(compactJobs[0]).toMatchObject({
       accountId: DEFAULT_ACCOUNT_ID,
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: mainBranchMemoryScopeId(sessionId),
       status: "pending",
     });
 
@@ -561,8 +568,8 @@ describe("MemoryWorker", () => {
     await database.db.insert(memoryItems).values({
       id: resolvedOpenLoopId,
       accountId: DEFAULT_ACCOUNT_ID,
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: mainBranchMemoryScopeId(sessionId),
       type: "open_loop",
       contentJson: JSON.stringify("Why did Bob hide the letter?"),
       importance: 0.8,
@@ -579,6 +586,7 @@ describe("MemoryWorker", () => {
       jobScheduler.enqueueIngestTurn(tx, {
         accountId: DEFAULT_ACCOUNT_ID,
         sessionId,
+        branchId: "main",
         floorId,
         floorNo: 4,
         assistantMessageId: conversation.assistantMessageId,
@@ -592,7 +600,7 @@ describe("MemoryWorker", () => {
     const process = vi.fn(async () => ({
       output: makeIngestOutput({
         microSummary: "Bob explains why he hid the letter, but his full plan remains unclear.",
-        openLoopsAdd: [{ content: "What else Bob is still hiding remains unresolved.", scope: "chat", importance: 0.65 }],
+        openLoopsAdd: [{ content: "What else Bob is still hiding remains unresolved.", importance: 0.65 }],
         openLoopsResolve: [{ id: resolvedOpenLoopId, resolution: "Bob admits he hid the letter to protect Alice." }],
       }),
       usage: { promptTokens: 8, completionTokens: 12, totalTokens: 20 },
@@ -1242,6 +1250,7 @@ describe("MemoryWorker", () => {
       jobScheduler.enqueueIngestTurn(tx, {
         accountId: DEFAULT_ACCOUNT_ID,
         sessionId,
+        branchId: "main",
         floorId,
         floorNo: 5,
         assistantMessageId: conversation.assistantMessageId,
@@ -1285,7 +1294,7 @@ describe("MemoryWorker", () => {
       .where(and(
         eq(runtimeScopeStates.accountId, DEFAULT_ACCOUNT_ID),
         eq(runtimeScopeStates.scopeType, MEMORY_RUNTIME_SCOPE_TYPE),
-        eq(runtimeScopeStates.scopeKey, buildMemoryRuntimeScopeKey("chat", sessionId)),
+        eq(runtimeScopeStates.scopeKey, buildMemoryRuntimeScopeKey("branch", mainBranchMemoryScopeId(sessionId))),
       ))
       .run();
 
@@ -1336,6 +1345,7 @@ describe("MemoryWorker", () => {
       jobScheduler.enqueueIngestTurn(tx, {
         accountId: DEFAULT_ACCOUNT_ID,
         sessionId,
+        branchId: "main",
         floorId,
         floorNo: 6,
         assistantMessageId: conversation.assistantMessageId,

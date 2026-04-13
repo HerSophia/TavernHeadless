@@ -18,15 +18,33 @@ export interface BranchLocalVariableSnapshotRecord {
 }
 
 export interface ResolvedSourceFloorLocalValues {
-  source: "snapshot" | "legacy_fallback";
+  source: "snapshot";
   values: Record<string, unknown>;
 }
 
 export interface MaterializeBranchLocalVariableSnapshotResult {
-  source: "snapshot" | "legacy_fallback";
+  source: "snapshot";
   targetScopeId: string;
   restoredCount: number;
   restoredKeys: string[];
+}
+
+export class BranchLocalSnapshotMissingError extends Error {
+  readonly code = "branch_local_snapshot_missing";
+
+  constructor(
+    public readonly details: {
+      accountId: string;
+      sessionId: string;
+      sourceFloorId: string;
+      sourceBranchId: string;
+    },
+  ) {
+    super(
+      `Source floor '${details.sourceFloorId}' in branch '${details.sourceBranchId}' does not have a branch local snapshot`,
+    );
+    this.name = "BranchLocalSnapshotMissingError";
+  }
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -53,7 +71,7 @@ function toSnapshotRecord(row: BranchLocalVariableSnapshotRow): BranchLocalVaria
  * 保存并回放分支 local 兼容变量快照。
  *
  * 这个服务只处理 branch/chat 两层的可见视图，
- * 用于历史分支点的 local 继承与 legacy fallback。
+ * 用于历史分支点的 local 继承。
  */
 export class BranchLocalVariableSnapshotService {
   constructor(private readonly db: AppDb | DbExecutor) {}
@@ -121,27 +139,38 @@ export class BranchLocalVariableSnapshotService {
     return row ? toSnapshotRecord(row) : null;
   }
 
-  resolveSourceFloorLocalValues(input: {
+  tryGetSourceFloorLocalValues(input: {
     accountId: string;
     sessionId: string;
     sourceFloorId: string;
     sourceBranchId: string;
-  }): ResolvedSourceFloorLocalValues {
+  }): ResolvedSourceFloorLocalValues | null {
     const storedSnapshot = this.getFloorLocalSnapshot({
       accountId: input.accountId,
       floorId: input.sourceFloorId,
     });
 
-    return storedSnapshot
-      ? { source: "snapshot", values: storedSnapshot.values }
-      : {
-          source: "legacy_fallback",
-          values: this.resolveVisibleLocalValues({
-            accountId: input.accountId,
-            sessionId: input.sessionId,
-            branchId: input.sourceBranchId,
-          }),
-        };
+    return storedSnapshot ? { source: "snapshot", values: storedSnapshot.values } : null;
+  }
+
+  requireSourceFloorLocalValues(input: {
+    accountId: string;
+    sessionId: string;
+    sourceFloorId: string;
+    sourceBranchId: string;
+  }): ResolvedSourceFloorLocalValues {
+    const resolved = this.tryGetSourceFloorLocalValues(input);
+
+    if (!resolved) {
+      throw new BranchLocalSnapshotMissingError({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        sourceFloorId: input.sourceFloorId,
+        sourceBranchId: input.sourceBranchId,
+      });
+    }
+
+    return resolved;
   }
 
   materializeFromSourceFloor(input: {
@@ -152,7 +181,7 @@ export class BranchLocalVariableSnapshotService {
     targetBranchId: string;
     createdAt: number;
   }): MaterializeBranchLocalVariableSnapshotResult {
-    const resolvedSource = this.resolveSourceFloorLocalValues({
+    const resolvedSource = this.requireSourceFloorLocalValues({
       accountId: input.accountId,
       sessionId: input.sessionId,
       sourceFloorId: input.sourceFloorId,

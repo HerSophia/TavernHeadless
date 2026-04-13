@@ -34,6 +34,7 @@ export type MemoryIngestTurnJobPayload = {
   committedAt: number;
   enableConsolidation: boolean;
   floorId: string;
+  branchId?: string;
   floorNo: number;
   sessionId: string;
   summaries: string[];
@@ -269,6 +270,7 @@ function mapMemoryJobPayload(jobType: MemoryJobType, value: unknown): MemoryJobP
         committedAt: readNumber(record.committedAt),
         enableConsolidation: readBoolean(record.enableConsolidation, false),
         floorId: readString(record.floorId),
+        branchId: readNullableString(record.branchId) ?? undefined,
         floorNo: readNumber(record.floorNo),
         sessionId: readString(record.sessionId),
         summaries: readStringArray(record.summaries),
