@@ -6,6 +6,8 @@ import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js
 import { getRequestAuthContext } from "../plugins/auth.js";
 import {
   promptRuntimeAssetsResponseJsonSchema,
+  promptRuntimeCompareBodyJsonSchema,
+  promptRuntimeCompareResponseJsonSchema,
   promptRuntimeCapabilitiesResponseJsonSchema,
   promptRuntimePolicyViewResponseJsonSchema,
   promptRuntimeHistoricalExplainResponseJsonSchema,
@@ -23,6 +25,7 @@ import {
   type PromptRuntimeAssetsView,
   type PromptRuntimeCapabilities,
   type PromptRuntimeDebugPolicy,
+  type PromptRuntimeExplainDiff,
   type PromptRuntimePersistentPolicy,
   type PromptRuntimePolicyView,
   type PromptRuntimeHistoricalExplain,
@@ -63,10 +66,31 @@ const promptRuntimePolicyPatchBodySchema = z.object({
     require_last_user: z.boolean().optional(),
     no_assistant: z.boolean().optional(),
   }).strict().nullable().optional(),
+  budget: z.object({
+    max_input_tokens: z.number().int().positive().optional(),
+    reserved_completion_tokens: z.number().int().positive().optional(),
+  }).strict().nullable().optional(),
+  source_selection: z.object({
+    history: z.object({
+      mode: z.enum(PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES).optional(),
+      max_messages: z.number().int().positive().optional(),
+    }).strict().optional(),
+    memory: z.object({ enabled: z.boolean().optional() }).strict().optional(),
+    worldbook: z.object({ enabled: z.boolean().optional() }).strict().optional(),
+    examples: z.object({ enabled: z.boolean().optional() }).strict().optional(),
+  }).strict().nullable().optional(),
 }).strict().refine(
-  (value) => value.structure !== undefined || value.delivery !== undefined,
+  (value) => value.structure !== undefined
+    || value.delivery !== undefined
+    || value.budget !== undefined
+    || value.source_selection !== undefined,
   "At least one mutable field is required",
 );
+
+const promptRuntimeCompareBodySchema = z.object({
+  left: z.object({ floor_id: z.string().min(1) }).strict(),
+  right: z.object({ floor_id: z.string().min(1) }).strict(),
+}).strict();
 
 const promptRuntimePreviewVisibilitySchema = z.object({
   hidden_floor_ranges: z.array(z.object({
@@ -216,7 +240,12 @@ export async function registerPromptRuntimeRoutes(
 
     try {
       const auth = getRequestAuthContext(request);
-      const policy = await promptRuntimeControlService.updatePolicy(parsedParams.data.id, auth.accountId, mapPolicyPatchBodyToCamelCase(parsedBody.data));
+      const policy = await promptRuntimeControlService.updatePolicy(
+        parsedParams.data.id,
+        auth.accountId,
+        mapPolicyPatchBodyToCamelCase(parsedBody.data),
+        auth.subject ?? auth.accountId,
+      );
       return reply.send({ data: mapPolicyViewToSnakeCase(policy) });
     } catch (error) {
       return sendPromptRuntimeControlServiceError(reply, error);
@@ -292,7 +321,13 @@ export async function registerPromptRuntimeRoutes(
 
     try {
       const auth = getRequestAuthContext(request);
-      const policy = await promptRuntimeControlService.updateBranchPolicy(parsedParams.data.id, parsedParams.data.branchId, auth.accountId, mapPolicyPatchBodyToCamelCase(parsedBody.data));
+      const policy = await promptRuntimeControlService.updateBranchPolicy(
+        parsedParams.data.id,
+        parsedParams.data.branchId,
+        auth.accountId,
+        mapPolicyPatchBodyToCamelCase(parsedBody.data),
+        auth.subject ?? auth.accountId,
+      );
       return reply.send({ data: mapPolicyViewToSnakeCase(policy) });
     } catch (error) {
       return sendPromptRuntimeControlServiceError(reply, error);
@@ -392,6 +427,45 @@ export async function registerPromptRuntimeRoutes(
     }
   });
 
+  app.post("/sessions/:id/prompt-runtime/compare", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Compare committed floor prompt runtime snapshots",
+      operationId: "compareSessionPromptRuntime",
+      params: idParamsJsonSchema,
+      body: promptRuntimeCompareBodyJsonSchema,
+      response: {
+        200: promptRuntimeCompareResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+    const parsedBody = parseWithSchema(promptRuntimeCompareBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    try {
+      const auth = getRequestAuthContext(request);
+      const diff = await promptRuntimeControlService.compareCommittedExplain(
+        parsedParams.data.id,
+        parsedBody.data.left.floor_id,
+        parsedBody.data.right.floor_id,
+        auth.accountId,
+      );
+      return reply.send({ data: mapExplainDiffToSnakeCase(diff) });
+    } catch (error) {
+      return sendPromptRuntimeControlServiceError(reply, error);
+    }
+  });
+
   app.get("/prompt-runtime/capabilities", {
     schema: {
       tags: ["prompt-runtime"],
@@ -412,9 +486,15 @@ function mapResolvedStateToSnakeCase(state: PromptRuntimeResolvedState): Record<
     scope: mapScopeToSnakeCase(state.scope),
     policy: mapResolvedPolicyToSnakeCase(state.policy),
     ...(state.persistentPolicy ? { persistent_policy: mapPersistentPolicyToSnakeCase(state.persistentPolicy) } : {}),
+    ...(state.persistentPolicyEnvelope !== undefined
+      ? { persistent_policy_envelope: mapPersistedPolicyEnvelopeToSnakeCase(state.persistentPolicyEnvelope) }
+      : {}),
     branch_persistent_policy: state.branchPersistentPolicy
       ? mapPersistentPolicyToSnakeCase(state.branchPersistentPolicy)
       : null,
+    ...(state.branchPersistentPolicyEnvelope !== undefined
+      ? { branch_persistent_policy_envelope: mapPersistedPolicyEnvelopeToSnakeCase(state.branchPersistentPolicyEnvelope) }
+      : {}),
     assets: mapAssetsViewToSnakeCase(state.assets),
     warnings: state.warnings,
     diagnostics: state.diagnostics.map((diagnostic) => mapDiagnosticToSnakeCase(diagnostic)),
@@ -426,6 +506,9 @@ function mapResolvedStateToSnakeCase(state: PromptRuntimeResolvedState): Record<
 function mapPolicyViewToSnakeCase(view: PromptRuntimePolicyView): Record<string, unknown> {
   return {
     ...(view.persistentPolicy ? { persistent_policy: mapPersistentPolicyToSnakeCase(view.persistentPolicy) } : {}),
+    ...(view.persistentPolicyEnvelope !== undefined
+      ? { persistent_policy_envelope: mapPersistedPolicyEnvelopeToSnakeCase(view.persistentPolicyEnvelope) }
+      : {}),
     resolved_policy: mapResolvedPolicyToSnakeCase(view.resolvedPolicy),
     warnings: view.warnings,
   };
@@ -451,6 +534,31 @@ function mapPolicyPatchBodyToCamelCase(body: z.infer<typeof promptRuntimePolicyP
             ...(body.delivery.allow_assistant_prefill !== undefined ? { allowAssistantPrefill: body.delivery.allow_assistant_prefill } : {}),
             ...(body.delivery.require_last_user !== undefined ? { requireLastUser: body.delivery.require_last_user } : {}),
             ...(body.delivery.no_assistant !== undefined ? { noAssistant: body.delivery.no_assistant } : {}),
+          },
+        }
+      : {}),
+    ...(body.budget !== undefined
+      ? {
+          budget: body.budget === null ? null : {
+            ...(body.budget.max_input_tokens !== undefined ? { maxInputTokens: body.budget.max_input_tokens } : {}),
+            ...(body.budget.reserved_completion_tokens !== undefined ? { reservedCompletionTokens: body.budget.reserved_completion_tokens } : {}),
+          },
+        }
+      : {}),
+    ...(body.source_selection !== undefined
+      ? {
+          sourceSelection: body.source_selection === null ? null : {
+            ...(body.source_selection.history !== undefined
+              ? {
+                  history: {
+                    ...(body.source_selection.history.mode !== undefined ? { mode: body.source_selection.history.mode } : {}),
+                    ...(body.source_selection.history.max_messages !== undefined ? { maxMessages: body.source_selection.history.max_messages } : {}),
+                  },
+                }
+              : {}),
+            ...(body.source_selection.memory !== undefined ? { memory: { ...(body.source_selection.memory.enabled !== undefined ? { enabled: body.source_selection.memory.enabled } : {}) } } : {}),
+            ...(body.source_selection.worldbook !== undefined ? { worldbook: { ...(body.source_selection.worldbook.enabled !== undefined ? { enabled: body.source_selection.worldbook.enabled } : {}) } } : {}),
+            ...(body.source_selection.examples !== undefined ? { examples: { ...(body.source_selection.examples.enabled !== undefined ? { enabled: body.source_selection.examples.enabled } : {}) } } : {}),
           },
         }
       : {}),
@@ -558,6 +666,8 @@ function mapHistoricalExplainToSnakeCase(explain: PromptRuntimeHistoricalExplain
       committed_at: explain.floor.committedAt,
     },
     scope: mapScopeToSnakeCase(explain.scope),
+    snapshot_available: explain.snapshotAvailable,
+    assets: explain.assets ? mapAssetsViewToSnakeCase(explain.assets) : null,
     prompt_snapshot: mapPromptSnapshotToSnakeCase(explain.promptSnapshot),
     resolved_policy: explain.resolvedPolicy ? mapResolvedPolicyToSnakeCase(explain.resolvedPolicy) : null,
     ...(explain.sourceMap ? { source_map: mapSourceMapToSnakeCase(explain.sourceMap) } : {}),
@@ -572,9 +682,30 @@ function mapHistoricalExplainToSnakeCase(explain: PromptRuntimeHistoricalExplain
     excluded_sources: explain.excludedSources
       ? explain.excludedSources.map((item) => ({ source: item.source, reason: item.reason, ...(item.detail ? { detail: item.detail } : {}) }))
       : null,
+    section_stats: explain.sectionStats ? explain.sectionStats.map((item) => mapSectionStatToSnakeCase(item)) : null,
     diagnostics: explain.diagnostics.map((diagnostic) => mapDiagnosticToSnakeCase(diagnostic)),
     limitations: explain.limitations,
     result: mapHistoricalExplainResultToSnakeCase(explain.result),
+  };
+}
+
+function mapExplainDiffToSnakeCase(diff: PromptRuntimeExplainDiff): Record<string, unknown> {
+  return {
+    left: {
+      floor_id: diff.left.floorId,
+      snapshot_available: diff.left.snapshotAvailable,
+    },
+    right: {
+      floor_id: diff.right.floorId,
+      snapshot_available: diff.right.snapshotAvailable,
+    },
+    scope_changes: diff.scopeChanges.map((entry) => mapDiffEntryToSnakeCase(entry)),
+    policy_changes: diff.policyChanges.map((entry) => mapDiffEntryToSnakeCase(entry)),
+    asset_changes: diff.assetChanges.map((entry) => mapDiffEntryToSnakeCase(entry)),
+    diagnostics_changes: diff.diagnosticsChanges.map((entry) => mapDiffEntryToSnakeCase(entry)),
+    trim_changes: diff.trimChanges.map((entry) => mapDiffEntryToSnakeCase(entry)),
+    exclusion_changes: diff.exclusionChanges.map((entry) => mapDiffEntryToSnakeCase(entry)),
+    limitations: diff.limitations,
   };
 }
 
@@ -654,6 +785,61 @@ function mapPersistentPolicyToSnakeCase(policy: PromptRuntimePersistentPolicy): 
     ...(policy.budget ? { budget: mapBudgetPolicyToSnakeCase(policy.budget) } : {}),
     ...(policy.sourceSelection ? { source_selection: mapSourceSelectionPolicyToSnakeCase(policy.sourceSelection) } : {}),
   };
+}
+
+function mapPersistedPolicyEnvelopeToSnakeCase(
+  envelope: PromptRuntimePolicyView["persistentPolicyEnvelope"] | PromptRuntimeResolvedState["persistentPolicyEnvelope"] | PromptRuntimeResolvedState["branchPersistentPolicyEnvelope"],
+): Record<string, unknown> | null {
+  if (!envelope) {
+    return null;
+  }
+
+  return {
+    version: envelope.version,
+    updated_at: envelope.updatedAt,
+    updated_by: envelope.updatedBy ?? null,
+    value: mapPersistentPolicyToSnakeCase(envelope.value),
+  };
+}
+
+function mapSectionStatToSnakeCase(item: { sectionName: string; tokenCount: number }): Record<string, unknown> {
+  return {
+    section_name: item.sectionName,
+    token_count: item.tokenCount,
+  };
+}
+
+function mapDiffEntryToSnakeCase(entry: { path: string; changeType: string; left?: unknown; right?: unknown }): Record<string, unknown> {
+  return {
+    path: toSnakeCasePath(entry.path),
+    change_type: entry.changeType,
+    ...(entry.left !== undefined ? { left: mapUnknownKeysToSnakeCase(entry.left) } : {}),
+    ...(entry.right !== undefined ? { right: mapUnknownKeysToSnakeCase(entry.right) } : {}),
+  };
+}
+
+function mapUnknownKeysToSnakeCase(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => mapUnknownKeysToSnakeCase(item));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, nestedValue]) => [
+      toSnakeCaseName(key),
+      mapUnknownKeysToSnakeCase(nestedValue),
+    ]),
+  );
+}
+
+function toSnakeCasePath(path: string): string {
+  return path.split(".").map((segment) => toSnakeCaseName(segment)).join(".");
+}
+
+function toSnakeCaseName(value: string): string {
+  return value.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 }
 
 function mapResolvedPolicyToSnakeCase(policy: ResolvedPromptRuntimePolicy): Record<string, unknown> {
@@ -938,6 +1124,27 @@ function mapCapabilitiesToSnakeCase(capabilities: PromptRuntimeCapabilities): Re
       history_modes: [...capabilities.sourceSelection.historyModes],
       exclusion_reason_codes: [...capabilities.sourceSelection.exclusionReasonCodes],
     },
+    governance: {
+      session: {
+        envelope_metadata: capabilities.governance.session.envelopeMetadata,
+        null_clears_field: capabilities.governance.session.nullClearsField,
+        object_patch: capabilities.governance.session.objectPatch,
+        supported_fields: [...capabilities.governance.session.supportedFields],
+      },
+      branch: {
+        envelope_metadata: capabilities.governance.branch.envelopeMetadata,
+        materialized_branches_only: capabilities.governance.branch.materializedBranchesOnly,
+        null_clears_field: capabilities.governance.branch.nullClearsField,
+        object_patch: capabilities.governance.branch.objectPatch,
+        supported_fields: [...capabilities.governance.branch.supportedFields],
+      },
+    },
+    compare: {
+      enabled: capabilities.compare.enabled,
+      committed_floors_only: capabilities.compare.committedFloorsOnly,
+      mixed_preview_supported: capabilities.compare.mixedPreviewSupported,
+      limitations_instead_of_recompute: capabilities.compare.limitationsInsteadOfRecompute,
+    },
     observability: {
       live: {
         enabled: capabilities.observability.live.enabled,
@@ -973,6 +1180,9 @@ function mapCapabilitiesToSnakeCase(capabilities: PromptRuntimeCapabilities): Re
         requires_committed_floor: capabilities.observability.explain.requiresCommittedFloor,
         persisted_truth_only: capabilities.observability.explain.persistedTruthOnly,
         recompute: capabilities.observability.explain.recompute,
+        snapshot_supported: capabilities.observability.explain.snapshotSupported,
+        legacy_floor_fallback: capabilities.observability.explain.legacyFloorFallback,
+        snapshot_availability_field: capabilities.observability.explain.snapshotAvailabilityField,
       },
       stream: {
         enabled: capabilities.observability.stream.enabled,

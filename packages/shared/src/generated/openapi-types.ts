@@ -5664,6 +5664,23 @@ export interface paths {
         patch: operations["patchSessionPromptRuntimeBranchPolicy"];
         trace?: never;
     };
+    "/sessions/{id}/prompt-runtime/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compare committed floor prompt runtime snapshots */
+        post: operations["compareSessionPromptRuntime"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{id}/prompt-runtime/policy": {
         parameters: {
             query?: never;
@@ -8817,33 +8834,40 @@ export interface operations {
                     /**
                      * @example {
                      *       "data": {
+                     *         "assets": {
+                     *           "character_card": {
+                     *             "id": "char-hero",
+                     *             "name": "Hero"
+                     *           },
+                     *           "preset": {
+                     *             "id": "preset-story",
+                     *             "name": "Story Preset"
+                     *           },
+                     *           "regex_profile": {
+                     *             "id": "regex-safe",
+                     *             "name": "Safety Regex"
+                     *           },
+                     *           "worldbook": {
+                     *             "id": "wb-lore",
+                     *             "name": "Lorebook"
+                     *           }
+                     *         },
                      *         "diagnostics": [
                      *           {
-                     *             "code": "historical_resolved_policy_unavailable",
-                     *             "field_path": "resolved_policy",
-                     *             "message": "Historical explain did not persist the resolved policy for this floor. The explain view returns persisted prompt snapshot and committed result truth only.",
-                     *             "phase": "explain",
-                     *             "severity": "info",
+                     *             "code": "derived_no_assistant_structure",
+                     *             "field_path": "policy.structure.mode",
+                     *             "message": "delivery.noAssistant forced the resolved structure.mode to no_assistant.",
+                     *             "severity": "warning",
                      *             "source": "policy"
-                     *           },
-                     *           {
-                     *             "code": "historical_trim_reasons_unavailable",
-                     *             "field_path": "trim_reasons",
-                     *             "message": "Historical explain did not persist trim reasons for this floor, so explain returns trim_reasons as null instead of recomputing budget decisions.",
-                     *             "phase": "explain",
-                     *             "severity": "info",
-                     *             "source": "budget"
-                     *           },
-                     *           {
-                     *             "code": "historical_excluded_sources_unavailable",
-                     *             "field_path": "excluded_sources",
-                     *             "message": "Historical explain did not persist excluded sources for this floor, so explain returns excluded_sources as null instead of recomputing source selection.",
-                     *             "phase": "explain",
-                     *             "severity": "info",
-                     *             "source": "source_selection"
                      *           }
                      *         ],
-                     *         "excluded_sources": null,
+                     *         "excluded_sources": [
+                     *           {
+                     *             "detail": "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly.",
+                     *             "reason": "disabled_by_policy",
+                     *             "source": "examples"
+                     *           }
+                     *         ],
                      *         "floor": {
                      *           "branch_id": "main",
                      *           "committed_at": 1710000004000,
@@ -8856,9 +8880,7 @@ export interface operations {
                      *         },
                      *         "limitations": [
                      *           "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
-                     *           "Variable commit remains page -> floor. Branch promotion is not automatic.",
-                     *           "Historical explain reads persisted prompt snapshot and committed floor result only. It does not re-run prompt assembly, macro evaluation, or budget decisions.",
-                     *           "Resolved policy, policy source-map fields, trim reasons, and excluded sources were not persisted for existing floors, so historical explain may return them as null."
+                     *           "Variable commit remains page -> floor. Branch promotion is not automatic."
                      *         ],
                      *         "prompt_snapshot": {
                      *           "preset_id": "preset-story",
@@ -8882,7 +8904,43 @@ export interface operations {
                      *           "worldbook_updated_at": 1710000001000,
                      *           "worldbook_version": 5
                      *         },
-                     *         "resolved_policy": null,
+                     *         "resolved_policy": {
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
+                     *           },
+                     *           "debug": {
+                     *             "include_prompt_snapshot": false,
+                     *             "include_runtime_trace": false,
+                     *             "include_worldbook_matches": false
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": true,
+                     *             "no_assistant": true,
+                     *             "require_last_user": true
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "to_system",
+                     *             "merge_adjacent_same_role": true,
+                     *             "mode": "no_assistant",
+                     *             "preserve_system_messages": true
+                     *           }
+                     *         },
                      *         "result": {
                      *           "assistant_message_id": "msg-assistant-12",
                      *           "committed_at": 1710000004000,
@@ -8906,18 +8964,84 @@ export interface operations {
                      *           "source_floor_id": null,
                      *           "target_branch_id": "main"
                      *         },
+                     *         "section_stats": [
+                     *           {
+                     *             "section_name": "history",
+                     *             "token_count": 320
+                     *           },
+                     *           {
+                     *             "section_name": "worldbook",
+                     *             "token_count": 96
+                     *           }
+                     *         ],
+                     *         "snapshot_available": true,
                      *         "source_map": {
+                     *           "budget": {
+                     *             "max_input_tokens": "request_override",
+                     *             "reserved_completion_tokens": "request_override"
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": "system_default",
+                     *             "no_assistant": "branch_policy",
+                     *             "require_last_user": "session_policy"
+                     *           },
                      *           "history": {
-                     *             "source_branch_id": "main",
+                     *             "source_branch_id": "alt-branch",
                      *             "source_mode": "existing_branch"
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": "request_override"
+                     *             },
+                     *             "history": {
+                     *               "max_messages": "request_override",
+                     *               "mode": "request_override"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": "system_default"
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": "system_default"
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "system_default",
+                     *             "merge_adjacent_same_role": "branch_policy",
+                     *             "mode": "branch_policy",
+                     *             "preserve_system_messages": "system_default"
                      *           }
                      *         },
-                     *         "trim_reasons": null
+                     *         "trim_reasons": [
+                     *           {
+                     *             "detail": "Prompt runtime pruned 128 tokens from budget group 'history'.",
+                     *             "group": "history",
+                     *             "pruned_token_count": 128,
+                     *             "reason": "budget_exceeded"
+                     *           }
+                     *         ]
                      *       }
                      *     }
                      */
                     "application/json": {
                         data: {
+                            assets: {
+                                character_card: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                                preset: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                                regex_profile: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                                worldbook: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                            } | null;
                             diagnostics: {
                                 code: string;
                                 field_path?: string;
@@ -9036,6 +9160,11 @@ export interface operations {
                                 source_floor_id?: string | null;
                                 target_branch_id: string;
                             };
+                            section_stats: {
+                                section_name: string;
+                                token_count: number;
+                            }[] | null;
+                            snapshot_available: boolean;
                             source_map?: {
                                 budget?: {
                                     /** @enum {string} */
@@ -14844,7 +14973,7 @@ export interface operations {
                      *       "data": {
                      *         "budget": {
                      *           "defaults": {},
-                     *           "persistent_patch_supported": false,
+                     *           "persistent_patch_supported": true,
                      *           "request_override_supported": true,
                      *           "supported_fields": [
                      *             "maxInputTokens",
@@ -14857,11 +14986,42 @@ export interface operations {
                      *             "policy_disabled"
                      *           ]
                      *         },
+                     *         "compare": {
+                     *           "committed_floors_only": true,
+                     *           "enabled": true,
+                     *           "limitations_instead_of_recompute": true,
+                     *           "mixed_preview_supported": false
+                     *         },
                      *         "delivery": {
                      *           "defaults": {
                      *             "allow_assistant_prefill": true,
                      *             "no_assistant": false,
                      *             "require_last_user": false
+                     *           }
+                     *         },
+                     *         "governance": {
+                     *           "branch": {
+                     *             "envelope_metadata": true,
+                     *             "materialized_branches_only": true,
+                     *             "null_clears_field": true,
+                     *             "object_patch": "deep_merge",
+                     *             "supported_fields": [
+                     *               "structure",
+                     *               "delivery",
+                     *               "budget",
+                     *               "sourceSelection"
+                     *             ]
+                     *           },
+                     *           "session": {
+                     *             "envelope_metadata": true,
+                     *             "null_clears_field": true,
+                     *             "object_patch": "deep_merge",
+                     *             "supported_fields": [
+                     *               "structure",
+                     *               "delivery",
+                     *               "budget",
+                     *               "sourceSelection"
+                     *             ]
                      *           }
                      *         },
                      *         "macro": {
@@ -14882,10 +15042,13 @@ export interface operations {
                      *           },
                      *           "explain": {
                      *             "enabled": true,
+                     *             "legacy_floor_fallback": true,
                      *             "persisted_truth_only": true,
                      *             "read_only": true,
                      *             "recompute": false,
-                     *             "requires_committed_floor": true
+                     *             "requires_committed_floor": true,
+                     *             "snapshot_availability_field": "snapshot_available",
+                     *             "snapshot_supported": true
                      *           },
                      *           "live": {
                      *             "default_off": true,
@@ -14940,7 +15103,7 @@ export interface operations {
                      *             "full",
                      *             "windowed"
                      *           ],
-                     *           "persistent_patch_supported": false,
+                     *           "persistent_patch_supported": true,
                      *           "request_override_supported": true,
                      *           "supported_sources": [
                      *             "history",
@@ -14978,17 +15141,49 @@ export interface operations {
                                     reserved_completion_tokens?: number;
                                 };
                                 /** @enum {unknown} */
-                                persistent_patch_supported: false;
+                                persistent_patch_supported: true;
                                 /** @enum {unknown} */
                                 request_override_supported: true;
                                 supported_fields: ("maxInputTokens" | "reservedCompletionTokens")[];
                                 trim_reason_codes: ("budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled")[];
+                            };
+                            compare: {
+                                /** @enum {unknown} */
+                                committed_floors_only: true;
+                                /** @enum {unknown} */
+                                enabled: true;
+                                /** @enum {unknown} */
+                                limitations_instead_of_recompute: true;
+                                /** @enum {unknown} */
+                                mixed_preview_supported: false;
                             };
                             delivery: {
                                 defaults: {
                                     allow_assistant_prefill: boolean;
                                     no_assistant: boolean;
                                     require_last_user: boolean;
+                                };
+                            };
+                            governance: {
+                                branch: {
+                                    /** @enum {unknown} */
+                                    envelope_metadata: true;
+                                    /** @enum {unknown} */
+                                    materialized_branches_only: true;
+                                    /** @enum {unknown} */
+                                    null_clears_field: true;
+                                    /** @enum {string} */
+                                    object_patch: "deep_merge";
+                                    supported_fields: ("structure" | "delivery" | "budget" | "sourceSelection")[];
+                                };
+                                session: {
+                                    /** @enum {unknown} */
+                                    envelope_metadata: true;
+                                    /** @enum {unknown} */
+                                    null_clears_field: true;
+                                    /** @enum {string} */
+                                    object_patch: "deep_merge";
+                                    supported_fields: ("structure" | "delivery" | "budget" | "sourceSelection")[];
                                 };
                             };
                             macro: {
@@ -15021,6 +15216,8 @@ export interface operations {
                                     /** @enum {unknown} */
                                     enabled: true;
                                     /** @enum {unknown} */
+                                    legacy_floor_fallback: true;
+                                    /** @enum {unknown} */
                                     persisted_truth_only: true;
                                     /** @enum {unknown} */
                                     read_only: true;
@@ -15028,6 +15225,10 @@ export interface operations {
                                     recompute: false;
                                     /** @enum {unknown} */
                                     requires_committed_floor: true;
+                                    /** @enum {string} */
+                                    snapshot_availability_field: "snapshot_available";
+                                    /** @enum {unknown} */
+                                    snapshot_supported: true;
                                 };
                                 live: {
                                     /** @enum {unknown} */
@@ -15093,7 +15294,7 @@ export interface operations {
                                 exclusion_reason_codes: ("disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered")[];
                                 history_modes: ("full" | "windowed")[];
                                 /** @enum {unknown} */
-                                persistent_patch_supported: false;
+                                persistent_patch_supported: true;
                                 /** @enum {unknown} */
                                 request_override_supported: true;
                                 supported_sources: ("history" | "memory" | "worldbook" | "examples")[];
@@ -15532,6 +15733,35 @@ export interface operations {
                      *             "no_assistant": true
                      *           }
                      *         },
+                     *         "branch_persistent_policy_envelope": {
+                     *           "updated_at": 1710000004500,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "budget": {
+                     *               "max_input_tokens": 4096,
+                     *               "reserved_completion_tokens": 1024
+                     *             },
+                     *             "delivery": {
+                     *               "no_assistant": true
+                     *             },
+                     *             "source_selection": {
+                     *               "examples": {
+                     *                 "enabled": false
+                     *               },
+                     *               "history": {
+                     *                 "max_messages": 24,
+                     *                 "mode": "windowed"
+                     *               },
+                     *               "memory": {
+                     *                 "enabled": true
+                     *               },
+                     *               "worldbook": {
+                     *                 "enabled": true
+                     *               }
+                     *             }
+                     *           },
+                     *           "version": 2
+                     *         },
                      *         "diagnostics": [
                      *           {
                      *             "code": "derived_no_assistant_structure",
@@ -15552,6 +15782,19 @@ export interface operations {
                      *           "structure": {
                      *             "mode": "strict_alternating"
                      *           }
+                     *         },
+                     *         "persistent_policy_envelope": {
+                     *           "updated_at": 1710000004200,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "delivery": {
+                     *               "require_last_user": true
+                     *             },
+                     *             "structure": {
+                     *               "mode": "strict_alternating"
+                     *             }
+                     *           },
+                     *           "version": 1
                      *         },
                      *         "policy": {
                      *           "budget": {
@@ -15695,6 +15938,46 @@ export interface operations {
                                     preserve_system_messages?: boolean;
                                 };
                             } | null;
+                            branch_persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                };
+                                version: number;
+                            } | null;
                             diagnostics: {
                                 code: string;
                                 field_path?: string;
@@ -15742,6 +16025,46 @@ export interface operations {
                                     preserve_system_messages?: boolean;
                                 };
                             };
+                            persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                };
+                                version: number;
+                            } | null;
                             policy: {
                                 budget: {
                                     max_input_tokens?: number;
@@ -16017,6 +16340,19 @@ export interface operations {
                      *             "mode": "strict_alternating"
                      *           }
                      *         },
+                     *         "persistent_policy_envelope": {
+                     *           "updated_at": 1710000004300,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "delivery": {
+                     *               "require_last_user": true
+                     *             },
+                     *             "structure": {
+                     *               "mode": "strict_alternating"
+                     *             }
+                     *           },
+                     *           "version": 1
+                     *         },
                      *         "resolved_policy": {
                      *           "budget": {
                      *             "max_input_tokens": 4096,
@@ -16095,6 +16431,46 @@ export interface operations {
                                     preserve_system_messages?: boolean;
                                 };
                             };
+                            persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                };
+                                version: number;
+                            } | null;
                             resolved_policy: {
                                 budget: {
                                     max_input_tokens?: number;
@@ -16200,10 +16576,30 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
+                    budget?: {
+                        max_input_tokens?: number;
+                        reserved_completion_tokens?: number;
+                    } | null;
                     delivery?: {
                         allow_assistant_prefill?: boolean;
                         no_assistant?: boolean;
                         require_last_user?: boolean;
+                    } | null;
+                    source_selection?: {
+                        examples?: {
+                            enabled?: boolean;
+                        };
+                        history?: {
+                            max_messages?: number;
+                            /** @enum {string} */
+                            mode?: "full" | "windowed";
+                        };
+                        memory?: {
+                            enabled?: boolean;
+                        };
+                        worldbook?: {
+                            enabled?: boolean;
+                        };
                     } | null;
                     structure?: {
                         /** @enum {string} */
@@ -16213,7 +16609,7 @@ export interface operations {
                         mode: "default" | "strict_alternating" | "no_assistant";
                         preserve_system_messages?: boolean;
                     } | null;
-                } | unknown | unknown;
+                } | unknown | unknown | unknown | unknown;
             };
         };
         responses: {
@@ -16233,6 +16629,19 @@ export interface operations {
                      *           "structure": {
                      *             "mode": "strict_alternating"
                      *           }
+                     *         },
+                     *         "persistent_policy_envelope": {
+                     *           "updated_at": 1710000004300,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "delivery": {
+                     *               "require_last_user": true
+                     *             },
+                     *             "structure": {
+                     *               "mode": "strict_alternating"
+                     *             }
+                     *           },
+                     *           "version": 1
                      *         },
                      *         "resolved_policy": {
                      *           "budget": {
@@ -16312,6 +16721,46 @@ export interface operations {
                                     preserve_system_messages?: boolean;
                                 };
                             };
+                            persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                };
+                                version: number;
+                            } | null;
                             resolved_policy: {
                                 budget: {
                                     max_input_tokens?: number;
@@ -16410,6 +16859,189 @@ export interface operations {
             };
         };
     };
+    compareSessionPromptRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    left: {
+                        floor_id: string;
+                    };
+                    right: {
+                        floor_id: string;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "asset_changes": [],
+                     *         "diagnostics_changes": [],
+                     *         "exclusion_changes": [],
+                     *         "left": {
+                     *           "floor_id": "floor-left",
+                     *           "snapshot_available": true
+                     *         },
+                     *         "limitations": [],
+                     *         "policy_changes": [
+                     *           {
+                     *             "change_type": "changed",
+                     *             "left": false,
+                     *             "path": "policy.resolved_policy.delivery.no_assistant",
+                     *             "right": true
+                     *           }
+                     *         ],
+                     *         "right": {
+                     *           "floor_id": "floor-right",
+                     *           "snapshot_available": true
+                     *         },
+                     *         "scope_changes": [],
+                     *         "trim_changes": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            asset_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            diagnostics_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            exclusion_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            left: {
+                                floor_id: string;
+                                snapshot_available: boolean;
+                            };
+                            limitations: string[];
+                            policy_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            right: {
+                                floor_id: string;
+                                snapshot_available: boolean;
+                            };
+                            scope_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            trim_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     getSessionPromptRuntimePolicy: {
         parameters: {
             query?: never;
@@ -16437,6 +17069,19 @@ export interface operations {
                      *           "structure": {
                      *             "mode": "strict_alternating"
                      *           }
+                     *         },
+                     *         "persistent_policy_envelope": {
+                     *           "updated_at": 1710000004300,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "delivery": {
+                     *               "require_last_user": true
+                     *             },
+                     *             "structure": {
+                     *               "mode": "strict_alternating"
+                     *             }
+                     *           },
+                     *           "version": 1
                      *         },
                      *         "resolved_policy": {
                      *           "budget": {
@@ -16516,6 +17161,46 @@ export interface operations {
                                     preserve_system_messages?: boolean;
                                 };
                             };
+                            persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                };
+                                version: number;
+                            } | null;
                             resolved_policy: {
                                 budget: {
                                     max_input_tokens?: number;
@@ -16620,10 +17305,30 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
+                    budget?: {
+                        max_input_tokens?: number;
+                        reserved_completion_tokens?: number;
+                    } | null;
                     delivery?: {
                         allow_assistant_prefill?: boolean;
                         no_assistant?: boolean;
                         require_last_user?: boolean;
+                    } | null;
+                    source_selection?: {
+                        examples?: {
+                            enabled?: boolean;
+                        };
+                        history?: {
+                            max_messages?: number;
+                            /** @enum {string} */
+                            mode?: "full" | "windowed";
+                        };
+                        memory?: {
+                            enabled?: boolean;
+                        };
+                        worldbook?: {
+                            enabled?: boolean;
+                        };
                     } | null;
                     structure?: {
                         /** @enum {string} */
@@ -16633,7 +17338,7 @@ export interface operations {
                         mode: "default" | "strict_alternating" | "no_assistant";
                         preserve_system_messages?: boolean;
                     } | null;
-                } | unknown | unknown;
+                } | unknown | unknown | unknown | unknown;
             };
         };
         responses: {
@@ -16653,6 +17358,19 @@ export interface operations {
                      *           "structure": {
                      *             "mode": "strict_alternating"
                      *           }
+                     *         },
+                     *         "persistent_policy_envelope": {
+                     *           "updated_at": 1710000004300,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "delivery": {
+                     *               "require_last_user": true
+                     *             },
+                     *             "structure": {
+                     *               "mode": "strict_alternating"
+                     *             }
+                     *           },
+                     *           "version": 1
                      *         },
                      *         "resolved_policy": {
                      *           "budget": {
@@ -16732,6 +17450,46 @@ export interface operations {
                                     preserve_system_messages?: boolean;
                                 };
                             };
+                            persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                };
+                                version: number;
+                            } | null;
                             resolved_policy: {
                                 budget: {
                                     max_input_tokens?: number;

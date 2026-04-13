@@ -115,6 +115,7 @@ import type { StMacroJsonValue, StMacroStagedMutation } from "./st-macros/index.
 import { resolveAssistantPrefillStrategy } from "../lib/llm-provider-discovery.js";
 import { VariableService } from "./variable-service.js";
 import {
+  PromptRuntimeControlService,
   buildPromptRuntimeDiagnostics,
   buildPromptRuntimeSourceMap,
   buildPromptRuntimeWarnings,
@@ -124,7 +125,17 @@ import {
   readPromptRuntimeBranchPersistentPolicy,
   readPromptRuntimePersistentPolicy,
 } from "./prompt-runtime-control-service.js";
-import type { PromptRuntimeDiagnostic, PromptRuntimePersistentPolicy, PromptRuntimeScopeRef, PromptRuntimeSourceMap, ResolvedPromptRuntimePolicy } from "./prompt-runtime-control-service.js";
+import type {
+  PromptRuntimeDiagnostic,
+  PromptRuntimeDiagnosticPhase,
+  PromptRuntimeHistorySourceMode,
+  PromptRuntimeInspectionResult,
+  PromptRuntimePersistentPolicy,
+  PromptRuntimeSectionStat,
+  PromptRuntimeScopeRef,
+  PromptRuntimeSourceMap,
+  ResolvedPromptRuntimePolicy,
+} from "./prompt-runtime-control-service.js";
 import {
   BranchLocalSnapshotMissingError,
   BranchLocalVariableSnapshotService,
@@ -659,6 +670,11 @@ export class ChatService {
           branchId,
           request.sourceFloorId
         );
+        const { persistentPolicy: sessionPersistentPolicy, warnings: sessionPolicyWarnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
+        const { persistentPolicy: branchPersistentPolicy, warnings: branchPolicyWarnings } = branchContext.branchExists
+          ? readPromptRuntimeBranchPersistentPolicy(session.metadataJson, branchId)
+          : { warnings: [] as string[] };
+        const requestPolicy = this.buildPromptRuntimeRequestPolicy(request);
         const history = this.applyPromptRuntimeHistorySourceSelection(
           await this.historyLoader.loadHistory(
             sessionId,
@@ -761,15 +777,33 @@ export class ChatService {
             promptRuntimePolicies.structure,
             promptRuntimePolicies.delivery,
           );
+          const inspection = await this.buildPromptRuntimeInspection({
+            accountId: resolvedAccountId,
+            sessionId,
+            branchId,
+            branchExists: branchContext.branchExists,
+            sourceFloorId: request.sourceFloorId ?? null,
+            historySourceBranchId: branchContext.historySourceBranchId,
+            historySourceMode: branchContext.historySourceMode,
+            sessionPersistentPolicy,
+            sessionPolicyWarnings,
+            branchPersistentPolicy,
+            branchPolicyWarnings,
+            requestPolicy,
+            resolvedPolicy: buildResolvedPromptRuntimePolicy(sessionPersistentPolicy, branchPersistentPolicy, requestPolicy),
+            phase: "assemble",
+            history,
+            memorySummary: effectiveMemorySummary,
+            assembled,
+            worldbookHitCount: assembled.debug?.worldbookHits,
+          });
           const promptDebug = this.buildLivePromptDebugArtifacts({
             floorId,
             sessionId,
             userMessage: persistedUserMessage,
             assembled,
             materialized,
-            history,
-            memorySummary: effectiveMemorySummary,
-            sourceSelection: promptRuntimePolicies.sourceSelection,
+            inspection,
             debugOptions: request.debugOptions,
           });
 
@@ -826,6 +860,7 @@ export class ChatService {
             accountId: resolvedAccountId,
             turnInput,
             promptSnapshot: promptDebug.promptSnapshotRecord,
+            promptRuntimeInspection: promptDebug.inspection,
             macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
             resolvedTurnModels,
             orchestrationFailureCode: "orchestration_failed",
@@ -879,6 +914,9 @@ export class ChatService {
       throw new ChatServiceError("session_archived", "Cannot dry-run in an archived session");
     }
 
+    const { persistentPolicy: sessionPersistentPolicy, warnings: sessionPolicyWarnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
+    const { persistentPolicy: branchPersistentPolicy, warnings: branchPolicyWarnings } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, "main");
+    const requestPolicy = this.buildPromptRuntimeRequestPolicy(request);
     const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request, "main");
     const history = this.applyPromptRuntimeHistorySourceSelection(
       await this.historyLoader.loadHistory(sessionId, "main", undefined, request.visibility),
@@ -941,11 +979,6 @@ export class ChatService {
     const preprocessedUserMessage = assembled.preProcess
       ? assembled.preProcess([{ role: "user", content: persistedUserMessage }])[0]?.content
       : persistedUserMessage;
-    const budgetTrace = buildPromptRuntimeBudgetTrace({
-      byGroup: assembled.tokenUsage.byGroup,
-      prunedByGroup: assembled.tokenUsage.prunedByGroup,
-      trimReasons: this.buildPromptRuntimeTrimReasons(assembled.tokenUsage.prunedByGroup),
-    });
 
     const debug: AssembleDebugInfo = assembled.debug ?? {
       mode: "fallback",
@@ -972,15 +1005,31 @@ export class ChatService {
       worldbookMatches: request.debugOptions?.includeWorldbookMatches ? [] : undefined,
     };
 
-    const sourceSelectionTrace = this.buildPromptRuntimeSourceSelectionTrace({
-      sourceSelection: promptRuntimePolicies.sourceSelection,
+    const inspection = await this.buildPromptRuntimeInspection({
+      accountId,
+      sessionId,
+      branchId: "main",
+      branchExists: true,
+      sourceFloorId: null,
+      historySourceBranchId: "main",
+      historySourceMode: "existing_branch",
+      sessionPersistentPolicy,
+      sessionPolicyWarnings,
+      branchPersistentPolicy,
+      branchPolicyWarnings,
+      requestPolicy,
+      resolvedPolicy: buildResolvedPromptRuntimePolicy(sessionPersistentPolicy, branchPersistentPolicy, requestPolicy),
+      phase: "dry_run",
       history,
       visibilityTrace,
       memorySummary: effectiveMemorySummary,
-      promptSnapshot: assembled.promptSnapshot,
+      assembled,
       worldbookHitCount: debug.worldbookHits,
-      budgetByGroup: assembled.tokenUsage.byGroup,
+    });
+    const budgetTrace = buildPromptRuntimeBudgetTrace({
+      byGroup: assembled.tokenUsage.byGroup,
       prunedByGroup: assembled.tokenUsage.prunedByGroup,
+      trimReasons: inspection.trimReasons.length > 0 ? inspection.trimReasons : undefined,
     });
 
     return {
@@ -992,7 +1041,7 @@ export class ChatService {
       assembly: { ...debug, preprocessedUserMessage },
       runtimeTrace: {
         ...(budgetTrace ? { budgets: budgetTrace } : {}),
-        ...(sourceSelectionTrace ? { sourceSelection: sourceSelectionTrace } : {}),
+        ...(inspection.excludedSources.length > 0 ? { sourceSelection: { excludedSources: inspection.excludedSources } } : {}),
         ...buildPromptRuntimeTrace({ debug, preprocessedUserMessage }),
         ...(materialized.structureTrace ? { structure: materialized.structureTrace } : {}),
         delivery: materialized.deliveryTrace,
@@ -1059,23 +1108,6 @@ export class ChatService {
       this.rethrowBranchLocalSnapshotError(error);
     }
 
-    const previewWarnings = buildPromptRuntimeWarnings(
-      mergePromptRuntimePersistentPolicies(sessionPersistentPolicy, branchPersistentPolicy, requestPolicy),
-      [...sessionPolicyWarnings, ...branchPolicyWarnings],
-    );
-    const previewDiagnostics = buildPromptRuntimeDiagnostics(previewWarnings, {
-      branchId,
-      phase: "preview",
-    });
-    if (!branchContext.branchExists) {
-      previewDiagnostics.push({
-        code: "unmaterialized_branch_preview",
-        message: `Preview targeted unmaterialized branch '${branchId}'. Branch policy overlay is unavailable until the branch is materialized.`,
-        severity: "info",
-        source: "branch",
-        phase: "preview",
-      });
-    }
     const effectivePreviewMemorySummary = resolvedPreviewPolicy.sourceSelection.memory.enabled ? memorySummary : undefined;
     const previewMaxPrompt = resolvedPreviewPolicy.budget.maxInputTokens ?? narratorParams?.maxContextTokens;
     const preview = previewPromptMacroText({
@@ -1092,39 +1124,45 @@ export class ChatService {
       runKind: "dry_run",
     });
 
-    const previewSourceSelectionTrace = this.buildPromptRuntimeSourceSelectionTrace({
-      sourceSelection: resolvedPreviewPolicy.sourceSelection,
+    const inspection = await this.buildPromptRuntimeInspection({
+      accountId: resolvedAccountId,
+      sessionId,
+      branchId,
+      branchExists: branchContext.branchExists,
+      sourceFloorId: request.sourceFloorId ?? null,
+      historySourceBranchId: branchContext.historySourceBranchId,
+      historySourceMode: branchContext.historySourceMode,
+      sessionPersistentPolicy,
+      sessionPolicyWarnings,
+      branchPersistentPolicy,
+      branchPolicyWarnings,
+      requestPolicy,
+      resolvedPolicy: resolvedPreviewPolicy,
+      phase: "preview",
       history,
       visibilityTrace,
       memorySummary: effectivePreviewMemorySummary,
+      extraDiagnostics: branchContext.branchExists
+        ? []
+        : [{
+            code: "unmaterialized_branch_preview",
+            message: `Preview targeted unmaterialized branch '${branchId}'. Branch policy overlay is unavailable until the branch is materialized.`,
+            severity: "info",
+            source: "branch",
+            phase: "preview",
+          } satisfies PromptRuntimeDiagnostic],
     });
 
     return {
-      scope: {
-        sessionId,
-        targetBranchId: branchId,
-        branchExists: branchContext.branchExists,
-        sourceFloorId: request.sourceFloorId ?? null,
-        historySourceBranchId: branchContext.historySourceBranchId,
-        historySourceMode: branchContext.historySourceMode,
-      },
-      policy: resolvedPreviewPolicy,
-      sourceMap: buildPromptRuntimeSourceMap({
-        sessionPolicy: sessionPersistentPolicy,
-        branchPolicy: branchPersistentPolicy,
-        requestPolicy,
-        resolvedPolicy: resolvedPreviewPolicy,
-        history: {
-          sourceBranchId: branchContext.historySourceBranchId,
-          sourceMode: branchContext.historySourceMode,
-        },
-      }),
-      diagnostics: previewDiagnostics,
-      limitations: [...PROMPT_RUNTIME_LIMITATIONS],
+      scope: inspection.scope,
+      policy: inspection.resolvedPolicy,
+      sourceMap: inspection.sourceMap,
+      diagnostics: inspection.diagnostics,
+      limitations: inspection.limitations,
       text: preview.text,
       runtimeTrace: {
         ...preview.runtimeTrace,
-        ...(previewSourceSelectionTrace ? { sourceSelection: previewSourceSelectionTrace } : {}),
+        ...(inspection.excludedSources.length > 0 ? { sourceSelection: { excludedSources: inspection.excludedSources } } : {}),
         visibility: {
           ...(visibilityTrace.hiddenFloorRanges ? { hiddenFloorRanges: visibilityTrace.hiddenFloorRanges } : {}),
           filteredFloorNos: visibilityTrace.filteredFloorNos,
@@ -1165,6 +1203,9 @@ export class ChatService {
       const session = await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot regenerate in an archived session");
       const targetFloor = await this.revalidateRegenerationTarget(sessionId, initialTargetFloor.id);
       const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request, targetFloor.branchId);
+      const { persistentPolicy: sessionPersistentPolicy, warnings: sessionPolicyWarnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
+      const { persistentPolicy: branchPersistentPolicy, warnings: branchPolicyWarnings } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetFloor.branchId);
+      const requestPolicy = this.buildPromptRuntimeRequestPolicy(request);
 
       // ── 3. 提取用户消息 ──
       const existingUserMessage = await this.getUserMessageFromFloor(targetFloor.id);
@@ -1254,15 +1295,33 @@ export class ChatService {
         promptRuntimePolicies.structure,
         promptRuntimePolicies.delivery,
       );
+      const inspection = await this.buildPromptRuntimeInspection({
+        accountId: resolvedAccountId,
+        sessionId,
+        branchId: targetFloor.branchId,
+        branchExists: true,
+        sourceFloorId: null,
+        historySourceBranchId: targetFloor.branchId,
+        historySourceMode: "existing_branch",
+        sessionPersistentPolicy,
+        sessionPolicyWarnings,
+        branchPersistentPolicy,
+        branchPolicyWarnings,
+        requestPolicy,
+        resolvedPolicy: buildResolvedPromptRuntimePolicy(sessionPersistentPolicy, branchPersistentPolicy, requestPolicy),
+        phase: "assemble",
+        history,
+        memorySummary: effectiveMemorySummary,
+        assembled,
+        worldbookHitCount: assembled.debug?.worldbookHits,
+      });
       const promptDebug = this.buildLivePromptDebugArtifacts({
         floorId: newFloorId,
         sessionId,
         userMessage,
         assembled,
         materialized,
-        history,
-        memorySummary: effectiveMemorySummary,
-        sourceSelection: promptRuntimePolicies.sourceSelection,
+        inspection,
         debugOptions: request.debugOptions,
       });
 
@@ -1317,6 +1376,7 @@ export class ChatService {
         accountId: resolvedAccountId,
         turnInput,
         promptSnapshot: promptDebug.promptSnapshotRecord,
+        promptRuntimeInspection: promptDebug.inspection,
         macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
         resolvedTurnModels,
         orchestrationFailureCode: "orchestration_failed",
@@ -1364,6 +1424,9 @@ export class ChatService {
         const session = await this.requireActiveSession(targetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session");
         await this.assertRetryReplayConfirmed(targetFloor.id, request);
         const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request, targetFloor.branchId);
+        const { persistentPolicy: sessionPersistentPolicy, warnings: sessionPolicyWarnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
+        const { persistentPolicy: branchPersistentPolicy, warnings: branchPolicyWarnings } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetFloor.branchId);
+        const requestPolicy = this.buildPromptRuntimeRequestPolicy(request);
 
         const userMessageRef = await this.getUserMessageFromFloor(targetFloor.id);
         if (!userMessageRef) {
@@ -1438,15 +1501,33 @@ export class ChatService {
           promptRuntimePolicies.structure,
           promptRuntimePolicies.delivery,
         );
+        const inspection = await this.buildPromptRuntimeInspection({
+          accountId: resolvedAccountId,
+          sessionId: targetFloor.sessionId,
+          branchId: targetFloor.branchId,
+          branchExists: true,
+          sourceFloorId: null,
+          historySourceBranchId: targetFloor.branchId,
+          historySourceMode: "existing_branch",
+          sessionPersistentPolicy,
+          sessionPolicyWarnings,
+          branchPersistentPolicy,
+          branchPolicyWarnings,
+          requestPolicy,
+          resolvedPolicy: buildResolvedPromptRuntimePolicy(sessionPersistentPolicy, branchPersistentPolicy, requestPolicy),
+          phase: "assemble",
+          history,
+          memorySummary: effectiveMemorySummary,
+          assembled,
+          worldbookHitCount: assembled.debug?.worldbookHits,
+        });
         const promptDebug = this.buildLivePromptDebugArtifacts({
           floorId: targetFloor.id,
           sessionId: targetFloor.sessionId,
           userMessage,
           assembled,
           materialized,
-          history,
-          memorySummary: effectiveMemorySummary,
-          sourceSelection: promptRuntimePolicies.sourceSelection,
+          inspection,
           debugOptions: request.debugOptions,
         });
 
@@ -1501,6 +1582,7 @@ export class ChatService {
           accountId: resolvedAccountId,
           turnInput,
           promptSnapshot: promptDebug.promptSnapshotRecord,
+          promptRuntimeInspection: promptDebug.inspection,
           macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
           resolvedTurnModels,
           orchestrationFailureCode: "orchestration_failed",
@@ -1673,6 +1755,7 @@ export class ChatService {
     accountId: string;
     turnInput: TurnInput;
     promptSnapshot?: ReturnType<typeof buildPromptSnapshotRecord>;
+    promptRuntimeInspection?: PromptRuntimeInspectionResult;
     macroStagedMutations?: StMacroStagedMutation[];
     resolvedTurnModels: ResolvedTurnModels;
     orchestrationFailureCode: string;
@@ -1757,6 +1840,7 @@ export class ChatService {
         pageId: turnInput.pageId,
       },
       promptSnapshot: args.promptSnapshot,
+      promptRuntimeInspection: args.promptRuntimeInspection,
       // commit 只消费 assemble 阶段已经冻结的 macroStagedMutations。
       // 这里不重新执行模板，也不应通过 commit_consume 重新触发写宏。
       // commit_consume 仅保留为结果消费语义，不是另一个通用模板执行阶段。
@@ -2438,6 +2522,9 @@ export class ChatService {
     this.assertNarratorSlotEnabled(resolvedTurnModels);
     const sessionInfo = this.buildSessionPromptInfo(args.session, resolvedTurnModels);
     const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(args.session.metadataJson, args.request, args.branchId ?? "main");
+    const { persistentPolicy: sessionPersistentPolicy, warnings: sessionPolicyWarnings } = readPromptRuntimePersistentPolicy(args.session.metadataJson);
+    const { persistentPolicy: branchPersistentPolicy, warnings: branchPolicyWarnings } = readPromptRuntimeBranchPersistentPolicy(args.session.metadataJson, args.branchId ?? "main");
+    const requestPolicy = this.buildPromptRuntimeRequestPolicy(args.request);
     const history = this.applyPromptRuntimeHistorySourceSelection(args.history, promptRuntimePolicies.sourceSelection);
     const effectiveMemorySummary = promptRuntimePolicies.sourceSelection?.memory?.enabled === false ? undefined : memorySummary;
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
@@ -2480,15 +2567,33 @@ export class ChatService {
       promptRuntimePolicies.structure,
       promptRuntimePolicies.delivery,
     );
+    const inspection = await this.buildPromptRuntimeInspection({
+      accountId: args.accountId,
+      sessionId: args.sessionId,
+      branchId: args.branchId ?? "main",
+      branchExists: true,
+      sourceFloorId: null,
+      historySourceBranchId: args.branchId ?? "main",
+      historySourceMode: "existing_branch",
+      sessionPersistentPolicy,
+      sessionPolicyWarnings,
+      branchPersistentPolicy,
+      branchPolicyWarnings,
+      requestPolicy,
+      resolvedPolicy: buildResolvedPromptRuntimePolicy(sessionPersistentPolicy, branchPersistentPolicy, requestPolicy),
+      phase: "assemble",
+      history,
+      memorySummary: effectiveMemorySummary,
+      assembled,
+      worldbookHitCount: assembled.debug?.worldbookHits,
+    });
     const promptDebug = this.buildLivePromptDebugArtifacts({
       floorId: args.floorId,
       sessionId: args.sessionId,
       userMessage: args.userMessage,
       assembled,
       materialized,
-      history,
-      memorySummary: effectiveMemorySummary,
-      sourceSelection: promptRuntimePolicies.sourceSelection,
+      inspection,
       debugOptions: args.request.debugOptions,
     });
 
@@ -2543,6 +2648,7 @@ export class ChatService {
       accountId: args.accountId,
       turnInput,
       promptSnapshot: promptDebug.promptSnapshotRecord,
+      promptRuntimeInspection: promptDebug.inspection,
       macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
       resolvedTurnModels,
       orchestrationFailureCode: "orchestration_failed",
@@ -3123,18 +3229,115 @@ export class ChatService {
     return excludedSources.length > 0 ? { excludedSources } : undefined;
   }
 
+  private buildPromptRuntimeSectionStats(
+    bySection?: Record<string, number>,
+  ): PromptRuntimeSectionStat[] {
+    return Object.entries(bySection ?? {})
+      .filter(([, tokenCount]) => Number.isFinite(tokenCount) && tokenCount > 0)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([sectionName, tokenCount]) => ({
+        sectionName,
+        tokenCount,
+      }));
+  }
+
+  private async buildPromptRuntimeInspection(args: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    branchExists: boolean;
+    sourceFloorId?: string | null;
+    historySourceBranchId: string;
+    historySourceMode: PromptRuntimeHistorySourceMode;
+    sessionPersistentPolicy?: PromptRuntimePersistentPolicy;
+    sessionPolicyWarnings?: string[];
+    branchPersistentPolicy?: PromptRuntimePersistentPolicy;
+    branchPolicyWarnings?: string[];
+    requestPolicy?: PromptRuntimePersistentPolicy;
+    resolvedPolicy?: ResolvedPromptRuntimePolicy;
+    phase: PromptRuntimeDiagnosticPhase;
+    history: ChatMessage[];
+    visibilityTrace?: PromptRuntimeTrace["visibility"];
+    memorySummary?: string;
+    assembled?: AssembleResult;
+    worldbookHitCount?: number;
+    extraDiagnostics?: PromptRuntimeDiagnostic[];
+  }): Promise<PromptRuntimeInspectionResult> {
+    const resolvedPolicy = args.resolvedPolicy
+      ?? buildResolvedPromptRuntimePolicy(
+        args.sessionPersistentPolicy,
+        args.branchPersistentPolicy,
+        args.requestPolicy,
+      );
+    const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(
+      args.sessionPersistentPolicy,
+      args.branchPersistentPolicy,
+      args.requestPolicy,
+    );
+    const warnings = buildPromptRuntimeWarnings(effectivePersistentPolicy, [
+      ...(args.sessionPolicyWarnings ?? []),
+      ...(args.branchPolicyWarnings ?? []),
+    ]);
+    const diagnostics = [
+      ...buildPromptRuntimeDiagnostics(warnings, {
+        branchId: args.branchId,
+        phase: args.phase,
+      }),
+      ...(args.extraDiagnostics ?? []),
+    ];
+    const trimReasons = this.buildPromptRuntimeTrimReasons(args.assembled?.tokenUsage.prunedByGroup) ?? [];
+    const sourceSelectionTrace = this.buildPromptRuntimeSourceSelectionTrace({
+      sourceSelection: resolvedPolicy.sourceSelection,
+      history: args.history,
+      visibilityTrace: args.visibilityTrace,
+      memorySummary: args.memorySummary,
+      promptSnapshot: args.assembled?.promptSnapshot,
+      worldbookHitCount: args.worldbookHitCount,
+      budgetByGroup: args.assembled?.tokenUsage.byGroup,
+      prunedByGroup: args.assembled?.tokenUsage.prunedByGroup,
+    });
+    const assets = await new PromptRuntimeControlService(this.db).getAssets(args.sessionId, args.accountId);
+
+    return {
+      scope: {
+        sessionId: args.sessionId,
+        targetBranchId: args.branchId,
+        branchExists: args.branchExists,
+        sourceFloorId: args.sourceFloorId ?? null,
+        historySourceBranchId: args.historySourceBranchId,
+        historySourceMode: args.historySourceMode,
+      },
+      assets,
+      resolvedPolicy,
+      sourceMap: buildPromptRuntimeSourceMap({
+        sessionPolicy: args.sessionPersistentPolicy,
+        branchPolicy: args.branchPersistentPolicy,
+        requestPolicy: args.requestPolicy,
+        resolvedPolicy,
+        history: {
+          sourceBranchId: args.historySourceBranchId,
+          sourceMode: args.historySourceMode,
+        },
+      }) ?? {},
+      diagnostics,
+      trimReasons,
+      excludedSources: sourceSelectionTrace?.excludedSources ?? [],
+      sectionStats: this.buildPromptRuntimeSectionStats(args.assembled?.tokenUsage.bySection),
+      limitations: [...PROMPT_RUNTIME_LIMITATIONS],
+    };
+  }
+
   private buildLivePromptDebugArtifacts(args: {
     floorId: string;
     sessionId: string;
     userMessage: string;
     assembled: AssembleResult;
     materialized: MaterializePromptRuntimeMessagesResult;
-    history: ChatMessage[];
-    memorySummary?: string;
-    sourceSelection?: PromptSourceSelectionPolicy;
+    inspection: PromptRuntimeInspectionResult;
     debugOptions?: PromptLiveDebugOptions;
   }): {
     availableForReply: number;
+    inspection: PromptRuntimeInspectionResult;
     promptSnapshotRecord: ReturnType<typeof buildPromptSnapshotRecord>;
     promptSnapshot?: PromptSnapshotPreview;
     runtimeTrace?: PromptRuntimeTrace;
@@ -3161,24 +3364,16 @@ export class ChatService {
       const preprocessedUserMessage = args.assembled.preProcess
         ? args.assembled.preProcess([{ role: "user", content: args.userMessage }])[0]?.content
         : args.userMessage;
-      const trimReasons = this.buildPromptRuntimeTrimReasons(args.assembled.tokenUsage.prunedByGroup);
       const budgetTrace = buildPromptRuntimeBudgetTrace({
         byGroup: args.assembled.tokenUsage.byGroup,
         prunedByGroup: args.assembled.tokenUsage.prunedByGroup,
-        trimReasons,
-      });
-      const sourceSelectionTrace = this.buildPromptRuntimeSourceSelectionTrace({
-        sourceSelection: args.sourceSelection,
-        history: args.history,
-        memorySummary: args.memorySummary,
-        promptSnapshot: args.assembled.promptSnapshot,
-        worldbookHitCount: args.assembled.debug.worldbookHits,
-        budgetByGroup: args.assembled.tokenUsage.byGroup,
-        prunedByGroup: args.assembled.tokenUsage.prunedByGroup,
+        trimReasons: args.inspection.trimReasons.length > 0 ? args.inspection.trimReasons : undefined,
       });
       runtimeTrace = {
         ...(budgetTrace ? { budgets: budgetTrace } : {}),
-        ...(sourceSelectionTrace ? { sourceSelection: sourceSelectionTrace } : {}),
+        ...(args.inspection.excludedSources.length > 0
+          ? { sourceSelection: { excludedSources: args.inspection.excludedSources } }
+          : {}),
         ...buildPromptRuntimeTrace({ debug: args.assembled.debug, preprocessedUserMessage }),
         ...(args.materialized.structureTrace ? { structure: args.materialized.structureTrace } : {}),
         delivery: args.materialized.deliveryTrace,
@@ -3187,6 +3382,7 @@ export class ChatService {
 
     return {
       availableForReply,
+      inspection: args.inspection,
       promptSnapshotRecord,
       ...(args.debugOptions?.includePromptSnapshot
         ? {

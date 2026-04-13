@@ -29,12 +29,12 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 - preview 不走 LLM、不创建 floor、不写 `prompt_snapshot`、不提交副作用。
 - `GET /sessions/:id/prompt-runtime` 的 `branch_id` 只面向**已物化 branch**；未物化或不存在的 branch 返回 `404 branch_not_found`。
 - branch policy 只面向**已物化 branch**；当前不支持对未物化 branch 预写入 policy。
-- `GET /floors/:id/prompt-runtime/explain` 只读取已持久化真相，不会重新组装 prompt、重新展开宏或重新计算 budget / source selection。
-- 当前 memory 仍是 `global / chat / floor` 三层模型，不具备 branch 隔离；同一 session 下不同 branch 仍可能共享 chat 级记忆。
-- session 默认策略当前只允许持久化 `structure` 与 `delivery`。
-- branch policy overlay 当前也只允许持久化 `structure` 与 `delivery`。
-- `budget` 与 `source_selection` 已进入 resolved state、capabilities，以及 preview / dry-run 的 request-side 解释输出。
-- 但当前**不提供** session / branch policy 对 `budget` 与 `source_selection` 的持久化 PATCH 写入。
+- session policy 与 branch policy 现在都支持持久化治理 `structure`、`delivery`、`budget`、`source_selection`。
+- session / branch 持久化策略写入后统一使用 envelope：`{ version, updated_at, updated_by, value }`；读取侧继续兼容旧的 bare object metadata。
+- live 聊天链在成功越过 commit 边界后，会把 `prompt_runtime_explain_snapshot` 与 assistant message、floor state、`prompt_snapshot`、committed result 等真相一起写入同一同步事务。
+- `GET /floors/:id/prompt-runtime/explain` 与 `POST /sessions/:id/prompt-runtime/compare` 只读取 committed truth，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。
+- 对没有 committed snapshot 的旧 floor，会显式返回 `snapshot_available: false` 和结构化 `limitations`；不会做启发式伪回填。
+- compare 首轮只支持同一 session 内的两个 committed floor，不支持 preview 与 floor 混合比较。
 - 不持久化内建只读宏值，不持久化 ST `local/global` 兼容快照，也不持久化 `runKind`。
 - 宏诊断仍属于统一观测面，不单独拆成第二套 control plane 诊断接口。
 
@@ -106,8 +106,40 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `delivery.allow_assistant_prefill` | boolean | 可选 |
 | `delivery.require_last_user` | boolean | 可选 |
 | `delivery.no_assistant` | boolean | 可选 |
-| `budget` | object | 可选。当前只作为 read-side / request-side 正式对象，不开放持久化 PATCH |
-| `source_selection` | object | 可选。当前只作为 read-side / request-side 正式对象，不开放持久化 PATCH |
+| `budget` | object | 可选。session / branch 级持久化 budget 策略 |
+| `budget.max_input_tokens` | integer | 可选。输入预算上限 |
+| `budget.reserved_completion_tokens` | integer | 可选。为回复预留的 completion 预算 |
+| `source_selection` | object | 可选。session / branch 级持久化 source selection 策略 |
+| `source_selection.history.mode` | string | `full` / `windowed` |
+| `source_selection.history.max_messages` | integer | 可选。history 窗口上限 |
+| `source_selection.memory.enabled` | boolean | 可选 |
+| `source_selection.worldbook.enabled` | boolean | 可选 |
+| `source_selection.examples.enabled` | boolean | 可选 |
+
+### PersistentPolicyEnvelope
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `version` | integer | envelope 版本号。每次成功写入都会递增 |
+| `updated_at` | integer | 最近一次成功写入时间戳（ms） |
+| `updated_by` | string \| null | 最近一次写入者标识。通常来自认证主体 |
+| `value` | [PersistentPolicy](#persistentpolicy) | 实际持久化策略值 |
+
+### SectionStat
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `section_name` | string | prompt 区段名 |
+| `token_count` | integer | 该区段的 token 统计值 |
+
+### DiffEntry
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `path` | string | 结构化差异路径。compare 响应中的路径固定使用 `snake_case` |
+| `change_type` | string | `added` / `removed` / `changed` |
+| `left` | any | 左侧值。仅在有值时返回 |
+| `right` | any | 右侧值。仅在有值时返回 |
 
 ### AssetsView
 
@@ -136,10 +168,12 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `policy.source_selection` | [SourceSelectionPolicy](#sourceselectionpolicy) | 当前正式 source selection 策略视图 |
 | `policy.debug` | [DebugPolicy](#debugpolicy) | 当前 debug 能力边界 |
 | `persistent_policy` | [PersistentPolicy](#persistentpolicy) | 可选。当前 session 已持久化的默认策略 |
+| `persistent_policy_envelope` | [PersistentPolicyEnvelope](#persistentpolicyenvelope) \| null | 可选。当前 session 持久化默认策略的 envelope 元数据 |
 | `branch_persistent_policy` | [PersistentPolicy](#persistentpolicy) \| null | 当前目标 branch 已持久化的 overlay。若当前 branch 未配置 overlay，则返回 `null` |
+| `branch_persistent_policy_envelope` | [PersistentPolicyEnvelope](#persistentpolicyenvelope) \| null | 可选。当前目标 branch overlay 的 envelope 元数据 |
 | `assets` | [AssetsView](#assetsview) | 当前 Prompt Assets 绑定 |
 | `warnings` | string[] | 控制面读取时产生的兼容 warning。当前至少会覆盖 invalid session policy、invalid branch policy，以及 `delivery.no_assistant` 推导出 `structure.mode = no_assistant` 的派生 warning |
-| `diagnostics` | object[] | 结构化诊断摘要。resolved state 当前仍以 warning 投影为主；historical explain 还会补充“字段未持久化、因此不可用”的说明型 diagnostics |
+| `diagnostics` | object[] | 结构化诊断摘要。resolved state 当前仍以 warning 投影为主；historical explain / preview 还会补充 explain snapshot、branch materialization 等说明型 diagnostics |
 | `diagnostics[].code` | string | 诊断代码 |
 | `diagnostics[].message` | string | 诊断说明 |
 | `diagnostics[].severity` | string | `info` / `warning` / `error` |
@@ -147,7 +181,7 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `diagnostics[].field_path` | string | 可选。命中的字段路径 |
 | `diagnostics[].phase` | string | 可选。当前 control plane 读取通常省略；preview / explain 场景会返回显式 phase |
 | `limitations` | string[] | 当前已知边界摘要，例如 memory 仍不具备 branch 隔离、`variableCommit` 仍只做 `page -> floor` |
-| `source_map` | object | 可选。当前已覆盖 structure / delivery / budget / source_selection 的来源解释，以及 `history.source_branch_id` / `history.source_mode` |
+| `source_map` | object | 可选。当前已覆盖 `structure` / `delivery` / `budget` / `source_selection` / `debug` 的来源解释，以及 `history.source_branch_id` / `history.source_mode` |
 
 ### PolicyView
 
@@ -155,6 +189,7 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
+| `persistent_policy_envelope` | [PersistentPolicyEnvelope](#persistentpolicyenvelope) \| null | 可选。已持久化策略的 envelope 元数据 |
 | `persistent_policy` | [PersistentPolicy](#persistentpolicy) | 可选。对于 session policy 路由，这里表示 session policy；对于 branch policy 路由，这里表示 branch overlay |
 | `resolved_policy` | object | 当前解析后的生效策略 |
 | `warnings` | string[] | 当前 policy 读取过程中产生的 warning |
@@ -169,9 +204,27 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `budget.defaults` | [BudgetPolicy](#budgetpolicy) | 当前正式 budget 默认值 |
 | `budget.request_override_supported` | boolean | 当前是否支持 request 级 budget override |
 | `budget.persistent_patch_supported` | boolean | 当前是否支持持久化 PATCH 写入 budget |
+| `budget.supported_fields` | string[] | 当前支持的 budget 治理字段名 |
+| `budget.trim_reason_codes` | string[] | 当前支持的 trim reason code |
 | `source_selection.defaults` | [SourceSelectionPolicy](#sourceselectionpolicy) | 当前正式 source selection 默认值 |
 | `source_selection.request_override_supported` | boolean | 当前是否支持 request 级 source selection override |
 | `source_selection.persistent_patch_supported` | boolean | 当前是否支持持久化 PATCH 写入 source selection |
+| `source_selection.supported_sources` | string[] | 当前支持的 source selection 来源 |
+| `source_selection.history_modes` | string[] | 当前支持的 history mode |
+| `source_selection.exclusion_reason_codes` | string[] | 当前支持的 exclusion reason code |
+| `governance.session.envelope_metadata` | boolean | session policy 是否带 envelope 元数据 |
+| `governance.session.null_clears_field` | boolean | session policy PATCH 是否支持显式 `null` 清空字段 |
+| `governance.session.object_patch` | string | 当前固定为 `deep_merge` |
+| `governance.session.supported_fields` | string[] | session policy 当前可治理字段 |
+| `governance.branch.envelope_metadata` | boolean | branch policy 是否带 envelope 元数据 |
+| `governance.branch.materialized_branches_only` | boolean | branch policy 是否只允许已物化 branch |
+| `governance.branch.null_clears_field` | boolean | branch policy PATCH 是否支持显式 `null` 清空字段 |
+| `governance.branch.object_patch` | string | 当前固定为 `deep_merge` |
+| `governance.branch.supported_fields` | string[] | branch policy 当前可治理字段 |
+| `compare.enabled` | boolean | 是否启用 committed floor compare |
+| `compare.committed_floors_only` | boolean | compare 是否只支持 committed floor |
+| `compare.mixed_preview_supported` | boolean | 是否支持 preview 与 committed floor 混合比较 |
+| `compare.limitations_instead_of_recompute` | boolean | 缺 snapshot 时是否返回 limitations 而不是重算 |
 | `observability.live.enabled` | boolean | 是否支持 live 最小观测 |
 | `observability.live.default_off` | boolean | live 最小观测是否默认关闭 |
 | `observability.live.request_scoped_only` | boolean | live 最小观测是否只允许请求级打开 |
@@ -199,6 +252,9 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `observability.explain.requires_committed_floor` | boolean | explain 是否只面向 committed floor |
 | `observability.explain.persisted_truth_only` | boolean | explain 是否只读取持久化真相 |
 | `observability.explain.recompute` | boolean | explain 是否会重新组装 / 重算。当前固定为 `false` |
+| `observability.explain.snapshot_supported` | boolean | 是否支持 committed explain snapshot |
+| `observability.explain.legacy_floor_fallback` | boolean | 旧 floor 缺 snapshot 时是否保留 fallback |
+| `observability.explain.snapshot_availability_field` | string | 当前固定为 `snapshot_available` |
 | `observability.stream.enabled` | boolean | SSE 路径是否存在 |
 | `observability.stream.prompt_debug_payload` | string | 当前为 `done_only` 或 `unsupported` |
 | `observability.stream.new_sse_event_family` | boolean | 是否新增独立 SSE 事件族 |
@@ -216,7 +272,7 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 GET /sessions/:id/prompt-runtime
 ```
 
-返回当前 session 在某个**已物化 branch**上的生效策略、已持久化默认策略、Prompt Assets 绑定和 warning。
+返回当前 session 在某个**已物化 branch**上的生效策略、已持久化默认策略、Prompt Assets 绑定，以及 session / branch policy envelope 元数据。
 
 ### 路径参数
 
@@ -255,6 +311,19 @@ GET /sessions/:id/prompt-runtime
         "require_last_user": true,
         "no_assistant": true
       },
+      "budget": {
+        "max_input_tokens": 4096,
+        "reserved_completion_tokens": 1024
+      },
+      "source_selection": {
+        "history": {
+          "mode": "windowed",
+          "max_messages": 24
+        },
+        "memory": { "enabled": true },
+        "worldbook": { "enabled": true },
+        "examples": { "enabled": false }
+      },
       "debug": {
         "include_prompt_snapshot": false,
         "include_runtime_trace": false,
@@ -270,9 +339,46 @@ GET /sessions/:id/prompt-runtime
         "require_last_user": true
       }
     },
+    "persistent_policy_envelope": {
+      "version": 1,
+      "updated_at": 1710000004200,
+      "updated_by": "user-1",
+      "value": {
+        "structure": {
+          "mode": "strict_alternating",
+          "preserve_system_messages": true
+        },
+        "delivery": {
+          "require_last_user": true
+        }
+      }
+    },
     "branch_persistent_policy": {
       "delivery": {
         "no_assistant": true
+      }
+    },
+    "branch_persistent_policy_envelope": {
+      "version": 2,
+      "updated_at": 1710000004500,
+      "updated_by": "user-1",
+      "value": {
+        "delivery": {
+          "no_assistant": true
+        },
+        "budget": {
+          "max_input_tokens": 4096,
+          "reserved_completion_tokens": 1024
+        },
+        "source_selection": {
+          "history": {
+            "mode": "windowed",
+            "max_messages": 24
+          },
+          "memory": { "enabled": true },
+          "worldbook": { "enabled": true },
+          "examples": { "enabled": false }
+        }
       }
     },
     "assets": {
@@ -304,6 +410,19 @@ GET /sessions/:id/prompt-runtime
         "allow_assistant_prefill": "system_default",
         "require_last_user": "session_policy",
         "no_assistant": "branch_policy"
+      },
+      "budget": {
+        "max_input_tokens": "request_override",
+        "reserved_completion_tokens": "request_override"
+      },
+      "source_selection": {
+        "history": {
+          "mode": "request_override",
+          "max_messages": "request_override"
+        },
+        "memory": { "enabled": "system_default" },
+        "worldbook": { "enabled": "system_default" },
+        "examples": { "enabled": "request_override" }
       },
       "history": {
         "source_branch_id": "alt-branch",
@@ -352,7 +471,7 @@ curl http://localhost:3000/sessions/session-1/prompt-runtime \
 GET /sessions/:id/prompt-runtime/policy
 ```
 
-返回当前 session 的已持久化默认策略和解析后的生效策略。
+返回当前 session 的已持久化默认策略、对应 envelope，以及解析后的生效策略。
 
 ### 路径参数
 
@@ -371,18 +490,71 @@ GET /sessions/:id/prompt-runtime/policy
       },
       "delivery": {
         "require_last_user": true
+      },
+      "budget": {
+        "max_input_tokens": 4096,
+        "reserved_completion_tokens": 1024
+      },
+      "source_selection": {
+        "history": {
+          "mode": "windowed",
+          "max_messages": 24
+        },
+        "examples": {
+          "enabled": false
+        }
+      }
+    },
+    "persistent_policy_envelope": {
+      "version": 3,
+      "updated_at": 1710000004300,
+      "updated_by": "user-1",
+      "value": {
+        "structure": {
+          "mode": "strict_alternating"
+        },
+        "delivery": {
+          "require_last_user": true
+        },
+        "budget": {
+          "max_input_tokens": 4096,
+          "reserved_completion_tokens": 1024
+        },
+        "source_selection": {
+          "history": {
+            "mode": "windowed",
+            "max_messages": 24
+          },
+          "examples": {
+            "enabled": false
+          }
+        }
       }
     },
     "resolved_policy": {
       "structure": {
         "mode": "strict_alternating",
-        "merge_adjacent_same_role": false,
-        "preserve_system_messages": true
+        "merge_adjacent_same_role": true,
+        "preserve_system_messages": true,
+        "assistant_rewrite_strategy": "to_system"
       },
       "delivery": {
         "allow_assistant_prefill": true,
         "require_last_user": true,
         "no_assistant": false
+      },
+      "budget": {
+        "max_input_tokens": 4096,
+        "reserved_completion_tokens": 1024
+      },
+      "source_selection": {
+        "history": {
+          "mode": "windowed",
+          "max_messages": 24
+        },
+        "memory": { "enabled": true },
+        "worldbook": { "enabled": true },
+        "examples": { "enabled": false }
       },
       "debug": {
         "include_prompt_snapshot": false,
@@ -409,90 +581,6 @@ curl http://localhost:3000/sessions/session-1/prompt-runtime/policy \
   -H 'Authorization: Bearer <token>'
 ```
 
-## 获取分支持久化策略视图
-
-```http
-GET /sessions/:id/prompt-runtime/branches/:branchId/policy
-```
-
-返回某个**已物化 branch**上的 branch persistent policy overlay，以及叠加 session policy 之后的 `resolved_policy`。
-
-### 路径参数
-
-| 参数 | 类型 | 说明 |
-| ---- | ---- | ---- |
-| `id` | string | 会话 ID |
-| `branchId` | string | 目标 branch ID。必须已经物化 |
-
-### 响应 `200`
-
-```json
-{
-  "data": {
-    "persistent_policy": {
-      "delivery": {
-        "no_assistant": true
-      }
-    },
-    "resolved_policy": {
-      "structure": {
-        "mode": "no_assistant",
-        "merge_adjacent_same_role": false,
-        "preserve_system_messages": true,
-        "assistant_rewrite_strategy": "to_system"
-      },
-      "delivery": {
-        "allow_assistant_prefill": true,
-        "require_last_user": false,
-        "no_assistant": true
-      },
-      "debug": {
-        "include_prompt_snapshot": false,
-        "include_runtime_trace": false,
-        "include_worldbook_matches": false
-      }
-    },
-    "warnings": []
-  }
-}
-```
-
-### 常见错误
-
-| 状态码 | code | 说明 |
-| ------ | ---- | ---- |
-| `404` | `not_found` | 会话不存在，或不属于当前账号 |
-| `404` | `branch_not_found` | `branchId` 不存在或尚未物化 |
-| `500` | `internal_error` | 服务端内部错误 |
-
-## 更新分支持久化策略
-
-```http
-PATCH /sessions/:id/prompt-runtime/branches/:branchId/policy
-```
-
-对某个**已物化 branch**的 persistent policy overlay 做增量更新。
-
-当前与 session policy patch 一样，只允许写入：
-
-- `structure`
-- `delivery`
-
-### 合并规则
-
-- 省略某个 section：保留原值。
-- 传 section 对象：和当前 branch policy section 合并。
-- 传 `null`：清空该 section。
-
-### 常见错误
-
-| 状态码 | code | 说明 |
-| ------ | ---- | ---- |
-| `400` | `validation_error` | 请求体不合法 |
-| `404` | `not_found` | 会话不存在，或不属于当前账号 |
-| `404` | `branch_not_found` | `branchId` 不存在或尚未物化 |
-| `500` | `internal_error` | 服务端内部错误 |
-
 ## 更新会话持久化策略
 
 ```http
@@ -501,10 +589,12 @@ PATCH /sessions/:id/prompt-runtime/policy
 
 对 session 级默认策略做增量更新。
 
-当前只允许写入：
+当前允许写入：
 
 - `structure`
 - `delivery`
+- `budget`
+- `source_selection`
 
 当前不允许写入：
 
@@ -516,8 +606,14 @@ PATCH /sessions/:id/prompt-runtime/policy
 ### 合并规则
 
 - 省略某个 section：保留原值。
-- 传 section 对象：和当前已存 section 合并。
+- 传 section 对象：按已知 schema 做稳定 deep merge。
 - 传 `null`：清空该 section。
+
+### envelope 语义
+
+- 读取侧继续兼容旧的 bare object metadata。
+- 写入侧统一升级为 envelope：`{ version, updated_at, updated_by, value }`。
+- `updated_by` 通常来自当前认证主体。
 
 ### 路径参数
 
@@ -538,8 +634,17 @@ PATCH /sessions/:id/prompt-runtime/policy
 | `delivery.allow_assistant_prefill` | boolean | 否 | 可选覆盖 |
 | `delivery.require_last_user` | boolean | 否 | 可选覆盖 |
 | `delivery.no_assistant` | boolean | 否 | 可选覆盖 |
+| `budget` | object \| null | 否 | session 级 budget 策略。传 `null` 表示清空 |
+| `budget.max_input_tokens` | integer | 否 | 输入预算上限 |
+| `budget.reserved_completion_tokens` | integer | 否 | completion 预留预算 |
+| `source_selection` | object \| null | 否 | session 级 source selection 策略。传 `null` 表示清空 |
+| `source_selection.history.mode` | string | 否 | `full` / `windowed` |
+| `source_selection.history.max_messages` | integer | 否 | history 窗口上限 |
+| `source_selection.memory.enabled` | boolean | 否 | 是否允许 memory summary 进入 prompt |
+| `source_selection.worldbook.enabled` | boolean | 否 | 是否允许 worldbook 进入 prompt |
+| `source_selection.examples.enabled` | boolean | 否 | 是否允许 example dialogue 进入 prompt |
 
-至少需要提供 `structure` 或 `delivery` 其中一个。
+至少需要提供 `structure`、`delivery`、`budget`、`source_selection` 其中一个。
 
 ### 请求示例
 
@@ -549,11 +654,26 @@ PATCH /sessions/:id/prompt-runtime/policy
     "mode": "strict_alternating",
     "preserve_system_messages": true
   },
+  "budget": {
+    "max_input_tokens": 4096,
+    "reserved_completion_tokens": 1024
+  },
+  "source_selection": {
+    "history": {
+      "mode": "windowed",
+      "max_messages": 24
+    },
+    "examples": {
+      "enabled": false
+    }
+  },
   "delivery": null
 }
 ```
 
 ### 响应 `200`
+
+成功时返回 [PolicyView](#policyview)。其中 `persistent_policy_envelope` 会体现最新的版本与更新时间。
 
 ```json
 {
@@ -562,18 +682,69 @@ PATCH /sessions/:id/prompt-runtime/policy
       "structure": {
         "mode": "strict_alternating",
         "preserve_system_messages": true
+      },
+      "budget": {
+        "max_input_tokens": 4096,
+        "reserved_completion_tokens": 1024
+      },
+      "source_selection": {
+        "history": {
+          "mode": "windowed",
+          "max_messages": 24
+        },
+        "examples": {
+          "enabled": false
+        }
+      }
+    },
+    "persistent_policy_envelope": {
+      "version": 4,
+      "updated_at": 1710000004600,
+      "updated_by": "user-1",
+      "value": {
+        "structure": {
+          "mode": "strict_alternating",
+          "preserve_system_messages": true
+        },
+        "budget": {
+          "max_input_tokens": 4096,
+          "reserved_completion_tokens": 1024
+        },
+        "source_selection": {
+          "history": {
+            "mode": "windowed",
+            "max_messages": 24
+          },
+          "examples": {
+            "enabled": false
+          }
+        }
       }
     },
     "resolved_policy": {
       "structure": {
         "mode": "strict_alternating",
-        "merge_adjacent_same_role": false,
-        "preserve_system_messages": true
+        "merge_adjacent_same_role": true,
+        "preserve_system_messages": true,
+        "assistant_rewrite_strategy": "to_system"
       },
       "delivery": {
         "allow_assistant_prefill": true,
         "require_last_user": false,
         "no_assistant": false
+      },
+      "budget": {
+        "max_input_tokens": 4096,
+        "reserved_completion_tokens": 1024
+      },
+      "source_selection": {
+        "history": {
+          "mode": "windowed",
+          "max_messages": 24
+        },
+        "memory": { "enabled": true },
+        "worldbook": { "enabled": true },
+        "examples": { "enabled": false }
       },
       "debug": {
         "include_prompt_snapshot": false,
@@ -605,9 +776,153 @@ curl -X PATCH http://localhost:3000/sessions/session-1/prompt-runtime/policy \
       "mode": "strict_alternating",
       "preserve_system_messages": true
     },
+    "budget": {
+      "max_input_tokens": 4096,
+      "reserved_completion_tokens": 1024
+    },
+    "source_selection": {
+      "history": {
+        "mode": "windowed",
+        "max_messages": 24
+      },
+      "examples": {
+        "enabled": false
+      }
+    },
     "delivery": null
   }'
 ```
+
+## 获取分支持久化策略视图
+
+```http
+GET /sessions/:id/prompt-runtime/branches/:branchId/policy
+```
+
+返回某个**已物化 branch**上的 branch persistent policy overlay、对应 envelope，以及叠加 session policy 之后的 `resolved_policy`。
+
+### 路径参数
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 会话 ID |
+| `branchId` | string | 目标 branch ID。必须已经物化 |
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "persistent_policy": {
+      "delivery": {
+        "no_assistant": true
+      },
+      "budget": {
+        "max_input_tokens": 4096,
+        "reserved_completion_tokens": 1024
+      }
+    },
+    "persistent_policy_envelope": {
+      "version": 2,
+      "updated_at": 1710000004500,
+      "updated_by": "user-1",
+      "value": {
+        "delivery": {
+          "no_assistant": true
+        },
+        "budget": {
+          "max_input_tokens": 4096,
+          "reserved_completion_tokens": 1024
+        }
+      }
+    },
+    "resolved_policy": {
+      "structure": {
+        "mode": "no_assistant",
+        "merge_adjacent_same_role": true,
+        "preserve_system_messages": true,
+        "assistant_rewrite_strategy": "to_system"
+      },
+      "delivery": {
+        "allow_assistant_prefill": true,
+        "require_last_user": true,
+        "no_assistant": true
+      },
+      "budget": {
+        "max_input_tokens": 4096,
+        "reserved_completion_tokens": 1024
+      },
+      "source_selection": {
+        "history": {
+          "mode": "windowed",
+          "max_messages": 24
+        },
+        "memory": { "enabled": true },
+        "worldbook": { "enabled": true },
+        "examples": { "enabled": false }
+      },
+      "debug": {
+        "include_prompt_snapshot": false,
+        "include_runtime_trace": false,
+        "include_worldbook_matches": false
+      }
+    },
+    "warnings": []
+  }
+}
+```
+
+### 常见错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 会话不存在，或不属于当前账号 |
+| `404` | `branch_not_found` | `branchId` 不存在或尚未物化 |
+| `500` | `internal_error` | 服务端内部错误 |
+
+## 更新分支持久化策略
+
+```http
+PATCH /sessions/:id/prompt-runtime/branches/:branchId/policy
+```
+
+对某个**已物化 branch**的 persistent policy overlay 做增量更新。
+
+当前允许写入：
+
+- `structure`
+- `delivery`
+- `budget`
+- `source_selection`
+
+### 请求体
+
+请求体字段与 [PATCH /sessions/:id/prompt-runtime/policy](#更新会话持久化策略) 完全一致。
+
+### 合并规则
+
+- 省略某个 section：保留原值。
+- 传 section 对象：按已知 schema 做稳定 deep merge。
+- 传 `null`：清空该 section。
+
+### envelope 语义
+
+- 读取侧继续兼容旧的 bare object metadata。
+- 写入侧统一升级为 envelope：`{ version, updated_at, updated_by, value }`。
+- 该路由只面向已物化 branch；不会为不存在的 branch 隐式创建 overlay。
+
+### 响应 `200`
+
+成功时返回 [PolicyView](#policyview)。
+
+### 常见错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体不合法 |
+| `404` | `not_found` | 会话不存在，或不属于当前账号 |
+| `404` | `branch_not_found` | `branchId` 不存在或尚未物化 |
+| `500` | `internal_error` | 服务端内部错误 |
 
 ## 获取会话 Prompt Assets 绑定
 
@@ -745,6 +1060,19 @@ POST /sessions/:id/prompt-runtime/preview
         "require_last_user": false,
         "no_assistant": true
       },
+      "budget": {
+        "max_input_tokens": 4096,
+        "reserved_completion_tokens": 1024
+      },
+      "source_selection": {
+        "history": {
+          "mode": "windowed",
+          "max_messages": 24
+        },
+        "memory": { "enabled": true },
+        "worldbook": { "enabled": true },
+        "examples": { "enabled": false }
+      },
       "debug": {
         "include_prompt_snapshot": false,
         "include_runtime_trace": false,
@@ -752,7 +1080,30 @@ POST /sessions/:id/prompt-runtime/preview
       }
     },
     "source_map": {
-      "delivery": { "no_assistant": "request_override" },
+      "structure": {
+        "mode": "request_override",
+        "merge_adjacent_same_role": "request_override",
+        "preserve_system_messages": "system_default",
+        "assistant_rewrite_strategy": "system_default"
+      },
+      "delivery": {
+        "allow_assistant_prefill": "system_default",
+        "require_last_user": "session_policy",
+        "no_assistant": "request_override"
+      },
+      "budget": {
+        "max_input_tokens": "request_override",
+        "reserved_completion_tokens": "request_override"
+      },
+      "source_selection": {
+        "history": {
+          "mode": "request_override",
+          "max_messages": "request_override"
+        },
+        "memory": { "enabled": "system_default" },
+        "worldbook": { "enabled": "system_default" },
+        "examples": { "enabled": "request_override" }
+      },
       "history": { "source_branch_id": "fork-branch", "source_mode": "source_floor_branch" }
     },
     "text": "{\"金币\":3}",
@@ -789,6 +1140,15 @@ POST /sessions/:id/prompt-runtime/preview
             "resolved_text": "{\"金币\":3}",
             "phase": "preview",
             "source_kind": "macro"
+          }
+        ]
+      },
+      "source_selection": {
+        "excluded_sources": [
+          {
+            "source": "history",
+            "reason": "visibility_filtered",
+            "detail": "Visibility filtered 2 floor(s) from the available history window."
           }
         ]
       },
@@ -873,7 +1233,7 @@ GET /floors/:id/prompt-runtime/explain
 
 读取某个 **committed floor** 的 Prompt Runtime 历史解释结果。
 
-这个接口的目标不是“事后重跑一遍 dry-run”，而是读取当前已经持久化的真相。
+这个接口会优先读取 `prompt_runtime_explain_snapshot`。这份 committed snapshot 会在 live 聊天链成功 commit 时，与 assistant message、floor state、`prompt_snapshot`、committed result 等真相一起写入同一同步事务。
 
 因此它固定遵守以下边界：
 
@@ -889,7 +1249,7 @@ GET /floors/:id/prompt-runtime/explain
 | ---- | ---- | ---- |
 | `id` | string | floor ID |
 
-### 响应 `200`
+### 响应 `200`（snapshot-backed）
 
 ```json
 {
@@ -912,6 +1272,25 @@ GET /floors/:id/prompt-runtime/explain
       "history_source_branch_id": "main",
       "history_source_mode": "existing_branch"
     },
+    "snapshot_available": true,
+    "assets": {
+      "preset": {
+        "id": "preset-story",
+        "name": "Story Preset"
+      },
+      "character_card": {
+        "id": "char-hero",
+        "name": "Hero"
+      },
+      "worldbook": {
+        "id": "wb-lore",
+        "name": "Lorebook"
+      },
+      "regex_profile": {
+        "id": "regex-safe",
+        "name": "Safety Regex"
+      }
+    },
     "prompt_snapshot": {
       "preset_id": "preset-story",
       "preset_updated_at": 1710000000000,
@@ -929,27 +1308,104 @@ GET /floors/:id/prompt-runtime/explain
       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
       "token_estimate": 512
     },
-    "resolved_policy": null,
+    "resolved_policy": {
+      "structure": {
+        "mode": "no_assistant",
+        "merge_adjacent_same_role": true,
+        "preserve_system_messages": true,
+        "assistant_rewrite_strategy": "to_system"
+      },
+      "delivery": {
+        "allow_assistant_prefill": true,
+        "require_last_user": true,
+        "no_assistant": true
+      },
+      "budget": {
+        "max_input_tokens": 4096,
+        "reserved_completion_tokens": 1024
+      },
+      "source_selection": {
+        "history": {
+          "mode": "windowed",
+          "max_messages": 24
+        },
+        "memory": { "enabled": true },
+        "worldbook": { "enabled": true },
+        "examples": { "enabled": false }
+      },
+      "debug": {
+        "include_prompt_snapshot": false,
+        "include_runtime_trace": false,
+        "include_worldbook_matches": false
+      }
+    },
     "source_map": {
+      "structure": {
+        "mode": "branch_policy",
+        "merge_adjacent_same_role": "branch_policy",
+        "preserve_system_messages": "system_default",
+        "assistant_rewrite_strategy": "system_default"
+      },
+      "delivery": {
+        "allow_assistant_prefill": "system_default",
+        "require_last_user": "session_policy",
+        "no_assistant": "branch_policy"
+      },
+      "budget": {
+        "max_input_tokens": "request_override",
+        "reserved_completion_tokens": "request_override"
+      },
+      "source_selection": {
+        "history": {
+          "mode": "request_override",
+          "max_messages": "request_override"
+        },
+        "memory": { "enabled": "system_default" },
+        "worldbook": { "enabled": "system_default" },
+        "examples": { "enabled": "request_override" }
+      },
       "history": {
         "source_branch_id": "main",
         "source_mode": "existing_branch"
       }
     },
-    "trim_reasons": null,
-    "excluded_sources": null,
+    "trim_reasons": [
+      {
+        "group": "history",
+        "reason": "budget_exceeded",
+        "detail": "Prompt runtime pruned 128 tokens from budget group 'history'.",
+        "pruned_token_count": 128
+      }
+    ],
+    "excluded_sources": [
+      {
+        "source": "examples",
+        "reason": "disabled_by_policy",
+        "detail": "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly."
+      }
+    ],
+    "section_stats": [
+      {
+        "section_name": "history",
+        "token_count": 320
+      },
+      {
+        "section_name": "worldbook",
+        "token_count": 96
+      }
+    ],
     "diagnostics": [
       {
-        "code": "historical_resolved_policy_unavailable",
-        "message": "Historical explain did not persist the resolved policy for this floor. The explain view returns persisted prompt snapshot and committed result truth only.",
-        "severity": "info",
+        "code": "derived_no_assistant_structure",
+        "message": "delivery.noAssistant forced the resolved structure.mode to no_assistant.",
+        "severity": "warning",
         "source": "policy",
-        "field_path": "resolved_policy",
-        "phase": "explain"
+        "field_path": "policy.structure.mode"
       }
     ],
     "limitations": [
-      "Historical explain reads persisted prompt snapshot and committed floor result only. It does not re-run prompt assembly, macro evaluation, or budget decisions."
+      "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+      "Variable commit remains page -> floor. Branch promotion is not automatic."
     ],
     "result": {
       "output_page_id": "page-output-12",
@@ -968,12 +1424,52 @@ GET /floors/:id/prompt-runtime/explain
 }
 ```
 
+### 旧楼层 fallback
+
+如果目标 floor 没有 committed explain snapshot，响应会显式退回最小只读 explain，并返回 `snapshot_available: false`。
+
+典型特征如下：
+
+- `assets = null`
+- `resolved_policy = null`
+- `trim_reasons = null`
+- `excluded_sources = null`
+- `section_stats = null`
+- `source_map` 只保留 `history` 子对象
+- `diagnostics` 会说明 `historical_snapshot_unavailable` 等原因
+- `limitations` 会明确说明没有做 explain recompute
+
+例如：
+
+```json
+{
+  "data": {
+    "snapshot_available": false,
+    "assets": null,
+    "resolved_policy": null,
+    "trim_reasons": null,
+    "excluded_sources": null,
+    "section_stats": null,
+    "diagnostics": [
+      {
+        "code": "historical_snapshot_unavailable",
+        "message": "Committed prompt runtime explain snapshot is unavailable for this floor. Historical explain falls back to minimal persisted truth only.",
+        "severity": "info",
+        "source": "policy",
+        "field_path": "snapshot_available",
+        "phase": "explain"
+      }
+    ]
+  }
+}
+```
+
 ### 当前返回面的解释
 
 - `prompt_snapshot`、`floor`、`result` 都来自已持久化记录。
-- `scope` 与 `source_map.history` 来自 committed floor 的 branch 真相，因此不会回退到当前可见 branch/chat 值。
-- `resolved_policy`、`trim_reasons`、`excluded_sources` 当前可能返回 `null`。这表示它们**没有随历史 floor 一起持久化**，而不是表示“当时没有这类结果”。
-- 对这些 `null` 字段，服务会同时返回结构化 `diagnostics` 和 `limitations`，明确说明它们为何不可用。
+- `snapshot_available = true` 表示 explain 已读到 `prompt_runtime_explain_snapshot`，因此可以返回完整 `assets`、`resolved_policy`、`source_map`、`trim_reasons`、`excluded_sources`、`section_stats`。
+- `snapshot_available = false` 表示目标 floor 没有这份 committed snapshot。服务会保留最小只读 explain，并通过 `diagnostics` 与 `limitations` 显式说明缺失字段。
+- 无论 snapshot 是否存在，这个接口都不会重跑 prompt 组装、宏展开、budget 或 source selection。
 
 ### 常见错误
 
@@ -982,6 +1478,104 @@ GET /floors/:id/prompt-runtime/explain
 | `404` | `not_found` / `prompt_runtime_explain_not_found` | floor 不存在、不属于当前账号，或缺少 explain 所需的持久化真相 |
 | `409` | `invalid_state` | floor 不是 committed，不能读取 historical explain |
 | `500` | `internal_error` | 服务端内部错误 |
+
+### 示例
+
+```bash
+curl http://localhost:3000/floors/floor-12/prompt-runtime/explain \
+  -H 'Authorization: Bearer <token>'
+```
+
+## 比较两个已提交楼层的 Prompt Runtime 差异
+
+```http
+POST /sessions/:id/prompt-runtime/compare
+```
+
+比较同一 session 内两个 **committed floor** 的 Prompt Runtime 差异。
+
+这个接口同样只读取 committed truth。它不会为 compare 额外做 explain recompute。
+
+### 路径参数
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 会话 ID |
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `left.floor_id` | string | **是** | 左侧 committed floor ID |
+| `right.floor_id` | string | **是** | 右侧 committed floor ID |
+
+### 请求示例
+
+```json
+{
+  "left": { "floor_id": "floor-left" },
+  "right": { "floor_id": "floor-right" }
+}
+```
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "left": {
+      "floor_id": "floor-left",
+      "snapshot_available": true
+    },
+    "right": {
+      "floor_id": "floor-right",
+      "snapshot_available": true
+    },
+    "scope_changes": [],
+    "policy_changes": [
+      {
+        "path": "policy.resolved_policy.delivery.no_assistant",
+        "change_type": "changed",
+        "left": false,
+        "right": true
+      }
+    ],
+    "asset_changes": [],
+    "diagnostics_changes": [],
+    "trim_changes": [],
+    "exclusion_changes": [],
+    "limitations": []
+  }
+}
+```
+
+### compare 边界
+
+- 只支持同一 session 内的两个 committed floor。
+- 不支持 preview 与 committed floor 混合比较。
+- 差异项是结构化 path/value diff，不是全文级 diff。
+- `path` 固定使用 `snake_case`。
+- 如果某一侧缺少 committed snapshot，会把对应侧的 `snapshot_available` 置为 `false`，并在 `limitations` 中说明 compare 因缺 snapshot 而跳过了 recompute。
+
+### 常见错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 会话或 floor 不存在，不属于当前账号，或 floor 不属于目标 session |
+| `409` | `invalid_state` | 任一 floor 不是 committed |
+| `500` | `internal_error` | 服务端内部错误 |
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/sessions/session-1/prompt-runtime/compare \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "left": { "floor_id": "floor-left" },
+    "right": { "floor_id": "floor-right" }
+  }'
+```
 
 ## 获取 Prompt Runtime 全局能力边界
 
@@ -1010,6 +1604,47 @@ GET /prompt-runtime/capabilities
         "require_last_user": false,
         "no_assistant": false
       }
+    },
+    "budget": {
+      "defaults": {},
+      "request_override_supported": true,
+      "persistent_patch_supported": true,
+      "supported_fields": ["maxInputTokens", "reservedCompletionTokens"],
+      "trim_reason_codes": ["budget_exceeded"]
+    },
+    "source_selection": {
+      "defaults": {
+        "history": { "mode": "full" },
+        "memory": { "enabled": true },
+        "worldbook": { "enabled": true },
+        "examples": { "enabled": true }
+      },
+      "request_override_supported": true,
+      "persistent_patch_supported": true,
+      "supported_sources": ["history", "memory", "worldbook", "examples"],
+      "history_modes": ["full", "windowed"],
+      "exclusion_reason_codes": ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"]
+    },
+    "governance": {
+      "session": {
+        "envelope_metadata": true,
+        "null_clears_field": true,
+        "object_patch": "deep_merge",
+        "supported_fields": ["structure", "delivery", "budget", "sourceSelection"]
+      },
+      "branch": {
+        "envelope_metadata": true,
+        "materialized_branches_only": true,
+        "null_clears_field": true,
+        "object_patch": "deep_merge",
+        "supported_fields": ["structure", "delivery", "budget", "sourceSelection"]
+      }
+    },
+    "compare": {
+      "enabled": true,
+      "committed_floors_only": true,
+      "mixed_preview_supported": false,
+      "limitations_instead_of_recompute": true
     },
     "observability": {
       "live": {
@@ -1045,7 +1680,10 @@ GET /prompt-runtime/capabilities
         "read_only": true,
         "requires_committed_floor": true,
         "persisted_truth_only": true,
-        "recompute": false
+        "recompute": false,
+        "snapshot_supported": true,
+        "legacy_floor_fallback": true,
+        "snapshot_availability_field": "snapshot_available"
       },
       "stream": {
         "enabled": true,

@@ -327,7 +327,7 @@ console.log(result.runtimeTrace);
 
 其中 `runtimeTrace.macro` 与同步接口保持同一套结构，便于复用同一份调试面代码。
 
-### 读取和更新 Prompt Runtime 默认策略
+### 读取、治理和比较 Prompt Runtime
 
 ```ts
 const state = await client.promptRuntime.getSession({
@@ -342,7 +342,24 @@ const policy = await client.promptRuntime.patchPolicy({
     mode: "strict_alternating",
     preserveSystemMessages: true,
   },
+  budget: {
+    maxInputTokens: 4096,
+    reservedCompletionTokens: 1024,
+  },
+  sourceSelection: {
+    history: { mode: "windowed", maxMessages: 24 },
+    examples: { enabled: false },
+  },
   delivery: null,
+});
+
+const branchPolicy = await client.promptRuntime.patchBranchPolicy({
+  accountId: "account-1",
+  sessionId: "session-1",
+  branchId: "main",
+  delivery: {
+    noAssistant: true,
+  },
 });
 
 const preview = await client.promptRuntime.previewText({
@@ -369,23 +386,41 @@ const explain = await client.promptRuntime.getFloorExplain({
   floorId: "floor-12",
 });
 
+const diff = await client.promptRuntime.compare({
+  accountId: "account-1",
+  sessionId: "session-1",
+  leftFloorId: "floor-11",
+  rightFloorId: "floor-12",
+});
+
 const capabilities = await client.promptRuntime.getCapabilities();
 
 console.log(state.assets.characterCard?.name);
 console.log(policy.resolvedPolicy.structure.mode);
+console.log(policy.persistentPolicyEnvelope?.version);
+console.log(policy.persistentPolicyEnvelope?.updatedBy);
+console.log(branchPolicy.persistentPolicyEnvelope?.value.delivery?.noAssistant);
 console.log(preview.text);
 console.log(preview.runtimeTrace.budgets?.trimReasons);
 console.log(preview.runtimeTrace.sourceSelection?.excludedSources);
 console.log(preview.runtimeTrace.macro?.stagedMutations); // []
 console.log(explain.promptSnapshot?.promptDigest);
-console.log(explain.resolvedPolicy); // 历史楼层未持久化时可能为 null
+console.log(explain.snapshotAvailable);
+console.log(explain.assets);
+console.log(explain.sectionStats);
+console.log(explain.resolvedPolicy); // 旧楼层 fallback 时可能为 null
+console.log(diff.policyChanges);
+console.log(diff.left.snapshotAvailable, diff.right.snapshotAvailable);
 console.log(capabilities.observability.preview.enabled);
 console.log(capabilities.observability.explain.enabled);
+console.log(capabilities.governance.session.envelopeMetadata);
+console.log(capabilities.compare.committedFloorsOnly);
 console.log(capabilities.unsupported);
 ```
 
 `promptRuntime` 当前覆盖：
 
+- `promptRuntime.compare(...)`
 - `promptRuntime.getAssets(...)`
 - `promptRuntime.getBranchPolicy(...)`
 - `promptRuntime.getCapabilities(...)`
@@ -400,14 +435,15 @@ console.log(capabilities.unsupported);
 
 - 这是一组独立的高级 API 资源，不会创建第二条聊天执行链。
 - `characterCard` 仍然属于 Prompt Assets。
-- `patchPolicy(...)` 当前只允许写 `structure` 和 `delivery`。
-- `patchBranchPolicy(...)` 当前同样只允许写 `structure` 和 `delivery`，并且只面向已物化 branch。
+- `patchPolicy(...)` 与 `patchBranchPolicy(...)` 现在都支持 `structure`、`delivery`、`budget`、`sourceSelection`。
+- 读取侧继续兼容旧的 bare object metadata；写入侧统一升级为 envelope：`{ version, updatedAt, updatedBy, value }`。
 - `previewText(...)` 只做单段文本 preview，不走 LLM、不创建 floor、不写 `promptSnapshot`、不提交副作用。
 - `previewText(...)` 当前支持 request 级 `budget` / `sourceSelection` 覆盖；结构化解释结果位于 `runtimeTrace.budgets.trimReasons` 与 `runtimeTrace.sourceSelection.excludedSources`。
 - `previewText(...)` 的宏诊断继续统一走 `runtimeTrace.macro`，并且 `runtimeTrace.macro.stagedMutations` 固定为空。
 - `getFloorExplain(...)` 只读取 committed floor 的持久化真相，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。
-- 历史楼层如果没有持久化 `resolvedPolicy`、`trimReasons`、`excludedSources`，SDK 会把它们映射为 `null`，并保留 `diagnostics` / `limitations` 说明原因。
-- `delivery: null` 或 `structure: null` 会清空对应持久化 section。
+- `getFloorExplain(...)` 的 `snapshotAvailable` 表示 explain 是否来自 committed explain snapshot。旧楼层 fallback 时，`assets`、`resolvedPolicy`、`trimReasons`、`excludedSources`、`sectionStats` 可能为 `null`，并会保留 `diagnostics` / `limitations`。
+- `compare(...)` 只支持同一 session 内的两个 committed floor。返回值是结构化 path/value diff，不是全文级 diff；缺 snapshot 时会保留 `limitations`，而不是重算 explain。
+- `delivery: null`、`structure: null`、`budget: null`、`sourceSelection: null` 都会清空对应持久化 section。
 - 当前没有 `promptRuntime.macros(...)` 之类的专用 control plane 方法；宏边界继续通过统一观测面公开。
 
 ## 设计边界

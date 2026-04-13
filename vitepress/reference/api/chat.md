@@ -8,7 +8,9 @@ outline: [2, 3]
 
 如果你只需要对一段文本做宏 preview，而不需要完整 prompt 组装，请改用 `POST /sessions/:id/prompt-runtime/preview`。它复用同一条宏主线，但不会创建 floor，也不会调用 LLM。
 
-如果你需要回看某个已提交楼层在当时真正落库的 `prompt_snapshot` 和 committed result，而不是当前请求的 live / dry-run 调试结果，请使用 `GET /floors/:id/prompt-runtime/explain`。它只读取持久化真相，不会重新组装 prompt，也不会重新计算 budget / source selection。
+如果你需要回看某个已提交楼层在当时真正落库的 `prompt_snapshot`、`prompt_runtime_explain_snapshot` 和 committed result，而不是当前请求的 live / dry-run 调试结果，请使用 `GET /floors/:id/prompt-runtime/explain`。它只读取持久化真相，不会重新组装 prompt，也不会重新计算 budget / source selection。
+
+如果你需要比较两个已提交楼层的 Prompt Runtime 差异，请使用 `POST /sessions/:id/prompt-runtime/compare`。这个接口同样只读取 committed truth，不会额外做 explain recompute。
 
 ## 发送消息并生成回复
 
@@ -79,6 +81,8 @@ POST /sessions/:id/respond
 当 mutation value 是对象时，`runtime_trace.macro.mutation_preview` 和 `runtime_trace.macro.staged_mutations` 会返回稳定 JSON 字符串，而不是 `[object Object]`。
 
 这两个字段默认都关闭。未打开时，同步成功响应保持兼容。
+
+当 live 生成成功并越过 commit 边界后，服务端还会在同一同步事务内写入 `prompt_runtime_explain_snapshot`。后续 `GET /floors/:id/prompt-runtime/explain` 和 `POST /sessions/:id/prompt-runtime/compare` 都以这份 committed snapshot 为主，不会事后重算 prompt 组装、宏展开、budget 或 source selection。
 
 ### 常见错误
 
@@ -174,6 +178,8 @@ POST /sessions/:id/respond/dry-run
 ```
 
 只组装 Prompt 并返回调试信息，不实际调用 LLM，无副作用。除了 `prompt_snapshot`，响应里的 `assembly` 还会返回 preset 兼容边界信息。
+
+dry-run 不会写入 `prompt_runtime_explain_snapshot`。这份 explain snapshot 只会在 live 聊天链成功 commit 时产生。
 
 如果需要查看命中的世界书条目、来源、注入位置和首个命中位置，可以在请求体里打开 `debug_options.include_worldbook_matches`。
 

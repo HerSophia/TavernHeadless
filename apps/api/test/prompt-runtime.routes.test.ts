@@ -20,6 +20,7 @@ type PromptRuntimeControlServiceStub = {
   updatePolicy: ReturnType<typeof vi.fn>;
   updateBranchPolicy: ReturnType<typeof vi.fn>;
   getHistoricalExplain: ReturnType<typeof vi.fn>;
+  compareCommittedExplain: ReturnType<typeof vi.fn>;
   getCapabilities: ReturnType<typeof vi.fn>;
 };
 
@@ -42,6 +43,7 @@ function createPromptRuntimeControlService(
     updatePolicy: vi.fn(),
     updateBranchPolicy: vi.fn(),
     getHistoricalExplain: vi.fn(),
+    compareCommittedExplain: vi.fn(),
     getCapabilities: vi.fn(),
     ...overrides,
   };
@@ -401,7 +403,7 @@ describe("prompt runtime routes", () => {
     expect(controlService.updatePolicy).toHaveBeenCalledWith("s1", DEFAULT_ADMIN_ACCOUNT_ID, {
       structure: { mode: "strict_alternating", preserveSystemMessages: true },
       delivery: { requireLastUser: true },
-    });
+    }, DEFAULT_ADMIN_ACCOUNT_ID);
   });
 
   it("maps PATCH /sessions/:id/prompt-runtime/policy null clearing semantics", async () => {
@@ -457,7 +459,7 @@ describe("prompt runtime routes", () => {
     expect(controlService.updatePolicy).toHaveBeenCalledWith("s1", DEFAULT_ADMIN_ACCOUNT_ID, {
       structure: null,
       delivery: null,
-    });
+    }, DEFAULT_ADMIN_ACCOUNT_ID);
   });
 
   it("maps GET /sessions/:id/prompt-runtime/branches/:branchId/policy response to snake_case", async () => {
@@ -558,7 +560,7 @@ describe("prompt runtime routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(controlService.updateBranchPolicy).toHaveBeenCalledWith("s1", "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID, { structure: { mode: "strict_alternating" } });
+    expect(controlService.updateBranchPolicy).toHaveBeenCalledWith("s1", "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID, { structure: { mode: "strict_alternating" } }, DEFAULT_ADMIN_ACCOUNT_ID);
   });
 
   it("rejects macro-related write attempts outside the mutable policy surface", async () => {
@@ -849,6 +851,13 @@ describe("prompt runtime routes", () => {
           historySourceBranchId: "main",
           historySourceMode: "existing_branch",
         },
+        snapshotAvailable: true,
+        assets: {
+          preset: { id: "preset-1", name: "Preset One" },
+          characterCard: { id: "char-1", name: "Hero" },
+          worldbook: { id: "wb-1", name: "Lorebook" },
+          regexProfile: null,
+        },
         promptSnapshot: {
           presetId: "preset-1",
           presetUpdatedAt: 1710000000000,
@@ -870,6 +879,7 @@ describe("prompt runtime routes", () => {
         sourceMap: { history: { sourceBranchId: "main", sourceMode: "existing_branch" } },
         trimReasons: null,
         excludedSources: null,
+        sectionStats: [{ sectionName: "history", tokenCount: 320 }],
         diagnostics: [{ code: "historical_resolved_policy_unavailable", message: "policy unavailable", severity: "info", source: "policy", fieldPath: "resolved_policy", phase: "explain" }],
         limitations: ["persisted only"],
         result: {
@@ -912,6 +922,13 @@ describe("prompt runtime routes", () => {
           history_source_branch_id: "main",
           history_source_mode: "existing_branch",
         },
+        snapshot_available: true,
+        assets: {
+          preset: { id: "preset-1", name: "Preset One" },
+          character_card: { id: "char-1", name: "Hero" },
+          worldbook: { id: "wb-1", name: "Lorebook" },
+          regex_profile: null,
+        },
         prompt_snapshot: {
           preset_id: "preset-1",
           preset_updated_at: 1710000000000,
@@ -935,6 +952,7 @@ describe("prompt runtime routes", () => {
         },
         trim_reasons: null,
         excluded_sources: null,
+        section_stats: [{ section_name: "history", token_count: 320 }],
         diagnostics: [{ code: "historical_resolved_policy_unavailable", message: "policy unavailable", severity: "info", source: "policy", field_path: "resolved_policy", phase: "explain" }],
         limitations: ["persisted only"],
         result: {
@@ -950,6 +968,49 @@ describe("prompt runtime routes", () => {
     });
 
     expect(controlService.getHistoricalExplain).toHaveBeenCalledWith("floor-12", DEFAULT_ADMIN_ACCOUNT_ID);
+  });
+
+  it("maps POST /sessions/:id/prompt-runtime/compare response to snake_case", async () => {
+    const controlService = createPromptRuntimeControlService({
+      compareCommittedExplain: vi.fn(async () => ({
+        left: { floorId: "floor-left", snapshotAvailable: true },
+        right: { floorId: "floor-right", snapshotAvailable: false },
+        scopeChanges: [],
+        policyChanges: [{ path: "policy.resolvedPolicy.delivery.noAssistant", changeType: "changed", left: false, right: true }],
+        assetChanges: [],
+        diagnosticsChanges: [],
+        trimChanges: [],
+        exclusionChanges: [],
+        limitations: ["Right floor 'floor-right' has no committed prompt runtime snapshot. Compare skipped recomputation and returned limitations only."],
+      })),
+    });
+
+    await mountRoutes(controlService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/prompt-runtime/compare",
+      payload: {
+        left: { floor_id: "floor-left" },
+        right: { floor_id: "floor-right" },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      data: {
+        left: { floor_id: "floor-left", snapshot_available: true },
+        right: { floor_id: "floor-right", snapshot_available: false },
+        scope_changes: [],
+        policy_changes: [{ path: "policy.resolved_policy.delivery.no_assistant", change_type: "changed", left: false, right: true }],
+        asset_changes: [],
+        diagnostics_changes: [],
+        trim_changes: [],
+        exclusion_changes: [],
+        limitations: ["Right floor 'floor-right' has no committed prompt runtime snapshot. Compare skipped recomputation and returned limitations only."],
+      },
+    });
+    expect(controlService.compareCommittedExplain).toHaveBeenCalledWith("s1", "floor-left", "floor-right", DEFAULT_ADMIN_ACCOUNT_ID);
   });
 
   it("maps GET /prompt-runtime/capabilities response to snake_case", async () => {
@@ -973,7 +1034,7 @@ describe("prompt runtime routes", () => {
         budget: {
           defaults: {},
           requestOverrideSupported: true,
-          persistentPatchSupported: false,
+          persistentPatchSupported: true,
           supportedFields: ["maxInputTokens", "reservedCompletionTokens"],
           trimReasonCodes: ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"],
         },
@@ -985,10 +1046,31 @@ describe("prompt runtime routes", () => {
             examples: { enabled: true },
           },
           requestOverrideSupported: true,
-          persistentPatchSupported: false,
+          persistentPatchSupported: true,
           supportedSources: ["history", "memory", "worldbook", "examples"],
           historyModes: ["full", "windowed"],
           exclusionReasonCodes: ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"],
+        },
+        governance: {
+          session: {
+            envelopeMetadata: true,
+            nullClearsField: true,
+            objectPatch: "deep_merge",
+            supportedFields: ["structure", "delivery", "budget", "sourceSelection"],
+          },
+          branch: {
+            envelopeMetadata: true,
+            materializedBranchesOnly: true,
+            nullClearsField: true,
+            objectPatch: "deep_merge",
+            supportedFields: ["structure", "delivery", "budget", "sourceSelection"],
+          },
+        },
+        compare: {
+          enabled: true,
+          committedFloorsOnly: true,
+          mixedPreviewSupported: false,
+          limitationsInsteadOfRecompute: true,
         },
         observability: {
           live: {
@@ -1025,6 +1107,9 @@ describe("prompt runtime routes", () => {
             requiresCommittedFloor: true,
             persistedTruthOnly: true,
             recompute: false,
+            snapshotSupported: true,
+            legacyFloorFallback: true,
+            snapshotAvailabilityField: "snapshot_available",
           },
           stream: {
             enabled: true,
@@ -1072,7 +1157,7 @@ describe("prompt runtime routes", () => {
         budget: {
           defaults: {},
           request_override_supported: true,
-          persistent_patch_supported: false,
+          persistent_patch_supported: true,
           supported_fields: ["maxInputTokens", "reservedCompletionTokens"],
           trim_reason_codes: ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"],
         },
@@ -1084,10 +1169,31 @@ describe("prompt runtime routes", () => {
             examples: { enabled: true },
           },
           request_override_supported: true,
-          persistent_patch_supported: false,
+          persistent_patch_supported: true,
           supported_sources: ["history", "memory", "worldbook", "examples"],
           history_modes: ["full", "windowed"],
           exclusion_reason_codes: ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"],
+        },
+        governance: {
+          session: {
+            envelope_metadata: true,
+            null_clears_field: true,
+            object_patch: "deep_merge",
+            supported_fields: ["structure", "delivery", "budget", "sourceSelection"],
+          },
+          branch: {
+            envelope_metadata: true,
+            materialized_branches_only: true,
+            null_clears_field: true,
+            object_patch: "deep_merge",
+            supported_fields: ["structure", "delivery", "budget", "sourceSelection"],
+          },
+        },
+        compare: {
+          enabled: true,
+          committed_floors_only: true,
+          mixed_preview_supported: false,
+          limitations_instead_of_recompute: true,
         },
         observability: {
           live: {
@@ -1124,6 +1230,9 @@ describe("prompt runtime routes", () => {
             requires_committed_floor: true,
             persisted_truth_only: true,
             recompute: false,
+            snapshot_supported: true,
+            legacy_floor_fallback: true,
+            snapshot_availability_field: "snapshot_available",
           },
           stream: {
             enabled: true,
