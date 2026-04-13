@@ -69,7 +69,7 @@ import {
   purgeDeletedClientDataDomains,
 } from "./client-data/client-data-maintenance.js";
 
-import { PromptRuntimeControlService } from "./services/prompt-runtime-control-service.js";
+import { PromptRuntimeControlService, PromptRuntimeControlServiceError } from "./services/prompt-runtime-control-service.js";
 import { ToolWorker } from "./services/tool-worker.js";
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
@@ -317,6 +317,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         sqlite_code: code,
         message: errorMessage
       });
+    }
+
+    if (error instanceof PromptRuntimeControlServiceError) {
+      return sendError(reply, error.statusCode, error.code, error.message);
     }
 
     if (error instanceof ResourceBusyError || isSqliteBusyError(error)) {

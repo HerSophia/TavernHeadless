@@ -434,6 +434,19 @@ describe("PromptRuntimeControlService", () => {
         sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
         debug: DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
       },
+      persistentPolicyEnvelope: expect.objectContaining({
+        version: 1,
+        value: {
+          structure: {
+            mode: "strict_alternating",
+            preserveSystemMessages: true,
+          },
+          delivery: {
+            requireLastUser: true,
+            noAssistant: true,
+          },
+        },
+      }),
       warnings: [DERIVED_NO_ASSISTANT_STRUCTURE_WARNING],
     });
 
@@ -449,13 +462,17 @@ describe("PromptRuntimeControlService", () => {
       source: "test",
       prompt_runtime: {
         policy: {
-          structure: {
-            mode: "strict_alternating",
-            preserveSystemMessages: true,
-          },
-          delivery: {
-            requireLastUser: true,
-            noAssistant: true,
+          version: 1,
+          updatedAt: expect.any(Number),
+          value: {
+            structure: {
+              mode: "strict_alternating",
+              preserveSystemMessages: true,
+            },
+            delivery: {
+              requireLastUser: true,
+              noAssistant: true,
+            },
           },
         },
       },
@@ -567,6 +584,21 @@ describe("PromptRuntimeControlService", () => {
         sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
         debug: DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
       },
+      persistentPolicyEnvelope: expect.objectContaining({
+        version: 1,
+        value: {
+          structure: {
+            mode: "no_assistant",
+            preserveSystemMessages: true,
+            assistantRewriteStrategy: "to_user_transcript",
+          },
+          delivery: {
+            allowAssistantPrefill: false,
+            requireLastUser: true,
+          },
+        },
+      }),
+
       warnings: [],
     });
 
@@ -578,14 +610,18 @@ describe("PromptRuntimeControlService", () => {
     expect(JSON.parse(sessionRow!.metadataJson!)).toEqual({
       prompt_runtime: {
         policy: {
-          structure: {
-            mode: "no_assistant",
-            preserveSystemMessages: true,
-            assistantRewriteStrategy: "to_user_transcript",
-          },
-          delivery: {
-            allowAssistantPrefill: false,
-            requireLastUser: true,
+          version: 1,
+          updatedAt: expect.any(Number),
+          value: {
+            structure: {
+              mode: "no_assistant",
+              preserveSystemMessages: true,
+              assistantRewriteStrategy: "to_user_transcript",
+            },
+            delivery: {
+              allowAssistantPrefill: false,
+              requireLastUser: true,
+            },
           },
         },
       },
@@ -735,6 +771,7 @@ describe("PromptRuntimeControlService", () => {
     const service = new PromptRuntimeControlService(database.db);
     const updated = await service.updateBranchPolicy(sessionId, "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID, {
       structure: { mode: "strict_alternating" },
+
       delivery: { requireLastUser: true },
     });
 
@@ -750,6 +787,14 @@ describe("PromptRuntimeControlService", () => {
         sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
         debug: DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
       },
+      persistentPolicyEnvelope: expect.objectContaining({
+        version: 1,
+        value: {
+          structure: { mode: "strict_alternating" },
+          delivery: { requireLastUser: true },
+        },
+      }),
+
       warnings: [],
     });
 
@@ -760,8 +805,12 @@ describe("PromptRuntimeControlService", () => {
       prompt_runtime: {
         branchPolicies: {
           "alt-branch": {
-            structure: { mode: "strict_alternating" },
-            delivery: { requireLastUser: true },
+            version: 1,
+            updatedAt: expect.any(Number),
+            value: {
+              structure: { mode: "strict_alternating" },
+              delivery: { requireLastUser: true },
+            },
           },
         },
       },
@@ -910,6 +959,8 @@ describe("PromptRuntimeControlService", () => {
       historySourceBranchId: "main",
       historySourceMode: "existing_branch",
     });
+    expect(explain.snapshotAvailable).toBe(false);
+    expect(explain.assets).toBeNull();
     expect(explain.promptSnapshot).toEqual({
       presetId: null,
       presetUpdatedAt: null,
@@ -931,6 +982,7 @@ describe("PromptRuntimeControlService", () => {
     expect(explain.sourceMap).toEqual({ history: { sourceBranchId: "main", sourceMode: "existing_branch" } });
     expect(explain.trimReasons).toBeNull();
     expect(explain.excludedSources).toBeNull();
+    expect(explain.sectionStats).toBeNull();
     expect(explain.result).toEqual({
       outputPageId,
       assistantMessageId,
@@ -941,6 +993,7 @@ describe("PromptRuntimeControlService", () => {
       committedAt: now,
     });
     expect(explain.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "historical_snapshot_unavailable", phase: "explain" }),
       expect.objectContaining({ code: "historical_resolved_policy_unavailable", phase: "explain" }),
       expect.objectContaining({ code: "historical_trim_reasons_unavailable", phase: "explain" }),
       expect.objectContaining({ code: "historical_excluded_sources_unavailable", phase: "explain" }),
@@ -974,7 +1027,27 @@ describe("PromptRuntimeControlService", () => {
           requiresCommittedFloor: true,
           persistedTruthOnly: true,
           recompute: false,
+          snapshotSupported: true,
+          legacyFloorFallback: true,
+          snapshotAvailabilityField: "snapshot_available",
         },
+      }),
+      compare: expect.objectContaining({
+        enabled: true,
+        committedFloorsOnly: true,
+        mixedPreviewSupported: false,
+        limitationsInsteadOfRecompute: true,
+      }),
+      governance: expect.objectContaining({
+        session: expect.objectContaining({
+          envelopeMetadata: true,
+          nullClearsField: true,
+          objectPatch: "deep_merge",
+        }),
+        branch: expect.objectContaining({
+          envelopeMetadata: true,
+          materializedBranchesOnly: true,
+        }),
       }),
       macro: expect.objectContaining({
         stCompatibilitySnapshotsPersistable: false,

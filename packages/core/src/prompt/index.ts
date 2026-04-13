@@ -34,6 +34,9 @@ export type {
   PromptRuntimeVisibilityRange,
   PromptRuntimeVisibilityTrace,
   PromptRuntimeSourceSelectionTrace,
+  PromptRuntimeSectionStat,
+  PromptRuntimeDiffChangeType,
+  PromptRuntimeDiffEntry,
   PromptRuntimeTrace,
   PromptRuntimeDebugView,
 } from './types.js';

@@ -322,6 +322,7 @@ export interface AssembleResult {
   tokenUsage: {
     total: number;
     availableForReply: number;
+    bySection?: Record<string, number>;
     byGroup?: Record<string, number>;
     prunedByGroup?: Record<string, number>;
   };
@@ -519,6 +520,7 @@ export async function assemblePrompt(
   let worldBookResults: PromptWorldbookTriggerResult | undefined;
   let worldbookMatches: WorldbookMatchDetail[] | undefined;
   let characterOverridesHandledInPromptIR = false;
+  let tokenUsageBySection: Record<string, number> | undefined;
   let tokenUsageByGroup: Record<string, number> | undefined;
   let prunedTokenUsageByGroup: Record<string, number> | undefined;
   let memorySummaryHandledInPromptIR = false;
@@ -638,6 +640,7 @@ export async function assemblePrompt(
 
     messages = assembled.messages;
     maxPromptTokens = promptIR.metadata.maxTokens;
+    tokenUsageBySection = assembledBudgetUsage.bySection;
     tokenUsageByGroup = assembledBudgetUsage.byGroup;
     prunedTokenUsageByGroup = assembledBudgetUsage.prunedByGroup;
     mode = "preset";
@@ -746,6 +749,7 @@ export async function assemblePrompt(
     postProcess,
     tokenUsage: {
       total: tokenEstimate,
+      ...(tokenUsageBySection ? { bySection: tokenUsageBySection } : {}),
       ...(tokenUsageByGroup ? { byGroup: tokenUsageByGroup } : {}),
       ...(prunedTokenUsageByGroup ? { prunedByGroup: prunedTokenUsageByGroup } : {}),
       availableForReply,

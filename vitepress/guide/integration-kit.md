@@ -229,22 +229,54 @@ console.log(preview.runtimeTrace.macro?.stagedMutations); // []
 
 这个方法只做单段文本 preview。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`。当前 request 级 `budget` / `sourceSelection` 覆盖的解释结果，会进入 `runtimeTrace.budgets.trimReasons` 与 `runtimeTrace.sourceSelection.excludedSources`。宏诊断继续统一走 `runtimeTrace.macro`。
 
-## Prompt Runtime historical explain 示例
+## Prompt Runtime governance / explain / compare 示例
 
 ```ts
+const policy = await client.promptRuntime.patchPolicy({
+  accountId: "account-1",
+  sessionId: "session-1",
+  budget: {
+    maxInputTokens: 4096,
+    reservedCompletionTokens: 1024,
+  },
+  sourceSelection: {
+    history: { mode: "windowed", maxMessages: 24 },
+    examples: { enabled: false },
+  },
+});
+
 const explain = await client.promptRuntime.getFloorExplain({
   accountId: "account-1",
   floorId: "floor-12",
 });
 
-console.log(explain.promptSnapshot?.promptDigest);
-console.log(explain.result?.outputText);
-console.log(explain.resolvedPolicy); // 历史楼层未持久化时可能为 null
+const diff = await client.promptRuntime.compare({
+  accountId: "account-1",
+  sessionId: "session-1",
+  leftFloorId: "floor-11",
+  rightFloorId: "floor-12",
+});
+
+console.log(policy.persistentPolicyEnvelope?.version);
+console.log(policy.persistentPolicyEnvelope?.updatedAt);
+console.log(policy.persistentPolicyEnvelope?.updatedBy);
+console.log(policy.persistentPolicyEnvelope?.value.budget);
+
+console.log(explain.snapshotAvailable);
+console.log(explain.assets);
+console.log(explain.sectionStats);
+console.log(explain.resolvedPolicy);
+
+console.log(diff.left.snapshotAvailable, diff.right.snapshotAvailable);
+console.log(diff.policyChanges);
 ```
 
-这个方法只读取 committed floor 的持久化真相。它不会重新组装 prompt，不会重新展开宏，也不会重算 budget / source selection。
+- `patchPolicy(...)` 和 `patchBranchPolicy(...)` 现在都支持 `structure`、`delivery`、`budget`、`sourceSelection`。
+- 写入后的持久化策略会带 envelope 元数据：`version`、`updatedAt`、`updatedBy`、`value`。
+- `getFloorExplain(...)` 只读取 committed floor 的持久化真相。`snapshotAvailable = true` 表示响应来自 committed explain snapshot；`false` 表示旧楼层 fallback，此时 `assets`、`resolvedPolicy`、`sectionStats` 等可能为 `null`。
+- `compare(...)` 只支持同一 session 内的两个 committed floor，且只返回结构化 path/value diff；不会做 explain recompute。
 
-当前 `@tavern/client-helpers` 没有为 historical explain 增加专用 helper。原因很简单：这份响应已经是稳定的只读对象，当前没有额外的跨框架语义整理需求。接入方直接使用 SDK 返回值即可。
+当前 `@tavern/client-helpers` 没有为 historical explain 或 compare 增加专用 helper。原因很简单：这两份响应已经是稳定的只读对象，当前没有额外的跨框架语义整理需求。接入方直接使用 SDK 返回值即可。
 
 
 ## `@tavern/client-helpers` 当前导出

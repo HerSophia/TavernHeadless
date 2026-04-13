@@ -312,6 +312,20 @@ export interface PromptRuntimeSourceSelectionTrace {
   excludedSources: PromptSourceExclusionReason[];
 }
 
+export interface PromptRuntimeSectionStat {
+  sectionName: string;
+  tokenCount: number;
+}
+
+export type PromptRuntimeDiffChangeType = 'added' | 'removed' | 'changed';
+
+export interface PromptRuntimeDiffEntry<TValue = unknown> {
+  path: string;
+  changeType: PromptRuntimeDiffChangeType;
+  left?: TValue;
+  right?: TValue;
+}
+
 export interface PromptRuntimeTrace<TWorldbookMatch = unknown> {
   preset?: PromptRuntimePresetTrace;
   worldbook?: PromptRuntimeWorldbookTrace<TWorldbookMatch>;

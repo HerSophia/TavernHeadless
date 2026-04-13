@@ -23,7 +23,7 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 - 流式输出（SSE）、带 `prompt_intent` / 运行语义回显的 Prompt 调试（dry-run）、OpenAPI 文档
 - Web 管理台已提供 LLM、Tools、MCP 的基础管理与运行检查界面
 - 官方集成层两包：`@tavern/sdk`、`@tavern/client-helpers`，并已覆盖会话、内容结构、Prompt Runtime、变量、记忆条目 / 边 / 作业 / scope 状态、导出、Tools、MCP 等主要接入域
-- Prompt Runtime 已支持分支感知 control plane、budget / source selection explain，以及读取已提交楼层的 historical explain（只读持久化真相）
+- Prompt Runtime 已支持分支感知 control plane、budget / source selection explain、已提交楼层的 historical explain（只读持久化真相）、committed floor compare/diff，以及 session / branch policy envelope governance
 - 三种认证模式、多账号隔离、LLM 密钥加密存储
 - 变量、记忆、消息、会话、用户等批量操作接口
 - LLM Profiles / Instance Slots 已接入真实执行链路，并使用 turn 级 provider 快照隔离运行中的配置
@@ -36,7 +36,7 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 - **三层消息结构** — 会话 → 楼层 → 消息页，天然支持分支和版本管理
 - **五级变量系统** — 全局、会话、分支、楼层、页级，互不干扰
 - **提示词编排** — 兼容模式与原生图编译路径并存，最终统一落到 PromptIR
-- **Prompt Runtime 观测面** — 支持 live debug、dry-run、单段 preview、budget / source selection explain，以及 committed floor 的 historical explain
+- **Prompt Runtime 观测面** — 支持 live debug、dry-run、单段 preview、budget / source selection explain、committed floor 的 historical explain，以及 committed floor compare / diff
 - **记忆系统** — 支持 Memory V2 双层摘要、结构化存储、默认分支隔离的记忆注入和后台维护
 - **开发者友好** — TypeScript 全栈、OpenAPI 导出、类型化 SDK
 - **官方集成层** — 提供 `@tavern/sdk` 和 `@tavern/client-helpers`

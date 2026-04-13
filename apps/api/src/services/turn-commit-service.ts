@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import type {
   BufferedToolVariableMutation,
   CoreEventBus,
@@ -26,6 +27,7 @@ import {
   floorResultSnapshots,
   messagePages,
   messages,
+  promptRuntimeExplainSnapshots,
   promptSnapshots,
   sessions,
   toolCallRecords,
@@ -54,11 +56,13 @@ import {
 } from "@tavern/shared";
 import { DEFAULT_GLOBAL_SCOPE_ID } from "./variable-host-service.js";
 import { BranchLocalVariableSnapshotService } from "./branch-local-variable-snapshot-service.js";
+import type { PromptRuntimeInspectionResult } from "./prompt-runtime-control-service.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
 type PromptSnapshotInsert = typeof promptSnapshots.$inferInsert;
 type FloorResultSnapshotInsert = typeof floorResultSnapshots.$inferInsert;
+type PromptRuntimeExplainSnapshotInsert = typeof promptRuntimeExplainSnapshots.$inferInsert;
 type ToolExecutionInsert = typeof toolExecutionRecords.$inferInsert;
 
 interface MemoryCommitInput {
@@ -80,6 +84,7 @@ export interface TurnCommitInput {
   execution: TurnExecutionResult;
   committedAt?: number;
   promptSnapshot?: PromptSnapshotRecord;
+  promptRuntimeInspection?: PromptRuntimeInspectionResult;
   toolCalls?: ToolCallRecord[];
   toolExecutionRecords?: ExecutedToolCallRecord[];
   pendingToolJobs?: PendingToolJobRequest[];
@@ -204,6 +209,32 @@ function toFloorResultSnapshotInsert(input: {
     verifierJson: verifier ? JSON.stringify(verifier) : null,
     committedAt: input.committedAt,
     updatedAt: input.committedAt,
+  };
+}
+
+function toPromptRuntimeExplainSnapshotInsert(input: {
+  floorId: string;
+  sessionId: string;
+  committedAt: number;
+  inspection: PromptRuntimeInspectionResult;
+}): PromptRuntimeExplainSnapshotInsert {
+  return {
+    id: nanoid(),
+    floorId: input.floorId,
+    sessionId: input.sessionId,
+    targetBranchId: input.inspection.scope.targetBranchId,
+    sourceFloorId: input.inspection.scope.sourceFloorId ?? null,
+    historySourceBranchId: input.inspection.scope.historySourceBranchId,
+    historySourceMode: input.inspection.scope.historySourceMode,
+    snapshotVersion: 1,
+    assetsJson: JSON.stringify(input.inspection.assets),
+    resolvedPolicyJson: JSON.stringify(input.inspection.resolvedPolicy),
+    sourceMapJson: JSON.stringify(input.inspection.sourceMap),
+    diagnosticsJson: JSON.stringify(input.inspection.diagnostics),
+    trimReasonsJson: JSON.stringify(input.inspection.trimReasons),
+    excludedSourcesJson: JSON.stringify(input.inspection.excludedSources),
+    sectionStatsJson: JSON.stringify(input.inspection.sectionStats),
+    createdAt: input.committedAt,
   };
 }
 
@@ -500,6 +531,38 @@ export class TurnCommitService {
                 promptDigest: snapshot.promptDigest,
                 tokenEstimate: snapshot.tokenEstimate,
                 createdAt: snapshot.createdAt,
+              },
+            })
+            .run();
+        }
+
+        if (input.promptRuntimeInspection) {
+          const inspectionSnapshot = toPromptRuntimeExplainSnapshotInsert({
+            floorId: input.floorId,
+            sessionId: input.sessionId,
+            committedAt,
+            inspection: input.promptRuntimeInspection,
+          });
+          tx
+            .insert(promptRuntimeExplainSnapshots)
+            .values(inspectionSnapshot)
+            .onConflictDoUpdate({
+              target: promptRuntimeExplainSnapshots.floorId,
+              set: {
+                sessionId: inspectionSnapshot.sessionId,
+                targetBranchId: inspectionSnapshot.targetBranchId,
+                sourceFloorId: inspectionSnapshot.sourceFloorId,
+                historySourceBranchId: inspectionSnapshot.historySourceBranchId,
+                historySourceMode: inspectionSnapshot.historySourceMode,
+                snapshotVersion: inspectionSnapshot.snapshotVersion,
+                assetsJson: inspectionSnapshot.assetsJson,
+                resolvedPolicyJson: inspectionSnapshot.resolvedPolicyJson,
+                sourceMapJson: inspectionSnapshot.sourceMapJson,
+                diagnosticsJson: inspectionSnapshot.diagnosticsJson,
+                trimReasonsJson: inspectionSnapshot.trimReasonsJson,
+                excludedSourcesJson: inspectionSnapshot.excludedSourcesJson,
+                sectionStatsJson: inspectionSnapshot.sectionStatsJson,
+                createdAt: inspectionSnapshot.createdAt,
               },
             })
             .run();

@@ -288,6 +288,13 @@
                         "when":  1764000000000,
                         "tag":  "0040_memory_branch_isolation",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  41,
+                        "version":  "6",
+                        "when":  1764100000000,
+                        "tag":  "0041_prompt_runtime_explain_snapshot",
+                        "breakpoints":  true
                     }
                 ]
 }

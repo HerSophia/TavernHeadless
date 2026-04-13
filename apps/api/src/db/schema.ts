@@ -747,6 +747,33 @@ export const floorResultSnapshots = sqliteTable(
   })
 );
 
+export const promptRuntimeExplainSnapshots = sqliteTable(
+  "prompt_runtime_explain_snapshot",
+  {
+    id: text("id").primaryKey(),
+    floorId: text("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    targetBranchId: text("target_branch_id"),
+    sourceFloorId: text("source_floor_id").references(() => floors.id, { onDelete: "set null" }),
+    historySourceBranchId: text("history_source_branch_id"),
+    historySourceMode: text("history_source_mode", { enum: ["existing_branch", "source_floor_branch", "main_fallback"] }).notNull().default("existing_branch"),
+    snapshotVersion: integer("snapshot_version").notNull().default(1),
+    assetsJson: text("assets_json").notNull().default("{}"),
+    resolvedPolicyJson: text("resolved_policy_json").notNull().default("{}"),
+    sourceMapJson: text("source_map_json").notNull().default("{}"),
+    diagnosticsJson: text("diagnostics_json").notNull().default("[]"),
+    trimReasonsJson: text("trim_reasons_json").notNull().default("[]"),
+    excludedSourcesJson: text("excluded_sources_json").notNull().default("[]"),
+    sectionStatsJson: text("section_stats_json").notNull().default("[]"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    floorIdUnique: uniqueIndex("prompt_runtime_explain_snapshot_floor_id_uq").on(table.floorId),
+    sessionCreatedIdx: index("prompt_runtime_explain_snapshot_session_created_idx").on(table.sessionId, table.createdAt),
+    sessionBranchCreatedIdx: index("prompt_runtime_explain_snapshot_session_branch_created_idx").on(table.sessionId, table.targetBranchId, table.createdAt),
+  })
+);
+
 export const branchLocalVariableSnapshots = sqliteTable(
   "branch_local_variable_snapshot",
   {

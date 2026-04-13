@@ -1,8 +1,8 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 
 import type { AppDb } from "../db/client.js";
-import { characters, floorResultSnapshots, floors, presets, promptSnapshots, regexProfiles, sessions, worldbooks } from "../db/schema.js";
+import { characters, floorResultSnapshots, floors, presets, promptRuntimeExplainSnapshots, promptSnapshots, regexProfiles, sessions, worldbooks } from "../db/schema.js";
 import { parseJsonField, stringifyJsonField } from "../lib/http.js";
 import type {
   PromptBudgetPolicy,
@@ -45,6 +45,7 @@ export const PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES = ["full", 
 export const PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES = ["history", "memory", "worldbook", "examples"] as const;
 export const PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES = ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"] as const;
 export const PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES = ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"] as const;
+export const PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS = ["structure", "delivery", "budget", "sourceSelection"] as const;
 export type PromptRuntimeSourceSelectionHistoryMode = typeof PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES[number];
 
 const promptStructurePolicySchema = z.object({
@@ -82,6 +83,13 @@ const promptRuntimePersistentPolicySchema = z.object({
   sourceSelection: promptSourceSelectionPolicySchema.optional(),
 }).strict();
 
+const promptRuntimePersistedPolicyEnvelopeSchema = z.object({
+  version: z.number().int().positive(),
+  updatedAt: z.number().int().nonnegative(),
+  updatedBy: z.string().min(1).nullable().optional(),
+  value: promptRuntimePersistentPolicySchema,
+}).strict();
+
 export interface PromptRuntimeAssetSummary {
   id: string;
   name: string | null;
@@ -101,9 +109,20 @@ export interface PromptRuntimePersistentPolicy {
   sourceSelection?: PromptSourceSelectionPolicy;
 }
 
+export type PromptRuntimeGovernedPolicy = PromptRuntimePersistentPolicy;
+
+export interface PromptRuntimePersistedPolicyEnvelope {
+  version: number;
+  updatedAt: number;
+  updatedBy?: string | null;
+  value: PromptRuntimeGovernedPolicy;
+}
+
 export interface PromptRuntimePersistentPolicyPatch {
   structure?: PromptStructurePolicy | null;
   delivery?: PromptDeliveryPolicy | null;
+  budget?: PromptBudgetPolicy | null;
+  sourceSelection?: PromptSourceSelectionPolicy | null;
 }
 
 export interface PromptRuntimeDebugPolicy {
@@ -145,6 +164,8 @@ export interface ResolvedPromptRuntimePolicy {
   sourceSelection: ResolvedPromptSourceSelectionPolicy;
 }
 
+export type ResolvedPromptRuntimePolicyV4 = ResolvedPromptRuntimePolicy;
+
 export interface PromptRuntimeScopeRef {
   sessionId: string;
   targetBranchId: string;
@@ -161,6 +182,20 @@ export interface PromptRuntimeDiagnostic {
   source?: PromptRuntimeDiagnosticSource;
   fieldPath?: string;
   phase?: PromptRuntimeDiagnosticPhase;
+}
+
+export interface PromptRuntimeSectionStat {
+  sectionName: string;
+  tokenCount: number;
+}
+
+export type PromptRuntimeDiffChangeType = "added" | "removed" | "changed";
+
+export interface PromptRuntimeDiffEntry<TValue = unknown> {
+  path: string;
+  changeType: PromptRuntimeDiffChangeType;
+  left?: TValue;
+  right?: TValue;
 }
 
 export interface PromptRuntimeSourceMap {
@@ -205,7 +240,9 @@ export interface PromptRuntimeResolvedState {
   scope: PromptRuntimeScopeRef;
   policy: ResolvedPromptRuntimePolicy;
   persistentPolicy?: PromptRuntimePersistentPolicy;
+  persistentPolicyEnvelope?: PromptRuntimePersistedPolicyEnvelope | null;
   branchPersistentPolicy: PromptRuntimePersistentPolicy | null;
+  branchPersistentPolicyEnvelope?: PromptRuntimePersistedPolicyEnvelope | null;
   assets: PromptRuntimeAssetsView;
   sourceMap?: PromptRuntimeSourceMap;
   warnings: string[];
@@ -237,18 +274,77 @@ export interface PromptRuntimeHistoricalExplainCommittedResult {
 export interface PromptRuntimeHistoricalExplain {
   floor: PromptRuntimeHistoricalExplainFloorRef;
   scope: PromptRuntimeScopeRef;
+  snapshotAvailable: boolean;
+  assets: PromptRuntimeAssetsView | null;
   promptSnapshot: PromptSnapshotPreview;
   resolvedPolicy: ResolvedPromptRuntimePolicy | null;
   sourceMap?: PromptRuntimeSourceMap;
   trimReasons: PromptTrimReason[] | null;
   excludedSources: PromptSourceExclusionReason[] | null;
+  sectionStats: PromptRuntimeSectionStat[] | null;
   diagnostics: PromptRuntimeDiagnostic[];
   limitations: string[];
   result: PromptRuntimeHistoricalExplainCommittedResult;
 }
 
+export interface PromptRuntimeInspectionResult {
+  scope: PromptRuntimeScopeRef;
+  assets: PromptRuntimeAssetsView;
+  resolvedPolicy: ResolvedPromptRuntimePolicyV4;
+  sourceMap: PromptRuntimeSourceMap;
+  diagnostics: PromptRuntimeDiagnostic[];
+  trimReasons: PromptTrimReason[];
+  excludedSources: PromptSourceExclusionReason[];
+  sectionStats: PromptRuntimeSectionStat[];
+  limitations: string[];
+}
+
+export interface PromptRuntimeCommittedExplainSnapshot {
+  floorId: string;
+  sessionId: string;
+  targetBranchId?: string | null;
+  sourceFloorId?: string | null;
+  historySourceBranchId?: string | null;
+  historySourceMode: PromptRuntimeHistorySourceMode;
+  assets: PromptRuntimeAssetsView;
+  resolvedPolicy: ResolvedPromptRuntimePolicyV4;
+  sourceMap: PromptRuntimeSourceMap;
+  diagnostics: PromptRuntimeDiagnostic[];
+  trimReasons: PromptTrimReason[];
+  excludedSources: PromptSourceExclusionReason[];
+  sectionStats: PromptRuntimeSectionStat[];
+  snapshotVersion: 1;
+  createdAt: number;
+}
+
+export type PromptRuntimeScopeDiff = PromptRuntimeDiffEntry<unknown>;
+export type PromptRuntimePolicyDiff = PromptRuntimeDiffEntry<unknown>;
+export type PromptRuntimeAssetDiff = PromptRuntimeDiffEntry<unknown>;
+export type PromptRuntimeDiagnosticDiff = PromptRuntimeDiffEntry<unknown>;
+export type PromptRuntimeTrimDiff = PromptRuntimeDiffEntry<unknown>;
+export type PromptRuntimeExclusionDiff = PromptRuntimeDiffEntry<unknown>;
+
+export interface PromptRuntimeExplainDiff {
+  left: {
+    floorId: string;
+    snapshotAvailable: boolean;
+  };
+  right: {
+    floorId: string;
+    snapshotAvailable: boolean;
+  };
+  scopeChanges: PromptRuntimeScopeDiff[];
+  policyChanges: PromptRuntimePolicyDiff[];
+  assetChanges: PromptRuntimeAssetDiff[];
+  diagnosticsChanges: PromptRuntimeDiagnosticDiff[];
+  trimChanges: PromptRuntimeTrimDiff[];
+  exclusionChanges: PromptRuntimeExclusionDiff[];
+  limitations: string[];
+}
+
 export interface PromptRuntimePolicyView {
   persistentPolicy?: PromptRuntimePersistentPolicy;
+  persistentPolicyEnvelope?: PromptRuntimePersistedPolicyEnvelope | null;
   resolvedPolicy: ResolvedPromptRuntimePolicy;
   warnings: string[];
 }
@@ -264,17 +360,38 @@ export interface PromptRuntimeCapabilities {
   budget: {
     defaults: ResolvedPromptBudgetPolicy;
     requestOverrideSupported: true;
-    persistentPatchSupported: false;
+    persistentPatchSupported: true;
     supportedFields: readonly ["maxInputTokens", "reservedCompletionTokens"];
     trimReasonCodes: typeof PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES;
   };
   sourceSelection: {
     defaults: ResolvedPromptSourceSelectionPolicy;
     requestOverrideSupported: true;
-    persistentPatchSupported: false;
+    persistentPatchSupported: true;
     supportedSources: typeof PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES;
     historyModes: typeof PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES;
     exclusionReasonCodes: typeof PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES;
+  };
+  governance: {
+    session: {
+      envelopeMetadata: true;
+      nullClearsField: true;
+      objectPatch: "deep_merge";
+      supportedFields: typeof PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS;
+    };
+    branch: {
+      envelopeMetadata: true;
+      materializedBranchesOnly: true;
+      nullClearsField: true;
+      objectPatch: "deep_merge";
+      supportedFields: typeof PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS;
+    };
+  };
+  compare: {
+    enabled: true;
+    committedFloorsOnly: true;
+    mixedPreviewSupported: false;
+    limitationsInsteadOfRecompute: true;
   };
   observability: {
     live: {
@@ -311,6 +428,9 @@ export interface PromptRuntimeCapabilities {
       requiresCommittedFloor: true;
       persistedTruthOnly: true;
       recompute: false;
+      snapshotSupported: true;
+      legacyFloorFallback: true;
+      snapshotAvailabilityField: "snapshot_available";
     };
     stream: {
       enabled: boolean;
@@ -395,8 +515,16 @@ export class PromptRuntimeControlService {
     const targetBranchId = normalizePromptRuntimeBranchId(branchId);
     await this.requireMaterializedBranch(session.id, targetBranchId);
     const assets = await this.buildAssetsView(session, accountId);
-    const { persistentPolicy, warnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
-    const { persistentPolicy: branchPersistentPolicy, warnings: branchWarnings } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
+    const {
+      persistentPolicy,
+      envelope: persistentPolicyEnvelope,
+      warnings,
+    } = readPromptRuntimePersistentPolicy(session.metadataJson);
+    const {
+      persistentPolicy: branchPersistentPolicy,
+      envelope: branchPersistentPolicyEnvelope,
+      warnings: branchWarnings,
+    } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
     const resolvedPolicy = buildResolvedPromptRuntimePolicy(persistentPolicy, branchPersistentPolicy ?? undefined);
     const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(persistentPolicy, branchPersistentPolicy ?? undefined);
     const controlPlaneWarnings = buildPromptRuntimeWarnings(effectivePersistentPolicy, [...warnings, ...branchWarnings]);
@@ -412,7 +540,9 @@ export class PromptRuntimeControlService {
       },
       policy: resolvedPolicy,
       ...(persistentPolicy ? { persistentPolicy } : {}),
+      ...(persistentPolicyEnvelope !== undefined ? { persistentPolicyEnvelope } : {}),
       branchPersistentPolicy: branchPersistentPolicy ?? null,
+      ...(branchPersistentPolicyEnvelope !== undefined ? { branchPersistentPolicyEnvelope } : {}),
       assets,
       sourceMap: buildPromptRuntimeSourceMap({
         sessionPolicy: persistentPolicy,
@@ -428,11 +558,12 @@ export class PromptRuntimeControlService {
 
   async getPolicy(sessionId: string, accountId: string): Promise<PromptRuntimePolicyView> {
     const session = await this.getOwnedSession(sessionId, accountId);
-    const { persistentPolicy, warnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
+    const { persistentPolicy, envelope, warnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
     const controlPlaneWarnings = buildPromptRuntimeWarnings(persistentPolicy, warnings);
 
     return {
       ...(persistentPolicy ? { persistentPolicy } : {}),
+      ...(envelope !== undefined ? { persistentPolicyEnvelope: envelope } : {}),
       resolvedPolicy: buildResolvedPromptRuntimePolicy(persistentPolicy),
       warnings: controlPlaneWarnings,
     };
@@ -443,12 +574,13 @@ export class PromptRuntimeControlService {
     const targetBranchId = normalizePromptRuntimeBranchId(branchId);
     await this.requireMaterializedBranch(session.id, targetBranchId);
     const { persistentPolicy, warnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
-    const { persistentPolicy: branchPersistentPolicy, warnings: branchWarnings } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
+    const { persistentPolicy: branchPersistentPolicy, envelope, warnings: branchWarnings } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
     const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(persistentPolicy, branchPersistentPolicy ?? undefined);
     const controlPlaneWarnings = buildPromptRuntimeWarnings(effectivePersistentPolicy, [...warnings, ...branchWarnings]);
 
     return {
       ...(branchPersistentPolicy ? { persistentPolicy: branchPersistentPolicy } : {}),
+      ...(envelope !== undefined ? { persistentPolicyEnvelope: envelope } : {}),
       resolvedPolicy: buildResolvedPromptRuntimePolicy(persistentPolicy, branchPersistentPolicy ?? undefined),
       warnings: controlPlaneWarnings,
     };
@@ -465,24 +597,58 @@ export class PromptRuntimeControlService {
       throw new PromptRuntimeControlServiceError(409, "invalid_state", `Floor '${floor.id}' is not committed`);
     }
 
-    const [promptSnapshotRow] = await this.db
-      .select()
-      .from(promptSnapshots)
-      .where(eq(promptSnapshots.floorId, floor.id))
-      .limit(1);
+    const [[promptSnapshotRow], [floorResultRow], [snapshotRow]] = await Promise.all([
+      this.db.select().from(promptSnapshots).where(eq(promptSnapshots.floorId, floor.id)).limit(1),
+      this.db.select().from(floorResultSnapshots).where(eq(floorResultSnapshots.floorId, floor.id)).limit(1),
+      this.db.select().from(promptRuntimeExplainSnapshots).where(eq(promptRuntimeExplainSnapshots.floorId, floor.id)).limit(1),
+    ]);
 
-    if (!promptSnapshotRow) {
-      throw new PromptRuntimeControlServiceError(404, "prompt_runtime_explain_not_found", `Prompt Runtime explain snapshot not found for floor '${floor.id}'`);
+    if (!promptSnapshotRow || !floorResultRow) {
+      throw new PromptRuntimeControlServiceError(404, "prompt_runtime_explain_not_found", `Prompt Runtime explain not found for floor '${floor.id}'`);
     }
 
-    const [floorResultRow] = await this.db
-      .select()
-      .from(floorResultSnapshots)
-      .where(eq(floorResultSnapshots.floorId, floor.id))
-      .limit(1);
+    const fallbackScope: PromptRuntimeScopeRef = {
+      sessionId: floor.sessionId,
+      targetBranchId: floor.branchId,
+      branchExists: true,
+      sourceFloorId: null,
+      historySourceBranchId: floor.branchId,
+      historySourceMode: "existing_branch",
+    };
 
-    if (!floorResultRow) {
-      throw new PromptRuntimeControlServiceError(404, "prompt_runtime_explain_not_found", `Prompt Runtime explain result snapshot not found for floor '${floor.id}'`);
+    if (snapshotRow) {
+      const snapshot = mapPromptRuntimeExplainSnapshotRow(snapshotRow);
+      return {
+        floor: {
+          id: floor.id,
+          sessionId: floor.sessionId,
+          floorNo: floor.floorNo,
+          branchId: floor.branchId,
+          parentFloorId: floor.parentFloorId,
+          state: "committed",
+          promptSnapshotCreatedAt: promptSnapshotRow.createdAt,
+          committedAt: floorResultRow.committedAt,
+        },
+        scope: {
+          sessionId: floor.sessionId,
+          targetBranchId: snapshot.targetBranchId ?? floor.branchId,
+          branchExists: true,
+          sourceFloorId: snapshot.sourceFloorId ?? null,
+          historySourceBranchId: snapshot.historySourceBranchId ?? floor.branchId,
+          historySourceMode: snapshot.historySourceMode,
+        },
+        snapshotAvailable: true,
+        assets: snapshot.assets,
+        promptSnapshot: mapPromptSnapshotRowToPreview(promptSnapshotRow),
+        resolvedPolicy: snapshot.resolvedPolicy,
+        sourceMap: snapshot.sourceMap,
+        trimReasons: snapshot.trimReasons,
+        excludedSources: snapshot.excludedSources,
+        sectionStats: snapshot.sectionStats,
+        diagnostics: snapshot.diagnostics,
+        limitations: [...PROMPT_RUNTIME_LIMITATIONS],
+        result: mapFloorResultSnapshotRowToHistoricalExplainResult(floorResultRow),
+      };
     }
 
     return {
@@ -496,41 +662,81 @@ export class PromptRuntimeControlService {
         promptSnapshotCreatedAt: promptSnapshotRow.createdAt,
         committedAt: floorResultRow.committedAt,
       },
-      scope: {
-        sessionId: floor.sessionId,
-        targetBranchId: floor.branchId,
-        branchExists: true,
-        sourceFloorId: null,
-        historySourceBranchId: floor.branchId,
-        historySourceMode: "existing_branch",
-      },
+      scope: fallbackScope,
+      snapshotAvailable: false,
+      assets: null,
       promptSnapshot: mapPromptSnapshotRowToPreview(promptSnapshotRow),
       resolvedPolicy: null,
       sourceMap: {
         history: {
-          sourceBranchId: floor.branchId,
-          sourceMode: "existing_branch",
+          sourceBranchId: fallbackScope.historySourceBranchId,
+          sourceMode: fallbackScope.historySourceMode,
         },
       },
       trimReasons: null,
       excludedSources: null,
+      sectionStats: null,
       diagnostics: buildPromptRuntimeHistoricalExplainDiagnostics(),
       limitations: [...PROMPT_RUNTIME_LIMITATIONS, ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS],
       result: mapFloorResultSnapshotRowToHistoricalExplainResult(floorResultRow),
     };
   }
 
+  async compareCommittedExplain(
+    sessionId: string,
+    leftFloorId: string,
+    rightFloorId: string,
+    accountId: string,
+  ): Promise<PromptRuntimeExplainDiff> {
+    await this.getOwnedSession(sessionId, accountId);
+
+    const [leftFloor, rightFloor] = await Promise.all([
+      this.getOwnedFloor(leftFloorId, accountId),
+      this.getOwnedFloor(rightFloorId, accountId),
+    ]);
+
+    if (leftFloor.sessionId !== sessionId || rightFloor.sessionId !== sessionId) {
+      throw new PromptRuntimeControlServiceError(404, "not_found", "Floor not found");
+    }
+    if (leftFloor.state !== "committed" || rightFloor.state !== "committed") {
+      throw new PromptRuntimeControlServiceError(409, "invalid_state", "Prompt Runtime compare requires committed floors");
+    }
+
+    const snapshotRows = await this.db
+      .select()
+      .from(promptRuntimeExplainSnapshots)
+      .where(or(
+        eq(promptRuntimeExplainSnapshots.floorId, leftFloorId),
+        eq(promptRuntimeExplainSnapshots.floorId, rightFloorId),
+      ));
+
+    const leftSnapshotRow = snapshotRows.find((row) => row.floorId === leftFloorId);
+    const rightSnapshotRow = snapshotRows.find((row) => row.floorId === rightFloorId);
+
+    return buildPromptRuntimeExplainDiff({
+      leftFloorId,
+      rightFloorId,
+      leftSnapshot: leftSnapshotRow ? mapPromptRuntimeExplainSnapshotRow(leftSnapshotRow) : null,
+      rightSnapshot: rightSnapshotRow ? mapPromptRuntimeExplainSnapshotRow(rightSnapshotRow) : null,
+    });
+  }
+
   async updatePolicy(
     sessionId: string,
     accountId: string,
     patch: PromptRuntimePersistentPolicyPatch,
+    updatedBy?: string | null,
   ): Promise<PromptRuntimePolicyView> {
     const session = await this.getOwnedSession(sessionId, accountId);
     const metadata = parseMetadataRecord(session.metadataJson);
-    const { persistentPolicy } = readPromptRuntimePersistentPolicy(session.metadataJson);
+    const { persistentPolicy, envelope } = readPromptRuntimePersistentPolicy(session.metadataJson);
     const nextPersistentPolicy = applyPromptRuntimePersistentPolicyPatch(persistentPolicy, patch);
-    const nextMetadata = writePromptRuntimePersistentPolicyToMetadata(metadata, nextPersistentPolicy);
     const updatedAt = Date.now();
+    const nextMetadata = writePromptRuntimePersistentPolicyToMetadata(metadata, nextPersistentPolicy, {
+      currentEnvelope: envelope,
+      updatedAt,
+      updatedBy,
+    });
 
     await this.db
       .update(sessions)
@@ -540,8 +746,18 @@ export class PromptRuntimeControlService {
       })
       .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)));
 
+    const nextEnvelope = nextPersistentPolicy
+      ? createPromptRuntimePersistedPolicyEnvelope({
+          currentEnvelope: envelope,
+          policy: nextPersistentPolicy,
+          updatedAt,
+          updatedBy,
+        })
+      : undefined;
+
     return {
       ...(nextPersistentPolicy ? { persistentPolicy: nextPersistentPolicy } : {}),
+      ...(nextEnvelope !== undefined ? { persistentPolicyEnvelope: nextEnvelope } : {}),
       resolvedPolicy: buildResolvedPromptRuntimePolicy(nextPersistentPolicy),
       warnings: buildPromptRuntimeWarnings(nextPersistentPolicy),
     };
@@ -552,16 +768,21 @@ export class PromptRuntimeControlService {
     branchId: string,
     accountId: string,
     patch: PromptRuntimePersistentPolicyPatch,
+    updatedBy?: string | null,
   ): Promise<PromptRuntimePolicyView> {
     const session = await this.getOwnedSession(sessionId, accountId);
     const targetBranchId = normalizePromptRuntimeBranchId(branchId);
     await this.requireMaterializedBranch(session.id, targetBranchId);
     const metadata = parseMetadataRecord(session.metadataJson);
     const { persistentPolicy } = readPromptRuntimePersistentPolicy(session.metadataJson);
-    const { persistentPolicy: currentBranchPolicy } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
+    const { persistentPolicy: currentBranchPolicy, envelope } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
     const nextBranchPersistentPolicy = applyPromptRuntimePersistentPolicyPatch(currentBranchPolicy, patch);
-    const nextMetadata = writePromptRuntimeBranchPersistentPolicyToMetadata(metadata, targetBranchId, nextBranchPersistentPolicy);
     const updatedAt = Date.now();
+    const nextMetadata = writePromptRuntimeBranchPersistentPolicyToMetadata(metadata, targetBranchId, nextBranchPersistentPolicy, {
+      currentEnvelope: envelope,
+      updatedAt,
+      updatedBy,
+    });
 
     await this.db
       .update(sessions)
@@ -572,9 +793,18 @@ export class PromptRuntimeControlService {
       .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)));
 
     const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(persistentPolicy, nextBranchPersistentPolicy);
+    const nextEnvelope = nextBranchPersistentPolicy
+      ? createPromptRuntimePersistedPolicyEnvelope({
+          currentEnvelope: envelope,
+          policy: nextBranchPersistentPolicy,
+          updatedAt,
+          updatedBy,
+        })
+      : undefined;
 
     return {
       ...(nextBranchPersistentPolicy ? { persistentPolicy: nextBranchPersistentPolicy } : {}),
+      ...(nextEnvelope !== undefined ? { persistentPolicyEnvelope: nextEnvelope } : {}),
       resolvedPolicy: buildResolvedPromptRuntimePolicy(persistentPolicy, nextBranchPersistentPolicy),
       warnings: buildPromptRuntimeWarnings(effectivePersistentPolicy),
     };
@@ -592,17 +822,38 @@ export class PromptRuntimeControlService {
       budget: {
         defaults: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
         requestOverrideSupported: true,
-        persistentPatchSupported: false,
+        persistentPatchSupported: true,
         supportedFields: ["maxInputTokens", "reservedCompletionTokens"],
         trimReasonCodes: PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES,
       },
       sourceSelection: {
         defaults: JSON.parse(JSON.stringify(DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY)) as ResolvedPromptSourceSelectionPolicy,
         requestOverrideSupported: true,
-        persistentPatchSupported: false,
+        persistentPatchSupported: true,
         supportedSources: PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES,
         historyModes: PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES,
         exclusionReasonCodes: PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES,
+      },
+      governance: {
+        session: {
+          envelopeMetadata: true,
+          nullClearsField: true,
+          objectPatch: "deep_merge",
+          supportedFields: PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS,
+        },
+        branch: {
+          envelopeMetadata: true,
+          materializedBranchesOnly: true,
+          nullClearsField: true,
+          objectPatch: "deep_merge",
+          supportedFields: PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS,
+        },
+      },
+      compare: {
+        enabled: true,
+        committedFloorsOnly: true,
+        mixedPreviewSupported: false,
+        limitationsInsteadOfRecompute: true,
       },
       observability: {
         live: {
@@ -639,6 +890,9 @@ export class PromptRuntimeControlService {
           requiresCommittedFloor: true,
           persistedTruthOnly: true,
           recompute: false,
+          snapshotSupported: true,
+          legacyFloorFallback: true,
+          snapshotAvailabilityField: "snapshot_available",
         },
         stream: {
           enabled: this.enableStreamEndpoint,
@@ -990,13 +1244,6 @@ export function applyPromptRuntimePersistentPolicyPatch(
 ): PromptRuntimePersistentPolicy | undefined {
   const next: PromptRuntimePersistentPolicy = {};
 
-  if (current?.budget) {
-    next.budget = current.budget;
-  }
-  if (current?.sourceSelection) {
-    next.sourceSelection = current.sourceSelection;
-  }
-
   const nextStructure = patch.structure === undefined
     ? current?.structure
     : patch.structure === null
@@ -1007,12 +1254,28 @@ export function applyPromptRuntimePersistentPolicyPatch(
     : patch.delivery === null
       ? undefined
       : mergePromptDeliveryPolicy(current?.delivery, patch.delivery);
+  const nextBudget = patch.budget === undefined
+    ? current?.budget
+    : patch.budget === null
+      ? undefined
+      : mergePromptBudgetPolicy(current?.budget, patch.budget);
+  const nextSourceSelection = patch.sourceSelection === undefined
+    ? current?.sourceSelection
+    : patch.sourceSelection === null
+      ? undefined
+      : mergePromptSourceSelectionPolicy(current?.sourceSelection, patch.sourceSelection);
 
   if (nextStructure) {
     next.structure = nextStructure;
   }
   if (nextDelivery) {
     next.delivery = nextDelivery;
+  }
+  if (nextBudget) {
+    next.budget = nextBudget;
+  }
+  if (nextSourceSelection) {
+    next.sourceSelection = nextSourceSelection;
   }
 
   return Object.keys(next).length > 0 ? next : undefined;
@@ -1253,6 +1516,14 @@ export function buildPromptRuntimeDiagnostics(
 export function buildPromptRuntimeHistoricalExplainDiagnostics(): PromptRuntimeDiagnostic[] {
   return [
     {
+      code: "historical_snapshot_unavailable",
+      message: "Committed prompt runtime explain snapshot is unavailable for this floor. Historical explain falls back to minimal persisted truth only.",
+      severity: "info",
+      source: "policy",
+      fieldPath: "snapshot_available",
+      phase: "explain",
+    },
+    {
       code: "historical_resolved_policy_unavailable",
       message: "Historical explain did not persist the resolved policy for this floor. The explain view returns persisted prompt snapshot and committed result truth only.",
       severity: "info",
@@ -1363,9 +1634,183 @@ function mapFloorResultSnapshotRowToHistoricalExplainResult(
   };
 }
 
+function parseJsonObjectField<TValue extends object>(
+  value: string | null | undefined,
+  fallback: TValue,
+): TValue {
+  const parsed = parseJsonField(value ?? null);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed as TValue
+    : fallback;
+}
+
+function parseJsonArrayField<TValue>(
+  value: string | null | undefined,
+  fallback: TValue[] = [],
+): TValue[] {
+  const parsed = parseJsonField(value ?? null);
+  return Array.isArray(parsed) ? parsed as TValue[] : fallback;
+}
+
+function mapPromptRuntimeExplainSnapshotRow(
+  row: typeof promptRuntimeExplainSnapshots.$inferSelect,
+): PromptRuntimeCommittedExplainSnapshot {
+  return {
+    floorId: row.floorId,
+    sessionId: row.sessionId,
+    targetBranchId: row.targetBranchId,
+    sourceFloorId: row.sourceFloorId,
+    historySourceBranchId: row.historySourceBranchId,
+    historySourceMode: row.historySourceMode,
+    assets: parseJsonObjectField<PromptRuntimeAssetsView>(row.assetsJson, {
+      preset: null,
+      characterCard: null,
+      worldbook: null,
+      regexProfile: null,
+    }),
+    resolvedPolicy: parseJsonObjectField<ResolvedPromptRuntimePolicy>(row.resolvedPolicyJson, buildResolvedPromptRuntimePolicy()),
+    sourceMap: parseJsonObjectField<PromptRuntimeSourceMap>(row.sourceMapJson, {}),
+    diagnostics: parseJsonArrayField<PromptRuntimeDiagnostic>(row.diagnosticsJson),
+    trimReasons: parseJsonArrayField<PromptTrimReason>(row.trimReasonsJson),
+    excludedSources: parseJsonArrayField<PromptSourceExclusionReason>(row.excludedSourcesJson),
+    sectionStats: parseJsonArrayField<PromptRuntimeSectionStat>(row.sectionStatsJson),
+    snapshotVersion: row.snapshotVersion === 1 ? 1 : 1,
+    createdAt: row.createdAt,
+  };
+}
+
+function buildPromptRuntimeExplainDiff(args: {
+  leftFloorId: string;
+  rightFloorId: string;
+  leftSnapshot: PromptRuntimeCommittedExplainSnapshot | null;
+  rightSnapshot: PromptRuntimeCommittedExplainSnapshot | null;
+}): PromptRuntimeExplainDiff {
+  const leftSnapshotAvailable = args.leftSnapshot !== null;
+  const rightSnapshotAvailable = args.rightSnapshot !== null;
+  const limitations: string[] = [];
+
+  if (!leftSnapshotAvailable) {
+    limitations.push(`Left floor '${args.leftFloorId}' has no committed prompt runtime snapshot. Compare skipped recomputation and returned limitations only.`);
+  }
+  if (!rightSnapshotAvailable) {
+    limitations.push(`Right floor '${args.rightFloorId}' has no committed prompt runtime snapshot. Compare skipped recomputation and returned limitations only.`);
+  }
+
+  if (!args.leftSnapshot || !args.rightSnapshot) {
+    return {
+      left: { floorId: args.leftFloorId, snapshotAvailable: leftSnapshotAvailable },
+      right: { floorId: args.rightFloorId, snapshotAvailable: rightSnapshotAvailable },
+      scopeChanges: [],
+      policyChanges: [],
+      assetChanges: [],
+      diagnosticsChanges: [],
+      trimChanges: [],
+      exclusionChanges: [],
+      limitations,
+    };
+  }
+
+  return {
+    left: { floorId: args.leftFloorId, snapshotAvailable: true },
+    right: { floorId: args.rightFloorId, snapshotAvailable: true },
+    scopeChanges: buildPromptRuntimeDiffEntries("scope", toPromptRuntimeSnapshotScope(args.leftSnapshot), toPromptRuntimeSnapshotScope(args.rightSnapshot)),
+    policyChanges: buildPromptRuntimeDiffEntries(
+      "policy",
+      { resolvedPolicy: args.leftSnapshot.resolvedPolicy, sourceMap: args.leftSnapshot.sourceMap },
+      { resolvedPolicy: args.rightSnapshot.resolvedPolicy, sourceMap: args.rightSnapshot.sourceMap },
+    ),
+    assetChanges: buildPromptRuntimeDiffEntries("assets", args.leftSnapshot.assets, args.rightSnapshot.assets),
+    diagnosticsChanges: buildPromptRuntimeDiffEntries(
+      "diagnostics",
+      normalizePromptRuntimeCollectionForDiff(args.leftSnapshot.diagnostics),
+      normalizePromptRuntimeCollectionForDiff(args.rightSnapshot.diagnostics),
+    ),
+    trimChanges: buildPromptRuntimeDiffEntries(
+      "trimReasons",
+      normalizePromptRuntimeCollectionForDiff(args.leftSnapshot.trimReasons),
+      normalizePromptRuntimeCollectionForDiff(args.rightSnapshot.trimReasons),
+    ),
+    exclusionChanges: buildPromptRuntimeDiffEntries(
+      "excludedSources",
+      normalizePromptRuntimeCollectionForDiff(args.leftSnapshot.excludedSources),
+      normalizePromptRuntimeCollectionForDiff(args.rightSnapshot.excludedSources),
+    ),
+    limitations,
+  };
+}
+
+function toPromptRuntimeSnapshotScope(snapshot: PromptRuntimeCommittedExplainSnapshot): PromptRuntimeScopeRef {
+  return {
+    sessionId: snapshot.sessionId,
+    targetBranchId: snapshot.targetBranchId ?? "main",
+    branchExists: true,
+    sourceFloorId: snapshot.sourceFloorId ?? null,
+    historySourceBranchId: snapshot.historySourceBranchId ?? snapshot.targetBranchId ?? "main",
+    historySourceMode: snapshot.historySourceMode,
+  };
+}
+
+function normalizePromptRuntimeCollectionForDiff<TValue>(items: TValue[]): TValue[] {
+  return [...items].sort((left, right) => stablePromptRuntimeStringify(left).localeCompare(stablePromptRuntimeStringify(right)));
+}
+
+function buildPromptRuntimeDiffEntries(
+  path: string,
+  left: unknown,
+  right: unknown,
+): PromptRuntimeDiffEntry<unknown>[] {
+  if (stablePromptRuntimeStringify(left) === stablePromptRuntimeStringify(right)) {
+    return [];
+  }
+
+  if (isPromptRuntimePlainObject(left) && isPromptRuntimePlainObject(right)) {
+    const changes: PromptRuntimeDiffEntry<unknown>[] = [];
+    const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+    for (const key of Array.from(keys).sort()) {
+      changes.push(...buildPromptRuntimeDiffEntries(`${path}.${key}`, left[key], right[key]));
+    }
+    return changes;
+  }
+
+  return [{
+    path,
+    changeType: resolvePromptRuntimeDiffChangeType(left, right),
+    ...(left !== undefined ? { left } : {}),
+    ...(right !== undefined ? { right } : {}),
+  }];
+}
+
+function resolvePromptRuntimeDiffChangeType(
+  left: unknown,
+  right: unknown,
+): PromptRuntimeDiffEntry<unknown>["changeType"] {
+  if (left === undefined) {
+    return "added";
+  }
+  if (right === undefined) {
+    return "removed";
+  }
+  return "changed";
+}
+
+function stablePromptRuntimeStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stablePromptRuntimeStringify(item)).join(",")}]`;
+  }
+  if (isPromptRuntimePlainObject(value)) {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${stablePromptRuntimeStringify(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function isPromptRuntimePlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 export function readPromptRuntimePersistentPolicy(
   metadataJson: string | null,
-): { persistentPolicy?: PromptRuntimePersistentPolicy; warnings: string[] } {
+): { persistentPolicy?: PromptRuntimePersistentPolicy; envelope?: PromptRuntimePersistedPolicyEnvelope; warnings: string[] } {
   const metadata = parseJsonField(metadataJson);
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return { warnings: [] };
@@ -1385,21 +1830,13 @@ export function readPromptRuntimePersistentPolicy(
     return { warnings: [] };
   }
 
-  const parsed = promptRuntimePersistentPolicySchema.safeParse(policy);
-  if (!parsed.success) {
-    return { warnings: [INVALID_PROMPT_RUNTIME_POLICY_WARNING] };
-  }
-
-  const normalized = normalizePersistentPolicy(parsed.data);
-  return normalized
-    ? { persistentPolicy: normalized, warnings: [] }
-    : { warnings: [] };
+  return parsePromptRuntimePolicyPayload(policy, INVALID_PROMPT_RUNTIME_POLICY_WARNING);
 }
 
 export function readPromptRuntimeBranchPersistentPolicy(
   metadataJson: string | null,
   branchId: string,
-): { persistentPolicy?: PromptRuntimePersistentPolicy; warnings: string[] } {
+): { persistentPolicy?: PromptRuntimePersistentPolicy; envelope?: PromptRuntimePersistedPolicyEnvelope; warnings: string[] } {
   const metadata = parseJsonField(metadataJson);
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return { warnings: [] };
@@ -1428,15 +1865,46 @@ export function readPromptRuntimeBranchPersistentPolicy(
     return { warnings: [] };
   }
 
-  const parsed = promptRuntimePersistentPolicySchema.safeParse(branchPolicy);
+  return parsePromptRuntimePolicyPayload(branchPolicy, INVALID_PROMPT_RUNTIME_BRANCH_POLICY_WARNING);
+}
+
+function parsePromptRuntimePolicyPayload(
+  value: unknown,
+  invalidWarning: string,
+): { persistentPolicy?: PromptRuntimePersistentPolicy; envelope?: PromptRuntimePersistedPolicyEnvelope; warnings: string[] } {
+  const envelopeParsed = promptRuntimePersistedPolicyEnvelopeSchema.safeParse(value);
+  if (envelopeParsed.success) {
+    const normalizedEnvelope = normalizePersistedPolicyEnvelope(envelopeParsed.data);
+    return normalizedEnvelope
+      ? { persistentPolicy: normalizedEnvelope.value, envelope: normalizedEnvelope, warnings: [] }
+      : { warnings: [] };
+  }
+
+  const parsed = promptRuntimePersistentPolicySchema.safeParse(value);
   if (!parsed.success) {
-    return { warnings: [INVALID_PROMPT_RUNTIME_BRANCH_POLICY_WARNING] };
+    return { warnings: [invalidWarning] };
   }
 
   const normalized = normalizePersistentPolicy(parsed.data);
   return normalized
     ? { persistentPolicy: normalized, warnings: [] }
     : { warnings: [] };
+}
+
+function normalizePersistedPolicyEnvelope(
+  envelope: z.infer<typeof promptRuntimePersistedPolicyEnvelopeSchema>,
+): PromptRuntimePersistedPolicyEnvelope | undefined {
+  const normalizedValue = normalizePersistentPolicy(envelope.value);
+  if (!normalizedValue) {
+    return undefined;
+  }
+
+  return {
+    version: envelope.version,
+    updatedAt: envelope.updatedAt,
+    ...(envelope.updatedBy !== undefined ? { updatedBy: envelope.updatedBy } : {}),
+    value: normalizedValue,
+  };
 }
 
 function normalizePersistentPolicy(
@@ -1552,6 +2020,31 @@ function serializePromptRuntimePersistentPolicy(
   return serialized;
 }
 
+function serializePromptRuntimePersistedPolicyEnvelope(
+  envelope: PromptRuntimePersistedPolicyEnvelope,
+): Record<string, unknown> {
+  return {
+    version: envelope.version,
+    updatedAt: envelope.updatedAt,
+    ...(envelope.updatedBy !== undefined ? { updatedBy: envelope.updatedBy } : {}),
+    value: serializePromptRuntimePersistentPolicy(envelope.value),
+  };
+}
+
+function createPromptRuntimePersistedPolicyEnvelope(args: {
+  currentEnvelope?: PromptRuntimePersistedPolicyEnvelope;
+  policy: PromptRuntimePersistentPolicy;
+  updatedAt: number;
+  updatedBy?: string | null;
+}): PromptRuntimePersistedPolicyEnvelope {
+  return {
+    version: (args.currentEnvelope?.version ?? 0) + 1,
+    updatedAt: args.updatedAt,
+    ...(args.updatedBy !== undefined ? { updatedBy: args.updatedBy } : {}),
+    value: args.policy,
+  };
+}
+
 function parseMetadataRecord(metadataJson: string | null): Record<string, unknown> {
   const metadata = parseJsonField(metadataJson);
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
@@ -1564,6 +2057,11 @@ function parseMetadataRecord(metadataJson: string | null): Record<string, unknow
 function writePromptRuntimePersistentPolicyToMetadata(
   metadata: Record<string, unknown>,
   policy: PromptRuntimePersistentPolicy | undefined,
+  options: {
+    currentEnvelope?: PromptRuntimePersistedPolicyEnvelope;
+    updatedAt: number;
+    updatedBy?: string | null;
+  },
 ): Record<string, unknown> | undefined {
   const nextMetadata = { ...metadata };
   const existingNamespace = nextMetadata.prompt_runtime;
@@ -1572,7 +2070,14 @@ function writePromptRuntimePersistentPolicyToMetadata(
     : {};
 
   if (policy) {
-    nextNamespace.policy = serializePromptRuntimePersistentPolicy(policy);
+    nextNamespace.policy = serializePromptRuntimePersistedPolicyEnvelope(
+      createPromptRuntimePersistedPolicyEnvelope({
+        currentEnvelope: options.currentEnvelope,
+        policy,
+        updatedAt: options.updatedAt,
+        updatedBy: options.updatedBy,
+      }),
+    );
     nextMetadata.prompt_runtime = nextNamespace;
   } else {
     delete nextNamespace.policy;
@@ -1587,6 +2092,11 @@ function writePromptRuntimeBranchPersistentPolicyToMetadata(
   metadata: Record<string, unknown>,
   branchId: string,
   policy: PromptRuntimePersistentPolicy | undefined,
+  options: {
+    currentEnvelope?: PromptRuntimePersistedPolicyEnvelope;
+    updatedAt: number;
+    updatedBy?: string | null;
+  },
 ): Record<string, unknown> | undefined {
   const nextMetadata = { ...metadata };
   const existingNamespace = nextMetadata.prompt_runtime;
@@ -1599,7 +2109,14 @@ function writePromptRuntimeBranchPersistentPolicyToMetadata(
     : {};
 
   if (policy) {
-    nextBranchPolicies[branchId] = serializePromptRuntimePersistentPolicy(policy);
+    nextBranchPolicies[branchId] = serializePromptRuntimePersistedPolicyEnvelope(
+      createPromptRuntimePersistedPolicyEnvelope({
+        currentEnvelope: options.currentEnvelope,
+        policy,
+        updatedAt: options.updatedAt,
+        updatedBy: options.updatedBy,
+      }),
+    );
     nextNamespace.branchPolicies = nextBranchPolicies;
   } else {
     delete nextBranchPolicies[branchId];

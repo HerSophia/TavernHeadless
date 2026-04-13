@@ -171,7 +171,7 @@ describe("sdk prompt runtime resource", () => {
             budget: {
               defaults: {},
               request_override_supported: true,
-              persistent_patch_supported: false,
+              persistent_patch_supported: true,
               supported_fields: ["maxInputTokens", "reservedCompletionTokens"],
               trim_reason_codes: ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"],
             },
@@ -183,10 +183,31 @@ describe("sdk prompt runtime resource", () => {
                 examples: { enabled: true },
               },
               request_override_supported: true,
-              persistent_patch_supported: false,
+              persistent_patch_supported: true,
               supported_sources: ["history", "memory", "worldbook", "examples"],
               history_modes: ["full", "windowed"],
               exclusion_reason_codes: ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"],
+            },
+            governance: {
+              session: {
+                envelope_metadata: true,
+                null_clears_field: true,
+                object_patch: "deep_merge",
+                supported_fields: ["structure", "delivery", "budget", "sourceSelection"],
+              },
+              branch: {
+                envelope_metadata: true,
+                materialized_branches_only: true,
+                null_clears_field: true,
+                object_patch: "deep_merge",
+                supported_fields: ["structure", "delivery", "budget", "sourceSelection"],
+              },
+            },
+            compare: {
+              enabled: true,
+              committed_floors_only: true,
+              mixed_preview_supported: false,
+              limitations_instead_of_recompute: true,
             },
             observability: {
               live: {
@@ -223,6 +244,9 @@ describe("sdk prompt runtime resource", () => {
                 requires_committed_floor: true,
                 persisted_truth_only: true,
                 recompute: false,
+                snapshot_supported: true,
+                legacy_floor_fallback: true,
+                snapshot_availability_field: "snapshot_available",
               },
               stream: {
                 enabled: true,
@@ -409,7 +433,7 @@ describe("sdk prompt runtime resource", () => {
       budget: {
         defaults: {},
         requestOverrideSupported: true,
-        persistentPatchSupported: false,
+        persistentPatchSupported: true,
         supportedFields: ["maxInputTokens", "reservedCompletionTokens"],
         trimReasonCodes: ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"],
       },
@@ -421,10 +445,31 @@ describe("sdk prompt runtime resource", () => {
           examples: { enabled: true },
         },
         requestOverrideSupported: true,
-        persistentPatchSupported: false,
+        persistentPatchSupported: true,
         supportedSources: ["history", "memory", "worldbook", "examples"],
         historyModes: ["full", "windowed"],
         exclusionReasonCodes: ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"],
+      },
+      governance: {
+        session: {
+          envelopeMetadata: true,
+          nullClearsField: true,
+          objectPatch: "deep_merge",
+          supportedFields: ["structure", "delivery", "budget", "sourceSelection"],
+        },
+        branch: {
+          envelopeMetadata: true,
+          materializedBranchesOnly: true,
+          nullClearsField: true,
+          objectPatch: "deep_merge",
+          supportedFields: ["structure", "delivery", "budget", "sourceSelection"],
+        },
+      },
+      compare: {
+        enabled: true,
+        committedFloorsOnly: true,
+        mixedPreviewSupported: false,
+        limitationsInsteadOfRecompute: true,
       },
       observability: {
         live: {
@@ -457,10 +502,13 @@ describe("sdk prompt runtime resource", () => {
         },
         explain: {
           enabled: true,
+          legacyFloorFallback: true,
           readOnly: true,
           requiresCommittedFloor: true,
           persistedTruthOnly: true,
           recompute: false,
+          snapshotAvailabilityField: "snapshot_available",
+          snapshotSupported: true,
         },
         stream: {
           enabled: true,
@@ -515,6 +563,13 @@ describe("sdk prompt runtime resource", () => {
             history_source_branch_id: "main",
             history_source_mode: "existing_branch",
           },
+          snapshot_available: true,
+          assets: {
+            preset: { id: "preset-1", name: "Story Preset" },
+            character_card: { id: "char-1", name: "Hero" },
+            worldbook: null,
+            regex_profile: null,
+          },
           prompt_snapshot: {
             preset_id: "preset-1",
             preset_updated_at: 1710000000000,
@@ -541,6 +596,7 @@ describe("sdk prompt runtime resource", () => {
           },
           trim_reasons: null,
           excluded_sources: null,
+          section_stats: [{ section_name: "history", token_count: 320 }],
           diagnostics: [
             { code: "historical_resolved_policy_unavailable", message: "policy unavailable", severity: "info", source: "policy", field_path: "resolved_policy", phase: "explain" },
           ],
@@ -564,17 +620,61 @@ describe("sdk prompt runtime resource", () => {
     await expect(promptRuntime.getFloorExplain({ accountId: "acc-1", floorId: "floor-12" })).resolves.toEqual({
       floor: { id: "floor-12", sessionId: "session-1", floorNo: 12, branchId: "main", parentFloorId: "floor-11", state: "committed", promptSnapshotCreatedAt: 1710000003000, committedAt: 1710000004000 },
       scope: { sessionId: "session-1", targetBranchId: "main", branchExists: true, sourceFloorId: null, historySourceBranchId: "main", historySourceMode: "existing_branch" },
+      snapshotAvailable: true,
+      assets: { preset: { id: "preset-1", name: "Story Preset" }, characterCard: { id: "char-1", name: "Hero" }, worldbook: null, regexProfile: null },
       promptSnapshot: { presetId: "preset-1", presetUpdatedAt: 1710000000000, presetVersion: 3, worldbookId: null, worldbookUpdatedAt: null, worldbookVersion: null, regexProfileId: null, regexProfileUpdatedAt: null, regexProfileVersion: null, worldbookActivatedEntryUids: [7], regexPreRuleNames: ["Input Rule"], regexPostRuleNames: [], promptMode: "compat_strict", promptDigest: "digest-1", tokenEstimate: 42 },
       resolvedPolicy: null,
       sourceMap: { history: { sourceBranchId: "main", sourceMode: "existing_branch" } },
       trimReasons: null,
       excludedSources: null,
+      sectionStats: [{ sectionName: "history", tokenCount: 320 }],
       diagnostics: [{ code: "historical_resolved_policy_unavailable", message: "policy unavailable", severity: "info", source: "policy", fieldPath: "resolved_policy", phase: "explain" }],
       limitations: ["persisted only"],
       result: { outputPageId: "page-output-12", assistantMessageId: "msg-assistant-12", generatedText: "hello", summaries: ["summary"], usage: { promptTokens: 320, completionTokens: 128, totalTokens: 448 }, verifier: null, committedAt: 1710000004000 },
     });
 
     expect(String(fetchImpl.mock.calls[0]![0])).toBe("http://localhost:3000/floors/floor-12/prompt-runtime/explain");
+  });
+
+  it("maps committed prompt runtime compare payload", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          left: { floor_id: "floor-left", snapshot_available: true },
+          right: { floor_id: "floor-right", snapshot_available: false },
+          scope_changes: [],
+          policy_changes: [{ path: "policy.resolved_policy.delivery.no_assistant", change_type: "changed", left: false, right: true }],
+          asset_changes: [],
+          diagnostics_changes: [],
+          trim_changes: [],
+          exclusion_changes: [],
+          limitations: ["Right floor 'floor-right' has no committed prompt runtime snapshot. Compare skipped recomputation and returned limitations only."],
+        },
+      }),
+    );
+
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const promptRuntime = createPromptRuntimeResource(transport);
+
+    await expect(promptRuntime.compare({ accountId: "acc-1", sessionId: "session-1", leftFloorId: "floor-left", rightFloorId: "floor-right" })).resolves.toEqual({
+      left: { floorId: "floor-left", snapshotAvailable: true },
+      right: { floorId: "floor-right", snapshotAvailable: false },
+      scopeChanges: [],
+      policyChanges: [{ path: "policy.resolved_policy.delivery.no_assistant", changeType: "changed", left: false, right: true }],
+      assetChanges: [],
+      diagnosticsChanges: [],
+      trimChanges: [],
+      exclusionChanges: [],
+      limitations: ["Right floor 'floor-right' has no committed prompt runtime snapshot. Compare skipped recomputation and returned limitations only."],
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe("http://localhost:3000/sessions/session-1/prompt-runtime/compare");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      left: { floor_id: "floor-left" },
+      right: { floor_id: "floor-right" },
+    });
   });
 
   it("maps patch policy requests, preserves null clears, and normalizes the response", async () => {

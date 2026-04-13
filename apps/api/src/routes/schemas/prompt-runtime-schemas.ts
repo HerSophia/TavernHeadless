@@ -9,6 +9,7 @@ import {
   PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES,
   PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS,
   PROMPT_RUNTIME_LIMITATIONS,
+  PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS,
   PROMPT_RUNTIME_UNSUPPORTED_ROUTES,
 } from "../../services/prompt-runtime-control-service.js";
 import { dryRunVisibilityJsonSchema, floorVisibilityRangeJsonSchema } from "./chat-schemas.js";
@@ -110,6 +111,24 @@ const promptRuntimeBranchPersistentPolicyExample = {
   },
 } as const;
 
+const promptRuntimePersistentPolicyEnvelopeExample = {
+  version: 2,
+  updated_at: 1710000004500,
+  updated_by: "user-1",
+  value: {
+    delivery: {
+      no_assistant: true,
+    },
+    budget: promptRuntimeBudgetExample,
+    source_selection: promptRuntimeSourceSelectionExample,
+  },
+} as const;
+
+const promptRuntimeSectionStatsExample = [
+  { section_name: "history", token_count: 320 },
+  { section_name: "worldbook", token_count: 96 },
+] as const;
+
 const promptRuntimeDiagnosticsExample = [
   {
     code: "derived_no_assistant_structure",
@@ -166,7 +185,17 @@ export const promptRuntimeResolvedStateExample = {
     structure: promptRuntimePersistentStructureExample,
     delivery: promptRuntimePersistentDeliveryExample,
   },
+  persistent_policy_envelope: {
+    version: 1,
+    updated_at: 1710000004200,
+    updated_by: "user-1",
+    value: {
+      structure: promptRuntimePersistentStructureExample,
+      delivery: promptRuntimePersistentDeliveryExample,
+    },
+  },
   branch_persistent_policy: promptRuntimeBranchPersistentPolicyExample,
+  branch_persistent_policy_envelope: promptRuntimePersistentPolicyEnvelopeExample,
   assets: promptRuntimeAssetsExample,
   source_map: promptRuntimeSourceMapExample,
   warnings: [DERIVED_NO_ASSISTANT_STRUCTURE_WARNING],
@@ -178,6 +207,15 @@ export const promptRuntimePolicyViewExample = {
   persistent_policy: {
     structure: promptRuntimePersistentStructureExample,
     delivery: promptRuntimePersistentDeliveryExample,
+  },
+  persistent_policy_envelope: {
+    version: 1,
+    updated_at: 1710000004300,
+    updated_by: "user-1",
+    value: {
+      structure: promptRuntimePersistentStructureExample,
+      delivery: promptRuntimePersistentDeliveryExample,
+    },
   },
   resolved_policy: {
     structure: promptRuntimeResolvedStructureExample,
@@ -328,6 +366,8 @@ export const promptRuntimeHistoricalExplainResponseExample = {
     history_source_branch_id: "main",
     history_source_mode: "existing_branch",
   },
+  snapshot_available: true,
+  assets: promptRuntimeAssetsExample,
   prompt_snapshot: {
     preset_id: "preset-story",
     preset_updated_at: 1710000000000,
@@ -345,14 +385,26 @@ export const promptRuntimeHistoricalExplainResponseExample = {
     prompt_digest: "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
     token_estimate: 512,
   },
-  resolved_policy: null,
-  source_map: {
-    history: { source_branch_id: "main", source_mode: "existing_branch" },
-  },
-  trim_reasons: null,
-  excluded_sources: null,
-  diagnostics: promptRuntimeHistoricalExplainDiagnosticsExample,
-  limitations: promptRuntimeHistoricalExplainLimitationsExample,
+  resolved_policy: promptRuntimePolicyViewExample.resolved_policy,
+  source_map: promptRuntimeSourceMapExample,
+  trim_reasons: [
+    {
+      group: "history",
+      reason: "budget_exceeded",
+      detail: "Prompt runtime pruned 128 tokens from budget group 'history'.",
+      pruned_token_count: 128,
+    },
+  ],
+  excluded_sources: [
+    {
+      source: "examples",
+      reason: "disabled_by_policy",
+      detail: "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly.",
+    },
+  ],
+  section_stats: promptRuntimeSectionStatsExample,
+  diagnostics: promptRuntimeDiagnosticsExample,
+  limitations: promptRuntimeLimitationsExample,
   result: {
     output_page_id: "page-output-12",
     assistant_message_id: "msg-assistant-12",
@@ -387,7 +439,7 @@ export const promptRuntimeCapabilitiesExample = {
   budget: {
     defaults: {},
     request_override_supported: true,
-    persistent_patch_supported: false,
+    persistent_patch_supported: true,
     supported_fields: ["maxInputTokens", "reservedCompletionTokens"],
     trim_reason_codes: [...PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES],
   },
@@ -399,10 +451,31 @@ export const promptRuntimeCapabilitiesExample = {
       examples: { enabled: true },
     },
     request_override_supported: true,
-    persistent_patch_supported: false,
+    persistent_patch_supported: true,
     supported_sources: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES],
     history_modes: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES],
     exclusion_reason_codes: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES],
+  },
+  governance: {
+    session: {
+      envelope_metadata: true,
+      null_clears_field: true,
+      object_patch: "deep_merge",
+      supported_fields: [...PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS],
+    },
+    branch: {
+      envelope_metadata: true,
+      materialized_branches_only: true,
+      null_clears_field: true,
+      object_patch: "deep_merge",
+      supported_fields: [...PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS],
+    },
+  },
+  compare: {
+    enabled: true,
+    committed_floors_only: true,
+    mixed_preview_supported: false,
+    limitations_instead_of_recompute: true,
   },
   observability: {
     live: {
@@ -439,6 +512,9 @@ export const promptRuntimeCapabilitiesExample = {
       requires_committed_floor: true,
       persisted_truth_only: true,
       recompute: false,
+      snapshot_supported: true,
+      legacy_floor_fallback: true,
+      snapshot_availability_field: "snapshot_available",
     },
     stream: {
       enabled: true,
@@ -511,10 +587,14 @@ export const promptRuntimePolicyPatchBodyJsonSchema = {
   properties: {
     structure: { anyOf: [promptRuntimePersistentStructureJsonSchema, { type: "null" }] },
     delivery: { anyOf: [promptRuntimePersistentDeliveryJsonSchema, { type: "null" }] },
+    budget: { anyOf: [promptRuntimeBudgetJsonSchema, { type: "null" }] },
+    source_selection: { anyOf: [promptRuntimePersistentSourceSelectionJsonSchema, { type: "null" }] },
   },
   anyOf: [
     { required: ["structure"] },
     { required: ["delivery"] },
+    { required: ["budget"] },
+    { required: ["source_selection"] },
   ],
   examples: [promptRuntimePolicyPatchBodyExample],
   additionalProperties: false,
@@ -527,6 +607,18 @@ export const promptRuntimePersistentPolicyJsonSchema = {
     delivery: promptRuntimePersistentDeliveryJsonSchema,
     budget: promptRuntimeBudgetJsonSchema,
     source_selection: promptRuntimePersistentSourceSelectionJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const promptRuntimePersistentPolicyEnvelopeJsonSchema = {
+  type: "object",
+  required: ["version", "updated_at", "updated_by", "value"],
+  properties: {
+    version: { type: "integer", minimum: 1 },
+    updated_at: { type: "integer", minimum: 0 },
+    updated_by: { anyOf: [{ type: "string" }, { type: "null" }] },
+    value: promptRuntimePersistentPolicyJsonSchema,
   },
   additionalProperties: false,
 } as const;
@@ -808,6 +900,16 @@ const promptRuntimeHistoricalExplainSourceExclusionJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const promptRuntimeSectionStatJsonSchema = {
+  type: "object",
+  required: ["section_name", "token_count"],
+  properties: {
+    section_name: { type: "string" },
+    token_count: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
 const promptRuntimeHistoricalExplainResultJsonSchema = {
   type: "object",
   required: ["output_page_id", "assistant_message_id", "generated_text", "summaries", "usage", "verifier", "committed_at"],
@@ -869,7 +971,9 @@ export const promptRuntimeResolvedStateJsonSchema = {
     scope: promptRuntimeScopeJsonSchema,
     policy: promptRuntimeResolvedPolicyJsonSchema,
     persistent_policy: promptRuntimePersistentPolicyJsonSchema,
+    persistent_policy_envelope: { anyOf: [promptRuntimePersistentPolicyEnvelopeJsonSchema, { type: "null" }] },
     branch_persistent_policy: { anyOf: [promptRuntimePersistentPolicyJsonSchema, { type: "null" }] },
+    branch_persistent_policy_envelope: { anyOf: [promptRuntimePersistentPolicyEnvelopeJsonSchema, { type: "null" }] },
     assets: promptRuntimeAssetsViewJsonSchema,
     warnings: {
       type: "array",
@@ -893,6 +997,7 @@ export const promptRuntimePolicyViewJsonSchema = {
   required: ["resolved_policy", "warnings"],
   properties: {
     persistent_policy: promptRuntimePersistentPolicyJsonSchema,
+    persistent_policy_envelope: { anyOf: [promptRuntimePersistentPolicyEnvelopeJsonSchema, { type: "null" }] },
     resolved_policy: promptRuntimeResolvedPolicyJsonSchema,
     warnings: {
       type: "array",
@@ -1010,7 +1115,7 @@ const promptRuntimePreviewRuntimeTraceJsonSchema = {
 
 export const promptRuntimeCapabilitiesJsonSchema = {
   type: "object",
-  required: ["structure", "delivery", "budget", "source_selection", "observability", "macro", "unsupported"],
+  required: ["structure", "delivery", "budget", "source_selection", "governance", "compare", "observability", "macro", "unsupported"],
   properties: {
     structure: {
       type: "object",
@@ -1038,7 +1143,7 @@ export const promptRuntimeCapabilitiesJsonSchema = {
       properties: {
         defaults: promptRuntimeBudgetJsonSchema,
         request_override_supported: { const: true },
-        persistent_patch_supported: { const: false },
+        persistent_patch_supported: { const: true },
         supported_fields: { type: "array", items: { type: "string", enum: ["maxInputTokens", "reservedCompletionTokens"] } },
         trim_reason_codes: { type: "array", items: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES] } },
       },
@@ -1050,10 +1155,51 @@ export const promptRuntimeCapabilitiesJsonSchema = {
       properties: {
         defaults: promptRuntimeResolvedSourceSelectionJsonSchema,
         request_override_supported: { const: true },
-        persistent_patch_supported: { const: false },
+        persistent_patch_supported: { const: true },
         supported_sources: { type: "array", items: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES] } },
         history_modes: { type: "array", items: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES] } },
         exclusion_reason_codes: { type: "array", items: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES] } },
+      },
+      additionalProperties: false,
+    },
+    governance: {
+      type: "object",
+      required: ["session", "branch"],
+      properties: {
+        session: {
+          type: "object",
+          required: ["envelope_metadata", "null_clears_field", "object_patch", "supported_fields"],
+          properties: {
+            envelope_metadata: { const: true },
+            null_clears_field: { const: true },
+            object_patch: { type: "string", enum: ["deep_merge"] },
+            supported_fields: { type: "array", items: { type: "string", enum: [...PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS] } },
+          },
+          additionalProperties: false,
+        },
+        branch: {
+          type: "object",
+          required: ["envelope_metadata", "materialized_branches_only", "null_clears_field", "object_patch", "supported_fields"],
+          properties: {
+            envelope_metadata: { const: true },
+            materialized_branches_only: { const: true },
+            null_clears_field: { const: true },
+            object_patch: { type: "string", enum: ["deep_merge"] },
+            supported_fields: { type: "array", items: { type: "string", enum: [...PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS] } },
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+    compare: {
+      type: "object",
+      required: ["enabled", "committed_floors_only", "mixed_preview_supported", "limitations_instead_of_recompute"],
+      properties: {
+        enabled: { const: true },
+        committed_floors_only: { const: true },
+        mixed_preview_supported: { const: false },
+        limitations_instead_of_recompute: { const: true },
       },
       additionalProperties: false,
     },
@@ -1131,13 +1277,16 @@ export const promptRuntimeCapabilitiesJsonSchema = {
         },
         explain: {
           type: "object",
-          required: ["enabled", "read_only", "requires_committed_floor", "persisted_truth_only", "recompute"],
+          required: ["enabled", "read_only", "requires_committed_floor", "persisted_truth_only", "recompute", "snapshot_supported", "legacy_floor_fallback", "snapshot_availability_field"],
           properties: {
             enabled: { const: true },
             read_only: { const: true },
             requires_committed_floor: { const: true },
             persisted_truth_only: { const: true },
             recompute: { const: false },
+            snapshot_supported: { const: true },
+            legacy_floor_fallback: { const: true },
+            snapshot_availability_field: { type: "string", enum: ["snapshot_available"] },
           },
           additionalProperties: false,
         },
@@ -1261,15 +1410,18 @@ export const promptRuntimeHistoricalExplainResponseJsonSchema = {
   properties: {
     data: {
       type: "object",
-      required: ["floor", "scope", "prompt_snapshot", "resolved_policy", "trim_reasons", "excluded_sources", "diagnostics", "limitations", "result"],
+      required: ["floor", "scope", "snapshot_available", "assets", "prompt_snapshot", "resolved_policy", "trim_reasons", "excluded_sources", "section_stats", "diagnostics", "limitations", "result"],
       properties: {
         floor: promptRuntimeHistoricalExplainFloorJsonSchema,
         scope: promptRuntimeScopeJsonSchema,
+        snapshot_available: { type: "boolean" },
+        assets: { anyOf: [promptRuntimeAssetsViewJsonSchema, { type: "null" }] },
         prompt_snapshot: promptRuntimeHistoricalPromptSnapshotJsonSchema,
         resolved_policy: { anyOf: [promptRuntimeResolvedPolicyJsonSchema, { type: "null" }] },
         source_map: promptRuntimeSourceMapJsonSchema,
         trim_reasons: { anyOf: [{ type: "array", items: promptRuntimeHistoricalExplainTrimReasonJsonSchema }, { type: "null" }] },
         excluded_sources: { anyOf: [{ type: "array", items: promptRuntimeHistoricalExplainSourceExclusionJsonSchema }, { type: "null" }] },
+        section_stats: { anyOf: [{ type: "array", items: promptRuntimeSectionStatJsonSchema }, { type: "null" }] },
         diagnostics: { type: "array", items: promptRuntimeDiagnosticJsonSchema },
         limitations: { type: "array", items: { type: "string" } },
         result: promptRuntimeHistoricalExplainResultJsonSchema,
@@ -1278,6 +1430,95 @@ export const promptRuntimeHistoricalExplainResponseJsonSchema = {
     },
   },
   examples: [{ data: promptRuntimeHistoricalExplainResponseExample }],
+  additionalProperties: false,
+} as const;
+
+const promptRuntimeDiffEntryJsonSchema = {
+  type: "object",
+  required: ["path", "change_type"],
+  properties: {
+    path: { type: "string" },
+    change_type: { type: "string", enum: ["added", "removed", "changed"] },
+    left: {},
+    right: {},
+  },
+  additionalProperties: false,
+} as const;
+
+const promptRuntimeCompareResponseExample = {
+  left: { floor_id: "floor-left", snapshot_available: true },
+  right: { floor_id: "floor-right", snapshot_available: true },
+  scope_changes: [],
+  policy_changes: [{ path: "policy.resolved_policy.delivery.no_assistant", change_type: "changed", left: false, right: true }],
+  asset_changes: [],
+  diagnostics_changes: [],
+  trim_changes: [],
+  exclusion_changes: [],
+  limitations: [],
+} as const;
+
+export const promptRuntimeCompareBodyJsonSchema = {
+  type: "object",
+  required: ["left", "right"],
+  properties: {
+    left: {
+      type: "object",
+      required: ["floor_id"],
+      properties: {
+        floor_id: { type: "string", minLength: 1 },
+      },
+      additionalProperties: false,
+    },
+    right: {
+      type: "object",
+      required: ["floor_id"],
+      properties: {
+        floor_id: { type: "string", minLength: 1 },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+export const promptRuntimeCompareResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["left", "right", "scope_changes", "policy_changes", "asset_changes", "diagnostics_changes", "trim_changes", "exclusion_changes", "limitations"],
+      properties: {
+        left: {
+          type: "object",
+          required: ["floor_id", "snapshot_available"],
+          properties: {
+            floor_id: { type: "string" },
+            snapshot_available: { type: "boolean" },
+          },
+          additionalProperties: false,
+        },
+        right: {
+          type: "object",
+          required: ["floor_id", "snapshot_available"],
+          properties: {
+            floor_id: { type: "string" },
+            snapshot_available: { type: "boolean" },
+          },
+          additionalProperties: false,
+        },
+        scope_changes: { type: "array", items: promptRuntimeDiffEntryJsonSchema },
+        policy_changes: { type: "array", items: promptRuntimeDiffEntryJsonSchema },
+        asset_changes: { type: "array", items: promptRuntimeDiffEntryJsonSchema },
+        diagnostics_changes: { type: "array", items: promptRuntimeDiffEntryJsonSchema },
+        trim_changes: { type: "array", items: promptRuntimeDiffEntryJsonSchema },
+        exclusion_changes: { type: "array", items: promptRuntimeDiffEntryJsonSchema },
+        limitations: { type: "array", items: { type: "string" } },
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [{ data: promptRuntimeCompareResponseExample }],
   additionalProperties: false,
 } as const;
 

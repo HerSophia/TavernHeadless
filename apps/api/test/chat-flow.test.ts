@@ -35,7 +35,7 @@ import type { ProviderConfig, ProviderFactory } from "@tavern/core";
 // 只测试路由层 + ChatService 的 DB 逻辑。
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { sessions, floors, messagePages, messages, presets, promptSnapshots, regexProfiles, toolExecutionRecords, variables } from "../src/db/schema";
+import { sessions, floors, messagePages, messages, presets, promptRuntimeExplainSnapshots, promptSnapshots, regexProfiles, toolExecutionRecords, variables } from "../src/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants";
 import { nanoid } from "nanoid";
@@ -843,6 +843,10 @@ describe("ChatService", () => {
       .select()
       .from(promptSnapshots)
       .where(eq(promptSnapshots.floorId, result.floorId));
+    const [inspectionSnapshotRow] = await database.db
+      .select()
+      .from(promptRuntimeExplainSnapshots)
+      .where(eq(promptRuntimeExplainSnapshots.floorId, result.floorId));
 
     expect(snapshotRow).toBeDefined();
     expect(snapshotRow!.sessionId).toBe(sessionId);
@@ -850,6 +854,10 @@ describe("ChatService", () => {
     expect(snapshotRow!.promptMode).toBe("compat_strict");
     expect(snapshotRow!.promptDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(snapshotRow!.tokenEstimate).toBeGreaterThan(0);
+    expect(inspectionSnapshotRow).toBeDefined();
+    expect(inspectionSnapshotRow!.sessionId).toBe(sessionId);
+    expect(inspectionSnapshotRow!.floorId).toBe(result.floorId);
+    expect(inspectionSnapshotRow!.snapshotVersion).toBe(1);
   });
 
   it("should promote page variables to floor inside the commit boundary after respond", async () => {
@@ -1615,6 +1623,13 @@ describe("ChatService", () => {
     const pages = await database.db.select().from(messagePages).where(eq(messagePages.floorId, floor!.id));
     expect(pages).toHaveLength(1);
     expect(pages[0]?.pageKind).toBe("input");
+    const [inspectionSnapshotRow] = await database.db
+      .select()
+      .from(promptRuntimeExplainSnapshots)
+      .where(eq(promptRuntimeExplainSnapshots.floorId, floor!.id));
+    expect(inspectionSnapshotRow).toBeUndefined();
+
+
 
     const [toolExecutionRow] = await database.db
       .select()
