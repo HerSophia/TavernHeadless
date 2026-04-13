@@ -188,6 +188,16 @@ const resolved = await resolveItemByPath(client, domainId, "settings", "theme.da
 | 工具与运行集成 | `tools`、`mcp` |
 | 高级客户端数据系统 | `clientData` |
 
+## 记忆 scope 约定
+
+`memories`、`memoryJobs`、`memoryScopes` 现在都接受 `global`、`chat`、`branch`、`floor` 四种记忆作用域。
+
+其中：
+
+- 主聊天链默认使用 `branch` scope。
+- `chat` scope 只表示显式的 session 级共享记忆。
+- `branch` scope 的 `scopeId` 需要使用 `JSON.stringify([sessionId, branchId])` 构造。
+
 ## Prompt Runtime preview 示例
 
 ```ts
@@ -196,6 +206,14 @@ const preview = await client.promptRuntime.previewText({
   sessionId: "session-1",
   branchId: "main",
   text: "{{setvar::资产.金币::3}}{{getvar::资产}}",
+  budget: {
+    maxInputTokens: 4096,
+    reservedCompletionTokens: 1024,
+  },
+  sourceSelection: {
+    history: { mode: "windowed", maxMessages: 24 },
+    examples: { enabled: false },
+  },
   visibility: {
     mode: "allow_all_except_hidden",
     hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
@@ -203,11 +221,30 @@ const preview = await client.promptRuntime.previewText({
 });
 
 console.log(preview.text);
+console.log(preview.runtimeTrace.budgets?.trimReasons);
+console.log(preview.runtimeTrace.sourceSelection?.excludedSources);
 console.log(preview.runtimeTrace.macro?.mutationPreview);
 console.log(preview.runtimeTrace.macro?.stagedMutations); // []
 ```
 
-这个方法只做单段文本 preview。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`。宏诊断继续统一走 `runtimeTrace.macro`。
+这个方法只做单段文本 preview。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`。当前 request 级 `budget` / `sourceSelection` 覆盖的解释结果，会进入 `runtimeTrace.budgets.trimReasons` 与 `runtimeTrace.sourceSelection.excludedSources`。宏诊断继续统一走 `runtimeTrace.macro`。
+
+## Prompt Runtime historical explain 示例
+
+```ts
+const explain = await client.promptRuntime.getFloorExplain({
+  accountId: "account-1",
+  floorId: "floor-12",
+});
+
+console.log(explain.promptSnapshot?.promptDigest);
+console.log(explain.result?.outputText);
+console.log(explain.resolvedPolicy); // 历史楼层未持久化时可能为 null
+```
+
+这个方法只读取 committed floor 的持久化真相。它不会重新组装 prompt，不会重新展开宏，也不会重算 budget / source selection。
+
+当前 `@tavern/client-helpers` 没有为 historical explain 增加专用 helper。原因很简单：这份响应已经是稳定的只读对象，当前没有额外的跨框架语义整理需求。接入方直接使用 SDK 返回值即可。
 
 
 ## `@tavern/client-helpers` 当前导出

@@ -1,14 +1,19 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import type { AppDb } from "../db/client.js";
-import { characters, presets, regexProfiles, sessions, worldbooks } from "../db/schema.js";
+import { characters, floorResultSnapshots, floors, presets, promptSnapshots, regexProfiles, sessions, worldbooks } from "../db/schema.js";
 import { parseJsonField, stringifyJsonField } from "../lib/http.js";
 import type {
+  PromptBudgetPolicy,
   PromptDeliveryPolicy,
+  PromptSnapshotPreview,
+  PromptSourceExclusionReason,
+  PromptSourceSelectionPolicy,
   PromptStructureAssistantRewriteStrategy,
   PromptStructureMode,
   PromptStructurePolicy,
+  PromptTrimReason,
 } from "./prompt-assembler.js";
 
 export const PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES = ["default", "strict_alternating", "no_assistant"] as const satisfies readonly PromptStructureMode[];
@@ -19,9 +24,28 @@ export const PROMPT_RUNTIME_UNSUPPORTED_ROUTES = [
   "/floors/:id/prompt-runtime",
   "/messages/:id/prompt-runtime",
 ] as const;
-export const PROMPT_RUNTIME_POLICY_SOURCES = ["system_default", "asset_default", "session_policy", "request_override", "provider_constraint"] as const;
+export const PROMPT_RUNTIME_POLICY_SOURCES = ["system_default", "asset_default", "session_policy", "branch_policy", "request_override", "provider_constraint"] as const;
 export const INVALID_PROMPT_RUNTIME_POLICY_WARNING = "Session metadata contains an invalid prompt_runtime.policy object. The control plane ignored it.";
+export const INVALID_PROMPT_RUNTIME_BRANCH_POLICY_WARNING = "Session metadata contains an invalid prompt_runtime.branchPolicies entry for this branch. The control plane ignored it.";
 export const DERIVED_NO_ASSISTANT_STRUCTURE_WARNING = "delivery.noAssistant forced the resolved structure.mode to no_assistant.";
+export const PROMPT_RUNTIME_LIMITATIONS = [
+  "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+  "Variable commit remains page -> floor. Branch promotion is not automatic.",
+] as const;
+export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS = [
+  "Historical explain reads persisted prompt snapshot and committed floor result only. It does not re-run prompt assembly, macro evaluation, or budget decisions.",
+  "Resolved policy, policy source-map fields, trim reasons, and excluded sources were not persisted for existing floors, so historical explain may return them as null.",
+] as const;
+
+export type PromptRuntimeHistorySourceMode = "existing_branch" | "source_floor_branch" | "main_fallback";
+export type PromptRuntimeDiagnosticSeverity = "info" | "warning" | "error";
+export type PromptRuntimeDiagnosticSource = "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
+export type PromptRuntimeDiagnosticPhase = "preview" | "dry_run" | "assemble" | "commit_consume" | "explain";
+export const PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES = ["full", "windowed"] as const;
+export const PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES = ["history", "memory", "worldbook", "examples"] as const;
+export const PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES = ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"] as const;
+export const PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES = ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"] as const;
+export type PromptRuntimeSourceSelectionHistoryMode = typeof PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES[number];
 
 const promptStructurePolicySchema = z.object({
   mode: z.enum(PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES),
@@ -36,9 +60,26 @@ const promptDeliveryPolicySchema = z.object({
   noAssistant: z.boolean().optional(),
 }).strict();
 
+const promptBudgetPolicySchema = z.object({
+  maxInputTokens: z.number().int().positive().optional(),
+  reservedCompletionTokens: z.number().int().positive().optional(),
+}).strict();
+
+const promptSourceSelectionPolicySchema = z.object({
+  history: z.object({
+    mode: z.enum(PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES).optional(),
+    maxMessages: z.number().int().positive().optional(),
+  }).strict().optional(),
+  memory: z.object({ enabled: z.boolean().optional() }).strict().optional(),
+  worldbook: z.object({ enabled: z.boolean().optional() }).strict().optional(),
+  examples: z.object({ enabled: z.boolean().optional() }).strict().optional(),
+}).strict();
+
 const promptRuntimePersistentPolicySchema = z.object({
   structure: promptStructurePolicySchema.optional(),
   delivery: promptDeliveryPolicySchema.optional(),
+  budget: promptBudgetPolicySchema.optional(),
+  sourceSelection: promptSourceSelectionPolicySchema.optional(),
 }).strict();
 
 export interface PromptRuntimeAssetSummary {
@@ -56,6 +97,8 @@ export interface PromptRuntimeAssetsView {
 export interface PromptRuntimePersistentPolicy {
   structure?: PromptStructurePolicy;
   delivery?: PromptDeliveryPolicy;
+  budget?: PromptBudgetPolicy;
+  sourceSelection?: PromptSourceSelectionPolicy;
 }
 
 export interface PromptRuntimePersistentPolicyPatch {
@@ -67,6 +110,18 @@ export interface PromptRuntimeDebugPolicy {
   includePromptSnapshot: boolean;
   includeRuntimeTrace: boolean;
   includeWorldbookMatches: boolean;
+}
+
+export interface ResolvedPromptBudgetPolicy {
+  maxInputTokens?: number;
+  reservedCompletionTokens?: number;
+}
+
+export interface ResolvedPromptSourceSelectionPolicy {
+  history: { mode: PromptRuntimeSourceSelectionHistoryMode; maxMessages?: number };
+  memory: { enabled: boolean };
+  worldbook: { enabled: boolean };
+  examples: { enabled: boolean };
 }
 
 export interface ResolvedPromptStructurePolicy {
@@ -86,6 +141,26 @@ export interface ResolvedPromptRuntimePolicy {
   structure: ResolvedPromptStructurePolicy;
   delivery: ResolvedPromptDeliveryPolicy;
   debug: PromptRuntimeDebugPolicy;
+  budget: ResolvedPromptBudgetPolicy;
+  sourceSelection: ResolvedPromptSourceSelectionPolicy;
+}
+
+export interface PromptRuntimeScopeRef {
+  sessionId: string;
+  targetBranchId: string;
+  branchExists: boolean;
+  sourceFloorId?: string | null;
+  historySourceBranchId: string;
+  historySourceMode: PromptRuntimeHistorySourceMode;
+}
+
+export interface PromptRuntimeDiagnostic {
+  code: string;
+  message: string;
+  severity: PromptRuntimeDiagnosticSeverity;
+  source?: PromptRuntimeDiagnosticSource;
+  fieldPath?: string;
+  phase?: PromptRuntimeDiagnosticPhase;
 }
 
 export interface PromptRuntimeSourceMap {
@@ -105,16 +180,71 @@ export interface PromptRuntimeSourceMap {
     includeRuntimeTrace?: PromptRuntimePolicySource;
     includeWorldbookMatches?: PromptRuntimePolicySource;
   };
+  budget?: {
+    maxInputTokens?: PromptRuntimePolicySource;
+    reservedCompletionTokens?: PromptRuntimePolicySource;
+  };
+  sourceSelection?: {
+    history?: {
+      mode?: PromptRuntimePolicySource;
+      maxMessages?: PromptRuntimePolicySource;
+    };
+    memory?: { enabled?: PromptRuntimePolicySource };
+    worldbook?: { enabled?: PromptRuntimePolicySource };
+    examples?: { enabled?: PromptRuntimePolicySource };
+  };
+  history?: {
+    sourceBranchId?: string;
+    sourceMode?: PromptRuntimeHistorySourceMode;
+  };
 }
 
 export type PromptRuntimePolicySource = typeof PROMPT_RUNTIME_POLICY_SOURCES[number];
 
 export interface PromptRuntimeResolvedState {
+  scope: PromptRuntimeScopeRef;
   policy: ResolvedPromptRuntimePolicy;
   persistentPolicy?: PromptRuntimePersistentPolicy;
+  branchPersistentPolicy: PromptRuntimePersistentPolicy | null;
   assets: PromptRuntimeAssetsView;
   sourceMap?: PromptRuntimeSourceMap;
   warnings: string[];
+  diagnostics: PromptRuntimeDiagnostic[];
+  limitations: string[];
+}
+
+export interface PromptRuntimeHistoricalExplainFloorRef {
+  id: string;
+  sessionId: string;
+  floorNo: number;
+  branchId: string;
+  parentFloorId: string | null;
+  state: "committed";
+  promptSnapshotCreatedAt: number;
+  committedAt: number;
+}
+
+export interface PromptRuntimeHistoricalExplainCommittedResult {
+  outputPageId: string;
+  assistantMessageId: string;
+  generatedText: string;
+  summaries: string[];
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+  verifier: { status: string; suggestion?: string | null; issues?: Array<{ description: string; severity: "warning" | "error" }> | null } | null;
+  committedAt: number;
+}
+
+export interface PromptRuntimeHistoricalExplain {
+  floor: PromptRuntimeHistoricalExplainFloorRef;
+  scope: PromptRuntimeScopeRef;
+  promptSnapshot: PromptSnapshotPreview;
+  resolvedPolicy: ResolvedPromptRuntimePolicy | null;
+  sourceMap?: PromptRuntimeSourceMap;
+  trimReasons: PromptTrimReason[] | null;
+  excludedSources: PromptSourceExclusionReason[] | null;
+  diagnostics: PromptRuntimeDiagnostic[];
+  limitations: string[];
+  result: PromptRuntimeHistoricalExplainCommittedResult;
 }
 
 export interface PromptRuntimePolicyView {
@@ -130,6 +260,21 @@ export interface PromptRuntimeCapabilities {
   };
   delivery: {
     defaults: ResolvedPromptDeliveryPolicy;
+  };
+  budget: {
+    defaults: ResolvedPromptBudgetPolicy;
+    requestOverrideSupported: true;
+    persistentPatchSupported: false;
+    supportedFields: readonly ["maxInputTokens", "reservedCompletionTokens"];
+    trimReasonCodes: typeof PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES;
+  };
+  sourceSelection: {
+    defaults: ResolvedPromptSourceSelectionPolicy;
+    requestOverrideSupported: true;
+    persistentPatchSupported: false;
+    supportedSources: typeof PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES;
+    historyModes: typeof PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES;
+    exclusionReasonCodes: typeof PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES;
   };
   observability: {
     live: {
@@ -159,6 +304,13 @@ export interface PromptRuntimeCapabilities {
       createsFloor: false;
       writesPromptSnapshot: false;
       commitsSideEffects: false;
+    };
+    explain: {
+      enabled: boolean;
+      readOnly: true;
+      requiresCommittedFloor: true;
+      persistedTruthOnly: true;
+      recompute: false;
     };
     stream: {
       enabled: boolean;
@@ -202,6 +354,15 @@ export const DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY: ResolvedPromptStr
   preserveSystemMessages: true,
 };
 
+export const DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY: ResolvedPromptBudgetPolicy = {};
+
+export const DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY: ResolvedPromptSourceSelectionPolicy = {
+  history: { mode: "full" },
+  memory: { enabled: true },
+  worldbook: { enabled: true },
+  examples: { enabled: true },
+};
+
 export class PromptRuntimeControlServiceError extends Error {
   constructor(
     public readonly statusCode: number,
@@ -229,19 +390,39 @@ export class PromptRuntimeControlService {
     this.enableStreamEndpoint = options.enableStreamEndpoint === true;
   }
 
-  async getResolvedState(sessionId: string, accountId: string): Promise<PromptRuntimeResolvedState> {
+  async getResolvedState(sessionId: string, accountId: string, branchId = "main"): Promise<PromptRuntimeResolvedState> {
     const session = await this.getOwnedSession(sessionId, accountId);
+    const targetBranchId = normalizePromptRuntimeBranchId(branchId);
+    await this.requireMaterializedBranch(session.id, targetBranchId);
     const assets = await this.buildAssetsView(session, accountId);
     const { persistentPolicy, warnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
-    const resolvedPolicy = buildResolvedPromptRuntimePolicy(persistentPolicy);
-    const controlPlaneWarnings = buildPromptRuntimeWarnings(persistentPolicy, warnings);
+    const { persistentPolicy: branchPersistentPolicy, warnings: branchWarnings } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
+    const resolvedPolicy = buildResolvedPromptRuntimePolicy(persistentPolicy, branchPersistentPolicy ?? undefined);
+    const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(persistentPolicy, branchPersistentPolicy ?? undefined);
+    const controlPlaneWarnings = buildPromptRuntimeWarnings(effectivePersistentPolicy, [...warnings, ...branchWarnings]);
 
     return {
+      scope: {
+        sessionId,
+        targetBranchId,
+        branchExists: true,
+        sourceFloorId: null,
+        historySourceBranchId: targetBranchId,
+        historySourceMode: "existing_branch",
+      },
       policy: resolvedPolicy,
       ...(persistentPolicy ? { persistentPolicy } : {}),
+      branchPersistentPolicy: branchPersistentPolicy ?? null,
       assets,
-      sourceMap: buildPromptRuntimeSourceMap(persistentPolicy, resolvedPolicy),
+      sourceMap: buildPromptRuntimeSourceMap({
+        sessionPolicy: persistentPolicy,
+        branchPolicy: branchPersistentPolicy ?? undefined,
+        resolvedPolicy,
+        history: { sourceBranchId: targetBranchId, sourceMode: "existing_branch" },
+      }),
       warnings: controlPlaneWarnings,
+      diagnostics: buildPromptRuntimeDiagnostics(controlPlaneWarnings, { branchId: targetBranchId }),
+      limitations: [...PROMPT_RUNTIME_LIMITATIONS],
     };
   }
 
@@ -257,9 +438,86 @@ export class PromptRuntimeControlService {
     };
   }
 
+  async getBranchPolicy(sessionId: string, branchId: string, accountId: string): Promise<PromptRuntimePolicyView> {
+    const session = await this.getOwnedSession(sessionId, accountId);
+    const targetBranchId = normalizePromptRuntimeBranchId(branchId);
+    await this.requireMaterializedBranch(session.id, targetBranchId);
+    const { persistentPolicy, warnings } = readPromptRuntimePersistentPolicy(session.metadataJson);
+    const { persistentPolicy: branchPersistentPolicy, warnings: branchWarnings } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
+    const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(persistentPolicy, branchPersistentPolicy ?? undefined);
+    const controlPlaneWarnings = buildPromptRuntimeWarnings(effectivePersistentPolicy, [...warnings, ...branchWarnings]);
+
+    return {
+      ...(branchPersistentPolicy ? { persistentPolicy: branchPersistentPolicy } : {}),
+      resolvedPolicy: buildResolvedPromptRuntimePolicy(persistentPolicy, branchPersistentPolicy ?? undefined),
+      warnings: controlPlaneWarnings,
+    };
+  }
+
   async getAssets(sessionId: string, accountId: string): Promise<PromptRuntimeAssetsView> {
     const session = await this.getOwnedSession(sessionId, accountId);
     return this.buildAssetsView(session, accountId);
+  }
+
+  async getHistoricalExplain(floorId: string, accountId: string): Promise<PromptRuntimeHistoricalExplain> {
+    const floor = await this.getOwnedFloor(floorId, accountId);
+    if (floor.state !== "committed") {
+      throw new PromptRuntimeControlServiceError(409, "invalid_state", `Floor '${floor.id}' is not committed`);
+    }
+
+    const [promptSnapshotRow] = await this.db
+      .select()
+      .from(promptSnapshots)
+      .where(eq(promptSnapshots.floorId, floor.id))
+      .limit(1);
+
+    if (!promptSnapshotRow) {
+      throw new PromptRuntimeControlServiceError(404, "prompt_runtime_explain_not_found", `Prompt Runtime explain snapshot not found for floor '${floor.id}'`);
+    }
+
+    const [floorResultRow] = await this.db
+      .select()
+      .from(floorResultSnapshots)
+      .where(eq(floorResultSnapshots.floorId, floor.id))
+      .limit(1);
+
+    if (!floorResultRow) {
+      throw new PromptRuntimeControlServiceError(404, "prompt_runtime_explain_not_found", `Prompt Runtime explain result snapshot not found for floor '${floor.id}'`);
+    }
+
+    return {
+      floor: {
+        id: floor.id,
+        sessionId: floor.sessionId,
+        floorNo: floor.floorNo,
+        branchId: floor.branchId,
+        parentFloorId: floor.parentFloorId,
+        state: "committed",
+        promptSnapshotCreatedAt: promptSnapshotRow.createdAt,
+        committedAt: floorResultRow.committedAt,
+      },
+      scope: {
+        sessionId: floor.sessionId,
+        targetBranchId: floor.branchId,
+        branchExists: true,
+        sourceFloorId: null,
+        historySourceBranchId: floor.branchId,
+        historySourceMode: "existing_branch",
+      },
+      promptSnapshot: mapPromptSnapshotRowToPreview(promptSnapshotRow),
+      resolvedPolicy: null,
+      sourceMap: {
+        history: {
+          sourceBranchId: floor.branchId,
+          sourceMode: "existing_branch",
+        },
+      },
+      trimReasons: null,
+      excludedSources: null,
+      diagnostics: buildPromptRuntimeHistoricalExplainDiagnostics(),
+      limitations: [...PROMPT_RUNTIME_LIMITATIONS, ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS],
+      result: mapFloorResultSnapshotRowToHistoricalExplainResult(floorResultRow),
+    };
   }
 
   async updatePolicy(
@@ -289,6 +547,39 @@ export class PromptRuntimeControlService {
     };
   }
 
+  async updateBranchPolicy(
+    sessionId: string,
+    branchId: string,
+    accountId: string,
+    patch: PromptRuntimePersistentPolicyPatch,
+  ): Promise<PromptRuntimePolicyView> {
+    const session = await this.getOwnedSession(sessionId, accountId);
+    const targetBranchId = normalizePromptRuntimeBranchId(branchId);
+    await this.requireMaterializedBranch(session.id, targetBranchId);
+    const metadata = parseMetadataRecord(session.metadataJson);
+    const { persistentPolicy } = readPromptRuntimePersistentPolicy(session.metadataJson);
+    const { persistentPolicy: currentBranchPolicy } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
+    const nextBranchPersistentPolicy = applyPromptRuntimePersistentPolicyPatch(currentBranchPolicy, patch);
+    const nextMetadata = writePromptRuntimeBranchPersistentPolicyToMetadata(metadata, targetBranchId, nextBranchPersistentPolicy);
+    const updatedAt = Date.now();
+
+    await this.db
+      .update(sessions)
+      .set({
+        metadataJson: stringifyJsonField(nextMetadata),
+        updatedAt,
+      })
+      .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)));
+
+    const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(persistentPolicy, nextBranchPersistentPolicy);
+
+    return {
+      ...(nextBranchPersistentPolicy ? { persistentPolicy: nextBranchPersistentPolicy } : {}),
+      resolvedPolicy: buildResolvedPromptRuntimePolicy(persistentPolicy, nextBranchPersistentPolicy),
+      warnings: buildPromptRuntimeWarnings(effectivePersistentPolicy),
+    };
+  }
+
   getCapabilities(): PromptRuntimeCapabilities {
     return {
       structure: {
@@ -297,6 +588,21 @@ export class PromptRuntimeControlService {
       },
       delivery: {
         defaults: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DELIVERY_POLICY },
+      },
+      budget: {
+        defaults: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
+        requestOverrideSupported: true,
+        persistentPatchSupported: false,
+        supportedFields: ["maxInputTokens", "reservedCompletionTokens"],
+        trimReasonCodes: PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES,
+      },
+      sourceSelection: {
+        defaults: JSON.parse(JSON.stringify(DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY)) as ResolvedPromptSourceSelectionPolicy,
+        requestOverrideSupported: true,
+        persistentPatchSupported: false,
+        supportedSources: PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES,
+        historyModes: PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES,
+        exclusionReasonCodes: PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES,
       },
       observability: {
         live: {
@@ -326,6 +632,13 @@ export class PromptRuntimeControlService {
           createsFloor: false,
           writesPromptSnapshot: false,
           commitsSideEffects: false,
+        },
+        explain: {
+          enabled: true,
+          readOnly: true,
+          requiresCommittedFloor: true,
+          persistedTruthOnly: true,
+          recompute: false,
         },
         stream: {
           enabled: this.enableStreamEndpoint,
@@ -366,6 +679,37 @@ export class PromptRuntimeControlService {
     }
 
     return session;
+  }
+
+  private async getOwnedFloor(floorId: string, accountId: string) {
+    const [row] = await this.db
+      .select({ floor: floors })
+      .from(floors)
+      .innerJoin(sessions, eq(floors.sessionId, sessions.id))
+      .where(and(eq(floors.id, floorId), eq(sessions.accountId, accountId)))
+      .limit(1);
+
+    if (!row?.floor) {
+      throw new PromptRuntimeControlServiceError(404, "not_found", "Floor not found");
+    }
+
+    return row.floor;
+  }
+
+  private async requireMaterializedBranch(sessionId: string, branchId: string): Promise<void> {
+    const [branch] = await this.db
+      .select({ id: floors.id })
+      .from(floors)
+      .where(and(
+        eq(floors.sessionId, sessionId),
+        eq(floors.branchId, branchId),
+        isNull(floors.supersededAt),
+      ))
+      .limit(1);
+
+    if (!branch) {
+      throw new PromptRuntimeControlServiceError(404, "branch_not_found", `Branch '${branchId}' not found in session`);
+    }
   }
 
   private async buildAssetsView(
@@ -451,15 +795,51 @@ export class PromptRuntimeControlService {
 }
 
 export function buildResolvedPromptRuntimePolicy(
-  persistentPolicy?: PromptRuntimePersistentPolicy,
+  ...layers: Array<PromptRuntimePersistentPolicy | undefined>
 ): ResolvedPromptRuntimePolicy {
-  const delivery = resolvePromptRuntimeDeliveryPolicy(persistentPolicy?.delivery);
+  const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(...layers);
+  const delivery = resolvePromptRuntimeDeliveryPolicy(effectivePersistentPolicy?.delivery);
 
   return {
-    structure: resolvePromptRuntimeStructurePolicy(persistentPolicy?.structure, delivery),
+    structure: resolvePromptRuntimeStructurePolicy(effectivePersistentPolicy?.structure, delivery),
     delivery,
     debug: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY },
+    budget: resolvePromptRuntimeBudgetPolicy(effectivePersistentPolicy?.budget),
+    sourceSelection: resolvePromptRuntimeSourceSelectionPolicy(effectivePersistentPolicy?.sourceSelection),
   };
+}
+
+export function mergePromptRuntimePersistentPolicies(
+  ...layers: Array<PromptRuntimePersistentPolicy | undefined>
+): PromptRuntimePersistentPolicy | undefined {
+  let structure: PromptStructurePolicy | undefined;
+  let delivery: PromptDeliveryPolicy | undefined;
+  let budget: PromptBudgetPolicy | undefined;
+  let sourceSelection: PromptSourceSelectionPolicy | undefined;
+
+  for (const layer of layers) {
+    structure = mergePromptStructurePolicy(structure, layer?.structure);
+    delivery = mergePromptDeliveryPolicy(delivery, layer?.delivery);
+    budget = mergePromptBudgetPolicy(budget, layer?.budget);
+    sourceSelection = mergePromptSourceSelectionPolicy(sourceSelection, layer?.sourceSelection);
+  }
+
+  const merged: PromptRuntimePersistentPolicy = {};
+
+  if (structure) {
+    merged.structure = structure;
+  }
+  if (delivery) {
+    merged.delivery = delivery;
+  }
+  if (budget) {
+    merged.budget = budget;
+  }
+  if (sourceSelection) {
+    merged.sourceSelection = sourceSelection;
+  }
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 export function resolvePromptRuntimeDeliveryPolicy(
@@ -470,6 +850,67 @@ export function resolvePromptRuntimeDeliveryPolicy(
     requireLastUser: deliveryPolicy?.requireLastUser ?? false,
     noAssistant: deliveryPolicy?.noAssistant ?? false,
   };
+}
+
+export function resolvePromptRuntimeBudgetPolicy(
+  budgetPolicy?: PromptBudgetPolicy,
+): ResolvedPromptBudgetPolicy {
+  return {
+    ...(budgetPolicy?.maxInputTokens !== undefined ? { maxInputTokens: budgetPolicy.maxInputTokens } : {}),
+    ...(budgetPolicy?.reservedCompletionTokens !== undefined ? { reservedCompletionTokens: budgetPolicy.reservedCompletionTokens } : {}),
+  };
+}
+
+export function resolvePromptRuntimeSourceSelectionPolicy(
+  sourceSelectionPolicy?: PromptSourceSelectionPolicy,
+): ResolvedPromptSourceSelectionPolicy {
+  return {
+    history: {
+      mode: sourceSelectionPolicy?.history?.mode ?? DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY.history.mode,
+      ...(sourceSelectionPolicy?.history?.maxMessages !== undefined ? { maxMessages: sourceSelectionPolicy.history.maxMessages } : {}),
+    },
+    memory: {
+      enabled: sourceSelectionPolicy?.memory?.enabled ?? DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY.memory.enabled,
+    },
+    worldbook: {
+      enabled: sourceSelectionPolicy?.worldbook?.enabled ?? DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY.worldbook.enabled,
+    },
+    examples: {
+      enabled: sourceSelectionPolicy?.examples?.enabled ?? DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY.examples.enabled,
+    },
+  };
+}
+
+export function mergePromptBudgetPolicy(
+  base: PromptBudgetPolicy | undefined,
+  override: PromptBudgetPolicy | undefined,
+): PromptBudgetPolicy | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  const merged: PromptBudgetPolicy = {
+    ...(base ?? {}),
+    ...(override ?? {}),
+  };
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function mergePromptSourceSelectionHistoryPolicy(
+  base: PromptSourceSelectionPolicy["history"],
+  override: PromptSourceSelectionPolicy["history"],
+): PromptSourceSelectionPolicy["history"] {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  const merged = {
+    ...(base ?? {}),
+    ...(override ?? {}),
+  };
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 export function mergePromptStructurePolicy(
@@ -508,11 +949,53 @@ export function mergePromptDeliveryPolicy(
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
+function mergePromptSourceSelectionTogglePolicy(
+  base: { enabled?: boolean } | undefined,
+  override: { enabled?: boolean } | undefined,
+): { enabled?: boolean } | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  const merged = {
+    ...(base ?? {}),
+    ...(override ?? {}),
+  };
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+export function mergePromptSourceSelectionPolicy(
+  base: PromptSourceSelectionPolicy | undefined,
+  override: PromptSourceSelectionPolicy | undefined,
+): PromptSourceSelectionPolicy | undefined {
+  const history = mergePromptSourceSelectionHistoryPolicy(base?.history, override?.history);
+  const memory = mergePromptSourceSelectionTogglePolicy(base?.memory, override?.memory);
+  const worldbook = mergePromptSourceSelectionTogglePolicy(base?.worldbook, override?.worldbook);
+  const examples = mergePromptSourceSelectionTogglePolicy(base?.examples, override?.examples);
+
+  const merged: PromptSourceSelectionPolicy = {
+    ...(history ? { history } : {}),
+    ...(memory ? { memory } : {}),
+    ...(worldbook ? { worldbook } : {}),
+    ...(examples ? { examples } : {}),
+  };
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
 export function applyPromptRuntimePersistentPolicyPatch(
   current: PromptRuntimePersistentPolicy | undefined,
   patch: PromptRuntimePersistentPolicyPatch,
 ): PromptRuntimePersistentPolicy | undefined {
   const next: PromptRuntimePersistentPolicy = {};
+
+  if (current?.budget) {
+    next.budget = current.budget;
+  }
+  if (current?.sourceSelection) {
+    next.sourceSelection = current.sourceSelection;
+  }
 
   const nextStructure = patch.structure === undefined
     ? current?.structure
@@ -566,64 +1049,318 @@ export function resolvePromptRuntimeStructurePolicy(
   };
 }
 
-function buildPromptRuntimeSourceMap(
-  persistentPolicy?: PromptRuntimePersistentPolicy,
-  resolvedPolicy?: ResolvedPromptRuntimePolicy,
-): PromptRuntimeSourceMap {
-  const structureModeFromSession = persistentPolicy?.structure?.mode !== undefined
-    || persistentPolicy?.delivery?.noAssistant === true;
-  const assistantRewriteStrategySource = resolvedPolicy?.structure.assistantRewriteStrategy
-    ? persistentPolicy?.structure?.assistantRewriteStrategy !== undefined
-      ? "session_policy"
-      : "system_default"
+export function buildPromptRuntimeSourceMap(args: {
+  sessionPolicy?: PromptRuntimePersistentPolicy;
+  branchPolicy?: PromptRuntimePersistentPolicy;
+  requestPolicy?: PromptRuntimePersistentPolicy;
+  resolvedPolicy?: ResolvedPromptRuntimePolicy;
+  history?: {
+    sourceBranchId?: string;
+    sourceMode?: PromptRuntimeHistorySourceMode;
+  };
+}): PromptRuntimeSourceMap | undefined {
+  const effectivePolicy = mergePromptRuntimePersistentPolicies(
+    args.sessionPolicy,
+    args.branchPolicy,
+    args.requestPolicy,
+  );
+  const resolvedPolicy = args.resolvedPolicy
+    ?? buildResolvedPromptRuntimePolicy(args.sessionPolicy, args.branchPolicy, args.requestPolicy);
+  const structureModeSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.structure?.mode,
+    branch: args.branchPolicy?.structure?.mode,
+    request: args.requestPolicy?.structure?.mode,
+  });
+  const structureMergeAdjacentSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.structure?.mergeAdjacentSameRole,
+    branch: args.branchPolicy?.structure?.mergeAdjacentSameRole,
+    request: args.requestPolicy?.structure?.mergeAdjacentSameRole,
+  });
+  const structurePreserveSystemSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.structure?.preserveSystemMessages,
+    branch: args.branchPolicy?.structure?.preserveSystemMessages,
+    request: args.requestPolicy?.structure?.preserveSystemMessages,
+  });
+  const structureAssistantRewriteSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.structure?.assistantRewriteStrategy,
+    branch: args.branchPolicy?.structure?.assistantRewriteStrategy,
+    request: args.requestPolicy?.structure?.assistantRewriteStrategy,
+  });
+  const budgetMaxInputTokensSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.budget?.maxInputTokens,
+    branch: args.branchPolicy?.budget?.maxInputTokens,
+    request: args.requestPolicy?.budget?.maxInputTokens,
+  });
+  const budgetReservedCompletionTokensSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.budget?.reservedCompletionTokens,
+    branch: args.branchPolicy?.budget?.reservedCompletionTokens,
+    request: args.requestPolicy?.budget?.reservedCompletionTokens,
+  });
+  const deliveryAllowAssistantPrefillSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.delivery?.allowAssistantPrefill,
+    branch: args.branchPolicy?.delivery?.allowAssistantPrefill,
+    request: args.requestPolicy?.delivery?.allowAssistantPrefill,
+  });
+  const deliveryRequireLastUserSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.delivery?.requireLastUser,
+    branch: args.branchPolicy?.delivery?.requireLastUser,
+    request: args.requestPolicy?.delivery?.requireLastUser,
+  });
+  const deliveryNoAssistantSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.delivery?.noAssistant,
+    branch: args.branchPolicy?.delivery?.noAssistant,
+    request: args.requestPolicy?.delivery?.noAssistant,
+  });
+  const sourceSelectionHistoryModeSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.sourceSelection?.history?.mode,
+    branch: args.branchPolicy?.sourceSelection?.history?.mode,
+    request: args.requestPolicy?.sourceSelection?.history?.mode,
+  });
+  const sourceSelectionHistoryMaxMessagesSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.sourceSelection?.history?.maxMessages,
+    branch: args.branchPolicy?.sourceSelection?.history?.maxMessages,
+    request: args.requestPolicy?.sourceSelection?.history?.maxMessages,
+  });
+  const sourceSelectionMemoryEnabledSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.sourceSelection?.memory?.enabled,
+    branch: args.branchPolicy?.sourceSelection?.memory?.enabled,
+    request: args.requestPolicy?.sourceSelection?.memory?.enabled,
+  });
+  const sourceSelectionWorldbookEnabledSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.sourceSelection?.worldbook?.enabled,
+    branch: args.branchPolicy?.sourceSelection?.worldbook?.enabled,
+    request: args.requestPolicy?.sourceSelection?.worldbook?.enabled,
+  });
+  const sourceSelectionExamplesEnabledSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.sourceSelection?.examples?.enabled,
+    branch: args.branchPolicy?.sourceSelection?.examples?.enabled,
+    request: args.requestPolicy?.sourceSelection?.examples?.enabled,
+  });
+  const structureModeDerivedFromDelivery = resolvedPolicy.delivery.noAssistant === true
+    && effectivePolicy?.structure?.mode !== "no_assistant";
+  const effectiveStructureModeSource = structureModeDerivedFromDelivery
+    ? deliveryNoAssistantSource ?? structureModeSource ?? "system_default"
+    : structureModeSource ?? "system_default";
+  const effectiveStructureMergeAdjacentSource = structureMergeAdjacentSource
+    ?? (structureModeDerivedFromDelivery
+      ? deliveryNoAssistantSource ?? structureModeSource ?? "system_default"
+      : effectivePolicy?.structure?.mode === "strict_alternating"
+        ? structureModeSource ?? "system_default"
+        : "system_default");
+  const assistantRewriteStrategySource = resolvedPolicy.structure.assistantRewriteStrategy
+    ? structureAssistantRewriteSource ?? "system_default"
     : undefined;
 
-  return {
+  const sourceMap: PromptRuntimeSourceMap = {
     structure: {
-      mode: structureModeFromSession ? "session_policy" : "system_default",
-      mergeAdjacentSameRole:
-        persistentPolicy?.structure?.mergeAdjacentSameRole !== undefined || structureModeFromSession
-          ? "session_policy"
-          : "system_default",
-      preserveSystemMessages:
-        persistentPolicy?.structure?.preserveSystemMessages !== undefined
-          ? "session_policy"
-          : "system_default",
+      mode: effectiveStructureModeSource,
+      mergeAdjacentSameRole: effectiveStructureMergeAdjacentSource,
+      preserveSystemMessages: structurePreserveSystemSource ?? "system_default",
       ...(assistantRewriteStrategySource
         ? { assistantRewriteStrategy: assistantRewriteStrategySource }
         : {}),
     },
-    delivery: {
-      allowAssistantPrefill:
-        persistentPolicy?.delivery?.allowAssistantPrefill !== undefined
-          ? "session_policy"
-          : "system_default",
-      requireLastUser:
-        persistentPolicy?.delivery?.requireLastUser !== undefined
-          ? "session_policy"
-          : "system_default",
-      noAssistant:
-        persistentPolicy?.delivery?.noAssistant !== undefined
-          ? "session_policy"
-          : "system_default",
+    ...(resolvedPolicy.budget.maxInputTokens !== undefined || resolvedPolicy.budget.reservedCompletionTokens !== undefined
+      ? {
+          budget: {
+            ...(resolvedPolicy.budget.maxInputTokens !== undefined ? { maxInputTokens: budgetMaxInputTokensSource ?? "system_default" } : {}),
+            ...(resolvedPolicy.budget.reservedCompletionTokens !== undefined ? { reservedCompletionTokens: budgetReservedCompletionTokensSource ?? "system_default" } : {}),
+          },
+        }
+      : {}),
+    sourceSelection: {
+      history: {
+        mode: sourceSelectionHistoryModeSource ?? "system_default",
+        ...(resolvedPolicy.sourceSelection.history.maxMessages !== undefined ? { maxMessages: sourceSelectionHistoryMaxMessagesSource ?? "system_default" } : {}),
+      },
+      memory: { enabled: sourceSelectionMemoryEnabledSource ?? "system_default" },
+      worldbook: { enabled: sourceSelectionWorldbookEnabledSource ?? "system_default" },
+      examples: { enabled: sourceSelectionExamplesEnabledSource ?? "system_default" },
     },
+    delivery: {
+      allowAssistantPrefill: deliveryAllowAssistantPrefillSource ?? "system_default",
+      requireLastUser: deliveryRequireLastUserSource ?? "system_default",
+      noAssistant: deliveryNoAssistantSource ?? "system_default",
+    },
+    ...(args.history && (args.history.sourceBranchId || args.history.sourceMode)
+      ? {
+          history: {
+            ...(args.history.sourceBranchId ? { sourceBranchId: args.history.sourceBranchId } : {}),
+            ...(args.history.sourceMode ? { sourceMode: args.history.sourceMode } : {}),
+          },
+        }
+      : {}),
   };
+
+  return prunePromptRuntimeSourceMap(sourceMap);
 }
 
-function buildPromptRuntimeWarnings(
-  persistentPolicy?: PromptRuntimePersistentPolicy,
+export function buildPromptRuntimeWarnings(
+  effectivePolicy?: PromptRuntimePersistentPolicy,
   metadataWarnings: string[] = [],
 ): string[] {
   const warnings = [...metadataWarnings];
 
   if (
-    persistentPolicy?.delivery?.noAssistant === true
-    && persistentPolicy?.structure?.mode !== "no_assistant"
+    effectivePolicy?.delivery?.noAssistant === true
+    && effectivePolicy?.structure?.mode !== "no_assistant"
   ) {
     warnings.push(DERIVED_NO_ASSISTANT_STRUCTURE_WARNING);
   }
 
   return warnings;
+}
+
+export function buildPromptRuntimeDiagnostics(
+  warnings: string[],
+  options: { branchId?: string; phase?: PromptRuntimeDiagnosticPhase } = {},
+): PromptRuntimeDiagnostic[] {
+  return warnings.map((warning) => {
+    switch (warning) {
+      case INVALID_PROMPT_RUNTIME_POLICY_WARNING:
+        return {
+          code: "invalid_prompt_runtime_policy",
+          message: warning,
+          severity: "warning",
+          source: "policy",
+          fieldPath: "prompt_runtime.policy",
+          ...(options.phase ? { phase: options.phase } : {}),
+        } satisfies PromptRuntimeDiagnostic;
+      case INVALID_PROMPT_RUNTIME_BRANCH_POLICY_WARNING:
+        return {
+          code: "invalid_prompt_runtime_branch_policy",
+          message: warning,
+          severity: "warning",
+          source: "policy",
+          fieldPath: options.branchId ? `prompt_runtime.branchPolicies.${options.branchId}` : "prompt_runtime.branchPolicies",
+          ...(options.phase ? { phase: options.phase } : {}),
+        } satisfies PromptRuntimeDiagnostic;
+      case DERIVED_NO_ASSISTANT_STRUCTURE_WARNING:
+        return {
+          code: "derived_no_assistant_structure",
+          message: warning,
+          severity: "warning",
+          source: "policy",
+          fieldPath: "policy.structure.mode",
+          ...(options.phase ? { phase: options.phase } : {}),
+        } satisfies PromptRuntimeDiagnostic;
+      default:
+        return { code: "prompt_runtime_warning", message: warning, severity: "warning", ...(options.phase ? { phase: options.phase } : {}) };
+    }
+  });
+}
+
+export function buildPromptRuntimeHistoricalExplainDiagnostics(): PromptRuntimeDiagnostic[] {
+  return [
+    {
+      code: "historical_resolved_policy_unavailable",
+      message: "Historical explain did not persist the resolved policy for this floor. The explain view returns persisted prompt snapshot and committed result truth only.",
+      severity: "info",
+      source: "policy",
+      fieldPath: "resolved_policy",
+      phase: "explain",
+    },
+    {
+      code: "historical_source_map_partial",
+      message: "Historical explain can only return source_map.history from committed floor truth. Policy source attribution was not persisted for this floor.",
+      severity: "info",
+      source: "policy",
+      fieldPath: "source_map",
+      phase: "explain",
+    },
+    {
+      code: "historical_trim_reasons_unavailable",
+      message: "Historical explain did not persist trim reasons for this floor, so explain returns trim_reasons as null instead of recomputing budget decisions.",
+      severity: "info",
+      source: "budget",
+      fieldPath: "trim_reasons",
+      phase: "explain",
+    },
+    {
+      code: "historical_excluded_sources_unavailable",
+      message: "Historical explain did not persist excluded sources for this floor, so explain returns excluded_sources as null instead of recomputing source selection.",
+      severity: "info",
+      source: "source_selection",
+      fieldPath: "excluded_sources",
+      phase: "explain",
+    },
+  ];
+}
+
+function parseStringArrayJson(value: string | null | undefined): string[] {
+  const parsed = parseJsonField(value ?? null);
+  return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+}
+
+function parseNumberArrayJson(value: string | null | undefined): number[] {
+  const parsed = parseJsonField(value ?? null);
+  return Array.isArray(parsed)
+    ? parsed.filter((item): item is number => typeof item === "number" && Number.isFinite(item))
+    : [];
+}
+
+function mapPromptSnapshotRowToPreview(row: typeof promptSnapshots.$inferSelect): PromptSnapshotPreview {
+  return {
+    presetId: row.presetId,
+    presetUpdatedAt: row.presetUpdatedAt,
+    presetVersion: row.presetVersion,
+    worldbookId: row.worldbookId,
+    worldbookUpdatedAt: row.worldbookUpdatedAt,
+    worldbookVersion: row.worldbookVersion,
+    regexProfileId: row.regexProfileId,
+    regexProfileUpdatedAt: row.regexProfileUpdatedAt,
+    regexProfileVersion: row.regexProfileVersion,
+    worldbookActivatedEntryUids: parseNumberArrayJson(row.worldbookActivatedEntryUidsJson),
+    regexPreRuleNames: parseStringArrayJson(row.regexPreRuleNamesJson),
+    regexPostRuleNames: parseStringArrayJson(row.regexPostRuleNamesJson),
+    promptMode: row.promptMode,
+    promptDigest: row.promptDigest,
+    tokenEstimate: row.tokenEstimate,
+  };
+}
+
+function mapFloorResultSnapshotRowToHistoricalExplainResult(
+  row: typeof floorResultSnapshots.$inferSelect,
+): PromptRuntimeHistoricalExplainCommittedResult {
+  const usage = parseJsonField(row.usageJson);
+  const verifier = parseJsonField(row.verifierJson);
+  const usageRecord = usage && typeof usage === "object" && !Array.isArray(usage)
+    ? usage as Record<string, unknown>
+    : null;
+  const verifierRecord = verifier && typeof verifier === "object" && !Array.isArray(verifier)
+    ? verifier as Record<string, unknown>
+    : null;
+  return {
+    outputPageId: row.outputPageId,
+    assistantMessageId: row.assistantMessageId,
+    generatedText: row.generatedText,
+    summaries: parseStringArrayJson(row.summariesJson),
+    usage: {
+      promptTokens: typeof usageRecord?.promptTokens === "number" ? usageRecord.promptTokens : 0,
+      completionTokens: typeof usageRecord?.completionTokens === "number" ? usageRecord.completionTokens : 0,
+      totalTokens: typeof usageRecord?.totalTokens === "number" ? usageRecord.totalTokens : 0,
+    },
+    verifier: verifierRecord
+      ? {
+          status: typeof verifierRecord.status === "string" ? verifierRecord.status : "unknown",
+          ...(verifierRecord.suggestion === null || typeof verifierRecord.suggestion === "string" ? { suggestion: verifierRecord.suggestion ?? null } : {}),
+          ...(Array.isArray(verifierRecord.issues)
+            ? {
+                issues: verifierRecord.issues
+                  .filter((item): item is { description: string; severity: "warning" | "error" } => (
+                    !!item
+                    && typeof item === "object"
+                    && "description" in item
+                    && "severity" in item
+                    && typeof item.description === "string"
+                    && (item.severity === "warning" || item.severity === "error")
+                  )),
+              }
+            : {}),
+        }
+      : null,
+    committedAt: row.committedAt,
+  };
 }
 
 export function readPromptRuntimePersistentPolicy(
@@ -651,6 +1388,49 @@ export function readPromptRuntimePersistentPolicy(
   const parsed = promptRuntimePersistentPolicySchema.safeParse(policy);
   if (!parsed.success) {
     return { warnings: [INVALID_PROMPT_RUNTIME_POLICY_WARNING] };
+  }
+
+  const normalized = normalizePersistentPolicy(parsed.data);
+  return normalized
+    ? { persistentPolicy: normalized, warnings: [] }
+    : { warnings: [] };
+}
+
+export function readPromptRuntimeBranchPersistentPolicy(
+  metadataJson: string | null,
+  branchId: string,
+): { persistentPolicy?: PromptRuntimePersistentPolicy; warnings: string[] } {
+  const metadata = parseJsonField(metadataJson);
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return { warnings: [] };
+  }
+
+  const namespace = (metadata as Record<string, unknown>).prompt_runtime;
+  if (namespace === undefined || namespace === null) {
+    return { warnings: [] };
+  }
+
+  if (typeof namespace !== "object" || Array.isArray(namespace)) {
+    return { warnings: [] };
+  }
+
+  const branchPolicies = (namespace as Record<string, unknown>).branchPolicies;
+  if (branchPolicies === undefined || branchPolicies === null) {
+    return { warnings: [] };
+  }
+
+  if (typeof branchPolicies !== "object" || Array.isArray(branchPolicies)) {
+    return { warnings: [INVALID_PROMPT_RUNTIME_BRANCH_POLICY_WARNING] };
+  }
+
+  const branchPolicy = (branchPolicies as Record<string, unknown>)[branchId];
+  if (branchPolicy === undefined || branchPolicy === null) {
+    return { warnings: [] };
+  }
+
+  const parsed = promptRuntimePersistentPolicySchema.safeParse(branchPolicy);
+  if (!parsed.success) {
+    return { warnings: [INVALID_PROMPT_RUNTIME_BRANCH_POLICY_WARNING] };
   }
 
   const normalized = normalizePersistentPolicy(parsed.data);
@@ -697,6 +1477,25 @@ function normalizePersistentPolicy(
     }
   }
 
+  if (value.budget) {
+    const budget = resolvePromptRuntimeBudgetPolicy(value.budget);
+    if (Object.keys(budget).length > 0) {
+      normalized.budget = budget;
+    }
+  }
+
+  if (value.sourceSelection) {
+    const sourceSelection = mergePromptSourceSelectionPolicy(undefined, {
+      ...(value.sourceSelection.history ? { history: { ...value.sourceSelection.history } } : {}),
+      ...(value.sourceSelection.memory ? { memory: { ...value.sourceSelection.memory } } : {}),
+      ...(value.sourceSelection.worldbook ? { worldbook: { ...value.sourceSelection.worldbook } } : {}),
+      ...(value.sourceSelection.examples ? { examples: { ...value.sourceSelection.examples } } : {}),
+    });
+    if (sourceSelection) {
+      normalized.sourceSelection = sourceSelection;
+    }
+  }
+
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
@@ -734,6 +1533,22 @@ function serializePromptRuntimePersistentPolicy(
     };
   }
 
+  if (policy.budget) {
+    serialized.budget = {
+      ...(policy.budget.maxInputTokens !== undefined ? { maxInputTokens: policy.budget.maxInputTokens } : {}),
+      ...(policy.budget.reservedCompletionTokens !== undefined ? { reservedCompletionTokens: policy.budget.reservedCompletionTokens } : {}),
+    };
+  }
+
+  if (policy.sourceSelection) {
+    serialized.sourceSelection = {
+      ...(policy.sourceSelection.history ? { history: policy.sourceSelection.history } : {}),
+      ...(policy.sourceSelection.memory ? { memory: policy.sourceSelection.memory } : {}),
+      ...(policy.sourceSelection.worldbook ? { worldbook: policy.sourceSelection.worldbook } : {}),
+      ...(policy.sourceSelection.examples ? { examples: policy.sourceSelection.examples } : {}),
+    };
+  }
+
   return serialized;
 }
 
@@ -768,6 +1583,35 @@ function writePromptRuntimePersistentPolicyToMetadata(
   return Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined;
 }
 
+function writePromptRuntimeBranchPersistentPolicyToMetadata(
+  metadata: Record<string, unknown>,
+  branchId: string,
+  policy: PromptRuntimePersistentPolicy | undefined,
+): Record<string, unknown> | undefined {
+  const nextMetadata = { ...metadata };
+  const existingNamespace = nextMetadata.prompt_runtime;
+  const nextNamespace = existingNamespace && typeof existingNamespace === "object" && !Array.isArray(existingNamespace)
+    ? { ...(existingNamespace as Record<string, unknown>) }
+    : {};
+  const existingBranchPolicies = nextNamespace.branchPolicies;
+  const nextBranchPolicies = existingBranchPolicies && typeof existingBranchPolicies === "object" && !Array.isArray(existingBranchPolicies)
+    ? { ...(existingBranchPolicies as Record<string, unknown>) }
+    : {};
+
+  if (policy) {
+    nextBranchPolicies[branchId] = serializePromptRuntimePersistentPolicy(policy);
+    nextNamespace.branchPolicies = nextBranchPolicies;
+  } else {
+    delete nextBranchPolicies[branchId];
+    if (Object.keys(nextBranchPolicies).length > 0) nextNamespace.branchPolicies = nextBranchPolicies;
+    else delete nextNamespace.branchPolicies;
+  }
+
+  if (Object.keys(nextNamespace).length > 0) nextMetadata.prompt_runtime = nextNamespace;
+  else delete nextMetadata.prompt_runtime;
+  return Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined;
+}
+
 function parseSnapshotName(snapshotJson: string | null): string | null {
   const snapshot = parseJsonField(snapshotJson);
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
@@ -787,3 +1631,54 @@ function toAssetSummary(id: string | null, name: string | null): PromptRuntimeAs
 
   return { id, name };
 }
+
+function normalizePromptRuntimeBranchId(value: string): string {
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : "main";
+}
+
+function selectPromptRuntimePolicySource(args: {
+  session: unknown;
+  branch: unknown;
+  request: unknown;
+}): Extract<PromptRuntimePolicySource, "session_policy" | "branch_policy" | "request_override"> | undefined {
+  if (args.request !== undefined) {
+    return "request_override";
+  }
+
+  if (args.branch !== undefined) {
+    return "branch_policy";
+  }
+
+  if (args.session !== undefined) {
+    return "session_policy";
+  }
+
+  return undefined;
+}
+
+function prunePromptRuntimeSourceMap(sourceMap: PromptRuntimeSourceMap): PromptRuntimeSourceMap | undefined {
+  const nextSourceMap: PromptRuntimeSourceMap = {
+    ...(sourceMap.structure && Object.keys(sourceMap.structure).length > 0
+      ? { structure: sourceMap.structure }
+      : {}),
+    ...(sourceMap.delivery && Object.keys(sourceMap.delivery).length > 0
+      ? { delivery: sourceMap.delivery }
+      : {}),
+    ...(sourceMap.debug && Object.keys(sourceMap.debug).length > 0
+      ? { debug: sourceMap.debug }
+      : {}),
+    ...(sourceMap.budget && Object.keys(sourceMap.budget).length > 0
+      ? { budget: sourceMap.budget }
+      : {}),
+    ...(sourceMap.sourceSelection && Object.keys(sourceMap.sourceSelection).length > 0
+      ? { sourceSelection: sourceMap.sourceSelection }
+      : {}),
+    ...(sourceMap.history && Object.keys(sourceMap.history).length > 0
+      ? { history: sourceMap.history }
+      : {}),
+  };
+
+  return Object.keys(nextSourceMap).length > 0 ? nextSourceMap : undefined;
+}
+

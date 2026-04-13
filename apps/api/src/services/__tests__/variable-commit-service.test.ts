@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { buildBranchVariableScopeId } from "@tavern/shared";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
@@ -66,7 +67,7 @@ async function seedInputPage(args: {
 async function seedVariable(args: {
   database: DatabaseConnection;
   id?: string;
-  scope: "global" | "chat" | "floor" | "page";
+  scope: "global" | "chat" | "branch" | "floor" | "page";
   scopeId: string;
   key: string;
   value: unknown;
@@ -212,6 +213,57 @@ describe("VariableCommitService", () => {
 
     expect(byKey.get("hp")).toBe(80);
     expect(byKey.get("mood")).toBe("calm");
+  });
+
+  it("keeps variable commit on the page -> floor boundary without touching branch scope", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const branchScopeId = buildBranchVariableScopeId(sessionId, "main");
+    const now = 1_735_690_015_000;
+    const committedAt = now + 500;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, now });
+    await seedInputPage({ database, floorId, pageId, now });
+    await seedVariable({ database, scope: "page", scopeId: pageId, key: "mood", value: "focused", now });
+    await seedVariable({
+      database,
+      scope: "branch",
+      scopeId: branchScopeId,
+      key: "route",
+      value: "existing-branch",
+      now,
+    });
+
+    const result = database.db.transaction((tx) => {
+      return service.promoteAll(
+        {
+          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+          pageId,
+          floorId,
+          sessionId,
+          policy: "replace",
+          committedAt,
+        },
+        tx,
+      );
+    });
+
+    expect(result.fromScope).toBe("page");
+    expect(result.toScope).toBe("floor");
+
+    const floorRows = await database.db
+      .select()
+      .from(variables)
+      .where(and(eq(variables.scope, "floor"), eq(variables.scopeId, floorId)));
+    expect(floorRows.map((row) => [row.key, JSON.parse(row.valueJson)])).toEqual([["mood", "focused"]]);
+
+    const branchRows = await database.db
+      .select()
+      .from(variables)
+      .where(and(eq(variables.scope, "branch"), eq(variables.scopeId, branchScopeId)));
+    expect(branchRows.map((row) => [row.key, JSON.parse(row.valueJson)])).toEqual([["route", "existing-branch"]]);
   });
 
   it("returns an empty summary when pageId is absent", async () => {

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { buildBranchVariableScopeId } from "@tavern/shared";
+import { buildBranchMemoryScopeId, buildBranchVariableScopeId } from "@tavern/shared";
 
 import { buildApp } from "../src/app";
 
@@ -192,12 +192,39 @@ async function getSession(app: FastifyInstance, sessionId: string): Promise<Sess
 
 describe("Import chat routes", () => {
   let app: FastifyInstance;
+  let originalMasterKey: string | undefined;
 
   beforeEach(async () => {
-    ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
+    originalMasterKey = process.env.APP_SECRETS_MASTER_KEY;
+    process.env.APP_SECRETS_MASTER_KEY = "test-master-key";
+
+    ({ app } = await buildApp({
+      databasePath: ":memory:",
+      logger: false,
+      enableWebSocket: false,
+      orchestration: {
+        providers: [
+          {
+            id: "default-openai",
+            type: "openai-compatible",
+            apiKey: "sk-default",
+          },
+        ],
+        defaultModel: {
+          providerId: "default-openai",
+          modelId: "gpt-4o-mini",
+        },
+      },
+    }));
   });
 
   afterEach(async () => {
+    if (originalMasterKey === undefined) {
+      delete process.env.APP_SECRETS_MASTER_KEY;
+    } else {
+      process.env.APP_SECRETS_MASTER_KEY = originalMasterKey;
+    }
+
     await app.close();
   });
 
@@ -369,6 +396,24 @@ describe("Import chat routes", () => {
           created_at: 1700000000600,
           updated_at: 1700000000700,
         },
+        {
+          _original_id: "mem_003",
+          scope: "branch",
+          scope_id_ref: "main",
+          type: "fact",
+          content: { text: "Branch fact" },
+          importance: 0.6,
+          confidence: 1,
+          source_floor_id_ref: "floor_001",
+          source_message_id_ref: null,
+          status: "active",
+          lifecycle_status: "active",
+          source_job_id: "memory-job:ingest_turn:branch-seed",
+          token_count_estimate: 16,
+          last_used_at: 1700000000750,
+          created_at: 1700000000720,
+          updated_at: 1700000000760,
+        },
       ],
       edges: [
         { from_id_ref: "mem_001", to_id_ref: "mem_002", relation: "derived_from", created_at: 1700000000800 },
@@ -393,7 +438,7 @@ describe("Import chat routes", () => {
     expect(importBody.data.page_count).toBe(1);
     expect(importBody.data.message_count).toBe(1);
     expect(importBody.data.variable_count).toBe(4);
-    expect(importBody.data.memory_item_count).toBe(2);
+    expect(importBody.data.memory_item_count).toBe(3);
     expect(importBody.data.memory_edge_count).toBe(1);
     expect(importBody.data.skipped_lines).toBe(0);
     expect(importBody.data.import_source).toBe("thchat");
@@ -508,6 +553,39 @@ describe("Import chat routes", () => {
       derived_from_count: 3,
     }));
 
+    const branchMemoryScopeId = buildBranchMemoryScopeId(sessionId, "main");
+    const branchMemoriesRes = await app.inject({
+      method: "GET",
+      url: `/memories?scope=branch&scope_id=${encodeURIComponent(branchMemoryScopeId)}&limit=10&offset=0&sort_by=created_at&sort_order=asc`,
+    });
+    expect(branchMemoriesRes.statusCode).toBe(200);
+    const branchMemoriesBody = branchMemoriesRes.json<ListResponse<{
+      lifecycle_status: string;
+      source_job_id: string | null;
+      token_count_estimate: number | null;
+      last_used_at: number | null;
+      content: { text: string };
+    }>>();
+    expect(branchMemoriesBody.data).toEqual([
+      expect.objectContaining({
+        lifecycle_status: "active",
+        source_job_id: "memory-job:ingest_turn:branch-seed",
+        token_count_estimate: 16,
+        last_used_at: 1700000000750,
+        content: { text: "Branch fact" },
+      }),
+    ]);
+
+    const branchScopeStatesRes = await app.inject({
+      method: "GET",
+      url: `/memory/scopes?scope=branch&scope_id=${encodeURIComponent(branchMemoryScopeId)}&limit=10&offset=0&sort_by=updated_at&sort_order=asc`,
+    });
+    expect(branchScopeStatesRes.statusCode).toBe(200);
+    const branchScopeStatesBody = branchScopeStatesRes.json<ListResponse<{ revision: number; last_processed_floor_no: number | null; last_compaction_at: number | null }>>();
+    expect(branchScopeStatesBody.data).toEqual([
+      expect.objectContaining({ revision: 1, last_processed_floor_no: 0, last_compaction_at: null }),
+    ]);
+
     const chatScopeStatesRes = await app.inject({
       method: "GET",
       url: `/memory/scopes?scope=chat&scope_id=${sessionId}&limit=10&offset=0&sort_by=updated_at&sort_order=asc`,
@@ -545,6 +623,47 @@ describe("Import chat routes", () => {
     expect(memoryEdgesBody.data).toEqual([
       expect.objectContaining({ relation: "derived_from" }),
     ]);
+  });
+
+  it("POST /import/chat does not synthesize branch local snapshots for imported floors", async () => {
+    const file = makeMinimalThChatFile();
+    file.data.variables = [
+      { scope: "branch", scope_id_ref: "main", key: "branch-key", value: "campfire", updated_at: 1700000000250 },
+    ];
+
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/import/chat",
+      payload: {
+        data: JSON.stringify(file),
+      },
+    });
+
+    expect(importRes.statusCode, importRes.body).toBe(201);
+    const sessionId = importRes.json<ChatImportResponse>().data.session_id;
+
+    const timelineRes = await app.inject({ method: "GET", url: `/sessions/${sessionId}/timeline` });
+    expect(timelineRes.statusCode).toBe(200);
+    const timelineBody = timelineRes.json<TimelineResponse>();
+    const floorId = timelineBody.data.floors[0]!.id;
+
+    const previewRes = await app.inject({
+      method: "POST",
+      url: `/sessions/${sessionId}/prompt-runtime/preview`,
+      payload: {
+        text: "{{getvar::branch-key}}",
+        branch_id: "alt-imported",
+        source_floor_id: floorId,
+      },
+    });
+
+    expect(previewRes.statusCode, previewRes.body).toBe(409);
+    expect(previewRes.json<{ error: { code: string; message: string } }>()).toEqual({
+      error: {
+        code: "branch_local_snapshot_missing",
+        message: `Source floor '${floorId}' in branch 'main' does not have a branch local snapshot`,
+      },
+    });
   });
 
   it("POST /import/chat uses the bound character snapshot and pin policy for .thchat imports", async () => {

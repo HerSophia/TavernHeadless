@@ -1,7 +1,10 @@
 import { nanoid } from "nanoid";
 import { eq, and } from "drizzle-orm";
 import { SimpleTokenCounter } from "@tavern/core";
-import { buildBranchVariableScopeId } from "@tavern/shared";
+import {
+  buildBranchMemoryScopeId,
+  buildBranchVariableScopeId,
+} from "@tavern/shared";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import {
@@ -344,12 +347,18 @@ function publishThChatManifest(
   }
 
   if (data.variables && data.variables.length > 0) {
+    // Imported chat formats currently restore persisted variable rows only.
+    // They do not carry per-floor branch_local_variable_snapshot material, and
+    // we intentionally do not synthesize that snapshot from visible variables
+    // because the exact source-floor local view cannot be reconstructed.
+    // Later branch inheritance should therefore fail with
+    // branch_local_snapshot_missing until exact snapshot data exists.
     const variableService = new VariableService(tx);
     variableService.restoreMany({
       accountId: manifest.accountId,
       items: data.variables.map((variable) => ({
         scope: variable.scope,
-        scopeId: resolveThChatImportScopeId({
+        scopeId: resolveThChatImportVariableScopeId({
           scope: variable.scope,
           scopeIdRef: variable.scope_id_ref,
           sessionId,
@@ -365,7 +374,7 @@ function publishThChatManifest(
   if (data.memories) {
     for (const item of data.memories.items) {
       const itemId = manifest.idMap[item._original_id]!;
-      const scopeId = resolveThChatImportScopeId({
+      const scopeId = resolveThChatImportMemoryScopeId({
         scope: item.scope,
         scopeIdRef: item.scope_id_ref,
         sessionId,
@@ -441,7 +450,7 @@ function publishThChatManifest(
   };
 }
 
-function resolveThChatImportScopeId(input: {
+function resolveThChatImportVariableScopeId(input: {
   scope: "chat" | "floor" | "branch" | "page";
   scopeIdRef: string | null;
   sessionId: string;
@@ -462,6 +471,27 @@ function resolveThChatImportScopeId(input: {
   return input.idMap[input.scopeIdRef] ?? input.scopeIdRef;
 }
 
+function resolveThChatImportMemoryScopeId(input: {
+  scope: "chat" | "floor" | "branch" | "page";
+  scopeIdRef: string | null;
+  sessionId: string;
+  idMap: Record<string, string>;
+}): string {
+  if (input.scope === "chat") {
+    return input.sessionId;
+  }
+
+  if (input.scope === "branch") {
+    return buildBranchMemoryScopeId(input.sessionId, input.scopeIdRef ?? "main");
+  }
+
+  if (!input.scopeIdRef) {
+    return input.sessionId;
+  }
+
+  return input.idMap[input.scopeIdRef] ?? input.scopeIdRef;
+}
+
 function buildImportedMemoryScopeStateRows(input: {
   accountId: string;
   data: ThChatImportManifest["file"]["data"];
@@ -471,15 +501,23 @@ function buildImportedMemoryScopeStateRows(input: {
 }): Array<typeof runtimeScopeStates.$inferInsert> {
   const scopeMeta = new Map<string, { revision: number; hasMacroSummary: boolean }>();
   const scopeRows = new Map<string, typeof runtimeScopeStates.$inferInsert>();
-  const makeScopeKey = (scope: "global" | "chat" | "floor", scopeId: string) => JSON.stringify([scope, scopeId]);
+  const makeScopeKey = (scope: "global" | "chat" | "branch" | "floor", scopeId: string) => JSON.stringify([scope, scopeId]);
+  const branchLastProcessedFloorNo = new Map<string, number>();
 
   const chatLastProcessedFloorNo = input.data.floors.reduce<number | null>(
     (maxFloorNo, floor) => (maxFloorNo === null ? floor.floor_no : Math.max(maxFloorNo, floor.floor_no)),
     null,
   );
 
+  for (const floor of input.data.floors) {
+    const scopeId = buildBranchMemoryScopeId(input.sessionId, floor.branch_id);
+    const key = makeScopeKey("branch", scopeId);
+    const currentFloorNo = branchLastProcessedFloorNo.get(key);
+    branchLastProcessedFloorNo.set(key, currentFloorNo === undefined ? floor.floor_no : Math.max(currentFloorNo, floor.floor_no));
+  }
+
   for (const item of input.data.memories?.items ?? []) {
-    const scopeId = resolveThChatImportScopeId({
+    const scopeId = resolveThChatImportMemoryScopeId({
       scope: item.scope,
       scopeIdRef: item.scope_id_ref,
       sessionId: input.sessionId,
@@ -535,12 +573,32 @@ function buildImportedMemoryScopeStateRows(input: {
     });
   }
 
+  for (const [key, lastProcessedFloorNo] of branchLastProcessedFloorNo.entries()) {
+    const [, scopeId] = JSON.parse(key) as ["branch", string];
+    const meta = scopeMeta.get(key);
+    scopeRows.set(key, {
+      accountId: input.accountId,
+      scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+      scopeKey: buildMemoryRuntimeScopeKey("branch", scopeId),
+      revision: meta?.revision ?? 0,
+      leaseOwner: null,
+      leaseUntil: null,
+      lastProcessedAt: input.now,
+      lastSuccessJobId: null,
+      metadataJson: JSON.stringify({
+        lastProcessedFloorNo,
+        lastCompactionAt: meta?.hasMacroSummary ? input.now : null,
+      }),
+      updatedAt: input.now,
+    });
+  }
+
   for (const [key, meta] of scopeMeta.entries()) {
     if (scopeRows.has(key)) {
       continue;
     }
 
-    const [scope, scopeId] = JSON.parse(key) as ["global" | "chat" | "floor", string];
+    const [scope, scopeId] = JSON.parse(key) as ["global" | "chat" | "branch" | "floor", string];
     scopeRows.set(key, {
       accountId: input.accountId,
       scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
@@ -551,7 +609,7 @@ function buildImportedMemoryScopeStateRows(input: {
       lastProcessedAt: input.now,
       lastSuccessJobId: null,
       metadataJson: JSON.stringify({
-        lastProcessedFloorNo: scope === "chat" ? chatLastProcessedFloorNo : null,
+        lastProcessedFloorNo: scope === "chat" ? chatLastProcessedFloorNo : branchLastProcessedFloorNo.get(key) ?? null,
         lastCompactionAt: meta.hasMacroSummary ? input.now : null,
       }),
       updatedAt: input.now,

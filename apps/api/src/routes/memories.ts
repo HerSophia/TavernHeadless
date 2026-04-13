@@ -2,6 +2,7 @@ import { and, count, eq, gte, inArray, like, lte, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { SimpleTokenCounter } from "@tavern/core";
+import { MEMORY_SCOPES } from "@tavern/shared";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
@@ -11,7 +12,7 @@ import { parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonFi
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth.js";
 
-const memoryScopeSchema = z.enum(["global", "chat", "floor"]);
+const memoryScopeSchema = z.enum(MEMORY_SCOPES);
 const memoryTypeSchema = z.enum(["fact", "summary", "open_loop"]);
 const memorySummaryTierSchema = z.enum(["micro", "macro"]);
 const memoryStatusSchema = z.enum(["active", "deprecated"]);
@@ -380,7 +381,7 @@ const memoryItemJsonSchema = {
   ],
   properties: {
     id: { type: "string" },
-    scope: { type: "string", enum: ["global", "chat", "floor"] },
+    scope: { type: "string", enum: [...MEMORY_SCOPES] },
     scope_id: { type: "string" },
     type: { type: "string", enum: ["fact", "summary", "open_loop"] },
     summary_tier: { anyOf: [{ type: "string", enum: ["micro", "macro"] }, { type: "null" }] },
@@ -419,7 +420,7 @@ const memoryEdgeJsonSchema = {
 } as const;
 
 const memoryFilterJsonSchemaProperties = {
-  scope: { type: "string", enum: ["global", "chat", "floor"] },
+  scope: { type: "string", enum: [...MEMORY_SCOPES] },
   scope_id: { type: "string", minLength: 1 },
   type: { type: "string", enum: ["fact", "summary", "open_loop"] },
   summary_tier: { type: "string", enum: ["micro", "macro"] },
@@ -443,7 +444,7 @@ const createMemoryBodyJsonSchema = {
   type: "object",
   required: ["scope", "scope_id", "type", "content"],
   properties: {
-    scope: { type: "string", enum: ["global", "chat", "floor"] },
+    scope: { type: "string", enum: [...MEMORY_SCOPES] },
     scope_id: { type: "string", minLength: 1 },
     type: { type: "string", enum: ["fact", "summary", "open_loop"] },
     summary_tier: { type: "string", enum: ["micro", "macro"] },

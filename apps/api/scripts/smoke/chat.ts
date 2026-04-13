@@ -2,7 +2,7 @@ import type { SmokeContext } from "./harness.js";
 import { assert, must } from "./harness.js";
 
 export async function smokeChat(ctx: SmokeContext): Promise<void> {
-  const { api, runId, runStep } = ctx;
+  const { api, runId, runStep, track, addCleanup } = ctx;
   const sessionId = must(ctx.shared.sessionId, "smokeChat requires sessionId");
   const committedBranchFloorId = must(ctx.shared.committedBranchFloorId, "smokeChat requires committedBranchFloorId");
   let previewEnabled = false;
@@ -196,8 +196,8 @@ export async function smokeChat(ctx: SmokeContext): Promise<void> {
       assert(text === "flat/霜刃", `Prompt Runtime preview must preserve exact-key-first and quoted-key semantics, got: ${String(text)}`);
     });
 
-    await runStep("POST /sessions/:id/prompt-runtime/preview (branch inheritance)", async () => {
-      const response = await api.request<{ data?: Record<string, unknown> }>(
+    await runStep("POST /sessions/:id/prompt-runtime/preview (raw CRUD floor without snapshot => 409)", async () => {
+      const response = await api.request<{ error?: { code?: string; message?: string } }>(
         "POST",
         `/sessions/${sessionId}/prompt-runtime/preview`,
         {
@@ -205,14 +205,117 @@ export async function smokeChat(ctx: SmokeContext): Promise<void> {
           branch_id: `${runId}-preview-branch`,
           source_floor_id: committedBranchFloorId,
         },
+        [409]
+      );
+      assert(response.body?.error?.code === "branch_local_snapshot_missing", "Prompt Runtime preview must reject raw CRUD floors that do not carry branch-local snapshots");
+      assert(
+        (response.body?.error?.message ?? "").includes("does not have a branch local snapshot"),
+        "Prompt Runtime preview raw CRUD floor smoke must preserve the strict snapshot failure message"
+      );
+    });
+
+    await runStep("POST /sessions/:id/prompt-runtime/preview (imported floor without snapshot => 409)", async () => {
+      const importedAt = Date.now();
+      const importResponse = await api.request<{ data?: { session_id?: string } }>(
+        "POST",
+        "/import/chat",
+        {
+          data: JSON.stringify({
+            spec: "tavern_headless_chat",
+            spec_version: "1.0.0",
+            exported_at: importedAt,
+            export_source: "smoke",
+            data: {
+              title: `${runId}-imported-legacy`,
+              status: "active",
+              created_at: importedAt,
+              updated_at: importedAt,
+              character_snapshot: null,
+              user_snapshot: null,
+              character_sync_policy: "pin",
+              floors: [
+                {
+                  floor_no: 0,
+                  branch_id: "main",
+                  parent_floor_id_ref: null,
+                  state: "committed",
+                  token_in: 0,
+                  token_out: 1,
+                  metadata: null,
+                  created_at: importedAt,
+                  updated_at: importedAt,
+                  _original_id: "legacy-floor-001",
+                  pages: [
+                    {
+                      page_no: 0,
+                      page_kind: "output",
+                      is_active: true,
+                      version: 1,
+                      checksum: null,
+                      created_at: importedAt,
+                      updated_at: importedAt,
+                      _original_id: "legacy-page-001",
+                      messages: [
+                        {
+                          seq: 0,
+                          role: "assistant",
+                          content: "legacy reply",
+                          content_format: "text",
+                          token_count: 1,
+                          is_hidden: false,
+                          source: "smoke-import",
+                          created_at: importedAt,
+                          _original_id: "legacy-msg-001",
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+              variables: [
+                {
+                  scope: "branch",
+                  scope_id_ref: "main",
+                  key: "legacy",
+                  value: "imported",
+                  updated_at: importedAt,
+                },
+              ],
+            },
+          }),
+        },
+        [201]
+      );
+      const importedSessionId = must(importResponse.body?.data?.session_id, "Prompt Runtime import smoke must return a session_id");
+      track("sessions", importedSessionId);
+      addCleanup(async () => {
+        await api.request("DELETE", `/sessions/${importedSessionId}`, undefined, [200, 404]);
+      });
+
+      const timelineResponse = await api.request<{ data?: { floors?: Array<{ id?: string }> } }>(
+        "GET",
+        `/sessions/${importedSessionId}/timeline`,
+        undefined,
         [200]
       );
-      const data = response.body?.data;
-      const macro = (data?.runtime_trace as Record<string, unknown> | undefined)?.macro as Record<string, unknown> | undefined;
-      const stagedMutations = Array.isArray(macro?.staged_mutations) ? macro.staged_mutations as Array<Record<string, unknown>> : [];
+      const importedFloorId = must(timelineResponse.body?.data?.floors?.[0]?.id, "Prompt Runtime import smoke must return the imported floor id");
 
-      assert(data?.text === "main", `Prompt Runtime preview must inherit source floor local values into a new branch context, got: ${String(data?.text)}`);
-      assert(stagedMutations.length === 0, "Prompt Runtime preview branch inheritance smoke must keep staged_mutations empty");
+      const previewResponse = await api.request<{ error?: { code?: string; message?: string } }>(
+        "POST",
+        `/sessions/${importedSessionId}/prompt-runtime/preview`,
+        {
+          text: "{{getvar::legacy}}",
+          branch_id: `${runId}-imported-preview-branch`,
+          source_floor_id: importedFloorId,
+        },
+        [409]
+      );
+
+      assert(previewResponse.body?.error?.code === "branch_local_snapshot_missing", "Prompt Runtime imported floor smoke must fail with branch_local_snapshot_missing");
+      assert(
+        (previewResponse.body?.error?.message ?? "").includes("does not have a branch local snapshot"),
+        "Prompt Runtime imported floor smoke must preserve the strict snapshot failure message"
+      );
     });
   }
 

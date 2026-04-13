@@ -117,9 +117,32 @@ export type PromptRuntimeBudgetGroupTrace = {
   tokenCount: number;
 };
 
+export type PromptTrimReasonCode =
+  | "budget_exceeded"
+  | "group_limit_exceeded"
+  | "provider_constraint"
+  | "policy_disabled";
+
+export type PromptTrimReason = {
+  detail?: string;
+  group: string;
+  prunedTokenCount?: number;
+  reason: PromptTrimReasonCode;
+};
+
 export type PromptRuntimeBudgetTrace = {
   byGroup: PromptRuntimeBudgetGroupTrace[];
+  trimReasons?: PromptTrimReason[];
 };
+
+export type PromptRuntimeSourceKind = "history" | "summary" | "memory" | "worldbook" | "examples" | "authors_note";
+export type PromptSourceExclusionReasonCode = "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+export type PromptSourceExclusionReason = {
+  detail?: string;
+  reason: PromptSourceExclusionReasonCode;
+  source: PromptRuntimeSourceKind;
+};
+export type PromptRuntimeSourceSelectionTrace = { excludedSources: PromptSourceExclusionReason[] };
 
 export type PromptRuntimeStructureTrace = {
   assistantRewriteCount: number;
@@ -202,6 +225,7 @@ export type PromptRuntimeTrace = {
   delivery?: PromptRuntimeDeliveryTrace;
   macro?: PromptRuntimeMacroTrace;
   memory?: PromptRuntimeMemoryTrace;
+  sourceSelection?: PromptRuntimeSourceSelectionTrace;
   preset?: PromptRuntimePresetTrace;
   regex?: PromptRuntimeRegexTrace;
   structure?: PromptRuntimeStructureTrace;
@@ -337,6 +361,11 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
             byGroup: readArray(budgets.by_group)
               .map(mapPromptRuntimeBudgetGroupTrace)
               .filter((item): item is PromptRuntimeBudgetGroupTrace => item !== null),
+            ...(budgets.trim_reasons !== undefined
+              ? {
+                  trimReasons: readArray(budgets.trim_reasons).map(mapPromptTrimReason).filter((item): item is PromptTrimReason => item !== null),
+                }
+              : {}),
           },
         }
       : {}),
@@ -403,6 +432,15 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
                     .filter((range): range is PromptRuntimeVisibilityRange => range !== null),
                 }
               : {}),
+          },
+        }
+      : {}),
+    ...(readRecord(record.source_selection)
+      ? {
+          sourceSelection: {
+            excludedSources: readArray(readRecord(record.source_selection)?.excluded_sources)
+              .map(mapPromptSourceExclusionReason)
+              .filter((item): item is PromptSourceExclusionReason => item !== null),
           },
         }
       : {}),
@@ -551,6 +589,38 @@ function mapPromptRuntimeBudgetGroupTrace(value: unknown): PromptRuntimeBudgetGr
     group: readString(record.group),
     prunedTokenCount: readNullableNumber(record.pruned_token_count) ?? undefined,
     tokenCount: readNumber(record.token_count),
+  };
+}
+
+function mapPromptTrimReason(value: unknown): PromptTrimReason | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const reason = readString(record.reason);
+  if (reason !== "budget_exceeded" && reason !== "group_limit_exceeded" && reason !== "provider_constraint" && reason !== "policy_disabled") {
+    return null;
+  }
+
+  return {
+    group: readString(record.group),
+    reason,
+    detail: readOptionalString(record.detail),
+    prunedTokenCount: readNullableNumber(record.pruned_token_count) ?? undefined,
+  };
+}
+
+function mapPromptSourceExclusionReason(value: unknown): PromptSourceExclusionReason | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    source: readString(record.source) as PromptRuntimeSourceKind,
+    reason: readString(record.reason) as PromptSourceExclusionReasonCode,
+    detail: readOptionalString(record.detail),
   };
 }
 

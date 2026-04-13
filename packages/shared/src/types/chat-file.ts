@@ -73,7 +73,7 @@ export type ThChatVariable = z.infer<typeof thChatVariableSchema>;
 
 export const thChatMemoryItemSchema = z.object({
   _original_id: z.string(),
-  scope: z.enum(['chat', 'floor']),
+  scope: z.enum(['chat', 'branch', 'floor']),
   scope_id_ref: z.string().nullable(),
   type: z.enum(['fact', 'summary', 'open_loop']),
   summary_tier: z.enum(['micro', 'macro']).nullable().optional(),

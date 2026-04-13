@@ -17,6 +17,9 @@ import {
   type PromptRuntimePresetTrace as CorePromptRuntimePresetTrace,
   type PromptRuntimeRegexTrace as CorePromptRuntimeRegexTrace,
   type PromptRuntimeStructureTrace as CorePromptRuntimeStructureTrace,
+  type PromptSourceExclusionReason as CorePromptSourceExclusionReason,
+  type PromptRuntimeSourceSelectionTrace as CorePromptRuntimeSourceSelectionTrace,
+  type PromptTrimReason as CorePromptTrimReason,
   type PromptRuntimeTrace as CorePromptRuntimeTrace,
   type PromptRuntimeVisibilityTrace as CorePromptRuntimeVisibilityTrace,
   type PromptRuntimeWorldbookTrace as CorePromptRuntimeWorldbookTrace,
@@ -233,6 +236,12 @@ export type PromptRuntimeBudgetTrace = CorePromptRuntimeBudgetTrace;
 
 export type PromptRuntimeMemoryTrace = CorePromptRuntimeMemoryTrace;
 
+export type PromptTrimReason = CorePromptTrimReason;
+
+export type PromptSourceExclusionReason = CorePromptSourceExclusionReason;
+
+export type PromptRuntimeSourceSelectionTrace = CorePromptRuntimeSourceSelectionTrace;
+
 export type PromptStructureMode = "default" | "strict_alternating" | "no_assistant";
 
 export type PromptStructureAssistantRewriteStrategy = "to_system" | "to_user_transcript";
@@ -250,6 +259,18 @@ export interface PromptDeliveryPolicy {
   allowAssistantPrefill?: boolean;
   requireLastUser?: boolean;
   noAssistant?: boolean;
+}
+
+export interface PromptBudgetPolicy {
+  maxInputTokens?: number;
+  reservedCompletionTokens?: number;
+}
+
+export interface PromptSourceSelectionPolicy {
+  history?: { mode?: "full" | "windowed"; maxMessages?: number };
+  memory?: { enabled?: boolean };
+  worldbook?: { enabled?: boolean };
+  examples?: { enabled?: boolean };
 }
 
 export type PromptDeliveryDegradeReason = PromptRuntimeDeliveryDegradeReason;
@@ -347,6 +368,8 @@ export interface AssemblePromptOptions {
   assistantPrefillStrategy?: AssistantPrefillExecutionStrategy;
   includeWorldbookMatchTrace?: boolean;
   runKind?: PromptMacroRunKind;
+  budget?: PromptBudgetPolicy;
+  sourceSelection?: PromptSourceSelectionPolicy;
 }
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
@@ -1842,6 +1865,7 @@ export function buildPromptSnapshotRecord(args: {
 export function buildPromptRuntimeBudgetTrace(args: {
   byGroup?: Record<string, number>;
   prunedByGroup?: Record<string, number>;
+  trimReasons?: PromptTrimReason[];
 }): PromptRuntimeBudgetTrace | undefined {
   const groups = new Set<string>([
     ...Object.keys(args.byGroup ?? {}),
@@ -1853,6 +1877,7 @@ export function buildPromptRuntimeBudgetTrace(args: {
   }
 
   return {
+    ...(args.trimReasons && args.trimReasons.length > 0 ? { trimReasons: args.trimReasons } : {}),
     byGroup: Array.from(groups)
       .sort((left, right) => left.localeCompare(right))
       .map((group) => ({

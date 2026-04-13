@@ -168,7 +168,7 @@ export type BuildAppResult = {
 
 export type MemoryMaintenanceScopeRef = {
   accountId: string;
-  scope: "global" | "chat" | "floor";
+  scope: "global" | "chat" | "branch" | "floor";
   scopeId: string;
 };
 

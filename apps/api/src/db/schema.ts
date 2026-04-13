@@ -372,7 +372,7 @@ export const memoryItems = sqliteTable(
   "memory_item",
   {
     id: text("id").primaryKey(),
-    scope: text("scope", { enum: ["global", "chat", "floor"] }).notNull(),
+    scope: text("scope", { enum: ["global", "chat", "branch", "floor"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     type: text("type", { enum: ["fact", "summary", "open_loop"] }).notNull(),
     summaryTier: text("summary_tier", { enum: ["micro", "macro"] }),

@@ -9,8 +9,13 @@ import type {
   MemoryItem,
   MemoryStore,
 } from "@tavern/core";
-import type { MemoryJobType } from "@tavern/shared";
-import { MemoryCompactionPlanner } from "@tavern/core";
+import { MemoryCompactionPlanner, MemoryScopeResolver } from "@tavern/core";
+import {
+  buildBranchMemoryScopeId,
+  parseBranchMemoryScopeId,
+  type MemoryJobType,
+  type MemoryScope,
+} from "@tavern/shared";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import {
@@ -57,6 +62,9 @@ interface IngestTurnProcessingContext {
   recentSummaries: Awaited<ReturnType<MemoryStore["query"]>>;
   existingFacts: Awaited<ReturnType<MemoryStore["query"]>>;
   existingOpenLoops: Awaited<ReturnType<MemoryStore["query"]>>;
+  branchId?: string;
+  scope: MemoryScope;
+  scopeId: string;
 }
 
 interface CompactMacroProcessingContext {
@@ -68,7 +76,7 @@ interface CompactMacroProcessingContext {
 
 interface CompactMacroEnqueueArgs {
   accountId: string;
-  scope: "global" | "chat" | "floor";
+  scope: MemoryScope;
   scopeId: string;
   triggerFloorId?: string;
   committedAt: number;
@@ -85,16 +93,46 @@ export interface MemoryRuntimeProcessorDependencies {
   enableMacroCompaction: boolean;
 }
 
+const visibleScopeResolver = new MemoryScopeResolver();
+
+function normalizeBranchId(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function resolveDefaultMemoryScope(args: { sessionId: string; branchId?: string }): { scope: MemoryScope; scopeId: string } {
+  const branchId = normalizeBranchId(args.branchId);
+  if (branchId) {
+    return {
+      scope: "branch",
+      scopeId: buildBranchMemoryScopeId(args.sessionId, branchId),
+    };
+  }
+
+  return {
+    scope: "chat",
+    scopeId: args.sessionId,
+  };
+}
+
 function resolveMemoryJobSessionId(
-  scope: "global" | "chat" | "floor",
+  scope: MemoryScope,
   scopeId: string,
   sessionId?: string,
 ): string | undefined {
-  return scope === "chat" ? scopeId : sessionId;
+  if (scope === "chat") {
+    return scopeId;
+  }
+
+  if (scope === "branch") {
+    return parseBranchMemoryScopeId(scopeId)?.sessionId ?? sessionId;
+  }
+
+  return sessionId;
 }
 
 function resolveMemoryJobFloorId(
-  scope: "global" | "chat" | "floor",
+  scope: MemoryScope,
   scopeId: string,
   floorId?: string | null,
 ): string | undefined {
@@ -106,7 +144,7 @@ function resolveMemoryJobFloorId(
 }
 
 function buildMemoryJobEventContext(args: {
-  scope: "global" | "chat" | "floor";
+  scope: MemoryScope;
   scopeId: string;
   sessionId?: string;
   floorId?: string | null;
@@ -231,18 +269,59 @@ async function loadAssistantMessage(db: AppDb, messageId: string, accountId: str
   return row.content;
 }
 
+async function loadFloorScopeContext(
+  db: AppDb,
+  floorId: string,
+  accountId: string,
+): Promise<{ sessionId: string; branchId: string }> {
+  const [row] = await db
+    .select({ sessionId: floors.sessionId, branchId: floors.branchId })
+    .from(floors)
+    .innerJoin(sessions, eq(floors.sessionId, sessions.id))
+    .where(and(
+      eq(floors.id, floorId),
+      eq(sessions.accountId, accountId),
+    ))
+    .limit(1);
+
+  if (!row?.sessionId || !row.branchId) {
+    throw new RuntimeJobFatalError(`Floor scope context not found for floor '${floorId}'`);
+  }
+
+  return row;
+}
+
 async function loadIngestContext(
   deps: MemoryRuntimeProcessorDependencies,
   payload: MemoryIngestTurnJobPayload,
   sourceJobId: string,
 ): Promise<IngestTurnProcessingContext> {
+  const fallbackScopeRef = resolveDefaultMemoryScope({
+    sessionId: payload.sessionId,
+    branchId: payload.branchId,
+  });
   try {
-    const [userMessage, assistantMessage, recentSummaries, existingFacts, existingOpenLoops] = await Promise.all([
+    const [floorScopeContext, userMessage, assistantMessage] = await Promise.all([
+      loadFloorScopeContext(deps.db, payload.floorId, payload.accountId),
       loadUserMessage(deps.db, payload.floorId, payload.accountId),
       loadAssistantMessage(deps.db, payload.assistantMessageId, payload.accountId),
+    ]);
+
+    const branchId = normalizeBranchId(payload.branchId) ?? floorScopeContext.branchId;
+    const scopeRef = resolveDefaultMemoryScope({
+      sessionId: payload.sessionId,
+      branchId,
+    });
+    const scopeRefs = visibleScopeResolver.resolveVisibleRefs({
+      accountId: payload.accountId,
+      sessionId: payload.sessionId,
+      branchId,
+      floorId: payload.floorId,
+    });
+
+    const [recentSummaries, existingFacts, existingOpenLoops] = await Promise.all([
       deps.memoryStore.query({
-        scope: "chat",
-        scopeId: payload.sessionId,
+        scopeRefs,
         accountId: payload.accountId,
         type: "summary",
         status: "active",
@@ -252,8 +331,7 @@ async function loadIngestContext(
         limit: 20,
       }),
       deps.memoryStore.query({
-        scope: "chat",
-        scopeId: payload.sessionId,
+        scopeRefs,
         accountId: payload.accountId,
         type: "fact",
         status: "active",
@@ -263,8 +341,7 @@ async function loadIngestContext(
         limit: 50,
       }),
       deps.memoryStore.query({
-        scope: "chat",
-        scopeId: payload.sessionId,
+        scopeRefs,
         accountId: payload.accountId,
         type: "open_loop",
         status: "active",
@@ -282,13 +359,16 @@ async function loadIngestContext(
       extractedSummaries: payload.summaries.map((summary) => summary.trim()).filter((summary) => summary.length > 0),
       recentSummaries,
       existingFacts,
+      ...(branchId ? { branchId } : {}),
+      scope: scopeRef.scope,
+      scopeId: scopeRef.scopeId,
       existingOpenLoops,
     };
   } catch (error) {
     await emitBestEffortEvent(deps.eventBus, "memory.consolidation_context_failed", {
       ...buildMemoryJobEventContext({
-        scope: "chat",
-        scopeId: payload.sessionId,
+        scope: fallbackScopeRef.scope,
+        scopeId: fallbackScopeRef.scopeId,
         sessionId: payload.sessionId,
         floorId: payload.floorId,
         sourceJobId,
@@ -390,16 +470,16 @@ async function runIngestProcessor(
       recentSummaries: context.recentSummaries,
       existingFacts: context.existingFacts,
       existingOpenLoops: context.existingOpenLoops,
-      scope: "chat",
-      scopeId: payload.sessionId,
+      scope: context.scope,
+      scopeId: context.scopeId,
       sourceFloorId: payload.floorId,
     });
 
     if (result.degraded?.reason === "json_parse_failed") {
       await emitBestEffortEvent(deps.eventBus, "memory.consolidation_json_parse_failed", {
         ...buildMemoryJobEventContext({
-          scope: "chat",
-          scopeId: payload.sessionId,
+          scope: context.scope,
+          scopeId: context.scopeId,
           sessionId: payload.sessionId,
           floorId: payload.floorId,
           sourceJobId,
@@ -414,8 +494,8 @@ async function runIngestProcessor(
   } catch (error) {
     await emitBestEffortEvent(deps.eventBus, "memory.consolidation_failed", {
       ...buildMemoryJobEventContext({
-        scope: "chat",
-        scopeId: payload.sessionId,
+        scope: context.scope,
+        scopeId: context.scopeId,
         sessionId: payload.sessionId,
         floorId: payload.floorId,
         sourceJobId,
@@ -508,7 +588,7 @@ function enqueueCompactMacroIfNeeded(
     accountId: args.accountId,
     scope: args.scope,
     scopeId: args.scopeId,
-    sessionId: args.scope === "chat" ? args.scopeId : undefined,
+    sessionId: resolveMemoryJobSessionId(args.scope, args.scopeId),
     sourceMicroIds: plan.sourceMicroIds,
     coverageStartFloorNo: plan.coverageStartFloorNo,
     coverageEndFloorNo: plan.coverageEndFloorNo,
@@ -570,11 +650,12 @@ export function createMemoryRuntimeJobProcessorRegistry(
       ingestOutput: prepared.ingestOutput,
       sourceFloorNo: payload.floorNo,
       sourceJobId: job.id,
-      defaultScope: "chat",
-      defaultScopeId: payload.sessionId,
+      defaultScope: prepared.context.scope,
+      defaultScopeId: prepared.context.scopeId,
       scopeContext: {
         accountId: payload.accountId,
         sessionId: payload.sessionId,
+        ...(prepared.context.branchId ? { branchId: prepared.context.branchId } : {}),
         floorId: payload.floorId,
       },
       sourceFloorId: payload.floorId,
@@ -588,8 +669,8 @@ export function createMemoryRuntimeJobProcessorRegistry(
     if (deps.enableMacroCompaction) {
       enqueueCompactMacroIfNeeded(tx, {
         accountId: payload.accountId,
-        scope: "chat",
-        scopeId: payload.sessionId,
+        scope: prepared.context.scope,
+        scopeId: prepared.context.scopeId,
         triggerFloorId: payload.floorId,
         committedAt: completedAt,
         lastProcessedFloorNo: latestProcessedFloorNo,
@@ -642,6 +723,7 @@ export function createMemoryRuntimeJobProcessorRegistry(
         scopeContext: {
           accountId: payload.accountId,
           sessionId,
+          ...(payload.scope === "branch" ? { branchId: parseBranchMemoryScopeId(payload.scopeId)?.branchId } : {}),
           floorId: payload.triggerFloorId,
         },
         sourceFloorId,
@@ -758,7 +840,7 @@ export function createMemoryRuntimeJobProcessorRegistry(
 
 export function buildMemoryRuntimeScopeRef(
   accountId: string,
-  scope: "global" | "chat" | "floor",
+  scope: MemoryScope,
   scopeId: string,
 ): RuntimeScopeRef {
   return {

@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../src/db/client.js";
-import { accounts, memoryEdges, memoryItems, runtimeJobs, runtimeScopeStates } from "../src/db/schema.js";
+import { accounts, memoryEdges, memoryItems, runtimeJobs, runtimeScopeStates, sessions } from "../src/db/schema.js";
 import { registerAuth } from "../src/plugins/auth.js";
 import { registerMemoryJobRoutes } from "../src/routes/memory-jobs.js";
 import { registerMemoryRoutes } from "../src/routes/memories.js";
@@ -25,6 +25,17 @@ async function seedDefaultAccount(database: DatabaseConnection, now: number): Pr
     createdAt: now,
     updatedAt: now,
   }).onConflictDoNothing().run();
+}
+
+async function seedSession(database: DatabaseConnection, sessionId: string, now: number): Promise<void> {
+  await database.db.insert(sessions).values({
+    id: sessionId,
+    title: "Memory Jobs Test",
+    accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+  });
 }
 
 function toLegacyMemoryJob(row: typeof runtimeJobs.$inferSelect) {
@@ -279,6 +290,7 @@ describe("memory admin routes", () => {
     const now = 1_735_710_020_000;
     const sessionId = nanoid();
     await seedDefaultAccount(database, now);
+    await seedSession(database, sessionId, now);
     await registerMemoryJobRoutes(app, database, { enableBackgroundWorker: true });
 
     await database.db.insert(memoryItems).values(

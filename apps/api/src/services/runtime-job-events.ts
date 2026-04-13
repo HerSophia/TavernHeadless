@@ -1,6 +1,8 @@
 import type { CoreEventBus, CoreEventMap } from "@tavern/core";
+import { parseBranchMemoryScopeId } from "@tavern/shared";
 
 import type { RuntimeJobRecord, RuntimeJobStatus } from "./runtime-job-types.js";
+import { parseMemoryRuntimeScopeKey } from "./memory-runtime-job-definitions.js";
 
 type RuntimeJobEventName =
   | "runtime.job_enqueued"
@@ -36,8 +38,17 @@ function deriveSessionId(job: RuntimeJobRecord): string | undefined {
     return job.sessionId;
   }
 
-  if (job.scopeType === "memory" && job.scopeKey.startsWith("chat:")) {
-    return job.scopeKey.slice("chat:".length);
+  if (job.scopeType === "memory") {
+    const scopeRef = parseMemoryRuntimeScopeKey(job.scopeKey);
+    if (scopeRef.scope === "chat") {
+      return scopeRef.scopeId;
+    }
+
+    if (scopeRef.scope === "branch") {
+      return parseBranchMemoryScopeId(scopeRef.scopeId)?.sessionId;
+    }
+
+    return undefined;
   }
 
   if (job.scopeType === "chat_transfer" && job.scopeKey.startsWith("session:")) {

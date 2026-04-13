@@ -8,6 +8,8 @@ outline: [2, 3]
 
 如果你只需要对一段文本做宏 preview，而不需要完整 prompt 组装，请改用 `POST /sessions/:id/prompt-runtime/preview`。它复用同一条宏主线，但不会创建 floor，也不会调用 LLM。
 
+如果你需要回看某个已提交楼层在当时真正落库的 `prompt_snapshot` 和 committed result，而不是当前请求的 live / dry-run 调试结果，请使用 `GET /floors/:id/prompt-runtime/explain`。它只读取持久化真相，不会重新组装 prompt，也不会重新计算 budget / source selection。
+
 ## 发送消息并生成回复
 
 ```http
@@ -84,7 +86,7 @@ POST /sessions/:id/respond
 | ------ | ---- | ---- |
 | `400` | `validation_error` / `invalid_message_scope` | 参数校验失败，或消息作用域错误 |
 | `404` | `not_found` | 会话不存在 |
-| `409` | `session_archived` / `generation_conflict` / `commit_conflict` / `generation_target_stale` | 会话状态冲突、提交边界冲突，或排队请求等待期间目标上下文已经变化 |
+| `409` | `session_archived` / `generation_conflict` / `commit_conflict` / `generation_target_stale` / `branch_local_snapshot_missing` | 会话状态冲突、提交边界冲突、排队请求等待期间目标上下文已经变化，或新分支所依赖的 source floor 缺少精确 local snapshot |
 | `503` | `secret_unavailable` / `commit_busy` / `generation_queue_timeout` | 密钥不可用，或生成 / 提交等待阶段已超时 |
 | `504` | `generation_timeout` | LLM 执行超时 |
 | `500` | `secret_invalid_format` / `orchestration_failed` / `turn_commit_failed` | 已保存的密文无法解密，或生成过程出现未分类内部错误 |
@@ -92,6 +94,8 @@ POST /sessions/:id/respond
 上表列出的是常见错误，不是穷尽列表。
 
 当前聊天链路还可能返回：`source_floor_not_found`、`invalid_tool_mode`、`tool_replay_blocked`、`tool_replay_confirmation_required`、`profile_not_found`、`profile_disabled`、`instance_slot_disabled_required`、`tool_catalog_conflict`、`generation_cancelled`（`499`）等 code。客户端应按 `error.code` 做分支处理，而不应只依赖状态码。
+
+如果 `respond` 或 `edit-and-regenerate` 要从一个尚未物化的新分支继承 source floor 的 local 兼容视图，但该 source floor 缺少 `branch_local_variable_snapshot`，服务端现在会直接返回 `409 branch_local_snapshot_missing`，不再退回到当前可见 branch/chat 值。
 
 这里的 `commit_busy` 是聊天提交链路专用错误，不复用资源写入路径上的 `resource_busy`。
 
@@ -184,7 +188,10 @@ POST /sessions/:id/respond/dry-run
 | `debug_options` | object | 否 | dry-run 额外调试选项 |
 | `debug_options.include_worldbook_matches` | boolean | 否 | 是否返回 `assembly.worldbook_matches`。默认 `false` |
 
-当前 dry-run 使用独立请求契约。它只接受 `message`、`prompt_intent` 和 `debug_options`。
+当前 dry-run 使用独立请求契约。除 `message`、`prompt_intent`、`debug_options` 外，还支持：
+
+- `budget`：当前首轮支持 `max_input_tokens`、`reserved_completion_tokens`
+- `source_selection`：当前首轮支持 `history` / `memory` / `worldbook` / `examples`
 
 ### 响应 `200`
 
@@ -290,6 +297,8 @@ POST /sessions/:id/respond/dry-run
 | `macro_used_names` | `assembly` | string[] | 本轮实际使用到的宏名 |
 | `macro_mutation_preview` | `assembly` | array | preview / dry-run 下的 would-write 列表 |
 | `macro_staged_mutations` | `assembly` | array | assemble 阶段冻结的 staged mutation |
+| `runtime_trace.budgets.trim_reasons` | `runtime_trace` | array | 结构化 trim 原因。当前首轮主要覆盖 token budget 裁剪 |
+| `runtime_trace.source_selection.excluded_sources` | `runtime_trace` | array | 结构化 source exclusion 原因。当前首轮覆盖 history / memory / worldbook / examples 级说明 |
 | `macro_traces` | `assembly` | array | 宏求值 trace 列表 |
 
 当前 `macro_traces` 中已经包含最小调试元数据，典型字段包括：
@@ -319,6 +328,11 @@ Prompt dry-run 与提示词调试场景对宏系统采用只读执行边界：
 - dry-run 与 live 都会基于真实主链汇总宏诊断
 - 对外调试时优先查看 `runtime_trace.macro`
 - staged mutation 只在 respond / regenerate 的 assemble 阶段冻结，并在 commit 阶段消费
+
+Phase 2 首轮里，`runtime_trace` 新增两类更正式的 explain 输出：
+
+- `budgets.trim_reasons`：回答“为什么被裁剪”
+- `source_selection.excluded_sources`：回答“为什么没有进入 prompt”
 
 ### `if` 条件块支持范围
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildBranchMemoryScopeId } from '@tavern/shared';
 
 import {
   MemoryScopeResolutionError,
@@ -10,6 +11,14 @@ describe('MemoryScopeResolver', () => {
     const resolver = new MemoryScopeResolver();
 
     expect(resolver.resolve('chat', { sessionId: 'session-1' })).toBe('session-1');
+  });
+
+  it('resolves branch scope to encoded session and branch id', () => {
+    const resolver = new MemoryScopeResolver();
+
+    expect(resolver.resolve('branch', { sessionId: 'session-1', branchId: 'main' })).toBe(
+      buildBranchMemoryScopeId('session-1', 'main'),
+    );
   });
 
   it('resolves floor scope to floorId', () => {
@@ -24,10 +33,13 @@ describe('MemoryScopeResolver', () => {
     expect(resolver.resolve('global', { accountId: 'account-1' })).toBe('account-1');
   });
 
-  it('uses fallback scopeId for matching chat or floor scope', () => {
+  it('uses fallback scopeId for matching chat, branch, or floor scope', () => {
     const resolver = new MemoryScopeResolver();
 
     expect(resolver.resolve('chat', {}, 'session-1')).toBe('session-1');
+    expect(resolver.resolve('branch', { sessionId: 'session-1' }, buildBranchMemoryScopeId('session-1', 'main'))).toBe(
+      buildBranchMemoryScopeId('session-1', 'main'),
+    );
     expect(resolver.resolve('floor', {}, 'floor-1')).toBe('floor-1');
   });
 
@@ -36,10 +48,26 @@ describe('MemoryScopeResolver', () => {
 
     expect(() => resolver.resolve('global', {})).toThrow(MemoryScopeResolutionError);
     expect(() => resolver.resolve('chat', {})).toThrow(MemoryScopeResolutionError);
+    expect(() => resolver.resolve('branch', { sessionId: 'session-1' })).toThrow(MemoryScopeResolutionError);
     expect(() => resolver.resolve('floor', {})).toThrow(MemoryScopeResolutionError);
   });
 
-  it('resolves visible refs in global chat floor order', () => {
+  it('resolves visible refs in global branch floor order when branch context exists', () => {
+    const resolver = new MemoryScopeResolver();
+
+    expect(resolver.resolveVisibleRefs({
+      accountId: 'account-1',
+      sessionId: 'session-1',
+      branchId: 'main',
+      floorId: 'floor-1',
+    })).toEqual([
+      { scope: 'global', scopeId: 'account-1' },
+      { scope: 'branch', scopeId: buildBranchMemoryScopeId('session-1', 'main') },
+      { scope: 'floor', scopeId: 'floor-1' },
+    ]);
+  });
+
+  it('keeps global chat floor order when branch context is absent', () => {
     const resolver = new MemoryScopeResolver();
 
     expect(resolver.resolveVisibleRefs({

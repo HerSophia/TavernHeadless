@@ -86,7 +86,9 @@ export function renderExportSnapshotToThChat(
         items: snapshot.memories.items.map<ThChatMemoryItem>((row) => ({
           _original_id: row.id,
           scope: row.scope,
-          scope_id_ref: row.scope === "chat" && row.scopeId === snapshot.sessionId ? null : row.scopeId,
+          scope_id_ref: row.scope === "chat" && row.scopeId === snapshot.sessionId
+            ? null
+            : row.scope === "branch" ? row.scopeRef?.branchId ?? row.scopeId : row.scopeId,
           type: row.type,
           summary_tier: row.summaryTier,
           content: row.content,

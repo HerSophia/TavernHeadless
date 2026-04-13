@@ -8,6 +8,7 @@ import {
   promptRuntimeAssetsResponseJsonSchema,
   promptRuntimeCapabilitiesResponseJsonSchema,
   promptRuntimePolicyViewResponseJsonSchema,
+  promptRuntimeHistoricalExplainResponseJsonSchema,
   promptRuntimePolicyPatchBodyJsonSchema,
   promptRuntimePreviewBodyJsonSchema,
   promptRuntimePreviewResponseJsonSchema,
@@ -15,6 +16,7 @@ import {
 } from "./schemas/prompt-runtime-schemas.js";
 import {
   PROMPT_RUNTIME_SUPPORTED_ASSISTANT_REWRITE_STRATEGIES,
+  PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES,
   PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES,
   PromptRuntimeControlService,
   PromptRuntimeControlServiceError,
@@ -23,6 +25,7 @@ import {
   type PromptRuntimeDebugPolicy,
   type PromptRuntimePersistentPolicy,
   type PromptRuntimePolicyView,
+  type PromptRuntimeHistoricalExplain,
   type PromptRuntimePersistentPolicyPatch,
   type PromptRuntimeResolvedState,
   type ResolvedPromptDeliveryPolicy,
@@ -37,6 +40,15 @@ import {
 
 const sessionIdParamsSchema = z.object({
   id: z.string().min(1),
+});
+
+const sessionPromptRuntimeQuerySchema = z.object({
+  branch_id: z.string().min(1).optional(),
+}).strict();
+
+const sessionBranchParamsSchema = z.object({
+  id: z.string().min(1),
+  branchId: z.string().min(1),
 });
 
 const promptRuntimePolicyPatchBodySchema = z.object({
@@ -74,6 +86,30 @@ const promptRuntimePreviewBodySchema = z.object({
   branch_id: z.string().min(1).optional(),
   source_floor_id: z.string().min(1).optional(),
   visibility: promptRuntimePreviewVisibilitySchema.optional(),
+  structure: z.object({
+    mode: z.enum(PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES),
+    merge_adjacent_same_role: z.boolean().optional(),
+    assistant_rewrite_strategy: z.enum(PROMPT_RUNTIME_SUPPORTED_ASSISTANT_REWRITE_STRATEGIES).optional(),
+    preserve_system_messages: z.boolean().optional(),
+  }).strict().optional(),
+  delivery: z.object({
+    allow_assistant_prefill: z.boolean().optional(),
+    require_last_user: z.boolean().optional(),
+    no_assistant: z.boolean().optional(),
+  }).strict().optional(),
+  budget: z.object({
+    max_input_tokens: z.number().int().positive().optional(),
+    reserved_completion_tokens: z.number().int().positive().optional(),
+  }).strict().optional(),
+  source_selection: z.object({
+    history: z.object({
+      mode: z.enum(PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES).optional(),
+      max_messages: z.number().int().positive().optional(),
+    }).strict().optional(),
+    memory: z.object({ enabled: z.boolean().optional() }).strict().optional(),
+    worldbook: z.object({ enabled: z.boolean().optional() }).strict().optional(),
+    examples: z.object({ enabled: z.boolean().optional() }).strict().optional(),
+  }).strict().optional(),
 }).strict();
 
 interface RegisterPromptRuntimeRoutesOptions {
@@ -93,6 +129,7 @@ export async function registerPromptRuntimeRoutes(
       summary: "Get session prompt runtime resolved state",
       operationId: "getSessionPromptRuntime",
       params: idParamsJsonSchema,
+      querystring: { type: "object", properties: { branch_id: { type: "string", minLength: 1 } }, additionalProperties: false },
       response: {
         200: promptRuntimeResolvedStateResponseJsonSchema,
         404: errorResponseJsonSchema,
@@ -104,10 +141,14 @@ export async function registerPromptRuntimeRoutes(
     if (!parsedParams.ok) {
       return;
     }
+    const parsedQuery = parseWithSchema(sessionPromptRuntimeQuerySchema, request.query, reply);
+    if (!parsedQuery.ok) {
+      return;
+    }
 
     try {
       const auth = getRequestAuthContext(request);
-      const state = await promptRuntimeControlService.getResolvedState(parsedParams.data.id, auth.accountId);
+      const state = await promptRuntimeControlService.getResolvedState(parsedParams.data.id, auth.accountId, parsedQuery.data.branch_id);
       return reply.send({ data: mapResolvedStateToSnakeCase(state) });
     } catch (error) {
       return sendPromptRuntimeControlServiceError(reply, error);
@@ -182,6 +223,82 @@ export async function registerPromptRuntimeRoutes(
     }
   });
 
+  app.get("/sessions/:id/prompt-runtime/branches/:branchId/policy", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Get branch prompt runtime persistent and resolved policy",
+      operationId: "getSessionPromptRuntimeBranchPolicy",
+      params: {
+        type: "object",
+        required: ["id", "branchId"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          branchId: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      response: {
+        200: promptRuntimePolicyViewResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionBranchParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    try {
+      const auth = getRequestAuthContext(request);
+      const policy = await promptRuntimeControlService.getBranchPolicy(parsedParams.data.id, parsedParams.data.branchId, auth.accountId);
+      return reply.send({ data: mapPolicyViewToSnakeCase(policy) });
+    } catch (error) {
+      return sendPromptRuntimeControlServiceError(reply, error);
+    }
+  });
+
+  app.patch("/sessions/:id/prompt-runtime/branches/:branchId/policy", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Patch branch prompt runtime persistent policy",
+      operationId: "patchSessionPromptRuntimeBranchPolicy",
+      params: {
+        type: "object",
+        required: ["id", "branchId"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          branchId: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      body: promptRuntimePolicyPatchBodyJsonSchema,
+      response: {
+        200: promptRuntimePolicyViewResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionBranchParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+    const parsedBody = parseWithSchema(promptRuntimePolicyPatchBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    try {
+      const auth = getRequestAuthContext(request);
+      const policy = await promptRuntimeControlService.updateBranchPolicy(parsedParams.data.id, parsedParams.data.branchId, auth.accountId, mapPolicyPatchBodyToCamelCase(parsedBody.data));
+      return reply.send({ data: mapPolicyViewToSnakeCase(policy) });
+    } catch (error) {
+      return sendPromptRuntimeControlServiceError(reply, error);
+    }
+  });
+
   app.get("/sessions/:id/prompt-runtime/assets", {
     schema: {
       tags: ["prompt-runtime"],
@@ -247,6 +364,34 @@ export async function registerPromptRuntimeRoutes(
     }
   });
 
+  app.get("/floors/:id/prompt-runtime/explain", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Explain committed floor prompt runtime from persisted truth",
+      operationId: "getFloorPromptRuntimeExplain",
+      params: idParamsJsonSchema,
+      response: {
+        200: promptRuntimeHistoricalExplainResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    try {
+      const auth = getRequestAuthContext(request);
+      const explain = await promptRuntimeControlService.getHistoricalExplain(parsedParams.data.id, auth.accountId);
+      return reply.send({ data: mapHistoricalExplainToSnakeCase(explain) });
+    } catch (error) {
+      return sendPromptRuntimeControlServiceError(reply, error);
+    }
+  });
+
   app.get("/prompt-runtime/capabilities", {
     schema: {
       tags: ["prompt-runtime"],
@@ -264,10 +409,16 @@ export async function registerPromptRuntimeRoutes(
 
 function mapResolvedStateToSnakeCase(state: PromptRuntimeResolvedState): Record<string, unknown> {
   return {
+    scope: mapScopeToSnakeCase(state.scope),
     policy: mapResolvedPolicyToSnakeCase(state.policy),
     ...(state.persistentPolicy ? { persistent_policy: mapPersistentPolicyToSnakeCase(state.persistentPolicy) } : {}),
+    branch_persistent_policy: state.branchPersistentPolicy
+      ? mapPersistentPolicyToSnakeCase(state.branchPersistentPolicy)
+      : null,
     assets: mapAssetsViewToSnakeCase(state.assets),
     warnings: state.warnings,
+    diagnostics: state.diagnostics.map((diagnostic) => mapDiagnosticToSnakeCase(diagnostic)),
+    limitations: state.limitations,
     ...(state.sourceMap ? { source_map: mapSourceMapToSnakeCase(state.sourceMap) } : {}),
   };
 }
@@ -335,13 +486,95 @@ function mapPreviewBodyToCamelCase(body: z.infer<typeof promptRuntimePreviewBody
           },
         }
       : {}),
+    ...(body.structure !== undefined
+      ? {
+          structure: {
+            mode: body.structure.mode,
+            ...(body.structure.merge_adjacent_same_role !== undefined ? { mergeAdjacentSameRole: body.structure.merge_adjacent_same_role } : {}),
+            ...(body.structure.assistant_rewrite_strategy !== undefined ? { assistantRewriteStrategy: body.structure.assistant_rewrite_strategy } : {}),
+            ...(body.structure.preserve_system_messages !== undefined ? { preserveSystemMessages: body.structure.preserve_system_messages } : {}),
+          },
+        }
+      : {}),
+    ...(body.delivery !== undefined
+      ? {
+          delivery: {
+            ...(body.delivery.allow_assistant_prefill !== undefined ? { allowAssistantPrefill: body.delivery.allow_assistant_prefill } : {}),
+            ...(body.delivery.require_last_user !== undefined ? { requireLastUser: body.delivery.require_last_user } : {}),
+            ...(body.delivery.no_assistant !== undefined ? { noAssistant: body.delivery.no_assistant } : {}),
+          },
+        }
+      : {}),
+    ...(body.budget !== undefined
+      ? {
+          budget: {
+            ...(body.budget.max_input_tokens !== undefined ? { maxInputTokens: body.budget.max_input_tokens } : {}),
+            ...(body.budget.reserved_completion_tokens !== undefined ? { reservedCompletionTokens: body.budget.reserved_completion_tokens } : {}),
+          },
+        }
+      : {}),
+    ...(body.source_selection !== undefined
+      ? {
+          sourceSelection: {
+            ...(body.source_selection.history !== undefined
+              ? {
+                  history: {
+                    ...(body.source_selection.history.mode !== undefined ? { mode: body.source_selection.history.mode } : {}),
+                    ...(body.source_selection.history.max_messages !== undefined ? { maxMessages: body.source_selection.history.max_messages } : {}),
+                  },
+                }
+              : {}),
+            ...(body.source_selection.memory !== undefined ? { memory: { ...(body.source_selection.memory.enabled !== undefined ? { enabled: body.source_selection.memory.enabled } : {}) } } : {}),
+            ...(body.source_selection.worldbook !== undefined ? { worldbook: { ...(body.source_selection.worldbook.enabled !== undefined ? { enabled: body.source_selection.worldbook.enabled } : {}) } } : {}),
+            ...(body.source_selection.examples !== undefined ? { examples: { ...(body.source_selection.examples.enabled !== undefined ? { enabled: body.source_selection.examples.enabled } : {}) } } : {}),
+          },
+        }
+      : {}),
   };
 }
 
 function mapPreviewResultToSnakeCase(result: PromptRuntimePreviewResult): Record<string, unknown> {
   return {
+    scope: mapScopeToSnakeCase(result.scope),
+    policy: mapResolvedPolicyToSnakeCase(result.policy),
+    diagnostics: result.diagnostics.map((diagnostic) => mapDiagnosticToSnakeCase(diagnostic)),
+    limitations: result.limitations,
+    ...(result.sourceMap ? { source_map: mapSourceMapToSnakeCase(result.sourceMap) } : {}),
     text: result.text,
     runtime_trace: mapPreviewRuntimeTraceToSnakeCase(result.runtimeTrace),
+  };
+}
+
+function mapHistoricalExplainToSnakeCase(explain: PromptRuntimeHistoricalExplain): Record<string, unknown> {
+  return {
+    floor: {
+      id: explain.floor.id,
+      session_id: explain.floor.sessionId,
+      floor_no: explain.floor.floorNo,
+      branch_id: explain.floor.branchId,
+      parent_floor_id: explain.floor.parentFloorId,
+      state: explain.floor.state,
+      prompt_snapshot_created_at: explain.floor.promptSnapshotCreatedAt,
+      committed_at: explain.floor.committedAt,
+    },
+    scope: mapScopeToSnakeCase(explain.scope),
+    prompt_snapshot: mapPromptSnapshotToSnakeCase(explain.promptSnapshot),
+    resolved_policy: explain.resolvedPolicy ? mapResolvedPolicyToSnakeCase(explain.resolvedPolicy) : null,
+    ...(explain.sourceMap ? { source_map: mapSourceMapToSnakeCase(explain.sourceMap) } : {}),
+    trim_reasons: explain.trimReasons
+      ? explain.trimReasons.map((reason) => ({
+          group: reason.group,
+          reason: reason.reason,
+          ...(reason.detail ? { detail: reason.detail } : {}),
+          ...(reason.prunedTokenCount !== undefined ? { pruned_token_count: reason.prunedTokenCount } : {}),
+        }))
+      : null,
+    excluded_sources: explain.excludedSources
+      ? explain.excludedSources.map((item) => ({ source: item.source, reason: item.reason, ...(item.detail ? { detail: item.detail } : {}) }))
+      : null,
+    diagnostics: explain.diagnostics.map((diagnostic) => mapDiagnosticToSnakeCase(diagnostic)),
+    limitations: explain.limitations,
+    result: mapHistoricalExplainResultToSnakeCase(explain.result),
   };
 }
 
@@ -360,6 +593,17 @@ function mapPreviewRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimePreviewRes
                 }
               : {}),
             filtered_floor_nos: runtimeTrace.visibility.filteredFloorNos,
+          },
+        }
+      : {}),
+    ...(runtimeTrace.sourceSelection
+      ? {
+          source_selection: {
+            excluded_sources: runtimeTrace.sourceSelection.excludedSources.map((item) => ({
+              source: item.source,
+              reason: item.reason,
+              ...(item.detail ? { detail: item.detail } : {}),
+            })),
           },
         }
       : {}),
@@ -407,6 +651,8 @@ function mapPersistentPolicyToSnakeCase(policy: PromptRuntimePersistentPolicy): 
   return {
     ...(policy.structure ? { structure: mapStructurePolicyToSnakeCase(policy.structure) } : {}),
     ...(policy.delivery ? { delivery: mapDeliveryPolicyToSnakeCase(policy.delivery) } : {}),
+    ...(policy.budget ? { budget: mapBudgetPolicyToSnakeCase(policy.budget) } : {}),
+    ...(policy.sourceSelection ? { source_selection: mapSourceSelectionPolicyToSnakeCase(policy.sourceSelection) } : {}),
   };
 }
 
@@ -414,6 +660,8 @@ function mapResolvedPolicyToSnakeCase(policy: ResolvedPromptRuntimePolicy): Reco
   return {
     structure: mapResolvedStructurePolicyToSnakeCase(policy.structure),
     delivery: mapResolvedDeliveryPolicyToSnakeCase(policy.delivery),
+    budget: mapBudgetPolicyToSnakeCase(policy.budget),
+    source_selection: mapSourceSelectionPolicyToSnakeCase(policy.sourceSelection),
     debug: mapDebugPolicyToSnakeCase(policy.debug),
   };
 }
@@ -466,6 +714,27 @@ function mapResolvedDeliveryPolicyToSnakeCase(policy: ResolvedPromptDeliveryPoli
   };
 }
 
+function mapBudgetPolicyToSnakeCase(policy: { maxInputTokens?: number; reservedCompletionTokens?: number }): Record<string, unknown> {
+  return {
+    ...(policy.maxInputTokens !== undefined ? { max_input_tokens: policy.maxInputTokens } : {}),
+    ...(policy.reservedCompletionTokens !== undefined ? { reserved_completion_tokens: policy.reservedCompletionTokens } : {}),
+  };
+}
+
+function mapSourceSelectionPolicyToSnakeCase(policy: {
+  history?: { mode?: string; maxMessages?: number };
+  memory?: { enabled?: boolean };
+  worldbook?: { enabled?: boolean };
+  examples?: { enabled?: boolean };
+}): Record<string, unknown> {
+  return {
+    ...(policy.history ? { history: { ...(policy.history.mode !== undefined ? { mode: policy.history.mode } : {}), ...(policy.history.maxMessages !== undefined ? { max_messages: policy.history.maxMessages } : {}) } } : {}),
+    ...(policy.memory ? { memory: { ...(policy.memory.enabled !== undefined ? { enabled: policy.memory.enabled } : {}) } } : {}),
+    ...(policy.worldbook ? { worldbook: { ...(policy.worldbook.enabled !== undefined ? { enabled: policy.worldbook.enabled } : {}) } } : {}),
+    ...(policy.examples ? { examples: { ...(policy.examples.enabled !== undefined ? { enabled: policy.examples.enabled } : {}) } } : {}),
+  };
+}
+
 function mapDebugPolicyToSnakeCase(policy: PromptRuntimeDebugPolicy): Record<string, unknown> {
   return {
     include_prompt_snapshot: policy.includePromptSnapshot,
@@ -483,6 +752,26 @@ function mapAssetsViewToSnakeCase(assets: PromptRuntimeAssetsView): Record<strin
   };
 }
 
+function mapPromptSnapshotToSnakeCase(snapshot: PromptRuntimeHistoricalExplain["promptSnapshot"]): Record<string, unknown> {
+  return {
+    preset_id: snapshot.presetId,
+    preset_updated_at: snapshot.presetUpdatedAt,
+    preset_version: snapshot.presetVersion,
+    worldbook_id: snapshot.worldbookId,
+    worldbook_updated_at: snapshot.worldbookUpdatedAt,
+    worldbook_version: snapshot.worldbookVersion,
+    regex_profile_id: snapshot.regexProfileId,
+    regex_profile_updated_at: snapshot.regexProfileUpdatedAt,
+    regex_profile_version: snapshot.regexProfileVersion,
+    worldbook_activated_entry_uids: snapshot.worldbookActivatedEntryUids,
+    regex_pre_rule_names: snapshot.regexPreRuleNames,
+    regex_post_rule_names: snapshot.regexPostRuleNames,
+    prompt_mode: snapshot.promptMode,
+    prompt_digest: snapshot.promptDigest,
+    token_estimate: snapshot.tokenEstimate,
+  };
+}
+
 function mapAssetSummaryToSnakeCase(asset: PromptRuntimeAssetsView[keyof PromptRuntimeAssetsView]): Record<string, unknown> | null {
   if (!asset) {
     return null;
@@ -491,6 +780,15 @@ function mapAssetSummaryToSnakeCase(asset: PromptRuntimeAssetsView[keyof PromptR
   return {
     id: asset.id,
     name: asset.name,
+  };
+}
+
+function mapSourceSelectionSourceMapToSnakeCase(sourceSelection: NonNullable<NonNullable<PromptRuntimeResolvedState["sourceMap"]>["sourceSelection"]>): Record<string, unknown> {
+  return {
+    ...(sourceSelection.history ? { history: { ...(sourceSelection.history.mode ? { mode: sourceSelection.history.mode } : {}), ...(sourceSelection.history.maxMessages ? { max_messages: sourceSelection.history.maxMessages } : {}) } } : {}),
+    ...(sourceSelection.memory ? { memory: { ...(sourceSelection.memory.enabled ? { enabled: sourceSelection.memory.enabled } : {}) } } : {}),
+    ...(sourceSelection.worldbook ? { worldbook: { ...(sourceSelection.worldbook.enabled ? { enabled: sourceSelection.worldbook.enabled } : {}) } } : {}),
+    ...(sourceSelection.examples ? { examples: { ...(sourceSelection.examples.enabled ? { enabled: sourceSelection.examples.enabled } : {}) } } : {}),
   };
 }
 
@@ -548,6 +846,69 @@ function mapSourceMapToSnakeCase(sourceMap: NonNullable<PromptRuntimeResolvedSta
     ...(debug && Object.keys(debug).length > 0
       ? { debug }
       : {}),
+    ...(sourceMap.budget
+      ? { budget: { ...(sourceMap.budget.maxInputTokens ? { max_input_tokens: sourceMap.budget.maxInputTokens } : {}), ...(sourceMap.budget.reservedCompletionTokens ? { reserved_completion_tokens: sourceMap.budget.reservedCompletionTokens } : {}) } }
+      : {}),
+    ...(sourceMap.sourceSelection
+      ? { source_selection: mapSourceSelectionSourceMapToSnakeCase(sourceMap.sourceSelection) }
+      : {}),
+    ...(sourceMap.history
+      ? {
+          history: {
+            ...(sourceMap.history.sourceBranchId ? { source_branch_id: sourceMap.history.sourceBranchId } : {}),
+            ...(sourceMap.history.sourceMode ? { source_mode: sourceMap.history.sourceMode } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+
+function mapScopeToSnakeCase(scope: PromptRuntimeResolvedState["scope"] | PromptRuntimePreviewResult["scope"]): Record<string, unknown> {
+  return {
+    session_id: scope.sessionId,
+    target_branch_id: scope.targetBranchId,
+    branch_exists: scope.branchExists,
+    ...(scope.sourceFloorId !== undefined ? { source_floor_id: scope.sourceFloorId } : {}),
+    history_source_branch_id: scope.historySourceBranchId,
+    history_source_mode: scope.historySourceMode,
+  };
+}
+
+function mapHistoricalExplainResultToSnakeCase(result: PromptRuntimeHistoricalExplain["result"]): Record<string, unknown> {
+  return {
+    output_page_id: result.outputPageId,
+    assistant_message_id: result.assistantMessageId,
+    generated_text: result.generatedText,
+    summaries: result.summaries,
+    usage: {
+      prompt_tokens: result.usage.promptTokens,
+      completion_tokens: result.usage.completionTokens,
+      total_tokens: result.usage.totalTokens,
+    },
+    verifier: result.verifier
+      ? {
+          status: result.verifier.status,
+          suggestion: result.verifier.suggestion ?? null,
+          issues: result.verifier.issues ?? null,
+        }
+      : null,
+    committed_at: result.committedAt,
+  };
+}
+
+function mapDiagnosticToSnakeCase(
+  diagnostic: PromptRuntimeResolvedState["diagnostics"][number]
+    | PromptRuntimePreviewResult["diagnostics"][number]
+    | PromptRuntimeHistoricalExplain["diagnostics"][number],
+): Record<string, unknown> {
+  return {
+    code: diagnostic.code,
+    message: diagnostic.message,
+    severity: diagnostic.severity,
+    ...(diagnostic.source ? { source: diagnostic.source } : {}),
+    ...(diagnostic.fieldPath ? { field_path: diagnostic.fieldPath } : {}),
+    ...(diagnostic.phase ? { phase: diagnostic.phase } : {}),
   };
 }
 
@@ -561,6 +922,21 @@ function mapCapabilitiesToSnakeCase(capabilities: PromptRuntimeCapabilities): Re
     },
     delivery: {
       defaults: mapResolvedDeliveryPolicyToSnakeCase(capabilities.delivery.defaults),
+    },
+    budget: {
+      defaults: mapBudgetPolicyToSnakeCase(capabilities.budget.defaults),
+      request_override_supported: capabilities.budget.requestOverrideSupported,
+      persistent_patch_supported: capabilities.budget.persistentPatchSupported,
+      supported_fields: [...capabilities.budget.supportedFields],
+      trim_reason_codes: [...capabilities.budget.trimReasonCodes],
+    },
+    source_selection: {
+      defaults: mapSourceSelectionPolicyToSnakeCase(capabilities.sourceSelection.defaults),
+      request_override_supported: capabilities.sourceSelection.requestOverrideSupported,
+      persistent_patch_supported: capabilities.sourceSelection.persistentPatchSupported,
+      supported_sources: [...capabilities.sourceSelection.supportedSources],
+      history_modes: [...capabilities.sourceSelection.historyModes],
+      exclusion_reason_codes: [...capabilities.sourceSelection.exclusionReasonCodes],
     },
     observability: {
       live: {
@@ -590,6 +966,13 @@ function mapCapabilitiesToSnakeCase(capabilities: PromptRuntimeCapabilities): Re
         creates_floor: capabilities.observability.preview.createsFloor,
         writes_prompt_snapshot: capabilities.observability.preview.writesPromptSnapshot,
         commits_side_effects: capabilities.observability.preview.commitsSideEffects,
+      },
+      explain: {
+        enabled: capabilities.observability.explain.enabled,
+        read_only: capabilities.observability.explain.readOnly,
+        requires_committed_floor: capabilities.observability.explain.requiresCommittedFloor,
+        persisted_truth_only: capabilities.observability.explain.persistedTruthOnly,
+        recompute: capabilities.observability.explain.recompute,
       },
       stream: {
         enabled: capabilities.observability.stream.enabled,
@@ -622,6 +1005,7 @@ function sendPromptRuntimePreviewServiceError(
       case "invalid_state":
       case "generation_target_stale":
       case "branch_exists":
+      case "branch_local_snapshot_missing":
         return sendError(reply, 409, error.code, error.message);
       default:
         return sendError(reply, 500, error.code, error.message);

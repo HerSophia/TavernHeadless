@@ -263,6 +263,7 @@ describe("OpenAPI integration", () => {
     };
     expect(sessionPromptRuntimePath.get?.operationId).toBe("getSessionPromptRuntime");
     expect(sessionPromptRuntimePath.get?.responses).toHaveProperty("200");
+    expect(sessionPromptRuntimePath.get?.parameters?.some((parameter) => parameter.name === "branch_id")).toBe(true);
 
     const sessionPromptRuntimePolicyPath = body.paths["/sessions/{id}/prompt-runtime/policy"] as {
       get?: OpenApiOperation;
@@ -272,6 +273,25 @@ describe("OpenAPI integration", () => {
     expect(sessionPromptRuntimePolicyPath.patch?.operationId).toBe("patchSessionPromptRuntimePolicy");
     expect(sessionPromptRuntimePolicyPath.patch?.requestBody).toBeDefined();
     expect(sessionPromptRuntimePolicyPath.patch?.responses).toHaveProperty("200");
+
+    const sessionPromptRuntimeBranchPolicyPath = body.paths["/sessions/{id}/prompt-runtime/branches/{branchId}/policy"] as {
+      get?: OpenApiOperation;
+      patch?: OpenApiOperation;
+    };
+    expect(sessionPromptRuntimeBranchPolicyPath.get?.operationId).toBe("getSessionPromptRuntimeBranchPolicy");
+    expect(sessionPromptRuntimeBranchPolicyPath.get?.responses).toHaveProperty("200");
+    expect(sessionPromptRuntimeBranchPolicyPath.patch?.operationId).toBe("patchSessionPromptRuntimeBranchPolicy");
+    expect(sessionPromptRuntimeBranchPolicyPath.patch?.requestBody).toBeDefined();
+    expect(sessionPromptRuntimeBranchPolicyPath.patch?.responses).toHaveProperty("200");
+
+    const sessionPromptRuntimePreviewPath = body.paths["/sessions/{id}/prompt-runtime/preview"] as {
+      post?: OpenApiOperation;
+    };
+    expect(sessionPromptRuntimePreviewPath.post?.operationId).toBe("previewSessionPromptRuntime");
+    expect(sessionPromptRuntimePreviewPath.post?.requestBody).toBeDefined();
+    expect(sessionPromptRuntimePreviewPath.post?.responses).toHaveProperty("200");
+    expect(sessionPromptRuntimePreviewPath.post?.responses).toHaveProperty("404");
+    expect(sessionPromptRuntimePreviewPath.post?.responses).toHaveProperty("409");
 
     const promptRuntimeCapabilitiesPath = body.paths["/prompt-runtime/capabilities"] as {
       get?: OpenApiOperation;

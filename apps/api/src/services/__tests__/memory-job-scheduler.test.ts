@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { nanoid } from "nanoid";
 import { and, eq } from "drizzle-orm";
 
+import { buildBranchMemoryScopeId } from "@tavern/shared";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { accounts, floors, runtimeJobs, sessions } from "../../db/schema.js";
 import { MemoryJobScheduler } from "../memory-job-scheduler.js";
@@ -87,6 +88,7 @@ describe("MemoryJobScheduler", () => {
       const first = scheduler.enqueueIngestTurn(tx, {
         accountId: DEFAULT_ACCOUNT_ID,
         sessionId,
+        branchId: "main",
         floorId,
         floorNo: 7,
         assistantMessageId: nanoid(),
@@ -98,6 +100,7 @@ describe("MemoryJobScheduler", () => {
       const second = scheduler.enqueueIngestTurn(tx, {
         accountId: DEFAULT_ACCOUNT_ID,
         sessionId,
+        branchId: "main",
         floorId,
         floorNo: 7,
         assistantMessageId: nanoid(),
@@ -121,18 +124,19 @@ describe("MemoryJobScheduler", () => {
 
     const rows = await database.db.select().from(runtimeJobs).where(and(
       eq(runtimeJobs.scopeType, MEMORY_RUNTIME_SCOPE_TYPE),
-      eq(runtimeJobs.scopeKey, buildMemoryRuntimeScopeKey("chat", sessionId)),
+      eq(runtimeJobs.scopeKey, buildMemoryRuntimeScopeKey("branch", buildBranchMemoryScopeId(sessionId, "main"))),
     ));
     expect(rows).toHaveLength(1);
     expect(toLegacyMemoryJob(rows[0]!)).toMatchObject({
       id: `memory-job:ingest_turn:${floorId}`,
       floorId,
       status: "pending",
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: buildBranchMemoryScopeId(sessionId, "main"),
       jobType: "ingest_turn",
     });
     expect(JSON.parse(rows[0]!.payloadJson)).toEqual(expect.objectContaining({
+      branchId: "main",
       summaries: ["summary-1"],
       enableConsolidation: true,
     }));

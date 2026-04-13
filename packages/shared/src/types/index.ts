@@ -12,6 +12,9 @@ export type { VariableScope, VariableEntry, BranchVariableScopeRef } from './var
 export { CoreEvents } from './events.js';
 
 export {
+  buildBranchMemoryScopeId,
+  parseBranchMemoryScopeId,
+  isBranchMemoryScopeId,
   MEMORY_SCOPES,
   MEMORY_TYPES,
   MEMORY_SUMMARY_TIERS,
@@ -22,14 +25,15 @@ export {
   MEMORY_JOB_STATUSES,
 } from './memory.js';
 export type {
+  BranchMemoryScopeRef,
   MemoryScope,
-  MemoryType,
-  MemorySummaryTier,
-  MemoryStatus,
   MemoryLifecycleStatus,
-  MemoryRelation,
-  MemoryJobType,
   MemoryJobStatus,
+  MemoryStatus,
+  MemoryRelation,
+  MemorySummaryTier,
+  MemoryType,
+  MemoryJobType,
 } from './memory.js';
 
 export { TH_CHAT_SPEC, TH_CHAT_SPEC_VERSION } from './chat-file.js';

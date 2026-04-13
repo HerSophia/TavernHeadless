@@ -16,7 +16,10 @@ type PromptRuntimeControlServiceStub = {
   getResolvedState: ReturnType<typeof vi.fn>;
   getPolicy: ReturnType<typeof vi.fn>;
   getAssets: ReturnType<typeof vi.fn>;
+  getBranchPolicy: ReturnType<typeof vi.fn>;
   updatePolicy: ReturnType<typeof vi.fn>;
+  updateBranchPolicy: ReturnType<typeof vi.fn>;
+  getHistoricalExplain: ReturnType<typeof vi.fn>;
   getCapabilities: ReturnType<typeof vi.fn>;
 };
 
@@ -35,7 +38,10 @@ function createPromptRuntimeControlService(
     getResolvedState: vi.fn(),
     getPolicy: vi.fn(),
     getAssets: vi.fn(),
+    getBranchPolicy: vi.fn(),
     updatePolicy: vi.fn(),
+    updateBranchPolicy: vi.fn(),
+    getHistoricalExplain: vi.fn(),
     getCapabilities: vi.fn(),
     ...overrides,
   };
@@ -93,6 +99,14 @@ describe("prompt runtime routes", () => {
   it("maps GET /sessions/:id/prompt-runtime response to snake_case", async () => {
     const controlService = createPromptRuntimeControlService({
       getResolvedState: vi.fn(async () => ({
+        scope: {
+          sessionId: "s1",
+          targetBranchId: "alt-branch",
+          branchExists: true,
+          sourceFloorId: null,
+          historySourceBranchId: "alt-branch",
+          historySourceMode: "existing_branch",
+        },
         policy: {
           structure: {
             mode: "no_assistant",
@@ -105,6 +119,8 @@ describe("prompt runtime routes", () => {
             requireLastUser: true,
             noAssistant: true,
           },
+          budget: {},
+          sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
           debug: {
             includePromptSnapshot: false,
             includeRuntimeTrace: false,
@@ -112,6 +128,11 @@ describe("prompt runtime routes", () => {
           },
         },
         persistentPolicy: {
+          delivery: {
+            noAssistant: true,
+          },
+        },
+        branchPersistentPolicy: {
           delivery: {
             noAssistant: true,
           },
@@ -134,8 +155,19 @@ describe("prompt runtime routes", () => {
             requireLastUser: "session_policy",
             noAssistant: "system_default",
           },
+          sourceSelection: { history: { mode: "system_default" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "system_default" } },
+          history: {
+            sourceBranchId: "alt-branch",
+            sourceMode: "existing_branch",
+          },
         },
         warnings: ["compat warning"],
+        diagnostics: [{
+          code: "derived_no_assistant_structure",
+          message: "compat warning",
+          severity: "warning",
+        }],
+        limitations: ["memory remains shared"],
       })),
     });
 
@@ -143,12 +175,20 @@ describe("prompt runtime routes", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/sessions/s1/prompt-runtime",
+      url: "/sessions/s1/prompt-runtime?branch_id=alt-branch",
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       data: {
+        scope: {
+          session_id: "s1",
+          target_branch_id: "alt-branch",
+          branch_exists: true,
+          source_floor_id: null,
+          history_source_branch_id: "alt-branch",
+          history_source_mode: "existing_branch",
+        },
         policy: {
           structure: {
             mode: "no_assistant",
@@ -161,6 +201,8 @@ describe("prompt runtime routes", () => {
             require_last_user: true,
             no_assistant: true,
           },
+          budget: {},
+          source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
           debug: {
             include_prompt_snapshot: false,
             include_runtime_trace: false,
@@ -168,6 +210,11 @@ describe("prompt runtime routes", () => {
           },
         },
         persistent_policy: {
+          delivery: {
+            no_assistant: true,
+          },
+        },
+        branch_persistent_policy: {
           delivery: {
             no_assistant: true,
           },
@@ -190,12 +237,19 @@ describe("prompt runtime routes", () => {
             require_last_user: "session_policy",
             no_assistant: "system_default",
           },
+          source_selection: { history: { mode: "system_default" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "system_default" } },
+          history: {
+            source_branch_id: "alt-branch",
+            source_mode: "existing_branch",
+          },
         },
         warnings: ["compat warning"],
+        diagnostics: [{ code: "derived_no_assistant_structure", message: "compat warning", severity: "warning" }],
+        limitations: ["memory remains shared"],
       },
     });
 
-    expect(controlService.getResolvedState).toHaveBeenCalledWith("s1", DEFAULT_ADMIN_ACCOUNT_ID);
+    expect(controlService.getResolvedState).toHaveBeenCalledWith("s1", DEFAULT_ADMIN_ACCOUNT_ID, "alt-branch");
   });
 
   it("maps GET /sessions/:id/prompt-runtime/policy response to snake_case", async () => {
@@ -220,6 +274,8 @@ describe("prompt runtime routes", () => {
             requireLastUser: true,
             noAssistant: false,
           },
+          budget: {},
+          sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
           debug: {
             includePromptSnapshot: false,
             includeRuntimeTrace: false,
@@ -259,6 +315,8 @@ describe("prompt runtime routes", () => {
             require_last_user: true,
             no_assistant: false,
           },
+          budget: {},
+          source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
           debug: {
             include_prompt_snapshot: false,
             include_runtime_trace: false,
@@ -295,6 +353,8 @@ describe("prompt runtime routes", () => {
             requireLastUser: true,
             noAssistant: false,
           },
+          budget: {},
+          sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
           debug: {
             includePromptSnapshot: false,
             includeRuntimeTrace: false,
@@ -331,6 +391,8 @@ describe("prompt runtime routes", () => {
         resolved_policy: {
           structure: { mode: "strict_alternating", merge_adjacent_same_role: true, preserve_system_messages: true },
           delivery: { allow_assistant_prefill: true, require_last_user: true, no_assistant: false },
+          budget: {},
+          source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
           debug: { include_prompt_snapshot: false, include_runtime_trace: false, include_worldbook_matches: false },
         },
         warnings: [],
@@ -356,6 +418,8 @@ describe("prompt runtime routes", () => {
             requireLastUser: false,
             noAssistant: false,
           },
+          budget: {},
+          sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
           debug: {
             includePromptSnapshot: false,
             includeRuntimeTrace: false,
@@ -383,6 +447,8 @@ describe("prompt runtime routes", () => {
         resolved_policy: {
           structure: { mode: "default", merge_adjacent_same_role: false, preserve_system_messages: true },
           delivery: { allow_assistant_prefill: true, require_last_user: false, no_assistant: false },
+          budget: {},
+          source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
           debug: { include_prompt_snapshot: false, include_runtime_trace: false, include_worldbook_matches: false },
         },
         warnings: [],
@@ -392,6 +458,107 @@ describe("prompt runtime routes", () => {
       structure: null,
       delivery: null,
     });
+  });
+
+  it("maps GET /sessions/:id/prompt-runtime/branches/:branchId/policy response to snake_case", async () => {
+    const controlService = createPromptRuntimeControlService({
+      getBranchPolicy: vi.fn(async () => ({
+        persistentPolicy: {
+          delivery: {
+            noAssistant: true,
+          },
+        },
+        resolvedPolicy: {
+          structure: {
+            mode: "no_assistant",
+            mergeAdjacentSameRole: false,
+            preserveSystemMessages: true,
+            assistantRewriteStrategy: "to_system",
+          },
+          delivery: {
+            allowAssistantPrefill: true,
+            requireLastUser: false,
+            noAssistant: true,
+          },
+          budget: {},
+          sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+          debug: {
+            includePromptSnapshot: false,
+            includeRuntimeTrace: false,
+            includeWorldbookMatches: false,
+          },
+        },
+        warnings: ["derived"],
+      })),
+    });
+
+    await mountRoutes(controlService);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/sessions/s1/prompt-runtime/branches/alt-branch/policy",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      data: {
+        persistent_policy: {
+          delivery: { no_assistant: true },
+        },
+        resolved_policy: {
+          structure: { mode: "no_assistant", merge_adjacent_same_role: false, preserve_system_messages: true, assistant_rewrite_strategy: "to_system" },
+          delivery: { allow_assistant_prefill: true, require_last_user: false, no_assistant: true },
+          budget: {},
+          source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+          debug: { include_prompt_snapshot: false, include_runtime_trace: false, include_worldbook_matches: false },
+        },
+        warnings: ["derived"],
+      },
+    });
+    expect(controlService.getBranchPolicy).toHaveBeenCalledWith("s1", "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID);
+  });
+
+  it("maps PATCH /sessions/:id/prompt-runtime/branches/:branchId/policy request and response", async () => {
+    const controlService = createPromptRuntimeControlService({
+      updateBranchPolicy: vi.fn(async () => ({
+        persistentPolicy: {
+          structure: {
+            mode: "strict_alternating",
+          },
+        },
+        resolvedPolicy: {
+          structure: {
+            mode: "strict_alternating",
+            mergeAdjacentSameRole: true,
+            preserveSystemMessages: true,
+          },
+          delivery: {
+            allowAssistantPrefill: true,
+            requireLastUser: false,
+            noAssistant: false,
+          },
+          budget: {},
+          sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+          debug: {
+            includePromptSnapshot: false,
+            includeRuntimeTrace: false,
+            includeWorldbookMatches: false,
+          },
+        },
+        warnings: [],
+      })),
+    });
+
+    await mountRoutes(controlService);
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/sessions/s1/prompt-runtime/branches/alt-branch/policy",
+      payload: { structure: { mode: "strict_alternating" } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(controlService.updateBranchPolicy).toHaveBeenCalledWith("s1", "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID, { structure: { mode: "strict_alternating" } });
   });
 
   it("rejects macro-related write attempts outside the mutable policy surface", async () => {
@@ -451,8 +618,36 @@ describe("prompt runtime routes", () => {
     const controlService = createPromptRuntimeControlService();
     const previewService = createPromptRuntimePreviewService({
       previewPromptRuntimeText: vi.fn(async () => ({
+        scope: {
+          sessionId: "s1",
+          targetBranchId: "alt-preview",
+          branchExists: false,
+          sourceFloorId: "floor-source",
+          historySourceBranchId: "fork-branch",
+          historySourceMode: "source_floor_branch",
+        },
+        policy: {
+          structure: {
+            mode: "no_assistant",
+            mergeAdjacentSameRole: false,
+            preserveSystemMessages: true,
+            assistantRewriteStrategy: "to_system",
+          },
+          delivery: {
+            allowAssistantPrefill: true,
+            requireLastUser: false,
+            noAssistant: true,
+          },
+          budget: { maxInputTokens: 4096, reservedCompletionTokens: 1024 },
+          sourceSelection: { history: { mode: "windowed", maxMessages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
+          debug: { includePromptSnapshot: false, includeRuntimeTrace: false, includeWorldbookMatches: false },
+        },
+        sourceMap: { delivery: { noAssistant: "request_override" }, budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" }, sourceSelection: { history: { mode: "request_override", maxMessages: "request_override" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "request_override" } }, history: { sourceBranchId: "fork-branch", sourceMode: "source_floor_branch" } },
+        diagnostics: [{ code: "unmaterialized_branch_preview", message: "branch pending", severity: "info", source: "branch", phase: "preview" }],
+        limitations: ["memory remains shared"],
         text: "3",
         runtimeTrace: {
+          sourceSelection: { excludedSources: [{ source: "history", reason: "visibility_filtered", detail: "Visibility filtered 2 floor(s) from the available history window." }] },
           macro: {
             warnings: [{ code: "macro_preview_side_effect_suppressed", message: "previewed", macroName: "setvar" }],
             usedNames: ["setvar", "getvar"],
@@ -478,8 +673,21 @@ describe("prompt runtime routes", () => {
       url: "/sessions/s1/prompt-runtime/preview",
       payload: {
         text: "{{.资产.金币=3}}{{getvar::资产.金币}}",
-        branch_id: "main",
+        branch_id: "alt-preview",
         source_floor_id: "floor-source",
+        delivery: {
+          no_assistant: true,
+        },
+        budget: {
+          max_input_tokens: 4096,
+          reserved_completion_tokens: 1024,
+        },
+        source_selection: {
+          history: { mode: "windowed", max_messages: 24 },
+          memory: { enabled: true },
+          worldbook: { enabled: true },
+          examples: { enabled: false },
+        },
         visibility: {
           mode: "allow_all_except_hidden",
           hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
@@ -490,6 +698,29 @@ describe("prompt runtime routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       data: {
+        scope: {
+          session_id: "s1",
+          target_branch_id: "alt-preview",
+          branch_exists: false,
+          source_floor_id: "floor-source",
+          history_source_branch_id: "fork-branch",
+          history_source_mode: "source_floor_branch",
+        },
+        policy: {
+          structure: { mode: "no_assistant", merge_adjacent_same_role: false, preserve_system_messages: true, assistant_rewrite_strategy: "to_system" },
+          delivery: { allow_assistant_prefill: true, require_last_user: false, no_assistant: true },
+          budget: { max_input_tokens: 4096, reserved_completion_tokens: 1024 },
+          source_selection: { history: { mode: "windowed", max_messages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
+          debug: { include_prompt_snapshot: false, include_runtime_trace: false, include_worldbook_matches: false },
+        },
+        source_map: {
+          delivery: { no_assistant: "request_override" },
+          budget: { max_input_tokens: "request_override", reserved_completion_tokens: "request_override" },
+          source_selection: { history: { mode: "request_override", max_messages: "request_override" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "request_override" } },
+          history: { source_branch_id: "fork-branch", source_mode: "source_floor_branch" },
+        },
+        diagnostics: [{ code: "unmaterialized_branch_preview", message: "branch pending", severity: "info", source: "branch", phase: "preview" }],
+        limitations: ["memory remains shared"],
         text: "3",
         runtime_trace: {
           macro: {
@@ -506,16 +737,38 @@ describe("prompt runtime routes", () => {
             hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
             filtered_floor_nos: [1, 2],
           },
+          source_selection: {
+            excluded_sources: [
+              {
+                source: "history",
+                reason: "visibility_filtered",
+                detail: "Visibility filtered 2 floor(s) from the available history window.",
+              },
+            ],
+          },
         },
       },
     });
     expect(previewService.previewPromptRuntimeText).toHaveBeenCalledWith("s1", {
       text: "{{.资产.金币=3}}{{getvar::资产.金币}}",
-      branchId: "main",
+      branchId: "alt-preview",
       sourceFloorId: "floor-source",
       visibility: {
         mode: "allow_all_except_hidden",
         hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+      },
+      delivery: {
+        noAssistant: true,
+      },
+      budget: {
+        maxInputTokens: 4096,
+        reservedCompletionTokens: 1024,
+      },
+      sourceSelection: {
+        history: { mode: "windowed", maxMessages: 24 },
+        memory: { enabled: true },
+        worldbook: { enabled: true },
+        examples: { enabled: false },
       },
     }, DEFAULT_ADMIN_ACCOUNT_ID);
   });
@@ -555,6 +808,150 @@ describe("prompt runtime routes", () => {
     expect(response.json()).toEqual({ error: { code: "source_floor_not_found", message: "Source floor is missing" } });
   });
 
+  it("maps branch_local_snapshot_missing preview errors to 409", async () => {
+    const controlService = createPromptRuntimeControlService();
+    const previewService = createPromptRuntimePreviewService({
+      previewPromptRuntimeText: vi.fn(async () => {
+        throw new ChatServiceError("branch_local_snapshot_missing", "Source floor snapshot is missing");
+      }),
+    });
+
+    await mountRoutes(controlService, previewService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/prompt-runtime/preview",
+      payload: { text: "{{getvar::mood}}", branch_id: "alt-preview", source_floor_id: "floor-old" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: { code: "branch_local_snapshot_missing", message: "Source floor snapshot is missing" } });
+  });
+
+  it("maps GET /floors/:id/prompt-runtime/explain response to snake_case", async () => {
+    const controlService = createPromptRuntimeControlService({
+      getHistoricalExplain: vi.fn(async () => ({
+        floor: {
+          id: "floor-12",
+          sessionId: "s1",
+          floorNo: 12,
+          branchId: "main",
+          parentFloorId: "floor-11",
+          state: "committed",
+          promptSnapshotCreatedAt: 1710000003000,
+          committedAt: 1710000004000,
+        },
+        scope: {
+          sessionId: "s1",
+          targetBranchId: "main",
+          branchExists: true,
+          sourceFloorId: null,
+          historySourceBranchId: "main",
+          historySourceMode: "existing_branch",
+        },
+        promptSnapshot: {
+          presetId: "preset-1",
+          presetUpdatedAt: 1710000000000,
+          presetVersion: 3,
+          worldbookId: "wb-1",
+          worldbookUpdatedAt: 1710000001000,
+          worldbookVersion: 5,
+          regexProfileId: "regex-1",
+          regexProfileUpdatedAt: 1710000002000,
+          regexProfileVersion: 2,
+          worldbookActivatedEntryUids: [7],
+          regexPreRuleNames: ["Input Rule"],
+          regexPostRuleNames: [],
+          promptMode: "compat_strict",
+          promptDigest: "digest-1",
+          tokenEstimate: 42,
+        },
+        resolvedPolicy: null,
+        sourceMap: { history: { sourceBranchId: "main", sourceMode: "existing_branch" } },
+        trimReasons: null,
+        excludedSources: null,
+        diagnostics: [{ code: "historical_resolved_policy_unavailable", message: "policy unavailable", severity: "info", source: "policy", fieldPath: "resolved_policy", phase: "explain" }],
+        limitations: ["persisted only"],
+        result: {
+          outputPageId: "page-output-12",
+          assistantMessageId: "msg-assistant-12",
+          generatedText: "hello",
+          summaries: ["summary"],
+          usage: { promptTokens: 320, completionTokens: 128, totalTokens: 448 },
+          verifier: null,
+          committedAt: 1710000004000,
+        },
+      })),
+    });
+
+    await mountRoutes(controlService);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/floors/floor-12/prompt-runtime/explain",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      data: {
+        floor: {
+          id: "floor-12",
+          session_id: "s1",
+          floor_no: 12,
+          branch_id: "main",
+          parent_floor_id: "floor-11",
+          state: "committed",
+          prompt_snapshot_created_at: 1710000003000,
+          committed_at: 1710000004000,
+        },
+        scope: {
+          session_id: "s1",
+          target_branch_id: "main",
+          branch_exists: true,
+          source_floor_id: null,
+          history_source_branch_id: "main",
+          history_source_mode: "existing_branch",
+        },
+        prompt_snapshot: {
+          preset_id: "preset-1",
+          preset_updated_at: 1710000000000,
+          preset_version: 3,
+          worldbook_id: "wb-1",
+          worldbook_updated_at: 1710000001000,
+          worldbook_version: 5,
+          regex_profile_id: "regex-1",
+          regex_profile_updated_at: 1710000002000,
+          regex_profile_version: 2,
+          worldbook_activated_entry_uids: [7],
+          regex_pre_rule_names: ["Input Rule"],
+          regex_post_rule_names: [],
+          prompt_mode: "compat_strict",
+          prompt_digest: "digest-1",
+          token_estimate: 42,
+        },
+        resolved_policy: null,
+        source_map: {
+          history: { source_branch_id: "main", source_mode: "existing_branch" },
+        },
+        trim_reasons: null,
+        excluded_sources: null,
+        diagnostics: [{ code: "historical_resolved_policy_unavailable", message: "policy unavailable", severity: "info", source: "policy", field_path: "resolved_policy", phase: "explain" }],
+        limitations: ["persisted only"],
+        result: {
+          output_page_id: "page-output-12",
+          assistant_message_id: "msg-assistant-12",
+          generated_text: "hello",
+          summaries: ["summary"],
+          usage: { prompt_tokens: 320, completion_tokens: 128, total_tokens: 448 },
+          verifier: null,
+          committed_at: 1710000004000,
+        },
+      },
+    });
+
+    expect(controlService.getHistoricalExplain).toHaveBeenCalledWith("floor-12", DEFAULT_ADMIN_ACCOUNT_ID);
+  });
+
   it("maps GET /prompt-runtime/capabilities response to snake_case", async () => {
     const controlService = createPromptRuntimeControlService({
       getCapabilities: vi.fn(() => ({
@@ -572,6 +969,26 @@ describe("prompt runtime routes", () => {
             requireLastUser: false,
             noAssistant: false,
           },
+        },
+        budget: {
+          defaults: {},
+          requestOverrideSupported: true,
+          persistentPatchSupported: false,
+          supportedFields: ["maxInputTokens", "reservedCompletionTokens"],
+          trimReasonCodes: ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"],
+        },
+        sourceSelection: {
+          defaults: {
+            history: { mode: "full" },
+            memory: { enabled: true },
+            worldbook: { enabled: true },
+            examples: { enabled: true },
+          },
+          requestOverrideSupported: true,
+          persistentPatchSupported: false,
+          supportedSources: ["history", "memory", "worldbook", "examples"],
+          historyModes: ["full", "windowed"],
+          exclusionReasonCodes: ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"],
         },
         observability: {
           live: {
@@ -601,6 +1018,13 @@ describe("prompt runtime routes", () => {
             createsFloor: false,
             writesPromptSnapshot: false,
             commitsSideEffects: false,
+          },
+          explain: {
+            enabled: true,
+            readOnly: true,
+            requiresCommittedFloor: true,
+            persistedTruthOnly: true,
+            recompute: false,
           },
           stream: {
             enabled: true,
@@ -645,6 +1069,26 @@ describe("prompt runtime routes", () => {
             no_assistant: false,
           },
         },
+        budget: {
+          defaults: {},
+          request_override_supported: true,
+          persistent_patch_supported: false,
+          supported_fields: ["maxInputTokens", "reservedCompletionTokens"],
+          trim_reason_codes: ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"],
+        },
+        source_selection: {
+          defaults: {
+            history: { mode: "full" },
+            memory: { enabled: true },
+            worldbook: { enabled: true },
+            examples: { enabled: true },
+          },
+          request_override_supported: true,
+          persistent_patch_supported: false,
+          supported_sources: ["history", "memory", "worldbook", "examples"],
+          history_modes: ["full", "windowed"],
+          exclusion_reason_codes: ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"],
+        },
         observability: {
           live: {
             enabled: true,
@@ -673,6 +1117,13 @@ describe("prompt runtime routes", () => {
             creates_floor: false,
             writes_prompt_snapshot: false,
             commits_side_effects: false,
+          },
+          explain: {
+            enabled: true,
+            read_only: true,
+            requires_committed_floor: true,
+            persisted_truth_only: true,
+            recompute: false,
           },
           stream: {
             enabled: true,

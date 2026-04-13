@@ -48,7 +48,10 @@ import type { MutationRuntime } from "./runtime-mutation-types.js";
 import type { ToolRuntimeJobBridge } from "./tool-runtime-job-bridge.js";
 import type { FloorRunService } from "./floor-run-service.js";
 import type { StMacroStagedMutation } from "./st-macros/index.js";
-import { buildBranchVariableScopeId } from "@tavern/shared";
+import {
+  buildBranchMemoryScopeId,
+  buildBranchVariableScopeId,
+} from "@tavern/shared";
 import { DEFAULT_GLOBAL_SCOPE_ID } from "./variable-host-service.js";
 import { BranchLocalVariableSnapshotService } from "./branch-local-variable-snapshot-service.js";
 
@@ -355,6 +358,7 @@ export class TurnCommitService {
   private enqueueIngestTurnJob(tx: DbExecutor, args: {
     accountId: string;
     sessionId: string;
+    branchId?: string;
     floor: FloorEntity;
     assistantMessageId: string;
     committedAt: number;
@@ -366,6 +370,7 @@ export class TurnCommitService {
       accountId: args.accountId,
       sessionId: args.sessionId,
       floorId: args.floor.id,
+      branchId: args.branchId,
       floorNo: args.floor.floorNo,
       assistantMessageId: args.assistantMessageId,
       userInputDigest,
@@ -643,11 +648,14 @@ export class TurnCommitService {
         let memory: TurnCommitMemoryReceipt | undefined;
 
         if (input.memoryCommit) {
+          const defaultScope = input.branchId ? "branch" : "chat";
+          const defaultScopeId = input.branchId ? buildBranchMemoryScopeId(input.sessionId, input.branchId) : input.sessionId;
           try {
             if (this.enableAsyncMemoryIngest) {
               const enqueuedMemory = this.enqueueIngestTurnJob(tx, {
                 accountId: input.accountId,
                 sessionId: input.sessionId,
+                branchId: input.branchId,
                 floor,
                 assistantMessageId: assistantMessage.messageId,
                 committedAt,
@@ -667,9 +675,9 @@ export class TurnCommitService {
                 pendingEvents,
                 summaries: input.memoryCommit.summaries,
                 consolidationOutput: input.memoryCommit.consolidationOutput,
-                defaultScope: "chat",
-                defaultScopeId: input.sessionId,
-                scopeContext: { accountId: input.accountId, sessionId: input.sessionId, floorId: input.floorId },
+                defaultScope,
+                defaultScopeId,
+                scopeContext: { accountId: input.accountId, sessionId: input.sessionId, ...(input.branchId ? { branchId: input.branchId } : {}), floorId: input.floorId },
                 sourceFloorId: input.floorId,
                 sourceMessageId: assistantMessage.messageId,
               });
@@ -697,8 +705,8 @@ export class TurnCommitService {
         try {
           await this.eventBus.emit("memory.persist_failed", {
             sessionId: input.sessionId,
-            scope: "chat",
-            scopeId: input.sessionId,
+            scope: input.branchId ? "branch" : "chat",
+            scopeId: input.branchId ? buildBranchMemoryScopeId(input.sessionId, input.branchId) : input.sessionId,
             floorId: input.floorId,
             sourceJobId: this.enableAsyncMemoryIngest ? `memory-job:ingest_turn:${input.floorId}` : undefined,
             error: normalizeError(error.cause ?? error),

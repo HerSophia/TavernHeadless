@@ -134,7 +134,9 @@ describe("createTavernClient", () => {
 
     expect(client.promptRuntime).toBeDefined();
     expect(typeof client.promptRuntime.getSession).toBe("function");
+    expect(typeof client.promptRuntime.getBranchPolicy).toBe("function");
     expect(typeof client.promptRuntime.patchPolicy).toBe("function");
+    expect(typeof client.promptRuntime.patchBranchPolicy).toBe("function");
     expect(typeof client.promptRuntime.previewText).toBe("function");
     expect(typeof client.promptRuntime.getCapabilities).toBe("function");
 

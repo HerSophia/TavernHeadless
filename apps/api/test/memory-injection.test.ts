@@ -11,10 +11,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
+import { buildBranchMemoryScopeId } from "@tavern/shared";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { floors, memoryItems, messagePages, messages, sessions } from "../src/db/schema";
+import { branchLocalVariableSnapshots, floors, memoryItems, messagePages, messages, sessions } from "../src/db/schema";
 import { DrizzleMemoryRepository } from "../src/adapters/drizzle-memory-repository";
 import { ChatService } from "../src/services/chat-service";
 import type { TurnCommitService } from "../src/services/turn-commit-service";
@@ -341,8 +342,8 @@ describe("Memory Injection", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: buildBranchMemoryScopeId(sessionId, "main"),
       type: "summary",
       status: "active",
       sourceFloorId: result.floorId,
@@ -599,13 +600,21 @@ describe("Memory Injection", () => {
       { memoryStore }
     );
 
-    const { messageId } = await createFloorWithUserMessage({
+    const { floorId, messageId } = await createFloorWithUserMessage({
       database,
       sessionId,
       floorNo: 3,
       state: "committed",
       content: "Original input",
     });
+    await database.db.insert(branchLocalVariableSnapshots).values({
+      floorId,
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      valuesJson: "{}",
+      createdAt: Date.now(),
+    }).onConflictDoNothing();
 
     await chatService.editAndRegenerate(messageId, {
       content: "Edited input",
@@ -653,10 +662,10 @@ describe("Memory Injection", () => {
       status: "active",
     });
     await memoryStore.create({
-      scope: "chat",
-      scopeId: sessionId,
+      scope: "branch",
+      scopeId: buildBranchMemoryScopeId(sessionId, "main"),
       type: "summary",
-      content: "Chat summary entry",
+      content: "Branch summary entry",
       importance: 0.8,
       confidence: 1,
       status: "active",
@@ -677,9 +686,9 @@ describe("Memory Injection", () => {
     const memoryMsg = turnInput.messages.find((m: { role: string; content: string }) => m.content.includes("[Memory]"));
 
     expect(memoryMsg?.content).toContain("Global reminder");
-    expect(memoryMsg?.content).toContain("Chat summary entry");
+    expect(memoryMsg?.content).toContain("Branch summary entry");
     expect(memoryMsg?.content).toContain("Floor-local clue");
-    expect(turnInput.consolidationContext?.recentSummaries).toEqual(expect.arrayContaining(["Chat summary entry"]));
+    expect(turnInput.consolidationContext?.recentSummaries).toEqual(expect.arrayContaining(["Branch summary entry"]));
     expect(turnInput.consolidationContext?.existingFacts).toEqual(expect.arrayContaining([
       expect.objectContaining({ scope: "global", content: "Global reminder" }),
       expect.objectContaining({ scope: "floor", content: "Floor-local clue" }),

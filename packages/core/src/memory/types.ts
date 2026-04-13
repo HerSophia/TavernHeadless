@@ -79,6 +79,7 @@ export interface MemoryAccessOptions {
 export interface MemoryScopeContext {
   accountId?: string;
   sessionId?: string;
+  branchId?: string;
   floorId?: string;
 }
 

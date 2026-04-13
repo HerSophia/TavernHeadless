@@ -1,4 +1,8 @@
-import { MEMORY_SCOPES, type MemoryScope } from '@tavern/shared';
+import {
+  MEMORY_SCOPES,
+  buildBranchMemoryScopeId,
+  type MemoryScope,
+} from '@tavern/shared';
 
 import type { MemoryScopeContext, MemoryScopeRef } from './types.js';
 
@@ -12,7 +16,7 @@ function normalizeScopeId(value: string | undefined): string | undefined {
 }
 
 export class MemoryScopeResolutionError extends Error {
-  constructor(scope: MemoryScope, missingField: 'accountId' | 'sessionId' | 'floorId') {
+  constructor(scope: MemoryScope, missingField: 'accountId' | 'sessionId' | 'branchId' | 'floorId') {
     super(`Cannot resolve memory scopeId for scope '${scope}': missing ${missingField}`);
     this.name = 'MemoryScopeResolutionError';
   }
@@ -33,12 +37,38 @@ export class MemoryScopeResolver {
       return accountId;
     }
 
-    const primary = scope === 'chat'
-      ? normalizeScopeId(context.sessionId)
-      : normalizeScopeId(context.floorId);
+    if (scope === 'chat') {
+      const sessionId = normalizeScopeId(context.sessionId);
+      if (sessionId) {
+        return sessionId;
+      }
 
-    if (primary) {
-      return primary;
+      const fallback = normalizeScopeId(fallbackScopeId);
+      if (fallback) {
+        return fallback;
+      }
+
+      throw new MemoryScopeResolutionError(scope, 'sessionId');
+    }
+
+    if (scope === 'branch') {
+      const sessionId = normalizeScopeId(context.sessionId);
+      const branchId = normalizeScopeId(context.branchId);
+      if (sessionId && branchId) {
+        return buildBranchMemoryScopeId(sessionId, branchId);
+      }
+
+      const fallback = normalizeScopeId(fallbackScopeId);
+      if (fallback) {
+        return fallback;
+      }
+
+      throw new MemoryScopeResolutionError(scope, sessionId ? 'branchId' : 'sessionId');
+    }
+
+    const floorId = normalizeScopeId(context.floorId);
+    if (floorId) {
+      return floorId;
     }
 
     const fallback = normalizeScopeId(fallbackScopeId);
@@ -46,7 +76,7 @@ export class MemoryScopeResolver {
       return fallback;
     }
 
-    throw new MemoryScopeResolutionError(scope, scope === 'chat' ? 'sessionId' : 'floorId');
+    throw new MemoryScopeResolutionError(scope, 'floorId');
   }
 
   resolveRef(
@@ -65,22 +95,36 @@ export class MemoryScopeResolver {
     scopes: readonly MemoryScope[] = MEMORY_SCOPES,
   ): ResolvedMemoryScopeRef[] {
     const resolved: ResolvedMemoryScopeRef[] = [];
+    const accountId = normalizeScopeId(context.accountId);
+    const sessionId = normalizeScopeId(context.sessionId);
+    const branchId = normalizeScopeId(context.branchId);
+    const floorId = normalizeScopeId(context.floorId);
+    const hasBranchContext = !!sessionId && !!branchId;
 
     for (const scope of scopes) {
       if (scope === 'global') {
-        const accountId = normalizeScopeId(context.accountId);
         if (accountId) {
           resolved.push({ scope, scopeId: accountId });
         }
         continue;
       }
 
-      const scopeId = scope === 'chat'
-        ? normalizeScopeId(context.sessionId)
-        : normalizeScopeId(context.floorId);
+      if (scope === 'chat') {
+        if (!hasBranchContext && sessionId) {
+          resolved.push({ scope, scopeId: sessionId });
+        }
+        continue;
+      }
 
-      if (scopeId) {
-        resolved.push({ scope, scopeId });
+      if (scope === 'branch') {
+        if (hasBranchContext) {
+          resolved.push({ scope, scopeId: buildBranchMemoryScopeId(sessionId, branchId) });
+        }
+        continue;
+      }
+
+      if (floorId) {
+        resolved.push({ scope, scopeId: floorId });
       }
     }
 

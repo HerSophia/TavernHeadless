@@ -83,6 +83,21 @@ type PromptStructureBody = {
   preserve_system_messages?: boolean;
 };
 
+type PromptBudgetBody = {
+  max_input_tokens?: number;
+  reserved_completion_tokens?: number;
+};
+
+type PromptSourceSelectionBody = {
+  history?: {
+    mode?: "full" | "windowed";
+    max_messages?: number;
+  };
+  memory?: { enabled?: boolean };
+  worldbook?: { enabled?: boolean };
+  examples?: { enabled?: boolean };
+};
+
 type LiveDebugOptionsBody = {
   include_prompt_snapshot?: boolean;
   include_runtime_trace?: boolean;
@@ -124,6 +139,8 @@ type DryRunBody = {
   visibility?: DryRunVisibilityBody;
   structure?: PromptStructureBody;
   delivery?: PromptDeliveryBody;
+  budget?: PromptBudgetBody;
+  source_selection?: PromptSourceSelectionBody;
 };
 
 type RegenerateBody = {
@@ -233,6 +250,8 @@ export async function registerChatRoutes(
       visibility: mapDryRunVisibilityRequest(parsedBody.data.visibility),
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
+      budget: mapPromptBudgetRequest(parsedBody.data.budget),
+      sourceSelection: mapPromptSourceSelectionRequest(parsedBody.data.source_selection),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -770,6 +789,34 @@ function mapPromptDeliveryRequest(
   };
 }
 
+function mapPromptBudgetRequest(
+  budget: PromptBudgetBody | undefined,
+): DryRunRequest["budget"] {
+  if (!budget) {
+    return undefined;
+  }
+
+  return {
+    ...(budget.max_input_tokens !== undefined ? { maxInputTokens: budget.max_input_tokens } : {}),
+    ...(budget.reserved_completion_tokens !== undefined ? { reservedCompletionTokens: budget.reserved_completion_tokens } : {}),
+  };
+}
+
+function mapPromptSourceSelectionRequest(
+  sourceSelection: PromptSourceSelectionBody | undefined,
+): DryRunRequest["sourceSelection"] {
+  if (!sourceSelection) {
+    return undefined;
+  }
+
+  return {
+    ...(sourceSelection.history ? { history: { ...(sourceSelection.history.mode !== undefined ? { mode: sourceSelection.history.mode } : {}), ...(sourceSelection.history.max_messages !== undefined ? { maxMessages: sourceSelection.history.max_messages } : {}) } } : {}),
+    ...(sourceSelection.memory ? { memory: { ...(sourceSelection.memory.enabled !== undefined ? { enabled: sourceSelection.memory.enabled } : {}) } } : {}),
+    ...(sourceSelection.worldbook ? { worldbook: { ...(sourceSelection.worldbook.enabled !== undefined ? { enabled: sourceSelection.worldbook.enabled } : {}) } } : {}),
+    ...(sourceSelection.examples ? { examples: { ...(sourceSelection.examples.enabled !== undefined ? { enabled: sourceSelection.examples.enabled } : {}) } } : {}),
+  };
+}
+
 function mapLiveDebugOptionsRequest(
   debugOptions: LiveDebugOptionsBody | undefined,
 ): RespondRequest["debugOptions"] {
@@ -893,6 +940,11 @@ function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<st
               token_count: item.tokenCount,
               ...(item.prunedTokenCount !== undefined ? { pruned_token_count: item.prunedTokenCount } : {}),
             })),
+            ...(runtimeTrace.budgets.trimReasons
+              ? {
+                  trim_reasons: runtimeTrace.budgets.trimReasons.map((item) => mapTrimReasonToSnakeCase(item)),
+                }
+              : {}),
           },
         }
       : {}),
@@ -932,6 +984,17 @@ function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<st
               source_macro: mutation.sourceMacro,
             })),
             traces: runtimeTrace.macro.traces.map((trace) => mapMacroTraceEntryToSnakeCase(trace)),
+          },
+        }
+      : {}),
+    ...(runtimeTrace.sourceSelection
+      ? {
+          source_selection: {
+            excluded_sources: runtimeTrace.sourceSelection.excludedSources.map((item) => ({
+              source: item.source,
+              reason: item.reason,
+              ...(item.detail ? { detail: item.detail } : {}),
+            })),
           },
         }
       : {}),
@@ -982,6 +1045,15 @@ function mapOptionalPromptDebugResponseFields(
       ? { prompt_snapshot: mapPromptSnapshotToSnakeCase(payload.promptSnapshot) }
       : {}),
     ...mapOptionalRuntimeTraceResponseField(payload.runtimeTrace),
+  };
+}
+
+function mapTrimReasonToSnakeCase(reason: NonNullable<NonNullable<PromptRuntimeTrace["budgets"]>["trimReasons"]>[number]): Record<string, unknown> {
+  return {
+    group: reason.group,
+    reason: reason.reason,
+    ...(reason.detail ? { detail: reason.detail } : {}),
+    ...(reason.prunedTokenCount !== undefined ? { pruned_token_count: reason.prunedTokenCount } : {}),
   };
 }
 
@@ -1058,6 +1130,7 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
     case "invalid_state":
     case "generation_target_stale":
     case "branch_exists":
+    case "branch_local_snapshot_missing":
       return { statusCode: 409, code: error.code, message: error.message };
     case "generation_cancelled":
       return { statusCode: 499, code: error.code, message: error.message };
