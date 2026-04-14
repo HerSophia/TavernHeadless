@@ -210,7 +210,7 @@ onUnmounted(() => {
       <div class="landing-shell structure-shell">
         <div class="section-header">
           <h2 class="section-title">仓库结构</h2>
-          <p class="section-desc">@tavern/sdk 和 @tavern/client-helpers 是公开接入包，其余按内部边界组织。</p>
+          <p class="section-desc">@tavern/sdk 和 @tavern/client-helpers 对外提供接入，其他包按职责划分。</p>
         </div>
 
         <div
