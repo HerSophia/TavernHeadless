@@ -5,6 +5,7 @@ import StatsBar from './components/StatsBar.vue'
 import FeaturesGrid from './components/FeaturesGrid.vue'
 import WorkflowSection from './components/WorkflowSection.vue'
 import QuickStartSection from './components/QuickStartSection.vue'
+import AgentAssistSection from './components/AgentAssistSection.vue'
 import TechStack from './components/TechStack.vue'
 import FooterSection from './components/FooterSection.vue'
 import OriginStorySection from './components/OriginStorySection.vue'
@@ -21,6 +22,7 @@ export default {
     app.component('FeaturesGrid', FeaturesGrid)
     app.component('WorkflowSection', WorkflowSection)
     app.component('QuickStartSection', QuickStartSection)
+    app.component('AgentAssistSection', AgentAssistSection)
     app.component('TechStack', TechStack)
     app.component('FooterSection', FooterSection)
     app.component('OriginStorySection', OriginStorySection)

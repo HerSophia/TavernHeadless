@@ -600,9 +600,10 @@ onUnmounted(() => {
 
 .landing-dock-item {
   display: inline-flex;
+  flex-direction: row-reverse;
   align-items: center;
   gap: 10px;
-  padding: 6px 8px 6px 10px;
+  padding: 6px 10px 6px 8px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -652,7 +653,7 @@ onUnmounted(() => {
   height: 28px;
   border-color: rgba(45, 212, 191, 0.35);
   background: linear-gradient(180deg, var(--vp-c-brand-1), #818cf8);
-  transform: translateX(-2px);
+  transform: none;
   box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12), 0 0 18px rgba(45, 212, 191, 0.18);
 }
 

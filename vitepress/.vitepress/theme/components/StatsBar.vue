@@ -2,8 +2,8 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 
 const stats = [
-  { value: 3, suffix: '', label: '层消息架构', desc: 'Session → Floor → Page' },
-  { value: 5, suffix: '', label: '级变量体系', desc: '全局 / 会话 / 分支 / 楼层 / 页' },
+  { value: 3, suffix: '', label: '层消息结构', desc: 'Session → Floor → Page' },
+  { value: 5, suffix: '', label: '级变量系统', desc: '全局 / 会话 / 分支 / 楼层 / 页' },
   { value: 20, suffix: '+', label: 'REST 资源', desc: '会话、内容、变量、记忆、Tools、MCP 等' },
   { value: 2, suffix: '', label: '官方接入包', desc: '@tavern/sdk + @tavern/client-helpers' },
 ]
@@ -155,7 +155,8 @@ onUnmounted(() => {
   padding: 0 !important;
 }
 
-.stats-panel {  border-radius: 28px;
+.stats-panel {
+  border-radius: 28px;
   border: 1px solid var(--landing-card-border);
   background:
     radial-gradient(circle at 12% 18%, rgba(45, 212, 191, 0.18), transparent 28%),

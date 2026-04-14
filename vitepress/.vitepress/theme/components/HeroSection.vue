@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
 import { withBase } from 'vitepress'
+import { onMounted, ref } from 'vue'
 
 const visible = ref(false)
 const sectionRef = ref<HTMLElement | null>(null)
@@ -14,7 +14,8 @@ function syncPointerMotionAvailability() {
     !window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-function resetPointerMotion() {  if (!sectionRef.value) return
+function resetPointerMotion() {
+  if (!sectionRef.value) return
 
   sectionRef.value.style.setProperty('--hero-pointer-x', '50%')
   sectionRef.value.style.setProperty('--hero-pointer-y', '50%')
@@ -29,7 +30,8 @@ function handlePointerMove(event: PointerEvent) {
   const x = event.clientX - rect.left
   const y = event.clientY - rect.top
   const ratioX = x / rect.width - 0.5
-  const ratioY = y / rect.height - 0.5  sectionRef.value.style.setProperty('--hero-pointer-x', `${x}px`)
+  const ratioY = y / rect.height - 0.5
+  sectionRef.value.style.setProperty('--hero-pointer-x', `${x}px`)
   sectionRef.value.style.setProperty('--hero-pointer-y', `${y}px`)
   sectionRef.value.style.setProperty('--hero-shift-x', `${ratioX * 42}px`)
   sectionRef.value.style.setProperty('--hero-shift-y', `${ratioY * 30}px`)
@@ -69,7 +71,8 @@ function scrollToOverview() {
   <section
     id="landing-hero"
     ref="sectionRef"
-    class="hero-section landing-fullscreen"    data-landing-section="hero"
+    class="hero-section landing-fullscreen"
+    data-landing-section="hero"
     data-section-title="首页"
     data-section-label="首页"
     @pointermove="handlePointerMove"
@@ -77,7 +80,8 @@ function scrollToOverview() {
   >
     <div class="hero-bg">
       <div class="grid-overlay"></div>
-      <div class="radial-mask"></div>      <div class="glow glow-tl"></div>
+      <div class="radial-mask"></div>
+      <div class="glow glow-tl"></div>
       <div class="glow glow-br"></div>
       <div class="glow glow-center"></div>
 

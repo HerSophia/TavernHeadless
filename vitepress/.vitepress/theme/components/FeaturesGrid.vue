@@ -19,18 +19,18 @@ const features = [
   },
   {
     icon: 'workflow',
-    title: '提示词编排体系',
-    details: '兼容模式复刻酒馆的拼接逻辑，原生模式走图编译。两条路径最终都落到 Prompt IR。',
+    title: '提示词编排',
+    details: '兼容模式沿用酒馆的拼接方式，原生模式走图编译。最终都输出同一份 Prompt IR。',
   },
   {
     icon: 'brain',
     title: '记忆系统',
-    details: '摘要提取、结构化存储、上下文注入、后台维护。支持同步写入和异步收敛。',
+    details: '自动提取摘要、结构化存储、按需注入上下文。后台异步维护，不阻塞对话。',
   },
   {
     icon: 'terminal',
     title: '开发者体验',
-    details: 'TypeScript 全栈、OpenAPI、官方 SDK、Client Helpers、SSE、Prompt dry-run。',
+    details: 'TypeScript 全栈，接口有 OpenAPI 文档，接入有官方 SDK，调试有 dry-run。',
   },
 ]
 
@@ -129,7 +129,8 @@ onUnmounted(() => {
           class="feature-card"
           :class="{ visible: visibleSet.has(index) }"
           :style="{ transitionDelay: `${index * 80}ms` }"
-        >          <div class="card-content">
+        >
+          <div class="card-content">
             <div class="card-icon">
               <svg v-if="feature.icon === 'compat'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M8 3L4 7l4 4" />

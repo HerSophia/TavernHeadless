@@ -9,6 +9,7 @@ layout: page
   <FeaturesGrid />
   <WorkflowSection />
   <QuickStartSection />
+  <AgentAssistSection />
   <TechStack />
   <FooterSection />
   <OriginStorySection />

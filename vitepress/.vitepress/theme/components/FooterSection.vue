@@ -45,7 +45,7 @@ const links = [
       <div class="footer-cta">
         <h2 class="footer-title">开始接入</h2>
         <p class="footer-summary">
-          快速开始和 SDK 文档是接入路径，架构设计和集成层说明是系统边界。
+          从快速开始上手，用 SDK 文档完成接入。系统全貌看架构设计。
         </p>
 
         <div class="footer-actions">
@@ -59,7 +59,7 @@ const links = [
       <div class="footer-grid">
         <div class="footer-brand">
           <span class="brand-name">Tavern<span class="accent">Headless</span></span>
-          <p class="brand-desc">为开发者而生的 AI RP 后端引擎</p>
+          <p class="brand-desc">面向开发者的 AI RP 后端引擎</p>
           <div class="brand-links">
             <a
               href="https://github.com/HerSophia/TavernHeadless"
