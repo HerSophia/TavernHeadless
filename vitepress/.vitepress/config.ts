@@ -52,6 +52,7 @@ export default defineConfig({
           { text: 'Client Helpers', link: '/sdk/client-helpers' },
         ],
       },
+      { text: 'Agent', link: '/agent/' },
       { text: '进度', link: '/progress/' },
     ],
 
@@ -159,6 +160,14 @@ export default defineConfig({
           text: 'Client Helpers',
           items: [
             { text: 'Client Helpers', link: '/sdk/client-helpers' },
+          ],
+        },
+      ],
+      '/agent/': [
+        {
+          text: 'Agent',
+          items: [
+            { text: 'Agent 接入', link: '/agent/' },
           ],
         },
       ],
