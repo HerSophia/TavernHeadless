@@ -32,6 +32,7 @@ outline: [2, 3]
 - 应该优先使用什么公开包
 - 应该怎样解读 manifest
 - 应该怎样组织本地验证
+- 参与项目开发时应遵守哪些边界和流程
 
 ## Agent 与 Skill 的分工
 
@@ -62,6 +63,8 @@ Skill 不替代以下内容：
 - OpenAPI
 - SDK 文档
 - 集成指南
+- 协作指南
+- 测试与 CI 规范
 
 Skill 只把这些已经公开的事实组织成一套稳定的工作流。
 
@@ -86,6 +89,8 @@ Skill 只把这些已经公开的事实组织成一套稳定的工作流。
 | [`/agent/skills/catalog.json`](/agent/skills/catalog.json) | Skill 目录 | 机器 |
 | [`/agent/skills/tavern-client-integration/`](/agent/skills/tavern-client-integration) | 客户端接入与升级 Skill | 人 |
 | [`/agent/skills/tavern-client-integration.json`](/agent/skills/tavern-client-integration.json) | 客户端接入与升级 Skill JSON | 机器 |
+| [`/agent/skills/tavern-project-contributing/`](/agent/skills/tavern-project-contributing) | 参与开发与协作 Skill | 人 |
+| [`/agent/skills/tavern-project-contributing.json`](/agent/skills/tavern-project-contributing.json) | 参与开发与协作 Skill JSON | 机器 |
 
 ## 如何配合使用
 
@@ -93,7 +98,7 @@ Skill 只把这些已经公开的事实组织成一套稳定的工作流。
 
 1. 先读取 `latest.json`，确认最新 commit 和 manifest 地址
 2. 再读取对应 manifest，确认 OpenAPI、SDK 和 helper 摘要
-3. 再进入对应 Skill，选择推荐路径和升级步骤
+3. 再进入对应 Skill，选择推荐路径和执行顺序
 4. 最后执行本地验证
 
 也就是说：
@@ -128,9 +133,19 @@ Skill 只把这些已经公开的事实组织成一套稳定的工作流。
 5. 再进入对应 Skill，按推荐顺序调整本地代码
 6. 最后执行 `typecheck` 和测试
 
+### 参与项目开发
+
+1. 先阅读 [协作指南](/development/contributing)
+2. 再阅读 [测试与 CI](/development/testing)
+3. 如需修改文档规范，再阅读
+   [文档规范](/development/doc-standards)
+4. 进入
+   [`tavern-project-contributing`](/agent/skills/tavern-project-contributing)
+5. 按 Skill 中的边界、验证和 PR 要求完成本地改动
+
 ## 机器接入最小示例
 
-当前第一阶段中，Skill 目录暂不通过 `index.json` 暴露。
+当前阶段中，Skill 目录还没有通过 `index.json` 暴露。
 
 如果机器方需要同时消费 Agent 与 Skill，可以按固定路径读取：
 
@@ -178,7 +193,7 @@ console.log(
    schema path，仍未到完整组件级和语义级 diff。
 2. `@tavern/sdk` 与 `@tavern/client-helpers` 已补直接 import 级
    consumer 摘要，但还不是完整的数据流和执行路径图。
-3. Skill 当前先覆盖客户端接入与升级主路径，
+3. Skill 当前先覆盖客户端接入与升级、参与开发与协作两条主路径，
    还没有覆盖全部开发场景。
 4. 当前不提供 webhook、SSE 或 Socket.IO 的真实通道地址。
 
