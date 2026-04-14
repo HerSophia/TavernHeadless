@@ -165,9 +165,16 @@ export default defineConfig({
       ],
       '/agent/': [
         {
-          text: 'Agent',
+          text: 'Agent 与 Skill',
           items: [
-            { text: 'Agent 接入', link: '/agent/' },
+            { text: '总入口', link: '/agent/' },
+            {
+              text: 'Skill',
+              items: [
+                { text: 'Skill 索引', link: '/agent/skills/' },
+                { text: '客户端接入与升级', link: '/agent/skills/tavern-client-integration' },
+              ],
+            },
           ],
         },
       ],

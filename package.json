@@ -40,8 +40,9 @@
     "postinstall": "node scripts/patch-vitepress-build.mjs",
     "prepare": "husky",
     "docs:generate-agent": "tsx scripts/generate-agent-artifacts.ts",
+    "docs:generate-skills": "tsx scripts/generate-skill-artifacts.ts",
     "docs:dev": "pnpm --filter @tavern/docs dev",
-    "docs:build": "pnpm docs:generate-agent && pnpm --filter @tavern/docs build",
+    "docs:build": "pnpm docs:generate-agent && pnpm docs:generate-skills && pnpm --filter @tavern/docs build",
     "docs:preview": "pnpm --filter @tavern/docs preview"
   },
   "dependencies": {
