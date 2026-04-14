@@ -173,6 +173,7 @@ export default defineConfig({
               items: [
                 { text: 'Skill 索引', link: '/agent/skills/' },
                 { text: '客户端接入与升级', link: '/agent/skills/tavern-client-integration' },
+                { text: '参与开发与协作', link: '/agent/skills/tavern-project-contributing' },
               ],
             },
           ],
