@@ -1,0 +1,1264 @@
+import { Buffer } from "node:buffer";
+
+import { nanoid } from "nanoid";
+
+import type { AppDb, DbExecutor } from "../db/client.js";
+import { parseJsonField } from "../lib/http.js";
+import {
+  ClientDataService,
+  ClientDataServiceError,
+  type ClientDataConfig,
+} from "../client-data/client-data-service.js";
+import {
+  ClientDataRepository,
+  type ClientDataManagedDomainRecord,
+  type ClientDataItemRecord,
+} from "../client-data/client-data-repository.js";
+import { SessionStateRepository, type SessionStateFloorHostRecord } from "./session-state-repository.js";
+import {
+  SessionStateSlotRegistry,
+  createDefaultSessionStateSlotRegistry,
+} from "./session-state-slot-registry.js";
+import type {
+  SessionStateDiffEntry,
+  SessionStateFloorSnapshotEnvelope,
+  SessionStateFloorSnapshotView,
+  SessionStateLiveHeadEnvelope,
+  SessionStateMutationPayload,
+  SessionStateMutationView,
+  SessionStateNamespace,
+  SessionStateReplaySafety,
+  SessionStateReplayEvaluation,
+  SessionStateResolvedValue,
+  SessionStateSlotDefinition,
+  SessionStateVisibilityMode,
+  SessionStateWriteMode,
+} from "./session-state-types.js";
+import {
+  SESSION_STATE_HOST_TYPE,
+  SESSION_STATE_INTERNAL_OWNER_ID,
+  SESSION_STATE_INTERNAL_OWNER_TYPE,
+  SESSION_STATE_LIVE_COLLECTION,
+  SESSION_STATE_MANAGER_KIND,
+  SESSION_STATE_SNAPSHOT_COLLECTION,
+} from "./session-state-types.js";
+
+export interface SessionStateServiceOptions {
+  clientData: ClientDataConfig;
+  slotRegistry?: SessionStateSlotRegistry;
+  managedOwnerType?: "application" | "plugin";
+  managedOwnerId?: string;
+  now?: () => number;
+}
+
+export interface SessionStateApplyResult {
+  mutations: SessionStateMutationView[];
+  snapshots: SessionStateFloorSnapshotView[];
+}
+
+export class SessionStateService {
+  private readonly clientDataConfig: ClientDataConfig;
+  private readonly slotRegistry: SessionStateSlotRegistry;
+  private readonly managedOwnerType: "application" | "plugin";
+  private readonly managedOwnerId: string;
+  private readonly now: () => number;
+
+  constructor(
+    private readonly db: AppDb,
+    options: SessionStateServiceOptions,
+  ) {
+    this.clientDataConfig = options.clientData;
+    this.slotRegistry = options.slotRegistry ?? createDefaultSessionStateSlotRegistry();
+    this.managedOwnerType = options.managedOwnerType ?? SESSION_STATE_INTERNAL_OWNER_TYPE;
+    this.managedOwnerId = options.managedOwnerId ?? SESSION_STATE_INTERNAL_OWNER_ID;
+    this.now = options.now ?? Date.now;
+  }
+
+  stageCommitBoundValue(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    sourceFloorId: string;
+    namespace: SessionStateNamespace;
+    slot: string;
+    value: unknown | null;
+    present?: boolean;
+    replaySafety?: SessionStateReplaySafety;
+    requestId?: string | null;
+    runId?: string | null;
+  }): SessionStateMutationView {
+    return this.executeTransaction((tx) => {
+      const definition = this.requireSlotDefinition(input.namespace, input.slot);
+      this.ensureWriteModeAllowed(definition, "commit_bound");
+      const replaySafety = this.resolveReplaySafety(definition, input.replaySafety);
+      const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
+      this.requireFloorInSession(tx, host.id, input.sourceFloorId);
+      const binding = this.ensureManagedDomainBinding(tx, host.accountId, host.id, input.namespace);
+      const payload = this.createMutationPayload({
+        present: input.present ?? true,
+        value: input.value,
+      });
+      this.assertPayloadWithinBudget(definition, payload);
+      const mutation = this.sessionStateRepository(tx).createMutation({
+        id: nanoid(),
+        accountId: host.accountId,
+        domainId: binding.domainId,
+        stateNamespace: input.namespace,
+        sessionId: host.id,
+        branchId: input.branchId,
+        sourceFloorId: input.sourceFloorId,
+        targetSlot: input.slot,
+        visibilityMode: definition.visibilityMode,
+        writeMode: "commit_bound",
+        replaySafety,
+        status: "staged",
+        requestId: input.requestId ?? null,
+        runId: input.runId ?? null,
+        payloadJson: JSON.stringify(payload),
+        sourceSnapshotFloorId: input.sourceFloorId,
+        liveHeadKey: this.buildLiveHeadItemKey(input.namespace, input.slot, definition.visibilityMode, host.id, input.branchId),
+        createdAt: this.now(),
+        updatedAt: this.now(),
+      });
+      return this.inflateMutation(mutation);
+    });
+  }
+
+  writeDirectValue(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    namespace: SessionStateNamespace;
+    slot: string;
+    value: unknown | null;
+    present?: boolean;
+    replaySafety?: SessionStateReplaySafety;
+    requestId?: string | null;
+    runId?: string | null;
+    sourceFloorId?: string | null;
+  }): SessionStateMutationView {
+    return this.executeTransaction((tx) => {
+      const definition = this.requireSlotDefinition(input.namespace, input.slot);
+      this.ensureWriteModeAllowed(definition, "direct");
+      const replaySafety = this.resolveReplaySafety(definition, input.replaySafety);
+      const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
+      if (input.sourceFloorId) {
+        this.requireFloorInSession(tx, host.id, input.sourceFloorId);
+      }
+      const binding = this.ensureManagedDomainBinding(tx, host.accountId, host.id, input.namespace);
+      const payload = this.createMutationPayload({
+        present: input.present ?? true,
+        value: input.value,
+      });
+      this.assertPayloadWithinBudget(definition, payload);
+      const mutation = this.sessionStateRepository(tx).createMutation({
+        id: nanoid(),
+        accountId: host.accountId,
+        domainId: binding.domainId,
+        stateNamespace: input.namespace,
+        sessionId: host.id,
+        branchId: input.branchId,
+        sourceFloorId: input.sourceFloorId ?? null,
+        targetSlot: input.slot,
+        visibilityMode: definition.visibilityMode,
+        writeMode: "direct",
+        replaySafety,
+        status: replaySafety === "uncertain" ? "uncertain" : "staged",
+        requestId: input.requestId ?? null,
+        runId: input.runId ?? null,
+        payloadJson: JSON.stringify(payload),
+        sourceSnapshotFloorId: input.sourceFloorId ?? null,
+        liveHeadKey: this.buildLiveHeadItemKey(input.namespace, input.slot, definition.visibilityMode, host.id, input.branchId),
+        blockedReason: replaySafety === "uncertain" ? "uncertain_replay_safety" : null,
+        createdAt: this.now(),
+        updatedAt: this.now(),
+      });
+
+      if (replaySafety === "uncertain") {
+        this.appendGovernanceAudit(tx, host.accountId, binding, {
+          action: "session_state.mutation.uncertain",
+          targetType: "mutation",
+          targetId: mutation.id,
+          metadata: {
+            slot: input.slot,
+            namespace: input.namespace,
+            branch_id: input.branchId,
+            write_mode: "direct",
+          },
+        });
+        return this.inflateMutation(mutation);
+      }
+
+      const appliedMutation = this.applyDirectMutation(tx, binding, definition, mutation, payload, this.now());
+      this.appendGovernanceAudit(tx, host.accountId, binding, {
+        action: "session_state.mutation.direct_apply",
+        targetType: "mutation",
+        targetId: appliedMutation.id,
+        metadata: {
+          slot: appliedMutation.targetSlot,
+          namespace: appliedMutation.stateNamespace,
+          branch_id: appliedMutation.branchId,
+          source_floor_id: appliedMutation.sourceFloorId,
+        },
+      });
+      return appliedMutation;
+    });
+  }
+
+  discardStagedMutationsForFloor(input: {
+    accountId: string;
+    sessionId: string;
+    floorId: string;
+    reason: string;
+  }): SessionStateMutationView[] {
+    return this.executeTransaction((tx) => {
+      this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: false });
+      this.requireFloorInSession(tx, input.sessionId, input.floorId);
+      const mutations = this.sessionStateRepository(tx).listMutationsForSourceFloor(input.floorId, ["staged"]);
+      return mutations.map((mutation) => {
+        const updated = this.sessionStateRepository(tx).updateMutation({
+          mutationId: mutation.id,
+          status: "discarded",
+          discardReason: input.reason,
+          updatedAt: this.now(),
+        });
+        return this.inflateMutation(updated ?? mutation);
+      });
+    });
+  }
+
+  applyStagedMutationsForFloor(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    floorId: string;
+    committedAt: number;
+  }, executor?: DbExecutor): SessionStateApplyResult {
+    if (!executor) {
+      return this.executeTransaction((tx) => this.applyStagedMutationsForFloor(input, tx));
+    }
+
+    const tx = executor;
+    const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: false });
+    const floor = this.requireFloorInSession(tx, host.id, input.floorId);
+    const managedBindings = this.clientDataRepository(tx).listManagedDomainsByHost({
+      accountId: host.accountId,
+      managerKind: SESSION_STATE_MANAGER_KIND,
+      hostType: SESSION_STATE_HOST_TYPE,
+      hostId: host.id,
+    });
+    const managedByNamespace = new Map<SessionStateNamespace, ClientDataManagedDomainRecord>(
+      managedBindings.map((binding) => [binding.stateNamespace, binding]),
+    );
+    const stagedMutations = this.sessionStateRepository(tx).listMutationsForSourceFloor(input.floorId, ["staged"]);
+    const appliedBySlot = new Map<string, { mutation: SessionStateMutationView; payload: SessionStateMutationPayload }>();
+    const appliedMutations: SessionStateMutationView[] = [];
+
+    for (const mutationBase of stagedMutations) {
+      const definition = this.requireSlotDefinition(mutationBase.stateNamespace, mutationBase.targetSlot);
+      const payload = this.parseMutationPayload(mutationBase.payloadJson);
+      if (mutationBase.replaySafety === "uncertain") {
+        this.sessionStateRepository(tx).updateMutation({
+          mutationId: mutationBase.id,
+          status: "uncertain",
+          blockedReason: "uncertain_replay_safety",
+          updatedAt: input.committedAt,
+        });
+        throw new SessionStateServiceError(
+          409,
+          "session_state_replay_uncertain",
+          `Session state mutation '${mutationBase.id}' is uncertain and cannot be auto-applied during commit`,
+        );
+      }
+
+      const binding = managedByNamespace.get(mutationBase.stateNamespace)
+        ?? this.ensureManagedDomainBinding(tx, host.accountId, host.id, mutationBase.stateNamespace);
+      const applied = this.applyDirectMutation(tx, binding, definition, mutationBase, payload, input.committedAt);
+      appliedMutations.push(applied);
+      appliedBySlot.set(this.toSlotMapKey(mutationBase.stateNamespace, mutationBase.targetSlot), {
+        mutation: applied,
+        payload,
+      });
+    }
+
+    const snapshots: SessionStateFloorSnapshotView[] = [];
+    for (const binding of managedByNamespace.values()) {
+      const definitions = this.slotRegistry.list(binding.stateNamespace);
+      for (const definition of definitions) {
+        const snapshot = this.materializeFloorSnapshotForSlot(tx, {
+          accountId: host.accountId,
+          binding,
+          floor,
+          definition,
+          branchId: input.branchId,
+          committedAt: input.committedAt,
+          appliedBySlot,
+        });
+        snapshots.push(snapshot);
+      }
+    }
+
+    return {
+      mutations: appliedMutations,
+      snapshots,
+    };
+  }
+
+  resolveLiveValue(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    namespace: SessionStateNamespace;
+    slot: string;
+    sourceFloorId?: string;
+  }): SessionStateResolvedValue | null {
+    const definition = this.requireSlotDefinition(input.namespace, input.slot);
+    this.requireSessionHost(this.db, input.accountId, input.sessionId, { requireActive: false });
+    if (input.sourceFloorId) {
+      this.requireFloorInSession(this.db, input.sessionId, input.sourceFloorId);
+    }
+
+    const binding = this.findManagedDomainBinding(this.db, input.accountId, input.sessionId, input.namespace);
+    if (!binding) {
+      return null;
+    }
+
+    const liveHead = this.getLiveHeadEnvelope(
+      this.db,
+      input.accountId,
+      binding.domainId,
+      input.namespace,
+      input.slot,
+      definition.visibilityMode,
+      input.sessionId,
+      input.branchId,
+    );
+    if (liveHead) {
+      return {
+        namespace: input.namespace,
+        slot: input.slot,
+        source: "live_head",
+        visibilityMode: definition.visibilityMode,
+        schemaVersion: liveHead.schemaVersion,
+        present: liveHead.present,
+        value: liveHead.value,
+        sessionId: liveHead.sessionId,
+        branchId: liveHead.branchId ?? input.branchId,
+        floorId: liveHead.sourceFloorId,
+        sourceMutationIds: liveHead.lastMutationId ? [liveHead.lastMutationId] : [],
+        updatedAt: liveHead.updatedAt,
+      };
+    }
+
+    if (input.sourceFloorId) {
+      const snapshot = this.getFloorSnapshot({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        floorId: input.sourceFloorId,
+        namespace: input.namespace,
+        slot: input.slot,
+      });
+      if (snapshot) {
+        return {
+          namespace: snapshot.namespace,
+          slot: snapshot.slot,
+          source: "source_floor_snapshot",
+          visibilityMode: snapshot.visibilityMode,
+          schemaVersion: snapshot.schemaVersion,
+          present: snapshot.present,
+          value: snapshot.value,
+          sessionId: snapshot.sessionId,
+          branchId: snapshot.branchId,
+          floorId: snapshot.floorId,
+          sourceMutationIds: snapshot.sourceMutationIds,
+          updatedAt: snapshot.committedAt,
+        };
+      }
+    }
+
+    const latestBranchFloor = this.sessionStateRepository(this.db).getLatestCommittedFloorInBranch(input.sessionId, input.branchId);
+    if (latestBranchFloor) {
+      const snapshot = this.getFloorSnapshot({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        floorId: latestBranchFloor.id,
+        namespace: input.namespace,
+        slot: input.slot,
+      });
+      if (snapshot) {
+        return {
+          namespace: snapshot.namespace,
+          slot: snapshot.slot,
+          source: "latest_branch_snapshot",
+          visibilityMode: snapshot.visibilityMode,
+          schemaVersion: snapshot.schemaVersion,
+          present: snapshot.present,
+          value: snapshot.value,
+          sessionId: snapshot.sessionId,
+          branchId: snapshot.branchId,
+          floorId: snapshot.floorId,
+          sourceMutationIds: snapshot.sourceMutationIds,
+          updatedAt: snapshot.committedAt,
+        };
+      }
+    }
+
+    if (definition.visibilityMode === "session_shared" && input.branchId !== "main") {
+      const latestMainFloor = this.sessionStateRepository(this.db).getLatestCommittedFloorInBranch(input.sessionId, "main");
+      if (latestMainFloor) {
+        const snapshot = this.getFloorSnapshot({
+          accountId: input.accountId,
+          sessionId: input.sessionId,
+          floorId: latestMainFloor.id,
+          namespace: input.namespace,
+          slot: input.slot,
+        });
+        if (snapshot) {
+          return {
+            namespace: snapshot.namespace,
+            slot: snapshot.slot,
+            source: "latest_main_snapshot",
+            visibilityMode: snapshot.visibilityMode,
+            schemaVersion: snapshot.schemaVersion,
+            present: snapshot.present,
+            value: snapshot.value,
+            sessionId: snapshot.sessionId,
+            branchId: snapshot.branchId,
+            floorId: snapshot.floorId,
+            sourceMutationIds: snapshot.sourceMutationIds,
+            updatedAt: snapshot.committedAt,
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  getFloorSnapshot(input: {
+    accountId: string;
+    sessionId: string;
+    floorId: string;
+    namespace: SessionStateNamespace;
+    slot: string;
+  }): SessionStateFloorSnapshotView | null {
+    this.requireSessionHost(this.db, input.accountId, input.sessionId, { requireActive: false });
+    this.requireFloorInSession(this.db, input.sessionId, input.floorId);
+    const binding = this.findManagedDomainBinding(this.db, input.accountId, input.sessionId, input.namespace);
+    if (!binding) {
+      return null;
+    }
+
+    const item = this.getInternalItemByKeyOrNull(this.db, {
+      accountId: input.accountId,
+      domainId: binding.domainId,
+      collectionName: SESSION_STATE_SNAPSHOT_COLLECTION,
+      itemKey: this.buildSnapshotItemKey(input.namespace, input.slot, input.floorId),
+    });
+    if (!item) {
+      return null;
+    }
+
+    return this.parseFloorSnapshotEnvelope(item.valueJson);
+  }
+
+  diffFloorSnapshots(input: {
+    accountId: string;
+    sessionId: string;
+    leftFloorId: string;
+    rightFloorId: string;
+    namespace?: SessionStateNamespace;
+  }): SessionStateDiffEntry[] {
+    this.requireSessionHost(this.db, input.accountId, input.sessionId, { requireActive: false });
+    this.requireFloorInSession(this.db, input.sessionId, input.leftFloorId);
+    this.requireFloorInSession(this.db, input.sessionId, input.rightFloorId);
+
+    const definitions = this.slotRegistry.list(input.namespace);
+    return definitions.map((definition) => {
+      const left = this.getFloorSnapshot({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        floorId: input.leftFloorId,
+        namespace: definition.namespace,
+        slot: definition.slot,
+      });
+      const right = this.getFloorSnapshot({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        floorId: input.rightFloorId,
+        namespace: definition.namespace,
+        slot: definition.slot,
+      });
+      return this.toDiffEntry(definition.namespace, definition.slot, left, right);
+    });
+  }
+
+  diffLiveAgainstFloor(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    floorId: string;
+    namespace?: SessionStateNamespace;
+  }): SessionStateDiffEntry[] {
+    this.requireSessionHost(this.db, input.accountId, input.sessionId, { requireActive: false });
+    this.requireFloorInSession(this.db, input.sessionId, input.floorId);
+
+    const definitions = this.slotRegistry.list(input.namespace);
+    return definitions.map((definition) => {
+      const live = this.resolveLiveValue({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        branchId: input.branchId,
+        namespace: definition.namespace,
+        slot: definition.slot,
+      });
+      const snapshot = this.getFloorSnapshot({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        floorId: input.floorId,
+        namespace: definition.namespace,
+        slot: definition.slot,
+      });
+      const left = live
+        ? {
+            namespace: live.namespace,
+            slot: live.slot,
+            visibilityMode: live.visibilityMode,
+            schemaVersion: live.schemaVersion,
+            present: live.present,
+            value: live.value,
+            sessionId: live.sessionId,
+            branchId: live.branchId,
+            floorId: live.floorId ?? input.floorId,
+            sourceMutationIds: live.sourceMutationIds,
+            committedAt: live.updatedAt,
+          }
+        : null;
+      return this.toDiffEntry(definition.namespace, definition.slot, left, snapshot);
+    });
+  }
+
+  restoreFloorSnapshot(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    floorId: string;
+    namespace: SessionStateNamespace;
+    slot: string;
+    writeMode?: SessionStateWriteMode;
+    requestId?: string | null;
+    runId?: string | null;
+  }): SessionStateMutationView {
+    const snapshot = this.getFloorSnapshot({
+      accountId: input.accountId,
+      sessionId: input.sessionId,
+      floorId: input.floorId,
+      namespace: input.namespace,
+      slot: input.slot,
+    });
+    if (!snapshot) {
+      throw new SessionStateServiceError(404, "session_state_snapshot_not_found", `Floor snapshot '${input.floorId}' does not exist for slot '${input.namespace}/${input.slot}'`);
+    }
+
+    if ((input.writeMode ?? "direct") === "commit_bound") {
+      return this.stageCommitBoundValue({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        branchId: input.branchId,
+        sourceFloorId: input.floorId,
+        namespace: input.namespace,
+        slot: input.slot,
+        value: snapshot.value,
+        present: snapshot.present,
+        requestId: input.requestId ?? null,
+        runId: input.runId ?? null,
+      });
+    }
+
+    return this.writeDirectValue({
+      accountId: input.accountId,
+      sessionId: input.sessionId,
+      branchId: input.branchId,
+      namespace: input.namespace,
+      slot: input.slot,
+      value: snapshot.value,
+      present: snapshot.present,
+      requestId: input.requestId ?? null,
+      runId: input.runId ?? null,
+      sourceFloorId: input.floorId,
+    });
+  }
+
+  evaluateReplaySafetyForFloor(input: {
+    accountId: string;
+    sessionId: string;
+    floorId: string;
+    confirmedMutationIds?: string[];
+  }): SessionStateReplayEvaluation {
+    this.requireSessionHost(this.db, input.accountId, input.sessionId, { requireActive: false });
+    this.requireFloorInSession(this.db, input.sessionId, input.floorId);
+    const confirmedMutationIds = new Set(input.confirmedMutationIds ?? []);
+    const mutations = this.sessionStateRepository(this.db)
+      .listMutationsForSourceFloor(input.floorId, ["applied", "blocked", "uncertain"])
+      .map((mutation) => this.inflateMutation(mutation));
+
+    const blockers: SessionStateReplayEvaluation["blockers"] = [];
+    for (const mutation of mutations) {
+      if (mutation.status === "blocked") {
+        blockers.push({
+          mutationId: mutation.id,
+          stateNamespace: mutation.stateNamespace,
+          targetSlot: mutation.targetSlot,
+          replaySafety: mutation.replaySafety,
+          status: mutation.status,
+          reason: "blocked",
+        });
+        continue;
+      }
+      if (mutation.status === "uncertain" || mutation.replaySafety === "uncertain") {
+        blockers.push({
+          mutationId: mutation.id,
+          stateNamespace: mutation.stateNamespace,
+          targetSlot: mutation.targetSlot,
+          replaySafety: mutation.replaySafety,
+          status: mutation.status,
+          reason: "uncertain",
+        });
+        continue;
+      }
+      if (mutation.replaySafety === "never_auto_replay") {
+        blockers.push({
+          mutationId: mutation.id,
+          stateNamespace: mutation.stateNamespace,
+          targetSlot: mutation.targetSlot,
+          replaySafety: mutation.replaySafety,
+          status: mutation.status,
+          reason: "never_auto_replay",
+        });
+        continue;
+      }
+      if (mutation.replaySafety === "confirm_on_replay" && !confirmedMutationIds.has(mutation.id)) {
+        blockers.push({
+          mutationId: mutation.id,
+          stateNamespace: mutation.stateNamespace,
+          targetSlot: mutation.targetSlot,
+          replaySafety: mutation.replaySafety,
+          status: mutation.status,
+          reason: "confirmation_required",
+        });
+      }
+    }
+
+    return {
+      allowed: blockers.length === 0,
+      blockers,
+    };
+  }
+
+  private applyDirectMutation(
+    tx: AppDb | DbExecutor,
+    binding: ClientDataManagedDomainRecord,
+    definition: SessionStateSlotDefinition,
+    mutation: SessionStateMutationView,
+    payload: SessionStateMutationPayload,
+    appliedAt: number,
+  ): SessionStateMutationView {
+    const liveHeadKey = mutation.liveHeadKey
+      ?? this.buildLiveHeadItemKey(
+        mutation.stateNamespace,
+        mutation.targetSlot,
+        definition.visibilityMode,
+        mutation.sessionId,
+        mutation.branchId,
+      );
+    const liveHeadEnvelope: SessionStateLiveHeadEnvelope = {
+      kind: "live_head",
+      namespace: mutation.stateNamespace,
+      slot: mutation.targetSlot,
+      sessionId: mutation.sessionId,
+      branchId: definition.visibilityMode === "session_shared" ? null : mutation.branchId,
+      visibilityMode: definition.visibilityMode,
+      schemaVersion: definition.schemaVersion,
+      present: payload.present,
+      value: payload.value,
+      lastMutationId: mutation.id,
+      sourceFloorId: mutation.sourceFloorId,
+      updatedAt: appliedAt,
+    };
+
+    this.getClientDataService(tx).upsertItem({
+      accountId: mutation.accountId,
+      domainId: binding.domainId,
+      collectionName: SESSION_STATE_LIVE_COLLECTION,
+      itemKey: liveHeadKey,
+      valueJson: liveHeadEnvelope,
+    });
+
+    const updated = this.sessionStateRepository(tx).updateMutation({
+      mutationId: mutation.id,
+      status: "applied",
+      liveHeadKey,
+      updatedAt: appliedAt,
+      appliedAt,
+    });
+
+    if (!updated) {
+      throw new SessionStateServiceError(500, "session_state_mutation_not_found", `Session state mutation '${mutation.id}' disappeared while applying`);
+    }
+
+    return this.inflateMutation(updated);
+  }
+
+  private materializeFloorSnapshotForSlot(
+    tx: AppDb | DbExecutor,
+    input: {
+      accountId: string;
+      binding: ClientDataManagedDomainRecord;
+      floor: SessionStateFloorHostRecord;
+      definition: SessionStateSlotDefinition;
+      branchId: string;
+      committedAt: number;
+      appliedBySlot: Map<string, { mutation: SessionStateMutationView; payload: SessionStateMutationPayload }>;
+    },
+  ): SessionStateFloorSnapshotView {
+    const slotMapKey = this.toSlotMapKey(input.definition.namespace, input.definition.slot);
+    const applied = input.appliedBySlot.get(slotMapKey);
+    const currentLiveHead = this.getLiveHeadEnvelope(
+      tx,
+      input.accountId,
+      input.binding.domainId,
+      input.definition.namespace,
+      input.definition.slot,
+      input.definition.visibilityMode,
+      input.floor.sessionId,
+      input.branchId,
+    );
+    const parentSnapshot = input.floor.parentFloorId
+      ? this.getFloorSnapshotFromStorage(tx, {
+          accountId: input.accountId,
+          domainId: input.binding.domainId,
+          floorId: input.floor.parentFloorId,
+          namespace: input.definition.namespace,
+          slot: input.definition.slot,
+        })
+      : null;
+
+    const snapshotEnvelope: SessionStateFloorSnapshotEnvelope = {
+      kind: "floor_snapshot",
+      namespace: input.definition.namespace,
+      slot: input.definition.slot,
+      sessionId: input.floor.sessionId,
+      branchId: input.floor.branchId,
+      floorId: input.floor.id,
+      visibilityMode: input.definition.visibilityMode,
+      schemaVersion: input.definition.schemaVersion,
+      present: false,
+      value: null,
+      sourceMutationIds: [],
+      committedAt: input.committedAt,
+    };
+
+    if (applied) {
+      snapshotEnvelope.present = applied.payload.present;
+      snapshotEnvelope.value = applied.payload.value;
+      snapshotEnvelope.sourceMutationIds = [applied.mutation.id];
+    } else if (currentLiveHead && (!parentSnapshot || currentLiveHead.updatedAt >= parentSnapshot.committedAt)) {
+      snapshotEnvelope.present = currentLiveHead.present;
+      snapshotEnvelope.value = currentLiveHead.value;
+      snapshotEnvelope.sourceMutationIds = currentLiveHead.lastMutationId ? [currentLiveHead.lastMutationId] : [];
+    } else if (parentSnapshot) {
+      snapshotEnvelope.present = parentSnapshot.present;
+      snapshotEnvelope.value = parentSnapshot.value;
+      snapshotEnvelope.sourceMutationIds = [...parentSnapshot.sourceMutationIds];
+    } else if (currentLiveHead) {
+      snapshotEnvelope.present = currentLiveHead.present;
+      snapshotEnvelope.value = currentLiveHead.value;
+      snapshotEnvelope.sourceMutationIds = currentLiveHead.lastMutationId ? [currentLiveHead.lastMutationId] : [];
+    }
+
+    this.getClientDataService(tx).upsertItem({
+      accountId: input.accountId,
+      domainId: input.binding.domainId,
+      collectionName: SESSION_STATE_SNAPSHOT_COLLECTION,
+      itemKey: this.buildSnapshotItemKey(input.definition.namespace, input.definition.slot, input.floor.id),
+      valueJson: snapshotEnvelope,
+    });
+
+    return {
+      namespace: snapshotEnvelope.namespace,
+      slot: snapshotEnvelope.slot,
+      visibilityMode: snapshotEnvelope.visibilityMode,
+      schemaVersion: snapshotEnvelope.schemaVersion,
+      present: snapshotEnvelope.present,
+      value: snapshotEnvelope.value,
+      sessionId: snapshotEnvelope.sessionId,
+      branchId: snapshotEnvelope.branchId,
+      floorId: snapshotEnvelope.floorId,
+      sourceMutationIds: snapshotEnvelope.sourceMutationIds,
+      committedAt: snapshotEnvelope.committedAt,
+    };
+  }
+
+  private findManagedDomainBinding(
+    executor: AppDb | DbExecutor,
+    accountId: string,
+    sessionId: string,
+    namespace: SessionStateNamespace,
+  ): ClientDataManagedDomainRecord | null {
+    return this.clientDataRepository(executor).getManagedDomainByHost({
+      accountId,
+      managerKind: SESSION_STATE_MANAGER_KIND,
+      hostType: SESSION_STATE_HOST_TYPE,
+      hostId: sessionId,
+      stateNamespace: namespace,
+    });
+  }
+
+  private ensureManagedDomainBinding(
+    executor: AppDb | DbExecutor,
+    accountId: string,
+    sessionId: string,
+    namespace: SessionStateNamespace,
+  ): ClientDataManagedDomainRecord {
+    const existingBinding = this.findManagedDomainBinding(executor, accountId, sessionId, namespace);
+    if (existingBinding) {
+      return existingBinding;
+    }
+
+    const clientDataRepository = this.clientDataRepository(executor);
+    const clientDataService = this.getClientDataService(executor);
+    const domainName = this.buildManagedDomainName(sessionId, namespace);
+    let domain = clientDataRepository.getDomainByOwnerName({
+      accountId,
+      ownerType: this.managedOwnerType,
+      ownerId: this.managedOwnerId,
+      domainName,
+    });
+
+    if (!domain) {
+      domain = clientDataService.createDomain({
+        accountId,
+        ownerType: this.managedOwnerType,
+        ownerId: this.managedOwnerId,
+        domainName,
+        displayName: `Session State ${namespace}`,
+        description: `Managed session state backing domain for session '${sessionId}' and namespace '${namespace}'`,
+        actor: { actorType: "system:session_state", actorId: sessionId },
+        requestId: `session-state-bootstrap:${sessionId}:${namespace}`,
+      });
+    }
+
+    this.ensureInternalCollections(executor, accountId, domain.id);
+
+    return clientDataRepository.upsertManagedDomain({
+      domainId: domain.id,
+      accountId,
+      managerKind: SESSION_STATE_MANAGER_KIND,
+      hostType: SESSION_STATE_HOST_TYPE,
+      hostId: sessionId,
+      stateNamespace: namespace,
+      requireCallerOwner: true,
+      allowAutoCreateCollection: false,
+      createdAt: this.now(),
+      updatedAt: this.now(),
+    });
+  }
+
+  private ensureInternalCollections(
+    executor: AppDb | DbExecutor,
+    accountId: string,
+    domainId: string,
+  ): void {
+    this.ensureCollection(executor, accountId, domainId, SESSION_STATE_LIVE_COLLECTION);
+    this.ensureCollection(executor, accountId, domainId, SESSION_STATE_SNAPSHOT_COLLECTION);
+  }
+
+  private ensureCollection(
+    executor: AppDb | DbExecutor,
+    accountId: string,
+    domainId: string,
+    collectionName: string,
+  ): void {
+    const repository = this.clientDataRepository(executor);
+    const existing = repository.getCollectionByDomainName(domainId, collectionName);
+    if (existing) {
+      return;
+    }
+
+    try {
+      this.getClientDataService(executor).createCollection({
+        accountId,
+        domainId,
+        collectionName,
+        description: `Managed session state internal collection '${collectionName}'`,
+      });
+    } catch (error) {
+      if (error instanceof ClientDataServiceError && error.code === "client_data_collection_name_conflict") {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private requireSessionHost(
+    executor: AppDb | DbExecutor,
+    accountId: string,
+    sessionId: string,
+    options: { requireActive: boolean },
+  ) {
+    const session = this.sessionStateRepository(executor).getSessionById(sessionId);
+    if (!session || session.accountId !== accountId) {
+      throw new SessionStateServiceError(404, "session_state_host_not_found", `Session '${sessionId}' was not found for session state governance`);
+    }
+    if (options.requireActive && session.status !== "active") {
+      throw new SessionStateServiceError(409, "session_state_host_archived", `Session '${sessionId}' is archived and cannot accept live state writes`);
+    }
+    return session;
+  }
+
+  private requireFloorInSession(
+    executor: AppDb | DbExecutor,
+    sessionId: string,
+    floorId: string,
+  ): SessionStateFloorHostRecord {
+    const floor = this.sessionStateRepository(executor).getFloorById(floorId);
+    if (!floor || floor.sessionId !== sessionId) {
+      throw new SessionStateServiceError(404, "session_state_floor_not_found", `Floor '${floorId}' was not found in session '${sessionId}'`);
+    }
+    return floor;
+  }
+
+  private getFloorSnapshotFromStorage(
+    executor: AppDb | DbExecutor,
+    input: {
+      accountId: string;
+      domainId: string;
+      floorId: string;
+      namespace: SessionStateNamespace;
+      slot: string;
+    },
+  ): SessionStateFloorSnapshotView | null {
+    const item = this.getInternalItemByKeyOrNull(executor, {
+      accountId: input.accountId,
+      domainId: input.domainId,
+      collectionName: SESSION_STATE_SNAPSHOT_COLLECTION,
+      itemKey: this.buildSnapshotItemKey(input.namespace, input.slot, input.floorId),
+    });
+    return item ? this.parseFloorSnapshotEnvelope(item.valueJson) : null;
+  }
+
+  private getLiveHeadEnvelope(
+    executor: AppDb | DbExecutor,
+    accountId: string,
+    domainId: string,
+    namespace: SessionStateNamespace,
+    slot: string,
+    visibilityMode: SessionStateVisibilityMode,
+    sessionId: string,
+    branchId: string,
+  ): SessionStateLiveHeadEnvelope | null {
+    const item = this.getInternalItemByKeyOrNull(executor, {
+      accountId,
+      domainId,
+      collectionName: SESSION_STATE_LIVE_COLLECTION,
+      itemKey: this.buildLiveHeadItemKey(namespace, slot, visibilityMode, sessionId, branchId),
+    });
+    return item ? this.parseLiveHeadEnvelope(item.valueJson) : null;
+  }
+
+  private getInternalItemByKeyOrNull(
+    executor: AppDb | DbExecutor,
+    input: {
+      accountId: string;
+      domainId: string;
+      collectionName: string;
+      itemKey: string;
+    },
+  ): ClientDataItemRecord | null {
+    try {
+      return this.getClientDataService(executor).getItemByKey({
+        accountId: input.accountId,
+        domainId: input.domainId,
+        collectionName: input.collectionName,
+        itemKey: input.itemKey,
+      });
+    } catch (error) {
+      if (error instanceof ClientDataServiceError && error.statusCode === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private parseLiveHeadEnvelope(valueJson: string): SessionStateLiveHeadEnvelope | null {
+    const record = asRecord(parseJsonField(valueJson));
+    if (!record) {
+      return null;
+    }
+    return {
+      kind: "live_head",
+      namespace: String(record.namespace) as SessionStateNamespace,
+      slot: String(record.slot),
+      sessionId: String(record.sessionId),
+      branchId: typeof record.branchId === "string" ? record.branchId : null,
+      visibilityMode: String(record.visibilityMode) as SessionStateVisibilityMode,
+      schemaVersion: Number(record.schemaVersion ?? 1),
+      present: Boolean(record.present),
+      value: record.value ?? null,
+      lastMutationId: typeof record.lastMutationId === "string" ? record.lastMutationId : null,
+      sourceFloorId: typeof record.sourceFloorId === "string" ? record.sourceFloorId : null,
+      updatedAt: Number(record.updatedAt ?? 0),
+    };
+  }
+
+  private parseFloorSnapshotEnvelope(valueJson: string): SessionStateFloorSnapshotView | null {
+    const record = asRecord(parseJsonField(valueJson));
+    if (!record) {
+      return null;
+    }
+    return {
+      namespace: String(record.namespace) as SessionStateNamespace,
+      slot: String(record.slot),
+      visibilityMode: String(record.visibilityMode) as SessionStateVisibilityMode,
+      schemaVersion: Number(record.schemaVersion ?? 1),
+      present: Boolean(record.present),
+      value: record.value ?? null,
+      sessionId: String(record.sessionId),
+      branchId: String(record.branchId),
+      floorId: String(record.floorId),
+      sourceMutationIds: Array.isArray(record.sourceMutationIds) ? record.sourceMutationIds.filter((entry): entry is string => typeof entry === "string") : [],
+      committedAt: Number(record.committedAt ?? 0),
+    };
+  }
+
+  private parseMutationPayload(payload: SessionStateMutationView["payload"] | string): SessionStateMutationPayload {
+    if (typeof payload === "string") {
+      const parsed = asRecord(parseJsonField(payload));
+      return {
+        present: parsed?.present !== false,
+        value: parsed?.value ?? null,
+      };
+    }
+    return {
+      present: payload.present !== false,
+      value: payload.value ?? null,
+    };
+  }
+
+  private inflateMutation(mutation: SessionStateMutationView): SessionStateMutationView {
+    return {
+      ...mutation,
+      payload: this.parseMutationPayload(mutation.payloadJson),
+    };
+  }
+
+  private createMutationPayload(input: { present: boolean; value: unknown | null }): SessionStateMutationPayload {
+    return {
+      present: input.present,
+      value: input.value ?? null,
+    };
+  }
+
+  private requireSlotDefinition(namespace: SessionStateNamespace, slot: string): SessionStateSlotDefinition {
+    try {
+      return this.slotRegistry.require(namespace, slot);
+    } catch {
+      throw new SessionStateServiceError(404, "session_state_slot_not_registered", `Session state slot '${namespace}/${slot}' is not registered`);
+    }
+  }
+
+  private resolveReplaySafety(
+    definition: SessionStateSlotDefinition,
+    requestedReplaySafety?: SessionStateReplaySafety,
+  ): SessionStateReplaySafety {
+    const replaySafety = requestedReplaySafety ?? definition.defaultReplaySafety;
+    if (this.getReplaySafetyRank(replaySafety) < this.getReplaySafetyRank(definition.defaultReplaySafety)) {
+      throw new SessionStateServiceError(
+        409,
+        "session_state_replay_safety_loosening_forbidden",
+        `Replay safety '${replaySafety}' cannot be looser than the slot default '${definition.defaultReplaySafety}'`,
+      );
+    }
+    return replaySafety;
+  }
+
+  private ensureWriteModeAllowed(definition: SessionStateSlotDefinition, writeMode: SessionStateWriteMode): void {
+    if (writeMode === definition.defaultWriteMode) {
+      return;
+    }
+    if (definition.defaultWriteMode === "commit_bound" && writeMode === "direct") {
+      return;
+    }
+    throw new SessionStateServiceError(
+      409,
+      "session_state_write_mode_forbidden",
+      `Write mode '${writeMode}' is not allowed for slot '${definition.namespace}/${definition.slot}'`,
+    );
+  }
+
+  private getReplaySafetyRank(replaySafety: SessionStateReplaySafety): number {
+    switch (replaySafety) {
+      case "safe":
+        return 0;
+      case "confirm_on_replay":
+        return 1;
+      case "never_auto_replay":
+        return 2;
+      case "uncertain":
+        return 3;
+    }
+  }
+
+  private assertPayloadWithinBudget(definition: SessionStateSlotDefinition, payload: SessionStateMutationPayload): void {
+    const bytes = Buffer.byteLength(JSON.stringify(payload), "utf-8");
+    if (bytes > definition.sizeBudgetBytes) {
+      throw new SessionStateServiceError(
+        409,
+        "session_state_payload_too_large",
+        `Session state payload for slot '${definition.namespace}/${definition.slot}' exceeds its size budget`,
+      );
+    }
+  }
+
+  private buildManagedDomainName(sessionId: string, namespace: SessionStateNamespace): string {
+    return `session-state:${namespace}:${sessionId}`;
+  }
+
+  private buildLiveHeadItemKey(
+    namespace: SessionStateNamespace,
+    slot: string,
+    visibilityMode: SessionStateVisibilityMode,
+    sessionId: string,
+    branchId: string,
+  ): string {
+    if (visibilityMode === "session_shared") {
+      return `live:${namespace}:${slot}:session:${sessionId}`;
+    }
+    return `live:${namespace}:${slot}:branch:${branchId}`;
+  }
+
+  private buildSnapshotItemKey(namespace: SessionStateNamespace, slot: string, floorId: string): string {
+    return `snapshot:${namespace}:${slot}:floor:${floorId}`;
+  }
+
+  private toSlotMapKey(namespace: SessionStateNamespace, slot: string): string {
+    return `${namespace}::${slot}`;
+  }
+
+  private toDiffEntry(
+    namespace: SessionStateNamespace,
+    slot: string,
+    left: SessionStateFloorSnapshotView | null,
+    right: SessionStateFloorSnapshotView | null,
+  ): SessionStateDiffEntry {
+    const leftPresent = left?.present ?? false;
+    const rightPresent = right?.present ?? false;
+    const leftValue = left?.value ?? null;
+    const rightValue = right?.value ?? null;
+    const changeType = !leftPresent && rightPresent
+      ? "added"
+      : leftPresent && !rightPresent
+        ? "removed"
+        : this.valuesEqual(leftValue, rightValue)
+          ? "unchanged"
+          : "changed";
+
+    return {
+      namespace,
+      slot,
+      changeType,
+      leftFloorId: left?.floorId ?? null,
+      rightFloorId: right?.floorId ?? null,
+      leftPresent,
+      rightPresent,
+      leftValue,
+      rightValue,
+    };
+  }
+
+  private valuesEqual(left: unknown, right: unknown): boolean {
+    return stableStringify(left) === stableStringify(right);
+  }
+
+  private appendGovernanceAudit(
+    executor: AppDb | DbExecutor,
+    accountId: string,
+    binding: ClientDataManagedDomainRecord,
+    input: {
+      action: string;
+      targetType: string;
+      targetId?: string | null;
+      metadata?: unknown;
+    },
+  ): void {
+    const domain = this.clientDataRepository(executor).getDomainById(binding.domainId);
+    this.clientDataRepository(executor).appendAuditLog({
+      accountId,
+      domainId: binding.domainId,
+      ownerType: domain?.ownerType ?? this.managedOwnerType,
+      ownerId: domain?.ownerId ?? this.managedOwnerId,
+      actorType: "system:session_state",
+      actorId: binding.hostId,
+      action: input.action,
+      targetType: input.targetType,
+      targetId: input.targetId ?? null,
+      requestId: null,
+      metadataJson: input.metadata === undefined ? null : JSON.stringify(input.metadata),
+      createdAt: this.now(),
+    });
+  }
+
+  private executeTransaction<T>(action: (tx: DbExecutor) => T): T {
+    return this.db.transaction((tx) => action(tx));
+  }
+
+  private getClientDataService(executor: AppDb | DbExecutor): ClientDataService {
+    return new ClientDataService(executor, this.clientDataConfig, this.now);
+  }
+
+  private clientDataRepository(executor: AppDb | DbExecutor): ClientDataRepository {
+    return new ClientDataRepository(executor);
+  }
+
+  private sessionStateRepository(executor: AppDb | DbExecutor): SessionStateRepository {
+    return new SessionStateRepository(executor);
+  }
+}
+
+export class SessionStateServiceError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SessionStateServiceError";
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(normalizeForStableStringify(value));
+}
+
+function normalizeForStableStringify(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeForStableStringify(item));
+  }
+
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort((left, right) => left.localeCompare(right))
+        .map((key) => [key, normalizeForStableStringify(record[key])]),
+    );
+  }
+
+  return value;
+}

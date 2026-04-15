@@ -121,17 +121,22 @@ export class ClientDataService {
       throw new ClientDataServiceError(409, "client_data_account_domain_limit_exceeded", "Client data domain limit exceeded for account");
     }
 
-    const created = this.repository.createDomain({
-      accountId: input.accountId,
-      ownerType: input.ownerType,
-      ownerId: input.ownerId,
-      domainName: input.domainName,
-      displayName: input.displayName,
-      description: input.description,
-      quotaMaxEntries: this.config.defaultQuotaMaxEntries,
-      quotaMaxBytes: this.config.defaultQuotaMaxBytes,
-      now: this.now(),
-    });
+    let created: ClientDataDomainRecord;
+    try {
+      created = this.repository.createDomain({
+        accountId: input.accountId,
+        ownerType: input.ownerType,
+        ownerId: input.ownerId,
+        domainName: input.domainName,
+        displayName: input.displayName,
+        description: input.description,
+        quotaMaxEntries: this.config.defaultQuotaMaxEntries,
+        quotaMaxBytes: this.config.defaultQuotaMaxBytes,
+        now: this.now(),
+      });
+    } catch (error) {
+      throw mapClientDataConstraintError(error) ?? error;
+    }
 
     this.appendAuditLog({
       accountId: created.accountId,
@@ -161,7 +166,11 @@ export class ClientDataService {
     sortBy: "updated_at" | "created_at" | "domain_name";
     sortOrder: "asc" | "desc";
   }) {
-    return this.repository.listDomains(input);
+    const managedDomainIds = this.repository.listManagedDomainIdsByAccount(input.accountId);
+    return this.repository.listDomains({
+      ...input,
+      excludeDomainIds: managedDomainIds,
+    });
   }
 
   getOwnedDomainDetail(accountId: string, domainId: string): ClientDataDomainDetail {
@@ -329,6 +338,7 @@ export class ClientDataService {
   }
 
   deleteDomainsByOwner(input: { accountId: string; ownerType: "application" | "plugin"; ownerId: string; actor?: ClientDataAuditActor; requestId?: string | null }): ClientDataDomainRecord[] {
+    this.assertRawOwnerDeletionAllowed(input.accountId, input.ownerType, input.ownerId);
     const deleted = this.repository.softDeleteDomainsByOwner({
       accountId: input.accountId,
       ownerType: input.ownerType,
@@ -513,15 +523,19 @@ export class ClientDataService {
     if (input.collectionName.length > 128) {
       throw new ClientDataServiceError(400, "validation_error", "collection_name must be 128 characters or less");
     }
-    return this.repository.createCollection({
-      domainId: domain.id,
-      collectionName: input.collectionName,
-      description: input.description,
-      defaultExpiresTtlMs: input.defaultExpiresTtlMs,
-      maxItemSizeBytes: input.maxItemSizeBytes,
-      metadataJson: stringifyJsonField(input.metadataJson),
-      now: this.now(),
-    });
+    try {
+      return this.repository.createCollection({
+        domainId: domain.id,
+        collectionName: input.collectionName,
+        description: input.description,
+        defaultExpiresTtlMs: input.defaultExpiresTtlMs,
+        maxItemSizeBytes: input.maxItemSizeBytes,
+        metadataJson: stringifyJsonField(input.metadataJson),
+        now: this.now(),
+      });
+    } catch (error) {
+      throw mapClientDataConstraintError(error) ?? error;
+    }
   }
 
   listCollections(accountId: string, domainId: string): ClientDataCollectionRecord[] {
@@ -692,11 +706,22 @@ export class ClientDataService {
 
         let collection = service.repository.getCollectionByDomainName(domain.id, itemInput.collectionName);
         if (!collection) {
-          collection = service.repository.createCollection({
-            domainId: domain.id,
-            collectionName: itemInput.collectionName,
-            now: service.now(),
-          });
+          try {
+            collection = service.repository.createCollection({
+              domainId: domain.id,
+              collectionName: itemInput.collectionName,
+              now: service.now(),
+            });
+          } catch (error) {
+            const mappedError = mapClientDataConstraintError(error);
+            if (!(mappedError instanceof ClientDataServiceError) || mappedError.code !== "client_data_collection_name_conflict") {
+              throw mappedError ?? error;
+            }
+            collection = service.repository.getCollectionByDomainName(domain.id, itemInput.collectionName);
+            if (!collection) {
+              throw mappedError;
+            }
+          }
         }
 
         const valueJsonString = JSON.stringify(itemInput.valueJson);
@@ -743,10 +768,6 @@ export class ClientDataService {
           continue;
         }
 
-        if (itemInput.ifVersion !== undefined && itemInput.ifVersion !== existing.version) {
-          throw new ClientDataServiceError(409, "client_data_version_conflict", "Client data item version conflict");
-        }
-
         const deltaBytes = byteSize - existing.byteSize;
         if (domainBytes + deltaBytes > domain.quotaMaxBytes) {
           throw new ClientDataServiceError(409, "client_data_domain_bytes_quota_exceeded", "Client data domain byte quota exceeded");
@@ -758,11 +779,15 @@ export class ClientDataService {
         const updated = service.repository.updateItem({
           itemId: existing.id,
           valueJson: valueJsonString,
+          ifVersion: itemInput.ifVersion,
           byteSize,
           expiresAt,
           now: service.now(),
         });
         if (!updated) {
+          if (itemInput.ifVersion !== undefined) {
+            throw new ClientDataServiceError(409, "client_data_version_conflict", "Client data item version conflict");
+          }
           throw new ClientDataServiceError(500, "internal_error", "Failed to update client data item");
         }
         service.repository.updateCollectionCounters(collection.id, 0, deltaBytes, service.now());
@@ -851,18 +876,23 @@ export class ClientDataService {
       throw new ClientDataServiceError(409, "client_data_domain_grant_owner_redundant", "Domain owner does not require an explicit grant");
     }
 
-    const created = this.repository.createDomainGrant({
-      accountId: input.accountId,
-      domainId: domain.id,
-      granteeOwnerType: input.granteeOwnerType,
-      granteeOwnerId: input.granteeOwnerId,
-      canRead: input.canRead,
-      canWrite: input.canWrite,
-      canDelete: input.canDelete,
-      canList: input.canList,
-      expiresAt: input.expiresAt,
-      now: this.now(),
-    });
+    let created: ClientDataDomainGrantRecord;
+    try {
+      created = this.repository.createDomainGrant({
+        accountId: input.accountId,
+        domainId: domain.id,
+        granteeOwnerType: input.granteeOwnerType,
+        granteeOwnerId: input.granteeOwnerId,
+        canRead: input.canRead,
+        canWrite: input.canWrite,
+        canDelete: input.canDelete,
+        canList: input.canList,
+        expiresAt: input.expiresAt,
+        now: this.now(),
+      });
+    } catch (error) {
+      throw mapClientDataConstraintError(error) ?? error;
+    }
 
     this.appendAuditLog({
       accountId: domain.accountId,
@@ -982,6 +1012,39 @@ export class ClientDataService {
       offset: input.offset,
       sortOrder: input.sortOrder,
     });
+  }
+
+  assertRawDomainAccessAllowed(accountId: string, domainId: string): ClientDataDomainRecord {
+    const domain = this.requireOwnedDomain(accountId, domainId);
+    if (this.repository.getManagedDomainByDomainId(domain.id)) {
+      throw new ClientDataServiceError(
+        403,
+        "client_data_managed_domain_raw_access_forbidden",
+        "Managed client data domains must be accessed through their governance service",
+      );
+    }
+    return domain;
+  }
+
+  assertRawOwnerDeletionAllowed(accountId: string, ownerType: "application" | "plugin", ownerId: string): void {
+    const managedDomainIds = new Set(this.repository.listManagedDomainIdsByAccount(accountId));
+    const candidateDomains = this.repository.listDomains({
+      accountId,
+      ownerType,
+      ownerId,
+      limit: this.config.maxDomainsPerAccount + 1,
+      offset: 0,
+      sortBy: "updated_at",
+      sortOrder: "desc",
+    }).rows;
+
+    if (candidateDomains.some((domain) => managedDomainIds.has(domain.id))) {
+      throw new ClientDataServiceError(
+        403,
+        "client_data_managed_domain_raw_access_forbidden",
+        "Managed client data domains must be accessed through their governance service",
+      );
+    }
   }
 
   authorizeDomainAccess(input: {
@@ -1326,4 +1389,32 @@ function validateImportPayload(payload: ClientDataImportPayload): void {
   if (itemCount > MAX_IMPORT_ITEMS) {
     throw new ClientDataServiceError(400, "client_data_import_item_limit_exceeded", "Client data import item count exceeds limit");
   }
+}
+
+function mapClientDataConstraintError(error: unknown): ClientDataServiceError | null {
+  const code = typeof (error as { code?: unknown })?.code === "string"
+    ? (error as { code: string }).code
+    : null;
+  if (!code?.startsWith("SQLITE_CONSTRAINT")) {
+    return null;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("client_data_domain_owner_name_uq") || message.includes("client_data_domain.account_id, client_data_domain.owner_type, client_data_domain.owner_id, client_data_domain.domain_name")) {
+    return new ClientDataServiceError(409, "client_data_domain_name_conflict", "Client data domain owner/name already exists");
+  }
+
+  if (message.includes("client_data_collection_domain_name_uq") || message.includes("client_data_collection.domain_id, client_data_collection.collection_name")) {
+    return new ClientDataServiceError(409, "client_data_collection_name_conflict", "Client data collection name already exists in domain");
+  }
+
+  if (message.includes("client_data_domain_grant_unique_uq") || message.includes("client_data_domain_grant.domain_id, client_data_domain_grant.grantee_owner_type, client_data_domain_grant.grantee_owner_id")) {
+    return new ClientDataServiceError(409, "client_data_domain_grant_conflict", "Client data domain grant already exists for grantee owner");
+  }
+
+  if (message.includes("client_data_managed_domain_account_manager_host_namespace_uq") || message.includes("client_data_managed_domain.account_id, client_data_managed_domain.manager_kind, client_data_managed_domain.host_type, client_data_managed_domain.host_id, client_data_managed_domain.state_namespace")) {
+    return new ClientDataServiceError(409, "client_data_managed_domain_conflict", "Client data managed domain registry already exists for host namespace");
+  }
+
+  return null;
 }

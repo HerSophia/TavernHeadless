@@ -146,6 +146,8 @@ import {
   BranchLocalSnapshotMissingError,
   BranchLocalVariableSnapshotService,
 } from "./branch-local-variable-snapshot-service.js";
+import type { SessionStateService } from "../session-state/session-state-service.js";
+import type { FirstPartyGameStateConsumer } from "../session-state/session-state-first-party-consumer.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
@@ -500,6 +502,8 @@ export interface ChatServiceOptions {
   resolveTurnModel?: ResolveTurnModelFn;
   /** 可选：外部注入提交服务。 */
   turnCommitService?: TurnCommitService;
+  sessionStateService?: SessionStateService;
+  firstPartyGameStateConsumer?: FirstPartyGameStateConsumer;
   /**
    * 可选：按 slot 粒度为当前会话解析模型配置。
    * 优先于 resolveTurnModel。
@@ -573,6 +577,8 @@ export class ChatService {
   private readonly toolExecutionRepository: DrizzleToolExecutionRepository;
   private readonly generationCoordinator: GenerationCoordinator;
   private readonly executionPolicy: TurnExecutionPolicy;
+  private readonly sessionStateService?: SessionStateService;
+  private readonly firstPartyGameStateConsumer?: FirstPartyGameStateConsumer;
   private readonly defaultNarratorProviderType?: ProviderType;
   private readonly accountContext: AccountContextOptions;
 
@@ -607,7 +613,10 @@ export class ChatService {
         enableAsyncMemoryIngest: this.enableAsyncMemoryIngest,
         accountMode: options.accountMode,
         defaultAccountId: options.defaultAccountId,
+        sessionStateService: options.sessionStateService,
       });
+    this.sessionStateService = options.sessionStateService;
+    this.firstPartyGameStateConsumer = options.firstPartyGameStateConsumer;
     this.generationCoordinator = options.generationCoordinator
       ?? options.generationGuard
       ?? new InMemoryGenerationCoordinator();
@@ -851,6 +860,7 @@ export class ChatService {
             promptSnapshot: promptDebug.promptSnapshotRecord,
             promptRuntimeInspection: promptDebug.inspection,
             macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
+            runType: "respond",
             resolvedTurnModels,
             orchestrationFailureCode: "orchestration_failed",
             orchestrationFailureMessage: "Turn orchestration failed",
@@ -1327,6 +1337,7 @@ export class ChatService {
         promptRuntimeInspection: promptDebug.inspection,
         macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
         resolvedTurnModels,
+        runType: "regenerate_page",
         orchestrationFailureCode: "orchestration_failed",
         orchestrationFailureMessage: "Regeneration orchestration failed",
         commitFailureMessage: "Regeneration commit failed",
@@ -1531,6 +1542,7 @@ export class ChatService {
           promptRuntimeInspection: promptDebug.inspection,
           macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
           resolvedTurnModels,
+          runType: "retry_turn",
           orchestrationFailureCode: "orchestration_failed",
           orchestrationFailureMessage: "Retry orchestration failed",
           persistMemory: this.memoryStore !== undefined,
@@ -1722,6 +1734,7 @@ export class ChatService {
     orchestrationFailureCode: string;
     orchestrationFailureMessage: string;
     persistMemory: boolean;
+    runType: FloorRunType;
     memoryConsolidationRequested: boolean;
     commitFailureMessage: string;
   }): Promise<{
@@ -1789,6 +1802,28 @@ export class ChatService {
       );
     }
 
+    if (this.firstPartyGameStateConsumer) {
+      try {
+        this.firstPartyGameStateConsumer.stageSceneState({
+          accountId: args.accountId,
+          sessionId: args.sessionId,
+          branchId: args.branchId ?? "main",
+          floorId: args.floorId,
+          runType: args.runType,
+          execution,
+        });
+      } catch (error) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+        await this.tryMarkRunFailed(args.floorId, error, "session_state_stage_failed");
+        await this.tryMarkFloorFailed(args.floorId, error);
+        throw new ChatServiceError(
+          "session_state_stage_failed",
+          `Failed to stage first-party session state: ${error instanceof Error ? error.message : String(error)}`,
+          error,
+        );
+      }
+    }
+
     await this.trackFloorRunPhase(args.floorId, "transaction_prepared");
 
     const commitInput = {
@@ -1850,6 +1885,7 @@ export class ChatService {
           attempts: Math.max(commitAttemptCount, 1),
           message: error instanceof Error ? error.message : String(error),
         });
+        this.discardStagedSessionStateBestEffort(args.accountId, args.sessionId, args.floorId, "commit_busy");
         await this.tryMarkRunFailed(args.floorId, error, "commit_busy");
         await this.tryMarkFloorFailed(args.floorId, error);
         throw new ChatServiceError(
@@ -1859,19 +1895,27 @@ export class ChatService {
         );
       }
 
+      this.discardStagedSessionStateBestEffort(args.accountId, args.sessionId, args.floorId, error instanceof FloorStateConflictError ? "commit_conflict" : error instanceof FloorNotFoundError ? "floor_not_found" : "turn_commit_failed");
+
       if (error instanceof FloorNotFoundError) {
         await this.tryMarkRunFailed(args.floorId, error, "floor_not_found");
         throw new ChatServiceError("floor_not_found", `Floor '${args.floorId}' not found`, error);
       }
 
       if (error instanceof FloorStateConflictError) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
         await this.tryMarkRunFailed(args.floorId, error, "commit_conflict");
         throw new ChatServiceError("commit_conflict", `${args.commitFailureMessage}: ${error.message}`, error);
       }
 
       if (!(error instanceof FloorStateConflictError) && !(error instanceof FloorNotFoundError)) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
         await this.tryMarkRunFailed(args.floorId, error, "turn_commit_failed");
         await this.tryMarkFloorFailed(args.floorId, error);
+      }
+
+      if (error instanceof FloorNotFoundError) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
       }
 
       throw new ChatServiceError(
@@ -1904,6 +1948,28 @@ export class ChatService {
     } catch {
       // 执行日志本体已经先行落库；失败边界上的归宿更新保持 best-effort，
       // 避免覆盖原始业务错误。
+    }
+  }
+
+  private discardStagedSessionStateBestEffort(
+    accountId: string,
+    sessionId: string,
+    floorId: string,
+    reason: string,
+  ): void {
+    if (!this.sessionStateService) {
+      return;
+    }
+
+    try {
+      this.sessionStateService.discardStagedMutationsForFloor({
+        accountId,
+        sessionId,
+        floorId,
+        reason,
+      });
+    } catch {
+      // best-effort discard on failed commit paths
     }
   }
 
@@ -2612,6 +2678,7 @@ export class ChatService {
       promptRuntimeInspection: promptDebug.inspection,
       macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
       resolvedTurnModels,
+      runType: args.runType,
       orchestrationFailureCode: "orchestration_failed",
       orchestrationFailureMessage: "Turn orchestration failed",
       commitFailureMessage: "Turn commit failed",
