@@ -77,7 +77,7 @@ type PromptDeliveryBody = {
 };
 
 type PromptStructureBody = {
-  mode: "default" | "strict_alternating" | "no_assistant";
+  mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
   merge_adjacent_same_role?: boolean;
   assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
   preserve_system_messages?: boolean;
@@ -938,6 +938,8 @@ function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<st
             by_group: runtimeTrace.budgets.byGroup.map((item) => ({
               group: item.group,
               token_count: item.tokenCount,
+              ...(item.estimatedTokenCount !== undefined ? { estimated_token_count: item.estimatedTokenCount } : {}),
+              ...(item.allocatedTokenCount !== undefined ? { allocated_token_count: item.allocatedTokenCount } : {}),
               ...(item.prunedTokenCount !== undefined ? { pruned_token_count: item.prunedTokenCount } : {}),
             })),
             ...(runtimeTrace.budgets.trimReasons
@@ -956,6 +958,9 @@ function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<st
             assistant_rewrite_count: runtimeTrace.structure.assistantRewriteCount,
             assistant_rewrite_strategy: runtimeTrace.structure.assistantRewriteStrategy ?? null,
             tail_assistant_detected: runtimeTrace.structure.tailAssistantDetected,
+            ...(runtimeTrace.structure.transcriptized !== undefined ? { transcriptized: runtimeTrace.structure.transcriptized } : {}),
+            ...(runtimeTrace.structure.transcriptMessageCount !== undefined ? { transcript_message_count: runtimeTrace.structure.transcriptMessageCount } : {}),
+            ...(runtimeTrace.structure.assistantPrefillTranscriptized !== undefined ? { assistant_prefill_transcriptized: runtimeTrace.structure.assistantPrefillTranscriptized } : {}),
           },
         }
       : {}),

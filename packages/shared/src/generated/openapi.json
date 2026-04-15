@@ -5920,6 +5920,15 @@
                         "merge_adjacent_same_role": true,
                         "mode": "no_assistant",
                         "preserve_system_messages": true
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": [
+                          {
+                            "end_floor_no": 2,
+                            "start_floor_no": 1
+                          }
+                        ],
+                        "mode": "allow_all_except_hidden"
                       }
                     },
                     "result": {
@@ -5951,7 +5960,7 @@
                         "token_count": 320
                       },
                       {
-                        "section_name": "worldbook",
+                        "section_name": "main",
                         "token_count": 96
                       }
                     ],
@@ -5990,12 +5999,16 @@
                         "merge_adjacent_same_role": "branch_policy",
                         "mode": "branch_policy",
                         "preserve_system_messages": "system_default"
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": "request_override",
+                        "mode": "request_override"
                       }
                     },
                     "trim_reasons": [
                       {
-                        "detail": "Prompt runtime pruned 128 tokens from budget group 'history'.",
-                        "group": "history",
+                        "detail": "Prompt runtime pruned 128 tokens from budget group 'section:main'.",
+                        "group": "section:main",
                         "pruned_token_count": 128,
                         "reason": "budget_exceeded"
                       }
@@ -6219,6 +6232,7 @@
                                     "type": "string"
                                   },
                                   "source": {
+                                    "description": "Public source kind. Internal budget groups such as `section:*` do not appear here.",
                                     "enum": [
                                       "history",
                                       "memory",
@@ -6590,7 +6604,8 @@
                                       "enum": [
                                         "default",
                                         "strict_alternating",
-                                        "no_assistant"
+                                        "no_assistant",
+                                        "flattened"
                                       ],
                                       "type": "string"
                                     },
@@ -6604,6 +6619,67 @@
                                     "preserve_system_messages"
                                   ],
                                   "type": "object"
+                                },
+                                "visibility": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "hidden_floor_ids": {
+                                      "items": {
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "hidden_floor_ranges": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "end_floor_no": {
+                                            "type": "integer"
+                                          },
+                                          "start_floor_no": {
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "start_floor_no",
+                                          "end_floor_no"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "mode": {
+                                      "enum": [
+                                        "allow_all_except_hidden",
+                                        "deny_all_except_visible"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "visible_floor_ranges": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "end_floor_no": {
+                                            "type": "integer"
+                                          },
+                                          "start_floor_no": {
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "start_floor_no",
+                                          "end_floor_no"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    }
+                                  },
+                                  "required": [
+                                    "mode"
+                                  ],
+                                  "type": "object"
                                 }
                               },
                               "required": [
@@ -6611,6 +6687,7 @@
                                 "delivery",
                                 "budget",
                                 "source_selection",
+                                "visibility",
                                 "debug"
                               ],
                               "type": "object"
@@ -6788,6 +6865,7 @@
                                 "additionalProperties": false,
                                 "properties": {
                                   "section_name": {
+                                    "description": "Prompt section name. Section stats remain section-level even when budget groups use concrete labels such as `section:main`.",
                                     "type": "string"
                                   },
                                   "token_count": {
@@ -7071,6 +7149,56 @@
                                 }
                               },
                               "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "hidden_floor_ranges": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
                             }
                           },
                           "type": "object"
@@ -7085,6 +7213,7 @@
                                     "type": "string"
                                   },
                                   "group": {
+                                    "description": "Budget group label. This may include concrete section groups such as `section:main`.",
                                     "type": "string"
                                   },
                                   "pruned_token_count": {
@@ -26462,7 +26591,8 @@
                           "structure",
                           "delivery",
                           "budget",
-                          "sourceSelection"
+                          "sourceSelection",
+                          "visibility"
                         ]
                       },
                       "session": {
@@ -26473,7 +26603,8 @@
                           "structure",
                           "delivery",
                           "budget",
-                          "sourceSelection"
+                          "sourceSelection",
+                          "visibility"
                         ]
                       }
                     },
@@ -26574,7 +26705,8 @@
                       "modes": [
                         "default",
                         "strict_alternating",
-                        "no_assistant"
+                        "no_assistant",
+                        "flattened"
                       ]
                     },
                     "unsupported": [
@@ -26744,7 +26876,8 @@
                                       "structure",
                                       "delivery",
                                       "budget",
-                                      "sourceSelection"
+                                      "sourceSelection",
+                                      "visibility"
                                     ],
                                     "type": "string"
                                   },
@@ -26785,7 +26918,8 @@
                                       "structure",
                                       "delivery",
                                       "budget",
-                                      "sourceSelection"
+                                      "sourceSelection",
+                                      "visibility"
                                     ],
                                     "type": "string"
                                   },
@@ -27203,6 +27337,7 @@
                               ]
                             },
                             "supported_sources": {
+                              "description": "Public source kinds only. Internal budget groups such as `section:*` do not appear here.",
                               "items": {
                                 "enum": [
                                   "history",
@@ -27245,7 +27380,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -27265,7 +27401,8 @@
                                 "enum": [
                                   "default",
                                   "strict_alternating",
-                                  "no_assistant"
+                                  "no_assistant",
+                                  "flattened"
                                 ],
                                 "type": "string"
                               },
@@ -31189,6 +31326,15 @@
                           "worldbook": {
                             "enabled": true
                           }
+                        },
+                        "visibility": {
+                          "hidden_floor_ranges": [
+                            {
+                              "end_floor_no": 2,
+                              "start_floor_no": 1
+                            }
+                          ],
+                          "mode": "allow_all_except_hidden"
                         }
                       },
                       "version": 2
@@ -31223,6 +31369,15 @@
                         },
                         "structure": {
                           "mode": "strict_alternating"
+                        },
+                        "visibility": {
+                          "hidden_floor_ranges": [
+                            {
+                              "end_floor_no": 2,
+                              "start_floor_no": 1
+                            }
+                          ],
+                          "mode": "allow_all_except_hidden"
                         }
                       },
                       "version": 1
@@ -31262,6 +31417,15 @@
                         "merge_adjacent_same_role": true,
                         "mode": "no_assistant",
                         "preserve_system_messages": true
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": [
+                          {
+                            "end_floor_no": 2,
+                            "start_floor_no": 1
+                          }
+                        ],
+                        "mode": "allow_all_except_hidden"
                       }
                     },
                     "scope": {
@@ -31306,6 +31470,10 @@
                         "merge_adjacent_same_role": "branch_policy",
                         "mode": "branch_policy",
                         "preserve_system_messages": "system_default"
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": "request_override",
+                        "mode": "request_override"
                       }
                     },
                     "warnings": [
@@ -31552,7 +31720,8 @@
                                       "enum": [
                                         "default",
                                         "strict_alternating",
-                                        "no_assistant"
+                                        "no_assistant",
+                                        "flattened"
                                       ],
                                       "type": "string"
                                     },
@@ -31563,6 +31732,75 @@
                                   "required": [
                                     "mode"
                                   ],
+                                  "type": "object"
+                                },
+                                "visibility": {
+                                  "additionalProperties": false,
+                                  "examples": [
+                                    {
+                                      "hidden_floor_ranges": [
+                                        {
+                                          "end_floor_no": 2,
+                                          "start_floor_no": 1
+                                        }
+                                      ],
+                                      "mode": "allow_all_except_hidden"
+                                    }
+                                  ],
+                                  "properties": {
+                                    "hidden_floor_ids": {
+                                      "items": {
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "hidden_floor_ranges": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "end_floor_no": {
+                                            "type": "integer"
+                                          },
+                                          "start_floor_no": {
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "start_floor_no",
+                                          "end_floor_no"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "mode": {
+                                      "enum": [
+                                        "allow_all_except_hidden",
+                                        "deny_all_except_visible"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "visible_floor_ranges": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "end_floor_no": {
+                                            "type": "integer"
+                                          },
+                                          "start_floor_no": {
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "start_floor_no",
+                                          "end_floor_no"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    }
+                                  },
                                   "type": "object"
                                 }
                               },
@@ -31691,7 +31929,8 @@
                                           "enum": [
                                             "default",
                                             "strict_alternating",
-                                            "no_assistant"
+                                            "no_assistant",
+                                            "flattened"
                                           ],
                                           "type": "string"
                                         },
@@ -31702,6 +31941,75 @@
                                       "required": [
                                         "mode"
                                       ],
+                                      "type": "object"
+                                    },
+                                    "visibility": {
+                                      "additionalProperties": false,
+                                      "examples": [
+                                        {
+                                          "hidden_floor_ranges": [
+                                            {
+                                              "end_floor_no": 2,
+                                              "start_floor_no": 1
+                                            }
+                                          ],
+                                          "mode": "allow_all_except_hidden"
+                                        }
+                                      ],
+                                      "properties": {
+                                        "hidden_floor_ids": {
+                                          "items": {
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "hidden_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "mode": {
+                                          "enum": [
+                                            "allow_all_except_hidden",
+                                            "deny_all_except_visible"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "visible_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
                                       "type": "object"
                                     }
                                   },
@@ -31882,7 +32190,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -31893,6 +32202,73 @@
                               "required": [
                                 "mode"
                               ],
+                              "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "example": {
+                                "hidden_floor_ranges": [
+                                  {
+                                    "end_floor_no": 2,
+                                    "start_floor_no": 1
+                                  }
+                                ],
+                                "mode": "allow_all_except_hidden"
+                              },
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
                               "type": "object"
                             }
                           },
@@ -32016,7 +32392,8 @@
                                           "enum": [
                                             "default",
                                             "strict_alternating",
-                                            "no_assistant"
+                                            "no_assistant",
+                                            "flattened"
                                           ],
                                           "type": "string"
                                         },
@@ -32027,6 +32404,75 @@
                                       "required": [
                                         "mode"
                                       ],
+                                      "type": "object"
+                                    },
+                                    "visibility": {
+                                      "additionalProperties": false,
+                                      "examples": [
+                                        {
+                                          "hidden_floor_ranges": [
+                                            {
+                                              "end_floor_no": 2,
+                                              "start_floor_no": 1
+                                            }
+                                          ],
+                                          "mode": "allow_all_except_hidden"
+                                        }
+                                      ],
+                                      "properties": {
+                                        "hidden_floor_ids": {
+                                          "items": {
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "hidden_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "mode": {
+                                          "enum": [
+                                            "allow_all_except_hidden",
+                                            "deny_all_except_visible"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "visible_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
                                       "type": "object"
                                     }
                                   },
@@ -32192,7 +32638,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -32206,6 +32653,67 @@
                                 "preserve_system_messages"
                               ],
                               "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
@@ -32213,6 +32721,7 @@
                             "delivery",
                             "budget",
                             "source_selection",
+                            "visibility",
                             "debug"
                           ],
                           "type": "object"
@@ -32508,6 +33017,56 @@
                                   "type": "string"
                                 },
                                 "preserve_system_messages": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "hidden_floor_ranges": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
                                   "enum": [
                                     "system_default",
                                     "asset_default",
@@ -32966,6 +33525,15 @@
                         "merge_adjacent_same_role": true,
                         "mode": "no_assistant",
                         "preserve_system_messages": true
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": [
+                          {
+                            "end_floor_no": 2,
+                            "start_floor_no": 1
+                          }
+                        ],
+                        "mode": "allow_all_except_hidden"
                       }
                     },
                     "warnings": []
@@ -33076,7 +33644,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -33087,6 +33656,73 @@
                               "required": [
                                 "mode"
                               ],
+                              "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "example": {
+                                "hidden_floor_ranges": [
+                                  {
+                                    "end_floor_no": 2,
+                                    "start_floor_no": 1
+                                  }
+                                ],
+                                "mode": "allow_all_except_hidden"
+                              },
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
                               "type": "object"
                             }
                           },
@@ -33210,7 +33846,8 @@
                                           "enum": [
                                             "default",
                                             "strict_alternating",
-                                            "no_assistant"
+                                            "no_assistant",
+                                            "flattened"
                                           ],
                                           "type": "string"
                                         },
@@ -33221,6 +33858,75 @@
                                       "required": [
                                         "mode"
                                       ],
+                                      "type": "object"
+                                    },
+                                    "visibility": {
+                                      "additionalProperties": false,
+                                      "examples": [
+                                        {
+                                          "hidden_floor_ranges": [
+                                            {
+                                              "end_floor_no": 2,
+                                              "start_floor_no": 1
+                                            }
+                                          ],
+                                          "mode": "allow_all_except_hidden"
+                                        }
+                                      ],
+                                      "properties": {
+                                        "hidden_floor_ids": {
+                                          "items": {
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "hidden_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "mode": {
+                                          "enum": [
+                                            "allow_all_except_hidden",
+                                            "deny_all_except_visible"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "visible_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
                                       "type": "object"
                                     }
                                   },
@@ -33386,7 +34092,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -33400,6 +34107,67 @@
                                 "preserve_system_messages"
                               ],
                               "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
@@ -33407,6 +34175,7 @@
                             "delivery",
                             "budget",
                             "source_selection",
+                            "visibility",
                             "debug"
                           ],
                           "type": "object"
@@ -33562,6 +34331,11 @@
                     "required": [
                       "source_selection"
                     ]
+                  },
+                  {
+                    "required": [
+                      "visibility"
+                    ]
                   }
                 ],
                 "properties": {
@@ -33684,7 +34458,8 @@
                             "enum": [
                               "default",
                               "strict_alternating",
-                              "no_assistant"
+                              "no_assistant",
+                              "flattened"
                             ],
                             "type": "string"
                           },
@@ -33695,6 +34470,82 @@
                         "required": [
                           "mode"
                         ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "visibility": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "examples": [
+                          {
+                            "hidden_floor_ranges": [
+                              {
+                                "end_floor_no": 2,
+                                "start_floor_no": 1
+                              }
+                            ],
+                            "mode": "allow_all_except_hidden"
+                          }
+                        ],
+                        "properties": {
+                          "hidden_floor_ids": {
+                            "items": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "hidden_floor_ranges": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "end_floor_no": {
+                                  "type": "integer"
+                                },
+                                "start_floor_no": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "start_floor_no",
+                                "end_floor_no"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "mode": {
+                            "enum": [
+                              "allow_all_except_hidden",
+                              "deny_all_except_visible"
+                            ],
+                            "type": "string"
+                          },
+                          "visible_floor_ranges": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "end_floor_no": {
+                                  "type": "integer"
+                                },
+                                "start_floor_no": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "start_floor_no",
+                                "end_floor_no"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          }
+                        },
                         "type": "object"
                       },
                       {
@@ -33771,6 +34622,15 @@
                         "merge_adjacent_same_role": true,
                         "mode": "no_assistant",
                         "preserve_system_messages": true
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": [
+                          {
+                            "end_floor_no": 2,
+                            "start_floor_no": 1
+                          }
+                        ],
+                        "mode": "allow_all_except_hidden"
                       }
                     },
                     "warnings": []
@@ -33881,7 +34741,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -33892,6 +34753,73 @@
                               "required": [
                                 "mode"
                               ],
+                              "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "example": {
+                                "hidden_floor_ranges": [
+                                  {
+                                    "end_floor_no": 2,
+                                    "start_floor_no": 1
+                                  }
+                                ],
+                                "mode": "allow_all_except_hidden"
+                              },
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
                               "type": "object"
                             }
                           },
@@ -34015,7 +34943,8 @@
                                           "enum": [
                                             "default",
                                             "strict_alternating",
-                                            "no_assistant"
+                                            "no_assistant",
+                                            "flattened"
                                           ],
                                           "type": "string"
                                         },
@@ -34026,6 +34955,75 @@
                                       "required": [
                                         "mode"
                                       ],
+                                      "type": "object"
+                                    },
+                                    "visibility": {
+                                      "additionalProperties": false,
+                                      "examples": [
+                                        {
+                                          "hidden_floor_ranges": [
+                                            {
+                                              "end_floor_no": 2,
+                                              "start_floor_no": 1
+                                            }
+                                          ],
+                                          "mode": "allow_all_except_hidden"
+                                        }
+                                      ],
+                                      "properties": {
+                                        "hidden_floor_ids": {
+                                          "items": {
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "hidden_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "mode": {
+                                          "enum": [
+                                            "allow_all_except_hidden",
+                                            "deny_all_except_visible"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "visible_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
                                       "type": "object"
                                     }
                                   },
@@ -34191,7 +35189,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -34205,6 +35204,67 @@
                                 "preserve_system_messages"
                               ],
                               "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
@@ -34212,6 +35272,7 @@
                             "delivery",
                             "budget",
                             "source_selection",
+                            "visibility",
                             "debug"
                           ],
                           "type": "object"
@@ -34410,7 +35471,24 @@
                   "data": {
                     "asset_changes": [],
                     "diagnostics_changes": [],
-                    "exclusion_changes": [],
+                    "exclusion_changes": [
+                      {
+                        "change_type": "changed",
+                        "left": [
+                          {
+                            "reason": "visibility_filtered",
+                            "source": "history"
+                          }
+                        ],
+                        "path": "excluded_sources",
+                        "right": [
+                          {
+                            "reason": "disabled_by_policy",
+                            "source": "examples"
+                          }
+                        ]
+                      }
+                    ],
                     "left": {
                       "floor_id": "floor-left",
                       "snapshot_available": true
@@ -34419,9 +35497,21 @@
                     "policy_changes": [
                       {
                         "change_type": "changed",
-                        "left": false,
-                        "path": "policy.resolved_policy.delivery.no_assistant",
-                        "right": true
+                        "left": 4096,
+                        "path": "policy.resolved_policy.budget.max_input_tokens",
+                        "right": 2048
+                      },
+                      {
+                        "change_type": "changed",
+                        "left": "allow_all_except_hidden",
+                        "path": "policy.resolved_policy.visibility.mode",
+                        "right": "deny_all_except_visible"
+                      },
+                      {
+                        "change_type": "changed",
+                        "left": "session_policy",
+                        "path": "policy.source_map.visibility.mode",
+                        "right": "request_override"
                       }
                     ],
                     "right": {
@@ -34429,7 +35519,26 @@
                       "snapshot_available": true
                     },
                     "scope_changes": [],
-                    "trim_changes": []
+                    "trim_changes": [
+                      {
+                        "change_type": "changed",
+                        "left": [
+                          {
+                            "group": "section:main",
+                            "pruned_token_count": 32,
+                            "reason": "group_limit_exceeded"
+                          }
+                        ],
+                        "path": "trim_reasons",
+                        "right": [
+                          {
+                            "group": "section:main",
+                            "pruned_token_count": 64,
+                            "reason": "group_limit_exceeded"
+                          }
+                        ]
+                      }
+                    ]
                   }
                 },
                 "schema": {
@@ -34871,6 +35980,15 @@
                         "merge_adjacent_same_role": true,
                         "mode": "no_assistant",
                         "preserve_system_messages": true
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": [
+                          {
+                            "end_floor_no": 2,
+                            "start_floor_no": 1
+                          }
+                        ],
+                        "mode": "allow_all_except_hidden"
                       }
                     },
                     "warnings": []
@@ -34981,7 +36099,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -34992,6 +36111,73 @@
                               "required": [
                                 "mode"
                               ],
+                              "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "example": {
+                                "hidden_floor_ranges": [
+                                  {
+                                    "end_floor_no": 2,
+                                    "start_floor_no": 1
+                                  }
+                                ],
+                                "mode": "allow_all_except_hidden"
+                              },
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
                               "type": "object"
                             }
                           },
@@ -35115,7 +36301,8 @@
                                           "enum": [
                                             "default",
                                             "strict_alternating",
-                                            "no_assistant"
+                                            "no_assistant",
+                                            "flattened"
                                           ],
                                           "type": "string"
                                         },
@@ -35126,6 +36313,75 @@
                                       "required": [
                                         "mode"
                                       ],
+                                      "type": "object"
+                                    },
+                                    "visibility": {
+                                      "additionalProperties": false,
+                                      "examples": [
+                                        {
+                                          "hidden_floor_ranges": [
+                                            {
+                                              "end_floor_no": 2,
+                                              "start_floor_no": 1
+                                            }
+                                          ],
+                                          "mode": "allow_all_except_hidden"
+                                        }
+                                      ],
+                                      "properties": {
+                                        "hidden_floor_ids": {
+                                          "items": {
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "hidden_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "mode": {
+                                          "enum": [
+                                            "allow_all_except_hidden",
+                                            "deny_all_except_visible"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "visible_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
                                       "type": "object"
                                     }
                                   },
@@ -35291,7 +36547,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -35305,6 +36562,67 @@
                                 "preserve_system_messages"
                               ],
                               "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
@@ -35312,6 +36630,7 @@
                             "delivery",
                             "budget",
                             "source_selection",
+                            "visibility",
                             "debug"
                           ],
                           "type": "object"
@@ -35458,6 +36777,11 @@
                     "required": [
                       "source_selection"
                     ]
+                  },
+                  {
+                    "required": [
+                      "visibility"
+                    ]
                   }
                 ],
                 "properties": {
@@ -35580,7 +36904,8 @@
                             "enum": [
                               "default",
                               "strict_alternating",
-                              "no_assistant"
+                              "no_assistant",
+                              "flattened"
                             ],
                             "type": "string"
                           },
@@ -35591,6 +36916,82 @@
                         "required": [
                           "mode"
                         ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "visibility": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "examples": [
+                          {
+                            "hidden_floor_ranges": [
+                              {
+                                "end_floor_no": 2,
+                                "start_floor_no": 1
+                              }
+                            ],
+                            "mode": "allow_all_except_hidden"
+                          }
+                        ],
+                        "properties": {
+                          "hidden_floor_ids": {
+                            "items": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "hidden_floor_ranges": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "end_floor_no": {
+                                  "type": "integer"
+                                },
+                                "start_floor_no": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "start_floor_no",
+                                "end_floor_no"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "mode": {
+                            "enum": [
+                              "allow_all_except_hidden",
+                              "deny_all_except_visible"
+                            ],
+                            "type": "string"
+                          },
+                          "visible_floor_ranges": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "end_floor_no": {
+                                  "type": "integer"
+                                },
+                                "start_floor_no": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "start_floor_no",
+                                "end_floor_no"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          }
+                        },
                         "type": "object"
                       },
                       {
@@ -35667,6 +37068,15 @@
                         "merge_adjacent_same_role": true,
                         "mode": "no_assistant",
                         "preserve_system_messages": true
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": [
+                          {
+                            "end_floor_no": 2,
+                            "start_floor_no": 1
+                          }
+                        ],
+                        "mode": "allow_all_except_hidden"
                       }
                     },
                     "warnings": []
@@ -35777,7 +37187,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -35788,6 +37199,73 @@
                               "required": [
                                 "mode"
                               ],
+                              "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "example": {
+                                "hidden_floor_ranges": [
+                                  {
+                                    "end_floor_no": 2,
+                                    "start_floor_no": 1
+                                  }
+                                ],
+                                "mode": "allow_all_except_hidden"
+                              },
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
                               "type": "object"
                             }
                           },
@@ -35911,7 +37389,8 @@
                                           "enum": [
                                             "default",
                                             "strict_alternating",
-                                            "no_assistant"
+                                            "no_assistant",
+                                            "flattened"
                                           ],
                                           "type": "string"
                                         },
@@ -35922,6 +37401,75 @@
                                       "required": [
                                         "mode"
                                       ],
+                                      "type": "object"
+                                    },
+                                    "visibility": {
+                                      "additionalProperties": false,
+                                      "examples": [
+                                        {
+                                          "hidden_floor_ranges": [
+                                            {
+                                              "end_floor_no": 2,
+                                              "start_floor_no": 1
+                                            }
+                                          ],
+                                          "mode": "allow_all_except_hidden"
+                                        }
+                                      ],
+                                      "properties": {
+                                        "hidden_floor_ids": {
+                                          "items": {
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "hidden_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "mode": {
+                                          "enum": [
+                                            "allow_all_except_hidden",
+                                            "deny_all_except_visible"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "visible_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
                                       "type": "object"
                                     }
                                   },
@@ -36087,7 +37635,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -36101,6 +37650,67 @@
                                 "preserve_system_messages"
                               ],
                               "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
@@ -36108,6 +37718,7 @@
                             "delivery",
                             "budget",
                             "source_selection",
+                            "visibility",
                             "debug"
                           ],
                           "type": "object"
@@ -36401,7 +38012,8 @@
                         "enum": [
                           "default",
                           "strict_alternating",
-                          "no_assistant"
+                          "no_assistant",
+                          "flattened"
                         ],
                         "type": "string"
                       },
@@ -36547,6 +38159,15 @@
                         "merge_adjacent_same_role": true,
                         "mode": "no_assistant",
                         "preserve_system_messages": true
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": [
+                          {
+                            "end_floor_no": 2,
+                            "start_floor_no": 1
+                          }
+                        ],
+                        "mode": "allow_all_except_hidden"
                       }
                     },
                     "runtime_trace": {
@@ -36652,6 +38273,10 @@
                         "merge_adjacent_same_role": "request_override",
                         "mode": "request_override",
                         "preserve_system_messages": "system_default"
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": "request_override",
+                        "mode": "request_override"
                       }
                     },
                     "text": "{\"金币\":3}"
@@ -36863,7 +38488,8 @@
                                   "enum": [
                                     "default",
                                     "strict_alternating",
-                                    "no_assistant"
+                                    "no_assistant",
+                                    "flattened"
                                   ],
                                   "type": "string"
                                 },
@@ -36877,6 +38503,67 @@
                                 "preserve_system_messages"
                               ],
                               "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "type": "object"
                             }
                           },
                           "required": [
@@ -36884,6 +38571,7 @@
                             "delivery",
                             "budget",
                             "source_selection",
+                            "visibility",
                             "debug"
                           ],
                           "type": "object"
@@ -37460,6 +39148,56 @@
                                   "type": "string"
                                 },
                                 "preserve_system_messages": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "hidden_floor_ranges": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
                                   "enum": [
                                     "system_default",
                                     "asset_default",

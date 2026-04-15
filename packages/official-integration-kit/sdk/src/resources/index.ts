@@ -209,6 +209,7 @@ export {
 } from "./regex-profiles.js";
 export {
   createSessionsResource,
+  type PromptAssemblyCompat,
   type PromptIntent,
   type RespondDryRunAssembly,
   type RespondDryRunMessage,

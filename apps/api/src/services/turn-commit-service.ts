@@ -56,7 +56,10 @@ import {
 } from "@tavern/shared";
 import { DEFAULT_GLOBAL_SCOPE_ID } from "./variable-host-service.js";
 import { BranchLocalVariableSnapshotService } from "./branch-local-variable-snapshot-service.js";
-import type { PromptRuntimeInspectionResult } from "./prompt-runtime-control-service.js";
+import {
+  buildPromptRuntimeCommittedExplainSnapshot,
+  type PromptRuntimeInspectionResult,
+} from "./prompt-runtime-control-service.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -218,23 +221,30 @@ function toPromptRuntimeExplainSnapshotInsert(input: {
   committedAt: number;
   inspection: PromptRuntimeInspectionResult;
 }): PromptRuntimeExplainSnapshotInsert {
-  return {
-    id: nanoid(),
+  const snapshot = buildPromptRuntimeCommittedExplainSnapshot({
     floorId: input.floorId,
     sessionId: input.sessionId,
-    targetBranchId: input.inspection.scope.targetBranchId,
-    sourceFloorId: input.inspection.scope.sourceFloorId ?? null,
-    historySourceBranchId: input.inspection.scope.historySourceBranchId,
-    historySourceMode: input.inspection.scope.historySourceMode,
-    snapshotVersion: 1,
-    assetsJson: JSON.stringify(input.inspection.assets),
-    resolvedPolicyJson: JSON.stringify(input.inspection.resolvedPolicy),
-    sourceMapJson: JSON.stringify(input.inspection.sourceMap),
-    diagnosticsJson: JSON.stringify(input.inspection.diagnostics),
-    trimReasonsJson: JSON.stringify(input.inspection.trimReasons),
-    excludedSourcesJson: JSON.stringify(input.inspection.excludedSources),
-    sectionStatsJson: JSON.stringify(input.inspection.sectionStats),
     createdAt: input.committedAt,
+    inspection: input.inspection,
+  });
+
+  return {
+    id: nanoid(),
+    floorId: snapshot.floorId,
+    sessionId: snapshot.sessionId,
+    targetBranchId: snapshot.targetBranchId ?? null,
+    sourceFloorId: snapshot.sourceFloorId ?? null,
+    historySourceBranchId: snapshot.historySourceBranchId,
+    historySourceMode: snapshot.historySourceMode,
+    snapshotVersion: snapshot.snapshotVersion,
+    assetsJson: JSON.stringify(snapshot.assets),
+    resolvedPolicyJson: JSON.stringify(snapshot.resolvedPolicy),
+    sourceMapJson: JSON.stringify(snapshot.sourceMap),
+    diagnosticsJson: JSON.stringify(snapshot.diagnostics),
+    trimReasonsJson: JSON.stringify(snapshot.trimReasons),
+    excludedSourcesJson: JSON.stringify(snapshot.excludedSources),
+    sectionStatsJson: JSON.stringify(snapshot.sectionStats),
+    createdAt: snapshot.createdAt,
   };
 }
 

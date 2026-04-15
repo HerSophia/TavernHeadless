@@ -7,6 +7,7 @@ import {
   PROMPT_RUNTIME_SUPPORTED_ASSISTANT_REWRITE_STRATEGIES,
   PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES,
   PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES,
+  PROMPT_RUNTIME_SUPPORTED_VISIBILITY_MODES,
   PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS,
   PROMPT_RUNTIME_LIMITATIONS,
   PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS,
@@ -43,6 +44,11 @@ const promptRuntimeSourceSelectionExample = {
   worldbook: { enabled: true }, examples: { enabled: false },
 } as const;
 
+const promptRuntimeVisibilityExample = {
+  mode: "allow_all_except_hidden",
+  hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
+} as const;
+
 export const promptRuntimePreviewBodyExample = {
   text: "{{setvar::资产.金币::3}}{{getvar::资产}}",
   branch_id: "alt-preview",
@@ -52,10 +58,7 @@ export const promptRuntimePreviewBodyExample = {
   },
   budget: promptRuntimeBudgetExample,
   source_selection: promptRuntimeSourceSelectionExample,
-  visibility: {
-    mode: "allow_all_except_hidden",
-    hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
-  },
+  visibility: promptRuntimeVisibilityExample,
 } as const;
 
 const promptRuntimeScopeExample = {
@@ -78,6 +81,10 @@ const promptRuntimeResolvedDeliveryExample = {
   allow_assistant_prefill: true,
   require_last_user: true,
   no_assistant: true,
+} as const;
+
+const promptRuntimeResolvedVisibilityExample = {
+  ...promptRuntimeVisibilityExample,
 } as const;
 
 const promptRuntimeDebugPolicyExample = {
@@ -121,12 +128,13 @@ const promptRuntimePersistentPolicyEnvelopeExample = {
     },
     budget: promptRuntimeBudgetExample,
     source_selection: promptRuntimeSourceSelectionExample,
+    visibility: promptRuntimeVisibilityExample,
   },
 } as const;
 
 const promptRuntimeSectionStatsExample = [
   { section_name: "history", token_count: 320 },
-  { section_name: "worldbook", token_count: 96 },
+  { section_name: "main", token_count: 96 },
 ] as const;
 
 const promptRuntimeDiagnosticsExample = [
@@ -166,6 +174,10 @@ const promptRuntimeSourceMapExample = {
     worldbook: { enabled: "system_default" },
     examples: { enabled: "request_override" },
   },
+  visibility: {
+    mode: "request_override",
+    hidden_floor_ranges: "request_override",
+  },
   history: {
     source_branch_id: "alt-branch",
     source_mode: "existing_branch",
@@ -179,6 +191,7 @@ export const promptRuntimeResolvedStateExample = {
     delivery: promptRuntimeResolvedDeliveryExample,
     budget: promptRuntimeBudgetExample,
     source_selection: promptRuntimeSourceSelectionExample,
+    visibility: promptRuntimeResolvedVisibilityExample,
     debug: promptRuntimeDebugPolicyExample,
   },
   persistent_policy: {
@@ -192,6 +205,7 @@ export const promptRuntimeResolvedStateExample = {
     value: {
       structure: promptRuntimePersistentStructureExample,
       delivery: promptRuntimePersistentDeliveryExample,
+      visibility: promptRuntimeVisibilityExample,
     },
   },
   branch_persistent_policy: promptRuntimeBranchPersistentPolicyExample,
@@ -222,6 +236,7 @@ export const promptRuntimePolicyViewExample = {
     delivery: promptRuntimeResolvedDeliveryExample,
     budget: promptRuntimeBudgetExample,
     source_selection: promptRuntimeSourceSelectionExample,
+    visibility: promptRuntimeResolvedVisibilityExample,
     debug: promptRuntimeDebugPolicyExample,
   },
   warnings: [],
@@ -241,6 +256,7 @@ export const promptRuntimePreviewResponseExample = {
     delivery: promptRuntimeResolvedDeliveryExample,
     budget: promptRuntimeBudgetExample,
     source_selection: promptRuntimeSourceSelectionExample,
+    visibility: promptRuntimeResolvedVisibilityExample,
     debug: promptRuntimeDebugPolicyExample,
   },
   source_map: {
@@ -267,6 +283,10 @@ export const promptRuntimePreviewResponseExample = {
       memory: { enabled: "system_default" },
       worldbook: { enabled: "system_default" },
       examples: { enabled: "request_override" },
+    },
+    visibility: {
+      mode: "request_override",
+      hidden_floor_ranges: "request_override",
     },
     history: { source_branch_id: "fork-branch", source_mode: "source_floor_branch" },
   },
@@ -318,7 +338,7 @@ export const promptRuntimePreviewResponseExample = {
 const promptRuntimeHistoricalExplainDiagnosticsExample = [
   {
     code: "historical_resolved_policy_unavailable",
-    message: "Historical explain did not persist the resolved policy for this floor. The explain view returns persisted prompt snapshot and committed result truth only.",
+    message: "This floor has no committed prompt runtime explain snapshot, so historical explain returns resolved_policy as null instead of recomputing it.",
     severity: "info",
     source: "policy",
     field_path: "resolved_policy",
@@ -326,7 +346,7 @@ const promptRuntimeHistoricalExplainDiagnosticsExample = [
   },
   {
     code: "historical_trim_reasons_unavailable",
-    message: "Historical explain did not persist trim reasons for this floor, so explain returns trim_reasons as null instead of recomputing budget decisions.",
+    message: "This floor has no committed prompt runtime explain snapshot, so explain returns trim_reasons as null instead of recomputing budget decisions.",
     severity: "info",
     source: "budget",
     field_path: "trim_reasons",
@@ -334,7 +354,7 @@ const promptRuntimeHistoricalExplainDiagnosticsExample = [
   },
   {
     code: "historical_excluded_sources_unavailable",
-    message: "Historical explain did not persist excluded sources for this floor, so explain returns excluded_sources as null instead of recomputing source selection.",
+    message: "This floor has no committed prompt runtime explain snapshot, so explain returns excluded_sources as null instead of recomputing source selection.",
     severity: "info",
     source: "source_selection",
     field_path: "excluded_sources",
@@ -389,9 +409,9 @@ export const promptRuntimeHistoricalExplainResponseExample = {
   source_map: promptRuntimeSourceMapExample,
   trim_reasons: [
     {
-      group: "history",
+      group: "section:main",
       reason: "budget_exceeded",
-      detail: "Prompt runtime pruned 128 tokens from budget group 'history'.",
+      detail: "Prompt runtime pruned 128 tokens from budget group 'section:main'.",
       pruned_token_count: 128,
     },
   ],
@@ -582,6 +602,29 @@ const promptRuntimePersistentSourceSelectionJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const promptRuntimeVisibilityJsonSchema = {
+  ...dryRunVisibilityJsonSchema,
+  examples: [promptRuntimeVisibilityExample],
+} as const;
+
+const promptRuntimeResolvedVisibilityJsonSchema = {
+  type: "object",
+  required: ["mode"],
+  properties: {
+    hidden_floor_ranges: {
+      type: "array",
+      items: floorVisibilityRangeJsonSchema,
+    },
+    visible_floor_ranges: {
+      type: "array",
+      items: floorVisibilityRangeJsonSchema,
+    },
+    hidden_floor_ids: { type: "array", items: { type: "string", minLength: 1 } },
+    mode: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_VISIBILITY_MODES] },
+  },
+  additionalProperties: false,
+} as const;
+
 export const promptRuntimePolicyPatchBodyJsonSchema = {
   type: "object",
   properties: {
@@ -589,12 +632,14 @@ export const promptRuntimePolicyPatchBodyJsonSchema = {
     delivery: { anyOf: [promptRuntimePersistentDeliveryJsonSchema, { type: "null" }] },
     budget: { anyOf: [promptRuntimeBudgetJsonSchema, { type: "null" }] },
     source_selection: { anyOf: [promptRuntimePersistentSourceSelectionJsonSchema, { type: "null" }] },
+    visibility: { anyOf: [promptRuntimeVisibilityJsonSchema, { type: "null" }] },
   },
   anyOf: [
     { required: ["structure"] },
     { required: ["delivery"] },
     { required: ["budget"] },
     { required: ["source_selection"] },
+    { required: ["visibility"] },
   ],
   examples: [promptRuntimePolicyPatchBodyExample],
   additionalProperties: false,
@@ -607,6 +652,7 @@ export const promptRuntimePersistentPolicyJsonSchema = {
     delivery: promptRuntimePersistentDeliveryJsonSchema,
     budget: promptRuntimeBudgetJsonSchema,
     source_selection: promptRuntimePersistentSourceSelectionJsonSchema,
+    visibility: promptRuntimeVisibilityJsonSchema,
   },
   additionalProperties: false,
 } as const;
@@ -682,6 +728,17 @@ const promptRuntimePolicySourceJsonSchema = {
   enum: [...PROMPT_RUNTIME_POLICY_SOURCES],
 } as const;
 
+const promptRuntimeVisibilitySourceMapJsonSchema = {
+  type: "object",
+  properties: {
+    hidden_floor_ranges: promptRuntimePolicySourceJsonSchema,
+    visible_floor_ranges: promptRuntimePolicySourceJsonSchema,
+    hidden_floor_ids: promptRuntimePolicySourceJsonSchema,
+    mode: promptRuntimePolicySourceJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
 const promptRuntimeSourceSelectionSourceMapJsonSchema = {
   type: "object",
   properties: {
@@ -740,6 +797,7 @@ const promptRuntimeSourceMapJsonSchema = {
       additionalProperties: false,
     },
     source_selection: promptRuntimeSourceSelectionSourceMapJsonSchema,
+    visibility: promptRuntimeVisibilitySourceMapJsonSchema,
     history: {
       type: "object",
       properties: {
@@ -783,12 +841,13 @@ export const promptRuntimeAssetsViewJsonSchema = {
 
 const promptRuntimeResolvedPolicyJsonSchema = {
   type: "object",
-  required: ["structure", "delivery", "budget", "source_selection", "debug"],
+  required: ["structure", "delivery", "budget", "source_selection", "visibility", "debug"],
   properties: {
     structure: promptRuntimeResolvedStructureJsonSchema,
     delivery: promptRuntimeResolvedDeliveryJsonSchema,
     budget: promptRuntimeBudgetJsonSchema,
     source_selection: promptRuntimeResolvedSourceSelectionJsonSchema,
+    visibility: promptRuntimeResolvedVisibilityJsonSchema,
     debug: promptRuntimeDebugPolicyJsonSchema,
   },
   additionalProperties: false,
@@ -881,7 +940,10 @@ const promptRuntimeHistoricalExplainTrimReasonJsonSchema = {
   type: "object",
   required: ["group", "reason"],
   properties: {
-    group: { type: "string" },
+    group: {
+      type: "string",
+      description: "Budget group label. This may include concrete section groups such as `section:main`.",
+    },
     reason: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES] },
     detail: { type: "string" },
     pruned_token_count: { type: "integer", minimum: 0 },
@@ -893,7 +955,11 @@ const promptRuntimeHistoricalExplainSourceExclusionJsonSchema = {
   type: "object",
   required: ["source", "reason"],
   properties: {
-    source: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES] },
+    source: {
+      type: "string",
+      enum: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES],
+      description: "Public source kind. Internal budget groups such as `section:*` do not appear here.",
+    },
     reason: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES] },
     detail: { type: "string" },
   },
@@ -904,7 +970,10 @@ const promptRuntimeSectionStatJsonSchema = {
   type: "object",
   required: ["section_name", "token_count"],
   properties: {
-    section_name: { type: "string" },
+    section_name: {
+      type: "string",
+      description: "Prompt section name. Section stats remain section-level even when budget groups use concrete labels such as `section:main`.",
+    },
     token_count: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
@@ -1156,7 +1225,11 @@ export const promptRuntimeCapabilitiesJsonSchema = {
         defaults: promptRuntimeResolvedSourceSelectionJsonSchema,
         request_override_supported: { const: true },
         persistent_patch_supported: { const: true },
-        supported_sources: { type: "array", items: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES] } },
+        supported_sources: {
+          type: "array",
+          description: "Public source kinds only. Internal budget groups such as `section:*` do not appear here.",
+          items: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES] },
+        },
         history_modes: { type: "array", items: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES] } },
         exclusion_reason_codes: { type: "array", items: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES] } },
       },
@@ -1449,11 +1522,44 @@ const promptRuntimeCompareResponseExample = {
   left: { floor_id: "floor-left", snapshot_available: true },
   right: { floor_id: "floor-right", snapshot_available: true },
   scope_changes: [],
-  policy_changes: [{ path: "policy.resolved_policy.delivery.no_assistant", change_type: "changed", left: false, right: true }],
+  policy_changes: [
+    {
+      path: "policy.resolved_policy.budget.max_input_tokens",
+      change_type: "changed",
+      left: 4096,
+      right: 2048,
+    },
+    {
+      path: "policy.resolved_policy.visibility.mode",
+      change_type: "changed",
+      left: "allow_all_except_hidden",
+      right: "deny_all_except_visible",
+    },
+    {
+      path: "policy.source_map.visibility.mode",
+      change_type: "changed",
+      left: "session_policy",
+      right: "request_override",
+    },
+  ],
   asset_changes: [],
   diagnostics_changes: [],
-  trim_changes: [],
-  exclusion_changes: [],
+  trim_changes: [
+    {
+      path: "trim_reasons",
+      change_type: "changed",
+      left: [{ group: "section:main", reason: "group_limit_exceeded", pruned_token_count: 32 }],
+      right: [{ group: "section:main", reason: "group_limit_exceeded", pruned_token_count: 64 }],
+    },
+  ],
+  exclusion_changes: [
+    {
+      path: "excluded_sources",
+      change_type: "changed",
+      left: [{ source: "history", reason: "visibility_filtered" }],
+      right: [{ source: "examples", reason: "disabled_by_policy" }],
+    },
+  ],
   limitations: [],
 } as const;
 

@@ -112,6 +112,8 @@ export type PromptRuntimeRegexTrace = {
 };
 
 export type PromptRuntimeBudgetGroupTrace = {
+  allocatedTokenCount?: number;
+  estimatedTokenCount?: number;
   group: string;
   prunedTokenCount?: number;
   tokenCount: number;
@@ -147,9 +149,12 @@ export type PromptRuntimeSourceSelectionTrace = { excludedSources: PromptSourceE
 export type PromptRuntimeStructureTrace = {
   assistantRewriteCount: number;
   assistantRewriteStrategy: "to_system" | "to_user_transcript" | null;
+  assistantPrefillTranscriptized?: boolean;
   mergeAdjacentSameRole: boolean;
-  mode: "default" | "strict_alternating" | "no_assistant";
+  mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
   tailAssistantDetected: boolean;
+  transcriptized?: boolean;
+  transcriptMessageCount?: number;
 };
 
 export type PromptRuntimeMemoryTrace = {
@@ -201,7 +206,7 @@ export type PromptRuntimeDeliveryTrace = {
   allowAssistantPrefill: boolean;
   assistantPrefillApplied: boolean;
   assistantPrefillRequested: boolean;
-  assistantPrefillStrategy: "provider_native" | "assistant_message_fallback" | "unsupported" | "none" | null;
+  assistantPrefillStrategy: "provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none" | null;
   degradeReasons: PromptRuntimeDeliveryDegradeReason[];
   degraded: boolean;
   endsWithUser: boolean;
@@ -232,6 +237,8 @@ export type PromptRuntimeTrace = {
   visibility?: PromptRuntimeVisibilityTrace;
   worldbook?: PromptRuntimeWorldbookTrace;
 };
+
+export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility">;
 
 export type PromptDebugPayload = {
   promptSnapshot?: PromptSnapshotPreview;
@@ -295,6 +302,24 @@ export function mapPromptDebugPayload(value: unknown): PromptDebugPayload {
     ...(runtimeTrace
       ? { runtimeTrace }
       : {}),
+  };
+}
+
+export function mapPromptRuntimePreviewTracePayload(value: unknown): PromptRuntimePreviewTrace | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const runtimeTrace = mapPromptRuntimeTracePayload(record);
+  if (!runtimeTrace) {
+    return {};
+  }
+
+  return {
+    ...(runtimeTrace.macro ? { macro: runtimeTrace.macro } : {}),
+    ...(runtimeTrace.sourceSelection ? { sourceSelection: runtimeTrace.sourceSelection } : {}),
+    ...(runtimeTrace.visibility ? { visibility: runtimeTrace.visibility } : {}),
   };
 }
 
@@ -374,9 +399,12 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
           structure: {
             assistantRewriteCount: readNumber(structure.assistant_rewrite_count),
             assistantRewriteStrategy: readNullablePromptAssistantRewriteStrategy(structure.assistant_rewrite_strategy),
+            assistantPrefillTranscriptized: typeof structure.assistant_prefill_transcriptized === "boolean" ? structure.assistant_prefill_transcriptized : undefined,
             mergeAdjacentSameRole: readBoolean(structure.merge_adjacent_same_role),
             mode: readPromptStructureMode(structure.mode),
             tailAssistantDetected: readBoolean(structure.tail_assistant_detected),
+            transcriptized: typeof structure.transcriptized === "boolean" ? structure.transcriptized : undefined,
+            transcriptMessageCount: typeof structure.transcript_message_count === "number" ? structure.transcript_message_count : undefined,
           },
         }
       : {}),
@@ -586,6 +614,8 @@ function mapPromptRuntimeBudgetGroupTrace(value: unknown): PromptRuntimeBudgetGr
   }
 
   return {
+    allocatedTokenCount: readNullableNumber(record.allocated_token_count) ?? undefined,
+    estimatedTokenCount: readNullableNumber(record.estimated_token_count) ?? undefined,
     group: readString(record.group),
     prunedTokenCount: readNullableNumber(record.pruned_token_count) ?? undefined,
     tokenCount: readNumber(record.token_count),
@@ -659,7 +689,7 @@ function readPromptSnapshotMode(value: unknown): PromptSnapshotMode {
 
 function readPromptStructureMode(value: unknown): PromptRuntimeStructureTrace["mode"] {
   const mode = readString(value);
-  if (mode === "strict_alternating" || mode === "no_assistant") {
+  if (mode === "strict_alternating" || mode === "no_assistant" || mode === "flattened") {
     return mode;
   }
 
@@ -693,6 +723,7 @@ function readNullablePromptAssistantPrefillStrategy(
   if (
     strategy === "provider_native"
     || strategy === "assistant_message_fallback"
+    || strategy === "transcript_append"
     || strategy === "unsupported"
     || strategy === "none"
   ) {

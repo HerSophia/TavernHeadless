@@ -12,6 +12,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+const defaultResolvedVisibility = {
+  mode: "allow_all_except_hidden",
+} as const;
+
+const defaultVisibilitySourceMap = {
+  mode: "system_default",
+} as const;
+
 describe("sdk prompt runtime resource", () => {
   it("maps session prompt runtime state, policy, assets, and capabilities", async () => {
     const fetchImpl = vi
@@ -41,6 +49,7 @@ describe("sdk prompt runtime resource", () => {
               },
               budget: {},
               source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+              visibility: { mode: "allow_all_except_hidden" },
               debug: {
                 include_prompt_snapshot: false,
                 include_runtime_trace: false,
@@ -87,6 +96,7 @@ describe("sdk prompt runtime resource", () => {
                 no_assistant: "system_default",
               },
               source_selection: { history: { mode: "system_default" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "system_default" } },
+              visibility: { mode: "system_default" },
               history: {
                 source_branch_id: "alt-branch",
                 source_mode: "existing_branch",
@@ -121,6 +131,7 @@ describe("sdk prompt runtime resource", () => {
               },
               budget: {},
               source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+              visibility: { mode: "allow_all_except_hidden" },
               debug: {
                 include_prompt_snapshot: false,
                 include_runtime_trace: false,
@@ -154,7 +165,7 @@ describe("sdk prompt runtime resource", () => {
         jsonResponse({
           data: {
             structure: {
-              modes: ["default", "strict_alternating", "no_assistant"],
+              modes: ["default", "strict_alternating", "no_assistant", "flattened"],
               defaults: {
                 mode: "default",
                 merge_adjacent_same_role: false,
@@ -193,14 +204,14 @@ describe("sdk prompt runtime resource", () => {
                 envelope_metadata: true,
                 null_clears_field: true,
                 object_patch: "deep_merge",
-                supported_fields: ["structure", "delivery", "budget", "sourceSelection"],
+                supported_fields: ["structure", "delivery", "budget", "sourceSelection", "visibility"],
               },
               branch: {
                 envelope_metadata: true,
                 materialized_branches_only: true,
                 null_clears_field: true,
                 object_patch: "deep_merge",
-                supported_fields: ["structure", "delivery", "budget", "sourceSelection"],
+                supported_fields: ["structure", "delivery", "budget", "sourceSelection", "visibility"],
               },
             },
             compare: {
@@ -302,6 +313,7 @@ describe("sdk prompt runtime resource", () => {
         },
         budget: {},
         sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+        visibility: defaultResolvedVisibility,
         debug: {
           includePromptSnapshot: false,
           includeRuntimeTrace: false,
@@ -348,6 +360,7 @@ describe("sdk prompt runtime resource", () => {
           noAssistant: "system_default",
         },
         sourceSelection: { history: { mode: "system_default" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "system_default" } },
+        visibility: defaultVisibilitySourceMap,
         history: {
           sourceBranchId: "alt-branch",
           sourceMode: "existing_branch",
@@ -384,6 +397,7 @@ describe("sdk prompt runtime resource", () => {
         },
         budget: {},
         sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+        visibility: defaultResolvedVisibility,
         debug: {
           includePromptSnapshot: false,
           includeRuntimeTrace: false,
@@ -416,7 +430,7 @@ describe("sdk prompt runtime resource", () => {
 
     await expect(promptRuntime.getCapabilities({ accountId: "acc-1" })).resolves.toEqual({
       structure: {
-        modes: ["default", "strict_alternating", "no_assistant"],
+        modes: ["default", "strict_alternating", "no_assistant", "flattened"],
         defaults: {
           mode: "default",
           mergeAdjacentSameRole: false,
@@ -455,14 +469,14 @@ describe("sdk prompt runtime resource", () => {
           envelopeMetadata: true,
           nullClearsField: true,
           objectPatch: "deep_merge",
-          supportedFields: ["structure", "delivery", "budget", "sourceSelection"],
+          supportedFields: ["structure", "delivery", "budget", "sourceSelection", "visibility"],
         },
         branch: {
           envelopeMetadata: true,
           materializedBranchesOnly: true,
           nullClearsField: true,
           objectPatch: "deep_merge",
-          supportedFields: ["structure", "delivery", "budget", "sourceSelection"],
+          supportedFields: ["structure", "delivery", "budget", "sourceSelection", "visibility"],
         },
       },
       compare: {
@@ -594,9 +608,18 @@ describe("sdk prompt runtime resource", () => {
               source_mode: "existing_branch",
             },
           },
-          trim_reasons: null,
-          excluded_sources: null,
-          section_stats: [{ section_name: "history", token_count: 320 }],
+          trim_reasons: [{
+            group: "section:main",
+            reason: "budget_exceeded",
+            detail: "Prompt runtime pruned 128 tokens from budget group 'section:main'.",
+            pruned_token_count: 128,
+          }],
+          excluded_sources: [{
+            source: "examples",
+            reason: "disabled_by_policy",
+            detail: "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly.",
+          }],
+          section_stats: [{ section_name: "history", token_count: 320 }, { section_name: "main", token_count: 96 }],
           diagnostics: [
             { code: "historical_resolved_policy_unavailable", message: "policy unavailable", severity: "info", source: "policy", field_path: "resolved_policy", phase: "explain" },
           ],
@@ -625,9 +648,18 @@ describe("sdk prompt runtime resource", () => {
       promptSnapshot: { presetId: "preset-1", presetUpdatedAt: 1710000000000, presetVersion: 3, worldbookId: null, worldbookUpdatedAt: null, worldbookVersion: null, regexProfileId: null, regexProfileUpdatedAt: null, regexProfileVersion: null, worldbookActivatedEntryUids: [7], regexPreRuleNames: ["Input Rule"], regexPostRuleNames: [], promptMode: "compat_strict", promptDigest: "digest-1", tokenEstimate: 42 },
       resolvedPolicy: null,
       sourceMap: { history: { sourceBranchId: "main", sourceMode: "existing_branch" } },
-      trimReasons: null,
-      excludedSources: null,
-      sectionStats: [{ sectionName: "history", tokenCount: 320 }],
+      trimReasons: [{
+        group: "section:main",
+        reason: "budget_exceeded",
+        detail: "Prompt runtime pruned 128 tokens from budget group 'section:main'.",
+        prunedTokenCount: 128,
+      }],
+      excludedSources: [{
+        source: "examples",
+        reason: "disabled_by_policy",
+        detail: "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly.",
+      }],
+      sectionStats: [{ sectionName: "history", tokenCount: 320 }, { sectionName: "main", tokenCount: 96 }],
       diagnostics: [{ code: "historical_resolved_policy_unavailable", message: "policy unavailable", severity: "info", source: "policy", fieldPath: "resolved_policy", phase: "explain" }],
       limitations: ["persisted only"],
       result: { outputPageId: "page-output-12", assistantMessageId: "msg-assistant-12", generatedText: "hello", summaries: ["summary"], usage: { promptTokens: 320, completionTokens: 128, totalTokens: 448 }, verifier: null, committedAt: 1710000004000 },
@@ -646,8 +678,18 @@ describe("sdk prompt runtime resource", () => {
           policy_changes: [{ path: "policy.resolved_policy.delivery.no_assistant", change_type: "changed", left: false, right: true }],
           asset_changes: [],
           diagnostics_changes: [],
-          trim_changes: [],
-          exclusion_changes: [],
+          trim_changes: [{
+            path: "trim_reasons",
+            change_type: "changed",
+            left: [{ group: "section:main", reason: "group_limit_exceeded", pruned_token_count: 32 }],
+            right: [{ group: "section:main", reason: "group_limit_exceeded", pruned_token_count: 64 }],
+          }],
+          exclusion_changes: [{
+            path: "excluded_sources",
+            change_type: "changed",
+            left: [{ source: "history", reason: "visibility_filtered" }],
+            right: [{ source: "examples", reason: "disabled_by_policy" }],
+          }],
           limitations: ["Right floor 'floor-right' has no committed prompt runtime snapshot. Compare skipped recomputation and returned limitations only."],
         },
       }),
@@ -663,8 +705,18 @@ describe("sdk prompt runtime resource", () => {
       policyChanges: [{ path: "policy.resolved_policy.delivery.no_assistant", changeType: "changed", left: false, right: true }],
       assetChanges: [],
       diagnosticsChanges: [],
-      trimChanges: [],
-      exclusionChanges: [],
+      trimChanges: [{
+        path: "trim_reasons",
+        changeType: "changed",
+        left: [{ group: "section:main", reason: "group_limit_exceeded", pruned_token_count: 32 }],
+        right: [{ group: "section:main", reason: "group_limit_exceeded", pruned_token_count: 64 }],
+      }],
+      exclusionChanges: [{
+        path: "excluded_sources",
+        changeType: "changed",
+        left: [{ source: "history", reason: "visibility_filtered" }],
+        right: [{ source: "examples", reason: "disabled_by_policy" }],
+      }],
       limitations: ["Right floor 'floor-right' has no committed prompt runtime snapshot. Compare skipped recomputation and returned limitations only."],
     });
 
@@ -700,6 +752,7 @@ describe("sdk prompt runtime resource", () => {
             },
             budget: {},
             source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+            visibility: { mode: "allow_all_except_hidden" },
             debug: {
               include_prompt_snapshot: false,
               include_runtime_trace: false,
@@ -721,6 +774,10 @@ describe("sdk prompt runtime resource", () => {
         structure: {
           mode: "strict_alternating",
           preserveSystemMessages: true,
+        },
+        visibility: {
+          mode: "allow_all_except_hidden",
+          hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
         },
         delivery: null,
       }),
@@ -744,6 +801,7 @@ describe("sdk prompt runtime resource", () => {
         },
         budget: {},
         sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+        visibility: defaultResolvedVisibility,
         debug: {
           includePromptSnapshot: false,
           includeRuntimeTrace: false,
@@ -761,6 +819,10 @@ describe("sdk prompt runtime resource", () => {
         mode: "strict_alternating",
         preserve_system_messages: true,
       },
+      visibility: {
+        mode: "allow_all_except_hidden",
+        hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
+      },
       delivery: null,
     });
   });
@@ -777,6 +839,7 @@ describe("sdk prompt runtime resource", () => {
             delivery: { allow_assistant_prefill: true, require_last_user: false, no_assistant: true },
             budget: {},
             source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+            visibility: { mode: "allow_all_except_hidden" },
             debug: { include_prompt_snapshot: false, include_runtime_trace: false, include_worldbook_matches: false },
           },
           warnings: ["derived"],
@@ -792,6 +855,10 @@ describe("sdk prompt runtime resource", () => {
             delivery: { allow_assistant_prefill: true, require_last_user: false, no_assistant: false },
             budget: {},
             source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+            visibility: {
+              mode: "deny_all_except_visible",
+              visible_floor_ranges: [{ start_floor_no: 3, end_floor_no: 4 }],
+            },
             debug: { include_prompt_snapshot: false, include_runtime_trace: false, include_worldbook_matches: false },
           },
           warnings: [],
@@ -803,19 +870,19 @@ describe("sdk prompt runtime resource", () => {
 
     await expect(promptRuntime.getBranchPolicy({ accountId: "acc-1", sessionId: "session 1", branchId: "alt-branch" })).resolves.toEqual({
       persistentPolicy: { delivery: { noAssistant: true } },
-      resolvedPolicy: { structure: { mode: "no_assistant", mergeAdjacentSameRole: false, preserveSystemMessages: true, assistantRewriteStrategy: "to_system" }, delivery: { allowAssistantPrefill: true, requireLastUser: false, noAssistant: true }, budget: {}, sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } }, debug: { includePromptSnapshot: false, includeRuntimeTrace: false, includeWorldbookMatches: false } },
+      resolvedPolicy: { structure: { mode: "no_assistant", mergeAdjacentSameRole: false, preserveSystemMessages: true, assistantRewriteStrategy: "to_system" }, delivery: { allowAssistantPrefill: true, requireLastUser: false, noAssistant: true }, budget: {}, sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } }, visibility: defaultResolvedVisibility, debug: { includePromptSnapshot: false, includeRuntimeTrace: false, includeWorldbookMatches: false } },
       warnings: ["derived"],
     });
 
-    await expect(promptRuntime.patchBranchPolicy({ accountId: "acc-1", sessionId: "session 1", branchId: "alt-branch", structure: { mode: "strict_alternating" }, delivery: null })).resolves.toEqual({
+    await expect(promptRuntime.patchBranchPolicy({ accountId: "acc-1", sessionId: "session 1", branchId: "alt-branch", structure: { mode: "strict_alternating" }, visibility: { mode: "deny_all_except_visible", visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }] }, delivery: null })).resolves.toEqual({
       persistentPolicy: { structure: { mode: "strict_alternating" } },
-      resolvedPolicy: { structure: { mode: "strict_alternating", mergeAdjacentSameRole: true, preserveSystemMessages: true }, delivery: { allowAssistantPrefill: true, requireLastUser: false, noAssistant: false }, budget: {}, sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } }, debug: { includePromptSnapshot: false, includeRuntimeTrace: false, includeWorldbookMatches: false } },
+      resolvedPolicy: { structure: { mode: "strict_alternating", mergeAdjacentSameRole: true, preserveSystemMessages: true }, delivery: { allowAssistantPrefill: true, requireLastUser: false, noAssistant: false }, budget: {}, sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } }, visibility: { mode: "deny_all_except_visible", visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }] }, debug: { includePromptSnapshot: false, includeRuntimeTrace: false, includeWorldbookMatches: false } },
       warnings: [],
     });
 
     expect(String(fetchImpl.mock.calls[0]![0])).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/branches/alt-branch/policy");
     expect(String(fetchImpl.mock.calls[1]![0])).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/branches/alt-branch/policy");
-    expect(JSON.parse(String(fetchImpl.mock.calls[1]![1]?.body))).toEqual({ structure: { mode: "strict_alternating" }, delivery: null });
+    expect(JSON.parse(String(fetchImpl.mock.calls[1]![1]?.body))).toEqual({ structure: { mode: "strict_alternating" }, visibility: { mode: "deny_all_except_visible", visible_floor_ranges: [{ start_floor_no: 3, end_floor_no: 4 }] }, delivery: null });
   });
 
   it("maps preview requests and preview responses", async () => {
@@ -835,12 +902,14 @@ describe("sdk prompt runtime resource", () => {
             delivery: { allow_assistant_prefill: true, require_last_user: false, no_assistant: true },
             budget: { max_input_tokens: 4096, reserved_completion_tokens: 1024 },
             source_selection: { history: { mode: "windowed", max_messages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
+            visibility: { mode: "allow_all_except_hidden", hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }] },
             debug: { include_prompt_snapshot: false, include_runtime_trace: false, include_worldbook_matches: false },
           },
           source_map: {
             delivery: { no_assistant: "request_override" },
             budget: { max_input_tokens: "request_override", reserved_completion_tokens: "request_override" },
             source_selection: { history: { mode: "request_override", max_messages: "request_override" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "request_override" } },
+            visibility: { mode: "request_override", hidden_floor_ranges: "request_override" },
             history: { source_branch_id: "fork-branch", source_mode: "source_floor_branch" },
           },
           diagnostics: [
@@ -929,9 +998,10 @@ describe("sdk prompt runtime resource", () => {
         delivery: { allowAssistantPrefill: true, requireLastUser: false, noAssistant: true },
         budget: { maxInputTokens: 4096, reservedCompletionTokens: 1024 },
         sourceSelection: { history: { mode: "windowed", maxMessages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
+        visibility: { mode: "allow_all_except_hidden", hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }] },
         debug: { includePromptSnapshot: false, includeRuntimeTrace: false, includeWorldbookMatches: false },
       },
-      sourceMap: { delivery: { noAssistant: "request_override" }, budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" }, sourceSelection: { history: { mode: "request_override", maxMessages: "request_override" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "request_override" } }, history: { sourceBranchId: "fork-branch", sourceMode: "source_floor_branch" } },
+      sourceMap: { delivery: { noAssistant: "request_override" }, budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" }, sourceSelection: { history: { mode: "request_override", maxMessages: "request_override" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "request_override" } }, visibility: { mode: "request_override", hiddenFloorRanges: "request_override" }, history: { sourceBranchId: "fork-branch", sourceMode: "source_floor_branch" } },
       diagnostics: [{ code: "unmaterialized_branch_preview", message: "branch pending", severity: "info", source: "branch", phase: "preview" }],
       limitations: ["memory remains shared"],
       text: '{"金币":3}/霜刃',
@@ -1006,6 +1076,77 @@ describe("sdk prompt runtime resource", () => {
         mode: "allow_all_except_hidden",
         visible_floor_ranges: [{ start_floor_no: 3, end_floor_no: 4 }],
       },
+    });
+  });
+
+  it("ignores unsupported preview runtime trace fields and accepts an empty filtered preview trace", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          scope: {
+            session_id: "session-1",
+            target_branch_id: "main",
+            branch_exists: true,
+            source_floor_id: null,
+            history_source_branch_id: "main",
+            history_source_mode: "existing_branch",
+          },
+          policy: {
+            structure: { mode: "default", merge_adjacent_same_role: false, preserve_system_messages: true },
+            delivery: { allow_assistant_prefill: true, require_last_user: false, no_assistant: false },
+            budget: {},
+            source_selection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+            visibility: { mode: "allow_all_except_hidden" },
+            debug: { include_prompt_snapshot: false, include_runtime_trace: false, include_worldbook_matches: false },
+          },
+          text: "Preview plain text",
+          runtime_trace: {
+            structure: {
+              mode: "flattened",
+              merge_adjacent_same_role: false,
+              assistant_rewrite_count: 0,
+              tail_assistant_detected: false,
+            },
+            delivery: {
+              assistant_prefill_requested: false,
+              assistant_prefill_applied: false,
+              allow_assistant_prefill: true,
+              require_last_user: false,
+              no_assistant: false,
+              last_message_role: null,
+              ends_with_user: false,
+              degraded: false,
+              degrade_reasons: [],
+            },
+          },
+        },
+      }),
+    );
+
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const promptRuntime = createPromptRuntimeResource(transport);
+
+    await expect(
+      promptRuntime.previewText({
+        accountId: "acc-1",
+        sessionId: "session-1",
+        text: "plain text",
+      }),
+    ).resolves.toMatchObject({
+      scope: {
+        sessionId: "session-1",
+        targetBranchId: "main",
+        branchExists: true,
+        sourceFloorId: null,
+        historySourceBranchId: "main",
+        historySourceMode: "existing_branch",
+      },
+      policy: {
+        structure: { mode: "default", mergeAdjacentSameRole: false, preserveSystemMessages: true },
+        delivery: { allowAssistantPrefill: true, requireLastUser: false, noAssistant: false },
+      },
+      text: "Preview plain text",
+      runtimeTrace: {},
     });
   });
 });

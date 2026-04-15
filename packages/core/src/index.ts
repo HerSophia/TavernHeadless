@@ -123,11 +123,21 @@ export type {
   PromptRuntimeDiffEntry,
   PromptRuntimeTrace,
   PromptRuntimeDebugView,
+  PromptRuntimeSourceDescriptor,
+  PromptRuntimeBudgetGroupDescriptor,
   TemplateOptions,
   MessageBuilderOptions,
 } from './prompt/index.js';
 export { TemplateEngine, TemplateVariableError } from './prompt/index.js';
 export { TokenBudget, SimpleTokenCounter } from './prompt/index.js';
+export {
+  buildPromptRuntimeSectionBudgetGroup,
+  resolvePromptRuntimeSourceDescriptor,
+  resolvePromptRuntimeBudgetGroupDescriptor,
+  resolvePromptRuntimeBudgetGroupDefaults,
+  resolvePromptRuntimeBudgetGroupExclusionSource,
+  resolvePromptRuntimeBudgetGroupTraceLabel,
+} from './prompt/index.js';
 export type {
   NativePromptMode,
   NativeWorldbookEntry,

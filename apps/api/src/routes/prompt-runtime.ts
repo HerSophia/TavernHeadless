@@ -20,6 +20,7 @@ import {
   PROMPT_RUNTIME_SUPPORTED_ASSISTANT_REWRITE_STRATEGIES,
   PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES,
   PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES,
+  PROMPT_RUNTIME_SUPPORTED_VISIBILITY_MODES,
   PromptRuntimeControlService,
   PromptRuntimeControlServiceError,
   type PromptRuntimeAssetsView,
@@ -54,6 +55,19 @@ const sessionBranchParamsSchema = z.object({
   branchId: z.string().min(1),
 });
 
+const promptRuntimeVisibilitySchema = z.object({
+  hidden_floor_ranges: z.array(z.object({
+    start_floor_no: z.number().int(),
+    end_floor_no: z.number().int(),
+  }).strict()).optional(),
+  visible_floor_ranges: z.array(z.object({
+    start_floor_no: z.number().int(),
+    end_floor_no: z.number().int(),
+  }).strict()).optional(),
+  hidden_floor_ids: z.array(z.string().min(1)).optional(),
+  mode: z.enum(PROMPT_RUNTIME_SUPPORTED_VISIBILITY_MODES).optional(),
+}).strict();
+
 const promptRuntimePolicyPatchBodySchema = z.object({
   structure: z.object({
     mode: z.enum(PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES),
@@ -79,11 +93,13 @@ const promptRuntimePolicyPatchBodySchema = z.object({
     worldbook: z.object({ enabled: z.boolean().optional() }).strict().optional(),
     examples: z.object({ enabled: z.boolean().optional() }).strict().optional(),
   }).strict().nullable().optional(),
+  visibility: promptRuntimeVisibilitySchema.nullable().optional(),
 }).strict().refine(
   (value) => value.structure !== undefined
     || value.delivery !== undefined
     || value.budget !== undefined
-    || value.source_selection !== undefined,
+    || value.source_selection !== undefined
+    || value.visibility !== undefined,
   "At least one mutable field is required",
 );
 
@@ -92,24 +108,11 @@ const promptRuntimeCompareBodySchema = z.object({
   right: z.object({ floor_id: z.string().min(1) }).strict(),
 }).strict();
 
-const promptRuntimePreviewVisibilitySchema = z.object({
-  hidden_floor_ranges: z.array(z.object({
-    start_floor_no: z.number().int(),
-    end_floor_no: z.number().int(),
-  }).strict()).optional(),
-  visible_floor_ranges: z.array(z.object({
-    start_floor_no: z.number().int(),
-    end_floor_no: z.number().int(),
-  }).strict()).optional(),
-  hidden_floor_ids: z.array(z.string().min(1)).optional(),
-  mode: z.enum(["allow_all_except_hidden", "deny_all_except_visible"]).optional(),
-}).strict();
-
 const promptRuntimePreviewBodySchema = z.object({
   text: z.string().min(1),
   branch_id: z.string().min(1).optional(),
   source_floor_id: z.string().min(1).optional(),
-  visibility: promptRuntimePreviewVisibilitySchema.optional(),
+  visibility: promptRuntimeVisibilitySchema.optional(),
   structure: z.object({
     mode: z.enum(PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES),
     merge_adjacent_same_role: z.boolean().optional(),
@@ -562,6 +565,25 @@ function mapPolicyPatchBodyToCamelCase(body: z.infer<typeof promptRuntimePolicyP
           },
         }
       : {}),
+    ...(body.visibility !== undefined
+      ? {
+          visibility: body.visibility === null
+            ? null
+            : {
+                ...(body.visibility.hidden_floor_ranges !== undefined
+                  ? {
+                      hiddenFloorRanges: body.visibility.hidden_floor_ranges.map((range) => ({
+                        startFloorNo: range.start_floor_no,
+                        endFloorNo: range.end_floor_no,
+                      })),
+                    }
+                  : {}),
+                ...(body.visibility.visible_floor_ranges !== undefined ? { visibleFloorRanges: body.visibility.visible_floor_ranges.map((range) => ({ startFloorNo: range.start_floor_no, endFloorNo: range.end_floor_no })) } : {}),
+                ...(body.visibility.hidden_floor_ids !== undefined ? { hiddenFloorIds: body.visibility.hidden_floor_ids } : {}),
+                ...(body.visibility.mode !== undefined ? { mode: body.visibility.mode } : {}),
+              },
+        }
+      : {}),
   };
 }
 
@@ -784,6 +806,7 @@ function mapPersistentPolicyToSnakeCase(policy: PromptRuntimePersistentPolicy): 
     ...(policy.delivery ? { delivery: mapDeliveryPolicyToSnakeCase(policy.delivery) } : {}),
     ...(policy.budget ? { budget: mapBudgetPolicyToSnakeCase(policy.budget) } : {}),
     ...(policy.sourceSelection ? { source_selection: mapSourceSelectionPolicyToSnakeCase(policy.sourceSelection) } : {}),
+    ...(policy.visibility ? { visibility: mapVisibilityPolicyToSnakeCase(policy.visibility) } : {}),
   };
 }
 
@@ -848,6 +871,7 @@ function mapResolvedPolicyToSnakeCase(policy: ResolvedPromptRuntimePolicy): Reco
     delivery: mapResolvedDeliveryPolicyToSnakeCase(policy.delivery),
     budget: mapBudgetPolicyToSnakeCase(policy.budget),
     source_selection: mapSourceSelectionPolicyToSnakeCase(policy.sourceSelection),
+    visibility: mapVisibilityPolicyToSnakeCase(policy.visibility),
     debug: mapDebugPolicyToSnakeCase(policy.debug),
   };
 }
@@ -918,6 +942,20 @@ function mapSourceSelectionPolicyToSnakeCase(policy: {
     ...(policy.memory ? { memory: { ...(policy.memory.enabled !== undefined ? { enabled: policy.memory.enabled } : {}) } } : {}),
     ...(policy.worldbook ? { worldbook: { ...(policy.worldbook.enabled !== undefined ? { enabled: policy.worldbook.enabled } : {}) } } : {}),
     ...(policy.examples ? { examples: { ...(policy.examples.enabled !== undefined ? { enabled: policy.examples.enabled } : {}) } } : {}),
+  };
+}
+
+function mapVisibilityPolicyToSnakeCase(policy: {
+  hiddenFloorRanges?: Array<{ startFloorNo: number; endFloorNo: number }>;
+  visibleFloorRanges?: Array<{ startFloorNo: number; endFloorNo: number }>;
+  hiddenFloorIds?: string[];
+  mode?: string;
+}): Record<string, unknown> {
+  return {
+    ...(policy.hiddenFloorRanges ? { hidden_floor_ranges: policy.hiddenFloorRanges.map((range) => ({ start_floor_no: range.startFloorNo, end_floor_no: range.endFloorNo })) } : {}),
+    ...(policy.visibleFloorRanges ? { visible_floor_ranges: policy.visibleFloorRanges.map((range) => ({ start_floor_no: range.startFloorNo, end_floor_no: range.endFloorNo })) } : {}),
+    ...(policy.hiddenFloorIds ? { hidden_floor_ids: policy.hiddenFloorIds } : {}),
+    ...(policy.mode !== undefined ? { mode: policy.mode } : {}),
   };
 }
 
@@ -1037,6 +1075,16 @@ function mapSourceMapToSnakeCase(sourceMap: NonNullable<PromptRuntimeResolvedSta
       : {}),
     ...(sourceMap.sourceSelection
       ? { source_selection: mapSourceSelectionSourceMapToSnakeCase(sourceMap.sourceSelection) }
+      : {}),
+    ...(sourceMap.visibility
+      ? {
+          visibility: {
+            ...(sourceMap.visibility.mode ? { mode: sourceMap.visibility.mode } : {}),
+            ...(sourceMap.visibility.hiddenFloorRanges ? { hidden_floor_ranges: sourceMap.visibility.hiddenFloorRanges } : {}),
+            ...(sourceMap.visibility.visibleFloorRanges ? { visible_floor_ranges: sourceMap.visibility.visibleFloorRanges } : {}),
+            ...(sourceMap.visibility.hiddenFloorIds ? { hidden_floor_ids: sourceMap.visibility.hiddenFloorIds } : {}),
+          },
+        }
       : {}),
     ...(sourceMap.history
       ? {

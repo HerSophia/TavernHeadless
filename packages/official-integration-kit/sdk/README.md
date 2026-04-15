@@ -400,9 +400,11 @@ console.log(policy.resolvedPolicy.structure.mode);
 console.log(policy.persistentPolicyEnvelope?.version);
 console.log(policy.persistentPolicyEnvelope?.updatedBy);
 console.log(branchPolicy.persistentPolicyEnvelope?.value.delivery?.noAssistant);
+console.log(preview.policy.budget);
 console.log(preview.text);
-console.log(preview.runtimeTrace.budgets?.trimReasons);
 console.log(preview.runtimeTrace.sourceSelection?.excludedSources);
+console.log(preview.runtimeTrace.visibility?.filteredFloorNos);
+console.log(preview.runtimeTrace.macro?.mutationPreview);
 console.log(preview.runtimeTrace.macro?.stagedMutations); // []
 console.log(explain.promptSnapshot?.promptDigest);
 console.log(explain.snapshotAvailable);
@@ -435,15 +437,16 @@ console.log(capabilities.unsupported);
 
 - 这是一组独立的高级 API 资源，不会创建第二条聊天执行链。
 - `characterCard` 仍然属于 Prompt Assets。
-- `patchPolicy(...)` 与 `patchBranchPolicy(...)` 现在都支持 `structure`、`delivery`、`budget`、`sourceSelection`。
+- `patchPolicy(...)` 与 `patchBranchPolicy(...)` 现在都支持 `structure`、`delivery`、`budget`、`sourceSelection`、`visibility`。
 - 读取侧继续兼容旧的 bare object metadata；写入侧统一升级为 envelope：`{ version, updatedAt, updatedBy, value }`。
 - `previewText(...)` 只做单段文本 preview，不走 LLM、不创建 floor、不写 `promptSnapshot`、不提交副作用。
-- `previewText(...)` 当前支持 request 级 `budget` / `sourceSelection` 覆盖；结构化解释结果位于 `runtimeTrace.budgets.trimReasons` 与 `runtimeTrace.sourceSelection.excludedSources`。
-- `previewText(...)` 的宏诊断继续统一走 `runtimeTrace.macro`，并且 `runtimeTrace.macro.stagedMutations` 固定为空。
+- `previewText(...)` 当前仍接受 request 级 `structure` / `delivery` / `budget` / `sourceSelection` / `visibility` 覆盖，但返回的 `runtimeTrace` 只投影 `macro`、`sourceSelection`、`visibility`。resolved budget / policy 请查看 `policy` 与 `sourceMap`。
+- `previewText(...)` 的宏诊断继续统一走 `runtimeTrace.macro`，并且 `runtimeTrace.macro.stagedMutations` 固定为空；结构化 budget trim reason 仍以 dry-run / live 为主。
 - `getFloorExplain(...)` 只读取 committed floor 的持久化真相，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。
 - `getFloorExplain(...)` 的 `snapshotAvailable` 表示 explain 是否来自 committed explain snapshot。旧楼层 fallback 时，`assets`、`resolvedPolicy`、`trimReasons`、`excludedSources`、`sectionStats` 可能为 `null`，并会保留 `diagnostics` / `limitations`。
+- `supportedSources` 与 `excludedSources[].source` 继续只承诺公开 source kind；具体 budget group 标签会出现在 `budgets.byGroup[].group`、`trimReasons[].group` 与 compare 的 `trimChanges` 中，例如 `section:main`。
 - `compare(...)` 只支持同一 session 内的两个 committed floor。返回值是结构化 path/value diff，不是全文级 diff；缺 snapshot 时会保留 `limitations`，而不是重算 explain。
-- `delivery: null`、`structure: null`、`budget: null`、`sourceSelection: null` 都会清空对应持久化 section。
+- `delivery: null`、`structure: null`、`budget: null`、`sourceSelection: null`、`visibility: null` 都会清空对应持久化 section。
 - 当前没有 `promptRuntime.macros(...)` 之类的专用 control plane 方法；宏边界继续通过统一观测面公开。
 
 ## 设计边界

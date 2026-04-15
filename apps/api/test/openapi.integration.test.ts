@@ -293,6 +293,19 @@ describe("OpenAPI integration", () => {
     expect(sessionPromptRuntimePreviewPath.post?.responses).toHaveProperty("404");
     expect(sessionPromptRuntimePreviewPath.post?.responses).toHaveProperty("409");
 
+    const previewResponseSchema = getOpenApiResponseSchema(sessionPromptRuntimePreviewPath.post, "200");
+    const previewResponseProperties = readRecordNode(previewResponseSchema?.properties);
+    const previewDataSchema = readRecordNode(previewResponseProperties?.data);
+    const previewDataProperties = readRecordNode(previewDataSchema?.properties);
+    const previewRuntimeTraceSchema = readRecordNode(previewDataProperties?.runtime_trace);
+    const previewRuntimeTraceProperties = readRecordNode(previewRuntimeTraceSchema?.properties);
+    expect(previewRuntimeTraceSchema?.additionalProperties).toBe(false);
+    expect(Object.keys(previewRuntimeTraceProperties ?? {}).sort()).toEqual([
+      "macro",
+      "source_selection",
+      "visibility",
+    ]);
+
     const promptRuntimeCapabilitiesPath = body.paths["/prompt-runtime/capabilities"] as {
       get?: OpenApiOperation;
     };
@@ -690,11 +703,62 @@ describe("OpenAPI integration", () => {
       const dryRunDataProperties = readRecordNode(dryRunDataSchema?.properties);
       const dryRunRuntimeTraceSchema = readRecordNode(dryRunDataProperties?.runtime_trace);
       const dryRunRuntimeTraceProperties = readRecordNode(dryRunRuntimeTraceSchema?.properties);
+      const dryRunAssemblySchema = readRecordNode(dryRunDataProperties?.assembly);
+      const dryRunAssemblyProperties = readRecordNode(dryRunAssemblySchema?.properties);
       expect(dryRunRuntimeTraceSchema?.additionalProperties).toBe(false);
       expect(dryRunRuntimeTraceProperties).toHaveProperty("visibility");
+      expect(dryRunAssemblySchema?.additionalProperties).toBe(false);
+      expect(dryRunAssemblyProperties).not.toHaveProperty("macro_warnings");
+      expect(dryRunAssemblyProperties).not.toHaveProperty("macro_used_names");
+      expect(dryRunAssemblyProperties).not.toHaveProperty("macro_mutation_preview");
+      expect(dryRunAssemblyProperties).not.toHaveProperty("macro_staged_mutations");
+      expect(dryRunAssemblyProperties).not.toHaveProperty("macro_traces");
+      expect(getOpenApiResponseExample(dryRunPath.post, "200")).toMatchObject({
+        data: {
+          runtime_trace: {
+            budgets: {
+              by_group: expect.arrayContaining([
+                expect.objectContaining({ group: "section:main" }),
+              ]),
+            },
+          },
+        },
+      });
     } finally {
       await chatApp.close();
     }
+  });
+
+  it("includes prompt runtime route schemas and examples", async () => {
+    const res = await app.inject({ method: "GET", url: "/openapi.json" });
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json<OpenApiDocument>();
+
+    const capabilitiesPath = body.paths["/prompt-runtime/capabilities"] as { get?: OpenApiOperation };
+    expect(getOpenApiResponseExample(capabilitiesPath.get, "200")).toMatchObject({
+      data: {
+        source_selection: {
+          supported_sources: ["history", "memory", "worldbook", "examples"],
+        },
+      },
+    });
+
+    const explainPath = body.paths["/floors/{id}/prompt-runtime/explain"] as { get?: OpenApiOperation };
+    expect(getOpenApiResponseExample(explainPath.get, "200")).toMatchObject({
+      data: {
+        trim_reasons: [expect.objectContaining({ group: "section:main" })],
+        excluded_sources: [expect.objectContaining({ source: "examples" })],
+      },
+    });
+
+    const comparePath = body.paths["/sessions/{id}/prompt-runtime/compare"] as { post?: OpenApiOperation };
+    expect(getOpenApiResponseExample(comparePath.post, "200")).toMatchObject({
+      data: {
+        trim_changes: [expect.objectContaining({ left: [expect.objectContaining({ group: "section:main" })] })],
+        exclusion_changes: [expect.objectContaining({ right: [expect.objectContaining({ source: "examples" })] })],
+      },
+    });
   });
 
   it("serves Swagger UI page", async () => {

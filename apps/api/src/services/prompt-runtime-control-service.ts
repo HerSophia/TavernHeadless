@@ -2,6 +2,7 @@ import { and, eq, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 
 import type { AppDb } from "../db/client.js";
+import type { PromptVisibilityPolicy } from "./chat-history-loader.js";
 import { characters, floorResultSnapshots, floors, presets, promptRuntimeExplainSnapshots, promptSnapshots, regexProfiles, sessions, worldbooks } from "../db/schema.js";
 import { parseJsonField, stringifyJsonField } from "../lib/http.js";
 import type {
@@ -16,7 +17,7 @@ import type {
   PromptTrimReason,
 } from "./prompt-assembler.js";
 
-export const PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES = ["default", "strict_alternating", "no_assistant"] as const satisfies readonly PromptStructureMode[];
+export const PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES = ["default", "strict_alternating", "no_assistant", "flattened"] as const satisfies readonly PromptStructureMode[];
 export const PROMPT_RUNTIME_SUPPORTED_ASSISTANT_REWRITE_STRATEGIES = ["to_system", "to_user_transcript"] as const satisfies readonly PromptStructureAssistantRewriteStrategy[];
 export const PROMPT_RUNTIME_UNSUPPORTED_ROUTES = [
   "/sessions/:id/prompt-runtime/run",
@@ -34,7 +35,7 @@ export const PROMPT_RUNTIME_LIMITATIONS = [
 ] as const;
 export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS = [
   "Historical explain reads persisted prompt snapshot and committed floor result only. It does not re-run prompt assembly, macro evaluation, or budget decisions.",
-  "Resolved policy, policy source-map fields, trim reasons, and excluded sources were not persisted for existing floors, so historical explain may return them as null.",
+  "Older committed floors without a prompt_runtime_explain_snapshot may return resolved policy, policy source-map fields, trim reasons, excluded sources, and section stats as null.",
 ] as const;
 
 export type PromptRuntimeHistorySourceMode = "existing_branch" | "source_floor_branch" | "main_fallback";
@@ -45,8 +46,10 @@ export const PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES = ["full", 
 export const PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_SOURCES = ["history", "memory", "worldbook", "examples"] as const;
 export const PROMPT_RUNTIME_SUPPORTED_TRIM_REASON_CODES = ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"] as const;
 export const PROMPT_RUNTIME_SUPPORTED_SOURCE_EXCLUSION_REASON_CODES = ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"] as const;
-export const PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS = ["structure", "delivery", "budget", "sourceSelection"] as const;
+export const PROMPT_RUNTIME_SUPPORTED_VISIBILITY_MODES = ["allow_all_except_hidden", "deny_all_except_visible"] as const;
+export const PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS = ["structure", "delivery", "budget", "sourceSelection", "visibility"] as const;
 export type PromptRuntimeSourceSelectionHistoryMode = typeof PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES[number];
+export type PromptRuntimeVisibilityMode = typeof PROMPT_RUNTIME_SUPPORTED_VISIBILITY_MODES[number];
 
 const promptStructurePolicySchema = z.object({
   mode: z.enum(PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES),
@@ -66,6 +69,18 @@ const promptBudgetPolicySchema = z.object({
   reservedCompletionTokens: z.number().int().positive().optional(),
 }).strict();
 
+const floorVisibilityRangeSchema = z.object({
+  startFloorNo: z.number().int(),
+  endFloorNo: z.number().int(),
+}).strict();
+
+const promptVisibilityPolicySchema = z.object({
+  hiddenFloorRanges: z.array(floorVisibilityRangeSchema).optional(),
+  visibleFloorRanges: z.array(floorVisibilityRangeSchema).optional(),
+  hiddenFloorIds: z.array(z.string().min(1)).optional(),
+  mode: z.enum(PROMPT_RUNTIME_SUPPORTED_VISIBILITY_MODES).optional(),
+}).strict();
+
 const promptSourceSelectionPolicySchema = z.object({
   history: z.object({
     mode: z.enum(PROMPT_RUNTIME_SUPPORTED_SOURCE_SELECTION_HISTORY_MODES).optional(),
@@ -81,6 +96,7 @@ const promptRuntimePersistentPolicySchema = z.object({
   delivery: promptDeliveryPolicySchema.optional(),
   budget: promptBudgetPolicySchema.optional(),
   sourceSelection: promptSourceSelectionPolicySchema.optional(),
+  visibility: promptVisibilityPolicySchema.optional(),
 }).strict();
 
 const promptRuntimePersistedPolicyEnvelopeSchema = z.object({
@@ -107,6 +123,7 @@ export interface PromptRuntimePersistentPolicy {
   delivery?: PromptDeliveryPolicy;
   budget?: PromptBudgetPolicy;
   sourceSelection?: PromptSourceSelectionPolicy;
+  visibility?: PromptVisibilityPolicy;
 }
 
 export type PromptRuntimeGovernedPolicy = PromptRuntimePersistentPolicy;
@@ -123,6 +140,7 @@ export interface PromptRuntimePersistentPolicyPatch {
   delivery?: PromptDeliveryPolicy | null;
   budget?: PromptBudgetPolicy | null;
   sourceSelection?: PromptSourceSelectionPolicy | null;
+  visibility?: PromptVisibilityPolicy | null;
 }
 
 export interface PromptRuntimeDebugPolicy {
@@ -143,6 +161,11 @@ export interface ResolvedPromptSourceSelectionPolicy {
   examples: { enabled: boolean };
 }
 
+export interface ResolvedPromptVisibilityPolicy extends Omit<PromptVisibilityPolicy, "mode"> {
+  mode: PromptRuntimeVisibilityMode;
+}
+
+
 export interface ResolvedPromptStructurePolicy {
   mode: PromptStructureMode;
   mergeAdjacentSameRole: boolean;
@@ -162,6 +185,7 @@ export interface ResolvedPromptRuntimePolicy {
   debug: PromptRuntimeDebugPolicy;
   budget: ResolvedPromptBudgetPolicy;
   sourceSelection: ResolvedPromptSourceSelectionPolicy;
+  visibility: ResolvedPromptVisibilityPolicy;
 }
 
 export type ResolvedPromptRuntimePolicyV4 = ResolvedPromptRuntimePolicy;
@@ -227,6 +251,12 @@ export interface PromptRuntimeSourceMap {
     memory?: { enabled?: PromptRuntimePolicySource };
     worldbook?: { enabled?: PromptRuntimePolicySource };
     examples?: { enabled?: PromptRuntimePolicySource };
+  };
+  visibility?: {
+    hiddenFloorRanges?: PromptRuntimePolicySource;
+    visibleFloorRanges?: PromptRuntimePolicySource;
+    hiddenFloorIds?: PromptRuntimePolicySource;
+    mode?: PromptRuntimePolicySource;
   };
   history?: {
     sourceBranchId?: string;
@@ -299,9 +329,7 @@ export interface PromptRuntimeInspectionResult {
   limitations: string[];
 }
 
-export interface PromptRuntimeCommittedExplainSnapshot {
-  floorId: string;
-  sessionId: string;
+export interface PromptRuntimeInspectionSnapshotPayload {
   targetBranchId?: string | null;
   sourceFloorId?: string | null;
   historySourceBranchId?: string | null;
@@ -314,7 +342,47 @@ export interface PromptRuntimeCommittedExplainSnapshot {
   excludedSources: PromptSourceExclusionReason[];
   sectionStats: PromptRuntimeSectionStat[];
   snapshotVersion: 1;
+}
+
+export function buildPromptRuntimeInspectionSnapshotPayload(
+  inspection: PromptRuntimeInspectionResult,
+): PromptRuntimeInspectionSnapshotPayload {
+  return {
+    targetBranchId: inspection.scope.targetBranchId,
+    sourceFloorId: inspection.scope.sourceFloorId ?? null,
+    historySourceBranchId: inspection.scope.historySourceBranchId,
+    historySourceMode: inspection.scope.historySourceMode,
+    assets: inspection.assets,
+    resolvedPolicy: inspection.resolvedPolicy,
+    sourceMap: inspection.sourceMap,
+    diagnostics: inspection.diagnostics,
+    trimReasons: inspection.trimReasons,
+    excludedSources: inspection.excludedSources,
+    sectionStats: inspection.sectionStats,
+    snapshotVersion: 1,
+  };
+}
+
+export interface PromptRuntimeCommittedExplainSnapshot extends PromptRuntimeInspectionSnapshotPayload {
+  floorId: string;
+  sessionId: string;
   createdAt: number;
+}
+
+export function buildPromptRuntimeCommittedExplainSnapshot(args: {
+  floorId: string;
+  sessionId: string;
+  createdAt: number;
+  inspection: PromptRuntimeInspectionResult;
+}): PromptRuntimeCommittedExplainSnapshot {
+  const snapshotPayload = buildPromptRuntimeInspectionSnapshotPayload(args.inspection);
+
+  return {
+    floorId: args.floorId,
+    sessionId: args.sessionId,
+    createdAt: args.createdAt,
+    ...snapshotPayload,
+  };
 }
 
 export type PromptRuntimeScopeDiff = PromptRuntimeDiffEntry<unknown>;
@@ -475,6 +543,10 @@ export const DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY: ResolvedPromptStr
 };
 
 export const DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY: ResolvedPromptBudgetPolicy = {};
+
+export const DEFAULT_RESOLVED_PROMPT_RUNTIME_VISIBILITY_POLICY: ResolvedPromptVisibilityPolicy = {
+  mode: "allow_all_except_hidden",
+};
 
 export const DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY: ResolvedPromptSourceSelectionPolicy = {
   history: { mode: "full" },
@@ -1059,6 +1131,7 @@ export function buildResolvedPromptRuntimePolicy(
     delivery,
     debug: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY },
     budget: resolvePromptRuntimeBudgetPolicy(effectivePersistentPolicy?.budget),
+    visibility: resolvePromptRuntimeVisibilityPolicy(effectivePersistentPolicy?.visibility),
     sourceSelection: resolvePromptRuntimeSourceSelectionPolicy(effectivePersistentPolicy?.sourceSelection),
   };
 }
@@ -1070,12 +1143,14 @@ export function mergePromptRuntimePersistentPolicies(
   let delivery: PromptDeliveryPolicy | undefined;
   let budget: PromptBudgetPolicy | undefined;
   let sourceSelection: PromptSourceSelectionPolicy | undefined;
+  let visibility: PromptVisibilityPolicy | undefined;
 
   for (const layer of layers) {
     structure = mergePromptStructurePolicy(structure, layer?.structure);
     delivery = mergePromptDeliveryPolicy(delivery, layer?.delivery);
     budget = mergePromptBudgetPolicy(budget, layer?.budget);
     sourceSelection = mergePromptSourceSelectionPolicy(sourceSelection, layer?.sourceSelection);
+    visibility = mergePromptVisibilityPolicy(visibility, layer?.visibility);
   }
 
   const merged: PromptRuntimePersistentPolicy = {};
@@ -1091,6 +1166,9 @@ export function mergePromptRuntimePersistentPolicies(
   }
   if (sourceSelection) {
     merged.sourceSelection = sourceSelection;
+  }
+  if (visibility) {
+    merged.visibility = visibility;
   }
 
   return Object.keys(merged).length > 0 ? merged : undefined;
@@ -1112,6 +1190,19 @@ export function resolvePromptRuntimeBudgetPolicy(
   return {
     ...(budgetPolicy?.maxInputTokens !== undefined ? { maxInputTokens: budgetPolicy.maxInputTokens } : {}),
     ...(budgetPolicy?.reservedCompletionTokens !== undefined ? { reservedCompletionTokens: budgetPolicy.reservedCompletionTokens } : {}),
+  };
+}
+
+export function resolvePromptRuntimeVisibilityPolicy(
+  visibilityPolicy?: PromptVisibilityPolicy,
+): ResolvedPromptVisibilityPolicy {
+  const normalizedVisibilityPolicy = normalizePromptVisibilityPolicy(visibilityPolicy);
+
+  return {
+    ...(normalizedVisibilityPolicy?.hiddenFloorRanges ? { hiddenFloorRanges: normalizedVisibilityPolicy.hiddenFloorRanges } : {}),
+    ...(normalizedVisibilityPolicy?.visibleFloorRanges ? { visibleFloorRanges: normalizedVisibilityPolicy.visibleFloorRanges } : {}),
+    ...(normalizedVisibilityPolicy?.hiddenFloorIds ? { hiddenFloorIds: normalizedVisibilityPolicy.hiddenFloorIds } : {}),
+    mode: normalizedVisibilityPolicy?.mode ?? DEFAULT_RESOLVED_PROMPT_RUNTIME_VISIBILITY_POLICY.mode,
   };
 }
 
@@ -1149,6 +1240,20 @@ export function mergePromptBudgetPolicy(
   };
 
   return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+export function mergePromptVisibilityPolicy(
+  base: PromptVisibilityPolicy | undefined,
+  override: PromptVisibilityPolicy | undefined,
+): PromptVisibilityPolicy | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  return normalizePromptVisibilityPolicy({
+    ...(base ?? {}),
+    ...(override ?? {}),
+  });
 }
 
 function mergePromptSourceSelectionHistoryPolicy(
@@ -1219,6 +1324,66 @@ function mergePromptSourceSelectionTogglePolicy(
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
+function normalizePromptVisibilityPolicy(
+  visibility: PromptVisibilityPolicy | undefined,
+): PromptVisibilityPolicy | undefined {
+  if (!visibility) {
+    return undefined;
+  }
+
+  const normalized: PromptVisibilityPolicy = {
+    ...(visibility.hiddenFloorRanges && visibility.hiddenFloorRanges.length > 0
+      ? {
+          hiddenFloorRanges: visibility.hiddenFloorRanges.map((range) => ({
+            startFloorNo: range.startFloorNo,
+            endFloorNo: range.endFloorNo,
+          })),
+        }
+      : {}),
+    ...(visibility.visibleFloorRanges && visibility.visibleFloorRanges.length > 0
+      ? {
+          visibleFloorRanges: visibility.visibleFloorRanges.map((range) => ({
+            startFloorNo: range.startFloorNo,
+            endFloorNo: range.endFloorNo,
+          })),
+        }
+      : {}),
+    ...(visibility.hiddenFloorIds && visibility.hiddenFloorIds.length > 0
+      ? { hiddenFloorIds: [...visibility.hiddenFloorIds] }
+      : {}),
+    ...(visibility.mode !== undefined ? { mode: visibility.mode } : {}),
+  };
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function serializePromptVisibilityPolicy(
+  visibility: PromptVisibilityPolicy,
+): Record<string, unknown> {
+  return {
+    ...(visibility.hiddenFloorRanges && visibility.hiddenFloorRanges.length > 0
+      ? {
+          hiddenFloorRanges: visibility.hiddenFloorRanges.map((range) => ({
+            startFloorNo: range.startFloorNo,
+            endFloorNo: range.endFloorNo,
+          })),
+        }
+      : {}),
+    ...(visibility.visibleFloorRanges && visibility.visibleFloorRanges.length > 0
+      ? {
+          visibleFloorRanges: visibility.visibleFloorRanges.map((range) => ({
+            startFloorNo: range.startFloorNo,
+            endFloorNo: range.endFloorNo,
+          })),
+        }
+      : {}),
+    ...(visibility.hiddenFloorIds && visibility.hiddenFloorIds.length > 0
+      ? { hiddenFloorIds: [...visibility.hiddenFloorIds] }
+      : {}),
+    ...(visibility.mode !== undefined ? { mode: visibility.mode } : {}),
+  };
+}
+
 export function mergePromptSourceSelectionPolicy(
   base: PromptSourceSelectionPolicy | undefined,
   override: PromptSourceSelectionPolicy | undefined,
@@ -1264,6 +1429,11 @@ export function applyPromptRuntimePersistentPolicyPatch(
     : patch.sourceSelection === null
       ? undefined
       : mergePromptSourceSelectionPolicy(current?.sourceSelection, patch.sourceSelection);
+  const nextVisibility = patch.visibility === undefined
+    ? current?.visibility
+    : patch.visibility === null
+      ? undefined
+      : mergePromptVisibilityPolicy(current?.visibility, patch.visibility);
 
   if (nextStructure) {
     next.structure = nextStructure;
@@ -1277,6 +1447,9 @@ export function applyPromptRuntimePersistentPolicyPatch(
   if (nextSourceSelection) {
     next.sourceSelection = nextSourceSelection;
   }
+  if (nextVisibility) {
+    next.visibility = nextVisibility;
+  }
 
   return Object.keys(next).length > 0 ? next : undefined;
 }
@@ -1287,7 +1460,7 @@ export function resolvePromptRuntimeStructurePolicy(
 ): ResolvedPromptStructurePolicy {
   let effectiveStructurePolicy = structurePolicy;
 
-  if (deliveryPolicy?.noAssistant === true && structurePolicy?.mode !== "no_assistant") {
+  if (deliveryPolicy?.noAssistant === true && structurePolicy?.mode !== "no_assistant" && structurePolicy?.mode !== "flattened") {
     effectiveStructurePolicy = {
       mode: "no_assistant",
       mergeAdjacentSameRole: structurePolicy?.mergeAdjacentSameRole
@@ -1399,8 +1572,29 @@ export function buildPromptRuntimeSourceMap(args: {
     branch: args.branchPolicy?.sourceSelection?.examples?.enabled,
     request: args.requestPolicy?.sourceSelection?.examples?.enabled,
   });
+  const visibilityHiddenFloorRangesSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.visibility?.hiddenFloorRanges,
+    branch: args.branchPolicy?.visibility?.hiddenFloorRanges,
+    request: args.requestPolicy?.visibility?.hiddenFloorRanges,
+  });
+  const visibilityVisibleFloorRangesSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.visibility?.visibleFloorRanges,
+    branch: args.branchPolicy?.visibility?.visibleFloorRanges,
+    request: args.requestPolicy?.visibility?.visibleFloorRanges,
+  });
+  const visibilityHiddenFloorIdsSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.visibility?.hiddenFloorIds,
+    branch: args.branchPolicy?.visibility?.hiddenFloorIds,
+    request: args.requestPolicy?.visibility?.hiddenFloorIds,
+  });
+  const visibilityModeSource = selectPromptRuntimePolicySource({
+    session: args.sessionPolicy?.visibility?.mode,
+    branch: args.branchPolicy?.visibility?.mode,
+    request: args.requestPolicy?.visibility?.mode,
+  });
   const structureModeDerivedFromDelivery = resolvedPolicy.delivery.noAssistant === true
-    && effectivePolicy?.structure?.mode !== "no_assistant";
+    && effectivePolicy?.structure?.mode !== "no_assistant"
+    && effectivePolicy?.structure?.mode !== "flattened";
   const effectiveStructureModeSource = structureModeDerivedFromDelivery
     ? deliveryNoAssistantSource ?? structureModeSource ?? "system_default"
     : structureModeSource ?? "system_default";
@@ -1445,6 +1639,12 @@ export function buildPromptRuntimeSourceMap(args: {
       requireLastUser: deliveryRequireLastUserSource ?? "system_default",
       noAssistant: deliveryNoAssistantSource ?? "system_default",
     },
+    visibility: {
+      mode: visibilityModeSource ?? "system_default",
+      ...(resolvedPolicy.visibility.hiddenFloorRanges ? { hiddenFloorRanges: visibilityHiddenFloorRangesSource ?? "system_default" } : {}),
+      ...(resolvedPolicy.visibility.visibleFloorRanges ? { visibleFloorRanges: visibilityVisibleFloorRangesSource ?? "system_default" } : {}),
+      ...(resolvedPolicy.visibility.hiddenFloorIds ? { hiddenFloorIds: visibilityHiddenFloorIdsSource ?? "system_default" } : {}),
+    },
     ...(args.history && (args.history.sourceBranchId || args.history.sourceMode)
       ? {
           history: {
@@ -1467,6 +1667,7 @@ export function buildPromptRuntimeWarnings(
   if (
     effectivePolicy?.delivery?.noAssistant === true
     && effectivePolicy?.structure?.mode !== "no_assistant"
+    && effectivePolicy?.structure?.mode !== "flattened"
   ) {
     warnings.push(DERIVED_NO_ASSISTANT_STRUCTURE_WARNING);
   }
@@ -1525,7 +1726,7 @@ export function buildPromptRuntimeHistoricalExplainDiagnostics(): PromptRuntimeD
     },
     {
       code: "historical_resolved_policy_unavailable",
-      message: "Historical explain did not persist the resolved policy for this floor. The explain view returns persisted prompt snapshot and committed result truth only.",
+      message: "This floor has no committed prompt runtime explain snapshot, so historical explain returns resolved_policy as null instead of recomputing it.",
       severity: "info",
       source: "policy",
       fieldPath: "resolved_policy",
@@ -1533,7 +1734,7 @@ export function buildPromptRuntimeHistoricalExplainDiagnostics(): PromptRuntimeD
     },
     {
       code: "historical_source_map_partial",
-      message: "Historical explain can only return source_map.history from committed floor truth. Policy source attribution was not persisted for this floor.",
+      message: "This floor has no committed prompt runtime explain snapshot, so historical explain can only return source_map.history from committed floor truth.",
       severity: "info",
       source: "policy",
       fieldPath: "source_map",
@@ -1541,7 +1742,7 @@ export function buildPromptRuntimeHistoricalExplainDiagnostics(): PromptRuntimeD
     },
     {
       code: "historical_trim_reasons_unavailable",
-      message: "Historical explain did not persist trim reasons for this floor, so explain returns trim_reasons as null instead of recomputing budget decisions.",
+      message: "This floor has no committed prompt runtime explain snapshot, so explain returns trim_reasons as null instead of recomputing budget decisions.",
       severity: "info",
       source: "budget",
       fieldPath: "trim_reasons",
@@ -1549,7 +1750,7 @@ export function buildPromptRuntimeHistoricalExplainDiagnostics(): PromptRuntimeD
     },
     {
       code: "historical_excluded_sources_unavailable",
-      message: "Historical explain did not persist excluded sources for this floor, so explain returns excluded_sources as null instead of recomputing source selection.",
+      message: "This floor has no committed prompt runtime explain snapshot, so explain returns excluded_sources as null instead of recomputing source selection.",
       severity: "info",
       source: "source_selection",
       fieldPath: "excluded_sources",
@@ -1964,6 +2165,13 @@ function normalizePersistentPolicy(
     }
   }
 
+  if (value.visibility) {
+    const visibility = normalizePromptVisibilityPolicy(value.visibility);
+    if (visibility) {
+      normalized.visibility = visibility;
+    }
+  }
+
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
@@ -2015,6 +2223,9 @@ function serializePromptRuntimePersistentPolicy(
       ...(policy.sourceSelection.worldbook ? { worldbook: policy.sourceSelection.worldbook } : {}),
       ...(policy.sourceSelection.examples ? { examples: policy.sourceSelection.examples } : {}),
     };
+  }
+  if (policy.visibility) {
+    serialized.visibility = serializePromptVisibilityPolicy(policy.visibility);
   }
 
   return serialized;
@@ -2190,6 +2401,9 @@ function prunePromptRuntimeSourceMap(sourceMap: PromptRuntimeSourceMap): PromptR
       : {}),
     ...(sourceMap.sourceSelection && Object.keys(sourceMap.sourceSelection).length > 0
       ? { sourceSelection: sourceMap.sourceSelection }
+      : {}),
+    ...(sourceMap.visibility && Object.keys(sourceMap.visibility).length > 0
+      ? { visibility: sourceMap.visibility }
       : {}),
     ...(sourceMap.history && Object.keys(sourceMap.history).length > 0
       ? { history: sourceMap.history }

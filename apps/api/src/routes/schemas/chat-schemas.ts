@@ -5,11 +5,11 @@
  */
 
 export const promptIntentValues = ["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"] as const;
-export const promptStructureModeValues = ["default", "strict_alternating", "no_assistant"] as const;
+export const promptStructureModeValues = ["default", "strict_alternating", "no_assistant", "flattened"] as const;
 export const promptStructureAssistantRewriteStrategyValues = ["to_system", "to_user_transcript"] as const;
 export const promptSnapshotModeValues = ["compat_strict", "compat_plus", "native"] as const;
 export const promptNamesBehaviorValues = ["off", "always"] as const;
-export const promptAssistantPrefillStrategyValues = ["provider_native", "assistant_message_fallback", "unsupported", "none"] as const;
+export const promptAssistantPrefillStrategyValues = ["provider_native", "assistant_message_fallback", "transcript_append", "unsupported", "none"] as const;
 export const promptMessageRoleValues = ["system", "user", "assistant"] as const;
 export const promptDeliveryDegradeReasonValues = ["assistant_prefill_disabled", "assistant_prefill_unsupported", "require_last_user", "no_assistant_override"] as const;
 export const dryRunVisibilityModeValues = ["allow_all_except_hidden", "deny_all_except_visible"] as const;
@@ -120,7 +120,7 @@ export const liveRuntimeTraceExample = {
   },
   budgets: {
     by_group: [
-      { group: "history", token_count: 256, pruned_token_count: 64 },
+      { group: "history", token_count: 256, estimated_token_count: 320, allocated_token_count: 256, pruned_token_count: 64 },
       { group: "worldbook", token_count: 64 },
     ],
   },
@@ -409,7 +409,7 @@ export const dryRunSuccessResponseExample = {
       },
       budgets: {
         by_group: [
-          { group: "history", token_count: 96, pruned_token_count: 32 },
+          { group: "history", token_count: 96, estimated_token_count: 128, allocated_token_count: 96, pruned_token_count: 32 },
           { group: "memory", token_count: 48 },
           { group: "worldbook", token_count: 64 },
           { group: "section:main", token_count: 80 },
@@ -764,8 +764,13 @@ const runtimeTraceBudgetGroupJsonSchema = {
   type: "object",
   required: ["group", "token_count"],
   properties: {
-    group: { type: "string" },
+    group: {
+      type: "string",
+      description: "Budget group label. This may include concrete section groups such as `section:main`.",
+    },
     token_count: { type: "integer", minimum: 0 },
+    estimated_token_count: { type: "integer", minimum: 0 },
+    allocated_token_count: { type: "integer", minimum: 0 },
     pruned_token_count: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
@@ -775,7 +780,10 @@ const runtimeTraceTrimReasonJsonSchema = {
   type: "object",
   required: ["group", "reason"],
   properties: {
-    group: { type: "string" },
+    group: {
+      type: "string",
+      description: "Budget group label. This may include concrete section groups such as `section:main`.",
+    },
     reason: { type: "string", enum: promptTrimReasonCodeValues },
     detail: { type: "string" },
     pruned_token_count: { type: "integer", minimum: 0 },
@@ -803,7 +811,11 @@ const runtimeTraceSourceExclusionReasonJsonSchema = {
   type: "object",
   required: ["source", "reason"],
   properties: {
-    source: { type: "string", enum: promptSourceKindValues },
+    source: {
+      type: "string",
+      enum: promptSourceKindValues,
+      description: "Public source kind. Internal budget groups such as `section:*` do not appear here.",
+    },
     reason: { type: "string", enum: promptSourceExclusionReasonValues },
     detail: { type: "string" },
   },
@@ -830,6 +842,9 @@ const runtimeTraceStructureJsonSchema = {
       anyOf: [{ type: "string", enum: promptStructureAssistantRewriteStrategyValues }, { type: "null" }],
     },
     tail_assistant_detected: { type: "boolean" },
+    transcriptized: { type: "boolean" },
+    transcript_message_count: { type: "integer", minimum: 0 },
+    assistant_prefill_transcriptized: { type: "boolean" },
   },
   additionalProperties: false,
 } as const;
