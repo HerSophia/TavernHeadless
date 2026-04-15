@@ -108,10 +108,12 @@ const rawSession = await client.request("GET", "/sessions/{id}", {
 ### 客户端专属数据域
 
 ```ts
+const domainOwner = { ownerType: "application", ownerId: "my-app" } as const;
+const pluginOwner = { ownerType: "plugin", ownerId: "chat-annotator" } as const;
+
 const domain = await client.clientData.domains.create({
   accountId: "account-1",
-  ownerType: "application",
-  ownerId: "my-app",
+  ...domainOwner,
   domainName: "preferences",
   displayName: "Preferences",
 });
@@ -124,6 +126,33 @@ const item = await client.clientData.items.upsert({
   valueJson: { mode: "dark" },
 });
 
+const grant = await client.clientData.grants.create({
+  accountId: "account-1",
+  callerOwner: domainOwner,
+  domainId: domain.id,
+  granteeOwnerType: pluginOwner.ownerType,
+  granteeOwnerId: pluginOwner.ownerId,
+  canRead: true,
+  canWrite: false,
+  canDelete: false,
+  canList: true,
+});
+
+const scopedItem = await client.clientData.items.getByKey({
+  accountId: "account-1",
+  callerOwner: pluginOwner,
+  domainId: domain.id,
+  collectionName: "settings",
+  itemKey: "theme",
+});
+
+const auditLogs = await client.clientData.auditLogs.list({
+  accountId: "account-1",
+  callerOwner: domainOwner,
+  domainId: domain.id,
+  limit: 20,
+});
+
 const exported = await client.clientData.domains.export({
   accountId: "account-1",
   domainId: domain.id,
@@ -131,6 +160,9 @@ const exported = await client.clientData.domains.export({
 
 console.log(domain.version);
 console.log(item.item.version);
+console.log(grant.canRead);
+console.log(scopedItem.valueJson);
+console.log(auditLogs.data[0]?.action);
 console.log(exported.collections[0]?.items[0]?.valueJson);
 ```
 
@@ -159,6 +191,11 @@ console.log(exported.collections[0]?.items[0]?.valueJson);
 - `clientData.items.upsertBatch`
 - `clientData.items.remove`
 - `clientData.items.removeBatch`
+- `clientData.grants.list`
+- `clientData.grants.create`
+- `clientData.grants.update`
+- `clientData.grants.remove`
+- `clientData.auditLogs.list`
 
 请求协议仍与后端保持一致，使用 `snake_case`。SDK 返回值继续做 `camelCase` 映射。
 
@@ -186,7 +223,23 @@ console.log(exported.collections[0]?.items[0]?.valueJson);
 
 #### caller owner 头
 
-第二期 grant 模型要求接入方在需要插件级隔离时显式传递 caller owner：
+第二期 grant 模型要求接入方在需要插件级隔离时显式传递 caller owner。
+
+更稳妥的做法，是在每个 domain-scoped `clientData` 调用上直接传 `callerOwner`：
+
+```ts
+const pluginOwner = { ownerType: "plugin", ownerId: "chat-annotator" } as const;
+
+await client.clientData.items.getByKey({
+  accountId: "account-1",
+  domainId: "domain-1",
+  callerOwner: pluginOwner,
+  collectionName: "settings",
+  itemKey: "theme.dark",
+});
+```
+
+如果整个客户端都固定代表同一个 owner，也可以在默认请求头中加入：
 
 ```ts
 const client = createTavernClient({
@@ -201,9 +254,11 @@ const client = createTavernClient({
 
 说明：
 
+- SDK 的 `callerOwner` 参数会为单次请求补齐 `X-Client-Owner-Type` 和 `X-Client-Owner-Id`
 - 未传 caller owner 时，服务端保持第一期兼容行为，继续按 `account_id + domain_id` 控制
 - 传了非法 caller owner 头时，服务端会返回 `400 client_data_caller_owner_invalid`
 - grant / audit 管理接口要求 caller owner 必须是 domain owner；否则返回 `403 client_data_domain_grant_manage_forbidden`
+- 如果服务端把某个 domain 标记为 managed domain，raw client-data 写路径会返回 `403 client_data_managed_domain_raw_access_forbidden`；这时需要改走对应的受治理服务，而不是继续调用 raw `clientData` 资源
 
 ### 列出会话，然后生成一次回复
 

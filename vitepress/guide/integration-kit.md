@@ -99,7 +99,21 @@ const client = createTavernClient({
 
 ### Client Data 第二期接入
 
-如果接入方要启用插件级 caller owner 隔离，需要在默认请求头中加入：
+如果接入方要启用插件级 caller owner 隔离，优先建议在单次 domain-scoped 调用上显式传 `callerOwner`：
+
+```ts
+const pluginOwner = { ownerType: "plugin", ownerId: "chat-annotator" } as const;
+
+await client.clientData.items.getByKey({
+  accountId: "account-1",
+  domainId: "domain-1",
+  callerOwner: pluginOwner,
+  collectionName: "settings",
+  itemKey: "theme.dark",
+});
+```
+
+如果整个客户端都固定代表同一个 owner，也可以在默认请求头中加入：
 
 ```ts
 const client = createTavernClient({
@@ -114,17 +128,21 @@ const client = createTavernClient({
 
 说明：
 
+- `callerOwner` 参数和默认头最终都会落到 `X-Client-Owner-Type` 与 `X-Client-Owner-Id`
 - 未提供 caller owner 头时，服务端保持第一期兼容模式
 - 提供非法 caller owner 头时，服务端返回 `400 client_data_caller_owner_invalid`
 - grant / audit 管理路由要求 caller owner 必须是 domain owner
+- 如果服务端把某个 domain 标记为 managed domain，raw `/client-data` 写路径会返回 `403 client_data_managed_domain_raw_access_forbidden`
 
 ### 调用 Client Data 资源
 
 ```ts
+const domainOwner = { ownerType: "application", ownerId: "my-app" } as const;
+const pluginOwner = { ownerType: "plugin", ownerId: "chat-annotator" } as const;
+
 const domain = await client.clientData.domains.create({
   accountId: "account-1",
-  ownerType: "application",
-  ownerId: "my-app",
+  ...domainOwner,
   domainName: "preferences",
 });
 
@@ -133,6 +151,18 @@ await client.clientData.domains.updateQuota({
   domainId: domain.id,
   quotaMaxEntries: 20000,
   quotaMaxBytes: 20971520,
+});
+
+const grant = await client.clientData.grants.create({
+  accountId: "account-1",
+  callerOwner: domainOwner,
+  domainId: domain.id,
+  granteeOwnerType: pluginOwner.ownerType,
+  granteeOwnerId: pluginOwner.ownerId,
+  canRead: true,
+  canWrite: false,
+  canDelete: false,
+  canList: true,
 });
 
 const imported = await client.clientData.domains.importAsNew({
@@ -150,11 +180,25 @@ const imported = await client.clientData.domains.importAsNew({
 
 const item = await client.clientData.items.getByKey({
   accountId: "account-1",
+  callerOwner: pluginOwner,
   domainId: imported.domain.id,
   collectionName: "settings",
   itemKey: "theme.dark",
 });
+
+const auditLogs = await client.clientData.auditLogs.list({
+  accountId: "account-1",
+  callerOwner: domainOwner,
+  domainId: imported.domain.id,
+  limit: 20,
+});
+
+console.log(grant.canRead);
+console.log(item?.valueJson);
+console.log(auditLogs.data[0]?.action);
 ```
+
+这里的 `clientData` 资源仍然对应 raw `/client-data`。如果后端把某个底层 domain 标记为 managed domain，接入方需要改走对应的受治理服务，而不是继续直接写 raw `clientData`。
 
 ### Client Data helper 用法
 
@@ -172,6 +216,7 @@ const nested = toClientDataMap(items, collections);
 const resolved = await resolveItemByPath(client, domainId, "settings", "theme.dark", {
   accountId: "account-1",
 });
+
 ```
 
 ## SDK 资源覆盖范围
