@@ -7,7 +7,7 @@
 - ORM: Drizzle ORM
 - 迁移目录: `apps/api/drizzle/`
 - 当前基础迁移: `0000_initial_schema.sql`
-- 当前最新迁移: `0038_client_data_domain_phase2.sql`
+- 当前最新迁移: `0042_session_state_governance.sql`
 
 ## `account`
 
@@ -367,3 +367,83 @@
 
 - 普通索引 `client_data_audit_log_account_created_idx(account_id, created_at)`
 - 普通索引 `client_data_audit_log_domain_created_idx(domain_id, created_at)`
+
+
+## `client_data_managed_domain`
+
+受治理 `Client Data` 数据域注册表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `domain_id` | `TEXT` | PK, FK -> `client_data_domain.id` | 被治理的数据域 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `manager_kind` | `TEXT` | `NOT NULL` | 治理器类型 |
+| `host_type` | `TEXT` | `NOT NULL` | 宿主类型 |
+| `host_id` | `TEXT` | `NOT NULL` | 宿主 ID |
+| `state_namespace` | `TEXT` | `NOT NULL` | 状态命名空间 |
+| `require_caller_owner` | `INTEGER` | `NOT NULL`, default `1` | 是否要求显式 caller owner（布尔） |
+| `allow_auto_create_collection` | `INTEGER` | `NOT NULL`, default `0` | 是否允许自动建 collection（布尔） |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+枚举约束：
+
+- `manager_kind`: `session_state`
+- `host_type`: `session`
+
+索引：
+
+- 唯一索引 `client_data_managed_domain_account_manager_host_namespace_uq(account_id, manager_kind, host_type, host_id, state_namespace)`
+- 普通索引 `client_data_managed_domain_account_host_idx(account_id, host_type, host_id, state_namespace)`
+
+说明：
+
+- 该表只标记某个底层 domain 已进入 managed 模式，不新建第二套状态存储
+- `session_state` 当前通过它把 managed domain 绑定到具体 `session + namespace`
+
+## `session_state_mutation`
+
+会话状态治理层的 mutation 日志表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | mutation ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `domain_id` | `TEXT` | `NOT NULL`, FK -> `client_data_domain.id` | 对应 managed domain |
+| `state_namespace` | `TEXT` | `NOT NULL` | 状态命名空间 |
+| `session_id` | `TEXT` | `NOT NULL`, FK -> `session.id` | 所属会话 |
+| `branch_id` | `TEXT` | `NOT NULL` | 所属分支 |
+| `source_floor_id` | `TEXT` | `NULL`, FK -> `floor.id` | 来源楼层 |
+| `target_slot` | `TEXT` | `NOT NULL` | 目标槽位 |
+| `visibility_mode` | `TEXT` | `NOT NULL` | 可见性模式 |
+| `write_mode` | `TEXT` | `NOT NULL` | 写入模式 |
+| `replay_safety` | `TEXT` | `NOT NULL` | 重放安全级别 |
+| `status` | `TEXT` | `NOT NULL`, default `staged` | 当前治理状态 |
+| `request_id` | `TEXT` | `NULL` | 来源请求 ID |
+| `run_id` | `TEXT` | `NULL` | 来源 run ID |
+| `payload_json` | `TEXT` | `NOT NULL`, default `'{}'` | mutation 负载 |
+| `source_snapshot_floor_id` | `TEXT` | `NULL`, FK -> `floor.id` | apply 时引用的 floor snapshot |
+| `live_head_key` | `TEXT` | `NULL` | 对应 live head item key |
+| `discard_reason` | `TEXT` | `NULL` | discard 原因 |
+| `blocked_reason` | `TEXT` | `NULL` | blocked 原因 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+| `applied_at` | `INTEGER` | `NULL` | 实际应用时间戳（ms） |
+
+枚举约束：
+
+- `visibility_mode`: `session_shared | branch_local | fork_on_branch`
+- `write_mode`: `direct | commit_bound`
+- `replay_safety`: `safe | confirm_on_replay | never_auto_replay | uncertain`
+- `status`: `staged | applied | discarded | blocked | uncertain`
+
+索引：
+
+- 普通索引 `session_state_mutation_session_branch_status_created_idx(session_id, branch_id, status, created_at)`
+- 普通索引 `session_state_mutation_source_floor_idx(source_floor_id, status, created_at)`
+- 普通索引 `session_state_mutation_run_idx(run_id, created_at)`
+
+说明：
+
+- 状态值本身仍落在 `client_data_item` 中，`session_state_mutation` 负责治理日志与提交边界
+- 当前第一批内置 namespace 是 `game_state`，默认 slot 包括 `world`、`scene`、`inventory`、`combat`

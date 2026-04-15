@@ -8,7 +8,7 @@ outline: [2, 3]
 
 - ORM: Drizzle ORM
 - 迁移目录: `apps/api/drizzle/`
-- 当前最新迁移: `0024_background_job_runtime.sql`
+- 当前最新迁移: `0042_session_state_governance.sql`
 
 ## account
 
@@ -172,6 +172,169 @@ outline: [2, 3]
 | `key` | `TEXT` | `NOT NULL` | 变量名 |
 | `value_json` | `TEXT` | `NOT NULL` | 变量值 JSON |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+## client_data_domain
+
+客户端专属数据域主表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 数据域 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK → `account.id` | 所属账号 |
+| `owner_type` | `TEXT` | `NOT NULL` | 拥有者类型（`application \| plugin`） |
+| `owner_id` | `TEXT` | `NOT NULL` | 拥有者 ID |
+| `domain_name` | `TEXT` | `NOT NULL` | 数据域名称 |
+| `display_name` | `TEXT` | `NULL` | 展示名称 |
+| `description` | `TEXT` | `NULL` | 描述 |
+| `status` | `TEXT` | `NOT NULL`, default `active` | 状态（`active \| suspended \| deleted`） |
+| `version` | `INTEGER` | `NOT NULL`, default `1` | 元数据版本号 |
+| `quota_max_entries` | `INTEGER` | `NOT NULL` | 域级最大条目数 |
+| `quota_max_bytes` | `INTEGER` | `NOT NULL` | 域级最大字节数 |
+| `current_entry_count` | `INTEGER` | `NOT NULL`, default `0` | 当前条目数 |
+| `current_byte_count` | `INTEGER` | `NOT NULL`, default `0` | 当前字节数 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+| `deleted_at` | `INTEGER` | `NULL` | 软删除时间（ms） |
+
+索引：`client_data_domain_owner_name_uq(account_id, owner_type, owner_id, domain_name)`（唯一）、`client_data_domain_account_owner_status_idx(account_id, owner_type, owner_id, status)`
+
+## client_data_collection
+
+客户端数据集合表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 集合 ID |
+| `domain_id` | `TEXT` | `NOT NULL`, FK → `client_data_domain.id` | 所属数据域 |
+| `collection_name` | `TEXT` | `NOT NULL` | 集合名称 |
+| `description` | `TEXT` | `NULL` | 描述 |
+| `default_expires_ttl_ms` | `INTEGER` | `NULL` | 默认过期 TTL（ms） |
+| `max_item_size_bytes` | `INTEGER` | `NULL` | 集合级单项大小上限 |
+| `version` | `INTEGER` | `NOT NULL`, default `1` | 元数据版本号 |
+| `metadata_json` | `TEXT` | `NULL` | 集合元信息 JSON |
+| `item_count` | `INTEGER` | `NOT NULL`, default `0` | 当前条目数 |
+| `byte_count` | `INTEGER` | `NOT NULL`, default `0` | 当前字节数 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：`client_data_collection_domain_name_uq(domain_id, collection_name)`（唯一）、`client_data_collection_domain_updated_idx(domain_id, updated_at)`
+
+## client_data_item
+
+客户端数据条目表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 条目 ID |
+| `domain_id` | `TEXT` | `NOT NULL`, FK → `client_data_domain.id` | 所属数据域 |
+| `collection_id` | `TEXT` | `NOT NULL`, FK → `client_data_collection.id` | 所属集合 |
+| `item_key` | `TEXT` | `NOT NULL` | 条目键 |
+| `value_json` | `TEXT` | `NOT NULL` | 条目值 JSON |
+| `byte_size` | `INTEGER` | `NOT NULL` | 存储字节数 |
+| `version` | `INTEGER` | `NOT NULL`, default `1` | 条目版本号 |
+| `expires_at` | `INTEGER` | `NULL` | 过期时间（ms） |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：`client_data_item_collection_key_uq(collection_id, item_key)`（唯一）、`client_data_item_domain_collection_updated_idx(domain_id, collection_id, updated_at)`、`client_data_item_expires_idx(expires_at)`（部分索引）
+
+## client_data_domain_grant
+
+客户端数据域授权表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 授权记录 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK → `account.id` | 所属账号 |
+| `domain_id` | `TEXT` | `NOT NULL`, FK → `client_data_domain.id` | 所属数据域 |
+| `grantee_owner_type` | `TEXT` | `NOT NULL` | 被授权 owner 类型（`application \| plugin`） |
+| `grantee_owner_id` | `TEXT` | `NOT NULL` | 被授权 owner ID |
+| `can_read` | `INTEGER` | `NOT NULL`, default `0` | 读权限 |
+| `can_write` | `INTEGER` | `NOT NULL`, default `0` | 写权限 |
+| `can_delete` | `INTEGER` | `NOT NULL`, default `0` | 删除权限 |
+| `can_list` | `INTEGER` | `NOT NULL`, default `0` | 列表权限 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+| `expires_at` | `INTEGER` | `NULL` | 授权过期时间（ms） |
+
+索引：`client_data_domain_grant_unique_uq(domain_id, grantee_owner_type, grantee_owner_id)`（唯一）、`client_data_domain_grant_account_grantee_idx(account_id, grantee_owner_type, grantee_owner_id)`
+
+## client_data_audit_log
+
+客户端数据域治理审计日志表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 审计日志 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK → `account.id` | 所属账号 |
+| `domain_id` | `TEXT` | `NULL`, FK → `client_data_domain.id` | 关联数据域 |
+| `owner_type` | `TEXT` | `NULL` | 数据域 owner 类型 |
+| `owner_id` | `TEXT` | `NULL` | 数据域 owner ID |
+| `actor_type` | `TEXT` | `NOT NULL` | 操作者类型 |
+| `actor_id` | `TEXT` | `NULL` | 操作者 ID |
+| `action` | `TEXT` | `NOT NULL` | 操作名称 |
+| `target_type` | `TEXT` | `NOT NULL` | 目标类型 |
+| `target_id` | `TEXT` | `NULL` | 目标 ID |
+| `request_id` | `TEXT` | `NULL` | 请求 ID |
+| `metadata_json` | `TEXT` | `NULL` | 审计元数据 JSON |
+| `created_at` | `INTEGER` | `NOT NULL` | 记录时间戳（ms） |
+
+索引：`client_data_audit_log_account_created_idx(account_id, created_at)`、`client_data_audit_log_domain_created_idx(domain_id, created_at)`
+
+## client_data_managed_domain
+
+受治理 Client Data 数据域注册表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `domain_id` | `TEXT` | PK, FK → `client_data_domain.id` | 被治理的数据域 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK → `account.id` | 所属账号 |
+| `manager_kind` | `TEXT` | `NOT NULL` | 治理器类型（当前固定 `session_state`） |
+| `host_type` | `TEXT` | `NOT NULL` | 宿主类型（当前固定 `session`） |
+| `host_id` | `TEXT` | `NOT NULL` | 宿主 ID |
+| `state_namespace` | `TEXT` | `NOT NULL` | 状态命名空间 |
+| `require_caller_owner` | `INTEGER` | `NOT NULL`, default `1` | 是否要求显式 caller owner |
+| `allow_auto_create_collection` | `INTEGER` | `NOT NULL`, default `0` | 是否允许自动建 collection |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：`client_data_managed_domain_account_manager_host_namespace_uq(account_id, manager_kind, host_type, host_id, state_namespace)`（唯一）、`client_data_managed_domain_account_host_idx(account_id, host_type, host_id, state_namespace)`
+
+说明：这张表只把底层 domain 标记为 managed 模式，不新建第二套状态存储。
+
+## session_state_mutation
+
+会话状态治理层的 mutation 日志表。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | mutation ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK → `account.id` | 所属账号 |
+| `domain_id` | `TEXT` | `NOT NULL`, FK → `client_data_domain.id` | 对应 managed domain |
+| `state_namespace` | `TEXT` | `NOT NULL` | 状态命名空间 |
+| `session_id` | `TEXT` | `NOT NULL`, FK → `session.id` | 所属会话 |
+| `branch_id` | `TEXT` | `NOT NULL` | 所属分支 |
+| `source_floor_id` | `TEXT` | `NULL`, FK → `floor.id` | 来源楼层 |
+| `target_slot` | `TEXT` | `NOT NULL` | 目标槽位 |
+| `visibility_mode` | `TEXT` | `NOT NULL` | 可见性模式（`session_shared \| branch_local \| fork_on_branch`） |
+| `write_mode` | `TEXT` | `NOT NULL` | 写入模式（`direct \| commit_bound`） |
+| `replay_safety` | `TEXT` | `NOT NULL` | 重放安全级别（`safe \| confirm_on_replay \| never_auto_replay \| uncertain`） |
+| `status` | `TEXT` | `NOT NULL`, default `staged` | 当前治理状态（`staged \| applied \| discarded \| blocked \| uncertain`） |
+| `request_id` | `TEXT` | `NULL` | 来源请求 ID |
+| `run_id` | `TEXT` | `NULL` | 来源 run ID |
+| `payload_json` | `TEXT` | `NOT NULL`, default `'{}'` | mutation 负载 |
+| `source_snapshot_floor_id` | `TEXT` | `NULL`, FK → `floor.id` | apply 时引用的 floor snapshot |
+| `live_head_key` | `TEXT` | `NULL` | 对应 live head item key |
+| `discard_reason` | `TEXT` | `NULL` | discard 原因 |
+| `blocked_reason` | `TEXT` | `NULL` | blocked 原因 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+| `applied_at` | `INTEGER` | `NULL` | 实际应用时间戳（ms） |
+
+索引：`session_state_mutation_session_branch_status_created_idx(session_id, branch_id, status, created_at)`、`session_state_mutation_source_floor_idx(source_floor_id, status, created_at)`、`session_state_mutation_run_idx(run_id, created_at)`
+
+说明：状态值本身仍保存在 `client_data_item` 中；`session_state_mutation` 负责治理日志、提交边界和 replay safety 决策。当前第一批内置 namespace 是 `game_state`，默认 slot 包括 `world`、`scene`、`inventory`、`combat`。
+
 
 ## memory_item
 

@@ -60,6 +60,7 @@ import {
   buildPromptRuntimeCommittedExplainSnapshot,
   type PromptRuntimeInspectionResult,
 } from "./prompt-runtime-control-service.js";
+import type { SessionStateService } from "../session-state/session-state-service.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -117,6 +118,7 @@ export interface TurnCommitServiceOptions extends AccountContextOptions {
   mutationRuntime?: MutationRuntime;
   floorRunService?: FloorRunService;
   toolRuntimeJobBridge?: ToolRuntimeJobBridge;
+  sessionStateService?: SessionStateService;
 }
 
 class MemoryPersistError extends Error {
@@ -348,6 +350,7 @@ export class TurnCommitService {
   private readonly memoryJobScheduler: MemoryJobScheduler;
   private readonly floorRunService?: FloorRunService;
   private readonly toolRuntimeJobBridge?: ToolRuntimeJobBridge;
+  private readonly sessionStateService?: SessionStateService;
   private readonly floorStateMachine: FloorStateMachine;
 
   constructor(
@@ -370,6 +373,7 @@ export class TurnCommitService {
     this.floorRunService = options.floorRunService;
     this.floorStateMachine = new FloorStateMachine(new DrizzleFloorRepository(db), this.eventBus);
     this.toolRuntimeJobBridge = options.toolRuntimeJobBridge;
+    this.sessionStateService = options.sessionStateService;
   }
 
   private loadUserInputDigest(tx: DbExecutor, floorId: string, accountId: string): string {
@@ -698,6 +702,16 @@ export class TurnCommitService {
             },
           })
           .run();
+
+        if (this.sessionStateService) {
+          this.sessionStateService.applyStagedMutationsForFloor({
+            accountId: input.accountId,
+            sessionId: input.sessionId,
+            branchId: input.branchId ?? "main",
+            floorId: input.floorId,
+            committedAt,
+          }, tx);
+        }
 
         new BranchLocalVariableSnapshotService(tx).persistFloorLocalSnapshot({
           accountId: input.accountId,

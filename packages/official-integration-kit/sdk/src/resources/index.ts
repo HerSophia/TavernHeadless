@@ -39,11 +39,17 @@ export {
 } from "./exports.js";
 export {
   createClientDataResource,
+  type ClientDataAuditLogRecord,
+  type ClientDataAuditLogsListResult,
+  type ClientDataCallerOwner,
   type ClientDataCollectionRecord,
   type ClientDataDomainDetail,
   type ClientDataDomainRecord,
   type ClientDataDomainsListResult,
   type ClientDataExportResult,
+  type ClientDataGrantRecord,
+  type ClientDataImportPayload,
+  type ClientDataImportResult,
   type ClientDataItemRecord,
   type ClientDataItemsListResult,
   type ClientDataOwnerType,

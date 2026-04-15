@@ -579,6 +579,232 @@ describe("sdk client data resource", () => {
     }));
   });
 
+  it("adds caller owner headers to domain-scoped requests", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: [],
+        meta: {
+          total: 0,
+          limit: 10,
+          offset: 0,
+          has_more: false,
+          sort_by: "updated_at",
+          sort_order: "desc",
+        },
+      }),
+    );
+
+    const client = createTavernClient({ baseUrl, fetchImpl });
+    await client.clientData.items.list({
+      accountId: "acc-1",
+      domainId: "domain-1",
+      callerOwner: {
+        ownerType: "plugin",
+        ownerId: "chat-annotator",
+      },
+      limit: 10,
+      offset: 0,
+    });
+
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Headers).get("x-account-id")).toBe("acc-1");
+    expect((init?.headers as Headers).get("x-client-owner-type")).toBe("plugin");
+    expect((init?.headers as Headers).get("x-client-owner-id")).toBe("chat-annotator");
+  });
+
+  it("lists, creates, updates, and removes grants", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        data: [
+          {
+            id: "grant-1",
+            domain_id: "domain-1",
+            grantee_owner_type: "plugin",
+            grantee_owner_id: "reader",
+            can_read: true,
+            can_write: false,
+            can_delete: false,
+            can_list: true,
+            created_at: 10,
+            updated_at: 11,
+            expires_at: null,
+          },
+        ],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: "grant-2",
+          domain_id: "domain-1",
+          grantee_owner_type: "plugin",
+          grantee_owner_id: "writer",
+          can_read: true,
+          can_write: true,
+          can_delete: false,
+          can_list: true,
+          created_at: 20,
+          updated_at: 21,
+          expires_at: null,
+        },
+      }, 201))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          id: "grant-2",
+          domain_id: "domain-1",
+          grantee_owner_type: "plugin",
+          grantee_owner_id: "writer",
+          can_read: true,
+          can_write: false,
+          can_delete: false,
+          can_list: true,
+          created_at: 20,
+          updated_at: 22,
+          expires_at: null,
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "grant-2", deleted: true } }));
+
+    const client = createTavernClient({ baseUrl, fetchImpl });
+    const callerOwner = { ownerType: "plugin" as const, ownerId: "owner-plugin" };
+
+    const listed = await client.clientData.grants.list({
+      accountId: "acc-1",
+      domainId: "domain-1",
+      callerOwner,
+    });
+    expect(listed).toEqual([
+      {
+        id: "grant-1",
+        domainId: "domain-1",
+        granteeOwnerType: "plugin",
+        granteeOwnerId: "reader",
+        canRead: true,
+        canWrite: false,
+        canDelete: false,
+        canList: true,
+        createdAt: 10,
+        updatedAt: 11,
+        expiresAt: null,
+      },
+    ]);
+
+    const created = await client.clientData.grants.create({
+      accountId: "acc-1",
+      domainId: "domain-1",
+      callerOwner,
+      granteeOwnerType: "plugin",
+      granteeOwnerId: "writer",
+      canRead: true,
+      canWrite: true,
+      canDelete: false,
+      canList: true,
+      expiresAt: null,
+    });
+    expect(created.canWrite).toBe(true);
+
+    const updated = await client.clientData.grants.update({
+      accountId: "acc-1",
+      domainId: "domain-1",
+      grantId: "grant-2",
+      callerOwner,
+      canWrite: false,
+    });
+    expect(updated.canWrite).toBe(false);
+
+    const removed = await client.clientData.grants.remove({
+      accountId: "acc-1",
+      domainId: "domain-1",
+      grantId: "grant-2",
+      callerOwner,
+    });
+    expect(removed).toBe(true);
+
+    const [, listInit] = fetchImpl.mock.calls[0]!;
+    const [, createInit] = fetchImpl.mock.calls[1]!;
+    const [, updateInit] = fetchImpl.mock.calls[2]!;
+    const [, removeInit] = fetchImpl.mock.calls[3]!;
+    expect((listInit?.headers as Headers).get("x-client-owner-id")).toBe("owner-plugin");
+    expect(createInit?.body).toBe(JSON.stringify({
+      grantee_owner_type: "plugin",
+      grantee_owner_id: "writer",
+      can_read: true,
+      can_write: true,
+      can_delete: false,
+      can_list: true,
+      expires_at: null,
+    }));
+    expect(updateInit?.body).toBe(JSON.stringify({ can_write: false }));
+    expect(removeInit?.method).toBe("DELETE");
+  });
+
+  it("lists audit logs and maps meta to camelCase", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: [
+          {
+            id: "audit-1",
+            account_id: "acc-1",
+            domain_id: "domain-1",
+            owner_type: "plugin",
+            owner_id: "owner-plugin",
+            actor_type: "owner:plugin",
+            actor_id: "owner-plugin",
+            action: "grant.create",
+            target_type: "grant",
+            target_id: "grant-1",
+            request_id: "req-1",
+            metadata_json: { can_write: false },
+            created_at: 20,
+          },
+        ],
+        meta: {
+          total: 1,
+          limit: 20,
+          offset: 0,
+          has_more: false,
+          sort_by: "created_at",
+          sort_order: "desc",
+        },
+      }),
+    );
+
+    const client = createTavernClient({ baseUrl, fetchImpl });
+    const result = await client.clientData.auditLogs.list({
+      accountId: "acc-1",
+      domainId: "domain-1",
+      callerOwner: { ownerType: "plugin", ownerId: "owner-plugin" },
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result).toEqual({
+      data: [
+        {
+          id: "audit-1",
+          accountId: "acc-1",
+          domainId: "domain-1",
+          ownerType: "plugin",
+          ownerId: "owner-plugin",
+          actorType: "owner:plugin",
+          actorId: "owner-plugin",
+          action: "grant.create",
+          targetType: "grant",
+          targetId: "grant-1",
+          requestId: "req-1",
+          metadataJson: { can_write: false },
+          createdAt: 20,
+        },
+      ],
+      meta: {
+        total: 1,
+        limit: 20,
+        offset: 0,
+        hasMore: false,
+        sortBy: "created_at",
+        sortOrder: "desc",
+      },
+    });
+  });
+
   it("mounts import helpers on createTavernClient", () => {
     const client = createTavernClient({ baseUrl, fetchImpl: vi.fn<typeof fetch>() });
     expect(typeof client.clientData.domains.import).toBe("function");
@@ -600,5 +826,7 @@ describe("sdk client data resource", () => {
     expect(typeof client.clientData.collections.create).toBe("function");
     expect(typeof client.clientData.items.getByKey).toBe("function");
     expect(typeof client.clientData.items.upsertBatch).toBe("function");
+    expect(typeof client.clientData.grants.create).toBe("function");
+    expect(typeof client.clientData.auditLogs.list).toBe("function");
   });
 });

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { buildApp, type BuildAppResult } from "../../app.js";
-import { clientDataAuditLogs, clientDataCollections, clientDataDomains } from "../../db/schema.js";
+import { clientDataAuditLogs, clientDataCollections, clientDataDomains, clientDataManagedDomains } from "../../db/schema.js";
 import type { DatabaseConnection } from "../../db/client.js";
 
 const clientDataConfig = {
@@ -211,6 +211,28 @@ describe("client data routes", () => {
     expect(JSON.parse(response.body).error.code).toBe("client_data_version_conflict");
   });
 
+  it("returns a stable code when owner/name already exists", async () => {
+    const { app } = await createTestApp();
+    await createDomain(app, {
+      owner_type: "application",
+      owner_id: "app-dup-domain",
+      domain_name: "preferences",
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/client-data/domains",
+      payload: {
+        owner_type: "application",
+        owner_id: "app-dup-domain",
+        domain_name: "preferences",
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(JSON.parse(response.body).error.code).toBe("client_data_domain_name_conflict");
+  });
+
   it("soft deletes domains by owner", async () => {
     const { app } = await createTestApp();
 
@@ -313,6 +335,31 @@ describe("client data routes", () => {
 
     expect(updateCollectionResponse.statusCode).toBe(409);
     expect(JSON.parse(updateCollectionResponse.body).error.code).toBe("client_data_version_conflict");
+  });
+
+  it("returns a stable code when collection name already exists in domain", async () => {
+    const { app } = await createTestApp();
+    const domainId = await createDomain(app, {
+      owner_type: "plugin",
+      owner_id: "app-dup-collection",
+      domain_name: "dup-collection-domain",
+    });
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/client-data/domains/${domainId}/collections`,
+      payload: { collection_name: "settings" },
+    });
+    expect(first.statusCode).toBe(201);
+
+    const duplicate = await app.inject({
+      method: "POST",
+      url: `/client-data/domains/${domainId}/collections`,
+      payload: { collection_name: "settings" },
+    });
+
+    expect(duplicate.statusCode).toBe(409);
+    expect(JSON.parse(duplicate.body).error.code).toBe("client_data_collection_name_conflict");
   });
 
   it("updates domain quota for admin and rejects quota below usage", async () => {
@@ -969,6 +1016,24 @@ describe("client data routes", () => {
     expect(createGrantResponse.statusCode).toBe(201);
     const grantId = JSON.parse(createGrantResponse.body).data.id as string;
 
+    const duplicateGrantResponse = await app.inject({
+      method: "POST",
+      url: `/client-data/domains/${domainId}/grants`,
+      headers: ownerHeaders,
+      payload: {
+        grantee_owner_type: "plugin",
+        grantee_owner_id: "plugin-reader",
+        can_read: true,
+        can_write: false,
+        can_delete: false,
+        can_list: true,
+        expires_at: null,
+      },
+    });
+
+    expect(duplicateGrantResponse.statusCode).toBe(409);
+    expect(JSON.parse(duplicateGrantResponse.body).error.code).toBe("client_data_domain_grant_conflict");
+
     const ownerWriteResponse = await app.inject({
       method: "PUT",
       url: `/client-data/domains/${domainId}/items`,
@@ -1102,5 +1167,53 @@ describe("client data routes", () => {
     });
     expect(forbiddenGrantListResponse.statusCode).toBe(403);
     expect(JSON.parse(forbiddenGrantListResponse.body).error.code).toBe("client_data_domain_grant_manage_forbidden");
+  });
+
+  it("hides managed domains from raw lists and rejects raw managed-domain writes", async () => {
+    const { app, database } = await createTestApp();
+    const domainId = await createDomain(app, {
+      owner_type: "application",
+      owner_id: "tavern-session-state",
+      domain_name: "session-state:game_state:session-1",
+    });
+
+    await database.insert(clientDataManagedDomains).values({
+      domainId,
+      accountId: "default-admin",
+      managerKind: "session_state",
+      hostType: "session",
+      hostId: "session-1",
+      stateNamespace: "game_state",
+      requireCallerOwner: true,
+      allowAutoCreateCollection: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/client-data/domains?limit=10&offset=0&sort_by=updated_at&sort_order=desc",
+    });
+    expect(listResponse.statusCode).toBe(200);
+    expect(JSON.parse(listResponse.body).data).toEqual([]);
+
+    const rawWriteResponse = await app.inject({
+      method: "PUT",
+      url: `/client-data/domains/${domainId}/items`,
+      payload: {
+        collection_name: "settings",
+        item_key: "theme",
+        value_json: { mode: "dark" },
+      },
+    });
+    expect(rawWriteResponse.statusCode).toBe(403);
+    expect(JSON.parse(rawWriteResponse.body).error.code).toBe("client_data_managed_domain_raw_access_forbidden");
+
+    const bulkDeleteResponse = await app.inject({
+      method: "DELETE",
+      url: "/client-data/owners/application/tavern-session-state/domains",
+    });
+    expect(bulkDeleteResponse.statusCode).toBe(403);
+    expect(JSON.parse(bulkDeleteResponse.body).error.code).toBe("client_data_managed_domain_raw_access_forbidden");
   });
 });
