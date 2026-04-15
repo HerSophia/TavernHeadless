@@ -1,5 +1,13 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
-import { mapPromptRuntimeTracePayload, type PromptRuntimeTrace, type PromptRuntimeVisibilityRange } from "../prompt-runtime.js";
+import {
+  mapPromptRuntimePreviewTracePayload,
+  type PromptRuntimePreviewTrace,
+  type PromptRuntimeSourceKind,
+  type PromptRuntimeTrace,
+  type PromptRuntimeVisibilityRange,
+  type PromptSourceExclusionReasonCode,
+  type PromptTrimReasonCode,
+} from "../prompt-runtime.js";
 import {
   compactObject,
   readArray,
@@ -12,7 +20,7 @@ import {
   readString,
 } from "./utils.js";
 
-export type PromptRuntimeStructureMode = "default" | "strict_alternating" | "no_assistant";
+export type PromptRuntimeStructureMode = "default" | "strict_alternating" | "no_assistant" | "flattened";
 export type PromptRuntimeAssistantRewriteStrategy = "to_system" | "to_user_transcript";
 export type PromptRuntimePolicySource =
   | "system_default"
@@ -21,7 +29,7 @@ export type PromptRuntimePolicySource =
   | "branch_policy"
   | "request_override"
   | "provider_constraint";
-export type PromptRuntimeGovernedPolicyField = "structure" | "delivery" | "budget" | "sourceSelection";
+export type PromptRuntimeGovernedPolicyField = "structure" | "delivery" | "budget" | "sourceSelection" | "visibility";
 export type PromptRuntimeStreamPromptDebugPayloadMode = "done_only" | "unsupported";
 export type PromptRuntimeMacroDiagnosticsSurface = "unified_observability";
 export type PromptRuntimeHistorySourceMode = "existing_branch" | "source_floor_branch" | "main_fallback";
@@ -47,6 +55,19 @@ export type PromptRuntimeBudgetPolicy = {
   reservedCompletionTokens?: number;
 };
 
+export type PromptRuntimeVisibilityMode = "allow_all_except_hidden" | "deny_all_except_visible";
+
+export type PromptRuntimeVisibilityPolicy = {
+  hiddenFloorIds?: string[];
+  hiddenFloorRanges?: PromptRuntimeVisibilityRange[];
+  mode?: PromptRuntimeVisibilityMode;
+  visibleFloorRanges?: PromptRuntimeVisibilityRange[];
+};
+
+export type PromptRuntimeResolvedVisibilityPolicy = PromptRuntimeVisibilityPolicy & {
+  mode: PromptRuntimeVisibilityMode;
+};
+
 export type PromptRuntimeSourceSelectionPolicy = {
   examples?: { enabled?: boolean };
   history?: { maxMessages?: number; mode?: "full" | "windowed" };
@@ -67,6 +88,7 @@ export type PromptRuntimePersistentPolicy = {
   budget?: PromptRuntimeBudgetPolicy;
   delivery?: PromptRuntimePersistentDeliveryPolicy;
   sourceSelection?: PromptRuntimeSourceSelectionPolicy;
+  visibility?: PromptRuntimeVisibilityPolicy;
   structure?: PromptRuntimePersistentStructurePolicy;
 };
 
@@ -101,6 +123,7 @@ export type PromptRuntimeResolvedPolicy = {
   budget: PromptRuntimeResolvedBudgetPolicy;
   delivery: PromptRuntimeResolvedDeliveryPolicy;
   sourceSelection: PromptRuntimeResolvedSourceSelectionPolicy;
+  visibility: PromptRuntimeResolvedVisibilityPolicy;
   structure: PromptRuntimeResolvedStructurePolicy;
 };
 
@@ -124,6 +147,12 @@ export type PromptRuntimeSourceMap = {
     history?: { maxMessages?: PromptRuntimePolicySource; mode?: PromptRuntimePolicySource };
     memory?: { enabled?: PromptRuntimePolicySource };
     worldbook?: { enabled?: PromptRuntimePolicySource };
+  };
+  visibility?: {
+    hiddenFloorIds?: PromptRuntimePolicySource;
+    hiddenFloorRanges?: PromptRuntimePolicySource;
+    mode?: PromptRuntimePolicySource;
+    visibleFloorRanges?: PromptRuntimePolicySource;
   };
   structure?: {
     assistantRewriteStrategy?: PromptRuntimePolicySource;
@@ -190,7 +219,7 @@ export type PromptRuntimeCapabilities = {
     persistentPatchSupported: boolean;
     requestOverrideSupported: boolean;
     supportedFields: string[];
-    trimReasonCodes: string[];
+    trimReasonCodes: PromptTrimReasonCode[];
   };
   compare: {
     committedFloorsOnly: boolean;
@@ -268,11 +297,11 @@ export type PromptRuntimeCapabilities = {
   };
   sourceSelection: {
     defaults: PromptRuntimeResolvedSourceSelectionPolicy;
-    exclusionReasonCodes: string[];
+    exclusionReasonCodes: PromptSourceExclusionReasonCode[];
     historyModes: Array<"full" | "windowed">;
     persistentPatchSupported: boolean;
     requestOverrideSupported: boolean;
-    supportedSources: string[];
+    supportedSources: Array<Extract<PromptRuntimeSourceKind, "history" | "memory" | "worldbook" | "examples">>;
   };
   structure: {
     defaults: PromptRuntimeResolvedStructurePolicy;
@@ -297,14 +326,9 @@ export type PromptRuntimeGetCapabilitiesOptions = {
   accountId?: AccountIdHint;
 };
 
-export type PromptRuntimePreviewVisibilityMode = "allow_all_except_hidden" | "deny_all_except_visible";
+export type PromptRuntimePreviewVisibilityMode = PromptRuntimeVisibilityMode;
 
-export type PromptRuntimePreviewVisibility = {
-  hiddenFloorIds?: string[];
-  hiddenFloorRanges?: PromptRuntimeVisibilityRange[];
-  mode?: PromptRuntimePreviewVisibilityMode;
-  visibleFloorRanges?: PromptRuntimeVisibilityRange[];
-};
+export type PromptRuntimePreviewVisibility = PromptRuntimeVisibilityPolicy;
 
 export type PromptRuntimePreviewOptions = PromptRuntimeGetSessionOptions & {
   branchId?: string;
@@ -321,7 +345,7 @@ export type PromptRuntimePreviewResult = {
   diagnostics?: PromptRuntimeDiagnostic[];
   limitations?: string[];
   policy: PromptRuntimeResolvedPolicy;
-  runtimeTrace: PromptRuntimeTrace;
+  runtimeTrace: PromptRuntimePreviewTrace;
   scope: PromptRuntimeScopeRef;
   sourceMap?: PromptRuntimeSourceMap;
   text: string;
@@ -368,6 +392,7 @@ export type PromptRuntimePatchPolicyOptions = PromptRuntimeGetSessionOptions & {
   budget?: PromptRuntimeBudgetPolicy | null;
   delivery?: PromptRuntimePersistentDeliveryPolicy | null;
   sourceSelection?: PromptRuntimeSourceSelectionPolicy | null;
+  visibility?: PromptRuntimeVisibilityPolicy | null;
   structure?: PromptRuntimePersistentStructurePolicy | null;
 };
 
@@ -375,6 +400,7 @@ export type PromptRuntimePatchBranchPolicyOptions = PromptRuntimeGetBranchPolicy
   budget?: PromptRuntimeBudgetPolicy | null;
   delivery?: PromptRuntimePersistentDeliveryPolicy | null;
   sourceSelection?: PromptRuntimeSourceSelectionPolicy | null;
+  visibility?: PromptRuntimeVisibilityPolicy | null;
   structure?: PromptRuntimePersistentStructurePolicy | null;
 };
 
@@ -544,6 +570,7 @@ export function createPromptRuntimeResource(client: TransportClient): PromptRunt
             budget: mapPromptRuntimeBudgetPolicyRequest(options.budget),
             delivery: mapPromptRuntimePersistentDeliveryPolicyRequest(options.delivery),
             source_selection: mapPromptRuntimeSourceSelectionPolicyRequest(options.sourceSelection),
+            visibility: mapPromptRuntimeVisibilityPolicyRequest(options.visibility),
             structure: mapPromptRuntimePersistentStructurePolicyRequest(options.structure),
           }),
           headers: buildAccountHeaders(options.accountId),
@@ -566,6 +593,7 @@ export function createPromptRuntimeResource(client: TransportClient): PromptRunt
             budget: mapPromptRuntimeBudgetPolicyRequest(options.budget),
             delivery: mapPromptRuntimePersistentDeliveryPolicyRequest(options.delivery),
             source_selection: mapPromptRuntimeSourceSelectionPolicyRequest(options.sourceSelection),
+            visibility: mapPromptRuntimeVisibilityPolicyRequest(options.visibility),
             structure: mapPromptRuntimePersistentStructurePolicyRequest(options.structure),
           }),
           headers: buildAccountHeaders(options.accountId),
@@ -592,7 +620,7 @@ export function createPromptRuntimeResource(client: TransportClient): PromptRunt
             delivery: mapPromptRuntimePersistentDeliveryPolicyRequest(options.delivery),
             source_selection: mapPromptRuntimeSourceSelectionPolicyRequest(options.sourceSelection),
             source_floor_id: options.sourceFloorId,
-            visibility: mapPromptRuntimePreviewVisibilityRequest(options.visibility),
+            visibility: mapPromptRuntimeVisibilityPolicyRequest(options.visibility),
           }),
           headers: buildAccountHeaders(options.accountId),
           method: "POST",
@@ -726,7 +754,11 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
       persistentPatchSupported: readBoolean(budget.persistent_patch_supported),
       requestOverrideSupported: readBoolean(budget.request_override_supported, true),
       supportedFields: mapStringArray(budget.supported_fields),
-      trimReasonCodes: mapStringArray(budget.trim_reason_codes),
+      trimReasonCodes: mapStringArray(budget.trim_reason_codes)
+        .filter((item): item is PromptTrimReasonCode => item === "budget_exceeded"
+          || item === "group_limit_exceeded"
+          || item === "provider_constraint"
+          || item === "policy_disabled"),
     },
     compare: {
       committedFloorsOnly: readBoolean(compare.committed_floors_only, true),
@@ -747,22 +779,31 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
         materializedBranchesOnly: readBoolean(branchGovernance.materialized_branches_only, true),
         nullClearsField: readBoolean(branchGovernance.null_clears_field, true),
         objectPatch: "deep_merge",
-        supportedFields: mapStringArray(branchGovernance.supported_fields).filter((item): item is PromptRuntimeGovernedPolicyField => item === "structure" || item === "delivery" || item === "budget" || item === "sourceSelection"),
+        supportedFields: mapStringArray(branchGovernance.supported_fields).filter((item): item is PromptRuntimeGovernedPolicyField => item === "structure" || item === "delivery" || item === "budget" || item === "sourceSelection" || item === "visibility"),
       },
       session: {
         envelopeMetadata: readBoolean(sessionGovernance.envelope_metadata, true),
         nullClearsField: readBoolean(sessionGovernance.null_clears_field, true),
         objectPatch: "deep_merge",
-        supportedFields: mapStringArray(sessionGovernance.supported_fields).filter((item): item is PromptRuntimeGovernedPolicyField => item === "structure" || item === "delivery" || item === "budget" || item === "sourceSelection"),
+        supportedFields: mapStringArray(sessionGovernance.supported_fields).filter((item): item is PromptRuntimeGovernedPolicyField => item === "structure" || item === "delivery" || item === "budget" || item === "sourceSelection" || item === "visibility"),
       },
     },
     sourceSelection: {
       defaults: defaultsSourceSelection,
-      exclusionReasonCodes: mapStringArray(sourceSelection.exclusion_reason_codes),
+      exclusionReasonCodes: mapStringArray(sourceSelection.exclusion_reason_codes)
+        .filter((item): item is PromptSourceExclusionReasonCode => item === "disabled_by_policy"
+          || item === "budget_trimmed"
+          || item === "provider_constraint"
+          || item === "visibility_filtered"
+          || item === "not_triggered"),
       historyModes: mapStringArray(sourceSelection.history_modes).filter((item): item is "full" | "windowed" => item === "full" || item === "windowed"),
       persistentPatchSupported: readBoolean(sourceSelection.persistent_patch_supported),
       requestOverrideSupported: readBoolean(sourceSelection.request_override_supported, true),
-      supportedSources: mapStringArray(sourceSelection.supported_sources),
+      supportedSources: mapStringArray(sourceSelection.supported_sources)
+        .filter((item): item is Extract<PromptRuntimeSourceKind, "history" | "memory" | "worldbook" | "examples"> => item === "history"
+          || item === "memory"
+          || item === "worldbook"
+          || item === "examples"),
     },
     observability: {
       live: {
@@ -831,6 +872,7 @@ function mapPromptRuntimePersistentPolicy(value: unknown): PromptRuntimePersiste
   const delivery = mapPromptRuntimePersistentDeliveryPolicy(record.delivery);
   const budget = mapPromptRuntimeBudgetPolicy(record.budget);
   const sourceSelection = mapPromptRuntimeSourceSelectionPolicy(record.source_selection);
+  const visibility = mapPromptRuntimeVisibilityPolicy(record.visibility);
   const policy: PromptRuntimePersistentPolicy = {};
 
   if (structure) {
@@ -844,6 +886,9 @@ function mapPromptRuntimePersistentPolicy(value: unknown): PromptRuntimePersiste
   }
   if (sourceSelection) {
     policy.sourceSelection = sourceSelection;
+  }
+  if (visibility) {
+    policy.visibility = visibility;
   }
 
   return Object.keys(policy).length > 0 ? policy : undefined;
@@ -923,6 +968,36 @@ function mapPromptRuntimeSourceSelectionPolicy(value: unknown): PromptRuntimeSou
   return Object.keys(policy).length > 0 ? policy : undefined;
 }
 
+function mapPromptRuntimeVisibilityPolicy(value: unknown): PromptRuntimeVisibilityPolicy | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const mode = readOptionalString(record.mode);
+  const policy: PromptRuntimeVisibilityPolicy = {
+    ...(record.hidden_floor_ids !== undefined ? { hiddenFloorIds: mapStringArray(record.hidden_floor_ids) } : {}),
+    ...(record.hidden_floor_ranges !== undefined
+      ? {
+          hiddenFloorRanges: readArray(record.hidden_floor_ranges)
+            .map((item) => item && typeof item === "object" ? item as Record<string, unknown> : null)
+            .filter((item): item is Record<string, unknown> => item !== null)
+            .map((item) => ({ startFloorNo: readNumber(item.start_floor_no), endFloorNo: readNumber(item.end_floor_no) })),
+        }
+      : {}),
+    ...(record.visible_floor_ranges !== undefined
+      ? {
+          visibleFloorRanges: readArray(record.visible_floor_ranges).map((item) => item && typeof item === "object" ? item as Record<string, unknown> : null).filter((item): item is Record<string, unknown> => item !== null).map((item) => ({ startFloorNo: readNumber(item.start_floor_no), endFloorNo: readNumber(item.end_floor_no) })),
+        }
+      : {}),
+    ...(mode === "allow_all_except_hidden" || mode === "deny_all_except_visible"
+      ? { mode }
+      : {}),
+  };
+
+  return Object.keys(policy).length > 0 ? policy : undefined;
+}
+
 function mapPromptRuntimeResolvedPolicy(value: unknown): PromptRuntimeResolvedPolicy | null {
   const record = readRecord(value);
   if (!record) {
@@ -933,9 +1008,10 @@ function mapPromptRuntimeResolvedPolicy(value: unknown): PromptRuntimeResolvedPo
   const delivery = mapPromptRuntimeResolvedDeliveryPolicy(record.delivery);
   const budget = mapPromptRuntimeResolvedBudgetPolicy(record.budget);
   const sourceSelection = mapPromptRuntimeResolvedSourceSelectionPolicy(record.source_selection);
+  const visibility = mapPromptRuntimeResolvedVisibilityPolicy(record.visibility);
   const debug = mapPromptRuntimeDebugPolicy(record.debug);
 
-  if (!structure || !delivery || !budget || !sourceSelection || !debug) {
+  if (!structure || !delivery || !budget || !sourceSelection || !visibility || !debug) {
     return null;
   }
 
@@ -944,6 +1020,7 @@ function mapPromptRuntimeResolvedPolicy(value: unknown): PromptRuntimeResolvedPo
     debug,
     delivery,
     sourceSelection,
+    visibility,
     structure,
   };
 }
@@ -1004,6 +1081,14 @@ function mapPromptRuntimeResolvedSourceSelectionPolicy(value: unknown): PromptRu
   };
 }
 
+function mapPromptRuntimeResolvedVisibilityPolicy(value: unknown): PromptRuntimeResolvedVisibilityPolicy | null {
+  const policy = mapPromptRuntimeVisibilityPolicy(value);
+  return {
+    ...(policy ?? {}),
+    mode: policy?.mode === "deny_all_except_visible" ? "deny_all_except_visible" : "allow_all_except_hidden",
+  };
+}
+
 function mapPromptRuntimeDebugPolicy(value: unknown): PromptRuntimeDebugPolicy | null {
   const record = readRecord(value);
   if (!record) {
@@ -1017,10 +1102,13 @@ function mapPromptRuntimeDebugPolicy(value: unknown): PromptRuntimeDebugPolicy |
   };
 }
 
-function mapPromptRuntimePreviewVisibilityRequest(
-  value?: PromptRuntimePreviewVisibility,
-): Record<string, unknown> | undefined {
+function mapPromptRuntimeVisibilityPolicyRequest(
+  value?: PromptRuntimeVisibilityPolicy | null,
+): Record<string, unknown> | null | undefined {
   if (!value) {
+    if (value === null) {
+      return null;
+    }
     return undefined;
   }
 
@@ -1046,8 +1134,8 @@ function mapPromptRuntimePreviewResult(value: unknown): PromptRuntimePreviewResu
     return null;
   }
 
-  const runtimeTrace = mapPromptRuntimeTracePayload(record.runtime_trace);
-  if (!runtimeTrace) {
+  const runtimeTrace = mapPromptRuntimePreviewTracePayload(record.runtime_trace);
+  if (runtimeTrace === undefined) {
     return null;
   }
 
@@ -1059,6 +1147,7 @@ function mapPromptRuntimePreviewResult(value: unknown): PromptRuntimePreviewResu
       delivery: { allowAssistantPrefill: true, requireLastUser: false, noAssistant: false },
       budget: {},
       sourceSelection: { history: { mode: "full" }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: true } },
+      visibility: { mode: "allow_all_except_hidden" },
       debug: { includePromptSnapshot: false, includeRuntimeTrace: false, includeWorldbookMatches: false },
     },
     runtimeTrace,
@@ -1294,6 +1383,16 @@ function mapPromptRuntimeSourceMap(value: unknown): PromptRuntimeSourceMap | und
     }
   }
 
+  const visibility = readRecord(record.visibility);
+  if (visibility) {
+    const visibilityMap: NonNullable<PromptRuntimeSourceMap["visibility"]> = {};
+    if (readPromptRuntimePolicySource(visibility.hidden_floor_ids)) visibilityMap.hiddenFloorIds = readPromptRuntimePolicySource(visibility.hidden_floor_ids);
+    if (readPromptRuntimePolicySource(visibility.hidden_floor_ranges)) visibilityMap.hiddenFloorRanges = readPromptRuntimePolicySource(visibility.hidden_floor_ranges);
+    if (readPromptRuntimePolicySource(visibility.visible_floor_ranges)) visibilityMap.visibleFloorRanges = readPromptRuntimePolicySource(visibility.visible_floor_ranges);
+    if (readPromptRuntimePolicySource(visibility.mode)) visibilityMap.mode = readPromptRuntimePolicySource(visibility.mode);
+    if (Object.keys(visibilityMap).length > 0) sourceMap.visibility = visibilityMap;
+  }
+
   const history = readRecord(record.history);
   if (history) {
     const historyMap: NonNullable<PromptRuntimeSourceMap["history"]> = {};
@@ -1460,7 +1559,7 @@ function readPromptRuntimeMacroDiagnosticsSurface(
 }
 
 function isPromptRuntimeStructureMode(value: string | undefined): value is PromptRuntimeStructureMode {
-  return value === "default" || value === "strict_alternating" || value === "no_assistant";
+  return value === "default" || value === "strict_alternating" || value === "no_assistant" || value === "flattened";
 }
 
 function mapPromptRuntimeScopeRef(value: unknown): PromptRuntimeScopeRef | null {

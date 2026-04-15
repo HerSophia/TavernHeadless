@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
-import { characters, floorResultSnapshots, floors, messagePages, messages, presets, promptSnapshots, regexProfiles, sessions, worldbooks } from "../../db/schema.js";
+import { characters, floorResultSnapshots, floors, messagePages, messages, presets, promptRuntimeExplainSnapshots, promptSnapshots, regexProfiles, sessions, worldbooks } from "../../db/schema.js";
 import {
   DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
   DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY,
@@ -29,6 +29,14 @@ const DEFAULT_EXPECTED_SOURCE_SELECTION_SOURCE_MAP = {
 
 const DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION = {
   ...DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY,
+} as const;
+
+const DEFAULT_EXPECTED_RESOLVED_VISIBILITY = {
+  mode: "allow_all_except_hidden",
+} as const;
+
+const DEFAULT_EXPECTED_VISIBILITY_SOURCE_MAP = {
+  mode: "system_default",
 } as const;
 
 describe("PromptRuntimeControlService", () => {
@@ -188,6 +196,7 @@ describe("PromptRuntimeControlService", () => {
         },
         budget: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
         sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
+        visibility: DEFAULT_EXPECTED_RESOLVED_VISIBILITY,
         debug: {
           includePromptSnapshot: false,
           includeRuntimeTrace: false,
@@ -233,6 +242,7 @@ describe("PromptRuntimeControlService", () => {
           noAssistant: "system_default",
         },
         sourceSelection: DEFAULT_EXPECTED_SOURCE_SELECTION_SOURCE_MAP,
+        visibility: DEFAULT_EXPECTED_VISIBILITY_SOURCE_MAP,
         history: {
           sourceBranchId: "main",
           sourceMode: "existing_branch",
@@ -281,6 +291,7 @@ describe("PromptRuntimeControlService", () => {
         noAssistant: "session_policy",
       },
       sourceSelection: DEFAULT_EXPECTED_SOURCE_SELECTION_SOURCE_MAP,
+      visibility: DEFAULT_EXPECTED_VISIBILITY_SOURCE_MAP,
       history: {
         sourceBranchId: "main",
         sourceMode: "existing_branch",
@@ -290,6 +301,50 @@ describe("PromptRuntimeControlService", () => {
     expect(state.branchPersistentPolicy).toBeNull();
     expect(state.diagnostics).toEqual([]);
     expect(state.limitations).toEqual([...PROMPT_RUNTIME_LIMITATIONS]);
+  });
+
+  it("surfaces resolved visibility and source map entries for explicit session visibility policy fields", async () => {
+    const sessionId = await insertSession({
+      metadata: {
+        prompt_runtime: {
+          policy: {
+            visibility: {
+              mode: "deny_all_except_visible",
+              visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+            },
+          },
+        },
+      },
+    });
+
+    const service = new PromptRuntimeControlService(database.db);
+    const state = await service.getResolvedState(sessionId, DEFAULT_ADMIN_ACCOUNT_ID);
+
+    expect(state.policy.visibility).toEqual({
+      mode: "deny_all_except_visible",
+      visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+    });
+    expect(state.sourceMap).toEqual({
+      structure: {
+        mode: "system_default",
+        mergeAdjacentSameRole: "system_default",
+        preserveSystemMessages: "system_default",
+      },
+      delivery: {
+        allowAssistantPrefill: "system_default",
+        requireLastUser: "system_default",
+        noAssistant: "system_default",
+      },
+      sourceSelection: DEFAULT_EXPECTED_SOURCE_SELECTION_SOURCE_MAP,
+      visibility: {
+        mode: "session_policy",
+        visibleFloorRanges: "session_policy",
+      },
+      history: {
+        sourceBranchId: "main",
+        sourceMode: "existing_branch",
+      },
+    });
   });
 
   it("surfaces source map entries when delivery.noAssistant derives the resolved structure mode", async () => {
@@ -321,6 +376,7 @@ describe("PromptRuntimeControlService", () => {
         noAssistant: "session_policy",
       },
       sourceSelection: DEFAULT_EXPECTED_SOURCE_SELECTION_SOURCE_MAP,
+      visibility: DEFAULT_EXPECTED_VISIBILITY_SOURCE_MAP,
       history: {
         sourceBranchId: "main",
         sourceMode: "existing_branch",
@@ -372,6 +428,7 @@ describe("PromptRuntimeControlService", () => {
         },
         budget: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
         sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
+        visibility: DEFAULT_EXPECTED_RESOLVED_VISIBILITY,
         debug: {
           includePromptSnapshot: false,
           includeRuntimeTrace: false,
@@ -379,6 +436,54 @@ describe("PromptRuntimeControlService", () => {
         },
       },
       warnings: [DERIVED_NO_ASSISTANT_STRUCTURE_WARNING],
+    });
+  });
+
+  it("keeps flattened structure mode when delivery.noAssistant is enabled", async () => {
+    const sessionId = await insertSession({
+      metadata: {
+        prompt_runtime: {
+          policy: {
+            structure: {
+              mode: "flattened",
+            },
+            delivery: {
+              noAssistant: true,
+            },
+          },
+        },
+      },
+    });
+
+    const service = new PromptRuntimeControlService(database.db);
+    const policy = await service.getPolicy(sessionId, DEFAULT_ADMIN_ACCOUNT_ID);
+
+    expect(policy).toEqual({
+      persistentPolicy: {
+        structure: {
+          mode: "flattened",
+        },
+        delivery: {
+          noAssistant: true,
+        },
+      },
+      resolvedPolicy: {
+        structure: {
+          mode: "flattened",
+          mergeAdjacentSameRole: false,
+          preserveSystemMessages: true,
+        },
+        delivery: {
+          allowAssistantPrefill: true,
+          requireLastUser: false,
+          noAssistant: true,
+        },
+        budget: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
+        sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
+        visibility: DEFAULT_EXPECTED_RESOLVED_VISIBILITY,
+        debug: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY },
+      },
+      warnings: [],
     });
   });
 
@@ -405,6 +510,10 @@ describe("PromptRuntimeControlService", () => {
       delivery: {
         noAssistant: true,
       },
+      visibility: {
+        mode: "allow_all_except_hidden",
+        hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+      },
     });
 
     expect(updated).toEqual({
@@ -416,6 +525,10 @@ describe("PromptRuntimeControlService", () => {
         delivery: {
           requireLastUser: true,
           noAssistant: true,
+        },
+        visibility: {
+          mode: "allow_all_except_hidden",
+          hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
         },
       },
       resolvedPolicy: {
@@ -432,6 +545,10 @@ describe("PromptRuntimeControlService", () => {
         },
         budget: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
         sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
+        visibility: {
+          mode: "allow_all_except_hidden",
+          hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+        },
         debug: DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
       },
       persistentPolicyEnvelope: expect.objectContaining({
@@ -444,6 +561,10 @@ describe("PromptRuntimeControlService", () => {
           delivery: {
             requireLastUser: true,
             noAssistant: true,
+          },
+          visibility: {
+            mode: "allow_all_except_hidden",
+            hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
           },
         },
       }),
@@ -472,6 +593,10 @@ describe("PromptRuntimeControlService", () => {
             delivery: {
               requireLastUser: true,
               noAssistant: true,
+            },
+            visibility: {
+              mode: "allow_all_except_hidden",
+              hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
             },
           },
         },
@@ -510,6 +635,7 @@ describe("PromptRuntimeControlService", () => {
         delivery: DEFAULT_RESOLVED_PROMPT_RUNTIME_DELIVERY_POLICY,
         budget: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
         sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
+        visibility: DEFAULT_EXPECTED_RESOLVED_VISIBILITY,
         debug: DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
       },
       warnings: [],
@@ -582,6 +708,7 @@ describe("PromptRuntimeControlService", () => {
         },
         budget: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
         sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
+        visibility: DEFAULT_EXPECTED_RESOLVED_VISIBILITY,
         debug: DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
       },
       persistentPolicyEnvelope: expect.objectContaining({
@@ -651,6 +778,7 @@ describe("PromptRuntimeControlService", () => {
       delivery: DEFAULT_RESOLVED_PROMPT_RUNTIME_DELIVERY_POLICY,
       budget: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
       sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
+      visibility: DEFAULT_EXPECTED_RESOLVED_VISIBILITY,
       debug: DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
     });
     expect(state.warnings).toEqual([INVALID_PROMPT_RUNTIME_POLICY_WARNING]);
@@ -728,6 +856,7 @@ describe("PromptRuntimeControlService", () => {
       },
       budget: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
       sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
+      visibility: DEFAULT_EXPECTED_RESOLVED_VISIBILITY,
       debug: DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
     });
     expect(state.sourceMap).toEqual({
@@ -743,6 +872,7 @@ describe("PromptRuntimeControlService", () => {
         noAssistant: "branch_policy",
       },
       sourceSelection: DEFAULT_EXPECTED_SOURCE_SELECTION_SOURCE_MAP,
+      visibility: DEFAULT_EXPECTED_VISIBILITY_SOURCE_MAP,
       history: {
         sourceBranchId: "alt-branch",
         sourceMode: "existing_branch",
@@ -771,20 +901,31 @@ describe("PromptRuntimeControlService", () => {
     const service = new PromptRuntimeControlService(database.db);
     const updated = await service.updateBranchPolicy(sessionId, "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID, {
       structure: { mode: "strict_alternating" },
-
       delivery: { requireLastUser: true },
+      visibility: {
+        mode: "deny_all_except_visible",
+        visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+      },
     });
 
     expect(updated).toEqual({
       persistentPolicy: {
         structure: { mode: "strict_alternating" },
         delivery: { requireLastUser: true },
+        visibility: {
+          mode: "deny_all_except_visible",
+          visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+        },
       },
       resolvedPolicy: {
         structure: { mode: "strict_alternating", mergeAdjacentSameRole: true, preserveSystemMessages: true },
         delivery: { allowAssistantPrefill: true, requireLastUser: true, noAssistant: false },
         budget: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY },
         sourceSelection: DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
+        visibility: {
+          mode: "deny_all_except_visible",
+          visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+        },
         debug: DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
       },
       persistentPolicyEnvelope: expect.objectContaining({
@@ -792,6 +933,10 @@ describe("PromptRuntimeControlService", () => {
         value: {
           structure: { mode: "strict_alternating" },
           delivery: { requireLastUser: true },
+          visibility: {
+            mode: "deny_all_except_visible",
+            visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+          },
         },
       }),
 
@@ -810,6 +955,10 @@ describe("PromptRuntimeControlService", () => {
             value: {
               structure: { mode: "strict_alternating" },
               delivery: { requireLastUser: true },
+              visibility: {
+                mode: "deny_all_except_visible",
+                visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+              },
             },
           },
         },
@@ -1001,6 +1150,310 @@ describe("PromptRuntimeControlService", () => {
     expect(explain.limitations).toEqual([...PROMPT_RUNTIME_LIMITATIONS, ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS]);
   });
 
+  it("returns snapshot-backed historical explain with persisted visibility and budget details", async () => {
+    const sessionId = await insertSession();
+    const [floor] = await database.db
+      .select()
+      .from(floors)
+      .where(eq(floors.sessionId, sessionId))
+      .limit(1);
+
+    const outputPageId = nanoid();
+    const assistantMessageId = nanoid();
+    const now = Date.now();
+
+    const resolvedPolicy = {
+      structure: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY },
+      delivery: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DELIVERY_POLICY, noAssistant: true },
+      budget: { maxInputTokens: 256, reservedCompletionTokens: 64 },
+      sourceSelection: {
+        ...DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION,
+        history: { mode: "windowed", maxMessages: 12 },
+        examples: { enabled: false },
+      },
+      visibility: {
+        mode: "deny_all_except_visible",
+        visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+      },
+      debug: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY },
+    };
+    const sourceMap = {
+      budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" },
+      sourceSelection: {
+        history: { mode: "request_override", maxMessages: "request_override" },
+        memory: { enabled: "system_default" },
+        worldbook: { enabled: "system_default" },
+        examples: { enabled: "request_override" },
+      },
+      visibility: {
+        mode: "session_policy",
+        visibleFloorRanges: "session_policy",
+      },
+      history: {
+        sourceBranchId: "main",
+        sourceMode: "existing_branch",
+      },
+    };
+    const trimReasons = [
+      {
+        group: "history",
+        reason: "group_limit_exceeded",
+        detail: "Budget allocator capped group 'history' at 0 tokens and retained 0 of 32 estimated tokens.",
+        prunedTokenCount: 32,
+      },
+    ];
+    const excludedSources = [
+      {
+        source: "history",
+        reason: "visibility_filtered",
+        detail: "Visibility filtered 1 floor(s) from the available history window.",
+      },
+    ];
+    const diagnostics = [
+      {
+        code: "persisted_snapshot_loaded",
+        message: "Committed explain snapshot loaded from persisted truth.",
+        severity: "info" as const,
+        phase: "explain" as const,
+      },
+    ];
+    const sectionStats = [{ sectionName: "history", tokenCount: 128 }];
+
+    await database.db.insert(messagePages).values({
+      id: outputPageId,
+      floorId: floor!.id,
+      pageNo: 1,
+      pageKind: "output",
+      isActive: true,
+      version: 1,
+      checksum: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(messages).values({
+      id: assistantMessageId,
+      pageId: outputPageId,
+      seq: 1,
+      role: "assistant",
+      content: "The firelight wavers as the next part of the story begins.",
+      contentFormat: "text",
+      tokenCount: 128,
+      isHidden: false,
+      source: "narrator",
+      createdAt: now,
+    });
+
+    await database.db.insert(promptSnapshots).values({
+      floorId: floor!.id,
+      sessionId,
+      presetId: null,
+      presetUpdatedAt: null,
+      presetVersion: null,
+      worldbookId: null,
+      worldbookUpdatedAt: null,
+      worldbookVersion: null,
+      regexProfileId: null,
+      regexProfileUpdatedAt: null,
+      regexProfileVersion: null,
+      worldbookActivatedEntryUidsJson: JSON.stringify([]),
+      regexPreRuleNamesJson: JSON.stringify([]),
+      regexPostRuleNamesJson: JSON.stringify([]),
+      promptMode: "compat_strict",
+      promptDigest: "digest-1",
+      tokenEstimate: 42,
+      createdAt: now,
+    });
+
+    await database.db.insert(floorResultSnapshots).values({
+      floorId: floor!.id,
+      outputPageId,
+      assistantMessageId,
+      generatedText: "The firelight wavers as the next part of the story begins.",
+      summariesJson: JSON.stringify(["The group resumes the campfire planning scene."]),
+      usageJson: JSON.stringify({ promptTokens: 320, completionTokens: 128, totalTokens: 448 }),
+      verifierJson: null,
+      committedAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(promptRuntimeExplainSnapshots).values({
+      id: nanoid(),
+      floorId: floor!.id,
+      sessionId,
+      targetBranchId: "main",
+      sourceFloorId: null,
+      historySourceBranchId: "main",
+      historySourceMode: "existing_branch",
+      snapshotVersion: 1,
+      assetsJson: JSON.stringify({ preset: null, characterCard: null, worldbook: null, regexProfile: null }),
+      resolvedPolicyJson: JSON.stringify(resolvedPolicy),
+      sourceMapJson: JSON.stringify(sourceMap),
+      diagnosticsJson: JSON.stringify(diagnostics),
+      trimReasonsJson: JSON.stringify(trimReasons),
+      excludedSourcesJson: JSON.stringify(excludedSources),
+      sectionStatsJson: JSON.stringify(sectionStats),
+      createdAt: now,
+    });
+
+    const service = new PromptRuntimeControlService(database.db);
+    const explain = await service.getHistoricalExplain(floor!.id, DEFAULT_ADMIN_ACCOUNT_ID);
+
+    expect(explain.snapshotAvailable).toBe(true);
+    expect(explain.scope).toEqual({
+      sessionId,
+      targetBranchId: "main",
+      branchExists: true,
+      sourceFloorId: null,
+      historySourceBranchId: "main",
+      historySourceMode: "existing_branch",
+    });
+    expect(explain.resolvedPolicy).toEqual(resolvedPolicy);
+    expect(explain.sourceMap).toEqual(sourceMap);
+    expect(explain.trimReasons).toEqual(trimReasons);
+    expect(explain.excludedSources).toEqual(excludedSources);
+    expect(explain.sectionStats).toEqual(sectionStats);
+    expect(explain.diagnostics).toEqual(diagnostics);
+    expect(explain.limitations).toEqual([...PROMPT_RUNTIME_LIMITATIONS]);
+  });
+
+  it("compares persisted visibility and budget fields from committed explain snapshots", async () => {
+    const sessionId = await insertSession();
+    const [leftFloor] = await database.db
+      .select()
+      .from(floors)
+      .where(eq(floors.sessionId, sessionId))
+      .limit(1);
+    const rightFloorId = nanoid();
+    const now = Date.now();
+
+    await database.db.insert(floors).values({
+      id: rightFloorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: leftFloor!.id,
+      state: "committed",
+      metadataJson: null,
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(promptRuntimeExplainSnapshots).values([
+      {
+        id: nanoid(),
+        floorId: leftFloor!.id,
+        sessionId,
+        targetBranchId: "main",
+        sourceFloorId: null,
+        historySourceBranchId: "main",
+        historySourceMode: "existing_branch",
+        snapshotVersion: 1,
+        assetsJson: JSON.stringify({ preset: null, characterCard: null, worldbook: null, regexProfile: null }),
+        resolvedPolicyJson: JSON.stringify({
+          structure: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY },
+          delivery: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DELIVERY_POLICY },
+          budget: { maxInputTokens: 256, reservedCompletionTokens: 64 },
+          sourceSelection: { ...DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION },
+          visibility: {
+            mode: "allow_all_except_hidden",
+            hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+          },
+          debug: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY },
+        }),
+        sourceMapJson: JSON.stringify({
+          budget: { maxInputTokens: "session_policy", reservedCompletionTokens: "session_policy" },
+          visibility: { mode: "session_policy", hiddenFloorRanges: "session_policy" },
+          history: { sourceBranchId: "main", sourceMode: "existing_branch" },
+        }),
+        diagnosticsJson: JSON.stringify([]),
+        trimReasonsJson: JSON.stringify([
+          {
+            group: "history",
+            reason: "group_limit_exceeded",
+            detail: "Left trim reason.",
+            prunedTokenCount: 32,
+          },
+        ]),
+        excludedSourcesJson: JSON.stringify([
+          {
+            source: "history",
+            reason: "visibility_filtered",
+            detail: "Left exclusion.",
+          },
+        ]),
+        sectionStatsJson: JSON.stringify([{ sectionName: "history", tokenCount: 128 }]),
+        createdAt: now,
+      },
+      {
+        id: nanoid(),
+        floorId: rightFloorId,
+        sessionId,
+        targetBranchId: "main",
+        sourceFloorId: leftFloor!.id,
+        historySourceBranchId: "main",
+        historySourceMode: "existing_branch",
+        snapshotVersion: 1,
+        assetsJson: JSON.stringify({ preset: null, characterCard: null, worldbook: null, regexProfile: null }),
+        resolvedPolicyJson: JSON.stringify({
+          structure: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY },
+          delivery: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DELIVERY_POLICY },
+          budget: { maxInputTokens: 512, reservedCompletionTokens: 96 },
+          sourceSelection: { ...DEFAULT_EXPECTED_RESOLVED_SOURCE_SELECTION },
+          visibility: {
+            mode: "deny_all_except_visible",
+            visibleFloorRanges: [{ startFloorNo: 2, endFloorNo: 4 }],
+          },
+          debug: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY },
+        }),
+        sourceMapJson: JSON.stringify({
+          budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" },
+          visibility: { mode: "request_override", visibleFloorRanges: "request_override" },
+          history: { sourceBranchId: "main", sourceMode: "existing_branch" },
+        }),
+        diagnosticsJson: JSON.stringify([]),
+        trimReasonsJson: JSON.stringify([
+          {
+            group: "history",
+            reason: "group_limit_exceeded",
+            detail: "Right trim reason.",
+            prunedTokenCount: 64,
+          },
+        ]),
+        excludedSourcesJson: JSON.stringify([
+          {
+            source: "examples",
+            reason: "disabled_by_policy",
+            detail: "Right exclusion.",
+          },
+        ]),
+        sectionStatsJson: JSON.stringify([{ sectionName: "history", tokenCount: 96 }]),
+        createdAt: now + 1,
+      },
+    ]);
+
+    const service = new PromptRuntimeControlService(database.db);
+    const diff = await service.compareCommittedExplain(sessionId, leftFloor!.id, rightFloorId, DEFAULT_ADMIN_ACCOUNT_ID);
+
+    expect(diff.left).toEqual({ floorId: leftFloor!.id, snapshotAvailable: true });
+    expect(diff.right).toEqual({ floorId: rightFloorId, snapshotAvailable: true });
+    expect(diff.policyChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "policy.resolvedPolicy.budget.maxInputTokens", changeType: "changed", left: 256, right: 512 }),
+      expect.objectContaining({ path: "policy.resolvedPolicy.visibility.mode", changeType: "changed", left: "allow_all_except_hidden", right: "deny_all_except_visible" }),
+      expect.objectContaining({ path: "policy.sourceMap.visibility.mode", changeType: "changed", left: "session_policy", right: "request_override" }),
+    ]));
+    expect(diff.trimChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "trimReasons", changeType: "changed" }),
+    ]));
+    expect(diff.exclusionChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "excludedSources", changeType: "changed" }),
+    ]));
+    expect(diff.limitations).toEqual([]);
+  });
+
+
   it("exposes preview capabilities without restoring the preview route to unsupported", () => {
     const service = new PromptRuntimeControlService(database.db, {
       enableLiveEndpoints: true,
@@ -1043,10 +1496,12 @@ describe("PromptRuntimeControlService", () => {
           envelopeMetadata: true,
           nullClearsField: true,
           objectPatch: "deep_merge",
+          supportedFields: expect.arrayContaining(["visibility"]),
         }),
         branch: expect.objectContaining({
           envelopeMetadata: true,
           materializedBranchesOnly: true,
+          supportedFields: expect.arrayContaining(["visibility"]),
         }),
       }),
       macro: expect.objectContaining({

@@ -43,15 +43,34 @@ export class MessageBuilder {
   /**
    * 完整流程：estimate → prune → assemble
    */
-  build(ir: PromptIR): AssembledPrompt {
-    const { ir: prunedIR, prunedCount, prunedTokensByGroup } = this.tokenBudget.prune(ir);
-    return this.assemble(prunedIR, prunedCount, prunedTokensByGroup);
+  build(
+    ir: PromptIR,
+    options: {
+      groupPolicies?: Array<{
+        group: string;
+        minTokens?: number;
+        maxTokens?: number;
+        targetTokens?: number;
+        weight?: number;
+        pruneOrder?: number;
+      }>;
+    } = {},
+  ): AssembledPrompt {
+    const { ir: prunedIR, prunedCount, prunedTokensByGroup, allocator } = this.tokenBudget.prune(ir, {
+      groupPolicies: options.groupPolicies,
+    });
+    return this.assemble(prunedIR, prunedCount, prunedTokensByGroup, allocator);
   }
 
   /**
    * 将 IR 按分区排序 → 展开插入位 → 扁平化 → 可选合并 → 统计
    */
-  assemble(ir: PromptIR, prunedCount: number = 0, prunedTokensByGroup: Record<string, number> = {}): AssembledPrompt {
+  assemble(
+    ir: PromptIR,
+    prunedCount: number = 0,
+    prunedTokensByGroup: Record<string, number> = {},
+    allocator?: AssembledPrompt['tokenUsage']['allocator'],
+  ): AssembledPrompt {
     const sortedSections = [...ir.sections].sort((a, b) => a.order - b.order);
     const expandedMessages = this.expandSections(sortedSections);
 
@@ -95,6 +114,7 @@ export class MessageBuilder {
         bySection,
         byGroup,
         prunedByGroup: prunedTokensByGroup,
+        ...(allocator ? { allocator } : {}),
         availableForReply,
       },
       prunedCount,

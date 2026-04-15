@@ -245,7 +245,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         },
         budgets: {
           byGroup: [
-            { group: "history", tokenCount: 24, prunedTokenCount: 8 },
+            { group: "history", tokenCount: 24, estimatedTokenCount: 32, allocatedTokenCount: 24, prunedTokenCount: 8 },
             { group: "memory", tokenCount: 12 },
             { group: "worldbook", tokenCount: 16 },
             { group: "section:main", tokenCount: 20 },
@@ -439,7 +439,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       },
       budgets: {
         by_group: [
-          { group: "history", token_count: 24, pruned_token_count: 8 },
+          { group: "history", token_count: 24, estimated_token_count: 32, allocated_token_count: 24, pruned_token_count: 8 },
           { group: "memory", token_count: 12 },
           { group: "worldbook", token_count: 16 },
           { group: "section:main", token_count: 20 },
@@ -755,6 +755,103 @@ describe("ChatService.dryRun", () => {
     expect(floorsAfter).toEqual(floorsBefore);
     expect(messagesAfter).toEqual(messagesBefore);
     expect(promptSnapshotsAfter).toEqual(promptSnapshotsBefore);
+  });
+
+  it("applies request budget to dry-run prompt totals", async () => {
+    const result = await chatService.dryRun(sessionId, {
+      message: "hello dry run",
+      budget: {
+        maxInputTokens: 256,
+        reservedCompletionTokens: 32,
+      },
+    });
+
+    expect(result.tokenEstimate + result.availableForReply).toBe(288);
+  });
+
+  it("surfaces allocator trim reasons when internal budget group policies are provided", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Budget Allocator Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now })
+      .where(eq(sessions.id, sessionId));
+
+    const result = await chatService.dryRun(sessionId, {
+      message: "hello dry run",
+      budget: {
+        maxInputTokens: 256,
+        reservedCompletionTokens: 32,
+        groups: [{ group: "history", maxTokens: 0 }],
+      } as any,
+    });
+
+    expect(result.runtimeTrace?.budgets?.byGroup).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          group: "history",
+          tokenCount: 0,
+          estimatedTokenCount: expect.any(Number),
+          allocatedTokenCount: 0,
+          prunedTokenCount: expect.any(Number),
+        }),
+      ]),
+    );
+    expect(result.runtimeTrace?.budgets?.trimReasons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ group: "history", reason: "group_limit_exceeded" }),
+      ]),
+    );
+  });
+
+  it("keeps allocator trace disabled when dry-run budget groups are absent", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Aggregate Budget Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now })
+      .where(eq(sessions.id, sessionId));
+
+    const result = await chatService.dryRun(sessionId, {
+      message: "hello dry run",
+      budget: {
+        maxInputTokens: 256,
+        reservedCompletionTokens: 32,
+      },
+    });
+
+    const historyGroup = result.runtimeTrace?.budgets?.byGroup.find((group) => group.group === "history");
+
+    expect(historyGroup).toBeDefined();
+    expect(historyGroup).not.toHaveProperty("estimatedTokenCount");
+    expect(historyGroup).not.toHaveProperty("allocatedTokenCount");
+    expect(result.runtimeTrace?.budgets?.trimReasons).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: "group_limit_exceeded" }),
+      ]),
+    );
   });
 
   it("returns visibility trace when dry-run visibility override is provided", async () => {
@@ -1148,6 +1245,47 @@ describe("ChatService.dryRun", () => {
     expect(result.promptSnapshot.tokenEstimate).toBe(result.tokenEstimate);
   });
 
+  it("transcriptizes assistant prefill on dry-run when structure sets flattened", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Dry Run Flattened Prefill Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        assistant_prefill: "Knight:",
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    const result = await chatService.dryRun(sessionId, {
+      message: "hello prefill",
+      promptIntent: "continue",
+      structure: { mode: "flattened" },
+      delivery: { requireLastUser: true },
+    });
+
+    expect(result.messages.some((message) => message.role === "assistant")).toBe(false);
+    expect(result.messages.some((message) => message.role === "user" && message.content.includes("hello prefill"))).toBe(true);
+    expect(result.messages.some((message) => message.role === "user" && message.content.includes("Assistant: Knight:"))).toBe(true);
+    expect(result.runtimeTrace?.structure).toMatchObject({ mode: "flattened", transcriptized: true, assistantPrefillTranscriptized: true });
+    expect(result.runtimeTrace?.delivery).toMatchObject({ assistantPrefillRequested: true, assistantPrefillApplied: true, assistantPrefillStrategy: "transcript_append", requireLastUser: true, endsWithUser: true });
+    expect(result.promptSnapshot.tokenEstimate).toBe(result.tokenEstimate);
+  });
+
   it("injects persisted visible variables into dry-run prompt assembly and reports reserved alias collisions", async () => {
     const now = Date.now();
     const presetId = nanoid();
@@ -1238,6 +1376,11 @@ describe("ChatService.dryRun", () => {
 
     expect(allContent).toContain("kind=dry_run");
     expect(allContent).toContain("OK");
+    expect(result.assembly).not.toHaveProperty("macroWarnings");
+    expect(result.assembly).not.toHaveProperty("macroUsedNames");
+    expect(result.assembly).not.toHaveProperty("macroMutationPreview");
+    expect(result.assembly).not.toHaveProperty("macroStagedMutations");
+    expect(result.assembly).not.toHaveProperty("macroTraces");
     expect(result.runtimeTrace?.macro?.usedNames).toEqual(expect.arrayContaining(["if", "lastGenerationType", "setvar"]));
     expect(result.runtimeTrace?.macro?.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "macro_preview_side_effect_suppressed", macroName: "setvar" })]));
     expect(result.runtimeTrace?.macro?.mutationPreview).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "set", scope: "branch", key: "mood", value: "happy" })]));

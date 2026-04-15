@@ -7,10 +7,42 @@ import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import {
   assemblePrompt,
+  buildPromptAssemblyCompat,
+  buildPromptRuntimeTrace,
   materializePromptRuntimeMessages,
+  resolveEffectivePromptBudget,
+  type AssembleDebugInfo,
+  type PromptRuntimeTrace,
   type SessionPromptInfo,
 } from "../prompt-assembler.js";
 import { SimpleTokenCounter } from "@tavern/core";
+
+function createAssemblyDebugFixture(overrides: Partial<AssembleDebugInfo> = {}): AssembleDebugInfo {
+  return {
+    mode: "fallback",
+    promptIntent: "normal",
+    assistantPrefillApplied: false,
+    assistantPrefillStrategy: "none",
+    presetUsed: false,
+    worldbookHits: 0,
+    regexPreRules: ["debug-pre"],
+    regexPostRules: ["debug-post"],
+    memorySummaryInjected: false,
+    reservedVariableCollisions: ["char"],
+    selectedPromptOrderCharacterId: null,
+    ignoredPromptOrderCharacterIds: [],
+    unsupportedPresetFields: ["assistant_prefill"],
+    ignoredPresetFields: [],
+    unresolvedPresetMarkers: ["debug-marker"],
+    presetWarnings: ["debug-warning"],
+    continueNudgeApplied: false,
+    continueNudgeText: undefined,
+    namesBehaviorApplied: "off",
+    triggerFilteredEntryIds: [],
+    inChatInsertedEntryIds: [],
+    ...overrides,
+  };
+}
 
 const SAMPLE_PRESET_DATA = {
   prompts: [
@@ -66,6 +98,181 @@ describe("assemblePrompt", () => {
 
   afterEach(() => {
     database.close();
+  });
+
+  it("prefers explicit prompt runtime budget over narrator and preset defaults", () => {
+    expect(resolveEffectivePromptBudget({
+      budget: {
+        maxInputTokens: 2048,
+        reservedCompletionTokens: 512,
+      },
+      maxContextTokensOverride: 4096,
+      maxOutputTokensOverride: 1024,
+      defaultMaxContextTokens: 8192,
+      defaultReservedCompletionTokens: 256,
+    })).toEqual({
+      maxInputTokens: 2048,
+      reservedCompletionTokens: 512,
+    });
+  });
+
+  it("falls back to legacy maxContext and maxOutput defaults when budget policy is absent", () => {
+    expect(resolveEffectivePromptBudget({
+      maxContextTokensOverride: 4096,
+      maxOutputTokensOverride: 1024,
+    })).toEqual({
+      maxInputTokens: 3072,
+      reservedCompletionTokens: 1024,
+    });
+  });
+
+  it("prefers runtimeTrace-backed facts when projecting dry-run assembly compat", () => {
+    const debug = createAssemblyDebugFixture();
+    const runtimeTrace: PromptRuntimeTrace = {
+      ...buildPromptRuntimeTrace({
+        traceSeed: createAssemblyDebugFixture({
+          assistantPrefillApplied: true,
+          assistantPrefillStrategy: "transcript_append",
+          worldbookHits: 2,
+          regexPreRules: ["trace-pre"],
+          regexPostRules: ["trace-post"],
+          memorySummaryInjected: true,
+          selectedPromptOrderCharacterId: 100000,
+          ignoredPromptOrderCharacterIds: [200001],
+          unsupportedPresetFields: [],
+          ignoredPresetFields: ["top_level.openai_model"],
+          unresolvedPresetMarkers: ["trace-marker"],
+          presetWarnings: ["trace-warning"],
+          continueNudgeApplied: true,
+          continueNudgeText: "[Continue]",
+          namesBehaviorApplied: "always",
+          triggerFilteredEntryIds: ["quietPrompt"],
+          inChatInsertedEntryIds: ["continueHint"],
+          worldbookMatches: [],
+        }),
+        preprocessedUserMessage: "from-trace",
+      }),
+      delivery: {
+        assistantPrefillRequested: true,
+        assistantPrefillApplied: true,
+        assistantPrefillStrategy: "transcript_append",
+        allowAssistantPrefill: true,
+        requireLastUser: true,
+        noAssistant: false,
+        lastMessageRole: "user",
+        endsWithUser: true,
+        degraded: false,
+        degradeReasons: [],
+      },
+    };
+
+    expect(buildPromptAssemblyCompat({
+      compatSeed: debug,
+      traceSeed: debug,
+      runtimeTrace,
+      preprocessedUserMessage: "from-debug",
+    })).toMatchObject({
+      mode: "fallback",
+      promptIntent: "normal",
+      presetUsed: false,
+      reservedVariableCollisions: ["char"],
+      assistantPrefillApplied: true,
+      assistantPrefillStrategy: "transcript_append",
+      worldbookHits: 2,
+      regexPreRules: ["trace-pre"],
+      regexPostRules: ["trace-post"],
+      preprocessedUserMessage: "from-trace",
+      memorySummaryInjected: true,
+      selectedPromptOrderCharacterId: 100000,
+      ignoredPromptOrderCharacterIds: [200001],
+      unsupportedPresetFields: [],
+      ignoredPresetFields: ["top_level.openai_model"],
+      unresolvedPresetMarkers: ["trace-marker"],
+      presetWarnings: ["trace-warning"],
+      continueNudgeApplied: true,
+      continueNudgeText: "[Continue]",
+      namesBehaviorApplied: "always",
+      triggerFilteredEntryIds: ["quietPrompt"],
+      inChatInsertedEntryIds: ["continueHint"],
+      worldbookMatches: [],
+    });
+  });
+
+  it("falls back to compat seed and runtime trace seed when runtimeTrace is absent", () => {
+    const debug = createAssemblyDebugFixture({
+      mode: "preset",
+      promptIntent: "continue",
+      assistantPrefillApplied: true,
+      assistantPrefillStrategy: "assistant_message_fallback",
+      presetUsed: true,
+      worldbookHits: 1,
+      continueNudgeApplied: true,
+      continueNudgeText: "[Continue]",
+      namesBehaviorApplied: "always",
+      triggerFilteredEntryIds: ["quietPrompt"],
+      inChatInsertedEntryIds: ["continueHint"],
+      worldbookMatches: [],
+    });
+
+    expect(buildPromptAssemblyCompat({
+      compatSeed: debug,
+      traceSeed: debug,
+      preprocessedUserMessage: "from-seed",
+    })).toMatchObject({
+      mode: "preset",
+      promptIntent: "continue",
+      assistantPrefillApplied: true,
+      assistantPrefillStrategy: "assistant_message_fallback",
+      presetUsed: true,
+      worldbookHits: 1,
+      regexPreRules: ["debug-pre"],
+      regexPostRules: ["debug-post"],
+      memorySummaryInjected: false,
+      reservedVariableCollisions: ["char"],
+      preprocessedUserMessage: "from-seed",
+      worldbookMatches: [],
+    });
+  });
+
+  it("keeps allocator disabled when only aggregate prompt budget totals are provided", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Aggregate Budget Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [{ role: "user", content: "Earlier turn." }],
+      "Continue.",
+      new SimpleTokenCounter(),
+      undefined,
+      {
+        budget: { maxInputTokens: 64, reservedCompletionTokens: 16 },
+      },
+    );
+
+    expect(assembled.tokenUsage.byGroup).toMatchObject({ history: expect.any(Number) });
+    expect(assembled.tokenUsage.allocator).toBeUndefined();
   });
 
   it("injects resolved persisted variables into prompt templates and preserves reserved aliases", async () => {
@@ -222,8 +429,14 @@ describe("assemblePrompt", () => {
       selectedPromptOrderCharacterId: 100000,
       ignoredPromptOrderCharacterIds: [],
     });
+    expect(assembled.runtimeTraceSeed).toMatchObject({
+      selectedPromptOrderCharacterId: 100000,
+      ignoredPromptOrderCharacterIds: [],
+      unsupportedPresetFields: [],
+    });
     expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_unknown")).toBe(false);
     expect(assembled.debug?.macroUsedNames).toEqual(expect.arrayContaining(["mood", "score", "char", "user"]));
+    expect(assembled.runtimeTraceSeed?.macroUsedNames).toEqual(expect.arrayContaining(["mood", "score", "char", "user"]));
     expect(assembled.debug?.unsupportedPresetFields).toEqual([]);
   });
 
@@ -896,13 +1109,58 @@ describe("assemblePrompt", () => {
       },
     );
 
+    expect(assembled.runtimeTraceSeed.macroMutationPreview).toEqual([
+      { kind: "set", scope: "branch", key: "mood", value: "happy" },
+    ]);
+    expect(assembled.runtimeTraceSeed.macroStagedMutations).toEqual([
+      { kind: "set", scope: "branch", key: "mood", value: "happy", sourceMacro: "setvar" },
+    ]);
     expect(assembled.debug?.macroMutationPreview).toEqual([
       { kind: "set", scope: "branch", key: "mood", value: "happy" },
     ]);
     expect(assembled.debug?.macroStagedMutations).toEqual([
       { kind: "set", scope: "branch", key: "mood", value: "happy", sourceMacro: "setvar" },
     ]);
+    expect(assembled.promptSnapshot).not.toHaveProperty("macroMutationPreview");
+    expect(assembled.promptSnapshot).not.toHaveProperty("macroStagedMutations");
+    expect(assembled.promptSnapshot).not.toHaveProperty("macroWarnings");
     expect(assembled.debug?.macroWarnings?.some((warning) => warning.code === "macro_preview_side_effect_suppressed")).toBe(true);
+  });
+
+  it("keeps macro commit facts outside prompt snapshot when debug output is disabled", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Prompt Macro Commit Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({
+        ...SAMPLE_PRESET_DATA,
+        prompts: [
+          { identifier: "main", name: "Main Prompt", role: "system", content: "{{setvar::mood::steady}}{{getvar::mood}}" },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    await database.db.insert(sessions).values({ id: sessionId, title: "Prompt Macro Commit Session", accountId: DEFAULT_ADMIN_ACCOUNT_ID, status: "active", createdAt: now + 1, updatedAt: now + 1 });
+    await database.db.insert(floors).values({ id: floorId, sessionId, floorNo: 1, branchId: "main", parentFloorId: null, state: "committed", tokenIn: 0, tokenOut: 0, createdAt: now + 2, updatedAt: now + 2 });
+    const assembled = await assemblePrompt(database.db, DEFAULT_ADMIN_ACCOUNT_ID, { presetId, worldbookProfileId: null, regexProfileId: null, metadataJson: null, characterSnapshotJson: JSON.stringify({ name: "Knight" }), promptMode: "compat_strict", userSnapshotJson: JSON.stringify({ name: "Traveler" }) }, [], "Advance.", new SimpleTokenCounter(), undefined, { variableContext: { sessionId, branchId: "main", floorId } });
+
+    expect(assembled.debug).toBeUndefined();
+    expect(assembled.assemblyCompatSeed).toMatchObject({
+      mode: "preset",
+      promptIntent: "normal",
+      presetUsed: true,
+      reservedVariableCollisions: [],
+    });
+    expect(assembled.runtimeTraceSeed.macroStagedMutations).toEqual([
+      { kind: "set", scope: "branch", key: "mood", value: "steady", sourceMacro: "setvar" },
+    ]);
+    expect(assembled.promptSnapshot).not.toHaveProperty("macroStagedMutations");
   });
 
   it("collects root object mutation preview for nested setvar in dry run", async () => {
@@ -1698,5 +1956,43 @@ describe("materializePromptRuntimeMessages", () => {
     expect(result.messages).toEqual([{ role: "user", content: "Hello." }, { role: "system", content: "Reply." }]);
     expect(result.structureTrace).toEqual({ mode: "no_assistant", mergeAdjacentSameRole: true, assistantRewriteCount: 1, assistantRewriteStrategy: "to_system", tailAssistantDetected: false });
     expect(result.deliveryTrace).toEqual({ assistantPrefillRequested: true, assistantPrefillApplied: false, assistantPrefillStrategy: "none", allowAssistantPrefill: true, requireLastUser: false, noAssistant: true, lastMessageRole: "user", endsWithUser: true, degraded: true, degradeReasons: ["no_assistant_override"] });
+  });
+
+  it("transcriptizes conversation messages and assistant prefill in flattened mode", () => {
+    const result = materializePromptRuntimeMessages({
+      messages: [
+        { role: "system", content: "System rules." },
+        { role: "user", content: "Hello." },
+        { role: "assistant", content: "Reply." },
+      ],
+      sendDirectives: { assistantPrefill: "Prefill fragment" },
+      assistantPrefillStrategy: "unsupported",
+      structurePolicy: { mode: "flattened" },
+      deliveryPolicy: { requireLastUser: true },
+      materializeAssistantPrefillFallback: false,
+    });
+
+    expect(result.messages).toEqual([
+      { role: "system", content: "System rules." },
+      { role: "user", content: "User: Hello.\nAssistant: Reply.\nAssistant: Prefill fragment" },
+    ]);
+    expect(result.structureTrace).toEqual({ mode: "flattened", mergeAdjacentSameRole: false, assistantRewriteCount: 0, tailAssistantDetected: false, transcriptized: true, transcriptMessageCount: 3, assistantPrefillTranscriptized: true });
+    expect(result.deliveryTrace).toEqual({ assistantPrefillRequested: true, assistantPrefillApplied: true, assistantPrefillStrategy: "transcript_append", allowAssistantPrefill: true, requireLastUser: true, noAssistant: false, lastMessageRole: "user", endsWithUser: true, degraded: false, degradeReasons: [] });
+  });
+
+  it("keeps flattened mode compatible with delivery no_assistant", () => {
+    const result = materializePromptRuntimeMessages({
+      messages: [{ role: "user", content: "Hello." }, { role: "assistant", content: "Reply." }],
+      sendDirectives: { assistantPrefill: "Prefill fragment" },
+      assistantPrefillStrategy: "assistant_message_fallback",
+      structurePolicy: { mode: "flattened" },
+      deliveryPolicy: { noAssistant: true },
+    });
+
+    expect(result.messages).toEqual([
+      { role: "user", content: "User: Hello.\nAssistant: Reply.\nAssistant: Prefill fragment" },
+    ]);
+    expect(result.structureTrace).toEqual({ mode: "flattened", mergeAdjacentSameRole: false, assistantRewriteCount: 0, tailAssistantDetected: false, transcriptized: true, transcriptMessageCount: 3, assistantPrefillTranscriptized: true });
+    expect(result.deliveryTrace).toEqual({ assistantPrefillRequested: true, assistantPrefillApplied: true, assistantPrefillStrategy: "transcript_append", allowAssistantPrefill: true, requireLastUser: false, noAssistant: true, lastMessageRole: "user", endsWithUser: true, degraded: false, degradeReasons: [] });
   });
 });

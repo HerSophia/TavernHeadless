@@ -196,8 +196,8 @@ describe("sdk sessions expanded resource", () => {
           },
           runtime_trace: {
             budgets: {
-              by_group: [{ group: "history", token_count: 24, pruned_token_count: 8 }],
-              trim_reasons: [{ group: "history", reason: "budget_exceeded", pruned_token_count: 8, detail: "Prompt runtime pruned 8 tokens from budget group 'history'." }],
+              by_group: [{ group: "section:main", token_count: 24, estimated_token_count: 32, allocated_token_count: 24, pruned_token_count: 8 }],
+              trim_reasons: [{ group: "section:main", reason: "budget_exceeded", pruned_token_count: 8, detail: "Prompt runtime pruned 8 tokens from budget group 'section:main'." }],
             },
             source_selection: {
               excluded_sources: [
@@ -308,8 +308,8 @@ describe("sdk sessions expanded resource", () => {
       },
       runtimeTrace: {
         budgets: {
-          byGroup: [{ group: "history", tokenCount: 24, prunedTokenCount: 8 }],
-          trimReasons: [{ group: "history", reason: "budget_exceeded", prunedTokenCount: 8, detail: "Prompt runtime pruned 8 tokens from budget group 'history'." }],
+          byGroup: [{ group: "section:main", tokenCount: 24, estimatedTokenCount: 32, allocatedTokenCount: 24, prunedTokenCount: 8 }],
+          trimReasons: [{ group: "section:main", reason: "budget_exceeded", prunedTokenCount: 8, detail: "Prompt runtime pruned 8 tokens from budget group 'section:main'." }],
         },
         sourceSelection: {
           excludedSources: [

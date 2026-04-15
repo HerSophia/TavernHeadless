@@ -22,6 +22,7 @@ import {
   runtimeJobs,
   messagePages,
   messages,
+  promptRuntimeExplainSnapshots,
   promptSnapshots,
   sessions,
   toolCallRecords,
@@ -29,6 +30,14 @@ import {
   variables,
 } from "../../db/schema.js";
 import { ChatMessagePersistence } from "../chat-message-persistence.js";
+import {
+  buildPromptRuntimeCommittedExplainSnapshot,
+  DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
+  DEFAULT_RESOLVED_PROMPT_RUNTIME_DELIVERY_POLICY,
+  DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY,
+  DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY,
+  type PromptRuntimeInspectionResult,
+} from "../prompt-runtime-control-service.js";
 import { TurnCommitService } from "../turn-commit-service.js";
 import { buildBranchVariableScopeId, type VariableScope } from "@tavern/shared";
 import {
@@ -1093,6 +1102,127 @@ describe("TurnCommitService", () => {
       createdAt: committedAt,
     });
   });
+
+  it("persists prompt runtime explain snapshot payload inside the commit transaction", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_735_689_720_000;
+    const committedAt = now + 1_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Assistant reply with persisted explain snapshot.",
+      rawText: "Assistant reply with persisted explain snapshot.",
+      summaries: ["assistant summary"],
+      totalUsage: {
+        promptTokens: 24,
+        completionTokens: 12,
+        totalTokens: 36,
+      },
+    };
+
+    const inspection = {
+      scope: {
+        sessionId,
+        targetBranchId: "main",
+        branchExists: true,
+        sourceFloorId: null,
+        historySourceBranchId: "main",
+        historySourceMode: "existing_branch",
+      },
+      assets: {
+        preset: null,
+        characterCard: null,
+        worldbook: null,
+        regexProfile: null,
+      },
+      resolvedPolicy: {
+        structure: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY },
+        delivery: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DELIVERY_POLICY },
+        budget: { maxInputTokens: 256, reservedCompletionTokens: 64 },
+        sourceSelection: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_SOURCE_SELECTION_POLICY },
+        visibility: {
+          mode: "deny_all_except_visible",
+          visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+        },
+        debug: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY },
+      },
+      sourceMap: {
+        budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" },
+        visibility: { mode: "session_policy", visibleFloorRanges: "session_policy" },
+        history: { sourceBranchId: "main", sourceMode: "existing_branch" },
+      },
+      diagnostics: [
+        {
+          code: "derived_no_assistant_structure",
+          message: "delivery.noAssistant forced the resolved structure.mode to no_assistant.",
+          severity: "warning",
+          source: "policy",
+          fieldPath: "policy.structure.mode",
+        },
+      ],
+      trimReasons: [
+        {
+          group: "history",
+          reason: "group_limit_exceeded",
+          detail: "Budget allocator capped group 'history' at 0 tokens and retained 0 of 32 estimated tokens.",
+          prunedTokenCount: 32,
+        },
+      ],
+      excludedSources: [
+        {
+          source: "history",
+          reason: "visibility_filtered",
+          detail: "Visibility filtered 1 floor(s) from the available history window.",
+        },
+      ],
+      sectionStats: [{ sectionName: "history", tokenCount: 128 }],
+      limitations: [],
+    } satisfies PromptRuntimeInspectionResult;
+
+    const expectedSnapshot = buildPromptRuntimeCommittedExplainSnapshot({
+      floorId,
+      sessionId,
+      createdAt: committedAt,
+      inspection,
+    });
+
+    await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      promptRuntimeInspection: inspection,
+    });
+
+    const [inspectionSnapshotRow] = await database.db
+      .select()
+      .from(promptRuntimeExplainSnapshots)
+      .where(eq(promptRuntimeExplainSnapshots.floorId, floorId));
+
+    expect(expectedSnapshot).not.toHaveProperty("limitations");
+    expect(inspectionSnapshotRow).toMatchObject({
+      floorId: expectedSnapshot.floorId,
+      sessionId: expectedSnapshot.sessionId,
+      targetBranchId: expectedSnapshot.targetBranchId,
+      sourceFloorId: expectedSnapshot.sourceFloorId,
+      historySourceBranchId: expectedSnapshot.historySourceBranchId,
+      historySourceMode: expectedSnapshot.historySourceMode,
+      snapshotVersion: expectedSnapshot.snapshotVersion,
+      createdAt: expectedSnapshot.createdAt,
+    });
+    expect(JSON.parse(inspectionSnapshotRow!.resolvedPolicyJson)).toEqual(expectedSnapshot.resolvedPolicy);
+    expect(JSON.parse(inspectionSnapshotRow!.sourceMapJson)).toEqual(expectedSnapshot.sourceMap);
+    expect(JSON.parse(inspectionSnapshotRow!.trimReasonsJson)).toEqual(expectedSnapshot.trimReasons);
+    expect(JSON.parse(inspectionSnapshotRow!.excludedSourcesJson)).toEqual(expectedSnapshot.excludedSources);
+    expect(JSON.parse(inspectionSnapshotRow!.sectionStatsJson)).toEqual(expectedSnapshot.sectionStats);
+  });
+
 
   it("promotes page variables to floor inside the commit boundary", async () => {
     const sessionId = nanoid();

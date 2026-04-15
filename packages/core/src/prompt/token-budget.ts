@@ -1,4 +1,11 @@
-import type { PromptIR, IRMessage, IRSection, TokenCounter } from './types.js';
+import type { PromptIR, IRMessage, IRSection, PromptTrimReason, TokenCounter } from './types.js';
+
+import {
+  allocatePromptBudget,
+  buildPromptBudgetTrimReasons,
+  type PromptBudgetGroupPolicy,
+} from './budget-allocator.js';
+import { buildPromptRuntimeSectionBudgetGroup } from './runtime-registry.js';
 
 /**
  * 简单 token 估算器：字符数 / 4
@@ -24,6 +31,12 @@ interface PruneCandidate {
   budgetGroup: string;
 }
 
+interface PromptBudgetAllocatorTrace {
+  estimatedByGroup: Record<string, number>;
+  allocatedByGroup: Record<string, number>;
+  trimReasons: PromptTrimReason[];
+}
+
 /**
  * Token 预算管理器
  *
@@ -38,7 +51,7 @@ export function resolveSectionBudgetGroupName(section: IRSection): string {
 
   return budgetGroup.length > 0
     ? budgetGroup
-    : `section:${section.name}`;
+    : buildPromptRuntimeSectionBudgetGroup(section.name);
 }
 
 export class TokenBudget {
@@ -70,7 +83,15 @@ export class TokenBudget {
    * 3. 按 priority 从大到小淘汰（数值大 = 优先淘汰）
    * 4. 同 priority 按全局位置从前到后淘汰（旧消息先淘汰）
    */
-  prune(ir: PromptIR): { ir: PromptIR; prunedCount: number; prunedTokensByGroup: Record<string, number> } {
+  prune(
+    ir: PromptIR,
+    options: { groupPolicies?: PromptBudgetGroupPolicy[] } = {},
+  ): {
+    ir: PromptIR;
+    prunedCount: number;
+    prunedTokensByGroup: Record<string, number>;
+    allocator?: PromptBudgetAllocatorTrace;
+  } {
     // 先确保所有消息都有 tokenCount
     const estimated = this.estimate(ir);
 
@@ -110,28 +131,123 @@ export class TokenBudget {
 
     const availableForPrunable = Math.max(0, budget - fixedTokens);
 
-    // 排序：priority 小（高优先保留）在前，同 priority 按 globalIndex 大（新消息）在前
-    // 这样我们从前往后累加，能保留的就保留
-    candidates.sort((a, b) => {
-      const pa = a.message.priority ?? 0;
-      const pb = b.message.priority ?? 0;
-      if (pa !== pb) return pa - pb; // priority 小的先保留
-      return b.globalIndex - a.globalIndex; // 新消息优先保留
-    });
-
-    // 标记哪些消息被保留
     const pruneSet = new Set<string>(); // "sectionIndex:messageIndex"
-    let usedTokens = 0;
-    const prunedTokensByGroup: Record<string, number> = {};
+    let allocatorTrace: PromptBudgetAllocatorTrace | undefined;
+    let prunedTokensByGroup: Record<string, number> = {};
 
-    for (const candidate of candidates) {
-      const tokens = candidate.message.tokenCount ?? 0;
-      if (usedTokens + tokens <= availableForPrunable) {
-        usedTokens += tokens;
-        // 保留
-      } else {
+    if (options.groupPolicies && options.groupPolicies.length > 0) {
+      const candidatesByGroup = new Map<string, PruneCandidate[]>();
+      const estimatedByGroup: Record<string, number> = {};
+
+      for (const candidate of candidates) {
+        const bucket = candidatesByGroup.get(candidate.budgetGroup) ?? [];
+        bucket.push(candidate);
+        candidatesByGroup.set(candidate.budgetGroup, bucket);
+        estimatedByGroup[candidate.budgetGroup] = (estimatedByGroup[candidate.budgetGroup] ?? 0) + (candidate.message.tokenCount ?? 0);
+      }
+
+      const allocation = allocatePromptBudget({
+        availableTokens: availableForPrunable,
+        estimatedByGroup,
+        groupPolicies: options.groupPolicies,
+      });
+      const groupResultByName = new Map(
+        allocation.groupResults.map((groupResult) => [groupResult.group, groupResult]),
+      );
+      const keptCandidates = new Set<string>();
+      const retainedByGroup: Record<string, number> = {};
+      let retainedTokens = 0;
+
+      for (const [group, groupCandidates] of candidatesByGroup) {
+        groupCandidates.sort(comparePruneCandidatesByRetentionPriority);
+        const provisionalLimit = allocation.allocatedByGroup[group] ?? 0;
+        let retainedInGroup = 0;
+
+        for (const candidate of groupCandidates) {
+          const tokens = candidate.message.tokenCount ?? 0;
+          if (retainedInGroup + tokens <= provisionalLimit) {
+            retainedInGroup += tokens;
+            retainedByGroup[group] = (retainedByGroup[group] ?? 0) + tokens;
+            retainedTokens += tokens;
+            keptCandidates.add(createPruneCandidateKey(candidate));
+          }
+        }
+      }
+
+      const reconciliationCandidates = candidates
+        .filter((candidate) => !keptCandidates.has(createPruneCandidateKey(candidate)))
+        .sort((left, right) => {
+          const leftResult = groupResultByName.get(left.budgetGroup);
+          const rightResult = groupResultByName.get(right.budgetGroup);
+          const leftPruneOrder = leftResult?.policy.pruneOrder ?? 0;
+          const rightPruneOrder = rightResult?.policy.pruneOrder ?? 0;
+
+          if (leftPruneOrder !== rightPruneOrder) {
+            return rightPruneOrder - leftPruneOrder;
+          }
+
+          return comparePruneCandidatesByRetentionPriority(left, right);
+        });
+
+      for (const candidate of reconciliationCandidates) {
+        const groupResult = groupResultByName.get(candidate.budgetGroup);
+        if (!groupResult) {
+          continue;
+        }
+
+        const tokens = candidate.message.tokenCount ?? 0;
+        const retainedInGroup = retainedByGroup[candidate.budgetGroup] ?? 0;
+        if (retainedTokens + tokens > availableForPrunable) {
+          continue;
+        }
+
+        if (retainedInGroup + tokens > groupResult.hardCapTokens) {
+          continue;
+        }
+
+        retainedByGroup[candidate.budgetGroup] = retainedInGroup + tokens;
+        retainedTokens += tokens;
+        keptCandidates.add(createPruneCandidateKey(candidate));
+      }
+
+      for (const [group, estimatedTokensByGroup] of Object.entries(allocation.estimatedByGroup)) {
+        const retainedInGroup = retainedByGroup[group] ?? 0;
+        const prunedInGroup = Math.max(0, estimatedTokensByGroup - retainedInGroup);
+        if (prunedInGroup > 0) {
+          prunedTokensByGroup[group] = prunedInGroup;
+        }
+      }
+
+      for (const candidate of candidates) {
+        const key = createPruneCandidateKey(candidate);
+        if (!keptCandidates.has(key)) {
+          pruneSet.add(key);
+        }
+      }
+
+      allocatorTrace = {
+        estimatedByGroup: allocation.estimatedByGroup,
+        allocatedByGroup: allocation.allocatedByGroup,
+        trimReasons: buildPromptBudgetTrimReasons({
+          availableTokens: availableForPrunable,
+          groupResults: allocation.groupResults,
+          retainedByGroup,
+        }),
+      };
+    } else {
+      candidates.sort(comparePruneCandidatesByRetentionPriority);
+      prunedTokensByGroup = {};
+      let usedTokens = 0;
+
+      for (const candidate of candidates) {
+        const tokens = candidate.message.tokenCount ?? 0;
+        if (usedTokens + tokens <= availableForPrunable) {
+          usedTokens += tokens;
+          continue;
+        }
+
         prunedTokensByGroup[candidate.budgetGroup] = (prunedTokensByGroup[candidate.budgetGroup] ?? 0) + tokens;
-        pruneSet.add(`${candidate.sectionIndex}:${candidate.messageIndex}`);
+        pruneSet.add(createPruneCandidateKey(candidate));
       }
     }
 
@@ -150,6 +266,21 @@ export class TokenBudget {
       },
       prunedCount: pruneSet.size,
       prunedTokensByGroup,
+      ...(allocatorTrace ? { allocator: allocatorTrace } : {}),
     };
   }
+}
+
+function createPruneCandidateKey(candidate: PruneCandidate): string {
+  return `${candidate.sectionIndex}:${candidate.messageIndex}`;
+}
+
+function comparePruneCandidatesByRetentionPriority(a: PruneCandidate, b: PruneCandidate): number {
+  const pa = a.message.priority ?? 0;
+  const pb = b.message.priority ?? 0;
+  if (pa !== pb) {
+    return pa - pb;
+  }
+
+  return b.globalIndex - a.globalIndex;
 }

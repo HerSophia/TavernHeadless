@@ -260,12 +260,18 @@ export type RespondDryRunWorldbookMatchSource = PromptRuntimeWorldbookMatchSourc
 export type RespondDryRunWorldbookMatchDetail = PromptRuntimeWorldbookMatchDetail;
 export type RespondDryRunPromptSnapshot = PromptSnapshotPreview;
 
-export type RespondDryRunAssembly = {
+/**
+ * dry-run 对外 `assembly` 兼容层。
+ *
+ * 这层继续保留既有 preset / dry-run 摘要字段，供旧调用方和调试面读取。
+ * 如果同一事实已经在 `runtimeTrace` 中以更结构化的形式出现，应优先消费 `runtimeTrace`。
+ */
+export type PromptAssemblyCompat = {
   memorySummaryInjected: boolean;
   mode: "preset" | "fallback";
   promptIntent: PromptIntent;
   assistantPrefillApplied: boolean;
-  assistantPrefillStrategy: "provider_native" | "assistant_message_fallback" | "unsupported" | "none";
+  assistantPrefillStrategy: "provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none";
   preprocessedUserMessage: string | null;
   presetUsed: boolean;
   regexPostRules: string[];
@@ -285,6 +291,8 @@ export type RespondDryRunAssembly = {
   worldbookHits: number;
   worldbookMatches?: RespondDryRunWorldbookMatchDetail[];
 };
+
+export type RespondDryRunAssembly = PromptAssemblyCompat;
 
 export type RespondDryRunResult = {
   assembly: RespondDryRunAssembly;
@@ -974,6 +982,7 @@ function readAssistantPrefillStrategy(value: unknown): RespondDryRunAssembly["as
   const strategy = readString(value, "none");
   return strategy === "provider_native"
     || strategy === "assistant_message_fallback"
+    || strategy === "transcript_append"
     || strategy === "unsupported"
     || strategy === "none"
     ? strategy

@@ -152,11 +152,6 @@ export interface PromptAssemblySnapshot extends PromptSnapshotPreview {
   userSnapshot?: UserSnapshot;
   persona?: PersonaInfo;
   variables: Record<string, unknown>;
-  macroWarnings?: StMacroWarning[];
-  macroUsedNames: string[];
-  macroMutationPreview?: StMacroMutationPreview[];
-  macroStagedMutations?: StMacroStagedMutation[];
-  macroTraces?: StMacroTraceEntry[];
 }
 
 export interface WorldbookMatchSource {
@@ -223,6 +218,7 @@ export interface PromptSendDirectives {
 export type AssistantPrefillExecutionStrategy =
   | "provider_native"
   | "assistant_message_fallback"
+  | "transcript_append"
   | "unsupported"
   | "none";
 
@@ -242,7 +238,7 @@ export type PromptSourceExclusionReason = CorePromptSourceExclusionReason;
 
 export type PromptRuntimeSourceSelectionTrace = CorePromptRuntimeSourceSelectionTrace;
 
-export type PromptStructureMode = "default" | "strict_alternating" | "no_assistant";
+export type PromptStructureMode = "default" | "strict_alternating" | "no_assistant" | "flattened";
 
 export type PromptStructureAssistantRewriteStrategy = "to_system" | "to_user_transcript";
 
@@ -264,6 +260,24 @@ export interface PromptDeliveryPolicy {
 export interface PromptBudgetPolicy {
   maxInputTokens?: number;
   reservedCompletionTokens?: number;
+}
+
+export interface PromptBudgetGroupPolicy {
+  group: string;
+  minTokens?: number;
+  maxTokens?: number;
+  targetTokens?: number;
+  weight?: number;
+  pruneOrder?: number;
+}
+
+export interface PromptBudgetPolicyV5 extends PromptBudgetPolicy {
+  groups?: PromptBudgetGroupPolicy[];
+}
+
+export interface EffectivePromptBudget {
+  maxInputTokens: number;
+  reservedCompletionTokens: number;
 }
 
 export interface PromptSourceSelectionPolicy {
@@ -314,6 +328,43 @@ export interface PromptRuntimeTrace extends CorePromptRuntimeTrace<WorldbookMatc
   macro?: PromptRuntimeMacroTrace;
 }
 
+export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility">;
+
+export interface PromptRuntimeTraceSeed {
+  worldbookHits: number;
+  regexPreRules: string[];
+  regexPostRules: string[];
+  memorySummaryInjected: boolean;
+  selectedPromptOrderCharacterId: number | null;
+  ignoredPromptOrderCharacterIds: number[];
+  unsupportedPresetFields: string[];
+  ignoredPresetFields: string[];
+  unresolvedPresetMarkers: string[];
+  presetWarnings: string[];
+  continueNudgeApplied: boolean;
+  continueNudgeText?: string;
+  namesBehaviorApplied: "off" | "always";
+  triggerFilteredEntryIds: string[];
+  inChatInsertedEntryIds: string[];
+  worldbookMatches?: WorldbookMatchDetail[];
+  macroWarnings?: StMacroWarning[];
+  macroUsedNames?: string[];
+  macroMutationPreview?: StMacroMutationPreview[];
+  macroStagedMutations?: StMacroStagedMutation[];
+  macroTraces?: StMacroTraceEntry[];
+}
+
+export interface PromptAssemblyCompatSeed {
+  mode: "preset" | "fallback";
+  promptIntent: PromptRunIntent;
+  assistantPrefillApplied: boolean;
+  assistantPrefillStrategy: AssistantPrefillExecutionStrategy;
+  presetUsed: boolean;
+  reservedVariableCollisions: ReservedPromptAlias[];
+}
+
+export interface AssembleDebugInfo extends PromptRuntimeTraceSeed, PromptAssemblyCompatSeed {}
+
 export interface AssembleResult {
   messages: ChatMessage[];
   sendDirectives: PromptSendDirectives;
@@ -325,12 +376,25 @@ export interface AssembleResult {
     bySection?: Record<string, number>;
     byGroup?: Record<string, number>;
     prunedByGroup?: Record<string, number>;
+    allocator?: {
+      estimatedByGroup: Record<string, number>;
+      allocatedByGroup: Record<string, number>;
+      trimReasons: PromptTrimReason[];
+    };
   };
+  runtimeTraceSeed: PromptRuntimeTraceSeed;
+  assemblyCompatSeed: PromptAssemblyCompatSeed;
   debug?: AssembleDebugInfo;
   promptSnapshot: PromptAssemblySnapshot;
 }
 
-export interface AssembleDebugInfo {
+/**
+ * dry-run 对外 `assembly` 兼容层。
+ *
+ * 这层继续保留既有 preset / dry-run 摘要字段，供旧调用方和调试面读取。
+ * 如果同一事实已经在 `runtimeTrace` 中以更结构化的形式出现，应优先消费 `runtimeTrace`。
+ */
+export interface PromptAssemblyCompat {
   mode: "preset" | "fallback";
   promptIntent: PromptRunIntent;
   assistantPrefillApplied: boolean;
@@ -352,24 +416,63 @@ export interface AssembleDebugInfo {
   namesBehaviorApplied: "off" | "always";
   triggerFilteredEntryIds: string[];
   inChatInsertedEntryIds: string[];
+  preprocessedUserMessage?: string;
   worldbookMatches?: WorldbookMatchDetail[];
-  macroWarnings?: StMacroWarning[];
-  macroUsedNames?: string[];
-  macroMutationPreview?: StMacroMutationPreview[];
-  macroStagedMutations?: StMacroStagedMutation[];
-  macroTraces?: StMacroTraceEntry[];
+}
+
+export function buildPromptAssemblyCompat(args: {
+  compatSeed: PromptAssemblyCompatSeed;
+  traceSeed: PromptRuntimeTraceSeed;
+  preprocessedUserMessage?: string;
   runtimeTrace?: PromptRuntimeTrace;
+}): PromptAssemblyCompat {
+  const preset = args.runtimeTrace?.preset;
+  const worldbook = args.runtimeTrace?.worldbook;
+  const regex = args.runtimeTrace?.regex;
+  const memory = args.runtimeTrace?.memory;
+  const delivery = args.runtimeTrace?.delivery;
+
+  return {
+    mode: args.compatSeed.mode,
+    promptIntent: args.compatSeed.promptIntent,
+    assistantPrefillApplied: delivery?.assistantPrefillApplied ?? args.compatSeed.assistantPrefillApplied,
+    assistantPrefillStrategy: delivery?.assistantPrefillStrategy ?? args.compatSeed.assistantPrefillStrategy,
+    presetUsed: args.compatSeed.presetUsed,
+    worldbookHits: worldbook?.hitCount ?? args.traceSeed.worldbookHits,
+    regexPreRules: regex?.userInputRules ?? args.traceSeed.regexPreRules,
+    regexPostRules: regex?.aiOutputRules ?? args.traceSeed.regexPostRules,
+    memorySummaryInjected: memory?.summaryInjected ?? args.traceSeed.memorySummaryInjected,
+    reservedVariableCollisions: args.compatSeed.reservedVariableCollisions,
+    selectedPromptOrderCharacterId: preset?.selectedPromptOrderCharacterId ?? args.traceSeed.selectedPromptOrderCharacterId,
+    ignoredPromptOrderCharacterIds: preset?.ignoredPromptOrderCharacterIds ?? args.traceSeed.ignoredPromptOrderCharacterIds,
+    unsupportedPresetFields: preset?.unsupportedFields ?? args.traceSeed.unsupportedPresetFields,
+    ignoredPresetFields: preset?.ignoredFields ?? args.traceSeed.ignoredPresetFields,
+    unresolvedPresetMarkers: preset?.unresolvedMarkers ?? args.traceSeed.unresolvedPresetMarkers,
+    presetWarnings: preset?.warnings ?? args.traceSeed.presetWarnings,
+    continueNudgeApplied: preset?.continueNudgeApplied ?? args.traceSeed.continueNudgeApplied,
+    continueNudgeText: preset?.continueNudgeText ?? args.traceSeed.continueNudgeText,
+    namesBehaviorApplied: preset?.namesBehaviorApplied ?? args.traceSeed.namesBehaviorApplied,
+    triggerFilteredEntryIds: preset?.triggerFilteredEntryIds ?? args.traceSeed.triggerFilteredEntryIds,
+    inChatInsertedEntryIds: preset?.inChatInsertedEntryIds ?? args.traceSeed.inChatInsertedEntryIds,
+    preprocessedUserMessage: regex?.preprocessedUserMessage ?? args.preprocessedUserMessage,
+    ...(worldbook?.matches !== undefined
+      ? { worldbookMatches: worldbook.matches }
+      : args.traceSeed.worldbookMatches !== undefined
+        ? { worldbookMatches: args.traceSeed.worldbookMatches }
+        : {}),
+  };
 }
 
 export interface AssemblePromptOptions {
   includeDebug?: boolean;
   maxContextTokensOverride?: number;
+  maxOutputTokensOverride?: number;
   variableContext?: PromptVariableContextInput;
   intent?: PromptRunIntent;
   assistantPrefillStrategy?: AssistantPrefillExecutionStrategy;
   includeWorldbookMatchTrace?: boolean;
   runKind?: PromptMacroRunKind;
-  budget?: PromptBudgetPolicy;
+  budget?: PromptBudgetPolicyV5;
   sourceSelection?: PromptSourceSelectionPolicy;
 }
 
@@ -379,6 +482,48 @@ const DEFAULT_MACRO_MAX_DEPTH = 16;
 const DEFAULT_MACRO_MAX_STEPS = 256;
 const DEFAULT_MACRO_MAX_EXPANDED_LENGTH = 32_768;
 const DEFAULT_MACRO_MAX_MUTATION_COUNT = 128;
+
+export function resolveEffectivePromptBudget(args: {
+  budget?: PromptBudgetPolicy;
+  maxContextTokensOverride?: number;
+  maxOutputTokensOverride?: number;
+  defaultMaxContextTokens?: number;
+  defaultReservedCompletionTokens?: number;
+}): EffectivePromptBudget {
+  const policyMaxInputTokens = normalizePositiveInt(args.budget?.maxInputTokens);
+  const baseMaxContextTokens = normalizePositiveInt(args.maxContextTokensOverride)
+    ?? normalizePositiveInt(args.defaultMaxContextTokens)
+    ?? DEFAULT_MAX_TOKENS;
+  const rawReservedCompletionTokens = normalizePositiveInt(args.budget?.reservedCompletionTokens)
+    ?? normalizePositiveInt(args.maxOutputTokensOverride)
+    ?? normalizePositiveInt(args.defaultReservedCompletionTokens)
+    ?? 0;
+
+  if (policyMaxInputTokens !== undefined) {
+    return {
+      maxInputTokens: policyMaxInputTokens,
+      reservedCompletionTokens: rawReservedCompletionTokens,
+    };
+  }
+
+  const reservedCompletionTokens = Math.min(rawReservedCompletionTokens, baseMaxContextTokens);
+  return {
+    maxInputTokens: Math.max(0, baseMaxContextTokens - reservedCompletionTokens),
+    reservedCompletionTokens,
+  };
+}
+
+function resolveExplicitPromptBudgetGroupPolicies(
+  budget?: PromptBudgetPolicyV5,
+): PromptBudgetGroupPolicy[] | undefined {
+  const groups = budget?.groups;
+  if (!groups || groups.length === 0) {
+    return undefined;
+  }
+
+  // Budget allocator 仍保持显式启用，避免在默认运行路径中悄然引入新的保留策略。
+  return groups;
+}
 
 export async function assemblePrompt(
   db: AppDb,
@@ -410,6 +555,13 @@ export async function assemblePrompt(
     context: options.variableContext,
   });
   const runKind = resolvePromptRunKind(options);
+  const effectiveBudget = resolveEffectivePromptBudget({
+    budget: options.budget,
+    maxContextTokensOverride: options.maxContextTokensOverride,
+    maxOutputTokensOverride: options.maxOutputTokensOverride,
+    defaultMaxContextTokens: preset?.preset.maxContext,
+    defaultReservedCompletionTokens: preset?.preset.maxTokens,
+  });
 
   const fullHistory = buildFullHistory(chatHistory, userMessage);
   const compatHistory = fullHistory.filter((message) => message.role === "user" || message.role === "assistant");
@@ -428,7 +580,7 @@ export async function assemblePrompt(
     ordinaryVariables,
     variableSnapshot,
     memorySummary,
-    maxPrompt: normalizePositiveInt(options.maxContextTokensOverride) ?? DEFAULT_MAX_TOKENS,
+    maxPrompt: effectiveBudget.maxInputTokens,
     runKind,
   });
   const macroPhase = runKind === "dry_run" ? "dry_run" : "assemble";
@@ -488,11 +640,6 @@ export async function assemblePrompt(
     userSnapshot,
     persona,
     variables: promptVariables,
-    macroUsedNames: aggregatedMacroUsedNames,
-    macroWarnings: aggregatedMacroWarnings,
-    macroMutationPreview: aggregatedMacroMutationPreview,
-    macroStagedMutations: aggregatedMacroStagedMutations,
-    macroTraces: aggregatedMacroTraces,
     presetId: preset?.id ?? null,
     presetUpdatedAt: preset?.updatedAt ?? null,
     presetVersion: preset?.version ?? null,
@@ -513,9 +660,9 @@ export async function assemblePrompt(
   const enabledRegexScripts = promptSnapshot.regexProfile?.scripts ?? [];
 
   let messages: ChatMessage[];
-  let maxPromptTokens = normalizePositiveInt(options.maxContextTokensOverride) ?? DEFAULT_MAX_TOKENS;
+  let maxPromptTokens = effectiveBudget.maxInputTokens + effectiveBudget.reservedCompletionTokens;
   const promptIntent = options.intent ?? "normal";
-  let mode: AssembleDebugInfo["mode"] = "fallback";
+  let mode: PromptAssemblyCompatSeed["mode"] = "fallback";
   let worldbookHits = 0;
   let worldBookResults: PromptWorldbookTriggerResult | undefined;
   let worldbookMatches: WorldbookMatchDetail[] | undefined;
@@ -523,6 +670,7 @@ export async function assemblePrompt(
   let tokenUsageBySection: Record<string, number> | undefined;
   let tokenUsageByGroup: Record<string, number> | undefined;
   let prunedTokenUsageByGroup: Record<string, number> | undefined;
+  let allocatorTokenUsage: AssembleResult["tokenUsage"]["allocator"] | undefined;
   let memorySummaryHandledInPromptIR = false;
 
   const presetData = promptSnapshot.preset?.preset ?? null;
@@ -616,8 +764,8 @@ export async function assemblePrompt(
             worldbookEntries: toPromptGraphWorldbookEntries(worldBookResults),
             exampleDialogue: promptSnapshot.character?.exampleDialogue,
             memorySummary,
-            maxTokens: normalizePositiveInt(options.maxContextTokensOverride) ?? presetData.maxContext,
-            reservedForReply: presetData.maxTokens,
+            maxTokens: effectiveBudget.maxInputTokens + effectiveBudget.reservedCompletionTokens,
+            reservedForReply: effectiveBudget.reservedCompletionTokens,
             tokenCounter,
           },
         )
@@ -632,20 +780,32 @@ export async function assemblePrompt(
     const builder = new MessageBuilder(tokenCounter, {
       mergeAdjacentSameRole: true,
     });
-    const assembled = builder.build(promptIR);
+    const budgetedPromptIr = {
+      ...promptIR,
+      metadata: {
+        ...promptIR.metadata,
+        maxTokens: effectiveBudget.maxInputTokens + effectiveBudget.reservedCompletionTokens,
+        reservedForReply: effectiveBudget.reservedCompletionTokens,
+      },
+    };
+    const explicitBudgetGroupPolicies = resolveExplicitPromptBudgetGroupPolicies(options.budget);
+    const assembled = builder.build(budgetedPromptIr, {
+      groupPolicies: explicitBudgetGroupPolicies,
+    });
     const assembledBudgetUsage = assembled.tokenUsage as typeof assembled.tokenUsage & {
       byGroup?: Record<string, number>;
       prunedByGroup?: Record<string, number>;
     };
 
     messages = assembled.messages;
-    maxPromptTokens = promptIR.metadata.maxTokens;
+    maxPromptTokens = budgetedPromptIr.metadata.maxTokens;
     tokenUsageBySection = assembledBudgetUsage.bySection;
     tokenUsageByGroup = assembledBudgetUsage.byGroup;
     prunedTokenUsageByGroup = assembledBudgetUsage.prunedByGroup;
+    allocatorTokenUsage = assembledBudgetUsage.allocator;
     mode = "preset";
   } else {
-    maxPromptTokens = normalizePositiveInt(options.maxContextTokensOverride) ?? DEFAULT_MAX_TOKENS;
+    maxPromptTokens = effectiveBudget.maxInputTokens + effectiveBudget.reservedCompletionTokens;
     messages = buildFallbackMessages(fullHistory, promptSnapshot.character, persona);
   }
 
@@ -709,19 +869,11 @@ export async function assemblePrompt(
   promptSnapshot.promptDigest = createPromptDigest(messages);
   promptSnapshot.tokenEstimate = tokenEstimate;
 
-  const debug: AssembleDebugInfo | undefined = options.includeDebug
-    ? {
-        mode,
-        promptIntent,
-        runtimeTrace: undefined,
-        assistantPrefillApplied: shouldMarkAssistantPrefillApplied(assistantPrefillStrategy),
-        assistantPrefillStrategy,
-        presetUsed: presetData !== null,
+  const runtimeTraceSeed: PromptRuntimeTraceSeed = {
         worldbookHits,
         regexPreRules: promptSnapshot.regexPreRuleNames,
         regexPostRules: promptSnapshot.regexPostRuleNames,
         memorySummaryInjected: Boolean(memorySummary),
-        reservedVariableCollisions,
         selectedPromptOrderCharacterId: 100000,
         ignoredPromptOrderCharacterIds: [],
         unsupportedPresetFields: [],
@@ -734,11 +886,26 @@ export async function assemblePrompt(
         triggerFilteredEntryIds: presetData ? collectTriggerFilteredEntryIds(presetData, promptIntent) : [],
         inChatInsertedEntryIds: presetData ? collectInChatInsertedEntryIds(presetData, promptIntent) : [],
         ...(worldbookMatches ? { worldbookMatches } : {}),
-        macroWarnings: promptSnapshot.macroWarnings,
-        macroUsedNames: promptSnapshot.macroUsedNames,
-        macroMutationPreview: promptSnapshot.macroMutationPreview,
-        macroStagedMutations: promptSnapshot.macroStagedMutations,
-        macroTraces: promptSnapshot.macroTraces,
+        macroWarnings: aggregatedMacroWarnings,
+        macroUsedNames: aggregatedMacroUsedNames,
+        macroMutationPreview: aggregatedMacroMutationPreview,
+        macroStagedMutations: aggregatedMacroStagedMutations,
+        macroTraces: aggregatedMacroTraces,
+      };
+
+  const assemblyCompatSeed: PromptAssemblyCompatSeed = {
+    mode,
+    promptIntent,
+    assistantPrefillApplied: shouldMarkAssistantPrefillApplied(assistantPrefillStrategy),
+    assistantPrefillStrategy,
+    presetUsed: presetData !== null,
+    reservedVariableCollisions,
+  };
+
+  const debug: AssembleDebugInfo | undefined = options.includeDebug
+    ? {
+        ...runtimeTraceSeed,
+        ...assemblyCompatSeed,
       }
     : undefined;
 
@@ -752,8 +919,11 @@ export async function assemblePrompt(
       ...(tokenUsageBySection ? { bySection: tokenUsageBySection } : {}),
       ...(tokenUsageByGroup ? { byGroup: tokenUsageByGroup } : {}),
       ...(prunedTokenUsageByGroup ? { prunedByGroup: prunedTokenUsageByGroup } : {}),
+      ...(allocatorTokenUsage ? { allocator: allocatorTokenUsage } : {}),
       availableForReply,
     },
+    runtimeTraceSeed,
+    assemblyCompatSeed,
     debug,
     promptSnapshot,
   };
@@ -1415,6 +1585,22 @@ export function applyPromptStructurePolicy(
   let assistantRewriteCount = 0;
   let nextMessages = preserveSystemMessages ? [...messages] : messages.filter((message) => message.role !== "system");
 
+  if (policy.mode === "flattened") {
+    const { messages: flattenedMessages, transcriptMessageCount } = flattenPromptStructureMessages(nextMessages, mergeAdjacentSameRole);
+    return {
+      messages: flattenedMessages,
+      trace: {
+        mode: policy.mode,
+        mergeAdjacentSameRole,
+        assistantRewriteCount,
+        tailAssistantDetected: hasTrailingAssistantMessage(flattenedMessages),
+        transcriptized: true,
+        transcriptMessageCount,
+        assistantPrefillTranscriptized: false,
+      },
+    };
+  }
+
   if (policy.mode === "no_assistant") {
     nextMessages = nextMessages.map((message) => {
       if (message.role !== "assistant") {
@@ -1453,8 +1639,9 @@ export function materializePromptRuntimeMessages(
   const noAssistant = deliveryPolicy?.noAssistant ?? false;
   const degradeReasons: PromptDeliveryDegradeReason[] = [];
   const effectiveStructurePolicy = resolveEffectiveStructurePolicy(args.structurePolicy, deliveryPolicy);
+  const flattenedTranscriptMode = effectiveStructurePolicy?.mode === "flattened";
   const structureSuppressesAssistantPrefill = effectiveStructurePolicy?.mode === "no_assistant";
-  if (noAssistant && args.structurePolicy?.mode !== "no_assistant") {
+  if (noAssistant && args.structurePolicy?.mode !== "no_assistant" && args.structurePolicy?.mode !== "flattened") {
     degradeReasons.push("no_assistant_override");
   }
 
@@ -1464,31 +1651,48 @@ export function materializePromptRuntimeMessages(
   let effectiveAssistantPrefillStrategy: AssistantPrefillExecutionStrategy = assistantPrefillRequested
     ? args.assistantPrefillStrategy
     : "none";
-  if (assistantPrefillRequested && effectiveAssistantPrefillStrategy === "unsupported") {
-    degradeReasons.push("assistant_prefill_unsupported");
-  }
-  if (assistantPrefillRequested && (structureSuppressesAssistantPrefill || noAssistant || !allowAssistantPrefill)) {
-    if (!structureSuppressesAssistantPrefill && !noAssistant && !allowAssistantPrefill) {
+  if (assistantPrefillRequested && flattenedTranscriptMode) {
+    if (!allowAssistantPrefill) {
       degradeReasons.push("assistant_prefill_disabled");
+      effectiveAssistantPrefillStrategy = "none";
+    } else {
+      effectiveAssistantPrefillStrategy = "transcript_append";
     }
-    effectiveAssistantPrefillStrategy = "none";
-  }
-  if (assistantPrefillRequested && requireLastUser && effectiveAssistantPrefillStrategy === "assistant_message_fallback") {
-    degradeReasons.push("require_last_user");
-    effectiveAssistantPrefillStrategy = "none";
+  } else {
+    if (assistantPrefillRequested && effectiveAssistantPrefillStrategy === "unsupported") {
+      degradeReasons.push("assistant_prefill_unsupported");
+    }
+    if (assistantPrefillRequested && (structureSuppressesAssistantPrefill || noAssistant || !allowAssistantPrefill)) {
+      if (!structureSuppressesAssistantPrefill && !noAssistant && !allowAssistantPrefill) {
+        degradeReasons.push("assistant_prefill_disabled");
+      }
+      effectiveAssistantPrefillStrategy = "none";
+    }
+    if (assistantPrefillRequested && requireLastUser && effectiveAssistantPrefillStrategy === "assistant_message_fallback") {
+      degradeReasons.push("require_last_user");
+      effectiveAssistantPrefillStrategy = "none";
+    }
   }
   const materializeAssistantPrefillFallback = args.materializeAssistantPrefillFallback ?? true;
   const baseMessages = structured?.messages ?? args.messages;
-  const messages = materializeAssistantPrefillFallback
+  const structureTrace = structured?.trace ? { ...structured.trace } : undefined;
+  let messages = materializeAssistantPrefillFallback
     ? materializePromptSendMessages(baseMessages, args.sendDirectives, effectiveAssistantPrefillStrategy)
-    : baseMessages;
+    : baseMessages.map((message) => ({ ...message }));
+  if (assistantPrefillRequested && effectiveAssistantPrefillStrategy === "transcript_append") {
+    messages = materializePromptTranscriptMessages(messages, args.sendDirectives);
+    if (structureTrace?.mode === "flattened") {
+      structureTrace.assistantPrefillTranscriptized = true;
+      structureTrace.transcriptMessageCount = (structureTrace.transcriptMessageCount ?? 0) + 1;
+    }
+  }
   const lastMessageRole = resolveLastConversationRole(messages);
   const assistantPrefillApplied = assistantPrefillRequested
     && shouldMarkAssistantPrefillApplied(effectiveAssistantPrefillStrategy);
 
   return {
     messages,
-    ...(structured ? { structureTrace: structured.trace } : {}),
+    ...(structureTrace ? { structureTrace } : {}),
     deliveryTrace: {
       assistantPrefillRequested,
       assistantPrefillApplied,
@@ -1525,6 +1729,65 @@ export function materializePromptSendMessages(
   ];
 }
 
+function flattenPromptStructureMessages(
+  messages: ChatMessage[],
+  mergeAdjacentSameRole: boolean,
+): { messages: ChatMessage[]; transcriptMessageCount: number } {
+  const systemMessages = messages
+    .filter((message) => message.role === "system")
+    .map((message) => ({ ...message }));
+  const conversationMessages = messages
+    .filter((message) => message.role !== "system")
+    .map((message) => ({ ...message }));
+  const transcriptMessages = mergeAdjacentSameRole
+    ? mergeAdjacentPromptMessages(conversationMessages)
+    : conversationMessages;
+  const transcriptText = buildFlattenedTranscriptText(transcriptMessages);
+
+  return {
+    messages: transcriptText.length > 0
+      ? [...systemMessages, { role: "user", content: transcriptText }]
+      : systemMessages,
+    transcriptMessageCount: transcriptMessages.length,
+  };
+}
+
+function buildFlattenedTranscriptText(messages: ChatMessage[]): string {
+  return messages.map((message) => formatFlattenedTranscriptLine(message.role, message.content)).join("\n");
+}
+
+function formatFlattenedTranscriptLine(role: ChatMessage["role"], content: string): string {
+  return `${role === "assistant" ? "Assistant" : "User"}: ${content}`;
+}
+
+function materializePromptTranscriptMessages(
+  messages: ChatMessage[],
+  sendDirectives: PromptSendDirectives,
+): ChatMessage[] {
+  const assistantPrefill = sendDirectives.assistantPrefill?.trim();
+  if (!assistantPrefill) {
+    return messages;
+  }
+
+  const nextMessages = messages.map((message) => ({ ...message }));
+  const transcriptLine = formatFlattenedTranscriptLine("assistant", assistantPrefill);
+  for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
+    if (nextMessages[index]?.role !== "user") {
+      continue;
+    }
+
+    nextMessages[index] = {
+      role: "user",
+      content: nextMessages[index]!.content.length > 0
+        ? `${nextMessages[index]!.content}\n${transcriptLine}`
+        : transcriptLine,
+    };
+    return nextMessages;
+  }
+
+  return [...nextMessages, { role: "user", content: transcriptLine }];
+}
+
 function rewriteAssistantStructureMessage(
   message: ChatMessage,
   strategy: PromptStructureAssistantRewriteStrategy,
@@ -1559,6 +1822,9 @@ function resolveEffectiveStructurePolicy(
   structurePolicy: PromptStructurePolicy | undefined,
   deliveryPolicy: PromptDeliveryPolicy | undefined,
 ): PromptStructurePolicy | undefined {
+  if (structurePolicy?.mode === "flattened" || structurePolicy?.mode === "no_assistant") {
+    return structurePolicy;
+  }
   if (deliveryPolicy?.noAssistant !== true) {
     return structurePolicy;
   }
@@ -1592,7 +1858,7 @@ function resolveLastConversationRole(messages: ChatMessage[]): ChatMessage["role
 }
 
 function shouldMarkAssistantPrefillApplied(strategy: AssistantPrefillExecutionStrategy): boolean {
-  return strategy === "provider_native" || strategy === "assistant_message_fallback";
+  return strategy === "provider_native" || strategy === "assistant_message_fallback" || strategy === "transcript_append";
 }
 
 function shouldIncludePromptEntryForIntent(promptEntry: { behavior?: { triggers?: PromptRunIntent[] } } | undefined, intent: PromptRunIntent): boolean {
@@ -1868,11 +2134,15 @@ export function buildPromptSnapshotRecord(args: {
 
 export function buildPromptRuntimeBudgetTrace(args: {
   byGroup?: Record<string, number>;
+  estimatedByGroup?: Record<string, number>;
+  allocatedByGroup?: Record<string, number>;
   prunedByGroup?: Record<string, number>;
   trimReasons?: PromptTrimReason[];
 }): PromptRuntimeBudgetTrace | undefined {
   const groups = new Set<string>([
     ...Object.keys(args.byGroup ?? {}),
+    ...Object.keys(args.estimatedByGroup ?? {}),
+    ...Object.keys(args.allocatedByGroup ?? {}),
     ...Object.keys(args.prunedByGroup ?? {}),
   ]);
 
@@ -1887,6 +2157,8 @@ export function buildPromptRuntimeBudgetTrace(args: {
       .map((group) => ({
         group,
         tokenCount: args.byGroup?.[group] ?? 0,
+        ...(args.estimatedByGroup?.[group] !== undefined ? { estimatedTokenCount: args.estimatedByGroup[group] } : {}),
+        ...(args.allocatedByGroup?.[group] !== undefined ? { allocatedTokenCount: args.allocatedByGroup[group] } : {}),
         ...(args.prunedByGroup?.[group] !== undefined ? { prunedTokenCount: args.prunedByGroup[group] } : {}),
       })),
   };
@@ -1952,57 +2224,44 @@ function buildPromptRuntimeMacroTrace(args: {
   };
 }
 
-
 export function buildPromptRuntimeTrace(args: {
-  debug: AssembleDebugInfo;
+  traceSeed: PromptRuntimeTraceSeed;
   preprocessedUserMessage?: string;
 }): PromptRuntimeTrace {
   const macro = buildPromptRuntimeMacroTrace({
-    warnings: args.debug.macroWarnings,
-    usedNames: args.debug.macroUsedNames,
-    mutationPreview: args.debug.macroMutationPreview,
-    stagedMutations: args.debug.macroStagedMutations,
-    traces: args.debug.macroTraces,
+    warnings: args.traceSeed.macroWarnings,
+    usedNames: args.traceSeed.macroUsedNames,
+    mutationPreview: args.traceSeed.macroMutationPreview,
+    stagedMutations: args.traceSeed.macroStagedMutations,
+    traces: args.traceSeed.macroTraces,
   });
 
   return {
     preset: {
-      selectedPromptOrderCharacterId: args.debug.selectedPromptOrderCharacterId,
-      ignoredPromptOrderCharacterIds: args.debug.ignoredPromptOrderCharacterIds,
-      unsupportedFields: args.debug.unsupportedPresetFields,
-      ignoredFields: args.debug.ignoredPresetFields,
-      unresolvedMarkers: args.debug.unresolvedPresetMarkers,
-      warnings: args.debug.presetWarnings,
-      triggerFilteredEntryIds: args.debug.triggerFilteredEntryIds,
-      inChatInsertedEntryIds: args.debug.inChatInsertedEntryIds,
-      continueNudgeApplied: args.debug.continueNudgeApplied,
-      continueNudgeText: args.debug.continueNudgeText,
-      namesBehaviorApplied: args.debug.namesBehaviorApplied,
+      selectedPromptOrderCharacterId: args.traceSeed.selectedPromptOrderCharacterId,
+      ignoredPromptOrderCharacterIds: args.traceSeed.ignoredPromptOrderCharacterIds,
+      unsupportedFields: args.traceSeed.unsupportedPresetFields,
+      ignoredFields: args.traceSeed.ignoredPresetFields,
+      unresolvedMarkers: args.traceSeed.unresolvedPresetMarkers,
+      warnings: args.traceSeed.presetWarnings,
+      triggerFilteredEntryIds: args.traceSeed.triggerFilteredEntryIds,
+      inChatInsertedEntryIds: args.traceSeed.inChatInsertedEntryIds,
+      continueNudgeApplied: args.traceSeed.continueNudgeApplied,
+      continueNudgeText: args.traceSeed.continueNudgeText,
+      namesBehaviorApplied: args.traceSeed.namesBehaviorApplied,
     },
     worldbook: {
-      hitCount: args.debug.worldbookHits,
-      ...(args.debug.worldbookMatches ? { matches: args.debug.worldbookMatches } : {}),
+      hitCount: args.traceSeed.worldbookHits,
+      ...(args.traceSeed.worldbookMatches ? { matches: args.traceSeed.worldbookMatches } : {}),
     },
     regex: {
-      userInputRules: args.debug.regexPreRules,
-      aiOutputRules: args.debug.regexPostRules,
+      userInputRules: args.traceSeed.regexPreRules,
+      aiOutputRules: args.traceSeed.regexPostRules,
       preprocessedUserMessage: args.preprocessedUserMessage,
     },
     memory: {
-      summaryInjected: args.debug.memorySummaryInjected,
+      summaryInjected: args.traceSeed.memorySummaryInjected,
     },
     ...(macro ? { macro } : {}),
-    delivery: {
-      assistantPrefillRequested: args.debug.assistantPrefillStrategy !== "none",
-      assistantPrefillApplied: args.debug.assistantPrefillApplied,
-      assistantPrefillStrategy: args.debug.assistantPrefillStrategy,
-      allowAssistantPrefill: true,
-      requireLastUser: false,
-      noAssistant: false,
-      lastMessageRole: null,
-      endsWithUser: false,
-      degraded: false,
-      degradeReasons: [],
-    },
   };
 }

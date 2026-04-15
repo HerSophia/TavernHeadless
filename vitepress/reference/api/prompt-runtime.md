@@ -29,7 +29,7 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 - preview 不走 LLM、不创建 floor、不写 `prompt_snapshot`、不提交副作用。
 - `GET /sessions/:id/prompt-runtime` 的 `branch_id` 只面向**已物化 branch**；未物化或不存在的 branch 返回 `404 branch_not_found`。
 - branch policy 只面向**已物化 branch**；当前不支持对未物化 branch 预写入 policy。
-- session policy 与 branch policy 现在都支持持久化治理 `structure`、`delivery`、`budget`、`source_selection`。
+- session policy 与 branch policy 现在都支持持久化治理 `structure`、`delivery`、`budget`、`source_selection`、`visibility`。
 - session / branch 持久化策略写入后统一使用 envelope：`{ version, updated_at, updated_by, value }`；读取侧继续兼容旧的 bare object metadata。
 - live 聊天链在成功越过 commit 边界后，会把 `prompt_runtime_explain_snapshot` 与 assistant message、floor state、`prompt_snapshot`、committed result 等真相一起写入同一同步事务。
 - `GET /floors/:id/prompt-runtime/explain` 与 `POST /sessions/:id/prompt-runtime/compare` 只读取 committed truth，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。
@@ -55,7 +55,7 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `mode` | string | `default` / `strict_alternating` / `no_assistant` |
+| `mode` | string | `default` / `strict_alternating` / `no_assistant` / `flattened` |
 | `merge_adjacent_same_role` | boolean | 是否合并相邻同角色消息 |
 | `preserve_system_messages` | boolean | 是否保留 system 消息 |
 | `assistant_rewrite_strategy` | string | 可选。`to_system` / `to_user_transcript` |
@@ -98,7 +98,7 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `structure` | object | 可选。session 级持久化结构策略 |
-| `structure.mode` | string | `default` / `strict_alternating` / `no_assistant`。当前结构对象存在时必填 |
+| `structure.mode` | string | `default` / `strict_alternating` / `no_assistant` / `flattened`。当前结构对象存在时必填 |
 | `structure.merge_adjacent_same_role` | boolean | 可选 |
 | `structure.assistant_rewrite_strategy` | string | 可选。`to_system` / `to_user_transcript` |
 | `structure.preserve_system_messages` | boolean | 可选 |
@@ -181,7 +181,7 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `diagnostics[].field_path` | string | 可选。命中的字段路径 |
 | `diagnostics[].phase` | string | 可选。当前 control plane 读取通常省略；preview / explain 场景会返回显式 phase |
 | `limitations` | string[] | 当前已知边界摘要，例如 memory 仍不具备 branch 隔离、`variableCommit` 仍只做 `page -> floor` |
-| `source_map` | object | 可选。当前已覆盖 `structure` / `delivery` / `budget` / `source_selection` / `debug` 的来源解释，以及 `history.source_branch_id` / `history.source_mode` |
+| `source_map` | object | 可选。当前已覆盖 `structure` / `delivery` / `budget` / `source_selection` / `visibility` / `debug` 的来源解释，以及 `history.source_branch_id` / `history.source_mode` |
 
 ### PolicyView
 
@@ -209,7 +209,7 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `source_selection.defaults` | [SourceSelectionPolicy](#sourceselectionpolicy) | 当前正式 source selection 默认值 |
 | `source_selection.request_override_supported` | boolean | 当前是否支持 request 级 source selection override |
 | `source_selection.persistent_patch_supported` | boolean | 当前是否支持持久化 PATCH 写入 source selection |
-| `source_selection.supported_sources` | string[] | 当前支持的 source selection 来源 |
+| `source_selection.supported_sources` | string[] | 当前支持的公开 source selection 来源。内部 budget group label（如 `section:*`）不会出现在这里 |
 | `source_selection.history_modes` | string[] | 当前支持的 history mode |
 | `source_selection.exclusion_reason_codes` | string[] | 当前支持的 exclusion reason code |
 | `governance.session.envelope_metadata` | boolean | session policy 是否带 envelope 元数据 |
@@ -626,7 +626,7 @@ PATCH /sessions/:id/prompt-runtime/policy
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
 | `structure` | object \| null | 否 | session 级结构策略。传 `null` 表示清空 |
-| `structure.mode` | string | 条件必填 | 当 `structure` 为对象时必填：`default` / `strict_alternating` / `no_assistant` |
+| `structure.mode` | string | 条件必填 | 当 `structure` 为对象时必填：`default` / `strict_alternating` / `no_assistant` / `flattened` |
 | `structure.merge_adjacent_same_role` | boolean | 否 | 可选覆盖 |
 | `structure.assistant_rewrite_strategy` | string | 否 | `to_system` / `to_user_transcript` |
 | `structure.preserve_system_messages` | boolean | 否 | 可选覆盖 |
@@ -644,7 +644,7 @@ PATCH /sessions/:id/prompt-runtime/policy
 | `source_selection.worldbook.enabled` | boolean | 否 | 是否允许 worldbook 进入 prompt |
 | `source_selection.examples.enabled` | boolean | 否 | 是否允许 example dialogue 进入 prompt |
 
-至少需要提供 `structure`、`delivery`、`budget`、`source_selection` 其中一个。
+至少需要提供 `structure`、`delivery`、`budget`、`source_selection`、`visibility` 其中一个。
 
 ### 请求示例
 
@@ -992,6 +992,7 @@ POST /sessions/:id/prompt-runtime/preview
 - 不创建 floor
 - 不写 `prompt_snapshot`
 - 不提交副作用
+- 返回的 `runtime_trace` 当前只投影 `macro`、`source_selection`、`visibility`
 - 宏诊断继续统一走 `runtime_trace.macro`
 
 ### 路径参数
@@ -1073,6 +1074,12 @@ POST /sessions/:id/prompt-runtime/preview
         "worldbook": { "enabled": true },
         "examples": { "enabled": false }
       },
+      "visibility": {
+        "mode": "allow_all_except_hidden",
+        "hidden_floor_ranges": [
+          { "start_floor_no": 1, "end_floor_no": 2 }
+        ]
+      },
       "debug": {
         "include_prompt_snapshot": false,
         "include_runtime_trace": false,
@@ -1103,6 +1110,10 @@ POST /sessions/:id/prompt-runtime/preview
         "memory": { "enabled": "system_default" },
         "worldbook": { "enabled": "system_default" },
         "examples": { "enabled": "request_override" }
+      },
+      "visibility": {
+        "mode": "request_override",
+        "hidden_floor_ranges": "request_override"
       },
       "history": { "source_branch_id": "fork-branch", "source_mode": "source_floor_branch" }
     },
@@ -1194,6 +1205,7 @@ POST /sessions/:id/prompt-runtime/preview
 - 如果 `branch_id` 尚未物化，preview 仍然允许执行，但 `scope.branch_exists` 会返回 `false`，并在 `diagnostics` 中追加 branch pending 类提示；此时 branch policy overlay 不会生效。
 - preview 也支持 v3.3 的 shorthand 写入子集与稳定 alias；`raw_text` 保留原始写法，`macro_name` 继续记录 canonical 宏名。
 - `runtime_trace.macro.staged_mutations` 在 preview 中固定为空；如果需要查看完整 prompt 组装结果，请使用 `POST /sessions/:id/respond/dry-run`。
+- request 级 `budget` / `structure` / `delivery` 当前仍会参与 control-plane 解析和 `policy` / `source_map` 回显，但不会把 `runtime_trace.budgets`、`runtime_trace.structure`、`runtime_trace.delivery` 投影到 preview 响应里。
 
 - v3 Phase 2 首轮里，preview 的 `runtime_trace.source_selection.excluded_sources` 只覆盖它当前真正参与的解释面：可见 history 与 memory summary。
 - 世界书、examples、group-level trim 的完整解释结果仍以 `POST /sessions/:id/respond/dry-run` 为主。
@@ -1242,6 +1254,7 @@ GET /floors/:id/prompt-runtime/explain
 - 不重新组装 prompt
 - 不重新展开宏
 - 不重新计算 budget / source selection
+- committed explain snapshot 只持久化 explain 所需子集；`limitations` 继续停留在 explain 返回面，不进入 committed snapshot
 
 ### 路径参数
 
@@ -1333,6 +1346,12 @@ GET /floors/:id/prompt-runtime/explain
         "worldbook": { "enabled": true },
         "examples": { "enabled": false }
       },
+      "visibility": {
+        "mode": "allow_all_except_hidden",
+        "hidden_floor_ranges": [
+          { "start_floor_no": 1, "end_floor_no": 2 }
+        ]
+      },
       "debug": {
         "include_prompt_snapshot": false,
         "include_runtime_trace": false,
@@ -1364,6 +1383,10 @@ GET /floors/:id/prompt-runtime/explain
         "worldbook": { "enabled": "system_default" },
         "examples": { "enabled": "request_override" }
       },
+      "visibility": {
+        "mode": "session_policy",
+        "hidden_floor_ranges": "session_policy"
+      },
       "history": {
         "source_branch_id": "main",
         "source_mode": "existing_branch"
@@ -1371,9 +1394,9 @@ GET /floors/:id/prompt-runtime/explain
     },
     "trim_reasons": [
       {
-        "group": "history",
+        "group": "section:main",
         "reason": "budget_exceeded",
-        "detail": "Prompt runtime pruned 128 tokens from budget group 'history'.",
+        "detail": "Prompt runtime pruned 128 tokens from budget group 'section:main'.",
         "pruned_token_count": 128
       }
     ],
@@ -1390,7 +1413,7 @@ GET /floors/:id/prompt-runtime/explain
         "token_count": 320
       },
       {
-        "section_name": "worldbook",
+        "section_name": "main",
         "token_count": 96
       }
     ],
@@ -1436,6 +1459,8 @@ GET /floors/:id/prompt-runtime/explain
 - `excluded_sources = null`
 - `section_stats = null`
 - `source_map` 只保留 `history` 子对象
+- `trim_reasons[].group` 这类 budget group 标签也不会被重算
+- `excluded_sources[].source` 继续只停留在公开 source kind 层，不会因为内部 group label 而扩展
 - `diagnostics` 会说明 `historical_snapshot_unavailable` 等原因
 - `limitations` 会明确说明没有做 explain recompute
 
@@ -1534,16 +1559,50 @@ POST /sessions/:id/prompt-runtime/compare
     "scope_changes": [],
     "policy_changes": [
       {
-        "path": "policy.resolved_policy.delivery.no_assistant",
+        "path": "policy.resolved_policy.budget.max_input_tokens",
         "change_type": "changed",
-        "left": false,
-        "right": true
+        "left": 4096,
+        "right": 2048
+      },
+      {
+        "path": "policy.resolved_policy.visibility.mode",
+        "change_type": "changed",
+        "left": "allow_all_except_hidden",
+        "right": "deny_all_except_visible"
+      },
+      {
+        "path": "policy.source_map.visibility.mode",
+        "change_type": "changed",
+        "left": "session_policy",
+        "right": "request_override"
       }
     ],
     "asset_changes": [],
     "diagnostics_changes": [],
-    "trim_changes": [],
-    "exclusion_changes": [],
+    "trim_changes": [
+      {
+        "path": "trim_reasons",
+        "change_type": "changed",
+        "left": [
+          { "group": "section:main", "reason": "group_limit_exceeded", "pruned_token_count": 32 }
+        ],
+        "right": [
+          { "group": "section:main", "reason": "group_limit_exceeded", "pruned_token_count": 64 }
+        ]
+      }
+    ],
+    "exclusion_changes": [
+      {
+        "path": "excluded_sources",
+        "change_type": "changed",
+        "left": [
+          { "source": "history", "reason": "visibility_filtered" }
+        ],
+        "right": [
+          { "source": "examples", "reason": "disabled_by_policy" }
+        ]
+      }
+    ],
     "limitations": []
   }
 }
@@ -1555,6 +1614,7 @@ POST /sessions/:id/prompt-runtime/compare
 - 不支持 preview 与 committed floor 混合比较。
 - 差异项是结构化 path/value diff，不是全文级 diff。
 - `path` 固定使用 `snake_case`。
+- `policy_changes` 会同时覆盖 `resolved_policy` 与 `source_map`，因此 budget 和 visibility 的变化也会出现在这里；budget trim 与 source exclusion 的变化分别出现在 `trim_changes` 与 `exclusion_changes`。
 - 如果某一侧缺少 committed snapshot，会把对应侧的 `snapshot_available` 置为 `false`，并在 `limitations` 中说明 compare 因缺 snapshot 而跳过了 recompute。
 
 ### 常见错误
@@ -1591,7 +1651,7 @@ GET /prompt-runtime/capabilities
 {
   "data": {
     "structure": {
-      "modes": ["default", "strict_alternating", "no_assistant"],
+      "modes": ["default", "strict_alternating", "no_assistant", "flattened"],
       "defaults": {
         "mode": "default",
         "merge_adjacent_same_role": false,
@@ -1630,14 +1690,14 @@ GET /prompt-runtime/capabilities
         "envelope_metadata": true,
         "null_clears_field": true,
         "object_patch": "deep_merge",
-        "supported_fields": ["structure", "delivery", "budget", "sourceSelection"]
+        "supported_fields": ["structure", "delivery", "budget", "sourceSelection", "visibility"]
       },
       "branch": {
         "envelope_metadata": true,
         "materialized_branches_only": true,
         "null_clears_field": true,
         "object_patch": "deep_merge",
-        "supported_fields": ["structure", "delivery", "budget", "sourceSelection"]
+        "supported_fields": ["structure", "delivery", "budget", "sourceSelection", "visibility"]
       }
     },
     "compare": {
@@ -1708,6 +1768,8 @@ GET /prompt-runtime/capabilities
   }
 }
 ```
+
+`supported_sources` 与 `excluded_sources[].source` 继续只承诺公开 source kind。像 `section:main` 这样的具体标签只会出现在 budget group / trim reason 路径中。
 
 ### 常见错误
 

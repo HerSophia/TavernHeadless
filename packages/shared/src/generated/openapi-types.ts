@@ -8939,6 +8939,15 @@ export interface operations {
                      *             "merge_adjacent_same_role": true,
                      *             "mode": "no_assistant",
                      *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "result": {
@@ -8970,7 +8979,7 @@ export interface operations {
                      *             "token_count": 320
                      *           },
                      *           {
-                     *             "section_name": "worldbook",
+                     *             "section_name": "main",
                      *             "token_count": 96
                      *           }
                      *         ],
@@ -9009,12 +9018,16 @@ export interface operations {
                      *             "merge_adjacent_same_role": "branch_policy",
                      *             "mode": "branch_policy",
                      *             "preserve_system_messages": "system_default"
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": "request_override",
+                     *             "mode": "request_override"
                      *           }
                      *         },
                      *         "trim_reasons": [
                      *           {
-                     *             "detail": "Prompt runtime pruned 128 tokens from budget group 'history'.",
-                     *             "group": "history",
+                     *             "detail": "Prompt runtime pruned 128 tokens from budget group 'section:main'.",
+                     *             "group": "section:main",
                      *             "pruned_token_count": 128,
                      *             "reason": "budget_exceeded"
                      *           }
@@ -9057,7 +9070,10 @@ export interface operations {
                                 detail?: string;
                                 /** @enum {string} */
                                 reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
-                                /** @enum {string} */
+                                /**
+                                 * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
+                                 * @enum {string}
+                                 */
                                 source: "history" | "memory" | "worldbook" | "examples";
                             }[] | null;
                             floor: {
@@ -9126,8 +9142,21 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             } | null;
                             result: {
@@ -9161,6 +9190,7 @@ export interface operations {
                                 target_branch_id: string;
                             };
                             section_stats: {
+                                /** @description Prompt section name. Section stats remain section-level even when budget groups use concrete labels such as `section:main`. */
                                 section_name: string;
                                 token_count: number;
                             }[] | null;
@@ -9223,9 +9253,20 @@ export interface operations {
                                     /** @enum {string} */
                                     preserve_system_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
+                                visibility?: {
+                                    /** @enum {string} */
+                                    hidden_floor_ids?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    hidden_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    visible_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
                             };
                             trim_reasons: {
                                 detail?: string;
+                                /** @description Budget group label. This may include concrete section groups such as `section:main`. */
                                 group: string;
                                 pruned_token_count?: number;
                                 /** @enum {string} */
@@ -15009,7 +15050,8 @@ export interface operations {
                      *               "structure",
                      *               "delivery",
                      *               "budget",
-                     *               "sourceSelection"
+                     *               "sourceSelection",
+                     *               "visibility"
                      *             ]
                      *           },
                      *           "session": {
@@ -15020,7 +15062,8 @@ export interface operations {
                      *               "structure",
                      *               "delivery",
                      *               "budget",
-                     *               "sourceSelection"
+                     *               "sourceSelection",
+                     *               "visibility"
                      *             ]
                      *           }
                      *         },
@@ -15121,7 +15164,8 @@ export interface operations {
                      *           "modes": [
                      *             "default",
                      *             "strict_alternating",
-                     *             "no_assistant"
+                     *             "no_assistant",
+                     *             "flattened"
                      *           ]
                      *         },
                      *         "unsupported": [
@@ -15174,7 +15218,7 @@ export interface operations {
                                     null_clears_field: true;
                                     /** @enum {string} */
                                     object_patch: "deep_merge";
-                                    supported_fields: ("structure" | "delivery" | "budget" | "sourceSelection")[];
+                                    supported_fields: ("structure" | "delivery" | "budget" | "sourceSelection" | "visibility")[];
                                 };
                                 session: {
                                     /** @enum {unknown} */
@@ -15183,7 +15227,7 @@ export interface operations {
                                     null_clears_field: true;
                                     /** @enum {string} */
                                     object_patch: "deep_merge";
-                                    supported_fields: ("structure" | "delivery" | "budget" | "sourceSelection")[];
+                                    supported_fields: ("structure" | "delivery" | "budget" | "sourceSelection" | "visibility")[];
                                 };
                             };
                             macro: {
@@ -15297,6 +15341,7 @@ export interface operations {
                                 persistent_patch_supported: true;
                                 /** @enum {unknown} */
                                 request_override_supported: true;
+                                /** @description Public source kinds only. Internal budget groups such as `section:*` do not appear here. */
                                 supported_sources: ("history" | "memory" | "worldbook" | "examples")[];
                             };
                             structure: {
@@ -15305,10 +15350,10 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
                                 };
-                                modes: ("default" | "strict_alternating" | "no_assistant")[];
+                                modes: ("default" | "strict_alternating" | "no_assistant" | "flattened")[];
                             };
                             unsupported: string[];
                         };
@@ -15758,6 +15803,15 @@ export interface operations {
                      *               "worldbook": {
                      *                 "enabled": true
                      *               }
+                     *             },
+                     *             "visibility": {
+                     *               "hidden_floor_ranges": [
+                     *                 {
+                     *                   "end_floor_no": 2,
+                     *                   "start_floor_no": 1
+                     *                 }
+                     *               ],
+                     *               "mode": "allow_all_except_hidden"
                      *             }
                      *           },
                      *           "version": 2
@@ -15792,6 +15846,15 @@ export interface operations {
                      *             },
                      *             "structure": {
                      *               "mode": "strict_alternating"
+                     *             },
+                     *             "visibility": {
+                     *               "hidden_floor_ranges": [
+                     *                 {
+                     *                   "end_floor_no": 2,
+                     *                   "start_floor_no": 1
+                     *                 }
+                     *               ],
+                     *               "mode": "allow_all_except_hidden"
                      *             }
                      *           },
                      *           "version": 1
@@ -15831,6 +15894,15 @@ export interface operations {
                      *             "merge_adjacent_same_role": true,
                      *             "mode": "no_assistant",
                      *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "scope": {
@@ -15875,6 +15947,10 @@ export interface operations {
                      *             "merge_adjacent_same_role": "branch_policy",
                      *             "mode": "branch_policy",
                      *             "preserve_system_messages": "system_default"
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": "request_override",
+                     *             "mode": "request_override"
                      *           }
                      *         },
                      *         "warnings": [
@@ -15934,8 +16010,32 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
+                                };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             } | null;
                             branch_persistent_policy_envelope?: {
@@ -15972,8 +16072,32 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
                                     };
                                 };
                                 version: number;
@@ -16021,8 +16145,32 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
+                                };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             persistent_policy_envelope?: {
@@ -16059,8 +16207,32 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
                                     };
                                 };
                                 version: number;
@@ -16101,8 +16273,21 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             scope: {
@@ -16171,6 +16356,16 @@ export interface operations {
                                     mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
                                     preserve_system_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                visibility?: {
+                                    /** @enum {string} */
+                                    hidden_floor_ids?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    hidden_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    visible_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                             };
                             warnings: string[];
@@ -16388,6 +16583,15 @@ export interface operations {
                      *             "merge_adjacent_same_role": true,
                      *             "mode": "no_assistant",
                      *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "warnings": []
@@ -16427,8 +16631,32 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
+                                };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             persistent_policy_envelope?: {
@@ -16465,8 +16693,32 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
                                     };
                                 };
                                 version: number;
@@ -16507,8 +16759,21 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             warnings: string[];
@@ -16606,10 +16871,23 @@ export interface operations {
                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                         merge_adjacent_same_role?: boolean;
                         /** @enum {string} */
-                        mode: "default" | "strict_alternating" | "no_assistant";
+                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                         preserve_system_messages?: boolean;
                     } | null;
-                } | unknown | unknown | unknown | unknown;
+                    visibility?: {
+                        hidden_floor_ids?: string[];
+                        hidden_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                        /** @enum {string} */
+                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                        visible_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                    } | null;
+                } | unknown | unknown | unknown | unknown | unknown;
             };
         };
         responses: {
@@ -16678,6 +16956,15 @@ export interface operations {
                      *             "merge_adjacent_same_role": true,
                      *             "mode": "no_assistant",
                      *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "warnings": []
@@ -16717,8 +17004,32 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
+                                };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             persistent_policy_envelope?: {
@@ -16755,8 +17066,32 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
                                     };
                                 };
                                 version: number;
@@ -16797,8 +17132,21 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             warnings: string[];
@@ -16892,7 +17240,24 @@ export interface operations {
                      *       "data": {
                      *         "asset_changes": [],
                      *         "diagnostics_changes": [],
-                     *         "exclusion_changes": [],
+                     *         "exclusion_changes": [
+                     *           {
+                     *             "change_type": "changed",
+                     *             "left": [
+                     *               {
+                     *                 "reason": "visibility_filtered",
+                     *                 "source": "history"
+                     *               }
+                     *             ],
+                     *             "path": "excluded_sources",
+                     *             "right": [
+                     *               {
+                     *                 "reason": "disabled_by_policy",
+                     *                 "source": "examples"
+                     *               }
+                     *             ]
+                     *           }
+                     *         ],
                      *         "left": {
                      *           "floor_id": "floor-left",
                      *           "snapshot_available": true
@@ -16901,9 +17266,21 @@ export interface operations {
                      *         "policy_changes": [
                      *           {
                      *             "change_type": "changed",
-                     *             "left": false,
-                     *             "path": "policy.resolved_policy.delivery.no_assistant",
-                     *             "right": true
+                     *             "left": 4096,
+                     *             "path": "policy.resolved_policy.budget.max_input_tokens",
+                     *             "right": 2048
+                     *           },
+                     *           {
+                     *             "change_type": "changed",
+                     *             "left": "allow_all_except_hidden",
+                     *             "path": "policy.resolved_policy.visibility.mode",
+                     *             "right": "deny_all_except_visible"
+                     *           },
+                     *           {
+                     *             "change_type": "changed",
+                     *             "left": "session_policy",
+                     *             "path": "policy.source_map.visibility.mode",
+                     *             "right": "request_override"
                      *           }
                      *         ],
                      *         "right": {
@@ -16911,7 +17288,26 @@ export interface operations {
                      *           "snapshot_available": true
                      *         },
                      *         "scope_changes": [],
-                     *         "trim_changes": []
+                     *         "trim_changes": [
+                     *           {
+                     *             "change_type": "changed",
+                     *             "left": [
+                     *               {
+                     *                 "group": "section:main",
+                     *                 "pruned_token_count": 32,
+                     *                 "reason": "group_limit_exceeded"
+                     *               }
+                     *             ],
+                     *             "path": "trim_reasons",
+                     *             "right": [
+                     *               {
+                     *                 "group": "section:main",
+                     *                 "pruned_token_count": 64,
+                     *                 "reason": "group_limit_exceeded"
+                     *               }
+                     *             ]
+                     *           }
+                     *         ]
                      *       }
                      *     }
                      */
@@ -17118,6 +17514,15 @@ export interface operations {
                      *             "merge_adjacent_same_role": true,
                      *             "mode": "no_assistant",
                      *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "warnings": []
@@ -17157,8 +17562,32 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
+                                };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             persistent_policy_envelope?: {
@@ -17195,8 +17624,32 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
                                     };
                                 };
                                 version: number;
@@ -17237,8 +17690,21 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             warnings: string[];
@@ -17335,10 +17801,23 @@ export interface operations {
                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                         merge_adjacent_same_role?: boolean;
                         /** @enum {string} */
-                        mode: "default" | "strict_alternating" | "no_assistant";
+                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                         preserve_system_messages?: boolean;
                     } | null;
-                } | unknown | unknown | unknown | unknown;
+                    visibility?: {
+                        hidden_floor_ids?: string[];
+                        hidden_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                        /** @enum {string} */
+                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                        visible_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                    } | null;
+                } | unknown | unknown | unknown | unknown | unknown;
             };
         };
         responses: {
@@ -17407,6 +17886,15 @@ export interface operations {
                      *             "merge_adjacent_same_role": true,
                      *             "mode": "no_assistant",
                      *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "warnings": []
@@ -17446,8 +17934,32 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
+                                };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             persistent_policy_envelope?: {
@@ -17484,8 +17996,32 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant";
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
                                     };
                                 };
                                 version: number;
@@ -17526,8 +18062,21 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             warnings: string[];
@@ -17670,7 +18219,7 @@ export interface operations {
                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                         merge_adjacent_same_role?: boolean;
                         /** @enum {string} */
-                        mode: "default" | "strict_alternating" | "no_assistant";
+                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                         preserve_system_messages?: boolean;
                     };
                     text: string;
@@ -17755,6 +18304,15 @@ export interface operations {
                      *             "merge_adjacent_same_role": true,
                      *             "mode": "no_assistant",
                      *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "runtime_trace": {
@@ -17860,6 +18418,10 @@ export interface operations {
                      *             "merge_adjacent_same_role": "request_override",
                      *             "mode": "request_override",
                      *             "preserve_system_messages": "system_default"
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": "request_override",
+                     *             "mode": "request_override"
                      *           }
                      *         },
                      *         "text": "{\"金币\":3}"
@@ -17916,8 +18478,21 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             runtime_trace: {
@@ -18080,6 +18655,16 @@ export interface operations {
                                     mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
                                     preserve_system_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                visibility?: {
+                                    /** @enum {string} */
+                                    hidden_floor_ids?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    hidden_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    visible_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                             };
                             text: string;

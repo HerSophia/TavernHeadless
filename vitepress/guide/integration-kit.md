@@ -220,14 +220,15 @@ const preview = await client.promptRuntime.previewText({
   },
 });
 
+console.log(preview.policy.budget);
 console.log(preview.text);
-console.log(preview.runtimeTrace.budgets?.trimReasons);
 console.log(preview.runtimeTrace.sourceSelection?.excludedSources);
+console.log(preview.runtimeTrace.visibility?.filteredFloorNos);
 console.log(preview.runtimeTrace.macro?.mutationPreview);
 console.log(preview.runtimeTrace.macro?.stagedMutations); // []
 ```
 
-这个方法只做单段文本 preview。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`。当前 request 级 `budget` / `sourceSelection` 覆盖的解释结果，会进入 `runtimeTrace.budgets.trimReasons` 与 `runtimeTrace.sourceSelection.excludedSources`。宏诊断继续统一走 `runtimeTrace.macro`。
+这个方法只做单段文本 preview。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`。当前 request 级 `structure` / `delivery` / `budget` / `sourceSelection` / `visibility` 覆盖会进入返回结果里的 `policy` 与 `sourceMap`，但返回的 `runtimeTrace` 只投影 `macro`、`sourceSelection`、`visibility`。宏诊断继续统一走 `runtimeTrace.macro`。
 
 ## Prompt Runtime governance / explain / compare 示例
 
@@ -277,6 +278,41 @@ console.log(diff.policyChanges);
 - `compare(...)` 只支持同一 session 内的两个 committed floor，且只返回结构化 path/value diff；不会做 explain recompute。
 
 当前 `@tavern/client-helpers` 没有为 historical explain 或 compare 增加专用 helper。原因很简单：这两份响应已经是稳定的只读对象，当前没有额外的跨框架语义整理需求。接入方直接使用 SDK 返回值即可。
+
+<a id="assembly提示词组装的运行结果"></a>
+
+## assembly：提示词组装的运行结果
+
+`respondDryRun(...)` 返回的 `assembly` 可以理解为 dry-run 的兼容摘要面。SDK 现在同时导出：
+
+- `PromptAssemblyCompat`
+- `RespondDryRunAssembly`（兼容别名）
+
+如果同一事实已经在 `runtimeTrace` 中以更结构化的形式出现，建议优先读取 `runtimeTrace`。`assembly` 继续保留，主要是为了让既有 dry-run 调试面和 preset 兼容说明保持稳定。
+
+常见对应关系如下：
+
+| `assembly` 字段 | 优先读取的 `runtimeTrace` | 说明 |
+| ---- | ---- | ---- |
+| `assistantPrefillApplied` / `assistantPrefillStrategy` | `runtimeTrace.delivery` | assistant prefill 是否真正落到最终发送消息 |
+| `regexPreRules` / `regexPostRules` / `preprocessedUserMessage` | `runtimeTrace.regex` | 正则执行结果与预处理后的用户消息 |
+| `worldbookHits` / `worldbookMatches` | `runtimeTrace.worldbook` | 世界书命中数量与详情 |
+| `memorySummaryInjected` | `runtimeTrace.memory.summaryInjected` | 记忆摘要是否注入 |
+| `selectedPromptOrderCharacterId` / `ignoredPromptOrderCharacterIds` / `continueNudgeApplied` / `continueNudgeText` / `namesBehaviorApplied` | `runtimeTrace.preset` | 预设运行事实与降级说明 |
+
+同时要区分两类名字：
+
+- `runtimeTrace.budgets.byGroup[].group` 与 `runtimeTrace.budgets.trimReasons[].group` 是 budget group 标签，可以出现具体 section 标签，例如 `section:main`
+- `capabilities.sourceSelection.supportedSources` 与 `runtimeTrace.sourceSelection.excludedSources[].source` 仍只使用公开 source kind：`history`、`memory`、`worldbook`、`examples`
+
+下面这些字段仍主要留在 `assembly`：
+
+- `mode`
+- `promptIntent`
+- `unsupportedPresetFields`
+- `ignoredPresetFields`
+- `unresolvedPresetMarkers`
+- `presetWarnings`
 
 
 ## `@tavern/client-helpers` 当前导出

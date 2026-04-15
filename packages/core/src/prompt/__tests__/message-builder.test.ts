@@ -335,5 +335,73 @@ describe('MessageBuilder', () => {
       expect(result.tokenUsage.prunedByGroup).toEqual({ history: 10 });
       expect(result.messages).toHaveLength(2);
     });
+
+    it('surfaces allocator trim reasons when build receives explicit group policies', () => {
+      const builder = new MessageBuilder(new CharTokenCounter());
+      const ir = makeIR(
+        [
+          section('examples', [
+            { role: 'system', content: '12345', priority: 1 },
+            { role: 'system', content: '67890', priority: 0 },
+          ], { order: 0, budgetGroup: 'examples' }),
+          section('chatHistory', [
+            { role: 'user', content: 'abcde', priority: 1 },
+            { role: 'assistant', content: 'fghij', priority: 0 },
+          ], { order: 1, budgetGroup: 'history' }),
+        ],
+        18,
+        0,
+      );
+
+      const result = builder.build(ir, {
+        groupPolicies: [{ group: 'examples', maxTokens: 5 }],
+      });
+
+      expect(result.tokenUsage.byGroup).toEqual({ examples: 5, history: 10 });
+      expect(result.tokenUsage.prunedByGroup).toEqual({ examples: 5 });
+      expect(result.tokenUsage.allocator?.estimatedByGroup).toEqual({ examples: 10, history: 10 });
+      expect(result.tokenUsage.allocator?.allocatedByGroup).toEqual({ examples: 5, history: 10 });
+      expect(result.tokenUsage.allocator?.trimReasons[0]?.reason).toBe('group_limit_exceeded');
+    });
+
+    it('surfaces target-based allocator details when build receives explicit group policies', () => {
+      const builder = new MessageBuilder(new CharTokenCounter());
+      const ir = makeIR(
+        [
+          section(
+            'examples',
+            Array.from({ length: 6 }, (_, index) => ({
+              role: 'system' as const,
+              content: String.fromCharCode(97 + index),
+              priority: 5 - index,
+            })),
+            { order: 0, budgetGroup: 'examples' },
+          ),
+          section(
+            'sys',
+            Array.from({ length: 6 }, (_, index) => ({
+              role: 'system' as const,
+              content: String.fromCharCode(107 + index),
+              priority: 5 - index,
+            })),
+            { order: 1, budgetGroup: 'section:sys' },
+          ),
+        ],
+        6,
+        0,
+      );
+
+      const result = builder.build(ir, {
+        groupPolicies: [
+          { group: 'examples', targetTokens: 4, weight: 1, pruneOrder: 0 },
+          { group: 'section:sys', targetTokens: 2, weight: 1, pruneOrder: 0 },
+        ],
+      });
+
+      expect(result.tokenUsage.byGroup).toEqual({ examples: 4, 'section:sys': 2 });
+      expect(result.tokenUsage.prunedByGroup).toEqual({ examples: 2, 'section:sys': 4 });
+      expect(result.tokenUsage.allocator?.estimatedByGroup).toEqual({ examples: 6, 'section:sys': 6 });
+      expect(result.tokenUsage.allocator?.allocatedByGroup).toEqual({ examples: 4, 'section:sys': 2 });
+    });
   });
 });

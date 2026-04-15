@@ -142,6 +142,58 @@ describe("ChatService", () => {
     finalState: "generating",
   };
 
+  const LIVE_BUDGET_TEST_PRESET_DATA = {
+    prompts: [
+      { identifier: "main", name: "Main Prompt", role: "system", content: "Stay in character." },
+      { identifier: "chatHistory", name: "Chat History", marker: true },
+    ],
+    prompt_order: [
+      {
+        character_id: 100000,
+        order: [
+          { identifier: "main", enabled: true },
+          { identifier: "chatHistory", enabled: true },
+        ],
+      },
+    ],
+    openai_max_context: 2048,
+    openai_max_tokens: 300,
+    temperature: 0.7,
+    top_p: 1,
+    top_k: 0,
+    min_p: 0,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+    repetition_penalty: 1,
+    new_chat_prompt: "",
+    new_example_chat_prompt: "",
+    continue_nudge_prompt: "",
+    assistant_prefill: "",
+    wi_format: "{0}",
+    names_behavior: 0,
+    stream_openai: true,
+  };
+
+  async function attachBudgetTracePreset(name: string): Promise<void> {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name,
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify(LIVE_BUDGET_TEST_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now })
+      .where(eq(sessions.id, sessionId));
+  }
+
   function createRecordingGenerationCoordinator(
     calls: Array<{ sessionId: string; branchId: string; mode: "reject" | "queue"; timeoutMs?: number }>,
   ): GenerationCoordinator {
@@ -602,6 +654,71 @@ describe("ChatService", () => {
     expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
   });
 
+  it("applies session prompt runtime visibility policy on the live respond path", async () => {
+    await chatService.respond(sessionId, { message: "First visible line" });
+    await chatService.respond(sessionId, { message: "Second hidden line" });
+
+    await database.db
+      .update(sessions)
+      .set({
+        metadataJson: JSON.stringify({
+          prompt_runtime: {
+            policy: {
+              visibility: {
+                hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+              },
+            },
+          },
+        }),
+        updatedAt: Date.now(),
+      })
+      .where(eq(sessions.id, sessionId));
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    const result = await chatService.respond(sessionId, {
+      message: "Third visible line",
+      debugOptions: { includeRuntimeTrace: true },
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const userMessages = turnInput.messages.filter((message: { role: string }) => message.role === "user");
+
+    expect(userMessages.map((message: { content: string }) => message.content)).toEqual([
+      "First visible line",
+      "Third visible line",
+    ]);
+    expect(result.runtimeTrace?.visibility).toEqual({
+      hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+      filteredFloorNos: [1],
+    });
+  });
+
+  it("keeps live request visibility override disabled on respond", async () => {
+    await chatService.respond(sessionId, { message: "First visible line" });
+    await chatService.respond(sessionId, { message: "Second visible line" });
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    const result = await chatService.respond(sessionId, {
+      message: "Third visible line",
+      debugOptions: { includeRuntimeTrace: true },
+      visibility: {
+        hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+      },
+    } as any);
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const userMessages = turnInput.messages.filter((message: { role: string }) => message.role === "user");
+
+    expect(userMessages.map((message: { content: string }) => message.content)).toEqual([
+      "First visible line",
+      "Second visible line",
+      "Third visible line",
+    ]);
+    expect(result.runtimeTrace?.visibility).toBeUndefined();
+  });
+
   it("lets request delivery override session prompt runtime delivery defaults on respond", async () => {
     await chatService.respond(sessionId, { message: "First turn" });
 
@@ -727,6 +844,212 @@ describe("ChatService", () => {
 
     expect(snapshotRow?.promptDigest).toBe(result.promptSnapshot?.promptDigest);
     expect(snapshotRow?.tokenEstimate).toBe(result.promptSnapshot?.tokenEstimate);
+  });
+
+  it("transcriptizes assistant prefill on the live respond path when structure sets flattened", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Flattened Respond Prefill Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        ...LIVE_BUDGET_TEST_PRESET_DATA,
+        assistant_prefill: "Knight:",
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now })
+      .where(eq(sessions.id, sessionId));
+
+    await chatService.respond(sessionId, { message: "First turn" });
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    const result = await chatService.respond(sessionId, {
+      message: "Continue the scene.",
+      promptIntent: "continue",
+      structure: { mode: "flattened" },
+      delivery: { requireLastUser: true },
+      debugOptions: {
+        includePromptSnapshot: true,
+        includeRuntimeTrace: true,
+      },
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
+    expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "user" && message.content.includes("Continue the scene."))).toBe(true);
+    expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "user" && message.content.includes("Assistant: Knight:"))).toBe(true);
+    expect(result.runtimeTrace?.structure).toMatchObject({ mode: "flattened", transcriptized: true, assistantPrefillTranscriptized: true });
+    expect(result.runtimeTrace?.delivery).toMatchObject({ assistantPrefillRequested: true, assistantPrefillApplied: true, assistantPrefillStrategy: "transcript_append", requireLastUser: true, endsWithUser: true });
+    expect(result.promptSnapshot).toBeDefined();
+  });
+
+  it("keeps allocator trace disabled on respond when only persistent aggregate budget is configured", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Live Aggregate Budget Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        prompts: [
+          { identifier: "main", name: "Main Prompt", role: "system", content: "Stay in character." },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+        prompt_order: [
+          {
+            character_id: 100000,
+            order: [
+              { identifier: "main", enabled: true },
+              { identifier: "chatHistory", enabled: true },
+            ],
+          },
+        ],
+        openai_max_context: 2048,
+        openai_max_tokens: 300,
+        temperature: 0.7,
+        top_p: 1,
+        top_k: 0,
+        min_p: 0,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        repetition_penalty: 1,
+        new_chat_prompt: "",
+        new_example_chat_prompt: "",
+        continue_nudge_prompt: "",
+        assistant_prefill: "",
+        wi_format: "{0}",
+        names_behavior: 0,
+        stream_openai: true,
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({
+        presetId,
+        characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+        metadataJson: JSON.stringify({
+          prompt_runtime: {
+            policy: {
+              budget: {
+                maxInputTokens: 256,
+                reservedCompletionTokens: 64,
+              },
+            },
+          },
+        }),
+        updatedAt: now,
+      })
+      .where(eq(sessions.id, sessionId));
+
+    await chatService.respond(sessionId, { message: "First turn" });
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    const result = await chatService.respond(sessionId, {
+      message: "Second turn",
+      debugOptions: { includeRuntimeTrace: true },
+    });
+
+    const historyGroup = result.runtimeTrace?.budgets?.byGroup.find((group) => group.group === "history");
+
+    expect(historyGroup).toBeDefined();
+    expect(historyGroup).not.toHaveProperty("estimatedTokenCount");
+    expect(historyGroup).not.toHaveProperty("allocatedTokenCount");
+  });
+
+  it("surfaces allocator trace on respond when internal budget group policies are provided", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Live Allocator Budget Preset",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      source: "sillytavern",
+      dataJson: JSON.stringify({
+        prompts: [
+          { identifier: "main", name: "Main Prompt", role: "system", content: "Stay in character." },
+          { identifier: "chatHistory", name: "Chat History", marker: true },
+        ],
+        prompt_order: [
+          {
+            character_id: 100000,
+            order: [
+              { identifier: "main", enabled: true },
+              { identifier: "chatHistory", enabled: true },
+            ],
+          },
+        ],
+        openai_max_context: 2048,
+        openai_max_tokens: 300,
+        temperature: 0.7,
+        top_p: 1,
+        top_k: 0,
+        min_p: 0,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        repetition_penalty: 1,
+        new_chat_prompt: "",
+        new_example_chat_prompt: "",
+        continue_nudge_prompt: "",
+        assistant_prefill: "",
+        wi_format: "{0}",
+        names_behavior: 0,
+        stream_openai: true,
+      }),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db
+      .update(sessions)
+      .set({ presetId, characterSnapshotJson: JSON.stringify({ name: "Knight" }), updatedAt: now })
+      .where(eq(sessions.id, sessionId));
+
+    await chatService.respond(sessionId, { message: "First turn" });
+
+    (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+    const result = await chatService.respond(sessionId, {
+      message: "Second turn",
+      debugOptions: { includeRuntimeTrace: true },
+      budget: {
+        maxInputTokens: 256,
+        reservedCompletionTokens: 64,
+        groups: [{ group: "history", maxTokens: 0 }],
+      },
+    } as any);
+
+    expect(result.runtimeTrace?.budgets?.byGroup).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          group: "history",
+          tokenCount: 0,
+          estimatedTokenCount: expect.any(Number),
+          allocatedTokenCount: 0,
+          prunedTokenCount: expect.any(Number),
+        }),
+      ]),
+    );
+    expect(result.runtimeTrace?.budgets?.trimReasons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ group: "history", reason: "group_limit_exceeded" }),
+      ]),
+    );
   });
 
   it("should forward runtime tool events during respond", async () => {
@@ -1787,6 +2110,21 @@ describe("ChatService", () => {
     expect(turnInput.generationParams.stream).toBe(false);
   });
 
+  it("should apply prompt runtime budget on respond send path", async () => {
+    await chatService.respond(sessionId, {
+      message: "Hello",
+      budget: { maxInputTokens: 256, reservedCompletionTokens: 64 },
+    });
+
+    const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const tokenCounter = new SimpleTokenCounter();
+    const expectedPromptTokens = turnInput.messages.reduce(
+      (sum: number, message: { content: string }) => sum + tokenCounter.count(message.content),
+      0,
+    );
+    expect(turnInput.generationParams.maxOutputTokens + expectedPromptTokens).toBe(320);
+  });
+
   it("should apply server default timeoutMs when not specified", async () => {
     const service = new ChatService(database.db, mockOrchestrator, new SimpleTokenCounter(), {
       executionPolicy: {
@@ -1896,6 +2234,27 @@ describe("ChatService", () => {
     expect(filteredPreview.runtimeTrace.visibility?.filteredFloorNos).toEqual([1]);
   });
 
+  it("should keep flattened preview as control-plane only without materializing structure trace", async () => {
+    await chatService.respond(sessionId, { message: "Preview flatten boundary" });
+
+    const preview = await chatService.previewPromptRuntimeText(sessionId, {
+      text: "{{lastUserMessage}}",
+      structure: { mode: "flattened" },
+      delivery: {
+        requireLastUser: true,
+        noAssistant: true,
+      },
+    });
+
+    expect(preview.text).toBe("Preview flatten boundary");
+    expect(preview.policy.structure).toMatchObject({ mode: "flattened" });
+    expect(preview.policy.delivery).toMatchObject({ allowAssistantPrefill: true, requireLastUser: true, noAssistant: true });
+    expect(preview.runtimeTrace.macro?.usedNames).toContain("lastUserMessage");
+    const previewRuntimeTrace = preview.runtimeTrace as Record<string, unknown>;
+    expect(previewRuntimeTrace).not.toHaveProperty("structure");
+    expect(previewRuntimeTrace).not.toHaveProperty("delivery");
+  });
+
   it("should fail preview on a new branch when the source floor snapshot is missing", async () => {
     const sourceFloorId = nanoid();
     const now = Date.now();
@@ -2001,6 +2360,135 @@ describe("ChatService", () => {
       const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
       expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+    });
+
+    it("applies session prompt runtime visibility policy on regenerate", async () => {
+      await chatService.respond(sessionId, { message: "First visible line" });
+      await chatService.respond(sessionId, { message: "Second hidden line" });
+      await chatService.respond(sessionId, { message: "Third visible line" });
+
+      await database.db
+        .update(sessions)
+        .set({
+          metadataJson: JSON.stringify({
+            prompt_runtime: {
+              policy: {
+                visibility: {
+                  hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+                },
+              },
+            },
+          }),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, sessionId));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      const result = await chatService.regenerate(sessionId, {
+        debugOptions: { includeRuntimeTrace: true },
+      });
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const userMessages = turnInput.messages.filter((message: { role: string }) => message.role === "user");
+
+      expect(userMessages.map((message: { content: string }) => message.content)).toEqual([
+        "First visible line",
+        "Third visible line",
+      ]);
+      expect(result.runtimeTrace?.visibility).toEqual({
+        hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+        filteredFloorNos: [1],
+      });
+    });
+
+    it("keeps allocator trace disabled on regenerate when only persistent aggregate budget is configured", async () => {
+      await attachBudgetTracePreset("Regenerate Aggregate Budget Preset");
+      await chatService.respond(sessionId, { message: "First turn" });
+      await chatService.respond(sessionId, { message: "Second turn" });
+
+      await database.db
+        .update(sessions)
+        .set({
+          metadataJson: JSON.stringify({
+            prompt_runtime: {
+              policy: {
+                budget: {
+                  maxInputTokens: 256,
+                  reservedCompletionTokens: 64,
+                },
+              },
+            },
+          }),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, sessionId));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      const result = await chatService.regenerate(sessionId, {
+        debugOptions: { includeRuntimeTrace: true },
+      });
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const tokenCounter = new SimpleTokenCounter();
+      const expectedPromptTokens = turnInput.messages.reduce(
+        (sum: number, message: { content: string }) => sum + tokenCounter.count(message.content),
+        0,
+      );
+      const historyGroup = result.runtimeTrace?.budgets?.byGroup.find((group) => group.group === "history");
+
+      expect(turnInput.generationParams.maxOutputTokens + expectedPromptTokens).toBe(320);
+      expect(historyGroup).toBeDefined();
+      expect(historyGroup).not.toHaveProperty("estimatedTokenCount");
+      expect(historyGroup).not.toHaveProperty("allocatedTokenCount");
+      expect(result.runtimeTrace?.budgets?.trimReasons).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ reason: "group_limit_exceeded" }),
+        ]),
+      );
+    });
+
+    it("surfaces allocator trace on regenerate when internal budget group policies are provided", async () => {
+      await attachBudgetTracePreset("Regenerate Allocator Budget Preset");
+      await chatService.respond(sessionId, { message: "First turn" });
+      await chatService.respond(sessionId, { message: "Second turn" });
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      const result = await chatService.regenerate(sessionId, {
+        debugOptions: { includeRuntimeTrace: true },
+        budget: {
+          maxInputTokens: 256,
+          reservedCompletionTokens: 64,
+          groups: [{ group: "history", maxTokens: 0 }],
+        },
+      } as any);
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const tokenCounter = new SimpleTokenCounter();
+      const expectedPromptTokens = turnInput.messages.reduce(
+        (sum: number, message: { content: string }) => sum + tokenCounter.count(message.content),
+        0,
+      );
+
+      expect(turnInput.generationParams.maxOutputTokens + expectedPromptTokens).toBe(320);
+      expect(result.runtimeTrace?.budgets?.byGroup).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            group: "history",
+            tokenCount: 0,
+            estimatedTokenCount: expect.any(Number),
+            allocatedTokenCount: 0,
+            prunedTokenCount: expect.any(Number),
+          }),
+        ]),
+      );
+      expect(result.runtimeTrace?.budgets?.trimReasons).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ group: "history", reason: "group_limit_exceeded" }),
+        ]),
+      );
     });
 
 
@@ -2265,6 +2753,15 @@ describe("ChatService", () => {
       expect(preview.text).toBe("Alt followup");
     });
 
+    it("should apply prompt runtime budget to preview maxPrompt macros", async () => {
+      const preview = await chatService.previewPromptRuntimeText(sessionId, {
+        text: "{{maxPrompt}}",
+        budget: { maxInputTokens: 256, reservedCompletionTokens: 64 },
+      });
+
+      expect(preview.text).toBe("256");
+    });
+
     it("should fail respond when the source floor snapshot is missing", async () => {
       const sourceFloorId = nanoid();
       const now = Date.now();
@@ -2482,6 +2979,144 @@ describe("ChatService", () => {
       const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
       expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+    });
+
+    it("applies branch prompt runtime visibility policy on retryFloor", async () => {
+      const root = await chatService.respond(sessionId, { message: "Root visible line" });
+      await chatService.respond(sessionId, {
+        message: "Branch hidden line",
+        branchId: "alt-visibility",
+        sourceFloorId: root.floorId,
+      });
+      const retryTarget = await chatService.respond(sessionId, {
+        message: "Retry branch line",
+        branchId: "alt-visibility",
+      });
+
+      await database.db
+        .update(sessions)
+        .set({
+          metadataJson: JSON.stringify({
+            prompt_runtime: {
+              branchPolicies: {
+                "alt-visibility": {
+                  visibility: {
+                    hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+                  },
+                },
+              },
+            },
+          }),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, sessionId));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      const result = await chatService.retryFloor(retryTarget.floorId, {
+        debugOptions: { includeRuntimeTrace: true },
+      });
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const userMessages = turnInput.messages.filter((message: { role: string }) => message.role === "user");
+
+      expect(userMessages.map((message: { content: string }) => message.content)).toEqual([
+        "Root visible line",
+        "Retry branch line",
+      ]);
+      expect(result.runtimeTrace?.visibility).toEqual({
+        hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+        filteredFloorNos: [1],
+      });
+    });
+
+    it("keeps allocator trace disabled on retryFloor when only persistent aggregate budget is configured", async () => {
+      await attachBudgetTracePreset("Retry Aggregate Budget Preset");
+      await chatService.respond(sessionId, { message: "First turn" });
+      const retryTarget = await chatService.respond(sessionId, { message: "Second turn" });
+
+      await database.db
+        .update(sessions)
+        .set({
+          metadataJson: JSON.stringify({
+            prompt_runtime: {
+              policy: {
+                budget: {
+                  maxInputTokens: 256,
+                  reservedCompletionTokens: 64,
+                },
+              },
+            },
+          }),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, sessionId));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      const result = await chatService.retryFloor(retryTarget.floorId, {
+        debugOptions: { includeRuntimeTrace: true },
+      });
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const tokenCounter = new SimpleTokenCounter();
+      const expectedPromptTokens = turnInput.messages.reduce(
+        (sum: number, message: { content: string }) => sum + tokenCounter.count(message.content),
+        0,
+      );
+      const historyGroup = result.runtimeTrace?.budgets?.byGroup.find((group) => group.group === "history");
+
+      expect(turnInput.generationParams.maxOutputTokens + expectedPromptTokens).toBe(320);
+      expect(historyGroup).toBeDefined();
+      expect(historyGroup).not.toHaveProperty("estimatedTokenCount");
+      expect(historyGroup).not.toHaveProperty("allocatedTokenCount");
+      expect(result.runtimeTrace?.budgets?.trimReasons).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ reason: "group_limit_exceeded" }),
+        ]),
+      );
+    });
+
+    it("surfaces allocator trace on retryFloor when internal budget group policies are provided", async () => {
+      await attachBudgetTracePreset("Retry Allocator Budget Preset");
+      await chatService.respond(sessionId, { message: "First turn" });
+      const retryTarget = await chatService.respond(sessionId, { message: "Second turn" });
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      const result = await chatService.retryFloor(retryTarget.floorId, {
+        debugOptions: { includeRuntimeTrace: true },
+        budget: {
+          maxInputTokens: 256,
+          reservedCompletionTokens: 64,
+          groups: [{ group: "history", maxTokens: 0 }],
+        },
+      } as any);
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const tokenCounter = new SimpleTokenCounter();
+      const expectedPromptTokens = turnInput.messages.reduce(
+        (sum: number, message: { content: string }) => sum + tokenCounter.count(message.content),
+        0,
+      );
+
+      expect(turnInput.generationParams.maxOutputTokens + expectedPromptTokens).toBe(320);
+      expect(result.runtimeTrace?.budgets?.byGroup).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            group: "history",
+            tokenCount: 0,
+            estimatedTokenCount: expect.any(Number),
+            allocatedTokenCount: 0,
+            prunedTokenCount: expect.any(Number),
+          }),
+        ]),
+      );
+      expect(result.runtimeTrace?.budgets?.trimReasons).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ group: "history", reason: "group_limit_exceeded" }),
+        ]),
+      );
     });
 
 
@@ -2942,6 +3577,169 @@ describe("ChatService", () => {
       const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(turnInput.messages.some((message: { role: string }) => message.role === "assistant")).toBe(false);
       expect(turnInput.messages.some((message: { role: string; content: string }) => message.role === "system" && message.content === MOCK_GENERATED_TEXT)).toBe(true);
+    });
+
+    it("applies session prompt runtime visibility policy on editAndRegenerate", async () => {
+      await chatService.respond(sessionId, { message: "First visible line" });
+      await chatService.respond(sessionId, { message: "Second hidden line" });
+      const editableTurn = await chatService.respond(sessionId, { message: "Editable user line" });
+
+      await database.db
+        .update(sessions)
+        .set({
+          metadataJson: JSON.stringify({
+            prompt_runtime: {
+              policy: {
+                visibility: {
+                  hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+                },
+              },
+            },
+          }),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, sessionId));
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, editableTurn.floorId), eq(messagePages.pageKind, "input")));
+
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      const result = await chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited visible line",
+        branchId: "edit-visibility",
+        debugOptions: { includeRuntimeTrace: true },
+      } as any);
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const userMessages = turnInput.messages.filter((message: { role: string }) => message.role === "user");
+
+      expect(userMessages.map((message: { content: string }) => message.content)).toEqual([
+        "First visible line",
+        "Edited visible line",
+      ]);
+      expect(result.runtimeTrace?.visibility).toEqual({
+        hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 1 }],
+        filteredFloorNos: [1],
+      });
+    });
+
+    it("keeps allocator trace disabled on editAndRegenerate when only persistent aggregate budget is configured", async () => {
+      await attachBudgetTracePreset("Edit Aggregate Budget Preset");
+      await chatService.respond(sessionId, { message: "First turn" });
+      const editableTurn = await chatService.respond(sessionId, { message: "Second turn" });
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, editableTurn.floorId), eq(messagePages.pageKind, "input")));
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      await database.db
+        .update(sessions)
+        .set({
+          metadataJson: JSON.stringify({
+            prompt_runtime: {
+              policy: {
+                budget: {
+                  maxInputTokens: 256,
+                  reservedCompletionTokens: 64,
+                },
+              },
+            },
+          }),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, sessionId));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      const result = await chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited second turn",
+        branchId: "edit-budget-persistent",
+        debugOptions: { includeRuntimeTrace: true },
+      } as any);
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const tokenCounter = new SimpleTokenCounter();
+      const expectedPromptTokens = turnInput.messages.reduce(
+        (sum: number, message: { content: string }) => sum + tokenCounter.count(message.content),
+        0,
+      );
+      const historyGroup = result.runtimeTrace?.budgets?.byGroup.find((group) => group.group === "history");
+
+      expect(turnInput.generationParams.maxOutputTokens + expectedPromptTokens).toBe(320);
+      expect(historyGroup).toBeDefined();
+      expect(historyGroup).not.toHaveProperty("estimatedTokenCount");
+      expect(historyGroup).not.toHaveProperty("allocatedTokenCount");
+      expect(result.runtimeTrace?.budgets?.trimReasons).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ reason: "group_limit_exceeded" }),
+        ]),
+      );
+    });
+
+    it("surfaces allocator trace on editAndRegenerate when internal budget group policies are provided", async () => {
+      await attachBudgetTracePreset("Edit Allocator Budget Preset");
+      await chatService.respond(sessionId, { message: "First turn" });
+      const editableTurn = await chatService.respond(sessionId, { message: "Second turn" });
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, editableTurn.floorId), eq(messagePages.pageKind, "input")));
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      const result = await chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited second turn",
+        branchId: "edit-budget-groups",
+        debugOptions: { includeRuntimeTrace: true },
+        budget: {
+          maxInputTokens: 256,
+          reservedCompletionTokens: 64,
+          groups: [{ group: "history", maxTokens: 0 }],
+        },
+      } as any);
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const tokenCounter = new SimpleTokenCounter();
+      const expectedPromptTokens = turnInput.messages.reduce(
+        (sum: number, message: { content: string }) => sum + tokenCounter.count(message.content),
+        0,
+      );
+
+      expect(turnInput.generationParams.maxOutputTokens + expectedPromptTokens).toBe(320);
+      expect(result.runtimeTrace?.budgets?.byGroup).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            group: "history",
+            tokenCount: 0,
+            estimatedTokenCount: expect.any(Number),
+            allocatedTokenCount: 0,
+            prunedTokenCount: expect.any(Number),
+          }),
+        ]),
+      );
+      expect(result.runtimeTrace?.budgets?.trimReasons).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ group: "history", reason: "group_limit_exceeded" }),
+        ]),
+      );
     });
 
 
