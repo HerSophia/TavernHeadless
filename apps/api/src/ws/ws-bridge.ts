@@ -1,5 +1,6 @@
 import type { WebSocket } from 'ws';
 import type { CoreEventBus, CoreEventMap } from '@tavern/core';
+import { parseBranchMemoryScopeId } from '@tavern/shared';
 
 // ── 推送协议 ──────────────────────────────────────────
 
@@ -83,6 +84,9 @@ export class WsBridge {
       'memory.created',
       'memory.updated',
       'memory.deprecated',
+      'memory.deleted',
+      'memory.edge.created',
+      'memory.edge.deleted',
       'memory.consolidated',
       'runtime.job_enqueued',
       'runtime.job_leased',
@@ -157,38 +161,70 @@ export class WsBridge {
 // ── 工具函数 ──────────────────────────────────────────
 
 /**
- * 从事件数据中提取 sessionId。
+ * 从事件 payload 中提取 sessionId 用于 WS 客户端过滤。
  *
- * 优先级：
- * - floor 事件：data.floor.sessionId
- * - 通用直接字段：data.sessionId
- * - memory 事件兜底：data.item.scope === 'chat' 时使用 data.item.scopeId
- * - memory 汇总兜底：data.scope === 'chat' 时使用 data.scopeId
+ * Workstream 5 的 resolution order（从高到低）：
+ * 1. 顶层 `data.sessionId`
+ * 2. `data.floor.sessionId`
+ * 3. `data.scope === 'chat'`：使用 `data.scopeId`
+ * 4. `data.scope === 'branch'`：使用 publisher attached `data.sessionId`，
+ *    否则 `parseBranchMemoryScopeId(data.scopeId).sessionId`
+ * 5. `data.scope === 'floor'`：仅在 publisher attached 显式 `data.sessionId`
+ *    存在时才能推导（不再从 scopeId 猜，避免误投递）。
+ * 6. item 级（`data.item`）按同样规则。
+ * 7. edge 级（`data.edge`）暂时只有顶层 sessionId 可用；不做 scope 推导，
+ *    避免在没有 attached session 时误投。
+ *
+ * 任意路径都没解析出 sessionId 时返回 undefined：根据 broadcast 的
+ * 过滤规则，session client 不会收到该事件，等价于 fail-closed。
  */
 function extractSessionId(_eventName: string, data: unknown): string | undefined {
   if (!data || typeof data !== 'object') return undefined;
 
   const d = data as Record<string, unknown>;
 
-  if (d.floor && typeof d.floor === 'object') {
-    return (d.floor as Record<string, unknown>).sessionId as string | undefined;
-  }
-
-  if (typeof d.sessionId === 'string') {
+  if (typeof d.sessionId === 'string' && d.sessionId.length > 0) {
     return d.sessionId;
   }
 
-  const item = d.item;
-  if (item && typeof item === 'object') {
-    const itemRecord = item as Record<string, unknown>;
-    if (itemRecord.scope === 'chat' && typeof itemRecord.scopeId === 'string') {
-      return itemRecord.scopeId;
+  if (d.floor && typeof d.floor === 'object') {
+    const floorSession = (d.floor as Record<string, unknown>).sessionId;
+    if (typeof floorSession === 'string' && floorSession.length > 0) {
+      return floorSession;
     }
   }
 
-  if (d.scope === 'chat' && typeof d.scopeId === 'string') {
-    return d.scopeId;
+  // 顶层 scope 推导（覆盖 memory.created / updated / deprecated /
+  // deleted / consolidated 的常见 envelope）
+  const topResolved = resolveScopeSessionId(d.scope, d.scopeId);
+  if (topResolved) return topResolved;
+
+  // item 级 scope 推导（兼容历史 envelope，比如部分早期 memory 事件
+  // 只在 item 上带 scope/scopeId）
+  const item = d.item;
+  if (item && typeof item === 'object') {
+    const itemRecord = item as Record<string, unknown>;
+    const itemResolved = resolveScopeSessionId(itemRecord.scope, itemRecord.scopeId);
+    if (itemResolved) return itemResolved;
   }
 
+  return undefined;
+}
+
+function resolveScopeSessionId(scope: unknown, scopeId: unknown): string | undefined {
+  if (typeof scopeId !== 'string' || scopeId.length === 0) return undefined;
+
+  if (scope === 'chat') {
+    return scopeId;
+  }
+
+  if (scope === 'branch') {
+    const parsed = parseBranchMemoryScopeId(scopeId);
+    return parsed?.sessionId;
+  }
+
+  // floor scope 不做隐式推导：必须由 publisher 显式 attach 顶层 sessionId
+  // 才会被路由到 session client，避免在 scopeId = floorId 的情况下
+  // 错把 floor id 当成 session id 投递给错误的订阅者。
   return undefined;
 }
