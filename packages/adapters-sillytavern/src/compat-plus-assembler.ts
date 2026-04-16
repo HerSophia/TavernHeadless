@@ -1,5 +1,6 @@
 import type { PromptIR, IRSection } from '@tavern/core';
 import type { MemoryInjectionResult } from '@tavern/core';
+import { PROMPT_MEMORY_MESSAGE_SOURCE, PROMPT_MEMORY_SECTION_NAME } from '@tavern/core';
 import { assembleCompat } from './compat-assembler.js';
 import type { CompatAssemblerInput } from './compat-assembler.js';
 
@@ -106,14 +107,14 @@ export function assembleCompatPlus(input: CompatPlusAssemblerInput): PromptIR {
   const memoryOrder = calculateMemoryOrder(baseIR.sections, memoryPosition);
 
   const memorySection: IRSection = {
-    name: 'memory',
+    name: PROMPT_MEMORY_SECTION_NAME,
     order: memoryOrder,
     budgetGroup: 'memory',
     pinned: true,
     messages: [{
       role: 'system',
       content: memoryInjection.formattedText,
-      source: 'memory',
+      source: PROMPT_MEMORY_MESSAGE_SOURCE,
       prunable: false,
     }],
   };

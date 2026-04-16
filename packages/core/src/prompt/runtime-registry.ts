@@ -38,6 +38,22 @@ const DEFAULT_PROMPT_RUNTIME_BUDGET_GROUP_DEFAULTS = {
   pruneOrder: 150,
 } as const;
 
+/**
+ * 统一的 memory section 名称。
+ *
+ * native pipeline 与 compat_plus assembler 都应该用这个名字输出 IR section，
+ * 避免下游按 section name 过滤时出现 `memorySummary` / `memory` 两种写法并存。
+ */
+export const PROMPT_MEMORY_SECTION_NAME = 'memory' as const;
+
+/**
+ * 统一的 memory IR message `source` 归因。
+ *
+ * native pipeline 与 compat_plus assembler 注入的 memory 消息都应使用这个 source，
+ * 以便 runtimeTrace / explain 在 memory 归因上保持一致，不再区分 `native:memory` 与 `memory`。
+ */
+export const PROMPT_MEMORY_MESSAGE_SOURCE = 'memory' as const;
+
 const PROMPT_RUNTIME_SOURCE_REGISTRY: readonly PromptRuntimeSourceDescriptor[] = [
   {
     kind: 'history',

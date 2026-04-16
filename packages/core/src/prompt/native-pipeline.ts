@@ -1,5 +1,6 @@
 import type { ChatMessage, ChatRole, IRMessage, IRSection, PromptIR, TokenCounter } from './types.js';
 import { TemplateEngine } from './template-engine.js';
+import { PROMPT_MEMORY_MESSAGE_SOURCE, PROMPT_MEMORY_SECTION_NAME } from './runtime-registry.js';
 
 export type NativePromptMode = 'compat_strict' | 'native';
 
@@ -454,17 +455,19 @@ export class MemoryInjectNode implements NativePipelineNode {
       .sort((a, b) => a - b)[0];
 
     const order = firstSystemOrder !== undefined ? firstSystemOrder + 0.5 : -1;
-    const sections = state.sections.filter((section) => section.name !== 'memorySummary');
+    const sections = state.sections.filter(
+      (section) => section.name !== PROMPT_MEMORY_SECTION_NAME && section.name !== 'memorySummary',
+    );
 
     sections.push({
-      name: 'memorySummary',
+      name: PROMPT_MEMORY_SECTION_NAME,
       order,
       budgetGroup: 'memory',
       pinned: true,
       messages: [{
         role: 'system',
         content: `[Memory Summary]\n${summary}`,
-        source: 'native:memory',
+        source: PROMPT_MEMORY_MESSAGE_SOURCE,
         prunable: false,
         priority: 0,
       }],

@@ -137,6 +137,8 @@ export {
   resolvePromptRuntimeBudgetGroupDefaults,
   resolvePromptRuntimeBudgetGroupExclusionSource,
   resolvePromptRuntimeBudgetGroupTraceLabel,
+  PROMPT_MEMORY_SECTION_NAME,
+  PROMPT_MEMORY_MESSAGE_SOURCE,
 } from './prompt/index.js';
 export type {
   NativePromptMode,
