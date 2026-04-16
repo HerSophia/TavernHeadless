@@ -3421,11 +3421,19 @@ export class ChatService {
     history: ChatMessage[],
     sourceSelection?: PromptSourceSelectionPolicy,
   ): ChatMessage[] {
+    const mode = sourceSelection?.history?.mode;
+
+    // mode = "full" 时，不做额外 message-window 截断，只受 visibility 与 budget 影响。
+    if (mode === "full") {
+      return history;
+    }
+
+    // mode = "windowed" 或未指定 mode 时，按 maxMessages 截断。
+    // 未指定 mode 时保持向后兼容：如果 maxMessages 有值，仍然截断。
     const maxMessages = normalizePositiveInt(sourceSelection?.history?.maxMessages);
     if (!maxMessages || history.length <= maxMessages) {
       return history;
     }
-
     return history.slice(-maxMessages);
   }
 
