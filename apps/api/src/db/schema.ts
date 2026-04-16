@@ -764,6 +764,17 @@ export const regexProfiles = sqliteTable(
   })
 );
 
+/**
+ * Assembly-phase prompt snapshot.
+ *
+ * One row per committed floor. Records what actually entered prompt assembly: preset /
+ * worldbook / regex provenance, activated worldbook entries, regex rule names applied,
+ * prompt mode, digest, and token estimate.
+ *
+ * Phase: `assembly` — describes what went INTO prompt assembly, not what was delivered
+ * to the provider. Delivery-phase truth (materialized send messages, structure merges,
+ * assistant prefill) is kept separately and is not reconstructed from this row.
+ */
 export const promptSnapshots = sqliteTable(
   "prompt_snapshot",
   {
@@ -811,6 +822,17 @@ export const floorResultSnapshots = sqliteTable(
   })
 );
 
+/**
+ * Explain-phase prompt runtime snapshot.
+ *
+ * One row per committed floor. Records control-plane / observability truth: resolved policy,
+ * policy source map, trim reasons, excluded sources, section stats, diagnostics, and the
+ * historical source branch / mode. Historical explain and compare routes read from here.
+ *
+ * Phase: `explain` — persisted at commit time alongside the assembly-phase `prompt_snapshot`
+ * row. `snapshot_version` keeps future payload revisions backward compatible; readers must
+ * tolerate older versions and must not assume newly-added fields are always present.
+ */
 export const promptRuntimeExplainSnapshots = sqliteTable(
   "prompt_runtime_explain_snapshot",
   {

@@ -356,6 +356,20 @@ export interface PromptRuntimeInspectionResult {
   limitations: string[];
 }
 
+/**
+ * Explain-phase snapshot payload.
+ *
+ * Records what prompt runtime control plane observed during assembly/commit, in the form that
+ * historical explain and compare routes consume. This is the explain-side truth, not the
+ * assembly-side truth recorded in {@link PromptAssemblySnapshot}.
+ *
+ * Persisted via `promptRuntimeExplainSnapshots` table. `snapshotVersion` lets future schema
+ * migrations stay backward compatible with rows written by older runtime versions. Increment
+ * only when the payload shape changes in a breaking way, and keep readers tolerant of older
+ * versions.
+ *
+ * Phase: `explain` — control-plane / observability truth, bound to the commit moment of a floor.
+ */
 export interface PromptRuntimeInspectionSnapshotPayload {
   targetBranchId?: string | null;
   sourceFloorId?: string | null;
@@ -390,6 +404,14 @@ export function buildPromptRuntimeInspectionSnapshotPayload(
   };
 }
 
+/**
+ * Committed explain-phase snapshot record.
+ *
+ * Binds a {@link PromptRuntimeInspectionSnapshotPayload} to a specific committed floor and
+ * persists it in the explain-phase store. Historical explain and compare routes read from here.
+ *
+ * Phase: `explain` — persisted at commit time alongside the assembly-phase `prompt_snapshot` row.
+ */
 export interface PromptRuntimeCommittedExplainSnapshot extends PromptRuntimeInspectionSnapshotPayload {
   floorId: string;
   sessionId: string;

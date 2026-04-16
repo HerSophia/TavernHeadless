@@ -130,6 +130,18 @@ const READONLY_PROMPT_MACRO_KEYS = [
 
 type ReadonlyPromptMacroKey = (typeof READONLY_PROMPT_MACRO_KEYS)[number];
 
+/**
+ * Assembly-phase snapshot preview.
+ *
+ * Records what actually entered the prompt assembly step: preset / worldbook / regex provenance,
+ * activated worldbook entries, applied regex rule names, prompt mode, digest, and token estimate.
+ *
+ * This is NOT a delivery-phase snapshot. It does not describe materialized send messages, structure
+ * merges, assistant-prefill rewrites, or final delivery trace. Those belong to delivery-phase
+ * artifacts (for example `materializePromptRuntimeMessages` output and turn outcome records).
+ *
+ * Persisted into the `prompt_snapshot` table by `turn-commit-service` after a floor commits.
+ */
 export interface PromptSnapshotPreview {
   presetId: string | null;
   presetUpdatedAt: number | null;
@@ -148,6 +160,14 @@ export interface PromptSnapshotPreview {
   tokenEstimate: number;
 }
 
+/**
+ * Full assembly-phase snapshot carried within one run.
+ *
+ * Extends {@link PromptSnapshotPreview} with the raw resources that assembled the prompt.
+ * Consumed in-memory; only the preview subset is persisted.
+ *
+ * Phase: `assembly` — records what went INTO prompt assembly, not what was sent to the provider.
+ */
 export interface PromptAssemblySnapshot extends PromptSnapshotPreview {
   createdAt: number;
   preset: LoadedPromptPreset | null;
