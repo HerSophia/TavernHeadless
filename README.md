@@ -36,7 +36,7 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 - **三层消息结构** — 会话 → 楼层 → 消息页，天然支持分支和版本管理
 - **五级变量系统** — 全局、会话、分支、楼层、页级，互不干扰
 - **提示词编排** — 兼容模式与原生图编译路径并存，最终统一落到 PromptIR
-- **Prompt Runtime 观测面** — 支持 live debug、dry-run、单段 preview、budget / source selection explain、committed floor 的 historical explain，以及 committed floor compare / diff
+- **Prompt Runtime 观测面** — 支持 live debug、dry-run、单段 `macro_text_preview`（宏/source selection/visibility 子视图）、budget / source selection explain、committed floor 的 historical explain（只读持久化真相），以及 committed floor compare / diff
 - **记忆系统** — 支持 Memory V2 双层摘要、结构化存储、默认分支隔离的记忆注入和后台维护
 - **开发者友好** — TypeScript 全栈、OpenAPI 导出、类型化 SDK
 - **官方集成层** — 提供 `@tavern/sdk` 和 `@tavern/client-helpers`
