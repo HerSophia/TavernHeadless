@@ -3482,8 +3482,11 @@ export class ChatService {
       });
     };
 
-    if (args.sourceSelection?.memory?.enabled === false && args.memorySummary?.trim()) {
-      pushExcludedSource("memory", "disabled_by_policy", "sourceSelection.memory.enabled=false removed memory summary injection.");
+    // memory exclusion：不再依赖 args.memorySummary 的内容判断（上游已将其截断为 undefined），
+    // 直接根据 policy 状态报告。如果 memory 被 policy 禁用，无论原始 summary 是否存在，
+    // 都应陈述"被 policy 禁用"这一事实。
+    if (args.sourceSelection?.memory?.enabled === false) {
+      pushExcludedSource("memory", "disabled_by_policy", "sourceSelection.memory.enabled=false disables memory summary injection.");
     }
 
     if (
