@@ -1008,6 +1008,14 @@ export const editAndRegenerateBodyJsonSchema = {
     config: turnConfigJsonSchema,
     generation_params: generationParamsJsonSchema,
     debug_options: liveDebugOptionsJsonSchema,
+    confirmed_execution_ids: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
+    confirmed_session_state_mutation_ids: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
   },
   examples: [editAndRegenerateBodyExample],
   additionalProperties: false,
@@ -1056,6 +1064,14 @@ export const regenerateBodyJsonSchema = {
     config: turnConfigJsonSchema,
     generation_params: generationParamsJsonSchema,
     debug_options: liveDebugOptionsJsonSchema,
+    confirmed_execution_ids: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
+    confirmed_session_state_mutation_ids: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,
@@ -1069,10 +1085,8 @@ export const retryFloorBodyJsonSchema = {
     config: turnConfigJsonSchema,
     generation_params: generationParamsJsonSchema,
     debug_options: liveDebugOptionsJsonSchema,
-    confirmed_execution_ids: {
-      type: "array",
-      items: { type: "string", minLength: 1 },
-    },
+    confirmed_execution_ids: regenerateBodyJsonSchema.properties.confirmed_execution_ids,
+    confirmed_session_state_mutation_ids: regenerateBodyJsonSchema.properties.confirmed_session_state_mutation_ids,
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,

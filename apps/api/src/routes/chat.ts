@@ -149,6 +149,8 @@ type RegenerateBody = {
   debug_options?: LiveDebugOptionsBody;
   config?: TurnConfigBody;
   generation_params?: GenerationParamsBody;
+  confirmed_execution_ids?: string[];
+  confirmed_session_state_mutation_ids?: string[];
 };
 
 type EditAndRegenerateBody = RegenerateBody & {
@@ -156,9 +158,7 @@ type EditAndRegenerateBody = RegenerateBody & {
   branch_id?: string;
 };
 
-type RetryFloorBody = RegenerateBody & {
-  confirmed_execution_ids?: string[];
-};
+type RetryFloorBody = RegenerateBody;
 
 const sessionIdParamsSchema = z.object({
   id: z.string().min(1),
@@ -538,6 +538,8 @@ export async function registerChatRoutes(
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
+      confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
+      confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -595,6 +597,7 @@ export async function registerChatRoutes(
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
       confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
+      confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
     };
 
     const accountId = getRequestAuthContext(request).accountId;
@@ -649,6 +652,8 @@ export async function registerChatRoutes(
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
+      confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
+      confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -1144,6 +1149,9 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
       return { statusCode: 409, code: error.code, message: error.message };
     case "tool_replay_blocked":
     case "tool_replay_confirmation_required":
+    case "replay_confirmation_required":
+    case "session_state_replay_blocked":
+    case "session_state_replay_confirmation_required":
     case "profile_not_found":
     case "tool_catalog_conflict":
     case "instance_slot_disabled_required":

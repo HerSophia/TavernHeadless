@@ -3,6 +3,7 @@ import type { FloorRunType } from "@tavern/core";
 import type { StageFirstPartySceneStateInput } from "./session-state-types.js";
 import { SESSION_STATE_NAMESPACE_GAME_STATE } from "./session-state-types.js";
 import { SessionStateService } from "./session-state-service.js";
+import { FIRST_PARTY_SCENE_STATE_WRITER_SCHEMA_VERSION } from "./first-party-game-state-service.js";
 
 export class FirstPartyGameStateConsumer {
   constructor(private readonly sessionStateService: SessionStateService) {}
@@ -25,7 +26,7 @@ export class FirstPartyGameStateConsumer {
   private buildSceneStateValue(input: StageFirstPartySceneStateInput) {
     return {
       kind: "first_party_scene_state",
-      schemaVersion: 1,
+      schemaVersion: FIRST_PARTY_SCENE_STATE_WRITER_SCHEMA_VERSION,
       sessionId: input.sessionId,
       branchId: input.branchId,
       floorId: input.floorId,

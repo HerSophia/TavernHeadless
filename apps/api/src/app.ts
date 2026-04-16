@@ -72,7 +72,7 @@ import {
 import { PromptRuntimeControlService, PromptRuntimeControlServiceError } from "./services/prompt-runtime-control-service.js";
 import { ToolWorker } from "./services/tool-worker.js";
 import {
-  FirstPartyGameStateConsumer,
+  FirstPartyGameStateService,
   SessionStateService,
 } from "./session-state/index.js";
 
@@ -469,7 +469,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let floorRunService: FloorRunService | undefined;
   let promptRuntimePreviewService: Pick<ChatService, "previewPromptRuntimeText"> | undefined;
   let sessionStateService: SessionStateService | undefined;
-  let firstPartyGameStateConsumer: FirstPartyGameStateConsumer | undefined;
+  let firstPartyGameStateService: FirstPartyGameStateService | undefined;
 
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
@@ -496,7 +496,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     sessionStateService = new SessionStateService(database.db, {
       clientData: options.clientData,
     });
-    firstPartyGameStateConsumer = new FirstPartyGameStateConsumer(sessionStateService);
+    firstPartyGameStateService = new FirstPartyGameStateService(database.db, sessionStateService);
   }
 
   const mcpService = new McpService(database.db);
@@ -707,7 +707,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         },
         accountMode,
         sessionStateService,
-        firstPartyGameStateConsumer,
+        firstPartyGameStateService,
         defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
       }
     );
