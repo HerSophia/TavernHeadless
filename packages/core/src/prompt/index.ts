@@ -54,8 +54,15 @@ export {
   resolvePromptRuntimeBudgetGroupDefaults,
   resolvePromptRuntimeBudgetGroupExclusionSource,
   resolvePromptRuntimeBudgetGroupTraceLabel,
+  resolvePromptRuntimeSourceGovernanceLevel,
+  PROMPT_MEMORY_SECTION_NAME,
+  PROMPT_MEMORY_MESSAGE_SOURCE,
 } from './runtime-registry.js';
-export type { PromptRuntimeSourceDescriptor, PromptRuntimeBudgetGroupDescriptor } from './runtime-registry.js';
+export type {
+  PromptRuntimeSourceDescriptor,
+  PromptRuntimeBudgetGroupDescriptor,
+  PromptRuntimeSourceGovernanceLevel,
+} from './runtime-registry.js';
 
 // ── Message Builder ───────────────────────────────────
 export { MessageBuilder } from './message-builder.js';

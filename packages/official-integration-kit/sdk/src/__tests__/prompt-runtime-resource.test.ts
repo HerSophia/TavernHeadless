@@ -241,6 +241,8 @@ describe("sdk prompt runtime resource", () => {
               },
               preview: {
                 enabled: true,
+                mode: "macro_text_preview",
+                returns_assembly_truth: false,
                 returns_runtime_trace: true,
                 supports_visibility: true,
                 single_text_only: true,
@@ -248,6 +250,7 @@ describe("sdk prompt runtime resource", () => {
                 creates_floor: false,
                 writes_prompt_snapshot: false,
                 commits_side_effects: false,
+                trace_subset: ["macro", "source_selection", "visibility"],
               },
               explain: {
                 enabled: true,
@@ -506,6 +509,8 @@ describe("sdk prompt runtime resource", () => {
         },
         preview: {
           enabled: true,
+          mode: "macro_text_preview",
+          returnsAssemblyTruth: false,
           returnsRuntimeTrace: true,
           supportsVisibility: true,
           singleTextOnly: true,
@@ -513,6 +518,7 @@ describe("sdk prompt runtime resource", () => {
           createsFloor: false,
           writesPromptSnapshot: false,
           commitsSideEffects: false,
+          traceSubset: ["macro", "source_selection", "visibility"],
         },
         explain: {
           enabled: true,

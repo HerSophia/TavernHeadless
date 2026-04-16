@@ -273,7 +273,7 @@ console.log(preview.runtimeTrace.macro?.mutationPreview);
 console.log(preview.runtimeTrace.macro?.stagedMutations); // []
 ```
 
-这个方法只做单段文本 preview。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`。当前 request 级 `structure` / `delivery` / `budget` / `sourceSelection` / `visibility` 覆盖会进入返回结果里的 `policy` 与 `sourceMap`，但返回的 `runtimeTrace` 只投影 `macro`、`sourceSelection`、`visibility`。宏诊断继续统一走 `runtimeTrace.macro`。
+这个方法正式契约是 `macro_text_preview`，对应 `capabilities.observability.preview.mode === "macro_text_preview"` 且 `returnsAssemblyTruth === false`。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`，同时也不会执行 prompt assembly、budget allocation 或 delivery materialization。当前 request 级 `structure` / `delivery` / `budget` / `sourceSelection` / `visibility` 覆盖会进入返回结果里的 `policy` 与 `sourceMap`，但返回的 `runtimeTrace` 固定只投影 `capabilities.observability.preview.traceSubset`，即 `macro`、`sourceSelection`、`visibility`。宏诊断继续统一走 `runtimeTrace.macro`；响应的 `limitations` 会额外说明 preview 只是 `macro_text_preview` 子视图，便于 UI 上与 live / dry-run 区分。
 
 ## Prompt Runtime governance / explain / compare 示例
 
@@ -319,7 +319,7 @@ console.log(diff.policyChanges);
 
 - `patchPolicy(...)` 和 `patchBranchPolicy(...)` 现在都支持 `structure`、`delivery`、`budget`、`sourceSelection`。
 - 写入后的持久化策略会带 envelope 元数据：`version`、`updatedAt`、`updatedBy`、`value`。
-- `getFloorExplain(...)` 只读取 committed floor 的持久化真相。`snapshotAvailable = true` 表示响应来自 committed explain snapshot；`false` 表示旧楼层 fallback，此时 `assets`、`resolvedPolicy`、`sectionStats` 等可能为 `null`。
+- `getFloorExplain(...)` 只读取 committed floor 的持久化真相，对应 `capabilities.observability.explain.persistedTruthOnly === true`。snapshot-backed 路径会附带"只读持久化真相"声明；`snapshotAvailable = true` 表示响应来自 committed explain snapshot，`false` 表示旧楼层 fallback，此时 limitations 会在通用只读声明基础上额外追加"老 floor 字段可能为 null"的 fallback 条目，`assets`、`resolvedPolicy`、`sectionStats` 等也可能为 `null`。
 - `compare(...)` 只支持同一 session 内的两个 committed floor，且只返回结构化 path/value diff；不会做 explain recompute。
 
 当前 `@tavern/client-helpers` 没有为 historical explain 或 compare 增加专用 helper。原因很简单：这两份响应已经是稳定的只读对象，当前没有额外的跨框架语义整理需求。接入方直接使用 SDK 返回值即可。

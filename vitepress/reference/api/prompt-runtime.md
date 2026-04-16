@@ -8,7 +8,7 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 
 它仍然是 control plane，不负责执行一轮聊天，也不会替代现有的 Chat 主链路。
 
-当前它还提供一个**单段文本宏预览**入口：`POST /sessions/:id/prompt-runtime/preview`。这个入口继续复用现有的宏执行主线，只做单段文本的 preview，不会创建第二条执行链。
+当前它还提供一个**单段文本宏预览**入口：`POST /sessions/:id/prompt-runtime/preview`。这个入口继续复用现有的宏执行主线，只做单段文本的 preview，不会创建第二条执行链。它的正式契约是 `macro_text_preview`，不是完整 runtime preview：不会执行 prompt assembly、budget allocation、delivery materialization，返回的 `runtime_trace` 也只投影 `macro`、`source_selection`、`visibility` 三个子字段。
 
 > 这组接口属于高级 API 资源，主要面向调试、平台集成、自动化脚本和策略治理。如果只需要普通聊天能力，不需要优先接入。
 
@@ -25,8 +25,9 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 - `character_card` 仍然属于 Prompt Assets。
 - 当前不提供 `GET /sessions/:id/prompt-runtime/macros`。
 - 当前不提供 `GET /sessions/:id/prompt-runtime/run`。
-- preview 只提供 `POST /sessions/:id/prompt-runtime/preview`，并且一次只处理一段 `text`。
-- preview 不走 LLM、不创建 floor、不写 `prompt_snapshot`、不提交副作用。
+- preview 只提供 `POST /sessions/:id/prompt-runtime/preview`，并且一次只处理一段 `text`。对外契约为 `macro_text_preview`（`capabilities.observability.preview.mode`）。
+- preview 不走 LLM、不创建 floor、不写 `prompt_snapshot`、不提交副作用；也不执行 prompt assembly / budget allocation / delivery materialization，`returns_assembly_truth` 固定为 `false`。
+- preview 的 `runtime_trace` 只投影 `trace_subset` 中列出的子字段（当前为 `macro`、`source_selection`、`visibility`），resolved budget / delivery / structure 请读取 `policy` 与 `source_map`。
 - `GET /sessions/:id/prompt-runtime` 的 `branch_id` 只面向**已物化 branch**；未物化或不存在的 branch 返回 `404 branch_not_found`。
 - branch policy 只面向**已物化 branch**；当前不支持对未物化 branch 预写入 policy。
 - session policy 与 branch policy 现在都支持持久化治理 `structure`、`delivery`、`budget`、`source_selection`、`visibility`。
@@ -131,6 +132,12 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | ---- | ---- | ---- |
 | `section_name` | string | prompt 区段名 |
 | `token_count` | integer | 该区段的 token 统计值 |
+
+`section_name` 是后端真实写入的 IR section 名称。当前已知稳定命名：
+
+- `history`、`main` 等 preset-driven section 继续沿用预设中定义的名称。
+- 记忆相关 section 在 `compat_plus` 与 `native` 两条装配路径下统一为 `memory`。
+- `compat` 路径下记忆仍以后置 `system` 消息形式注入，不会产生 `memory` section，`section_stats` 中也不会出现对应条目。
 
 ### DiffEntry
 
@@ -240,6 +247,8 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `observability.dry_run.supports_visibility` | boolean | dry-run 是否支持 `visibility` |
 | `observability.dry_run.include_worldbook_matches` | boolean | dry-run 是否支持 `worldbook_matches` |
 | `observability.preview.enabled` | boolean | preview 能力是否可用 |
+| `observability.preview.mode` | string | preview 正式契约。当前固定为 `macro_text_preview`，表示 preview 只是宏解析子视图 |
+| `observability.preview.returns_assembly_truth` | boolean | preview 是否暴露 full prompt assembly 真相。当前固定为 `false` |
 | `observability.preview.returns_runtime_trace` | boolean | preview 是否返回 `runtime_trace` |
 | `observability.preview.supports_visibility` | boolean | preview 是否支持 `visibility` |
 | `observability.preview.single_text_only` | boolean | preview 是否限制为单段文本 |
@@ -247,6 +256,7 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `observability.preview.creates_floor` | boolean | preview 是否会创建 floor |
 | `observability.preview.writes_prompt_snapshot` | boolean | preview 是否会写 `prompt_snapshot` |
 | `observability.preview.commits_side_effects` | boolean | preview 是否会提交副作用 |
+| `observability.preview.trace_subset` | string[] | preview 会投影到 `runtime_trace` 的子字段列表。当前固定为 `["macro", "source_selection", "visibility"]` |
 | `observability.explain.enabled` | boolean | historical explain 是否可用 |
 | `observability.explain.read_only` | boolean | explain 是否只读 |
 | `observability.explain.requires_committed_floor` | boolean | explain 是否只面向 committed floor |

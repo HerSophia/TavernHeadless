@@ -137,14 +137,15 @@ describe('assembleNativePrompt', () => {
     const orderedSections = [...ir.sections].sort((a, b) => a.order - b.order);
     expect(orderedSections.map((section) => section.name)).toEqual([
       'nativeSystem',
-      'memorySummary',
+      'memory',
       'worldbookBefore',
       'chatHistory',
     ]);
 
-    const memorySection = ir.sections.find((section) => section.name === 'memorySummary');
+    const memorySection = ir.sections.find((section) => section.name === 'memory');
     expect(memorySection?.messages[0]?.role).toBe('system');
     expect(memorySection?.budgetGroup).toBe('memory');
+    expect(memorySection?.messages[0]?.source).toBe('memory');
     expect(memorySection?.messages[0]?.content).toContain('[Memory Summary]');
     expect(memorySection?.messages[0]?.content).toContain('Luna remembers the ritual.');
   });

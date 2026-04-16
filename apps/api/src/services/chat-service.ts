@@ -121,6 +121,7 @@ import {
   buildResolvedPromptRuntimePolicy,
   mergePromptRuntimePersistentPolicies,
   PROMPT_RUNTIME_LIMITATIONS,
+  PROMPT_RUNTIME_PREVIEW_LIMITATIONS,
   readPromptRuntimeBranchPersistentPolicy,
   readPromptRuntimePersistentPolicy,
 } from "./prompt-runtime-control-service.js";
@@ -1143,7 +1144,7 @@ export class ChatService {
       policy: executionContext.resolvedPolicy,
       sourceMap: inspection.sourceMap,
       diagnostics: inspection.diagnostics,
-      limitations: inspection.limitations,
+      limitations: [...inspection.limitations, ...PROMPT_RUNTIME_PREVIEW_LIMITATIONS],
       text: preview.text,
       runtimeTrace,
     };
@@ -3421,11 +3422,19 @@ export class ChatService {
     history: ChatMessage[],
     sourceSelection?: PromptSourceSelectionPolicy,
   ): ChatMessage[] {
+    const mode = sourceSelection?.history?.mode;
+
+    // mode = "full" 时，不做额外 message-window 截断，只受 visibility 与 budget 影响。
+    if (mode === "full") {
+      return history;
+    }
+
+    // mode = "windowed" 或未指定 mode 时，按 maxMessages 截断。
+    // 未指定 mode 时保持向后兼容：如果 maxMessages 有值，仍然截断。
     const maxMessages = normalizePositiveInt(sourceSelection?.history?.maxMessages);
     if (!maxMessages || history.length <= maxMessages) {
       return history;
     }
-
     return history.slice(-maxMessages);
   }
 
@@ -3482,8 +3491,11 @@ export class ChatService {
       });
     };
 
-    if (args.sourceSelection?.memory?.enabled === false && args.memorySummary?.trim()) {
-      pushExcludedSource("memory", "disabled_by_policy", "sourceSelection.memory.enabled=false removed memory summary injection.");
+    // memory exclusion：不再依赖 args.memorySummary 的内容判断（上游已将其截断为 undefined），
+    // 直接根据 policy 状态报告。如果 memory 被 policy 禁用，无论原始 summary 是否存在，
+    // 都应陈述"被 policy 禁用"这一事实。
+    if (args.sourceSelection?.memory?.enabled === false) {
+      pushExcludedSource("memory", "disabled_by_policy", "sourceSelection.memory.enabled=false disables memory summary injection.");
     }
 
     if (
