@@ -308,6 +308,11 @@ export class WorldbookResolveNode implements NativePipelineNode {
             role: entry.role ?? 'system',
             content: rendered,
             source: `native:worldbook:${entry.id}@depth${depth}`,
+            // Phase 3 governance: worldbook registry 记为 `budget_prunable`，
+            // 但当前 native pipeline 固定 pin 住世界书条目。已公开治理的裁剪策略
+            // 仍由 `sourceSelection.worldbook.enabled` 与 budget allocator 的
+            // 组级裁剪承担，后续若放开 IR 层级 trim，应读取 registry 的
+            // governance level 决策。
             prunable: false,
           }],
         });
@@ -319,6 +324,8 @@ export class WorldbookResolveNode implements NativePipelineNode {
         role: entry.role ?? 'system',
         content: rendered,
         source: `native:worldbook:${entry.id}`,
+        // Phase 3 governance: worldbook registry 记为 `budget_prunable`。
+        // 说明同上，首轮保持 pin 住的既有行为。
         prunable: false,
       });
     }
@@ -468,6 +475,10 @@ export class MemoryInjectNode implements NativePipelineNode {
         role: 'system',
         content: `[Memory Summary]\n${summary}`,
         source: PROMPT_MEMORY_MESSAGE_SOURCE,
+        // Phase 3 governance: memory registry 记为 `soft_required`。首轮保留
+        // `prunable: false`，对外治理依然走 `sourceSelection.memory.enabled`。
+        // 后续若允许 budget 在极端压力下裁剪 memory，应改为读取
+        // `resolvePromptRuntimeSourceGovernanceLevel('memory')`。
         prunable: false,
         priority: 0,
       }],

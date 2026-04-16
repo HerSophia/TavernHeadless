@@ -115,6 +115,10 @@ export function assembleCompatPlus(input: CompatPlusAssemblerInput): PromptIR {
       role: 'system',
       content: memoryInjection.formattedText,
       source: PROMPT_MEMORY_MESSAGE_SOURCE,
+      // Phase 3 governance: memory registry 记为 `soft_required`。首轮
+      // 保留 `prunable: false`，对外治理走 `sourceSelection.memory.enabled`。
+      // 若后续允许在极端 budget 压力下裁剪 memory，应参考
+      // `resolvePromptRuntimeSourceGovernanceLevel('memory')` 重新决策。
       prunable: false,
     }],
   };

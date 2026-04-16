@@ -128,6 +128,7 @@ export type {
   TemplateOptions,
   MessageBuilderOptions,
 } from './prompt/index.js';
+export type { PromptRuntimeSourceGovernanceLevel } from './prompt/index.js';
 export { TemplateEngine, TemplateVariableError } from './prompt/index.js';
 export { TokenBudget, SimpleTokenCounter } from './prompt/index.js';
 export {
@@ -137,6 +138,7 @@ export {
   resolvePromptRuntimeBudgetGroupDefaults,
   resolvePromptRuntimeBudgetGroupExclusionSource,
   resolvePromptRuntimeBudgetGroupTraceLabel,
+  resolvePromptRuntimeSourceGovernanceLevel,
   PROMPT_MEMORY_SECTION_NAME,
   PROMPT_MEMORY_MESSAGE_SOURCE,
 } from './prompt/index.js';

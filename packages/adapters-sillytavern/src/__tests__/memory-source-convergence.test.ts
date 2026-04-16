@@ -89,6 +89,7 @@ describe('memory source convergence across compat_plus / native', () => {
       variables: { char: 'Luna' },
       memorySummary: '- Luna remembers the ritual.',
       maxTokens: 2048,
+      reservedForReply: 256,
     });
 
     const compatPlusIR = assembleCompatPlus(baseCompatPlusInput('- Luna remembers the ritual.'));
@@ -138,6 +139,7 @@ describe('memory source convergence across compat_plus / native', () => {
       chatHistory: [{ role: 'user', content: 'Hello' }],
       memorySummary: '',
       maxTokens: 512,
+      reservedForReply: 64,
     });
 
     const compatPlusIR = assembleCompatPlus({

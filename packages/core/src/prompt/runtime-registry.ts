@@ -1,6 +1,28 @@
 import type { PromptRuntimeSourceKind } from './types.js';
 
 /**
+ * Prompt Runtime 来源的治理级别。
+ *
+ * 用于内部描述某类 source 在本轮装配中的保护强度，供装配器 / explain 侧
+ * 在未来演进 prunable 策略时参考。首轮不开放为公共 API 类型，默认行为保持
+ * 原样（即相关 section 仍 `prunable: false`）。
+ *
+ * 语义约定：
+ *
+ * - `hard_required`：主链路必需，不允许被 budget 裁剪。例如 nativeSystem / 主
+ *   指令文本。即便 budget 收紧，也应优先裁其他 source。
+ * - `soft_required`：对外治理面允许通过 `sourceSelection.*.enabled` 或
+ *   `visibility` 显式关掉，但进入装配后不宜被 budget 裁剪。当前 memory 属于
+ *   这一类：默认注入，用户可关；一旦进入装配就视为语义必须项。
+ * - `budget_prunable`：允许 budget 在必要时裁剪。典型场景是 history、worldbook、
+ *   examples，这些 source 的对外治理与 budget 之间需要协作。
+ */
+export type PromptRuntimeSourceGovernanceLevel =
+  | 'hard_required'
+  | 'soft_required'
+  | 'budget_prunable';
+
+/**
  * Prompt Runtime 来源描述符。
  *
  * 这是内部 registry 的只读描述对象，用来集中声明某个来源的默认预算组、
@@ -15,6 +37,14 @@ export interface PromptRuntimeSourceDescriptor {
   readonly traceLabel: string;
   /** 如需暴露到 excludedSources.source，则在这里声明对应公开来源名。 */
   readonly exclusionSource?: PromptRuntimeSourceKind;
+  /**
+   * 默认治理级别。
+   *
+   * 首轮仅作为装配器 / explain 侧的参考描述，不直接决定 IR message 的
+   * `prunable` 值。后续可以把这里的级别与 `prunable` 决策串起来，例如
+   * `budget_prunable` 源默认允许 trim。
+   */
+  readonly defaultGovernanceLevel?: PromptRuntimeSourceGovernanceLevel;
 }
 
 /**
@@ -60,24 +90,28 @@ const PROMPT_RUNTIME_SOURCE_REGISTRY: readonly PromptRuntimeSourceDescriptor[] =
     defaultBudgetGroup: 'history',
     traceLabel: 'history',
     exclusionSource: 'history',
+    defaultGovernanceLevel: 'budget_prunable',
   },
   {
     kind: 'memory',
     defaultBudgetGroup: 'memory',
     traceLabel: 'memory',
     exclusionSource: 'memory',
+    defaultGovernanceLevel: 'soft_required',
   },
   {
     kind: 'worldbook',
     defaultBudgetGroup: 'worldbook',
     traceLabel: 'worldbook',
     exclusionSource: 'worldbook',
+    defaultGovernanceLevel: 'budget_prunable',
   },
   {
     kind: 'examples',
     defaultBudgetGroup: 'examples',
     traceLabel: 'examples',
     exclusionSource: 'examples',
+    defaultGovernanceLevel: 'budget_prunable',
   },
   {
     kind: PROMPT_RUNTIME_SECTION_BUDGET_GROUP_PATTERN,
@@ -170,6 +204,25 @@ export function resolvePromptRuntimeSourceDescriptor(
   kind: string,
 ): PromptRuntimeSourceDescriptor | undefined {
   return resolveRegistryDescriptorByPattern(PROMPT_RUNTIME_SOURCE_REGISTRY, (descriptor) => descriptor.kind, kind);
+}
+
+/**
+ * 读取某类来源的默认治理级别。
+ *
+ * 首轮仅用于装配器 / explain 侧的参考描述，不直接决定 IR message 的
+ * `prunable` 值。如果未命中 registry，返回 `undefined` 表示未定义治理意图。
+ *
+ * @example
+ * ```ts
+ * resolvePromptRuntimeSourceGovernanceLevel('memory');   // 'soft_required'
+ * resolvePromptRuntimeSourceGovernanceLevel('worldbook'); // 'budget_prunable'
+ * resolvePromptRuntimeSourceGovernanceLevel('unknown');   // undefined
+ * ```
+ */
+export function resolvePromptRuntimeSourceGovernanceLevel(
+  kind: string,
+): PromptRuntimeSourceGovernanceLevel | undefined {
+  return resolvePromptRuntimeSourceDescriptor(kind)?.defaultGovernanceLevel;
 }
 
 /**
