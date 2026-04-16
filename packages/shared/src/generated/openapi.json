@@ -5797,6 +5797,7 @@
     },
     "/floors/{id}/prompt-runtime/explain": {
       "get": {
+        "description": "Returns prompt runtime facts that were actually persisted when this floor was committed. It never re-runs prompt assembly, macro evaluation, or budget decisions. If the floor was committed before the explain snapshot feature existed, resolved policy, source map, trim reasons, excluded sources, and section stats may be returned as null.",
         "operationId": "getFloorPromptRuntimeExplain",
         "parameters": [
           {
@@ -26650,9 +26651,16 @@
                         "creates_floor": false,
                         "enabled": true,
                         "llm_call": false,
+                        "mode": "macro_text_preview",
+                        "returns_assembly_truth": false,
                         "returns_runtime_trace": true,
                         "single_text_only": true,
                         "supports_visibility": true,
+                        "trace_subset": [
+                          "macro",
+                          "source_selection",
+                          "visibility"
+                        ],
                         "writes_prompt_snapshot": false
                       },
                       "stream": {
@@ -27163,6 +27171,17 @@
                                     false
                                   ]
                                 },
+                                "mode": {
+                                  "enum": [
+                                    "macro_text_preview"
+                                  ],
+                                  "type": "string"
+                                },
+                                "returns_assembly_truth": {
+                                  "enum": [
+                                    false
+                                  ]
+                                },
                                 "returns_runtime_trace": {
                                   "enum": [
                                     true
@@ -27178,6 +27197,17 @@
                                     true
                                   ]
                                 },
+                                "trace_subset": {
+                                  "items": {
+                                    "enum": [
+                                      "macro",
+                                      "source_selection",
+                                      "visibility"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
                                 "writes_prompt_snapshot": {
                                   "enum": [
                                     false
@@ -27186,13 +27216,16 @@
                               },
                               "required": [
                                 "enabled",
+                                "mode",
                                 "returns_runtime_trace",
+                                "returns_assembly_truth",
                                 "supports_visibility",
                                 "single_text_only",
                                 "llm_call",
                                 "creates_floor",
                                 "writes_prompt_snapshot",
-                                "commits_side_effects"
+                                "commits_side_effects",
+                                "trace_subset"
                               ],
                               "type": "object"
                             },
@@ -37854,6 +37887,7 @@
     },
     "/sessions/{id}/prompt-runtime/preview": {
       "post": {
+        "description": "Resolves macros, source_selection, and visibility against the current session state for one ad-hoc text segment. This is a macro_text_preview sub-view, not a full runtime preview: it does not run prompt assembly, budget allocation, or delivery materialization, and it never creates floors, writes prompt snapshots, or calls an LLM.",
         "operationId": "previewSessionPromptRuntime",
         "parameters": [
           {
@@ -39371,7 +39405,7 @@
             "description": "Default Response"
           }
         },
-        "summary": "Preview prompt runtime macros for a single text segment",
+        "summary": "Preview macro resolution for a single text segment (macro_text_preview)",
         "tags": [
           "prompt-runtime"
         ]

@@ -33,9 +33,36 @@ export const PROMPT_RUNTIME_LIMITATIONS = [
   "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
   "Variable commit remains page -> floor. Branch promotion is not automatic.",
 ] as const;
-export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS = [
+export const PROMPT_RUNTIME_PREVIEW_LIMITATIONS = [
+  "Preview returns a macro_text_preview sub-view. It does not perform full prompt assembly, budget allocation, or delivery-time structure decisions.",
+  "Preview exposes only macro, source_selection, and visibility traces. It does not return assembled messages, materialized delivery results, or executable prompt snapshot truth.",
+] as const;
+/**
+ * Limitations common to every historical explain response. It always reads persisted truth
+ * and never re-runs prompt assembly, macro evaluation, or budget decisions, regardless of
+ * whether an explain snapshot is available for the committed floor.
+ */
+export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS = [
   "Historical explain reads persisted prompt snapshot and committed floor result only. It does not re-run prompt assembly, macro evaluation, or budget decisions.",
+] as const;
+
+/**
+ * Additional limitations when an older committed floor does not have a prompt_runtime_explain_snapshot
+ * row. In that case resolved policy, source-map, trim reasons, excluded sources, and section stats
+ * are returned as null rather than recomputed.
+ */
+export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_FALLBACK_LIMITATIONS = [
   "Older committed floors without a prompt_runtime_explain_snapshot may return resolved policy, policy source-map fields, trim reasons, excluded sources, and section stats as null.",
+] as const;
+
+/**
+ * @deprecated Use {@link PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS} combined with
+ * {@link PROMPT_RUNTIME_HISTORICAL_EXPLAIN_FALLBACK_LIMITATIONS}. Kept for backward compatibility
+ * of external consumers that import the old name.
+ */
+export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS = [
+  ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS,
+  ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_FALLBACK_LIMITATIONS,
 ] as const;
 
 export type PromptRuntimeHistorySourceMode = "existing_branch" | "source_floor_branch" | "main_fallback";
@@ -329,6 +356,20 @@ export interface PromptRuntimeInspectionResult {
   limitations: string[];
 }
 
+/**
+ * Explain-phase snapshot payload.
+ *
+ * Records what prompt runtime control plane observed during assembly/commit, in the form that
+ * historical explain and compare routes consume. This is the explain-side truth, not the
+ * assembly-side truth recorded in {@link PromptAssemblySnapshot}.
+ *
+ * Persisted via `promptRuntimeExplainSnapshots` table. `snapshotVersion` lets future schema
+ * migrations stay backward compatible with rows written by older runtime versions. Increment
+ * only when the payload shape changes in a breaking way, and keep readers tolerant of older
+ * versions.
+ *
+ * Phase: `explain` — control-plane / observability truth, bound to the commit moment of a floor.
+ */
 export interface PromptRuntimeInspectionSnapshotPayload {
   targetBranchId?: string | null;
   sourceFloorId?: string | null;
@@ -363,6 +404,14 @@ export function buildPromptRuntimeInspectionSnapshotPayload(
   };
 }
 
+/**
+ * Committed explain-phase snapshot record.
+ *
+ * Binds a {@link PromptRuntimeInspectionSnapshotPayload} to a specific committed floor and
+ * persists it in the explain-phase store. Historical explain and compare routes read from here.
+ *
+ * Phase: `explain` — persisted at commit time alongside the assembly-phase `prompt_snapshot` row.
+ */
 export interface PromptRuntimeCommittedExplainSnapshot extends PromptRuntimeInspectionSnapshotPayload {
   floorId: string;
   sessionId: string;
@@ -482,13 +531,16 @@ export interface PromptRuntimeCapabilities {
     };
     preview: {
       enabled: boolean;
+      mode: "macro_text_preview";
       returnsRuntimeTrace: true;
+      returnsAssemblyTruth: false;
       supportsVisibility: true;
       singleTextOnly: true;
       llmCall: false;
       createsFloor: false;
       writesPromptSnapshot: false;
       commitsSideEffects: false;
+      traceSubset: readonly ("macro" | "source_selection" | "visibility")[];
     };
     explain: {
       enabled: boolean;
@@ -718,7 +770,10 @@ export class PromptRuntimeControlService {
         excludedSources: snapshot.excludedSources,
         sectionStats: snapshot.sectionStats,
         diagnostics: snapshot.diagnostics,
-        limitations: [...PROMPT_RUNTIME_LIMITATIONS],
+        limitations: [
+          ...PROMPT_RUNTIME_LIMITATIONS,
+          ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS,
+        ],
         result: mapFloorResultSnapshotRowToHistoricalExplainResult(floorResultRow),
       };
     }
@@ -749,7 +804,11 @@ export class PromptRuntimeControlService {
       excludedSources: null,
       sectionStats: null,
       diagnostics: buildPromptRuntimeHistoricalExplainDiagnostics(),
-      limitations: [...PROMPT_RUNTIME_LIMITATIONS, ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS],
+      limitations: [
+        ...PROMPT_RUNTIME_LIMITATIONS,
+        ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS,
+        ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_FALLBACK_LIMITATIONS,
+      ],
       result: mapFloorResultSnapshotRowToHistoricalExplainResult(floorResultRow),
     };
   }
@@ -948,13 +1007,16 @@ export class PromptRuntimeControlService {
         },
         preview: {
           enabled: this.enablePreviewEndpoint,
+          mode: "macro_text_preview",
           returnsRuntimeTrace: true,
+          returnsAssemblyTruth: false,
           supportsVisibility: true,
           singleTextOnly: true,
           llmCall: false,
           createsFloor: false,
           writesPromptSnapshot: false,
           commitsSideEffects: false,
+          traceSubset: ["macro", "source_selection", "visibility"],
         },
         explain: {
           enabled: true,

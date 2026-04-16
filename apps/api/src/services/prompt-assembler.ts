@@ -63,6 +63,12 @@ import {
 } from "./st-macros/index.js";
 import { stringifyStMacroValue } from "./st-macros/variable-path.js";
 
+import {
+  resolvePromptSourceGates,
+  applyMemorySourceGate,
+  type PromptSourceResolution,
+} from "./prompt-runtime-source-resolution.js";
+
 export interface SessionPromptInfo {
   presetId: string | null;
   worldbookProfileId: string | null;
@@ -124,6 +130,18 @@ const READONLY_PROMPT_MACRO_KEYS = [
 
 type ReadonlyPromptMacroKey = (typeof READONLY_PROMPT_MACRO_KEYS)[number];
 
+/**
+ * Assembly-phase snapshot preview.
+ *
+ * Records what actually entered the prompt assembly step: preset / worldbook / regex provenance,
+ * activated worldbook entries, applied regex rule names, prompt mode, digest, and token estimate.
+ *
+ * This is NOT a delivery-phase snapshot. It does not describe materialized send messages, structure
+ * merges, assistant-prefill rewrites, or final delivery trace. Those belong to delivery-phase
+ * artifacts (for example `materializePromptRuntimeMessages` output and turn outcome records).
+ *
+ * Persisted into the `prompt_snapshot` table by `turn-commit-service` after a floor commits.
+ */
 export interface PromptSnapshotPreview {
   presetId: string | null;
   presetUpdatedAt: number | null;
@@ -142,6 +160,14 @@ export interface PromptSnapshotPreview {
   tokenEstimate: number;
 }
 
+/**
+ * Full assembly-phase snapshot carried within one run.
+ *
+ * Extends {@link PromptSnapshotPreview} with the raw resources that assembled the prompt.
+ * Consumed in-memory; only the preview subset is persisted.
+ *
+ * Phase: `assembly` — records what went INTO prompt assembly, not what was sent to the provider.
+ */
 export interface PromptAssemblySnapshot extends PromptSnapshotPreview {
   createdAt: number;
   preset: LoadedPromptPreset | null;
@@ -543,6 +569,11 @@ export async function assemblePrompt(
   });
 
   const metadata = parseSessionMetadata(session.metadataJson);
+
+  // ── Source Resolution：在进入组装前统一解析所有 source 的准入状态 ──
+  const sourceResolution = resolvePromptSourceGates(options.sourceSelection);
+  const effectiveMemorySummary = applyMemorySourceGate(memorySummary, sourceResolution.gates.memory);
+
   const character = parseCharacterSnapshot(session.characterSnapshotJson);
   const userSnapshot = parseUserSnapshot(session.userSnapshotJson ?? null);
   const persona = userSnapshot ?? metadata.persona;
@@ -579,7 +610,7 @@ export async function assemblePrompt(
     userSnapshot,
     ordinaryVariables,
     variableSnapshot,
-    memorySummary,
+    memorySummary: effectiveMemorySummary,
     maxPrompt: effectiveBudget.maxInputTokens,
     runKind,
   });
@@ -684,7 +715,9 @@ export async function assemblePrompt(
   if (presetData) {
     const runtimeWorldbooks = collectPromptWorldbooks(promptSnapshot.worldbook, promptSnapshot.character);
 
-    if (runtimeWorldbooks.length > 0) {
+    // sourceSelection.worldbook.enabled = false 时，跳过世界书触发与注入。
+    const worldbookGateEnabled = sourceResolution.gates.worldbook.enabled;
+    if (runtimeWorldbooks.length > 0 && worldbookGateEnabled) {
       const triggerMessages = fullHistory.map((message) => message.content).reverse();
 
       worldBookResults = triggerPromptWorldbooks(runtimeWorldbooks, {
@@ -717,7 +750,10 @@ export async function assemblePrompt(
       characterDescription: promptSnapshot.character?.description,
       characterPersonality: promptSnapshot.character?.personality,
       scenario: promptSnapshot.character?.scenario,
-      exampleDialogue: promptSnapshot.character?.exampleDialogue,
+      // sourceSelection.examples.enabled = false 时，不传入示例对话。
+      exampleDialogue: sourceResolution.gates.examples.enabled
+        ? promptSnapshot.character?.exampleDialogue
+        : undefined,
       personaDescription: persona?.description,
       intent: promptIntent,
       namesBehavior: resolveNamesBehavior(presetData.namesBehavior),
@@ -736,7 +772,7 @@ export async function assemblePrompt(
     const useNativePipeline = promptSnapshot.promptMode === "native";
     const useCompatPlusPipeline = promptSnapshot.promptMode === "compat_plus";
     const compatPlusMemoryInjection = useCompatPlusPipeline
-      ? createCompatPlusMemoryInjection(memorySummary, tokenCounter)
+      ? createCompatPlusMemoryInjection(effectiveMemorySummary, tokenCounter)
       : undefined;
     characterOverridesHandledInPromptIR = useNativePipeline;
     memorySummaryHandledInPromptIR = useNativePipeline || compatPlusMemoryInjection !== undefined;
@@ -762,8 +798,10 @@ export async function assemblePrompt(
             persona: persona ? { name: persona.name, description: persona.description } : undefined,
             chatHistory: fullHistory,
             worldbookEntries: toPromptGraphWorldbookEntries(worldBookResults),
-            exampleDialogue: promptSnapshot.character?.exampleDialogue,
-            memorySummary,
+            exampleDialogue: sourceResolution.gates.examples.enabled
+              ? promptSnapshot.character?.exampleDialogue
+              : undefined,
+            memorySummary: effectiveMemorySummary,
             maxTokens: effectiveBudget.maxInputTokens + effectiveBudget.reservedCompletionTokens,
             reservedForReply: effectiveBudget.reservedCompletionTokens,
             tokenCounter,
@@ -813,8 +851,8 @@ export async function assemblePrompt(
     worldbookMatches = buildWorldbookMatchDetails(worldBookResults);
   }
 
-  if (memorySummary && !memorySummaryHandledInPromptIR) {
-    messages = injectMemorySummary(messages, memorySummary);
+  if (effectiveMemorySummary && !memorySummaryHandledInPromptIR) {
+    messages = injectMemorySummary(messages, effectiveMemorySummary);
   }
   if (!characterOverridesHandledInPromptIR) {
     messages = injectCharacterSystemPrompt(messages, promptSnapshot.character);
@@ -873,8 +911,9 @@ export async function assemblePrompt(
         worldbookHits,
         regexPreRules: promptSnapshot.regexPreRuleNames,
         regexPostRules: promptSnapshot.regexPostRuleNames,
-        memorySummaryInjected: Boolean(memorySummary),
-        selectedPromptOrderCharacterId: 100000,
+        // 反映真实执行状态：effectiveMemorySummary 是经过 source gate 过滤后的值
+        memorySummaryInjected: Boolean(effectiveMemorySummary),
+        selectedPromptOrderCharacterId: null,
         ignoredPromptOrderCharacterIds: [],
         unsupportedPresetFields: [],
         ignoredPresetFields: [],

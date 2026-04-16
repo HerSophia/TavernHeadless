@@ -994,7 +994,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Explain committed floor prompt runtime from persisted truth */
+        /**
+         * Explain committed floor prompt runtime from persisted truth
+         * @description Returns prompt runtime facts that were actually persisted when this floor was committed. It never re-runs prompt assembly, macro evaluation, or budget decisions. If the floor was committed before the explain snapshot feature existed, resolved policy, source map, trim reasons, excluded sources, and section stats may be returned as null.
+         */
         get: operations["getFloorPromptRuntimeExplain"];
         put?: never;
         post?: never;
@@ -5708,7 +5711,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Preview prompt runtime macros for a single text segment */
+        /**
+         * Preview macro resolution for a single text segment (macro_text_preview)
+         * @description Resolves macros, source_selection, and visibility against the current session state for one ad-hoc text segment. This is a macro_text_preview sub-view, not a full runtime preview: it does not run prompt assembly, budget allocation, or delivery materialization, and it never creates floors, writes prompt snapshots, or calls an LLM.
+         */
         post: operations["previewSessionPromptRuntime"];
         delete?: never;
         options?: never;
@@ -15109,9 +15115,16 @@ export interface operations {
                      *             "creates_floor": false,
                      *             "enabled": true,
                      *             "llm_call": false,
+                     *             "mode": "macro_text_preview",
+                     *             "returns_assembly_truth": false,
                      *             "returns_runtime_trace": true,
                      *             "single_text_only": true,
                      *             "supports_visibility": true,
+                     *             "trace_subset": [
+                     *               "macro",
+                     *               "source_selection",
+                     *               "visibility"
+                     *             ],
                      *             "writes_prompt_snapshot": false
                      *           },
                      *           "stream": {
@@ -15301,12 +15314,17 @@ export interface operations {
                                     enabled: boolean;
                                     /** @enum {unknown} */
                                     llm_call: false;
+                                    /** @enum {string} */
+                                    mode: "macro_text_preview";
+                                    /** @enum {unknown} */
+                                    returns_assembly_truth: false;
                                     /** @enum {unknown} */
                                     returns_runtime_trace: true;
                                     /** @enum {unknown} */
                                     single_text_only: true;
                                     /** @enum {unknown} */
                                     supports_visibility: true;
+                                    trace_subset: ("macro" | "source_selection" | "visibility")[];
                                     /** @enum {unknown} */
                                     writes_prompt_snapshot: false;
                                 };
