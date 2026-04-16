@@ -363,6 +363,109 @@ describe('MemoryStore', () => {
       expect(result.items.map((item) => item.scope)).toEqual(['global', 'branch', 'floor']);
     });
 
+    it('attaches scopeResolution diagnostic in normal visible_refs path', async () => {
+      const { store, repo } = createStore();
+
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-vr-1',
+        type: 'fact',
+        content: 'session-1 fact',
+        importance: 0.6,
+        confidence: 1.0,
+        status: 'active',
+      });
+
+      const result = await store.prepareInjection('session-vr-1', {
+        maxTokens: 10000,
+        scopeContext: { accountId: 'account-1', sessionId: 'session-vr-1' },
+      });
+
+      expect(result.scopeResolution).toBeDefined();
+      expect(result.scopeResolution!.requestedMode).toBe('visible_refs');
+      expect(result.scopeResolution!.actualMode).toBe('visible_refs');
+      expect(result.scopeResolution!.status).toBe('ok');
+      expect(result.scopeResolution!.requestedScope.scopeId).toBe('session-vr-1');
+      expect(result.scopeResolution!.resolvedScopeRefs?.length).toBeGreaterThan(0);
+      expect(result.scopeResolution!.fallbackReason).toBeUndefined();
+    });
+
+    it('attaches direct_scope_fallback diagnostic when visible refs resolve to empty (default mode)', async () => {
+      const { store, repo } = createStore();
+
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-fb-1',
+        type: 'fact',
+        content: 'session-fb-1 fact',
+        importance: 0.5,
+        confidence: 1.0,
+        status: 'active',
+      });
+
+      // 故意不传 sessionId / branchId / floorId / accountId，
+      // 让 resolveVisibleRefs 返回空集，触发 default fallback。
+      const result = await store.prepareInjection('session-fb-1', {
+        maxTokens: 10000,
+        scopeContext: {},
+      });
+
+      expect(result.scopeResolution!.requestedMode).toBe('visible_refs');
+      expect(result.scopeResolution!.actualMode).toBe('direct_scope_fallback');
+      expect(result.scopeResolution!.status).toBe('empty_visible_refs');
+      expect(result.scopeResolution!.fallbackReason).toContain('empty');
+      // fallback 仍然能命中按 scopeId 直查的 chat 记忆
+      expect(result.items).toHaveLength(1);
+    });
+
+    it('returns strict_empty result when strictVisibleRefs is enabled and visible refs resolve to empty', async () => {
+      const { store, repo } = createStore();
+
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-strict-1',
+        type: 'fact',
+        content: 'should not be returned in strict mode',
+        importance: 0.5,
+        confidence: 1.0,
+        status: 'active',
+      });
+
+      const result = await store.prepareInjection('session-strict-1', {
+        maxTokens: 10000,
+        scopeContext: {},
+        strictVisibleRefs: true,
+      });
+
+      expect(result.scopeResolution!.actualMode).toBe('strict_empty');
+      expect(result.scopeResolution!.status).toBe('empty_visible_refs');
+      expect(result.items).toHaveLength(0);
+      expect(result.formattedText).toBe('');
+      expect(result.tokenCount).toBe(0);
+    });
+
+    it('attaches direct_scope diagnostic when scopeContext is not provided', async () => {
+      const { store, repo } = createStore();
+
+      await repo.create({
+        scope: 'chat',
+        scopeId: 'session-direct-1',
+        type: 'fact',
+        content: 'direct scope fact',
+        importance: 0.5,
+        confidence: 1.0,
+        status: 'active',
+      });
+
+      const result = await store.prepareInjection('session-direct-1', {
+        maxTokens: 10000,
+      });
+
+      expect(result.scopeResolution!.requestedMode).toBe('direct_scope');
+      expect(result.scopeResolution!.actualMode).toBe('direct_scope');
+      expect(result.scopeResolution!.status).toBe('ok');
+    });
+
     it('orders by importance (highest first)', async () => {
       const { store, repo } = createStore();
       await repo.create({
