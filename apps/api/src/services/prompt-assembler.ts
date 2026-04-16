@@ -1109,6 +1109,26 @@ function injectCharacterPostHistoryInstructions(messages: ChatMessage[], charact
   ];
 }
 
+/**
+ * compat 路径的 memory 后置注入。
+ *
+ * 与 `compat_plus` 和 `native` 路径不同，本函数直接把 memory summary 以裸
+ * `ChatMessage` 形式插入到消息数组的第 1 位（第一条 system 之后），不会产生
+ * 带 `source` / `budgetGroup` 归因的 IR section。
+ *
+ * Limitation: compat 路径下 memory 不参与 section 级 token budget 治理，
+ * 也不会进入 runtimeTrace 的 section stats。`runtimeTrace.memory.summaryInjected`
+ * 仍能正确反映 memory 是否真正进入 prompt。如果需要 section 级归因，
+ * 请将 `promptMode` 切换到 `compat_plus` 或 `native`。
+ *
+ * 三条路径的 memory 接入点对比：
+ *
+ * | 路径 | 接入方式 | section name | message source |
+ * | ---- | ---- | ---- | ---- |
+ * | compat | `injectMemorySummary()` 后置 | 无 section | 无 source 标签 |
+ * | compat_plus | `assembleCompatPlus` IR section | `PROMPT_MEMORY_SECTION_NAME` = `"memory"` | `PROMPT_MEMORY_MESSAGE_SOURCE` = `"memory"` |
+ * | native | `MemoryInjectNode` IR section | `PROMPT_MEMORY_SECTION_NAME` = `"memory"` | `PROMPT_MEMORY_MESSAGE_SOURCE` = `"memory"` |
+ */
 function injectMemorySummary(messages: ChatMessage[], memorySummary: string): ChatMessage[] {
   if (!memorySummary.trim()) {
     return messages;

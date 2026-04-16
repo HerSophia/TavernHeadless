@@ -133,6 +133,12 @@ Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前
 | `section_name` | string | prompt 区段名 |
 | `token_count` | integer | 该区段的 token 统计值 |
 
+`section_name` 是后端真实写入的 IR section 名称。当前已知稳定命名：
+
+- `history`、`main` 等 preset-driven section 继续沿用预设中定义的名称。
+- 记忆相关 section 在 `compat_plus` 与 `native` 两条装配路径下统一为 `memory`。
+- `compat` 路径下记忆仍以后置 `system` 消息形式注入，不会产生 `memory` section，`section_stats` 中也不会出现对应条目。
+
 ### DiffEntry
 
 | 字段 | 类型 | 说明 |
