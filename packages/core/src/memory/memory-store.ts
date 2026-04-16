@@ -1,6 +1,6 @@
 import type { MemoryScope } from '@tavern/shared';
 import type { CoreEventBus } from '../events/index.js';
-import type { MemoryRepository } from '../ports/memory-repository.js';
+import type { MemoryItemUpdatePatch, MemoryRepository } from '../ports/memory-repository.js';
 import type { TokenCounter } from '../prompt/types.js';
 import type {
   MemoryAccessOptions,
@@ -249,5 +249,43 @@ export class MemoryStore {
     });
 
     return created;
+  }
+
+  /**
+   * 更新记忆条目（手动更新）。
+   *
+   * 用于手动 CRUD 路径将更新统一收口到 canonical mutation ingress。
+   * 在仓储成功 update 之后广播 `memory.updated`，让事件面与
+   * 主链 turn-commit / runtime mutation 完全一致。
+   *
+   * @param id - 待更新的记忆 ID
+   * @param patch - 部分字段更新
+   * @param access - 访问上下文（一般用于 multi-account 隔离）
+   * @returns 更新后的领域对象，找不到时返回 null
+   */
+  async update(
+    id: string,
+    patch: MemoryItemUpdatePatch,
+    access: MemoryAccessOptions = {},
+  ): Promise<MemoryItem | null> {
+    const previous = await this.repo.findById(id, access);
+    if (!previous) {
+      return null;
+    }
+
+    const updated = await this.repo.update(id, patch, access);
+    if (!updated) {
+      return null;
+    }
+
+    const eventContext = this.buildEventContext(updated);
+
+    await this.eventBus.emit('memory.updated', {
+      ...eventContext,
+      item: updated,
+      previousContent: previous.content,
+    });
+
+    return updated;
   }
 }

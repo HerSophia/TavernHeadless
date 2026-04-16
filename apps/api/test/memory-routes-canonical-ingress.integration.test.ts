@@ -117,4 +117,79 @@ describe("memory routes — canonical ingress (POST /memories)", () => {
       unsubscribe();
     }
   }, 15000);
+
+  it("updates a memory item via MemoryStore and emits memory.updated with previousContent", async () => {
+    expect(result?.orchestrationContext?.memoryStore).toBeDefined();
+
+    // 先用 canonical ingress 建一条
+    const createResp = await app!.inject({
+      method: "POST",
+      url: "/memories",
+      payload: {
+        scope: "chat",
+        scope_id: "sess_canonical_update_001",
+        type: "fact",
+        fact_key: "beta",
+        content: { text: "Original beta fact" },
+        importance: 0.4,
+        confidence: 0.8,
+      },
+    });
+    expect(createResp.statusCode, createResp.body).toBe(201);
+    const created = createResp.json<ItemResponse<MemoryDto>>().data;
+
+    const events: Array<{ name: string; payload: unknown }> = [];
+    const unsubscribeUpdated = result!.orchestrationContext!.eventBus.on(
+      "memory.updated",
+      (payload) => {
+        events.push({ name: "memory.updated", payload });
+      },
+    );
+
+    try {
+      const patchResp = await app!.inject({
+        method: "PATCH",
+        url: `/memories/${created.id}`,
+        payload: {
+          content: { text: "Refined beta fact" },
+          importance: 0.55,
+        },
+      });
+
+      expect(patchResp.statusCode, patchResp.body).toBe(200);
+      const updated = patchResp.json<ItemResponse<MemoryDto>>().data;
+      expect(updated.id).toBe(created.id);
+      expect(updated.content).toEqual({ text: "Refined beta fact" });
+      expect(updated.importance).toBeCloseTo(0.55);
+      expect(updated.confidence).toBeCloseTo(0.8);
+      expect(updated.scope_id).toBe("sess_canonical_update_001");
+
+      expect(events).toHaveLength(1);
+      const evt = events[0]!.payload as {
+        scope: string;
+        scopeId: string;
+        sessionId?: string;
+        item: { id: string; content: string };
+        previousContent?: string;
+      };
+      expect(evt.scope).toBe("chat");
+      expect(evt.scopeId).toBe("sess_canonical_update_001");
+      expect(evt.sessionId).toBe("sess_canonical_update_001");
+      expect(evt.item.id).toBe(created.id);
+      expect(evt.item.content).toBe("Refined beta fact");
+      expect(evt.previousContent).toBe("Original beta fact");
+    } finally {
+      unsubscribeUpdated();
+    }
+  }, 15000);
+
+  it("PATCH /memories/:id returns 404 when target does not exist", async () => {
+    const resp = await app!.inject({
+      method: "PATCH",
+      url: "/memories/mem_does_not_exist",
+      payload: { importance: 0.9 },
+    });
+    expect(resp.statusCode).toBe(404);
+    expect(resp.json<{ error: { code: string } }>().error.code).toBe("not_found");
+  }, 10000);
 });

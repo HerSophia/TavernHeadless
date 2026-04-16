@@ -4,6 +4,7 @@ import type {
   MemoryAccessOptions,
   MemoryEdge,
   MemoryItem,
+  MemoryItemUpdatePatch,
   MemoryQuery,
   MemoryRepository,
 } from "@tavern/core";
@@ -258,20 +259,42 @@ export class DrizzleMemoryRepository implements MemoryRepository {
 
   async update(
     id: string,
-    patch: Partial<Pick<MemoryItem, "content" | "factKey" | "importance" | "confidence" | "status" | "lifecycleStatus">>,
+    patch: MemoryItemUpdatePatch,
     options?: MemoryAccessOptions,
   ): Promise<MemoryItem | null> {
     const accountId = this.resolveAccountId(undefined, options);
     const updates: Record<string, unknown> = {
       updatedAt: Date.now(),
     };
-    const normalizedFactKey = normalizeFactKey(patch.factKey);
+
+    // 标量重定位字段：scope / scopeId / type / summaryTier / 源信息
+    if (patch.scope !== undefined) {
+      updates.scope = patch.scope;
+    }
+    if (patch.scopeId !== undefined) {
+      updates.scopeId = patch.scopeId;
+    }
+    if (patch.type !== undefined) {
+      updates.type = patch.type;
+    }
+    if (patch.summaryTier !== undefined) {
+      updates.summaryTier = patch.summaryTier ?? null;
+    }
+    if (patch.sourceFloorId !== undefined) {
+      updates.sourceFloorId = patch.sourceFloorId ?? null;
+    }
+    if (patch.sourceMessageId !== undefined) {
+      updates.sourceMessageId = patch.sourceMessageId ?? null;
+    }
 
     if (patch.content !== undefined) {
       updates.contentJson = toContentJson(patch.content);
     }
     if (patch.factKey !== undefined) {
-      updates.factKey = normalizedFactKey ?? null;
+      // factKey 可显式 null 来清空；否则归一化非空字符串
+      updates.factKey = patch.factKey === null
+        ? null
+        : (normalizeFactKey(patch.factKey) ?? null);
     }
     if (patch.importance !== undefined) {
       updates.importance = patch.importance;

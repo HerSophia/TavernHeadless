@@ -82,9 +82,18 @@ function createMockRepo(): MemoryRepository {
     async update(id, patch, _options) {
       const item = storage.get(id);
       if (!item) return null;
+      const merged: Record<string, unknown> = { ...item };
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === undefined) continue;
+        // 模拟 repo：可空字段允许 null 显式清空，落到 domain 上等价于不存在
+        if (value === null) {
+          delete merged[key];
+        } else {
+          merged[key] = value;
+        }
+      }
       const updated = {
-        ...item,
-        ...patch,
+        ...(merged as unknown as MemoryItem),
         updatedAt: Date.now(),
       };
       storage.set(id, updated);

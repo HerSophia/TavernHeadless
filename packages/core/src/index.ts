@@ -80,7 +80,7 @@ export type { VariableContext } from './types.js';
 export type { VariableRepository, VariableRepositoryOptions } from './ports/variable-repository.js';
 
 // ── Repository Ports ──────────────────────────────────
-export type { MemoryRepository } from './ports/memory-repository.js';
+export type { MemoryItemUpdatePatch, MemoryRepository } from './ports/memory-repository.js';
 
 // ── Prompt ────────────────────────────────────────────
 export type {

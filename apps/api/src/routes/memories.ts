@@ -1391,10 +1391,92 @@ export async function registerMemoryRoutes(
       return sendError(reply, 404, "not_found", "Memory item not found");
     }
 
+    // 用 route 现有的字段折叠规则把请求体翻译成 canonical patch。
+    // 走 canonical ingress 时直接交给 MemoryStore.update，由它来发
+    // memory.updated 进入 committed event 面；否则保留 fallback 路径
+    // 写库（仅用于未注入 memoryStore 的环境）。
+    const nextType = parsedBody.data.type ?? existing.type;
+    const nextSummaryTier =
+      nextType === "summary"
+        ? parsedBody.data.summary_tier !== undefined
+          ? parsedBody.data.summary_tier
+          : (existing.summaryTier ?? undefined)
+        : null;
+    const nextFactKey =
+      nextType === "fact"
+        ? parsedBody.data.fact_key !== undefined
+          ? resolveStoredFactKey(nextType, parsedBody.data.fact_key)
+          : (existing.factKey ?? null)
+        : null;
+
+    let canonicalContent: string | undefined;
+    if (parsedBody.data.content !== undefined) {
+      const contentText = getMemoryContentText(parsedBody.data.content);
+      if (contentText === null) {
+        return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
+      }
+      canonicalContent = contentText;
+    }
+
+    if (memoryStore) {
+      const patch: Parameters<MemoryStore["update"]>[1] = {};
+      if (parsedBody.data.scope !== undefined) {
+        patch.scope = parsedBody.data.scope;
+      }
+      if (parsedBody.data.scope_id !== undefined) {
+        patch.scopeId = parsedBody.data.scope_id;
+      }
+      if (parsedBody.data.type !== undefined) {
+        patch.type = parsedBody.data.type;
+      }
+      if (
+        parsedBody.data.type !== undefined
+        || parsedBody.data.summary_tier !== undefined
+      ) {
+        // type 切换或显式 summary_tier 调整时统一对齐
+        patch.summaryTier = nextType === "summary" ? (nextSummaryTier ?? null) : null;
+      }
+      if (canonicalContent !== undefined) {
+        patch.content = canonicalContent;
+      }
+      if (parsedBody.data.importance !== undefined) {
+        patch.importance = parsedBody.data.importance;
+      }
+      if (parsedBody.data.confidence !== undefined) {
+        patch.confidence = parsedBody.data.confidence;
+      }
+      if (
+        parsedBody.data.type !== undefined
+        || parsedBody.data.fact_key !== undefined
+      ) {
+        patch.factKey = nextType === "fact" ? (nextFactKey ?? null) : null;
+      }
+      if (parsedBody.data.source_floor_id !== undefined) {
+        patch.sourceFloorId = parsedBody.data.source_floor_id ?? null;
+      }
+      if (parsedBody.data.source_message_id !== undefined) {
+        patch.sourceMessageId = parsedBody.data.source_message_id ?? null;
+      }
+      if (parsedBody.data.status !== undefined) {
+        patch.status = parsedBody.data.status;
+      }
+      if (parsedBody.data.lifecycle_status !== undefined) {
+        patch.lifecycleStatus = parsedBody.data.lifecycle_status;
+      } else if (parsedBody.data.status !== undefined) {
+        patch.lifecycleStatus = toLifecycleStatus(parsedBody.data.status);
+      }
+
+      const updated = await memoryStore.update(parsedParams.data.id, patch, { accountId: auth.accountId });
+      if (!updated) {
+        return sendError(reply, 404, "not_found", "Memory item not found");
+      }
+      return reply.send({ data: toMemoryItemResponseFromDomain(updated) });
+    }
+
+    // Fallback：未注入 canonical ingress 时退回 route-local SQL（保留原行为）
     const updates: Partial<typeof memoryItems.$inferInsert> = {
       updatedAt: Date.now()
     };
-    const nextType = parsedBody.data.type ?? existing.type;
 
     if (parsedBody.data.scope !== undefined) {
       updates.scope = parsedBody.data.scope;
