@@ -1466,13 +1466,16 @@ describe("PromptRuntimeControlService", () => {
       observability: expect.objectContaining({
         preview: {
           enabled: true,
+          mode: "macro_text_preview",
           returnsRuntimeTrace: true,
+          returnsAssemblyTruth: false,
           supportsVisibility: true,
           singleTextOnly: true,
           llmCall: false,
           createsFloor: false,
           writesPromptSnapshot: false,
           commitsSideEffects: false,
+          traceSubset: ["macro", "source_selection", "visibility"],
         },
         explain: {
           enabled: true,

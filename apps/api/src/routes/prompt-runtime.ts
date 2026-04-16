@@ -367,7 +367,8 @@ export async function registerPromptRuntimeRoutes(
   app.post("/sessions/:id/prompt-runtime/preview", {
     schema: {
       tags: ["prompt-runtime"],
-      summary: "Preview prompt runtime macros for a single text segment",
+      summary: "Preview macro resolution for a single text segment (macro_text_preview)",
+      description: "Resolves macros, source_selection, and visibility against the current session state for one ad-hoc text segment. This is a macro_text_preview sub-view, not a full runtime preview: it does not run prompt assembly, budget allocation, or delivery materialization, and it never creates floors, writes prompt snapshots, or calls an LLM.",
       operationId: "previewSessionPromptRuntime",
       params: idParamsJsonSchema,
       body: promptRuntimePreviewBodyJsonSchema,
@@ -1214,13 +1215,16 @@ function mapCapabilitiesToSnakeCase(capabilities: PromptRuntimeCapabilities): Re
       },
       preview: {
         enabled: capabilities.observability.preview.enabled,
+        mode: capabilities.observability.preview.mode,
         returns_runtime_trace: capabilities.observability.preview.returnsRuntimeTrace,
+        returns_assembly_truth: capabilities.observability.preview.returnsAssemblyTruth,
         supports_visibility: capabilities.observability.preview.supportsVisibility,
         single_text_only: capabilities.observability.preview.singleTextOnly,
         llm_call: capabilities.observability.preview.llmCall,
         creates_floor: capabilities.observability.preview.createsFloor,
         writes_prompt_snapshot: capabilities.observability.preview.writesPromptSnapshot,
         commits_side_effects: capabilities.observability.preview.commitsSideEffects,
+        trace_subset: [...capabilities.observability.preview.traceSubset],
       },
       explain: {
         enabled: capabilities.observability.explain.enabled,

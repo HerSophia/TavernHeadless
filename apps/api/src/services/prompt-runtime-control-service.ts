@@ -33,6 +33,10 @@ export const PROMPT_RUNTIME_LIMITATIONS = [
   "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
   "Variable commit remains page -> floor. Branch promotion is not automatic.",
 ] as const;
+export const PROMPT_RUNTIME_PREVIEW_LIMITATIONS = [
+  "Preview returns a macro_text_preview sub-view. It does not perform full prompt assembly, budget allocation, or delivery-time structure decisions.",
+  "Preview exposes only macro, source_selection, and visibility traces. It does not return assembled messages, materialized delivery results, or executable prompt snapshot truth.",
+] as const;
 export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS = [
   "Historical explain reads persisted prompt snapshot and committed floor result only. It does not re-run prompt assembly, macro evaluation, or budget decisions.",
   "Older committed floors without a prompt_runtime_explain_snapshot may return resolved policy, policy source-map fields, trim reasons, excluded sources, and section stats as null.",
@@ -482,13 +486,16 @@ export interface PromptRuntimeCapabilities {
     };
     preview: {
       enabled: boolean;
+      mode: "macro_text_preview";
       returnsRuntimeTrace: true;
+      returnsAssemblyTruth: false;
       supportsVisibility: true;
       singleTextOnly: true;
       llmCall: false;
       createsFloor: false;
       writesPromptSnapshot: false;
       commitsSideEffects: false;
+      traceSubset: readonly ("macro" | "source_selection" | "visibility")[];
     };
     explain: {
       enabled: boolean;
@@ -948,13 +955,16 @@ export class PromptRuntimeControlService {
         },
         preview: {
           enabled: this.enablePreviewEndpoint,
+          mode: "macro_text_preview",
           returnsRuntimeTrace: true,
+          returnsAssemblyTruth: false,
           supportsVisibility: true,
           singleTextOnly: true,
           llmCall: false,
           createsFloor: false,
           writesPromptSnapshot: false,
           commitsSideEffects: false,
+          traceSubset: ["macro", "source_selection", "visibility"],
         },
         explain: {
           enabled: true,

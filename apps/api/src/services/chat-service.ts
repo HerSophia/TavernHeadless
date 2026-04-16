@@ -121,6 +121,7 @@ import {
   buildResolvedPromptRuntimePolicy,
   mergePromptRuntimePersistentPolicies,
   PROMPT_RUNTIME_LIMITATIONS,
+  PROMPT_RUNTIME_PREVIEW_LIMITATIONS,
   readPromptRuntimeBranchPersistentPolicy,
   readPromptRuntimePersistentPolicy,
 } from "./prompt-runtime-control-service.js";
@@ -1143,7 +1144,7 @@ export class ChatService {
       policy: executionContext.resolvedPolicy,
       sourceMap: inspection.sourceMap,
       diagnostics: inspection.diagnostics,
-      limitations: inspection.limitations,
+      limitations: [...inspection.limitations, ...PROMPT_RUNTIME_PREVIEW_LIMITATIONS],
       text: preview.text,
       runtimeTrace,
     };
