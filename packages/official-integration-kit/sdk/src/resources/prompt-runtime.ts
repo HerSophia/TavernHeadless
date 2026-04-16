@@ -274,9 +274,26 @@ export type PromptRuntimeCapabilities = {
       createsFloor: boolean;
       enabled: boolean;
       llmCall: boolean;
+      /**
+       * Preview sub-view mode. Always `"macro_text_preview"`.
+       * Preview is not a full runtime assembly preview: it does not run
+       * prompt assembly, budget allocation, or delivery materialization.
+       */
+      mode: "macro_text_preview";
+      /**
+       * Preview does not expose assembled messages, materialized delivery
+       * results, or executable prompt snapshot truth. It only exposes the
+       * macro / source_selection / visibility sub-view of the runtime trace.
+       */
+      returnsAssemblyTruth: false;
       returnsRuntimeTrace: boolean;
       singleTextOnly: boolean;
       supportsVisibility: boolean;
+      /**
+       * Subset of runtime trace fields that preview may populate. Currently
+       * fixed to `["macro", "source_selection", "visibility"]`.
+       */
+      traceSubset: ReadonlyArray<"macro" | "source_selection" | "visibility">;
       writesPromptSnapshot: boolean;
     };
     explain: {
@@ -829,9 +846,15 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
         createsFloor: readBoolean(preview.creates_floor),
         enabled: readBoolean(preview.enabled),
         llmCall: readBoolean(preview.llm_call),
+        mode: "macro_text_preview",
+        returnsAssemblyTruth: false,
         returnsRuntimeTrace: readBoolean(preview.returns_runtime_trace, true),
         singleTextOnly: readBoolean(preview.single_text_only, true),
         supportsVisibility: readBoolean(preview.supports_visibility, true),
+        traceSubset: mapStringArray(preview.trace_subset)
+          .filter((item): item is "macro" | "source_selection" | "visibility" =>
+            item === "macro" || item === "source_selection" || item === "visibility",
+          ),
         writesPromptSnapshot: readBoolean(preview.writes_prompt_snapshot),
       },
       explain: {

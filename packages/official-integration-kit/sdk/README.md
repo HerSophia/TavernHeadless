@@ -469,6 +469,9 @@ console.log(explain.resolvedPolicy); // 旧楼层 fallback 时可能为 null
 console.log(diff.policyChanges);
 console.log(diff.left.snapshotAvailable, diff.right.snapshotAvailable);
 console.log(capabilities.observability.preview.enabled);
+console.log(capabilities.observability.preview.mode); // "macro_text_preview"
+console.log(capabilities.observability.preview.returnsAssemblyTruth); // false
+console.log(capabilities.observability.preview.traceSubset); // ["macro", "source_selection", "visibility"]
 console.log(capabilities.observability.explain.enabled);
 console.log(capabilities.governance.session.envelopeMetadata);
 console.log(capabilities.compare.committedFloorsOnly);
@@ -494,11 +497,12 @@ console.log(capabilities.unsupported);
 - `characterCard` 仍然属于 Prompt Assets。
 - `patchPolicy(...)` 与 `patchBranchPolicy(...)` 现在都支持 `structure`、`delivery`、`budget`、`sourceSelection`、`visibility`。
 - 读取侧继续兼容旧的 bare object metadata；写入侧统一升级为 envelope：`{ version, updatedAt, updatedBy, value }`。
-- `previewText(...)` 只做单段文本 preview，不走 LLM、不创建 floor、不写 `promptSnapshot`、不提交副作用。
-- `previewText(...)` 当前仍接受 request 级 `structure` / `delivery` / `budget` / `sourceSelection` / `visibility` 覆盖，但返回的 `runtimeTrace` 只投影 `macro`、`sourceSelection`、`visibility`。resolved budget / policy 请查看 `policy` 与 `sourceMap`。
+- `previewText(...)` 正式契约是 `macro_text_preview` 子视图，对应 `capabilities.observability.preview.mode === "macro_text_preview"` 且 `returnsAssemblyTruth === false`。它不走 LLM、不创建 floor、不写 `promptSnapshot`、不提交副作用，也不会执行完整 prompt assembly、budget allocation 或 delivery materialization。
+- `previewText(...)` 仍接受 request 级 `structure` / `delivery` / `budget` / `sourceSelection` / `visibility` 覆盖，但返回的 `runtimeTrace` 固定只投影 `capabilities.observability.preview.traceSubset`，即 `macro`、`sourceSelection`、`visibility`。resolved budget / policy 请查看 `policy` 与 `sourceMap`。
 - `previewText(...)` 的宏诊断继续统一走 `runtimeTrace.macro`，并且 `runtimeTrace.macro.stagedMutations` 固定为空；结构化 budget trim reason 仍以 dry-run / live 为主。
-- `getFloorExplain(...)` 只读取 committed floor 的持久化真相，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。
-- `getFloorExplain(...)` 的 `snapshotAvailable` 表示 explain 是否来自 committed explain snapshot。旧楼层 fallback 时，`assets`、`resolvedPolicy`、`trimReasons`、`excludedSources`、`sectionStats` 可能为 `null`，并会保留 `diagnostics` / `limitations`。
+- `previewText(...)` 响应的 `limitations` 会额外说明 preview 只是 `macro_text_preview` 子视图、不包含 assembly / delivery 真相，便于接入方在 UI 上提示用户 preview 不等于 live / dry-run 结果。
+- `getFloorExplain(...)` 只读取 committed floor 的持久化真相，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。对应 `capabilities.observability.explain.persistedTruthOnly === true`。
+- `getFloorExplain(...)` 的 `snapshotAvailable` 表示 explain 是否来自 committed explain snapshot。snapshot-backed 路径会返回持久化 limitations 声明，fallback 路径会在其基础上追加"旧 floor 字段可能为 null"的 fallback 限制条目；`assets`、`resolvedPolicy`、`trimReasons`、`excludedSources`、`sectionStats` 在 fallback 路径可能为 `null`，并会保留 `diagnostics` / `limitations`。
 - `supportedSources` 与 `excludedSources[].source` 继续只承诺公开 source kind；具体 budget group 标签会出现在 `budgets.byGroup[].group`、`trimReasons[].group` 与 compare 的 `trimChanges` 中，例如 `section:main`。
 - `compare(...)` 只支持同一 session 内的两个 committed floor。返回值是结构化 path/value diff，不是全文级 diff；缺 snapshot 时会保留 `limitations`，而不是重算 explain。
 - `delivery: null`、`structure: null`、`budget: null`、`sourceSelection: null`、`visibility: null` 都会清空对应持久化 section。
