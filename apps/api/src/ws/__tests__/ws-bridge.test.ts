@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { createEventBus } from '@tavern/core';
 import type { CoreEventBus } from '@tavern/core';
+import { buildBranchMemoryScopeId } from '@tavern/shared';
 import { WsBridge, type WsMessage } from '../ws-bridge';
 
 // ── Mock WebSocket ────────────────────────────────────
@@ -500,5 +501,126 @@ describe('WsBridge', () => {
   it('start is idempotent', () => {
     bridge.start(); // already started in beforeEach
     expect(bridge.clientCount).toBe(0); // no error
+  });
+
+  // ── Workstream 5：branch / floor / fail-closed routing ──────────
+
+  it('routes branch-scoped memory.created via parseBranchMemoryScopeId without explicit sessionId', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-branch-1');
+    bridge.addClient(socket2, 'session-branch-2');
+
+    const branchScopeId = buildBranchMemoryScopeId('session-branch-1', 'main');
+
+    await eventBus.emit('memory.created', {
+      // 故意不带顶层 sessionId，验证 bridge 能从 scopeId 推导
+      scope: 'branch',
+      scopeId: branchScopeId,
+      item: {
+        id: 'mem-branch-1',
+        scope: 'branch',
+        scopeId: branchScopeId,
+        type: 'fact',
+        content: 'branch fact',
+        importance: 0.5,
+        confidence: 1,
+        status: 'active',
+        lifecycleStatus: 'active',
+        createdAt: 123,
+        updatedAt: 123,
+      },
+      source: 'manual',
+    });
+
+    expect(parseSent(socket1)).toHaveLength(1);
+    expect(parseSent(socket2)).toHaveLength(0);
+  });
+
+  it('routes floor-scoped memory.deleted via publisher-attached sessionId', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-floor-1');
+    bridge.addClient(socket2, 'session-floor-2');
+
+    await eventBus.emit('memory.deleted', {
+      // floor scope 必须由 publisher 显式提供 sessionId 才能正确路由
+      sessionId: 'session-floor-1',
+      scope: 'floor',
+      scopeId: 'floor_xyz',
+      item: {
+        id: 'mem-floor-1',
+        scope: 'floor',
+        scopeId: 'floor_xyz',
+        type: 'open_loop',
+        content: 'open loop',
+        importance: 0.4,
+        confidence: 1,
+        status: 'active',
+        lifecycleStatus: 'active',
+        createdAt: 123,
+        updatedAt: 123,
+      },
+      source: 'manual',
+    });
+
+    expect(parseSent(socket1)).toHaveLength(1);
+    expect(parseSent(socket2)).toHaveLength(0);
+  });
+
+  it('does not route floor-scoped event to any session client when sessionId is missing (fail closed)', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'floor_xyz'); // 故意把客户端 sessionId 设成 floorId
+    bridge.addClient(socket2, 'session-floor-2');
+
+    await eventBus.emit('memory.deleted', {
+      // 没有顶层 sessionId，scope=floor 不允许从 scopeId 推断
+      scope: 'floor',
+      scopeId: 'floor_xyz',
+      item: {
+        id: 'mem-floor-2',
+        scope: 'floor',
+        scopeId: 'floor_xyz',
+        type: 'open_loop',
+        content: 'open loop',
+        importance: 0.4,
+        confidence: 1,
+        status: 'active',
+        lifecycleStatus: 'active',
+        createdAt: 123,
+        updatedAt: 123,
+      },
+      source: 'manual',
+    });
+
+    expect(parseSent(socket1)).toHaveLength(0);
+    expect(parseSent(socket2)).toHaveLength(0);
+  });
+
+  it('forwards memory.edge.created and memory.edge.deleted events; routes only when sessionId is attached', async () => {
+    const socketGlobal = createMockSocket();
+    const socketSession = createMockSocket();
+    bridge.addClient(socketGlobal); // 不带 sessionId，全局客户端
+    bridge.addClient(socketSession, 'session-edge-1');
+
+    // 不带 sessionId：只投到全局客户端
+    await eventBus.emit('memory.edge.created', {
+      edge: { id: 'edge-1', fromId: 'mem-a', toId: 'mem-b', relation: 'supports', createdAt: 1 },
+      source: 'manual',
+    });
+    expect(parseSent(socketGlobal)).toHaveLength(1);
+    expect(parseSent(socketSession)).toHaveLength(0);
+
+    // 带 sessionId：session client 收到
+    await eventBus.emit('memory.edge.deleted', {
+      sessionId: 'session-edge-1',
+      edge: { id: 'edge-2', fromId: 'mem-a', toId: 'mem-b', relation: 'updates', createdAt: 2 },
+      source: 'manual',
+    });
+    expect(parseSent(socketGlobal)).toHaveLength(2);
+    expect(parseSent(socketSession)).toHaveLength(1);
+    const sessionMessages = parseSent(socketSession);
+    expect(sessionMessages[0]!.event).toBe('memory.edge.deleted');
   });
 });

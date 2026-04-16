@@ -584,6 +584,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     variableEventBus: orchestrationContext?.eventBus,
     sessionToolRegistryService,
     mutationRuntime: mutationRuntimeComponents?.runtime,
+    memoryStore: options.enableMemory ? orchestrationContext?.memoryStore : undefined,
     memoryJobs: {
       enableBackgroundWorker: options.enableMemory === true && options.orchestration !== undefined && (
         options.enableAsyncMemoryIngest === true
@@ -733,7 +734,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
 
   if (options.enableMemory === true && options.memoryMaintenance) {
-    const maintenanceService = new MemoryMaintenanceService(database.db);
+    const maintenanceService = new MemoryMaintenanceService(database.db, {
+      eventBus: orchestrationContext?.eventBus,
+    });
     const intervalMs = Math.max(10_000, options.memoryMaintenance.intervalMs);
     const batchSize = options.memoryMaintenance.batchSize ?? 500;
     const dryRun = options.memoryMaintenance.dryRun ?? false;

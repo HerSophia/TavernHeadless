@@ -1,7 +1,7 @@
 import type { FloorState, MemoryJobType, MemoryScope, VariableScope, VariableEntry } from '@tavern/shared';
 import type { FloorEntity } from '../types.js';
 import type { ModelConfig, TokenUsage } from '../llm/types.js';
-import type { MemoryItem } from '../memory/types.js';
+import type { MemoryEdge, MemoryItem } from '../memory/types.js';
 import type { InstanceSlot } from '../llm/types.js';
 import type {
   ToolExecutionProviderType,
@@ -224,6 +224,44 @@ export interface MemoryUpdatedEvent extends MemoryEventContext {
 export interface MemoryDeprecatedEvent extends MemoryEventContext {
   item: MemoryItem;
   reason: string;
+}
+
+/**
+ * 记忆物理删除事件。
+ *
+ * 由手动 CRUD 路径 / 维护清理路径在记忆条目从仓储中真正删除后发出，
+ * 标记一次后置可信删除。`item` 为删除前的快照，便于观察方重建真相。
+ */
+export interface MemoryDeletedEvent extends MemoryEventContext {
+  item: MemoryItem;
+  /** 删除来源：当前主要是手动路由或维护任务。 */
+  source: 'manual' | 'maintenance';
+  /** 可选删除原因，便于审计。 */
+  reason?: string;
+}
+
+/** 记忆边事件共享上下文（与条目事件解耦，scope 字段保留以贴近现有 routing 习惯） */
+export interface MemoryEdgeEventContext {
+  sessionId?: string;
+  /** 边没有 scope 概念时维持 undefined；存在 scope 信息（来自一端 item）时填充。 */
+  scope?: MemoryScope;
+  scopeId?: string;
+  floorId?: string;
+}
+
+/** 记忆边创建事件 */
+export interface MemoryEdgeCreatedEvent extends MemoryEdgeEventContext {
+  edge: MemoryEdge;
+  /** 创建来源：手动路由 / 主链整理 / 维护。 */
+  source: 'manual' | 'consolidation' | 'maintenance';
+}
+
+/** 记忆边删除事件 */
+export interface MemoryEdgeDeletedEvent extends MemoryEdgeEventContext {
+  edge: MemoryEdge;
+  /** 删除来源：手动路由 / 维护。 */
+  source: 'manual' | 'maintenance';
+  reason?: string;
 }
 
 /** 记忆整理完成事件 */
@@ -457,6 +495,9 @@ export interface CoreEventMap {
   'memory.created': MemoryCreatedEvent;
   'memory.updated': MemoryUpdatedEvent;
   'memory.deprecated': MemoryDeprecatedEvent;
+  'memory.deleted': MemoryDeletedEvent;
+  'memory.edge.created': MemoryEdgeCreatedEvent;
+  'memory.edge.deleted': MemoryEdgeDeletedEvent;
   'memory.injection_failed': MemoryInjectionFailedEvent;
   'memory.persist_failed': MemoryPersistFailedEvent;
   'memory.consolidation_context_failed': MemoryConsolidationContextFailedEvent;

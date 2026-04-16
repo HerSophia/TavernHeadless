@@ -1,7 +1,7 @@
 import { and, count, eq, gte, inArray, like, lte, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
-import { SimpleTokenCounter } from "@tavern/core";
+import { SimpleTokenCounter, type MemoryItem, type MemoryStore } from "@tavern/core";
 import { MEMORY_SCOPES } from "@tavern/shared";
 import { z } from "zod";
 
@@ -50,7 +50,9 @@ function resolveStoredFactKey(
   return normalizeFactKey(value) ?? null;
 }
 
-function toLifecycleStatus(status: z.infer<typeof memoryStatusSchema>) {
+function toLifecycleStatus(
+  status: z.infer<typeof memoryStatusSchema>,
+): "deprecated" | "active" {
   return status === "deprecated" ? "deprecated" : "active";
 }
 
@@ -754,6 +756,37 @@ function toMemoryItemResponse(row: typeof memoryItems.$inferSelect) {
   };
 }
 
+/**
+ * Render a domain {@link MemoryItem} (returned by the canonical
+ * `MemoryStore` mutation ingress) into the public memory-item response
+ * shape. Output is wire-compatible with {@link toMemoryItemResponse}.
+ */
+function toMemoryItemResponseFromDomain(item: MemoryItem) {
+  return {
+    id: item.id,
+    scope: item.scope,
+    scope_id: item.scopeId,
+    type: item.type,
+    summary_tier: item.summaryTier ?? null,
+    content: { text: item.content },
+    fact_key: item.factKey ?? null,
+    importance: item.importance,
+    confidence: item.confidence,
+    source_floor_id: item.sourceFloorId ?? null,
+    source_message_id: item.sourceMessageId ?? null,
+    status: item.status,
+    lifecycle_status: item.lifecycleStatus ?? null,
+    source_job_id: item.sourceJobId ?? null,
+    token_count_estimate: item.tokenCountEstimate ?? null,
+    last_used_at: item.lastUsedAt ?? null,
+    coverage_start_floor_no: item.coverageStartFloorNo ?? null,
+    coverage_end_floor_no: item.coverageEndFloorNo ?? null,
+    derived_from_count: item.derivedFromCount ?? null,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt
+  };
+}
+
 function toMemoryEdgeResponse(row: typeof memoryEdges.$inferSelect) {
   return {
     id: row.id,
@@ -919,12 +952,29 @@ function buildMemoryFilters(
   return filters;
 }
 
+/**
+ * Options for {@link registerMemoryRoutes}.
+ *
+ * @remarks
+ * `memoryStore` is the canonical memory mutation ingress. When supplied,
+ * write routes route their visible mutations through it so that committed
+ * memory events (`memory.created`, `memory.updated`, `memory.deprecated`,
+ * etc.) are published on the same post-commit event plane as turn-commit
+ * and runtime mutations. When omitted, write routes fall back to their
+ * legacy route-local SQL path without event publication.
+ */
+export interface MemoryRoutesOptions {
+  memoryStore?: MemoryStore;
+}
+
 export async function registerMemoryRoutes(
   app: FastifyInstance,
-  connection: DatabaseConnection
+  connection: DatabaseConnection,
+  options: MemoryRoutesOptions = {}
 ): Promise<void> {
   const { db } = connection;
   const tokenCounter = new SimpleTokenCounter();
+  const memoryStore = options.memoryStore;
 
   app.post("/memories", {
     schema: {
@@ -945,16 +995,48 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const contentJson = stringifyJsonField(parsedBody.data.content);
+    const contentText = getMemoryContentText(parsedBody.data.content);
 
-    if (contentJson === null) {
+    if (contentText === null) {
       return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
     }
 
-    const now = Date.now();
     const storedStatus = resolveStoredStatus(parsedBody.data.status, parsedBody.data.lifecycle_status);
     const storedLifecycleStatus = resolveStoredLifecycleStatus(storedStatus, parsedBody.data.lifecycle_status);
+    const normalizedFactKey = resolveStoredFactKey(parsedBody.data.type, parsedBody.data.fact_key);
 
+    if (memoryStore) {
+      // Canonical mutation ingress path. The store writes through the
+      // repository and emits `memory.created` on the same post-commit
+      // event plane that mainline turn-commit and runtime mutations use.
+      const createInput: Omit<MemoryItem, "id" | "createdAt" | "updatedAt"> = {
+        scope: parsedBody.data.scope,
+        scopeId: parsedBody.data.scope_id,
+        type: parsedBody.data.type,
+        ...(parsedBody.data.type === "summary" && parsedBody.data.summary_tier
+          ? { summaryTier: parsedBody.data.summary_tier }
+          : {}),
+        content: contentText,
+        ...(normalizedFactKey ? { factKey: normalizedFactKey } : {}),
+        importance: parsedBody.data.importance ?? 0.5,
+        confidence: parsedBody.data.confidence ?? 1,
+        ...(parsedBody.data.source_floor_id ? { sourceFloorId: parsedBody.data.source_floor_id } : {}),
+        ...(parsedBody.data.source_message_id ? { sourceMessageId: parsedBody.data.source_message_id } : {}),
+        status: storedStatus,
+        lifecycleStatus: storedLifecycleStatus,
+      };
+      const created = await memoryStore.create(createInput, { accountId: auth.accountId });
+      return reply.code(201).send({ data: toMemoryItemResponseFromDomain(created) });
+    }
+
+    // Fallback: legacy route-local path used when no canonical ingress is
+    // wired (e.g. environments that disable memory). This branch keeps the
+    // historical behavior intact and does not publish committed events.
+    const contentJson = stringifyJsonField(parsedBody.data.content);
+    if (contentJson === null) {
+      return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
+    }
+    const now = Date.now();
     const createdRows = await db
       .insert(memoryItems)
       .values({
@@ -965,7 +1047,7 @@ export async function registerMemoryRoutes(
         type: parsedBody.data.type,
         summaryTier: parsedBody.data.type === "summary" ? parsedBody.data.summary_tier ?? null : null,
         contentJson,
-        factKey: resolveStoredFactKey(parsedBody.data.type, parsedBody.data.fact_key),
+        factKey: normalizedFactKey,
         importance: parsedBody.data.importance ?? 0.5,
         confidence: parsedBody.data.confidence ?? 1,
         sourceFloorId: parsedBody.data.source_floor_id ?? null,
@@ -982,9 +1064,7 @@ export async function registerMemoryRoutes(
         updatedAt: now
       })
       .returning();
-
     const created = requireRow(createdRows[0], "Failed to create memory item");
-
     return reply.code(201).send({ data: toMemoryItemResponse(created) });
   });
 
@@ -1168,6 +1248,45 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+
+    if (memoryStore) {
+      // canonical 路径：按 item 粒度逐条 update，让每个被更新的 item 都
+      // 进入 memory.updated 事件面，便于 WS 订阅者重建 per-entity 真相。
+      const patch = {
+        status: parsedBody.data.status,
+        lifecycleStatus: toLifecycleStatus(parsedBody.data.status),
+      };
+      const updatedItems: MemoryItem[] = [];
+      const results = await Promise.all(
+        parsedBody.data.ids.map(async (id, index) => {
+          const updated = await memoryStore.update(id, patch, { accountId: auth.accountId });
+          if (!updated) {
+            return { index, id, action: "not_found" as const };
+          }
+          updatedItems.push(updated);
+          return {
+            index,
+            id,
+            action: "updated" as const,
+            data: toMemoryItemResponseFromDomain(updated),
+          };
+        }),
+      );
+
+      return reply.send({
+        data: {
+          results,
+          meta: {
+            total: results.length,
+            updated: updatedItems.length,
+            not_found: results.length - updatedItems.length,
+            status: parsedBody.data.status,
+          },
+        },
+      });
+    }
+
+    // Fallback：未注入 canonical ingress 时退回原 route-local 批量 SQL
     const now = Date.now();
     const updatedRows = await db
       .update(memoryItems)
@@ -1182,16 +1301,14 @@ export async function registerMemoryRoutes(
     const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
     const results = parsedBody.data.ids.map((id, index) => {
       const row = updatedById.get(id);
-
       if (!row) {
         return { index, id, action: "not_found" as const };
       }
-
       return {
         index,
         id,
         action: "updated" as const,
-        data: toMemoryItemResponse(row)
+        data: toMemoryItemResponse(row),
       };
     });
 
@@ -1202,9 +1319,9 @@ export async function registerMemoryRoutes(
           total: results.length,
           updated: updatedRows.length,
           not_found: results.length - updatedRows.length,
-          status: parsedBody.data.status
-        }
-      }
+          status: parsedBody.data.status,
+        },
+      },
     });
   });
 
@@ -1227,12 +1344,24 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const deletedRows = await db
-      .delete(memoryItems)
-      .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
-      .returning();
 
-    const deletedIds = new Set(deletedRows.map((row) => row.id));
+    let deletedCount = 0;
+    let deletedIds: Set<string>;
+
+    if (memoryStore) {
+      const removed = await memoryStore.removeMany(parsedBody.data.ids, { accountId: auth.accountId });
+      deletedCount = removed.length;
+      deletedIds = new Set(removed.map((item) => item.id));
+    } else {
+      // Fallback：未注入 canonical ingress 时退回 route-local 批量 SQL
+      const deletedRows = await db
+        .delete(memoryItems)
+        .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
+        .returning();
+      deletedCount = deletedRows.length;
+      deletedIds = new Set(deletedRows.map((row) => row.id));
+    }
+
     const results = parsedBody.data.ids.map((id, index) => ({
       index,
       id,
@@ -1244,8 +1373,8 @@ export async function registerMemoryRoutes(
         results,
         meta: {
           total: results.length,
-          deleted: deletedRows.length,
-          not_found: results.length - deletedRows.length
+          deleted: deletedCount,
+          not_found: results.length - deletedCount
         }
       }
     });
@@ -1313,10 +1442,92 @@ export async function registerMemoryRoutes(
       return sendError(reply, 404, "not_found", "Memory item not found");
     }
 
+    // 用 route 现有的字段折叠规则把请求体翻译成 canonical patch。
+    // 走 canonical ingress 时直接交给 MemoryStore.update，由它来发
+    // memory.updated 进入 committed event 面；否则保留 fallback 路径
+    // 写库（仅用于未注入 memoryStore 的环境）。
+    const nextType = parsedBody.data.type ?? existing.type;
+    const nextSummaryTier =
+      nextType === "summary"
+        ? parsedBody.data.summary_tier !== undefined
+          ? parsedBody.data.summary_tier
+          : (existing.summaryTier ?? undefined)
+        : null;
+    const nextFactKey =
+      nextType === "fact"
+        ? parsedBody.data.fact_key !== undefined
+          ? resolveStoredFactKey(nextType, parsedBody.data.fact_key)
+          : (existing.factKey ?? null)
+        : null;
+
+    let canonicalContent: string | undefined;
+    if (parsedBody.data.content !== undefined) {
+      const contentText = getMemoryContentText(parsedBody.data.content);
+      if (contentText === null) {
+        return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
+      }
+      canonicalContent = contentText;
+    }
+
+    if (memoryStore) {
+      const patch: Parameters<MemoryStore["update"]>[1] = {};
+      if (parsedBody.data.scope !== undefined) {
+        patch.scope = parsedBody.data.scope;
+      }
+      if (parsedBody.data.scope_id !== undefined) {
+        patch.scopeId = parsedBody.data.scope_id;
+      }
+      if (parsedBody.data.type !== undefined) {
+        patch.type = parsedBody.data.type;
+      }
+      if (
+        parsedBody.data.type !== undefined
+        || parsedBody.data.summary_tier !== undefined
+      ) {
+        // type 切换或显式 summary_tier 调整时统一对齐
+        patch.summaryTier = nextType === "summary" ? (nextSummaryTier ?? null) : null;
+      }
+      if (canonicalContent !== undefined) {
+        patch.content = canonicalContent;
+      }
+      if (parsedBody.data.importance !== undefined) {
+        patch.importance = parsedBody.data.importance;
+      }
+      if (parsedBody.data.confidence !== undefined) {
+        patch.confidence = parsedBody.data.confidence;
+      }
+      if (
+        parsedBody.data.type !== undefined
+        || parsedBody.data.fact_key !== undefined
+      ) {
+        patch.factKey = nextType === "fact" ? (nextFactKey ?? null) : null;
+      }
+      if (parsedBody.data.source_floor_id !== undefined) {
+        patch.sourceFloorId = parsedBody.data.source_floor_id ?? null;
+      }
+      if (parsedBody.data.source_message_id !== undefined) {
+        patch.sourceMessageId = parsedBody.data.source_message_id ?? null;
+      }
+      if (parsedBody.data.status !== undefined) {
+        patch.status = parsedBody.data.status;
+      }
+      if (parsedBody.data.lifecycle_status !== undefined) {
+        patch.lifecycleStatus = parsedBody.data.lifecycle_status;
+      } else if (parsedBody.data.status !== undefined) {
+        patch.lifecycleStatus = toLifecycleStatus(parsedBody.data.status);
+      }
+
+      const updated = await memoryStore.update(parsedParams.data.id, patch, { accountId: auth.accountId });
+      if (!updated) {
+        return sendError(reply, 404, "not_found", "Memory item not found");
+      }
+      return reply.send({ data: toMemoryItemResponseFromDomain(updated) });
+    }
+
+    // Fallback：未注入 canonical ingress 时退回 route-local SQL（保留原行为）
     const updates: Partial<typeof memoryItems.$inferInsert> = {
       updatedAt: Date.now()
     };
-    const nextType = parsedBody.data.type ?? existing.type;
 
     if (parsedBody.data.scope !== undefined) {
       updates.scope = parsedBody.data.scope;
@@ -1410,12 +1621,20 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const deleted = await db.delete(memoryItems).where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId))).returning();
 
+    if (memoryStore) {
+      const removed = await memoryStore.remove(parsedParams.data.id, { accountId: auth.accountId });
+      if (!removed) {
+        return sendError(reply, 404, "not_found", "Memory item not found");
+      }
+      return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
+    }
+
+    // Fallback：未注入 canonical ingress 时退回 route-local SQL（保留原行为）
+    const deleted = await db.delete(memoryItems).where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId))).returning();
     if (deleted.length === 0) {
       return sendError(reply, 404, "not_found", "Memory item not found");
     }
-
     return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
   });
 
@@ -1453,6 +1672,19 @@ export async function registerMemoryRoutes(
     }
 
     try {
+      if (memoryStore) {
+        const created = await memoryStore.createEdge(
+          {
+            fromId: parsedBody.data.from_id,
+            toId: parsedBody.data.to_id,
+            relation: parsedBody.data.relation,
+          },
+          { accountId: auth.accountId },
+        );
+        return reply.code(201).send({ data: { id: created.id, from_id: created.fromId, to_id: created.toId, relation: created.relation, created_at: created.createdAt } });
+      }
+
+      // Fallback：未注入 canonical ingress 时退回 route-local SQL
       const createdRows = await db
         .insert(memoryEdges)
         .values({
@@ -1464,9 +1696,7 @@ export async function registerMemoryRoutes(
           createdAt: Date.now()
         })
         .returning();
-
       const created = requireRow(createdRows[0], "Failed to create memory edge");
-
       return reply.code(201).send({ data: toMemoryEdgeResponse(created) });
     } catch (error) {
       const mapped = mapMemoryEdgeWriteError(error);
@@ -1664,15 +1894,23 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+
+    if (memoryStore) {
+      const removed = await memoryStore.removeEdge(parsedParams.data.id, { accountId: auth.accountId });
+      if (!removed) {
+        return sendError(reply, 404, "not_found", "Memory edge not found");
+      }
+      return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
+    }
+
+    // Fallback：未注入 canonical ingress 时退回 route-local SQL
     const deleted = await db
       .delete(memoryEdges)
       .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
       .returning();
-
     if (deleted.length === 0) {
       return sendError(reply, 404, "not_found", "Memory edge not found");
     }
-
     return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
   });
 }

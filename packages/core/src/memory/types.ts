@@ -246,6 +246,19 @@ export interface MemoryInjectionOptions {
   scope?: MemoryScope;
   /** 当前账户 ID（多账号场景下必须传入） */
   accountId?: string;
+  /**
+   * 严格 visible-refs 模式开关。
+   *
+   * 默认关闭：当 `scopeContext` 给出但 `resolveVisibleRefs()` 返回
+   * 空集合时，仍然回退到直接 `scopeId` 查询，与历史行为兼容；
+   * 但本次回退会被记录为显式 `direct_scope_fallback` 诊断。
+   *
+   * 打开后（`strictVisibleRefs: true`）：相同情况下不再回退，
+   * `prepareInjection()` 直接返回空结果，并把诊断模式标为
+   * `strict_empty`。仅推荐用于 explain / debug / 测试场景，
+   * 第一轮不在生产默认启用。
+   */
+  strictVisibleRefs?: boolean;
 }
 
 /**
@@ -260,4 +273,51 @@ export interface MemoryInjectionResult {
   formattedText: string;
   /** 估算 token 数 */
   tokenCount: number;
+  /**
+   * scope-resolution 诊断。
+   *
+   * `prepareInjection()` 在 visible-refs 路径上是否发生退化的真实记录，
+   * 供 explain / debug 接口透传给观察方，避免静默把退化当作正常行为。
+   */
+  scopeResolution?: MemoryScopeResolutionDiagnostic;
+}
+
+/** scope-resolution 诊断模式 */
+export type MemoryScopeResolutionMode =
+  | 'visible_refs'
+  | 'direct_scope_fallback'
+  | 'strict_empty'
+  | 'direct_scope';
+
+/** scope-resolution 诊断状态 */
+export type MemoryScopeResolutionStatus =
+  | 'ok'
+  | 'empty_visible_refs'
+  | 'resolver_error';
+
+/**
+ * scope-resolution 诊断结构。
+ *
+ * - `requestedMode`：调用方期望的解析模式（有 scopeContext 时为
+ *   `visible_refs`，否则为 `direct_scope`）。
+ * - `actualMode`：实际生效模式：
+ *   - `visible_refs`：按可见范围注入；
+ *   - `direct_scope`：调用方就期望直接 scope 查询；
+ *   - `direct_scope_fallback`：期望可见范围但回退到了直接 scope；
+ *   - `strict_empty`：strictVisibleRefs 打开时的空结果。
+ * - `status`：解析过程的健康状态。
+ * - `requestedScope`：调用方请求的 scope/scopeId。
+ * - `resolvedScopeRefs`：实际查询使用的 scopeRefs（visible_refs 模式）。
+ * - `fallbackReason`：触发回退/strict 空集时的简短原因。
+ */
+export interface MemoryScopeResolutionDiagnostic {
+  requestedMode: 'visible_refs' | 'direct_scope';
+  actualMode: MemoryScopeResolutionMode;
+  status: MemoryScopeResolutionStatus;
+  requestedScope: {
+    scope?: MemoryScope;
+    scopeId: string;
+  };
+  resolvedScopeRefs?: Array<{ scope: MemoryScope; scopeId: string }>;
+  fallbackReason?: string;
 }

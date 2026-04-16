@@ -234,7 +234,7 @@ Profile 支持按作用域（全局或会话）和槽位粒度绑定。你可以
 
 - 楼层生命周期：`floor.created` / `floor.committed` / `floor.failed`
 - 生成过程：`generation.started` / `generation.chunk` / `generation.completed` / `generation.failed`
-- 记忆操作：`memory.created` / `memory.updated` / `memory.deprecated` / `memory.consolidated`
+- 记忆操作：`memory.created` / `memory.updated` / `memory.deprecated` / `memory.deleted` / `memory.edge.created` / `memory.edge.deleted` / `memory.consolidated`
 - 变量变更：`variable.set` / `variable.promoted` / `variable.deleted`
 
 这些事件可以通过 WebSocket 转发给前端用于实时显示，也可以用来记录日志或触发自定义逻辑。

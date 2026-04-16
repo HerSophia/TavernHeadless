@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, gte, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, or, type SQL } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type {
   MemoryAccessOptions,
   MemoryEdge,
   MemoryItem,
+  MemoryItemUpdatePatch,
   MemoryQuery,
   MemoryRepository,
 } from "@tavern/core";
@@ -258,20 +259,42 @@ export class DrizzleMemoryRepository implements MemoryRepository {
 
   async update(
     id: string,
-    patch: Partial<Pick<MemoryItem, "content" | "factKey" | "importance" | "confidence" | "status" | "lifecycleStatus">>,
+    patch: MemoryItemUpdatePatch,
     options?: MemoryAccessOptions,
   ): Promise<MemoryItem | null> {
     const accountId = this.resolveAccountId(undefined, options);
     const updates: Record<string, unknown> = {
       updatedAt: Date.now(),
     };
-    const normalizedFactKey = normalizeFactKey(patch.factKey);
+
+    // 标量重定位字段：scope / scopeId / type / summaryTier / 源信息
+    if (patch.scope !== undefined) {
+      updates.scope = patch.scope;
+    }
+    if (patch.scopeId !== undefined) {
+      updates.scopeId = patch.scopeId;
+    }
+    if (patch.type !== undefined) {
+      updates.type = patch.type;
+    }
+    if (patch.summaryTier !== undefined) {
+      updates.summaryTier = patch.summaryTier ?? null;
+    }
+    if (patch.sourceFloorId !== undefined) {
+      updates.sourceFloorId = patch.sourceFloorId ?? null;
+    }
+    if (patch.sourceMessageId !== undefined) {
+      updates.sourceMessageId = patch.sourceMessageId ?? null;
+    }
 
     if (patch.content !== undefined) {
       updates.contentJson = toContentJson(patch.content);
     }
     if (patch.factKey !== undefined) {
-      updates.factKey = normalizedFactKey ?? null;
+      // factKey 可显式 null 来清空；否则归一化非空字符串
+      updates.factKey = patch.factKey === null
+        ? null
+        : (normalizeFactKey(patch.factKey) ?? null);
     }
     if (patch.importance !== undefined) {
       updates.importance = patch.importance;
@@ -302,6 +325,28 @@ export class DrizzleMemoryRepository implements MemoryRepository {
 
   async deprecate(id: string, options?: MemoryAccessOptions): Promise<MemoryItem | null> {
     return this.update(id, { status: "deprecated" as MemoryStatus }, options);
+  }
+
+  async remove(id: string, options?: MemoryAccessOptions): Promise<MemoryItem | null> {
+    const accountId = this.resolveAccountId(undefined, options);
+    const [row] = await this.db
+      .delete(memoryItems)
+      .where(and(eq(memoryItems.id, id), eq(memoryItems.accountId, accountId)))
+      .returning();
+    return row ? toMemoryItem(row) : null;
+  }
+
+  async removeMany(
+    ids: readonly string[],
+    options?: MemoryAccessOptions,
+  ): Promise<MemoryItem[]> {
+    if (ids.length === 0) return [];
+    const accountId = this.resolveAccountId(undefined, options);
+    const rows = await this.db
+      .delete(memoryItems)
+      .where(and(eq(memoryItems.accountId, accountId), inArray(memoryItems.id, [...ids])))
+      .returning();
+    return rows.map(toMemoryItem);
   }
 
   // ── 关系边操作 ──
@@ -344,5 +389,23 @@ export class DrizzleMemoryRepository implements MemoryRepository {
       );
 
     return rows.map(toMemoryEdge);
+  }
+
+  async findEdgeById(id: string, options?: MemoryAccessOptions): Promise<MemoryEdge | null> {
+    const accountId = this.resolveAccountId(undefined, options);
+    const [row] = await this.db
+      .select()
+      .from(memoryEdges)
+      .where(and(eq(memoryEdges.id, id), eq(memoryEdges.accountId, accountId)));
+    return row ? toMemoryEdge(row) : null;
+  }
+
+  async removeEdge(id: string, options?: MemoryAccessOptions): Promise<MemoryEdge | null> {
+    const accountId = this.resolveAccountId(undefined, options);
+    const [row] = await this.db
+      .delete(memoryEdges)
+      .where(and(eq(memoryEdges.id, id), eq(memoryEdges.accountId, accountId)))
+      .returning();
+    return row ? toMemoryEdge(row) : null;
   }
 }

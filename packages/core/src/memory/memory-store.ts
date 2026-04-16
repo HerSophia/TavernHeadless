@@ -1,14 +1,16 @@
 import type { MemoryScope } from '@tavern/shared';
 import type { CoreEventBus } from '../events/index.js';
-import type { MemoryRepository } from '../ports/memory-repository.js';
+import type { MemoryItemUpdatePatch, MemoryRepository } from '../ports/memory-repository.js';
 import type { TokenCounter } from '../prompt/types.js';
 import type {
   MemoryAccessOptions,
   MemoryConsolidationOutput,
+  MemoryEdge,
   MemoryInjectionOptions,
   MemoryInjectionResult,
   MemoryItem,
   MemoryQuery,
+  MemoryScopeResolutionDiagnostic,
 } from './types.js';
 import { MemoryMutationApplier } from './memory-mutation-applier.js';
 import { MemoryInjectionSelector } from './memory-injection-selector.js';
@@ -142,16 +144,54 @@ export class MemoryStore {
       accountId: options.accountId,
     };
 
+    // 解析模式由 scopeContext 是否给出决定。当 scopeContext 给出但
+    // resolveVisibleRefs 返回空集时，第一轮维持回退到 scopeId 直查
+    // 的兼容行为；若 strictVisibleRefs=true 则不再回退。任意分支
+    // 都通过 diagnostic 把"实际生效模式"暴露给上层。
+    const requestedMode: MemoryScopeResolutionDiagnostic['requestedMode'] =
+      options.scopeContext ? 'visible_refs' : 'direct_scope';
+    let actualMode: MemoryScopeResolutionDiagnostic['actualMode'] = 'direct_scope';
+    let status: MemoryScopeResolutionDiagnostic['status'] = 'ok';
+    let resolvedScopeRefs: MemoryScopeResolutionDiagnostic['resolvedScopeRefs'];
+    let fallbackReason: string | undefined;
+    let strictEmpty = false;
+
     if (options.scopeContext) {
       if (options.scope) {
+        // 调用方明确指定 scope：仍然走"按指定 scope 的可见 ref 解析"
         query.scope = options.scope;
         query.scopeId = this.scopeResolver.resolve(options.scope, options.scopeContext, scopeId);
+        actualMode = 'direct_scope';
       } else {
-        const scopeRefs = this.scopeResolver.resolveVisibleRefs(options.scopeContext);
-        if (scopeRefs.length > 0) {
-          query.scopeRefs = scopeRefs;
-        } else {
-          query.scopeId = scopeId;
+        try {
+          const scopeRefs = this.scopeResolver.resolveVisibleRefs(options.scopeContext);
+          resolvedScopeRefs = scopeRefs.map((ref) => ({ scope: ref.scope, scopeId: ref.scopeId }));
+          if (scopeRefs.length > 0) {
+            query.scopeRefs = scopeRefs;
+            actualMode = 'visible_refs';
+          } else if (options.strictVisibleRefs) {
+            actualMode = 'strict_empty';
+            status = 'empty_visible_refs';
+            strictEmpty = true;
+            fallbackReason = 'visible refs resolved to empty under strict mode';
+          } else {
+            // 兼容回退：visible_refs 解析为空时直查请求方传入的 scopeId
+            query.scopeId = scopeId;
+            actualMode = 'direct_scope_fallback';
+            status = 'empty_visible_refs';
+            fallbackReason = 'visible refs resolved to empty; falling back to direct scopeId query';
+          }
+        } catch (error) {
+          // resolver 异常也走回退（除非 strict 模式打开），保留主链可用性
+          status = 'resolver_error';
+          fallbackReason = error instanceof Error ? error.message : String(error);
+          if (options.strictVisibleRefs) {
+            actualMode = 'strict_empty';
+            strictEmpty = true;
+          } else {
+            query.scopeId = scopeId;
+            actualMode = 'direct_scope_fallback';
+          }
         }
       }
     } else {
@@ -159,6 +199,30 @@ export class MemoryStore {
       if (options.scope) {
         query.scope = options.scope;
       }
+      actualMode = 'direct_scope';
+    }
+
+    const diagnostic: MemoryScopeResolutionDiagnostic = {
+      requestedMode,
+      actualMode,
+      status,
+      requestedScope: {
+        ...(options.scope ? { scope: options.scope } : {}),
+        scopeId,
+      },
+      ...(resolvedScopeRefs ? { resolvedScopeRefs } : {}),
+      ...(fallbackReason ? { fallbackReason } : {}),
+    };
+
+    if (strictEmpty) {
+      // 严格模式 + visible refs 空集：不查库，直接返回空注入结果，
+      // 让 explain / debug 面看到 strict_empty 的真相。
+      return {
+        items: [],
+        formattedText: '',
+        tokenCount: 0,
+        scopeResolution: diagnostic,
+      };
     }
 
     if (options.minImportance !== undefined) query.minImportance = options.minImportance;
@@ -174,7 +238,11 @@ export class MemoryStore {
 
     let candidates = await this.repo.findMany(query);
 
-    return new MemoryInjectionSelector(this.counter).select(candidates, options);
+    const selected = new MemoryInjectionSelector(this.counter).select(candidates, options);
+    return {
+      ...selected,
+      scopeResolution: diagnostic,
+    };
   }
 
   /**
@@ -249,5 +317,151 @@ export class MemoryStore {
     });
 
     return created;
+  }
+
+  /**
+   * 更新记忆条目（手动更新）。
+   *
+   * 用于手动 CRUD 路径将更新统一收口到 canonical mutation ingress。
+   * 在仓储成功 update 之后广播 `memory.updated`，让事件面与
+   * 主链 turn-commit / runtime mutation 完全一致。
+   *
+   * @param id - 待更新的记忆 ID
+   * @param patch - 部分字段更新
+   * @param access - 访问上下文（一般用于 multi-account 隔离）
+   * @returns 更新后的领域对象，找不到时返回 null
+   */
+  async update(
+    id: string,
+    patch: MemoryItemUpdatePatch,
+    access: MemoryAccessOptions = {},
+  ): Promise<MemoryItem | null> {
+    const previous = await this.repo.findById(id, access);
+    if (!previous) {
+      return null;
+    }
+
+    const updated = await this.repo.update(id, patch, access);
+    if (!updated) {
+      return null;
+    }
+
+    const eventContext = this.buildEventContext(updated);
+
+    await this.eventBus.emit('memory.updated', {
+      ...eventContext,
+      item: updated,
+      previousContent: previous.content,
+    });
+
+    return updated;
+  }
+
+  /**
+   * 物理删除记忆条目（手动删除）。
+   *
+   * 写库成功之后广播 `memory.deleted`（source=manual）。事件 payload
+   * 中的 `item` 是删除前的快照，方便观察方重建真相。
+   */
+  async remove(
+    id: string,
+    access: MemoryAccessOptions = {},
+    options: { reason?: string; source?: 'manual' | 'maintenance' } = {},
+  ): Promise<MemoryItem | null> {
+    const removed = await this.repo.remove(id, access);
+    if (!removed) {
+      return null;
+    }
+
+    const eventContext = this.buildEventContext(removed);
+    await this.eventBus.emit('memory.deleted', {
+      ...eventContext,
+      item: removed,
+      source: options.source ?? 'manual',
+      ...(options.reason ? { reason: options.reason } : {}),
+    });
+
+    return removed;
+  }
+
+  /**
+   * 批量物理删除记忆条目。
+   *
+   * 对每个被删除的条目分别广播 `memory.deleted`，让批量操作仍然
+   * 在事件面上保持 item 级真相，与单条 remove 在事件粒度上一致。
+   */
+  async removeMany(
+    ids: readonly string[],
+    access: MemoryAccessOptions = {},
+    options: { reason?: string; source?: 'manual' | 'maintenance' } = {},
+  ): Promise<MemoryItem[]> {
+    if (ids.length === 0) return [];
+
+    const removed = await this.repo.removeMany(ids, access);
+    for (const item of removed) {
+      const eventContext = this.buildEventContext(item);
+      await this.eventBus.emit('memory.deleted', {
+        ...eventContext,
+        item,
+        source: options.source ?? 'manual',
+        ...(options.reason ? { reason: options.reason } : {}),
+      });
+    }
+
+    return removed;
+  }
+
+  /**
+   * 创建记忆关系边（手动创建）。
+   *
+   * 写入成功后广播 `memory.edge.created`。边事件 payload 主要面向
+   * 图变更观察者：edge 字段携带创建后的快照，session/scope 上下文
+   * 由调用方按需传入（默认对 edge 不做 scope 推导）。
+   */
+  async createEdge(
+    edge: Omit<MemoryEdge, 'id' | 'createdAt'>,
+    access: MemoryAccessOptions = {},
+    eventContext: { sessionId?: string; scope?: MemoryScope; scopeId?: string; floorId?: string } = {},
+  ): Promise<MemoryEdge> {
+    const created = await this.repo.createEdge(edge, access);
+
+    await this.eventBus.emit('memory.edge.created', {
+      edge: created,
+      source: 'manual',
+      ...(eventContext.sessionId ? { sessionId: eventContext.sessionId } : {}),
+      ...(eventContext.scope ? { scope: eventContext.scope } : {}),
+      ...(eventContext.scopeId ? { scopeId: eventContext.scopeId } : {}),
+      ...(eventContext.floorId ? { floorId: eventContext.floorId } : {}),
+    });
+
+    return created;
+  }
+
+  /**
+   * 物理删除记忆关系边（手动删除）。
+   *
+   * 写库成功后广播 `memory.edge.deleted`，edge 字段为删除前快照。
+   */
+  async removeEdge(
+    id: string,
+    access: MemoryAccessOptions = {},
+    options: { reason?: string; source?: 'manual' | 'maintenance'; sessionId?: string; scope?: MemoryScope; scopeId?: string; floorId?: string } = {},
+  ): Promise<MemoryEdge | null> {
+    const removed = await this.repo.removeEdge(id, access);
+    if (!removed) {
+      return null;
+    }
+
+    await this.eventBus.emit('memory.edge.deleted', {
+      edge: removed,
+      source: options.source ?? 'manual',
+      ...(options.reason ? { reason: options.reason } : {}),
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+      ...(options.scope ? { scope: options.scope } : {}),
+      ...(options.scopeId ? { scopeId: options.scopeId } : {}),
+      ...(options.floorId ? { floorId: options.floorId } : {}),
+    });
+
+    return removed;
   }
 }
