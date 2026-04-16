@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
+import { createEventBus } from "@tavern/core";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
@@ -256,6 +257,129 @@ describe("MemoryMaintenanceService", () => {
       { accountId: "maintenance-account", scope: "chat", scopeId: "session-1" },
       { accountId: "maintenance-account", scope: "global", scopeId: "maintenance-account" },
     ]));
+  });
+
+  it("emits per-item memory.deprecated and memory.deleted events when an eventBus is wired", async () => {
+    const eventBus = createEventBus();
+    const deprecatedEvents: unknown[] = [];
+    const deletedEvents: unknown[] = [];
+    eventBus.on("memory.deprecated", (payload) => deprecatedEvents.push(payload));
+    eventBus.on("memory.deleted", (payload) => deletedEvents.push(payload));
+
+    const service = new MemoryMaintenanceService(database.db, { eventBus });
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const now = new Date("2020-01-01T00:00:00.000Z").getTime();
+
+    await database.db.insert(memoryItems).values([
+      {
+        id: "sum-old-evt",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "chat",
+        scopeId: "session-evt-1",
+        type: "summary",
+        contentJson: toContentJson("old summary to deprecate"),
+        importance: 0.5,
+        confidence: 1,
+        status: "active",
+        createdAt: now - 40 * dayMs,
+        updatedAt: now - 40 * dayMs,
+        sourceFloorId: null,
+        sourceMessageId: null,
+      },
+      {
+        id: "dep-purge-evt",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        scope: "chat",
+        scopeId: "session-evt-1",
+        type: "summary",
+        contentJson: toContentJson("deprecated to purge"),
+        importance: 0.5,
+        confidence: 1,
+        status: "deprecated",
+        createdAt: now - 200 * dayMs,
+        updatedAt: now - 100 * dayMs,
+        sourceFloorId: null,
+        sourceMessageId: null,
+      },
+    ]);
+
+    const result = await service.run({
+      now,
+      policy: {
+        summaryMaxAgeMs: 30 * dayMs,
+        deprecatedPurgeAgeMs: 90 * dayMs,
+      },
+    });
+
+    expect(result.deprecated.summary).toBe(1);
+    expect(result.purged).toBe(1);
+
+    expect(deprecatedEvents).toHaveLength(1);
+    const dep = deprecatedEvents[0] as {
+      scope: string; scopeId: string; sessionId?: string;
+      item: { id: string; status: string; lifecycleStatus?: string };
+      reason: string;
+    };
+    expect(dep.scope).toBe("chat");
+    expect(dep.scopeId).toBe("session-evt-1");
+    expect(dep.sessionId).toBe("session-evt-1");
+    expect(dep.item.id).toBe("sum-old-evt");
+    expect(dep.item.status).toBe("deprecated");
+    expect(dep.item.lifecycleStatus).toBe("deprecated");
+    expect(dep.reason).toBe("maintenance");
+
+    expect(deletedEvents).toHaveLength(1);
+    const del = deletedEvents[0] as {
+      scope: string; scopeId: string; sessionId?: string;
+      item: { id: string };
+      source: string;
+      reason: string;
+    };
+    expect(del.scope).toBe("chat");
+    expect(del.scopeId).toBe("session-evt-1");
+    expect(del.sessionId).toBe("session-evt-1");
+    expect(del.item.id).toBe("dep-purge-evt");
+    expect(del.source).toBe("maintenance");
+    expect(del.reason).toBe("purge");
+  });
+
+  it("does not emit any maintenance events in dry-run mode", async () => {
+    const eventBus = createEventBus();
+    const deprecatedEvents: unknown[] = [];
+    const deletedEvents: unknown[] = [];
+    eventBus.on("memory.deprecated", (p) => deprecatedEvents.push(p));
+    eventBus.on("memory.deleted", (p) => deletedEvents.push(p));
+
+    const service = new MemoryMaintenanceService(database.db, { eventBus });
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const now = new Date("2020-01-02T00:00:00.000Z").getTime();
+
+    await database.db.insert(memoryItems).values({
+      id: "sum-dryrun-evt",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      scope: "chat",
+      scopeId: "session-dryrun-1",
+      type: "summary",
+      contentJson: toContentJson("old summary"),
+      importance: 0.5,
+      confidence: 1,
+      status: "active",
+      createdAt: now - 40 * dayMs,
+      updatedAt: now - 40 * dayMs,
+      sourceFloorId: null,
+      sourceMessageId: null,
+    });
+
+    await service.run({
+      now,
+      dryRun: true,
+      policy: { summaryMaxAgeMs: 30 * dayMs },
+    });
+
+    expect(deprecatedEvents).toHaveLength(0);
+    expect(deletedEvents).toHaveLength(0);
   });
 });
 

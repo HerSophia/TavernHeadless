@@ -734,7 +734,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
 
   if (options.enableMemory === true && options.memoryMaintenance) {
-    const maintenanceService = new MemoryMaintenanceService(database.db);
+    const maintenanceService = new MemoryMaintenanceService(database.db, {
+      eventBus: orchestrationContext?.eventBus,
+    });
     const intervalMs = Math.max(10_000, options.memoryMaintenance.intervalMs);
     const batchSize = options.memoryMaintenance.batchSize ?? 500;
     const dryRun = options.memoryMaintenance.dryRun ?? false;

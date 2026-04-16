@@ -1,8 +1,72 @@
 import { and, eq, inArray, lt, sql, type SQL } from "drizzle-orm";
-import type { MemoryScope } from "@tavern/shared";
+import { parseBranchMemoryScopeId, type MemoryScope } from "@tavern/shared";
+import type { CoreEventBus, MemoryItem } from "@tavern/core";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { memoryItems } from "../db/schema.js";
+
+type MemoryItemRow = typeof memoryItems.$inferSelect;
+
+function rowToMemoryItem(row: MemoryItemRow): MemoryItem {
+  // 仅用于 maintenance 事件 payload，因此对 content 解析采取宽松策略：
+  // 失败时退回原 string，不影响主路径。
+  let content: string;
+  try {
+    const parsed = JSON.parse(row.contentJson) as unknown;
+    if (typeof parsed === "string") {
+      content = parsed;
+    } else if (parsed && typeof parsed === "object" && "text" in parsed && typeof (parsed as { text: unknown }).text === "string") {
+      content = (parsed as { text: string }).text;
+    } else {
+      content = row.contentJson;
+    }
+  } catch {
+    content = row.contentJson;
+  }
+
+  return {
+    id: row.id,
+    scope: row.scope,
+    scopeId: row.scopeId,
+    type: row.type,
+    ...(row.summaryTier ? { summaryTier: row.summaryTier } : {}),
+    content,
+    ...(row.factKey ? { factKey: row.factKey } : {}),
+    importance: row.importance,
+    confidence: row.confidence,
+    ...(row.sourceFloorId ? { sourceFloorId: row.sourceFloorId } : {}),
+    ...(row.sourceMessageId ? { sourceMessageId: row.sourceMessageId } : {}),
+    status: row.status,
+    ...(row.lifecycleStatus ? { lifecycleStatus: row.lifecycleStatus } : {}),
+    ...(row.sourceJobId ? { sourceJobId: row.sourceJobId } : {}),
+    ...(row.tokenCountEstimate !== null ? { tokenCountEstimate: row.tokenCountEstimate } : {}),
+    ...(row.lastUsedAt !== null ? { lastUsedAt: row.lastUsedAt } : {}),
+    ...(row.coverageStartFloorNo !== null ? { coverageStartFloorNo: row.coverageStartFloorNo } : {}),
+    ...(row.coverageEndFloorNo !== null ? { coverageEndFloorNo: row.coverageEndFloorNo } : {}),
+    ...(row.derivedFromCount !== null ? { derivedFromCount: row.derivedFromCount } : {}),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function resolveMaintenanceEventSessionId(item: MemoryItem): string | undefined {
+  if (item.scope === "chat") {
+    return item.scopeId;
+  }
+  if (item.scope === "branch") {
+    return parseBranchMemoryScopeId(item.scopeId)?.sessionId;
+  }
+  return undefined;
+}
+
+function buildMaintenanceEventContext(item: MemoryItem) {
+  return {
+    sessionId: resolveMaintenanceEventSessionId(item),
+    scope: item.scope,
+    scopeId: item.scopeId,
+    ...(item.sourceFloorId ? { floorId: item.sourceFloorId } : {}),
+  };
+}
 
 export type MemoryMaintenancePolicy = {
   /** 将超过该 age 的 summary 标记为 deprecated（按 createdAt 计算）。 */
@@ -79,12 +143,48 @@ function countRows(executor: MaintenanceExecutor, whereClause: SQL | undefined):
 }
 
 export class MemoryMaintenanceService {
-  constructor(private readonly db: AppDb) {}
+  constructor(
+    private readonly db: AppDb,
+    private readonly options: { eventBus?: CoreEventBus } = {},
+  ) {}
 
   async run(options: MemoryMaintenanceRunOptions = {}): Promise<MemoryMaintenanceRunResult> {
-    return this.runWithExecutor(this.db, options);
+    // 收集 maintenance affected rows，便于在同步 SQL 完成后按 item
+    // 粒度发出 committed 事件（与手动 / 主链 mutation 保持事件面一致）。
+    const collected = {
+      deprecated: [] as MemoryItem[],
+      purged: [] as MemoryItem[],
+    };
+    const result = this.runWithExecutor(this.db, options, collected);
+
+    if (this.options.eventBus && !options.dryRun) {
+      for (const item of collected.deprecated) {
+        await this.options.eventBus.emit("memory.deprecated", {
+          ...buildMaintenanceEventContext(item),
+          item,
+          reason: "maintenance",
+        });
+      }
+      for (const item of collected.purged) {
+        await this.options.eventBus.emit("memory.deleted", {
+          ...buildMaintenanceEventContext(item),
+          item,
+          source: "maintenance",
+          reason: "purge",
+        });
+      }
+    }
+
+    return result;
   }
 
+  /**
+   * 在外部事务里同步执行维护。
+   *
+   * 注意：本入口不会发出 memory.deprecated / memory.deleted 事件——
+   * 因为外部事务的 commit 时机由调用方掌控。如果需要事件面，
+   * 调用方应在事务成功提交后通过 eventBus 自行 emit。
+   */
   runInTransaction(tx: DbExecutor, options: MemoryMaintenanceRunOptions = {}): MemoryMaintenanceRunResult {
     return this.runWithExecutor(tx, options);
   }
@@ -92,6 +192,7 @@ export class MemoryMaintenanceService {
   private runWithExecutor(
     executor: MaintenanceExecutor,
     options: MemoryMaintenanceRunOptions,
+    collected?: { deprecated: MemoryItem[]; purged: MemoryItem[] },
   ): MemoryMaintenanceRunResult {
     const startedAt = Date.now();
     const now = options.now ?? Date.now();
@@ -108,21 +209,21 @@ export class MemoryMaintenanceService {
       const createdBefore = now - policy.summaryMaxAgeMs;
       deprecatedSummary = dryRun
         ? this.countActiveBefore(executor, "summary", createdBefore, scope)
-        : this.deprecateActiveBefore(executor, "summary", createdBefore, batchSize, now, scope);
+        : this.deprecateActiveBefore(executor, "summary", createdBefore, batchSize, now, scope, collected);
     }
 
     if (policy.openLoopMaxAgeMs !== undefined && policy.openLoopMaxAgeMs > 0) {
       const createdBefore = now - policy.openLoopMaxAgeMs;
       deprecatedOpenLoop = dryRun
         ? this.countActiveBefore(executor, "open_loop", createdBefore, scope)
-        : this.deprecateActiveBefore(executor, "open_loop", createdBefore, batchSize, now, scope);
+        : this.deprecateActiveBefore(executor, "open_loop", createdBefore, batchSize, now, scope, collected);
     }
 
     if (policy.deprecatedPurgeAgeMs !== undefined && policy.deprecatedPurgeAgeMs > 0) {
       const deprecatedUntouchedBefore = now - policy.deprecatedPurgeAgeMs;
       purged = dryRun
         ? this.countDeprecatedBefore(executor, deprecatedUntouchedBefore, scope)
-        : this.purgeDeprecatedBefore(executor, deprecatedUntouchedBefore, batchSize, scope);
+        : this.purgeDeprecatedBefore(executor, deprecatedUntouchedBefore, batchSize, scope, collected);
     }
 
     const durationMs = Date.now() - startedAt;
@@ -180,21 +281,35 @@ export class MemoryMaintenanceService {
     batchSize: number,
     now: number,
     scope: MemoryMaintenanceScopeFilter | undefined,
+    collected?: { deprecated: MemoryItem[]; purged: MemoryItem[] },
   ): number {
     let total = 0;
 
     while (true) {
-      const rows = executor
-        .select({ id: memoryItems.id })
-        .from(memoryItems)
-        .where(and(
-          ...buildScopeFilters(scope),
-          eq(memoryItems.status, "active"),
-          eq(memoryItems.type, type),
-          lt(memoryItems.createdAt, createdBefore),
-        ))
-        .limit(batchSize)
-        .all();
+      // collected!=undefined 时取整行用于事件 payload；否则只取 id 节省 IO
+      const rows = collected
+        ? executor
+            .select()
+            .from(memoryItems)
+            .where(and(
+              ...buildScopeFilters(scope),
+              eq(memoryItems.status, "active"),
+              eq(memoryItems.type, type),
+              lt(memoryItems.createdAt, createdBefore),
+            ))
+            .limit(batchSize)
+            .all()
+        : executor
+            .select({ id: memoryItems.id })
+            .from(memoryItems)
+            .where(and(
+              ...buildScopeFilters(scope),
+              eq(memoryItems.status, "active"),
+              eq(memoryItems.type, type),
+              lt(memoryItems.createdAt, createdBefore),
+            ))
+            .limit(batchSize)
+            .all();
 
       const ids = rows.map((row) => row.id);
       if (ids.length === 0) {
@@ -209,6 +324,18 @@ export class MemoryMaintenanceService {
 
       total += ids.length;
 
+      if (collected) {
+        for (const row of rows as MemoryItemRow[]) {
+          // event 携带 deprecate 后的状态，与单条 deprecate 路径保持一致
+          collected.deprecated.push(rowToMemoryItem({
+            ...row,
+            status: "deprecated",
+            lifecycleStatus: "deprecated",
+            updatedAt: now,
+          }));
+        }
+      }
+
       if (ids.length < batchSize) {
         break;
       }
@@ -222,20 +349,33 @@ export class MemoryMaintenanceService {
     deprecatedUntouchedBefore: number,
     batchSize: number,
     scope: MemoryMaintenanceScopeFilter | undefined,
+    collected?: { deprecated: MemoryItem[]; purged: MemoryItem[] },
   ): number {
     let total = 0;
 
     while (true) {
-      const rows = executor
-        .select({ id: memoryItems.id })
-        .from(memoryItems)
-        .where(and(
-          ...buildScopeFilters(scope),
-          eq(memoryItems.status, "deprecated"),
-          lt(memoryItems.updatedAt, deprecatedUntouchedBefore),
-        ))
-        .limit(batchSize)
-        .all();
+      // collected!=undefined 时取整行用于 memory.deleted 事件 payload
+      const rows = collected
+        ? executor
+            .select()
+            .from(memoryItems)
+            .where(and(
+              ...buildScopeFilters(scope),
+              eq(memoryItems.status, "deprecated"),
+              lt(memoryItems.updatedAt, deprecatedUntouchedBefore),
+            ))
+            .limit(batchSize)
+            .all()
+        : executor
+            .select({ id: memoryItems.id })
+            .from(memoryItems)
+            .where(and(
+              ...buildScopeFilters(scope),
+              eq(memoryItems.status, "deprecated"),
+              lt(memoryItems.updatedAt, deprecatedUntouchedBefore),
+            ))
+            .limit(batchSize)
+            .all();
 
       const ids = rows.map((row) => row.id);
       if (ids.length === 0) {
@@ -244,6 +384,12 @@ export class MemoryMaintenanceService {
 
       executor.delete(memoryItems).where(inArray(memoryItems.id, ids)).run();
       total += ids.length;
+
+      if (collected) {
+        for (const row of rows as MemoryItemRow[]) {
+          collected.purged.push(rowToMemoryItem(row));
+        }
+      }
 
       if (ids.length < batchSize) {
         break;
