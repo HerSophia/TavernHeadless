@@ -584,6 +584,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     variableEventBus: orchestrationContext?.eventBus,
     sessionToolRegistryService,
     mutationRuntime: mutationRuntimeComponents?.runtime,
+    memoryStore: options.enableMemory ? orchestrationContext?.memoryStore : undefined,
     memoryJobs: {
       enableBackgroundWorker: options.enableMemory === true && options.orchestration !== undefined && (
         options.enableAsyncMemoryIngest === true

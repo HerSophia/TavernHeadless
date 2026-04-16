@@ -1,4 +1,4 @@
-import type { CoreEventBus } from "@tavern/core";
+import type { CoreEventBus, MemoryStore } from "@tavern/core";
 import type { FastifyInstance } from "fastify";
 
 import type { DatabaseConnection } from "../db/client";
@@ -33,6 +33,17 @@ export interface CrudRoutesOptions {
   variableEventBus?: CoreEventBus;
   sessionToolRegistryService?: SessionToolRegistryService;
   memoryJobs?: MemoryJobRoutesOptions;
+  /**
+   * Canonical memory mutation ingress used by `registerMemoryRoutes`.
+   *
+   * When provided, manual memory CRUD routes route their writes through
+   * this `MemoryStore` instance so that committed memory events enter the
+   * same post-commit event plane as mainline turn commits and runtime
+   * compaction. When omitted (e.g. tests that disable memory), routes
+   * fall back to their legacy route-local SQL behavior without event
+   * publication.
+   */
+  memoryStore?: MemoryStore;
   chatTransferJobs?: ChatTransferJobRoutesOptions & { importMaxBytes?: number; exportSyncMaxMessages?: number; exportArtifactTtlMs?: number };
   mutationRuntime?: MutationRuntime;
   mcpManager?: McpConnectionManager;
@@ -63,7 +74,9 @@ export async function registerCrudRoutes(
     eventBus: options.variableEventBus,
     mutationRuntime: options.mutationRuntime,
   });
-  await registerMemoryRoutes(app, connection);
+  await registerMemoryRoutes(app, connection, {
+    memoryStore: options.memoryStore,
+  });
   await registerMemoryJobRoutes(app, connection, options.memoryJobs);
   await registerImportRoutes(app, connection, options.chatTransferJobs);
   await registerLlmProfileRoutes(app, connection, {

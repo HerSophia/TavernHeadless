@@ -1,7 +1,7 @@
 import { and, count, eq, gte, inArray, like, lte, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
-import { SimpleTokenCounter } from "@tavern/core";
+import { SimpleTokenCounter, type MemoryItem, type MemoryStore } from "@tavern/core";
 import { MEMORY_SCOPES } from "@tavern/shared";
 import { z } from "zod";
 
@@ -754,6 +754,37 @@ function toMemoryItemResponse(row: typeof memoryItems.$inferSelect) {
   };
 }
 
+/**
+ * Render a domain {@link MemoryItem} (returned by the canonical
+ * `MemoryStore` mutation ingress) into the public memory-item response
+ * shape. Output is wire-compatible with {@link toMemoryItemResponse}.
+ */
+function toMemoryItemResponseFromDomain(item: MemoryItem) {
+  return {
+    id: item.id,
+    scope: item.scope,
+    scope_id: item.scopeId,
+    type: item.type,
+    summary_tier: item.summaryTier ?? null,
+    content: { text: item.content },
+    fact_key: item.factKey ?? null,
+    importance: item.importance,
+    confidence: item.confidence,
+    source_floor_id: item.sourceFloorId ?? null,
+    source_message_id: item.sourceMessageId ?? null,
+    status: item.status,
+    lifecycle_status: item.lifecycleStatus ?? null,
+    source_job_id: item.sourceJobId ?? null,
+    token_count_estimate: item.tokenCountEstimate ?? null,
+    last_used_at: item.lastUsedAt ?? null,
+    coverage_start_floor_no: item.coverageStartFloorNo ?? null,
+    coverage_end_floor_no: item.coverageEndFloorNo ?? null,
+    derived_from_count: item.derivedFromCount ?? null,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt
+  };
+}
+
 function toMemoryEdgeResponse(row: typeof memoryEdges.$inferSelect) {
   return {
     id: row.id,
@@ -919,12 +950,29 @@ function buildMemoryFilters(
   return filters;
 }
 
+/**
+ * Options for {@link registerMemoryRoutes}.
+ *
+ * @remarks
+ * `memoryStore` is the canonical memory mutation ingress. When supplied,
+ * write routes route their visible mutations through it so that committed
+ * memory events (`memory.created`, `memory.updated`, `memory.deprecated`,
+ * etc.) are published on the same post-commit event plane as turn-commit
+ * and runtime mutations. When omitted, write routes fall back to their
+ * legacy route-local SQL path without event publication.
+ */
+export interface MemoryRoutesOptions {
+  memoryStore?: MemoryStore;
+}
+
 export async function registerMemoryRoutes(
   app: FastifyInstance,
-  connection: DatabaseConnection
+  connection: DatabaseConnection,
+  options: MemoryRoutesOptions = {}
 ): Promise<void> {
   const { db } = connection;
   const tokenCounter = new SimpleTokenCounter();
+  const memoryStore = options.memoryStore;
 
   app.post("/memories", {
     schema: {
@@ -945,16 +993,48 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const contentJson = stringifyJsonField(parsedBody.data.content);
+    const contentText = getMemoryContentText(parsedBody.data.content);
 
-    if (contentJson === null) {
+    if (contentText === null) {
       return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
     }
 
-    const now = Date.now();
     const storedStatus = resolveStoredStatus(parsedBody.data.status, parsedBody.data.lifecycle_status);
     const storedLifecycleStatus = resolveStoredLifecycleStatus(storedStatus, parsedBody.data.lifecycle_status);
+    const normalizedFactKey = resolveStoredFactKey(parsedBody.data.type, parsedBody.data.fact_key);
 
+    if (memoryStore) {
+      // Canonical mutation ingress path. The store writes through the
+      // repository and emits `memory.created` on the same post-commit
+      // event plane that mainline turn-commit and runtime mutations use.
+      const createInput: Omit<MemoryItem, "id" | "createdAt" | "updatedAt"> = {
+        scope: parsedBody.data.scope,
+        scopeId: parsedBody.data.scope_id,
+        type: parsedBody.data.type,
+        ...(parsedBody.data.type === "summary" && parsedBody.data.summary_tier
+          ? { summaryTier: parsedBody.data.summary_tier }
+          : {}),
+        content: contentText,
+        ...(normalizedFactKey ? { factKey: normalizedFactKey } : {}),
+        importance: parsedBody.data.importance ?? 0.5,
+        confidence: parsedBody.data.confidence ?? 1,
+        ...(parsedBody.data.source_floor_id ? { sourceFloorId: parsedBody.data.source_floor_id } : {}),
+        ...(parsedBody.data.source_message_id ? { sourceMessageId: parsedBody.data.source_message_id } : {}),
+        status: storedStatus,
+        lifecycleStatus: storedLifecycleStatus,
+      };
+      const created = await memoryStore.create(createInput, { accountId: auth.accountId });
+      return reply.code(201).send({ data: toMemoryItemResponseFromDomain(created) });
+    }
+
+    // Fallback: legacy route-local path used when no canonical ingress is
+    // wired (e.g. environments that disable memory). This branch keeps the
+    // historical behavior intact and does not publish committed events.
+    const contentJson = stringifyJsonField(parsedBody.data.content);
+    if (contentJson === null) {
+      return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
+    }
+    const now = Date.now();
     const createdRows = await db
       .insert(memoryItems)
       .values({
@@ -965,7 +1045,7 @@ export async function registerMemoryRoutes(
         type: parsedBody.data.type,
         summaryTier: parsedBody.data.type === "summary" ? parsedBody.data.summary_tier ?? null : null,
         contentJson,
-        factKey: resolveStoredFactKey(parsedBody.data.type, parsedBody.data.fact_key),
+        factKey: normalizedFactKey,
         importance: parsedBody.data.importance ?? 0.5,
         confidence: parsedBody.data.confidence ?? 1,
         sourceFloorId: parsedBody.data.source_floor_id ?? null,
@@ -982,9 +1062,7 @@ export async function registerMemoryRoutes(
         updatedAt: now
       })
       .returning();
-
     const created = requireRow(createdRows[0], "Failed to create memory item");
-
     return reply.code(201).send({ data: toMemoryItemResponse(created) });
   });
 
