@@ -174,6 +174,41 @@ export interface SessionStateReplayEvaluation {
   blockers: SessionStateReplayBlocker[];
 }
 
+export type FirstPartySceneResolutionMode = "current_effective" | "source_floor";
+
+export interface LoadFirstPartySceneContextInput {
+  accountId: string;
+  sessionId: string;
+  branchId: string;
+  sourceFloorId?: string | null;
+  expectedSourceBranchId?: string | null;
+  resolutionMode?: FirstPartySceneResolutionMode;
+}
+
+export interface FirstPartySceneContext {
+  namespace: typeof SESSION_STATE_NAMESPACE_GAME_STATE;
+  slot: "scene";
+  resolutionMode: FirstPartySceneResolutionMode;
+  source: SessionStateResolvedValue["source"] | "none";
+  present: boolean;
+  schemaVersion: number | null;
+  sessionId: string;
+  branchId: string;
+  floorId: string | null;
+  sourceMutationIds: string[];
+  updatedAt: number | null;
+  scene: NormalizedFirstPartySceneState | null;
+}
+
+export interface FirstPartyReplayBlocker extends SessionStateReplayBlocker {
+  blockerType: "session_state_mutation";
+}
+
+export interface FirstPartyReplayEvaluation {
+  allowed: boolean;
+  blockers: FirstPartyReplayBlocker[];
+}
+
 export interface FirstPartySceneStateValue {
   kind: "first_party_scene_state";
   schemaVersion: number;
@@ -187,6 +222,8 @@ export interface FirstPartySceneStateValue {
   toolExecutionIds: string[];
   updatedAt: number;
 }
+
+export type NormalizedFirstPartySceneState = FirstPartySceneStateValue;
 
 export interface StageFirstPartySceneStateInput {
   accountId: string;

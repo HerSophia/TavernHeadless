@@ -146,6 +146,11 @@ import {
   BranchLocalSnapshotMissingError,
   BranchLocalVariableSnapshotService,
 } from "./branch-local-variable-snapshot-service.js";
+import {
+  FirstPartyGameStateServiceError,
+  type FirstPartyGameStateService,
+} from "../session-state/first-party-game-state-service.js";
+import type { FirstPartyReplayBlocker, FirstPartySceneContext, FirstPartySceneResolutionMode } from "../session-state/session-state-types.js";
 import type { SessionStateService } from "../session-state/session-state-service.js";
 import type { FirstPartyGameStateConsumer } from "../session-state/session-state-first-party-consumer.js";
 
@@ -267,8 +272,16 @@ export interface PromptRuntimePreviewResult {
   runtimeTrace: PromptRuntimePreviewTrace;
 }
 
+interface ReplayConfirmationRequest {
+  /** 显式确认允许重放的历史执行记录 ID 列表 */
+  confirmedExecutionIds?: string[];
+
+  /** 显式确认允许重放的 session-state mutation ID 列表 */
+  confirmedSessionStateMutationIds?: string[];
+}
+
 /** /regenerate 请求体 */
-export interface RegenerateRequest {
+export interface RegenerateRequest extends ReplayConfirmationRequest {
   /** 回合配置覆盖（可选） */
   config?: TurnConfig;
   /** 生成参数覆盖（可选） */
@@ -306,22 +319,7 @@ export interface RegenerateResult {
 }
 
 /** /floors/:id/retry 请求体 */
-export interface RetryFloorRequest {
-  /** 回合配置覆盖（可选） */
-  config?: TurnConfig;
-  /** 生成参数覆盖（可选） */
-  generationParams?: Partial<GenerationParams>;
-  /** 消息结构覆盖 */
-  structure?: PromptStructurePolicy;
-  /** 发送约束覆盖 */
-  delivery?: PromptDeliveryPolicy;
-
-  /** live 调试返回选项 */
-  debugOptions?: PromptLiveDebugOptions;
-
-  /** 显式确认允许重放的历史执行记录 ID 列表 */
-  confirmedExecutionIds?: string[];
-}
+export type RetryFloorRequest = RegenerateRequest;
 
 /** /floors/:id/retry 响应体 */
 export interface RetryFloorResult {
@@ -358,6 +356,19 @@ interface ReplayBlockingExecutionDetail {
   replay_safety: ToolReplaySafety;
   reason: string;
   error_message?: string;
+}
+
+interface ReplayBlockingSessionStateMutationDetail {
+  mutation_id: string;
+  state_namespace: string;
+  target_slot: string;
+  replay_safety: ToolReplaySafety;
+  status: string;
+  reason: "confirmation_required" | "never_auto_replay" | "uncertain" | "blocked";
+}
+
+interface FirstPartyStateContext {
+  scene: FirstPartySceneContext | null;
 }
 
 export interface EditAndRegenerateRequest extends RetryFloorRequest {
@@ -504,6 +515,7 @@ export interface ChatServiceOptions {
   turnCommitService?: TurnCommitService;
   sessionStateService?: SessionStateService;
   firstPartyGameStateConsumer?: FirstPartyGameStateConsumer;
+  firstPartyGameStateService?: FirstPartyGameStateService;
   /**
    * 可选：按 slot 粒度为当前会话解析模型配置。
    * 优先于 resolveTurnModel。
@@ -579,6 +591,7 @@ export class ChatService {
   private readonly executionPolicy: TurnExecutionPolicy;
   private readonly sessionStateService?: SessionStateService;
   private readonly firstPartyGameStateConsumer?: FirstPartyGameStateConsumer;
+  private readonly firstPartyGameStateService?: FirstPartyGameStateService;
   private readonly defaultNarratorProviderType?: ProviderType;
   private readonly accountContext: AccountContextOptions;
 
@@ -617,6 +630,7 @@ export class ChatService {
       });
     this.sessionStateService = options.sessionStateService;
     this.firstPartyGameStateConsumer = options.firstPartyGameStateConsumer;
+    this.firstPartyGameStateService = options.firstPartyGameStateService;
     this.generationCoordinator = options.generationCoordinator
       ?? options.generationGuard
       ?? new InMemoryGenerationCoordinator();
@@ -662,14 +676,21 @@ export class ChatService {
         const session = await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot respond to an archived session");
         const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, resolvedAccountId);
         this.assertNarratorSlotEnabled(resolvedTurnModels);
-        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
-
         // ── 2. 确定分支上下文 + 加载历史 ──
         const branchContext = await this.resolveRespondBranchContext(
           sessionId,
           branchId,
           request.sourceFloorId
         );
+        const firstPartyStateContext = this.loadFirstPartyStateContext({
+          accountId: resolvedAccountId,
+          sessionId,
+          branchId,
+          sourceFloorId: branchContext.inheritanceSource?.floorId ?? null,
+          expectedSourceBranchId: branchContext.inheritanceSource?.branchId ?? null,
+          resolutionMode: branchContext.inheritanceSource ? "source_floor" : "current_effective",
+        });
+        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
         const liveRequestPolicy = this.buildPromptRuntimeRequestPolicy(request);
         const executionContext = resolvePromptRuntimeExecutionContext({
           sessionId,
@@ -793,6 +814,7 @@ export class ChatService {
             memorySummary: effectiveMemorySummary,
             assembled,
             worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
+            extraDiagnostics: this.buildFirstPartyStateDiagnostics(firstPartyStateContext, "assemble"),
           });
           const promptDebug = this.buildLivePromptDebugArtifacts({
             floorId,
@@ -1158,6 +1180,14 @@ export class ChatService {
     return this.withGenerationCoordinator(sessionId, "main", undefined, async (generationRuntime: CoordinatorRuntime) => {
       const session = await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot regenerate in an archived session");
       const targetFloor = await this.revalidateRegenerationTarget(sessionId, initialTargetFloor.id);
+      await this.assertReplayConfirmedForFloor({
+        floorId: targetFloor.id,
+        sessionId,
+        accountId: resolvedAccountId,
+        confirmedExecutionIds: request.confirmedExecutionIds,
+        confirmedSessionStateMutationIds: request.confirmedSessionStateMutationIds,
+        actionLabel: "Regeneration",
+      });
       const liveRequestPolicy = this.buildPromptRuntimeRequestPolicy(request);
       const executionContext = resolvePromptRuntimeExecutionContext({
         sessionId,
@@ -1167,6 +1197,14 @@ export class ChatService {
         historySourceBranchId: targetFloor.branchId,
         historySourceMode: "existing_branch",
         request: liveRequestPolicy,
+      });
+      const firstPartyStateContext = this.loadFirstPartyStateContext({
+        accountId: resolvedAccountId,
+        sessionId,
+        branchId: targetFloor.branchId,
+        sourceFloorId: targetFloor.parentFloorId,
+        expectedSourceBranchId: targetFloor.branchId,
+        resolutionMode: "source_floor",
       });
 
       // ── 3. 提取用户消息 ──
@@ -1223,7 +1261,7 @@ export class ChatService {
       await this.initializeFloorRun(sessionId, newFloorId, "regenerate_page", now);
       try {
       // ── 8. 构建 TurnInput + 执行编排 ──
-      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
+      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
       const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
       await this.trackFloorRunPhase(newFloorId, "semantic_resolved");
       await this.trackFloorRunPhase(newFloorId, "prechecked");
@@ -1271,6 +1309,7 @@ export class ChatService {
         memorySummary: effectiveMemorySummary,
         assembled,
         worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
+        extraDiagnostics: this.buildFirstPartyStateDiagnostics(firstPartyStateContext, "assemble"),
       });
       const promptDebug = this.buildLivePromptDebugArtifacts({
         floorId: newFloorId,
@@ -1381,7 +1420,12 @@ export class ChatService {
       async (generationRuntime) => {
         const targetFloor = await this.revalidateRetryTargetFloor(floorId, resolvedAccountId, initialTargetFloor);
         const session = await this.requireActiveSession(targetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session");
-        await this.assertRetryReplayConfirmed(targetFloor.id, request);
+        await this.assertRetryReplayConfirmed({
+          floorId: targetFloor.id,
+          sessionId: targetFloor.sessionId,
+          accountId: resolvedAccountId,
+          request,
+        });
         const liveRequestPolicy = this.buildPromptRuntimeRequestPolicy(request);
         const executionContext = resolvePromptRuntimeExecutionContext({
           sessionId: targetFloor.sessionId,
@@ -1391,6 +1435,14 @@ export class ChatService {
           historySourceBranchId: targetFloor.branchId,
           historySourceMode: "existing_branch",
           request: liveRequestPolicy,
+        });
+        const firstPartyStateContext = this.loadFirstPartyStateContext({
+          accountId: resolvedAccountId,
+          sessionId: targetFloor.sessionId,
+          branchId: targetFloor.branchId,
+          sourceFloorId: targetFloor.parentFloorId,
+          expectedSourceBranchId: targetFloor.branchId,
+          resolutionMode: "source_floor",
         });
 
         const userMessageRef = await this.getUserMessageFromFloor(targetFloor.id);
@@ -1426,7 +1478,7 @@ export class ChatService {
         await this.trackFloorRunPhase(targetFloor.id, "prechecked");
         try {
 
-        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
+        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
         const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
         const includeRuntimeTrace = request.debugOptions?.includeRuntimeTrace === true;
         const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
@@ -1476,6 +1528,7 @@ export class ChatService {
           memorySummary: effectiveMemorySummary,
           assembled,
           worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
+          extraDiagnostics: this.buildFirstPartyStateDiagnostics(firstPartyStateContext, "assemble"),
         });
         const promptDebug = this.buildLivePromptDebugArtifacts({
           floorId: targetFloor.id,
@@ -1598,6 +1651,15 @@ export class ChatService {
         );
       }
 
+      await this.assertReplayConfirmedForFloor({
+        floorId: source.floorId,
+        sessionId: source.sessionId,
+        accountId: resolvedAccountId,
+        confirmedExecutionIds: request.confirmedExecutionIds,
+        confirmedSessionStateMutationIds: request.confirmedSessionStateMutationIds,
+        actionLabel: "Edit-and-regenerate",
+      });
+
       const liveRequestPolicy = this.buildPromptRuntimeRequestPolicy(request);
       const executionContext = resolvePromptRuntimeExecutionContext({
         sessionId: source.sessionId,
@@ -1608,6 +1670,14 @@ export class ChatService {
         historySourceMode: "source_floor_branch",
         sourceFloorId: source.floorId,
         request: liveRequestPolicy,
+      });
+      const firstPartyStateContext = this.loadFirstPartyStateContext({
+        accountId: resolvedAccountId,
+        sessionId: source.sessionId,
+        branchId: newBranchId,
+        sourceFloorId: source.floorId,
+        expectedSourceBranchId: source.branchId,
+        resolutionMode: "source_floor",
       });
       const { history, visibilityTrace } = await this.loadPromptRuntimeHistoryWindow({
         sessionId: source.sessionId,
@@ -1621,7 +1691,7 @@ export class ChatService {
       const newFloorId = nanoid();
       const resolvedTurnModels = await this.resolveTurnModelsForSession(source.sessionId, resolvedAccountId);
       this.assertNarratorSlotEnabled(resolvedTurnModels);
-      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
+      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
       let userMessageRef: PersistedMessageRef;
       try {
         ({ userMessageRef } = this.createDraftFloorWithUserMessage({
@@ -1676,6 +1746,7 @@ export class ChatService {
         accountId: resolvedAccountId,
         abortSignal: generationRuntime.abortSignal,
         runType: "edit_and_regenerate",
+        firstPartyStateContext,
       });
 
       return {
@@ -1802,9 +1873,11 @@ export class ChatService {
       );
     }
 
-    if (this.firstPartyGameStateConsumer) {
+    if (this.firstPartyGameStateService || this.firstPartyGameStateConsumer) {
       try {
-        this.firstPartyGameStateConsumer.stageSceneState({
+        const stageSceneState = this.firstPartyGameStateService?.stageSceneState.bind(this.firstPartyGameStateService)
+          ?? this.firstPartyGameStateConsumer?.stageSceneState.bind(this.firstPartyGameStateConsumer);
+        stageSceneState?.({
           accountId: args.accountId,
           sessionId: args.sessionId,
           branchId: args.branchId ?? "main",
@@ -2053,30 +2126,97 @@ export class ChatService {
     }
   }
 
-  private async assertRetryReplayConfirmed(
-    floorId: string,
-    request: RetryFloorRequest,
-  ): Promise<void> {
-    const blockingExecutions = await this.listReplayBlockingExecutionsForFloor(floorId);
-    if (blockingExecutions.length === 0) {
-      return;
-    }
+  private async assertRetryReplayConfirmed(input: {
+    floorId: string;
+    sessionId: string;
+    accountId: string;
+    request: RetryFloorRequest;
+  }): Promise<void> {
+    await this.assertReplayConfirmedForFloor({
+      floorId: input.floorId,
+      sessionId: input.sessionId,
+      accountId: input.accountId,
+      confirmedExecutionIds: input.request.confirmedExecutionIds,
+      confirmedSessionStateMutationIds: input.request.confirmedSessionStateMutationIds,
+      actionLabel: "Retry",
+    });
+  }
 
-    const confirmedExecutionIds = new Set(request.confirmedExecutionIds ?? []);
-    const missingConfirmations = blockingExecutions.filter(
+  private async assertReplayConfirmedForFloor(input: {
+    floorId: string;
+    sessionId: string;
+    accountId: string;
+    confirmedExecutionIds?: string[];
+    confirmedSessionStateMutationIds?: string[];
+    actionLabel: string;
+  }): Promise<void> {
+    const blockingExecutions = await this.listReplayBlockingExecutionsForFloor(input.floorId);
+    const confirmedExecutionIds = new Set(input.confirmedExecutionIds ?? []);
+    const missingExecutionConfirmations = blockingExecutions.filter(
       (execution) => !confirmedExecutionIds.has(execution.execution_id),
     );
 
-    if (missingConfirmations.length === 0) {
+    const sessionStateEvaluation = this.firstPartyGameStateService?.evaluateReplayBlockersForFloor({
+      accountId: input.accountId,
+      sessionId: input.sessionId,
+      floorId: input.floorId,
+      confirmedMutationIds: input.confirmedSessionStateMutationIds,
+    }) ?? { allowed: true, blockers: [] };
+    const blockingSessionStateMutations = sessionStateEvaluation.blockers.map((blocker) =>
+      this.toReplayBlockingSessionStateMutationDetail(blocker),
+    );
+    const hardSessionStateBlockers = blockingSessionStateMutations.filter(
+      (blocker) => blocker.reason !== "confirmation_required",
+    );
+    const missingSessionStateConfirmations = blockingSessionStateMutations.filter(
+      (blocker) => blocker.reason === "confirmation_required",
+    );
+
+    if (hardSessionStateBlockers.length > 0) {
+      throw new ChatServiceError(
+        "session_state_replay_blocked",
+        `${input.actionLabel} is blocked by ${hardSessionStateBlockers.length} prior session-state mutation(s).`,
+        undefined,
+        {
+          ...(blockingExecutions.length > 0 ? { blocking_executions: blockingExecutions } : {}),
+          blocking_session_state_mutations: blockingSessionStateMutations,
+        },
+      );
+    }
+
+    if (missingExecutionConfirmations.length === 0 && missingSessionStateConfirmations.length === 0) {
       return;
     }
 
+    if (missingExecutionConfirmations.length > 0 && missingSessionStateConfirmations.length === 0) {
+      throw new ChatServiceError(
+        "tool_replay_confirmation_required",
+        `${input.actionLabel} requires explicit confirmation for ${missingExecutionConfirmations.length} prior tool execution(s).`,
+        undefined,
+        {
+          blocking_executions: blockingExecutions,
+        },
+      );
+    }
+
+    if (missingExecutionConfirmations.length === 0) {
+      throw new ChatServiceError(
+        "session_state_replay_confirmation_required",
+        `${input.actionLabel} requires explicit confirmation for ${missingSessionStateConfirmations.length} prior session-state mutation(s).`,
+        undefined,
+        {
+          blocking_session_state_mutations: blockingSessionStateMutations,
+        },
+      );
+    }
+
     throw new ChatServiceError(
-      "tool_replay_confirmation_required",
-      `Retry requires explicit confirmation for ${missingConfirmations.length} prior tool execution(s).`,
+      "replay_confirmation_required",
+      `${input.actionLabel} requires explicit confirmation for ${missingExecutionConfirmations.length} prior tool execution(s) and ${missingSessionStateConfirmations.length} session-state mutation(s).`,
       undefined,
       {
         blocking_executions: blockingExecutions,
+        blocking_session_state_mutations: blockingSessionStateMutations,
       },
     );
   }
@@ -2110,6 +2250,97 @@ export class ChatService {
       reason: evaluation.reason,
       ...(record.errorMessage ? { error_message: record.errorMessage } : {}),
     };
+  }
+
+  private toReplayBlockingSessionStateMutationDetail(
+    blocker: FirstPartyReplayBlocker,
+  ): ReplayBlockingSessionStateMutationDetail {
+    return {
+      mutation_id: blocker.mutationId,
+      state_namespace: blocker.stateNamespace,
+      target_slot: blocker.targetSlot,
+      replay_safety: blocker.replaySafety,
+      status: blocker.status,
+      reason: blocker.reason,
+    };
+  }
+
+  private loadFirstPartyStateContext(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    sourceFloorId?: string | null;
+    expectedSourceBranchId?: string | null;
+    resolutionMode?: FirstPartySceneResolutionMode;
+  }): FirstPartyStateContext {
+    return {
+      scene: this.loadFirstPartySceneContext(input),
+    };
+  }
+
+  private loadFirstPartySceneContext(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    sourceFloorId?: string | null;
+    expectedSourceBranchId?: string | null;
+    resolutionMode?: FirstPartySceneResolutionMode;
+  }): FirstPartySceneContext | null {
+    if (!this.firstPartyGameStateService) {
+      return null;
+    }
+
+    try {
+      return this.firstPartyGameStateService.loadSceneContext(input);
+    } catch (error) {
+      if (!(error instanceof FirstPartyGameStateServiceError)) {
+        throw error;
+      }
+
+      switch (error.code) {
+        case "first_party_scene_source_floor_not_found":
+          throw new ChatServiceError("source_floor_not_found", error.message, error);
+        case "first_party_scene_source_floor_not_committed":
+        case "first_party_scene_source_floor_branch_mismatch":
+          throw new ChatServiceError("invalid_state", error.message, error);
+        case "first_party_scene_payload_invalid":
+          throw new ChatServiceError(
+            "invalid_state",
+            `Managed scene state is invalid: ${error.message}`,
+            error,
+          );
+        default:
+          throw new ChatServiceError(
+            "invalid_state",
+            error.message,
+            error,
+          );
+      }
+    }
+  }
+
+  private buildFirstPartyStateDiagnostics(
+    firstPartyStateContext: FirstPartyStateContext | undefined,
+    phase: PromptRuntimeDiagnosticPhase,
+  ): PromptRuntimeDiagnostic[] {
+    const scene = firstPartyStateContext?.scene;
+    if (!scene) {
+      return [];
+    }
+
+    const floorMessage = scene.floorId ? ` at floor '${scene.floorId}'` : "";
+    const message = scene.present
+      ? `Managed scene context resolved from '${scene.source}'${floorMessage}.`
+      : scene.source === "none"
+        ? "Managed scene context is currently empty."
+        : `Managed scene context baseline from '${scene.source}' is empty${floorMessage}.`;
+
+    return [{
+      code: scene.present ? "managed_scene_context_loaded" : "managed_scene_context_empty",
+      message,
+      severity: "info",
+      phase,
+    }];
   }
 
   private toReplayBlockingExecutionDetailFromBlockedError(
@@ -2426,7 +2657,7 @@ export class ChatService {
   private async requireRetryTargetFloor(
     floorId: string,
     accountId: string,
-  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "state">> {
+  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "parentFloorId" | "state">> {
     const targetFloor = new OwnedFloorRepository(this.db).getById(accountId, floorId);
     if (!targetFloor) {
       throw new ChatServiceError("floor_not_found", `Floor '${floorId}' not found`);
@@ -2445,13 +2676,14 @@ export class ChatService {
   private async revalidateRetryTargetFloor(
     floorId: string,
     accountId: string,
-    expected: Pick<typeof floors.$inferSelect, "sessionId" | "floorNo" | "branchId">,
-  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "state">> {
+    expected: Pick<typeof floors.$inferSelect, "sessionId" | "floorNo" | "branchId" | "parentFloorId">,
+  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "parentFloorId" | "state">> {
     const targetFloor = await this.requireRetryTargetFloor(floorId, accountId);
     if (
       targetFloor.sessionId !== expected.sessionId
       || targetFloor.floorNo !== expected.floorNo
       || targetFloor.branchId !== expected.branchId
+      || targetFloor.parentFloorId !== expected.parentFloorId
     ) {
       throw new ChatServiceError(
         "generation_target_stale",
@@ -2542,6 +2774,7 @@ export class ChatService {
     accountId: string;
     abortSignal?: AbortSignal;
     runType: FloorRunType;
+    firstPartyStateContext?: FirstPartyStateContext;
   }): Promise<RetryFloorResult> {
     const memorySummary = await this.retrieveMemorySummary(args.sessionId, args.accountId, args.floorId, args.branchId);
     await this.initializeFloorRun(args.sessionId, args.floorId, args.runType);
@@ -2549,7 +2782,7 @@ export class ChatService {
 
     const resolvedTurnModels = await this.resolveTurnModelsForSession(args.sessionId, args.accountId);
     this.assertNarratorSlotEnabled(resolvedTurnModels);
-    const sessionInfo = this.buildSessionPromptInfo(args.session, resolvedTurnModels);
+    const sessionInfo = this.buildSessionPromptInfo(args.session, resolvedTurnModels, args.firstPartyStateContext);
     const executionContext = args.executionContext ?? resolvePromptRuntimeExecutionContext({
       sessionId: args.sessionId,
       metadataJson: args.session.metadataJson,
@@ -2612,6 +2845,7 @@ export class ChatService {
       memorySummary: effectiveMemorySummary,
       assembled,
       worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
+      extraDiagnostics: this.buildFirstPartyStateDiagnostics(args.firstPartyStateContext, "assemble"),
     });
     const promptDebug = this.buildLivePromptDebugArtifacts({
       floorId: args.floorId,
@@ -2766,12 +3000,13 @@ export class ChatService {
       | "userSnapshotJson"
     >,
     resolvedTurnModels: ResolvedTurnModels,
+    firstPartyStateContext?: FirstPartyStateContext,
   ): SessionPromptInfo {
     return {
       presetId: resolvedTurnModels.narrator?.presetId ?? session.presetId,
       worldbookProfileId: session.worldbookProfileId,
       regexProfileId: session.regexProfileId,
-      metadataJson: session.metadataJson,
+      metadataJson: mergeSessionMetadataWithFirstPartyState(session.metadataJson, firstPartyStateContext),
       characterSnapshotJson: session.characterSnapshotJson,
       promptMode: session.promptMode,
       userSnapshotJson: session.userSnapshotJson,
@@ -3963,6 +4198,63 @@ function normalizeBranchId(value: string | undefined): string {
   }
 
   return normalized;
+}
+
+function mergeSessionMetadataWithFirstPartyState(
+  metadataJson: string | null,
+  firstPartyStateContext?: FirstPartyStateContext,
+): string | null {
+  const scene = firstPartyStateContext?.scene;
+  if (!scene) {
+    return metadataJson;
+  }
+
+  const parsed = parseJsonRecord(metadataJson);
+  if (metadataJson !== null && parsed === null) {
+    return metadataJson;
+  }
+
+  const nextMetadata = parsed ?? {};
+  const currentFirstPartyState = asJsonRecord(nextMetadata.first_party_state) ?? {};
+  return JSON.stringify({
+    ...nextMetadata,
+    first_party_state: {
+      ...currentFirstPartyState,
+      scene: buildManagedSceneMetadata(scene),
+    },
+  });
+}
+
+function buildManagedSceneMetadata(scene: FirstPartySceneContext): Record<string, unknown> {
+  return {
+    namespace: scene.namespace,
+    slot: scene.slot,
+    resolution_mode: scene.resolutionMode,
+    source: scene.source,
+    present: scene.present,
+    schema_version: scene.schemaVersion,
+    floor_id: scene.floorId,
+    updated_at: scene.updatedAt,
+    source_mutation_ids: [...scene.sourceMutationIds],
+  };
+}
+
+function parseJsonRecord(raw: string | null): Record<string, unknown> | null {
+  if (raw === null) {
+    return {};
+  }
+
+  try {
+    return asJsonRecord(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function asJsonRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function hasPromptRuntimeWorldbookSource(promptSnapshot: AssembleResult["promptSnapshot"]): boolean {

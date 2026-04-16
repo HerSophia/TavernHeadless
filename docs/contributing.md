@@ -248,26 +248,61 @@ apps/web  ──→  packages/shared
 
 ## 5. 开发工作流
 
-我们使用一条主干加短分支的工作方式。
+我们使用 `dev` 集成分支 + 短生命周期 feature 分支的工作方式。
+
+### 分支结构
+
+```text
+main          稳定发布分支，只接受来自 dev 的合并
+ └── dev      日常集成分支，所有 feature/fix 分支的合并目标
+      ├── feat/xxx     功能分支
+      ├── fix/yyy      修复分支
+      └── chore/zzz    维护分支
+```
+
+### 分支职责
+
+| 分支 | 用途 | 谁可以合入 | 保护规则 |
+| ---- | ---- | ---- | ---- |
+| `main` | 稳定发布 | 只接受 `dev → main` 的 PR | 禁止直推、要求 CI 全绿 |
+| `dev` | 日常集成 | 接受 feature/fix 分支的 PR | 禁止直推、要求 CI 全绿 |
+| `feat/*` / `fix/*` / `chore/*` | 开发分支 | — | 无保护，开发者自行管理 |
 
 ### 日常流程
 
 ```text
-1. 从 main 拉新分支
+1. 从 dev 拉新分支
 2. 在分支上开发
 3. 本地自查
-4. 提交 PR
+4. 提交 PR，目标分支选 dev
 5. Code Review
-6. 合并到 main
+6. CI 全绿后合并到 dev
 7. 删除分支
 ```
 
+### dev → main 的合并
+
+当 `dev` 上积累了足够的改动并且状态稳定时，由维护者发起 `dev → main` 的 PR。
+这个 PR 同样需要 CI 全绿才能合并。
+
+不允许跳过 `dev` 直接把 feature 分支合进 `main`。
+
 ### 禁止事项
 
-- 不要直接推送到 `main`
+- 不要直接推送到 `main` 或 `dev`
+- 不要把 feature 分支的 PR 目标设为 `main`（除非是 `dev → main` 的集成合并）
 - 不要在共享分支上强制推送
 - 不要把无关改动塞进同一个 PR
 - 不要把代码改动和本应同步更新的文档拆成两个长期分离的 PR
+
+### GitHub 分支保护（Ruleset）
+
+仓库通过 GitHub Rulesets 对 `main` 和 `dev` 施加以下保护：
+
+- 禁止删除分支
+- 禁止 non-fast-forward push（即禁止 force push）
+- 所有改动必须通过 PR 合入
+- PR 合入前必须通过以下 CI 检查：Lint、Typecheck、Build、Test (shard 1/3)、Test (shard 2/3)、Test (shard 3/3)、API Smoke
 
 ---
 

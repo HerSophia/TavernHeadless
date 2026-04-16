@@ -320,6 +320,7 @@ Coverage：仅在 push 到 main / workflow_dispatch 时运行
 | --------------------- | --------------------------------------------- |
 | push 到非 `main` 分支 | 常规检查 + API smoke                          |
 | PR 到 `main`          | 常规检查 + API smoke；docs-only PR 走轻量路径 |
+| PR 到 `dev`           | 常规检查 + API smoke；docs-only PR 走轻量路径 |
 | push 到 `main`        | 常规检查 + API smoke + coverage               |
 | 手动触发              | 常规检查 + API smoke + coverage               |
 
@@ -346,7 +347,7 @@ on:
   push:
     branches: ['**']
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 jobs:

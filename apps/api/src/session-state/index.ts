@@ -1,8 +1,20 @@
 export { SessionStateService, SessionStateServiceError, type SessionStateApplyResult } from "./session-state-service.js";
 export { FirstPartyGameStateConsumer } from "./session-state-first-party-consumer.js";
+export {
+  FirstPartyGameStateService,
+  FirstPartyGameStateServiceError,
+  FIRST_PARTY_SCENE_STATE_WRITER_SCHEMA_VERSION,
+  FIRST_PARTY_SCENE_STATE_MIN_SUPPORTED_SCHEMA_VERSION,
+} from "./first-party-game-state-service.js";
 export { SessionStateSlotRegistry, createDefaultSessionStateSlotRegistry } from "./session-state-slot-registry.js";
 export type {
+  FirstPartyReplayBlocker,
+  FirstPartyReplayEvaluation,
+  FirstPartySceneContext,
+  FirstPartySceneResolutionMode,
   FirstPartySceneStateValue,
+  LoadFirstPartySceneContextInput,
+  NormalizedFirstPartySceneState,
   SessionStateDiffEntry,
   SessionStateFloorSnapshotView,
   SessionStateLiveHeadEnvelope,
