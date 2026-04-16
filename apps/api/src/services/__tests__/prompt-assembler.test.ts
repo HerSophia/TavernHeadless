@@ -426,11 +426,11 @@ describe("assemblePrompt", () => {
     expect(assembled.debug).toMatchObject({
       promptIntent: "normal",
       reservedVariableCollisions: ["char", "user"],
-      selectedPromptOrderCharacterId: 100000,
+      selectedPromptOrderCharacterId: null,
       ignoredPromptOrderCharacterIds: [],
     });
     expect(assembled.runtimeTraceSeed).toMatchObject({
-      selectedPromptOrderCharacterId: 100000,
+      selectedPromptOrderCharacterId: null,
       ignoredPromptOrderCharacterIds: [],
       unsupportedPresetFields: [],
     });
