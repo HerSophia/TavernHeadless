@@ -37,9 +37,32 @@ export const PROMPT_RUNTIME_PREVIEW_LIMITATIONS = [
   "Preview returns a macro_text_preview sub-view. It does not perform full prompt assembly, budget allocation, or delivery-time structure decisions.",
   "Preview exposes only macro, source_selection, and visibility traces. It does not return assembled messages, materialized delivery results, or executable prompt snapshot truth.",
 ] as const;
-export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS = [
+/**
+ * Limitations common to every historical explain response. It always reads persisted truth
+ * and never re-runs prompt assembly, macro evaluation, or budget decisions, regardless of
+ * whether an explain snapshot is available for the committed floor.
+ */
+export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS = [
   "Historical explain reads persisted prompt snapshot and committed floor result only. It does not re-run prompt assembly, macro evaluation, or budget decisions.",
+] as const;
+
+/**
+ * Additional limitations when an older committed floor does not have a prompt_runtime_explain_snapshot
+ * row. In that case resolved policy, source-map, trim reasons, excluded sources, and section stats
+ * are returned as null rather than recomputed.
+ */
+export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_FALLBACK_LIMITATIONS = [
   "Older committed floors without a prompt_runtime_explain_snapshot may return resolved policy, policy source-map fields, trim reasons, excluded sources, and section stats as null.",
+] as const;
+
+/**
+ * @deprecated Use {@link PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS} combined with
+ * {@link PROMPT_RUNTIME_HISTORICAL_EXPLAIN_FALLBACK_LIMITATIONS}. Kept for backward compatibility
+ * of external consumers that import the old name.
+ */
+export const PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS = [
+  ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS,
+  ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_FALLBACK_LIMITATIONS,
 ] as const;
 
 export type PromptRuntimeHistorySourceMode = "existing_branch" | "source_floor_branch" | "main_fallback";
@@ -725,7 +748,10 @@ export class PromptRuntimeControlService {
         excludedSources: snapshot.excludedSources,
         sectionStats: snapshot.sectionStats,
         diagnostics: snapshot.diagnostics,
-        limitations: [...PROMPT_RUNTIME_LIMITATIONS],
+        limitations: [
+          ...PROMPT_RUNTIME_LIMITATIONS,
+          ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS,
+        ],
         result: mapFloorResultSnapshotRowToHistoricalExplainResult(floorResultRow),
       };
     }
@@ -756,7 +782,11 @@ export class PromptRuntimeControlService {
       excludedSources: null,
       sectionStats: null,
       diagnostics: buildPromptRuntimeHistoricalExplainDiagnostics(),
-      limitations: [...PROMPT_RUNTIME_LIMITATIONS, ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS],
+      limitations: [
+        ...PROMPT_RUNTIME_LIMITATIONS,
+        ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS,
+        ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_FALLBACK_LIMITATIONS,
+      ],
       result: mapFloorResultSnapshotRowToHistoricalExplainResult(floorResultRow),
     };
   }

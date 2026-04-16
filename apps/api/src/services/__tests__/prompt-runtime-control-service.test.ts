@@ -17,6 +17,7 @@ import {
   PROMPT_RUNTIME_LIMITATIONS,
   PromptRuntimeControlService,
   PROMPT_RUNTIME_HISTORICAL_EXPLAIN_LIMITATIONS,
+  PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS,
   PromptRuntimeControlServiceError,
 } from "../prompt-runtime-control-service.js";
 
@@ -1314,7 +1315,10 @@ describe("PromptRuntimeControlService", () => {
     expect(explain.excludedSources).toEqual(excludedSources);
     expect(explain.sectionStats).toEqual(sectionStats);
     expect(explain.diagnostics).toEqual(diagnostics);
-    expect(explain.limitations).toEqual([...PROMPT_RUNTIME_LIMITATIONS]);
+    expect(explain.limitations).toEqual([
+      ...PROMPT_RUNTIME_LIMITATIONS,
+      ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS,
+    ]);
   });
 
   it("compares persisted visibility and budget fields from committed explain snapshots", async () => {

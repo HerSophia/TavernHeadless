@@ -407,6 +407,7 @@ export async function registerPromptRuntimeRoutes(
     schema: {
       tags: ["prompt-runtime"],
       summary: "Explain committed floor prompt runtime from persisted truth",
+      description: "Returns prompt runtime facts that were actually persisted when this floor was committed. It never re-runs prompt assembly, macro evaluation, or budget decisions. If the floor was committed before the explain snapshot feature existed, resolved policy, source map, trim reasons, excluded sources, and section stats may be returned as null.",
       operationId: "getFloorPromptRuntimeExplain",
       params: idParamsJsonSchema,
       response: {
