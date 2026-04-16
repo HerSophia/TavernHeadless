@@ -50,7 +50,9 @@ function resolveStoredFactKey(
   return normalizeFactKey(value) ?? null;
 }
 
-function toLifecycleStatus(status: z.infer<typeof memoryStatusSchema>) {
+function toLifecycleStatus(
+  status: z.infer<typeof memoryStatusSchema>,
+): "deprecated" | "active" {
   return status === "deprecated" ? "deprecated" : "active";
 }
 
@@ -1246,6 +1248,45 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+
+    if (memoryStore) {
+      // canonical 路径：按 item 粒度逐条 update，让每个被更新的 item 都
+      // 进入 memory.updated 事件面，便于 WS 订阅者重建 per-entity 真相。
+      const patch = {
+        status: parsedBody.data.status,
+        lifecycleStatus: toLifecycleStatus(parsedBody.data.status),
+      };
+      const updatedItems: MemoryItem[] = [];
+      const results = await Promise.all(
+        parsedBody.data.ids.map(async (id, index) => {
+          const updated = await memoryStore.update(id, patch, { accountId: auth.accountId });
+          if (!updated) {
+            return { index, id, action: "not_found" as const };
+          }
+          updatedItems.push(updated);
+          return {
+            index,
+            id,
+            action: "updated" as const,
+            data: toMemoryItemResponseFromDomain(updated),
+          };
+        }),
+      );
+
+      return reply.send({
+        data: {
+          results,
+          meta: {
+            total: results.length,
+            updated: updatedItems.length,
+            not_found: results.length - updatedItems.length,
+            status: parsedBody.data.status,
+          },
+        },
+      });
+    }
+
+    // Fallback：未注入 canonical ingress 时退回原 route-local 批量 SQL
     const now = Date.now();
     const updatedRows = await db
       .update(memoryItems)
@@ -1260,16 +1301,14 @@ export async function registerMemoryRoutes(
     const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
     const results = parsedBody.data.ids.map((id, index) => {
       const row = updatedById.get(id);
-
       if (!row) {
         return { index, id, action: "not_found" as const };
       }
-
       return {
         index,
         id,
         action: "updated" as const,
-        data: toMemoryItemResponse(row)
+        data: toMemoryItemResponse(row),
       };
     });
 
@@ -1280,9 +1319,9 @@ export async function registerMemoryRoutes(
           total: results.length,
           updated: updatedRows.length,
           not_found: results.length - updatedRows.length,
-          status: parsedBody.data.status
-        }
-      }
+          status: parsedBody.data.status,
+        },
+      },
     });
   });
 
@@ -1305,12 +1344,24 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const deletedRows = await db
-      .delete(memoryItems)
-      .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
-      .returning();
 
-    const deletedIds = new Set(deletedRows.map((row) => row.id));
+    let deletedCount = 0;
+    let deletedIds: Set<string>;
+
+    if (memoryStore) {
+      const removed = await memoryStore.removeMany(parsedBody.data.ids, { accountId: auth.accountId });
+      deletedCount = removed.length;
+      deletedIds = new Set(removed.map((item) => item.id));
+    } else {
+      // Fallback：未注入 canonical ingress 时退回 route-local 批量 SQL
+      const deletedRows = await db
+        .delete(memoryItems)
+        .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
+        .returning();
+      deletedCount = deletedRows.length;
+      deletedIds = new Set(deletedRows.map((row) => row.id));
+    }
+
     const results = parsedBody.data.ids.map((id, index) => ({
       index,
       id,
@@ -1322,8 +1373,8 @@ export async function registerMemoryRoutes(
         results,
         meta: {
           total: results.length,
-          deleted: deletedRows.length,
-          not_found: results.length - deletedRows.length
+          deleted: deletedCount,
+          not_found: results.length - deletedCount
         }
       }
     });
@@ -1570,12 +1621,20 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const deleted = await db.delete(memoryItems).where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId))).returning();
 
+    if (memoryStore) {
+      const removed = await memoryStore.remove(parsedParams.data.id, { accountId: auth.accountId });
+      if (!removed) {
+        return sendError(reply, 404, "not_found", "Memory item not found");
+      }
+      return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
+    }
+
+    // Fallback：未注入 canonical ingress 时退回 route-local SQL（保留原行为）
+    const deleted = await db.delete(memoryItems).where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId))).returning();
     if (deleted.length === 0) {
       return sendError(reply, 404, "not_found", "Memory item not found");
     }
-
     return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
   });
 
@@ -1613,6 +1672,19 @@ export async function registerMemoryRoutes(
     }
 
     try {
+      if (memoryStore) {
+        const created = await memoryStore.createEdge(
+          {
+            fromId: parsedBody.data.from_id,
+            toId: parsedBody.data.to_id,
+            relation: parsedBody.data.relation,
+          },
+          { accountId: auth.accountId },
+        );
+        return reply.code(201).send({ data: { id: created.id, from_id: created.fromId, to_id: created.toId, relation: created.relation, created_at: created.createdAt } });
+      }
+
+      // Fallback：未注入 canonical ingress 时退回 route-local SQL
       const createdRows = await db
         .insert(memoryEdges)
         .values({
@@ -1624,9 +1696,7 @@ export async function registerMemoryRoutes(
           createdAt: Date.now()
         })
         .returning();
-
       const created = requireRow(createdRows[0], "Failed to create memory edge");
-
       return reply.code(201).send({ data: toMemoryEdgeResponse(created) });
     } catch (error) {
       const mapped = mapMemoryEdgeWriteError(error);
@@ -1824,15 +1894,23 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+
+    if (memoryStore) {
+      const removed = await memoryStore.removeEdge(parsedParams.data.id, { accountId: auth.accountId });
+      if (!removed) {
+        return sendError(reply, 404, "not_found", "Memory edge not found");
+      }
+      return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
+    }
+
+    // Fallback：未注入 canonical ingress 时退回 route-local SQL
     const deleted = await db
       .delete(memoryEdges)
       .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
       .returning();
-
     if (deleted.length === 0) {
       return sendError(reply, 404, "not_found", "Memory edge not found");
     }
-
     return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
   });
 }
