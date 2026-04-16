@@ -7,6 +7,7 @@ import {
   clientDataCollections,
   clientDataDomainGrants,
   clientDataDomains,
+  clientDataManagedDomains,
   clientDataItems,
 } from "../db/schema.js";
 
@@ -90,6 +91,19 @@ export interface ClientDataAuditLogRecord {
   createdAt: number;
 }
 
+export interface ClientDataManagedDomainRecord {
+  domainId: string;
+  accountId: string;
+  managerKind: "session_state";
+  hostType: "session";
+  hostId: string;
+  stateNamespace: string;
+  requireCallerOwner: boolean;
+  allowAutoCreateCollection: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface ClientDataDomainListOptions {
   accountId: string;
   ownerType?: "application" | "plugin";
@@ -98,6 +112,7 @@ export interface ClientDataDomainListOptions {
   limit: number;
   offset: number;
   sortBy: "updated_at" | "created_at" | "domain_name";
+  excludeDomainIds?: string[];
   sortOrder: "asc" | "desc";
 }
 
@@ -171,6 +186,9 @@ export class ClientDataRepository {
     if (options.status) {
       filters.push(eq(clientDataDomains.status, options.status));
     }
+    if (options.excludeDomainIds && options.excludeDomainIds.length > 0) {
+      filters.push(not(inArray(clientDataDomains.id, options.excludeDomainIds)));
+    }
 
     const whereClause = filters.length === 1 ? filters[0] : and(...filters);
     const orderBy = resolveDomainOrderBy(options.sortBy, options.sortOrder);
@@ -204,6 +222,108 @@ export class ClientDataRepository {
     )).limit(1).get();
 
     return row ? toDomainRecord(row) : null;
+  }
+
+  getManagedDomainByDomainId(domainId: string): ClientDataManagedDomainRecord | null {
+    const row = this.db
+      .select()
+      .from(clientDataManagedDomains)
+      .where(eq(clientDataManagedDomains.domainId, domainId))
+      .limit(1)
+      .get();
+
+    return row ? toManagedDomainRecord(row) : null;
+  }
+
+  getManagedDomainByHost(input: {
+    accountId: string;
+    managerKind: "session_state";
+    hostType: "session";
+    hostId: string;
+    stateNamespace: string;
+  }): ClientDataManagedDomainRecord | null {
+    const row = this.db
+      .select()
+      .from(clientDataManagedDomains)
+      .where(and(
+        eq(clientDataManagedDomains.accountId, input.accountId),
+        eq(clientDataManagedDomains.managerKind, input.managerKind),
+        eq(clientDataManagedDomains.hostType, input.hostType),
+        eq(clientDataManagedDomains.hostId, input.hostId),
+        eq(clientDataManagedDomains.stateNamespace, input.stateNamespace),
+      ))
+      .limit(1)
+      .get();
+
+    return row ? toManagedDomainRecord(row) : null;
+  }
+
+  listManagedDomainsByHost(input: {
+    accountId: string;
+    managerKind: "session_state";
+    hostType: "session";
+    hostId: string;
+  }): ClientDataManagedDomainRecord[] {
+    return this.db
+      .select()
+      .from(clientDataManagedDomains)
+      .where(and(
+        eq(clientDataManagedDomains.accountId, input.accountId),
+        eq(clientDataManagedDomains.managerKind, input.managerKind),
+        eq(clientDataManagedDomains.hostType, input.hostType),
+        eq(clientDataManagedDomains.hostId, input.hostId),
+      ))
+      .all()
+      .map(toManagedDomainRecord);
+  }
+
+  listManagedDomainIdsByAccount(accountId: string): string[] {
+    return this.db
+      .select({ domainId: clientDataManagedDomains.domainId })
+      .from(clientDataManagedDomains)
+      .where(eq(clientDataManagedDomains.accountId, accountId))
+      .all()
+      .map((row) => row.domainId);
+  }
+
+  upsertManagedDomain(input: {
+    domainId: string;
+    accountId: string;
+    managerKind: "session_state";
+    hostType: "session";
+    hostId: string;
+    stateNamespace: string;
+    requireCallerOwner: boolean;
+    allowAutoCreateCollection: boolean;
+    createdAt: number;
+    updatedAt: number;
+  }): ClientDataManagedDomainRecord {
+    const row = this.db.insert(clientDataManagedDomains).values({
+      domainId: input.domainId,
+      accountId: input.accountId,
+      managerKind: input.managerKind,
+      hostType: input.hostType,
+      hostId: input.hostId,
+      stateNamespace: input.stateNamespace,
+      requireCallerOwner: input.requireCallerOwner,
+      allowAutoCreateCollection: input.allowAutoCreateCollection,
+      createdAt: input.createdAt,
+      updatedAt: input.updatedAt,
+    }).onConflictDoUpdate({
+      target: clientDataManagedDomains.domainId,
+      set: {
+        accountId: input.accountId,
+        managerKind: input.managerKind,
+        hostType: input.hostType,
+        hostId: input.hostId,
+        stateNamespace: input.stateNamespace,
+        requireCallerOwner: input.requireCallerOwner,
+        allowAutoCreateCollection: input.allowAutoCreateCollection,
+        updatedAt: input.updatedAt,
+      },
+    }).returning().get();
+
+    return toManagedDomainRecord(row);
   }
 
   updateDomain(input: {
@@ -493,17 +613,23 @@ export class ClientDataRepository {
   updateItem(input: {
     itemId: string;
     valueJson: string;
+    ifVersion?: number;
     byteSize: number;
     expiresAt: number | null;
     now: number;
   }): ClientDataItemRecord | null {
+    const filters = [eq(clientDataItems.id, input.itemId)];
+    if (input.ifVersion !== undefined) {
+      filters.push(eq(clientDataItems.version, input.ifVersion));
+    }
+
     const row = this.db.update(clientDataItems).set({
       valueJson: input.valueJson,
       byteSize: input.byteSize,
       expiresAt: input.expiresAt,
       updatedAt: input.now,
       version: sql`${clientDataItems.version} + 1`,
-    }).where(eq(clientDataItems.id, input.itemId)).returning().get();
+    }).where(filters.length === 1 ? filters[0]! : and(...filters)).returning().get();
 
     return row ? toItemRecord(row) : null;
   }
@@ -795,6 +921,21 @@ function toAuditLogRecord(row: typeof clientDataAuditLogs.$inferSelect): ClientD
     requestId: row.requestId ?? null,
     metadataJson: row.metadataJson ?? null,
     createdAt: row.createdAt,
+  };
+}
+
+function toManagedDomainRecord(row: typeof clientDataManagedDomains.$inferSelect): ClientDataManagedDomainRecord {
+  return {
+    domainId: row.domainId,
+    accountId: row.accountId,
+    managerKind: row.managerKind,
+    hostType: row.hostType,
+    hostId: row.hostId,
+    stateNamespace: row.stateNamespace,
+    requireCallerOwner: row.requireCallerOwner,
+    allowAutoCreateCollection: row.allowAutoCreateCollection,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 

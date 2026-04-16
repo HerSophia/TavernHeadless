@@ -707,6 +707,25 @@ export async function registerClientDataRoutes(
 ): Promise<void> {
   const service = new ClientDataService(connection.db, options.clientData);
 
+  app.addHook("preHandler", async (request, reply) => {
+    const routePath = request.routeOptions.url ?? "";
+    if (!routePath.startsWith("/client-data/")) {
+      return;
+    }
+
+    const params = request.params as Record<string, unknown> | undefined;
+    const domainId = typeof params?.domainId === "string" ? params.domainId : undefined;
+    if (!domainId) {
+      return;
+    }
+
+    try {
+      service.assertRawDomainAccessAllowed(getRequestAuthContext(request).accountId, domainId);
+    } catch (error) {
+      return handleClientDataError(error, reply);
+    }
+  });
+
   app.post("/client-data/domains", {
     schema: {
       tags: ["client-data"],

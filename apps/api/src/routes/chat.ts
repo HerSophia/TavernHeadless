@@ -77,10 +77,25 @@ type PromptDeliveryBody = {
 };
 
 type PromptStructureBody = {
-  mode: "default" | "strict_alternating" | "no_assistant";
+  mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
   merge_adjacent_same_role?: boolean;
   assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
   preserve_system_messages?: boolean;
+};
+
+type PromptBudgetBody = {
+  max_input_tokens?: number;
+  reserved_completion_tokens?: number;
+};
+
+type PromptSourceSelectionBody = {
+  history?: {
+    mode?: "full" | "windowed";
+    max_messages?: number;
+  };
+  memory?: { enabled?: boolean };
+  worldbook?: { enabled?: boolean };
+  examples?: { enabled?: boolean };
 };
 
 type LiveDebugOptionsBody = {
@@ -124,6 +139,8 @@ type DryRunBody = {
   visibility?: DryRunVisibilityBody;
   structure?: PromptStructureBody;
   delivery?: PromptDeliveryBody;
+  budget?: PromptBudgetBody;
+  source_selection?: PromptSourceSelectionBody;
 };
 
 type RegenerateBody = {
@@ -132,6 +149,8 @@ type RegenerateBody = {
   debug_options?: LiveDebugOptionsBody;
   config?: TurnConfigBody;
   generation_params?: GenerationParamsBody;
+  confirmed_execution_ids?: string[];
+  confirmed_session_state_mutation_ids?: string[];
 };
 
 type EditAndRegenerateBody = RegenerateBody & {
@@ -139,9 +158,7 @@ type EditAndRegenerateBody = RegenerateBody & {
   branch_id?: string;
 };
 
-type RetryFloorBody = RegenerateBody & {
-  confirmed_execution_ids?: string[];
-};
+type RetryFloorBody = RegenerateBody;
 
 const sessionIdParamsSchema = z.object({
   id: z.string().min(1),
@@ -233,6 +250,8 @@ export async function registerChatRoutes(
       visibility: mapDryRunVisibilityRequest(parsedBody.data.visibility),
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
+      budget: mapPromptBudgetRequest(parsedBody.data.budget),
+      sourceSelection: mapPromptSourceSelectionRequest(parsedBody.data.source_selection),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -519,6 +538,8 @@ export async function registerChatRoutes(
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
+      confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
+      confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -576,6 +597,7 @@ export async function registerChatRoutes(
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
       confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
+      confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
     };
 
     const accountId = getRequestAuthContext(request).accountId;
@@ -630,6 +652,8 @@ export async function registerChatRoutes(
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
+      confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
+      confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -770,6 +794,34 @@ function mapPromptDeliveryRequest(
   };
 }
 
+function mapPromptBudgetRequest(
+  budget: PromptBudgetBody | undefined,
+): DryRunRequest["budget"] {
+  if (!budget) {
+    return undefined;
+  }
+
+  return {
+    ...(budget.max_input_tokens !== undefined ? { maxInputTokens: budget.max_input_tokens } : {}),
+    ...(budget.reserved_completion_tokens !== undefined ? { reservedCompletionTokens: budget.reserved_completion_tokens } : {}),
+  };
+}
+
+function mapPromptSourceSelectionRequest(
+  sourceSelection: PromptSourceSelectionBody | undefined,
+): DryRunRequest["sourceSelection"] {
+  if (!sourceSelection) {
+    return undefined;
+  }
+
+  return {
+    ...(sourceSelection.history ? { history: { ...(sourceSelection.history.mode !== undefined ? { mode: sourceSelection.history.mode } : {}), ...(sourceSelection.history.max_messages !== undefined ? { maxMessages: sourceSelection.history.max_messages } : {}) } } : {}),
+    ...(sourceSelection.memory ? { memory: { ...(sourceSelection.memory.enabled !== undefined ? { enabled: sourceSelection.memory.enabled } : {}) } } : {}),
+    ...(sourceSelection.worldbook ? { worldbook: { ...(sourceSelection.worldbook.enabled !== undefined ? { enabled: sourceSelection.worldbook.enabled } : {}) } } : {}),
+    ...(sourceSelection.examples ? { examples: { ...(sourceSelection.examples.enabled !== undefined ? { enabled: sourceSelection.examples.enabled } : {}) } } : {}),
+  };
+}
+
 function mapLiveDebugOptionsRequest(
   debugOptions: LiveDebugOptionsBody | undefined,
 ): RespondRequest["debugOptions"] {
@@ -891,8 +943,15 @@ function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<st
             by_group: runtimeTrace.budgets.byGroup.map((item) => ({
               group: item.group,
               token_count: item.tokenCount,
+              ...(item.estimatedTokenCount !== undefined ? { estimated_token_count: item.estimatedTokenCount } : {}),
+              ...(item.allocatedTokenCount !== undefined ? { allocated_token_count: item.allocatedTokenCount } : {}),
               ...(item.prunedTokenCount !== undefined ? { pruned_token_count: item.prunedTokenCount } : {}),
             })),
+            ...(runtimeTrace.budgets.trimReasons
+              ? {
+                  trim_reasons: runtimeTrace.budgets.trimReasons.map((item) => mapTrimReasonToSnakeCase(item)),
+                }
+              : {}),
           },
         }
       : {}),
@@ -904,6 +963,9 @@ function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<st
             assistant_rewrite_count: runtimeTrace.structure.assistantRewriteCount,
             assistant_rewrite_strategy: runtimeTrace.structure.assistantRewriteStrategy ?? null,
             tail_assistant_detected: runtimeTrace.structure.tailAssistantDetected,
+            ...(runtimeTrace.structure.transcriptized !== undefined ? { transcriptized: runtimeTrace.structure.transcriptized } : {}),
+            ...(runtimeTrace.structure.transcriptMessageCount !== undefined ? { transcript_message_count: runtimeTrace.structure.transcriptMessageCount } : {}),
+            ...(runtimeTrace.structure.assistantPrefillTranscriptized !== undefined ? { assistant_prefill_transcriptized: runtimeTrace.structure.assistantPrefillTranscriptized } : {}),
           },
         }
       : {}),
@@ -932,6 +994,17 @@ function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<st
               source_macro: mutation.sourceMacro,
             })),
             traces: runtimeTrace.macro.traces.map((trace) => mapMacroTraceEntryToSnakeCase(trace)),
+          },
+        }
+      : {}),
+    ...(runtimeTrace.sourceSelection
+      ? {
+          source_selection: {
+            excluded_sources: runtimeTrace.sourceSelection.excludedSources.map((item) => ({
+              source: item.source,
+              reason: item.reason,
+              ...(item.detail ? { detail: item.detail } : {}),
+            })),
           },
         }
       : {}),
@@ -982,6 +1055,15 @@ function mapOptionalPromptDebugResponseFields(
       ? { prompt_snapshot: mapPromptSnapshotToSnakeCase(payload.promptSnapshot) }
       : {}),
     ...mapOptionalRuntimeTraceResponseField(payload.runtimeTrace),
+  };
+}
+
+function mapTrimReasonToSnakeCase(reason: NonNullable<NonNullable<PromptRuntimeTrace["budgets"]>["trimReasons"]>[number]): Record<string, unknown> {
+  return {
+    group: reason.group,
+    reason: reason.reason,
+    ...(reason.detail ? { detail: reason.detail } : {}),
+    ...(reason.prunedTokenCount !== undefined ? { pruned_token_count: reason.prunedTokenCount } : {}),
   };
 }
 
@@ -1058,6 +1140,7 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
     case "invalid_state":
     case "generation_target_stale":
     case "branch_exists":
+    case "branch_local_snapshot_missing":
       return { statusCode: 409, code: error.code, message: error.message };
     case "generation_cancelled":
       return { statusCode: 499, code: error.code, message: error.message };
@@ -1066,6 +1149,9 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
       return { statusCode: 409, code: error.code, message: error.message };
     case "tool_replay_blocked":
     case "tool_replay_confirmation_required":
+    case "replay_confirmation_required":
+    case "session_state_replay_blocked":
+    case "session_state_replay_confirmation_required":
     case "profile_not_found":
     case "tool_catalog_conflict":
     case "instance_slot_disabled_required":

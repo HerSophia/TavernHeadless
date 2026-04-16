@@ -315,6 +315,13 @@ describe("chat routes", () => {
       errorCode: "tool_replay_blocked",
     },
     {
+      name: "branch_local_snapshot_missing",
+      code: "branch_local_snapshot_missing",
+      message: "Source floor snapshot is missing",
+      statusCode: 409,
+      errorCode: "branch_local_snapshot_missing",
+    },
+    {
       name: "secret_unavailable",
       code: "secret_unavailable",
       message: "Secret is unavailable",

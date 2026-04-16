@@ -38,6 +38,7 @@ import { z } from "zod";
 
 import {
   TH_CHAT_SPEC,
+  buildBranchMemoryScopeId,
   buildBranchVariableScopeId,
   thChatFileSchema,
   type ThChatFile,
@@ -2730,7 +2731,7 @@ async function handleThChatImport(
   });
 }
 
-function resolveThChatImportScopeId(input: {
+function resolveThChatImportVariableScopeId(input: {
   scope: "chat" | "floor" | "branch" | "page";
   scopeIdRef: string | null;
   sessionId: string;
@@ -2751,6 +2752,27 @@ function resolveThChatImportScopeId(input: {
   return input.idMap.get(input.scopeIdRef) ?? input.scopeIdRef;
 }
 
+function resolveThChatImportMemoryScopeId(input: {
+  scope: "chat" | "floor" | "branch" | "page";
+  scopeIdRef: string | null;
+  sessionId: string;
+  idMap: Map<string, string>;
+}): string {
+  if (input.scope === "chat") {
+    return input.sessionId;
+  }
+
+  if (input.scope === "branch") {
+    return buildBranchMemoryScopeId(input.sessionId, input.scopeIdRef ?? "main");
+  }
+
+  if (!input.scopeIdRef) {
+    return input.sessionId;
+  }
+
+  return input.idMap.get(input.scopeIdRef) ?? input.scopeIdRef;
+}
+
 function buildImportedMemoryScopeStateRows(input: {
   accountId: string;
   data: ThChatFile["data"];
@@ -2758,18 +2780,26 @@ function buildImportedMemoryScopeStateRows(input: {
   now: number;
   sessionId: string;
 }): Array<typeof runtimeScopeStates.$inferInsert> {
-  const makeScopeKey = (scope: "global" | "chat" | "floor", scopeId: string): string => JSON.stringify([scope, scopeId]);
+  const makeScopeKey = (scope: "global" | "chat" | "branch" | "floor", scopeId: string): string => JSON.stringify([scope, scopeId]);
 
   const scopeMeta = new Map<string, { revision: number; hasMacroSummary: boolean }>();
   const scopeRows = new Map<string, typeof runtimeScopeStates.$inferInsert>();
+  const branchLastProcessedFloorNo = new Map<string, number>();
   const chatLastProcessedFloorNo = input.data.floors.reduce<number | null>(
     (maxFloorNo, floor) => (maxFloorNo === null ? floor.floor_no : Math.max(maxFloorNo, floor.floor_no)),
     null,
   );
 
+  for (const floor of input.data.floors) {
+    const scopeId = buildBranchMemoryScopeId(input.sessionId, floor.branch_id);
+    const key = makeScopeKey("branch", scopeId);
+    const currentFloorNo = branchLastProcessedFloorNo.get(key);
+    branchLastProcessedFloorNo.set(key, currentFloorNo === undefined ? floor.floor_no : Math.max(currentFloorNo, floor.floor_no));
+  }
+
   if (input.data.memories) {
     for (const item of input.data.memories.items) {
-      const scopeId = resolveThChatImportScopeId({
+      const scopeId = resolveThChatImportMemoryScopeId({
         scope: item.scope,
         scopeIdRef: item.scope_id_ref,
         sessionId: input.sessionId,
@@ -2829,12 +2859,32 @@ function buildImportedMemoryScopeStateRows(input: {
     });
   }
 
+  for (const [scopeKey, lastProcessedFloorNo] of branchLastProcessedFloorNo.entries()) {
+    const [, scopeId] = JSON.parse(scopeKey) as ["branch", string];
+    const branchMeta = scopeMeta.get(scopeKey);
+    scopeRows.set(scopeKey, {
+      accountId: input.accountId,
+      scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
+      scopeKey: buildMemoryRuntimeScopeKey("branch", scopeId),
+      revision: branchMeta?.revision ?? 0,
+      leaseOwner: null,
+      leaseUntil: null,
+      lastProcessedAt: input.now,
+      lastSuccessJobId: null,
+      metadataJson: JSON.stringify({
+        lastProcessedFloorNo,
+        lastCompactionAt: branchMeta?.hasMacroSummary ? input.now : null,
+      }),
+      updatedAt: input.now,
+    });
+  }
+
   for (const [scopeKey, meta] of scopeMeta.entries()) {
     if (scopeRows.has(scopeKey)) {
       continue;
     }
 
-    const [scope, scopeId] = JSON.parse(scopeKey) as ["global" | "chat" | "floor", string];
+    const [scope, scopeId] = JSON.parse(scopeKey) as ["global" | "chat" | "branch" | "floor", string];
     scopeRows.set(scopeKey, {
       accountId: input.accountId,
       scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
@@ -2845,7 +2895,7 @@ function buildImportedMemoryScopeStateRows(input: {
       lastProcessedAt: input.now,
       lastSuccessJobId: null,
       metadataJson: JSON.stringify({
-        lastProcessedFloorNo: scope === "chat" ? chatLastProcessedFloorNo : null,
+        lastProcessedFloorNo: scope === "chat" ? chatLastProcessedFloorNo : branchLastProcessedFloorNo.get(scopeKey) ?? null,
         lastCompactionAt: meta.hasMacroSummary ? input.now : null,
       }),
       updatedAt: input.now,
@@ -3000,7 +3050,7 @@ function createSessionFromThChatImport(
         accountId: input.accountId,
         items: data.variables.map((v) => ({
           scope: v.scope,
-          scopeId: resolveThChatImportScopeId({
+          scopeId: resolveThChatImportVariableScopeId({
             scope: v.scope,
             scopeIdRef: v.scope_id_ref,
             sessionId,
@@ -3020,7 +3070,7 @@ function createSessionFromThChatImport(
     if (data.memories) {
       for (const item of data.memories.items) {
         const itemId = input.idMap.get(item._original_id)!;
-        const scopeId = resolveThChatImportScopeId({
+        const scopeId = resolveThChatImportMemoryScopeId({
           scope: item.scope,
           scopeIdRef: item.scope_id_ref,
           sessionId,

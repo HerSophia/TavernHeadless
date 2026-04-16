@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import type {
   BufferedToolVariableMutation,
   CoreEventBus,
@@ -26,6 +27,7 @@ import {
   floorResultSnapshots,
   messagePages,
   messages,
+  promptRuntimeExplainSnapshots,
   promptSnapshots,
   sessions,
   toolCallRecords,
@@ -48,14 +50,23 @@ import type { MutationRuntime } from "./runtime-mutation-types.js";
 import type { ToolRuntimeJobBridge } from "./tool-runtime-job-bridge.js";
 import type { FloorRunService } from "./floor-run-service.js";
 import type { StMacroStagedMutation } from "./st-macros/index.js";
-import { buildBranchVariableScopeId } from "@tavern/shared";
+import {
+  buildBranchMemoryScopeId,
+  buildBranchVariableScopeId,
+} from "@tavern/shared";
 import { DEFAULT_GLOBAL_SCOPE_ID } from "./variable-host-service.js";
 import { BranchLocalVariableSnapshotService } from "./branch-local-variable-snapshot-service.js";
+import {
+  buildPromptRuntimeCommittedExplainSnapshot,
+  type PromptRuntimeInspectionResult,
+} from "./prompt-runtime-control-service.js";
+import type { SessionStateService } from "../session-state/session-state-service.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
 type PromptSnapshotInsert = typeof promptSnapshots.$inferInsert;
 type FloorResultSnapshotInsert = typeof floorResultSnapshots.$inferInsert;
+type PromptRuntimeExplainSnapshotInsert = typeof promptRuntimeExplainSnapshots.$inferInsert;
 type ToolExecutionInsert = typeof toolExecutionRecords.$inferInsert;
 
 interface MemoryCommitInput {
@@ -77,6 +88,7 @@ export interface TurnCommitInput {
   execution: TurnExecutionResult;
   committedAt?: number;
   promptSnapshot?: PromptSnapshotRecord;
+  promptRuntimeInspection?: PromptRuntimeInspectionResult;
   toolCalls?: ToolCallRecord[];
   toolExecutionRecords?: ExecutedToolCallRecord[];
   pendingToolJobs?: PendingToolJobRequest[];
@@ -106,6 +118,7 @@ export interface TurnCommitServiceOptions extends AccountContextOptions {
   mutationRuntime?: MutationRuntime;
   floorRunService?: FloorRunService;
   toolRuntimeJobBridge?: ToolRuntimeJobBridge;
+  sessionStateService?: SessionStateService;
 }
 
 class MemoryPersistError extends Error {
@@ -201,6 +214,39 @@ function toFloorResultSnapshotInsert(input: {
     verifierJson: verifier ? JSON.stringify(verifier) : null,
     committedAt: input.committedAt,
     updatedAt: input.committedAt,
+  };
+}
+
+function toPromptRuntimeExplainSnapshotInsert(input: {
+  floorId: string;
+  sessionId: string;
+  committedAt: number;
+  inspection: PromptRuntimeInspectionResult;
+}): PromptRuntimeExplainSnapshotInsert {
+  const snapshot = buildPromptRuntimeCommittedExplainSnapshot({
+    floorId: input.floorId,
+    sessionId: input.sessionId,
+    createdAt: input.committedAt,
+    inspection: input.inspection,
+  });
+
+  return {
+    id: nanoid(),
+    floorId: snapshot.floorId,
+    sessionId: snapshot.sessionId,
+    targetBranchId: snapshot.targetBranchId ?? null,
+    sourceFloorId: snapshot.sourceFloorId ?? null,
+    historySourceBranchId: snapshot.historySourceBranchId,
+    historySourceMode: snapshot.historySourceMode,
+    snapshotVersion: snapshot.snapshotVersion,
+    assetsJson: JSON.stringify(snapshot.assets),
+    resolvedPolicyJson: JSON.stringify(snapshot.resolvedPolicy),
+    sourceMapJson: JSON.stringify(snapshot.sourceMap),
+    diagnosticsJson: JSON.stringify(snapshot.diagnostics),
+    trimReasonsJson: JSON.stringify(snapshot.trimReasons),
+    excludedSourcesJson: JSON.stringify(snapshot.excludedSources),
+    sectionStatsJson: JSON.stringify(snapshot.sectionStats),
+    createdAt: snapshot.createdAt,
   };
 }
 
@@ -304,6 +350,7 @@ export class TurnCommitService {
   private readonly memoryJobScheduler: MemoryJobScheduler;
   private readonly floorRunService?: FloorRunService;
   private readonly toolRuntimeJobBridge?: ToolRuntimeJobBridge;
+  private readonly sessionStateService?: SessionStateService;
   private readonly floorStateMachine: FloorStateMachine;
 
   constructor(
@@ -326,6 +373,7 @@ export class TurnCommitService {
     this.floorRunService = options.floorRunService;
     this.floorStateMachine = new FloorStateMachine(new DrizzleFloorRepository(db), this.eventBus);
     this.toolRuntimeJobBridge = options.toolRuntimeJobBridge;
+    this.sessionStateService = options.sessionStateService;
   }
 
   private loadUserInputDigest(tx: DbExecutor, floorId: string, accountId: string): string {
@@ -355,6 +403,7 @@ export class TurnCommitService {
   private enqueueIngestTurnJob(tx: DbExecutor, args: {
     accountId: string;
     sessionId: string;
+    branchId?: string;
     floor: FloorEntity;
     assistantMessageId: string;
     committedAt: number;
@@ -366,6 +415,7 @@ export class TurnCommitService {
       accountId: args.accountId,
       sessionId: args.sessionId,
       floorId: args.floor.id,
+      branchId: args.branchId,
       floorNo: args.floor.floorNo,
       assistantMessageId: args.assistantMessageId,
       userInputDigest,
@@ -500,6 +550,38 @@ export class TurnCommitService {
             .run();
         }
 
+        if (input.promptRuntimeInspection) {
+          const inspectionSnapshot = toPromptRuntimeExplainSnapshotInsert({
+            floorId: input.floorId,
+            sessionId: input.sessionId,
+            committedAt,
+            inspection: input.promptRuntimeInspection,
+          });
+          tx
+            .insert(promptRuntimeExplainSnapshots)
+            .values(inspectionSnapshot)
+            .onConflictDoUpdate({
+              target: promptRuntimeExplainSnapshots.floorId,
+              set: {
+                sessionId: inspectionSnapshot.sessionId,
+                targetBranchId: inspectionSnapshot.targetBranchId,
+                sourceFloorId: inspectionSnapshot.sourceFloorId,
+                historySourceBranchId: inspectionSnapshot.historySourceBranchId,
+                historySourceMode: inspectionSnapshot.historySourceMode,
+                snapshotVersion: inspectionSnapshot.snapshotVersion,
+                assetsJson: inspectionSnapshot.assetsJson,
+                resolvedPolicyJson: inspectionSnapshot.resolvedPolicyJson,
+                sourceMapJson: inspectionSnapshot.sourceMapJson,
+                diagnosticsJson: inspectionSnapshot.diagnosticsJson,
+                trimReasonsJson: inspectionSnapshot.trimReasonsJson,
+                excludedSourcesJson: inspectionSnapshot.excludedSourcesJson,
+                sectionStatsJson: inspectionSnapshot.sectionStatsJson,
+                createdAt: inspectionSnapshot.createdAt,
+              },
+            })
+            .run();
+        }
+
         if (actualToolExecutionRecords.length > 0) {
           tx
             .insert(toolExecutionRecords)
@@ -621,6 +703,16 @@ export class TurnCommitService {
           })
           .run();
 
+        if (this.sessionStateService) {
+          this.sessionStateService.applyStagedMutationsForFloor({
+            accountId: input.accountId,
+            sessionId: input.sessionId,
+            branchId: input.branchId ?? "main",
+            floorId: input.floorId,
+            committedAt,
+          }, tx);
+        }
+
         new BranchLocalVariableSnapshotService(tx).persistFloorLocalSnapshot({
           accountId: input.accountId,
           floorId: input.floorId,
@@ -643,11 +735,14 @@ export class TurnCommitService {
         let memory: TurnCommitMemoryReceipt | undefined;
 
         if (input.memoryCommit) {
+          const defaultScope = input.branchId ? "branch" : "chat";
+          const defaultScopeId = input.branchId ? buildBranchMemoryScopeId(input.sessionId, input.branchId) : input.sessionId;
           try {
             if (this.enableAsyncMemoryIngest) {
               const enqueuedMemory = this.enqueueIngestTurnJob(tx, {
                 accountId: input.accountId,
                 sessionId: input.sessionId,
+                branchId: input.branchId,
                 floor,
                 assistantMessageId: assistantMessage.messageId,
                 committedAt,
@@ -667,9 +762,9 @@ export class TurnCommitService {
                 pendingEvents,
                 summaries: input.memoryCommit.summaries,
                 consolidationOutput: input.memoryCommit.consolidationOutput,
-                defaultScope: "chat",
-                defaultScopeId: input.sessionId,
-                scopeContext: { accountId: input.accountId, sessionId: input.sessionId, floorId: input.floorId },
+                defaultScope,
+                defaultScopeId,
+                scopeContext: { accountId: input.accountId, sessionId: input.sessionId, ...(input.branchId ? { branchId: input.branchId } : {}), floorId: input.floorId },
                 sourceFloorId: input.floorId,
                 sourceMessageId: assistantMessage.messageId,
               });
@@ -697,8 +792,8 @@ export class TurnCommitService {
         try {
           await this.eventBus.emit("memory.persist_failed", {
             sessionId: input.sessionId,
-            scope: "chat",
-            scopeId: input.sessionId,
+            scope: input.branchId ? "branch" : "chat",
+            scopeId: input.branchId ? buildBranchMemoryScopeId(input.sessionId, input.branchId) : input.sessionId,
             floorId: input.floorId,
             sourceJobId: this.enableAsyncMemoryIngest ? `memory-job:ingest_turn:${input.floorId}` : undefined,
             error: normalizeError(error.cause ?? error),

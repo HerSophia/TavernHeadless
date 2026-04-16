@@ -99,7 +99,21 @@ const client = createTavernClient({
 
 ### Client Data 第二期接入
 
-如果接入方要启用插件级 caller owner 隔离，需要在默认请求头中加入：
+如果接入方要启用插件级 caller owner 隔离，优先建议在单次 domain-scoped 调用上显式传 `callerOwner`：
+
+```ts
+const pluginOwner = { ownerType: "plugin", ownerId: "chat-annotator" } as const;
+
+await client.clientData.items.getByKey({
+  accountId: "account-1",
+  domainId: "domain-1",
+  callerOwner: pluginOwner,
+  collectionName: "settings",
+  itemKey: "theme.dark",
+});
+```
+
+如果整个客户端都固定代表同一个 owner，也可以在默认请求头中加入：
 
 ```ts
 const client = createTavernClient({
@@ -114,17 +128,21 @@ const client = createTavernClient({
 
 说明：
 
+- `callerOwner` 参数和默认头最终都会落到 `X-Client-Owner-Type` 与 `X-Client-Owner-Id`
 - 未提供 caller owner 头时，服务端保持第一期兼容模式
 - 提供非法 caller owner 头时，服务端返回 `400 client_data_caller_owner_invalid`
 - grant / audit 管理路由要求 caller owner 必须是 domain owner
+- 如果服务端把某个 domain 标记为 managed domain，raw `/client-data` 写路径会返回 `403 client_data_managed_domain_raw_access_forbidden`
 
 ### 调用 Client Data 资源
 
 ```ts
+const domainOwner = { ownerType: "application", ownerId: "my-app" } as const;
+const pluginOwner = { ownerType: "plugin", ownerId: "chat-annotator" } as const;
+
 const domain = await client.clientData.domains.create({
   accountId: "account-1",
-  ownerType: "application",
-  ownerId: "my-app",
+  ...domainOwner,
   domainName: "preferences",
 });
 
@@ -133,6 +151,18 @@ await client.clientData.domains.updateQuota({
   domainId: domain.id,
   quotaMaxEntries: 20000,
   quotaMaxBytes: 20971520,
+});
+
+const grant = await client.clientData.grants.create({
+  accountId: "account-1",
+  callerOwner: domainOwner,
+  domainId: domain.id,
+  granteeOwnerType: pluginOwner.ownerType,
+  granteeOwnerId: pluginOwner.ownerId,
+  canRead: true,
+  canWrite: false,
+  canDelete: false,
+  canList: true,
 });
 
 const imported = await client.clientData.domains.importAsNew({
@@ -150,11 +180,25 @@ const imported = await client.clientData.domains.importAsNew({
 
 const item = await client.clientData.items.getByKey({
   accountId: "account-1",
+  callerOwner: pluginOwner,
   domainId: imported.domain.id,
   collectionName: "settings",
   itemKey: "theme.dark",
 });
+
+const auditLogs = await client.clientData.auditLogs.list({
+  accountId: "account-1",
+  callerOwner: domainOwner,
+  domainId: imported.domain.id,
+  limit: 20,
+});
+
+console.log(grant.canRead);
+console.log(item?.valueJson);
+console.log(auditLogs.data[0]?.action);
 ```
+
+这里的 `clientData` 资源仍然对应 raw `/client-data`。如果后端把某个底层 domain 标记为 managed domain，接入方需要改走对应的受治理服务，而不是继续直接写 raw `clientData`。
 
 ### Client Data helper 用法
 
@@ -172,6 +216,7 @@ const nested = toClientDataMap(items, collections);
 const resolved = await resolveItemByPath(client, domainId, "settings", "theme.dark", {
   accountId: "account-1",
 });
+
 ```
 
 ## SDK 资源覆盖范围
@@ -188,6 +233,16 @@ const resolved = await resolveItemByPath(client, domainId, "settings", "theme.da
 | 工具与运行集成 | `tools`、`mcp` |
 | 高级客户端数据系统 | `clientData` |
 
+## 记忆 scope 约定
+
+`memories`、`memoryJobs`、`memoryScopes` 现在都接受 `global`、`chat`、`branch`、`floor` 四种记忆作用域。
+
+其中：
+
+- 主聊天链默认使用 `branch` scope。
+- `chat` scope 只表示显式的 session 级共享记忆。
+- `branch` scope 的 `scopeId` 需要使用 `JSON.stringify([sessionId, branchId])` 构造。
+
 ## Prompt Runtime preview 示例
 
 ```ts
@@ -196,18 +251,113 @@ const preview = await client.promptRuntime.previewText({
   sessionId: "session-1",
   branchId: "main",
   text: "{{setvar::资产.金币::3}}{{getvar::资产}}",
+  budget: {
+    maxInputTokens: 4096,
+    reservedCompletionTokens: 1024,
+  },
+  sourceSelection: {
+    history: { mode: "windowed", maxMessages: 24 },
+    examples: { enabled: false },
+  },
   visibility: {
     mode: "allow_all_except_hidden",
     hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
   },
 });
 
+console.log(preview.policy.budget);
 console.log(preview.text);
+console.log(preview.runtimeTrace.sourceSelection?.excludedSources);
+console.log(preview.runtimeTrace.visibility?.filteredFloorNos);
 console.log(preview.runtimeTrace.macro?.mutationPreview);
 console.log(preview.runtimeTrace.macro?.stagedMutations); // []
 ```
 
-这个方法只做单段文本 preview。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`。宏诊断继续统一走 `runtimeTrace.macro`。
+这个方法只做单段文本 preview。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`。当前 request 级 `structure` / `delivery` / `budget` / `sourceSelection` / `visibility` 覆盖会进入返回结果里的 `policy` 与 `sourceMap`，但返回的 `runtimeTrace` 只投影 `macro`、`sourceSelection`、`visibility`。宏诊断继续统一走 `runtimeTrace.macro`。
+
+## Prompt Runtime governance / explain / compare 示例
+
+```ts
+const policy = await client.promptRuntime.patchPolicy({
+  accountId: "account-1",
+  sessionId: "session-1",
+  budget: {
+    maxInputTokens: 4096,
+    reservedCompletionTokens: 1024,
+  },
+  sourceSelection: {
+    history: { mode: "windowed", maxMessages: 24 },
+    examples: { enabled: false },
+  },
+});
+
+const explain = await client.promptRuntime.getFloorExplain({
+  accountId: "account-1",
+  floorId: "floor-12",
+});
+
+const diff = await client.promptRuntime.compare({
+  accountId: "account-1",
+  sessionId: "session-1",
+  leftFloorId: "floor-11",
+  rightFloorId: "floor-12",
+});
+
+console.log(policy.persistentPolicyEnvelope?.version);
+console.log(policy.persistentPolicyEnvelope?.updatedAt);
+console.log(policy.persistentPolicyEnvelope?.updatedBy);
+console.log(policy.persistentPolicyEnvelope?.value.budget);
+
+console.log(explain.snapshotAvailable);
+console.log(explain.assets);
+console.log(explain.sectionStats);
+console.log(explain.resolvedPolicy);
+
+console.log(diff.left.snapshotAvailable, diff.right.snapshotAvailable);
+console.log(diff.policyChanges);
+```
+
+- `patchPolicy(...)` 和 `patchBranchPolicy(...)` 现在都支持 `structure`、`delivery`、`budget`、`sourceSelection`。
+- 写入后的持久化策略会带 envelope 元数据：`version`、`updatedAt`、`updatedBy`、`value`。
+- `getFloorExplain(...)` 只读取 committed floor 的持久化真相。`snapshotAvailable = true` 表示响应来自 committed explain snapshot；`false` 表示旧楼层 fallback，此时 `assets`、`resolvedPolicy`、`sectionStats` 等可能为 `null`。
+- `compare(...)` 只支持同一 session 内的两个 committed floor，且只返回结构化 path/value diff；不会做 explain recompute。
+
+当前 `@tavern/client-helpers` 没有为 historical explain 或 compare 增加专用 helper。原因很简单：这两份响应已经是稳定的只读对象，当前没有额外的跨框架语义整理需求。接入方直接使用 SDK 返回值即可。
+
+<a id="assembly提示词组装的运行结果"></a>
+
+## assembly：提示词组装的运行结果
+
+`respondDryRun(...)` 返回的 `assembly` 可以理解为 dry-run 的兼容摘要面。SDK 现在同时导出：
+
+- `PromptAssemblyCompat`
+- `RespondDryRunAssembly`（兼容别名）
+
+如果同一事实已经在 `runtimeTrace` 中以更结构化的形式出现，建议优先读取 `runtimeTrace`。`assembly` 继续保留，主要是为了让既有 dry-run 调试面和 preset 兼容说明保持稳定。
+
+常见对应关系如下：
+
+| `assembly` 字段 | 优先读取的 `runtimeTrace` | 说明 |
+| ---- | ---- | ---- |
+| `assistantPrefillApplied` / `assistantPrefillStrategy` | `runtimeTrace.delivery` | assistant prefill 是否真正落到最终发送消息 |
+| `regexPreRules` / `regexPostRules` / `preprocessedUserMessage` | `runtimeTrace.regex` | 正则执行结果与预处理后的用户消息 |
+| `worldbookHits` / `worldbookMatches` | `runtimeTrace.worldbook` | 世界书命中数量与详情 |
+| `memorySummaryInjected` | `runtimeTrace.memory.summaryInjected` | 记忆摘要是否注入 |
+| `selectedPromptOrderCharacterId` / `ignoredPromptOrderCharacterIds` / `continueNudgeApplied` / `continueNudgeText` / `namesBehaviorApplied` | `runtimeTrace.preset` | 预设运行事实与降级说明 |
+
+同时要区分两类名字：
+
+- `runtimeTrace.budgets.byGroup[].group` 与 `runtimeTrace.budgets.trimReasons[].group` 是 budget group 标签，可以出现具体 section 标签，例如 `section:main`
+- `capabilities.sourceSelection.supportedSources` 与 `runtimeTrace.sourceSelection.excludedSources[].source` 仍只使用公开 source kind：`history`、`memory`、`worldbook`、`examples`
+
+下面这些字段仍主要留在 `assembly`：
+
+- `mode`
+- `promptIntent`
+- `unsupportedPresetFields`
+- `ignoredPresetFields`
+- `unresolvedPresetMarkers`
+- `presetWarnings`
 
 
 ## `@tavern/client-helpers` 当前导出

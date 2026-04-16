@@ -3,6 +3,7 @@ import { TavernApiError } from "../errors/tavern-api-error.js";
 import {
   mapPromptDebugPayload,
   mapPromptLiveDebugOptionsRequest,
+  mapPromptRuntimeTracePayload,
   type PromptLiveDebugOptions,
   type PromptRuntimeTrace,
   type PromptRuntimeWorldbookFirstMatch,
@@ -12,6 +13,10 @@ import {
   type PromptRuntimeWorldbookMatchSource,
   type PromptSnapshotPreview,
 } from "../prompt-runtime.js";
+import type {
+  PromptRuntimeBudgetPolicy,
+  PromptRuntimeSourceSelectionPolicy,
+} from "./prompt-runtime.js";
 import { readSseStream } from "../stream/read-sse.js";
 import type { RespondStreamCallbacks } from "../stream/event-types.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage, type ApiUsage } from "../types/usage.js";
@@ -255,12 +260,18 @@ export type RespondDryRunWorldbookMatchSource = PromptRuntimeWorldbookMatchSourc
 export type RespondDryRunWorldbookMatchDetail = PromptRuntimeWorldbookMatchDetail;
 export type RespondDryRunPromptSnapshot = PromptSnapshotPreview;
 
-export type RespondDryRunAssembly = {
+/**
+ * dry-run 对外 `assembly` 兼容层。
+ *
+ * 这层继续保留既有 preset / dry-run 摘要字段，供旧调用方和调试面读取。
+ * 如果同一事实已经在 `runtimeTrace` 中以更结构化的形式出现，应优先消费 `runtimeTrace`。
+ */
+export type PromptAssemblyCompat = {
   memorySummaryInjected: boolean;
   mode: "preset" | "fallback";
   promptIntent: PromptIntent;
   assistantPrefillApplied: boolean;
-  assistantPrefillStrategy: "provider_native" | "assistant_message_fallback" | "unsupported" | "none";
+  assistantPrefillStrategy: "provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none";
   preprocessedUserMessage: string | null;
   presetUsed: boolean;
   regexPostRules: string[];
@@ -281,12 +292,15 @@ export type RespondDryRunAssembly = {
   worldbookMatches?: RespondDryRunWorldbookMatchDetail[];
 };
 
+export type RespondDryRunAssembly = PromptAssemblyCompat;
+
 export type RespondDryRunResult = {
   assembly: RespondDryRunAssembly;
   availableForReply: number;
   memorySummary: string | null;
   messages: RespondDryRunMessage[];
   promptSnapshot: RespondDryRunPromptSnapshot;
+  runtimeTrace?: PromptRuntimeTrace;
   tokenEstimate: number;
 };
 
@@ -371,9 +385,11 @@ export type SessionsRespondDryRunOptions = {
   debugOptions?: {
     includeWorldbookMatches?: boolean;
   };
+  budget?: PromptRuntimeBudgetPolicy;
   message: string;
   promptIntent?: PromptIntent;
   sessionId: string;
+  sourceSelection?: PromptRuntimeSourceSelectionPolicy;
 };
 
 export type SessionsRespondStreamOptions = SessionsRespondOptions &
@@ -889,8 +905,10 @@ function mapDryRunRequestBody(options: SessionsRespondDryRunOptions): Record<str
           include_worldbook_matches: options.debugOptions.includeWorldbookMatches,
         })
       : undefined,
+    budget: mapPromptBudgetPolicyRequestBody(options.budget),
     message: options.message,
     prompt_intent: options.promptIntent,
+    source_selection: mapPromptSourceSelectionPolicyRequestBody(options.sourceSelection),
   });
 }
 
@@ -914,6 +932,37 @@ function mapNumberArray(value: unknown): number[] {
     .filter((item): item is number => item !== undefined);
 }
 
+function mapPromptBudgetPolicyRequestBody(
+  budget?: PromptRuntimeBudgetPolicy,
+): Record<string, unknown> | undefined {
+  if (!budget) {
+    return undefined;
+  }
+
+  const mapped = compactObject({
+    max_input_tokens: budget.maxInputTokens,
+    reserved_completion_tokens: budget.reservedCompletionTokens,
+  });
+
+  return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+function mapPromptSourceSelectionPolicyRequestBody(
+  sourceSelection?: PromptRuntimeSourceSelectionPolicy,
+): Record<string, unknown> | undefined {
+  if (!sourceSelection) {
+    return undefined;
+  }
+
+  const mapped = compactObject({
+    history: sourceSelection.history ? compactObject({ mode: sourceSelection.history.mode, max_messages: sourceSelection.history.maxMessages }) : undefined,
+    memory: sourceSelection.memory ? compactObject({ enabled: sourceSelection.memory.enabled }) : undefined,
+    worldbook: sourceSelection.worldbook ? compactObject({ enabled: sourceSelection.worldbook.enabled }) : undefined,
+    examples: sourceSelection.examples ? compactObject({ enabled: sourceSelection.examples.enabled }) : undefined,
+  });
+  return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
 function readDryRunMode(value: unknown): RespondDryRunAssembly["mode"] {
   return readString(value) === "preset" ? "preset" : "fallback";
 }
@@ -933,6 +982,7 @@ function readAssistantPrefillStrategy(value: unknown): RespondDryRunAssembly["as
   const strategy = readString(value, "none");
   return strategy === "provider_native"
     || strategy === "assistant_message_fallback"
+    || strategy === "transcript_append"
     || strategy === "unsupported"
     || strategy === "none"
     ? strategy
@@ -986,6 +1036,7 @@ function mapDryRunPayload(payload: Record<string, unknown> | null): RespondDryRu
   const data = readRecord(payload?.data);
   const assembly = readRecord(data?.assembly);
   const promptSnapshot = readRecord(data?.prompt_snapshot);
+  const runtimeTrace = mapPromptRuntimeTracePayload(data?.runtime_trace);
 
   const worldbookMatches = readArray(assembly?.worldbook_matches)
     .map(mapDryRunWorldbookMatchDetail)
@@ -1022,6 +1073,7 @@ function mapDryRunPayload(payload: Record<string, unknown> | null): RespondDryRu
     messages: readArray(data?.messages)
       .map(mapDryRunMessage)
       .filter((message): message is RespondDryRunMessage => message !== null),
+    ...(runtimeTrace ? { runtimeTrace } : {}),
     promptSnapshot: mapDryRunPromptSnapshot(promptSnapshot),
     tokenEstimate: readNumber(data?.token_estimate),
   };

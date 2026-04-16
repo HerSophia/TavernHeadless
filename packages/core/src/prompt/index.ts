@@ -13,7 +13,12 @@ export type {
   AssembledPrompt,
   PromptSnapshotRecord,
   PromptRuntimeBudgetGroupTrace,
+  PromptTrimReasonCode,
+  PromptTrimReason,
   PromptRuntimeBudgetTrace,
+  PromptRuntimeSourceKind,
+  PromptSourceExclusionReasonCode,
+  PromptSourceExclusionReason,
   PromptRuntimePresetTrace,
   PromptRuntimeWorldbookTrace,
   PromptRuntimeRegexTrace,
@@ -28,6 +33,10 @@ export type {
   PromptRuntimeDeliveryTrace,
   PromptRuntimeVisibilityRange,
   PromptRuntimeVisibilityTrace,
+  PromptRuntimeSourceSelectionTrace,
+  PromptRuntimeSectionStat,
+  PromptRuntimeDiffChangeType,
+  PromptRuntimeDiffEntry,
   PromptRuntimeTrace,
   PromptRuntimeDebugView,
 } from './types.js';
@@ -38,6 +47,15 @@ export type { TemplateOptions } from './template-engine.js';
 
 // ── Token Budget ──────────────────────────────────────
 export { TokenBudget, SimpleTokenCounter } from './token-budget.js';
+export {
+  buildPromptRuntimeSectionBudgetGroup,
+  resolvePromptRuntimeSourceDescriptor,
+  resolvePromptRuntimeBudgetGroupDescriptor,
+  resolvePromptRuntimeBudgetGroupDefaults,
+  resolvePromptRuntimeBudgetGroupExclusionSource,
+  resolvePromptRuntimeBudgetGroupTraceLabel,
+} from './runtime-registry.js';
+export type { PromptRuntimeSourceDescriptor, PromptRuntimeBudgetGroupDescriptor } from './runtime-registry.js';
 
 // ── Message Builder ───────────────────────────────────
 export { MessageBuilder } from './message-builder.js';

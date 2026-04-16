@@ -108,10 +108,12 @@ const rawSession = await client.request("GET", "/sessions/{id}", {
 ### 客户端专属数据域
 
 ```ts
+const domainOwner = { ownerType: "application", ownerId: "my-app" } as const;
+const pluginOwner = { ownerType: "plugin", ownerId: "chat-annotator" } as const;
+
 const domain = await client.clientData.domains.create({
   accountId: "account-1",
-  ownerType: "application",
-  ownerId: "my-app",
+  ...domainOwner,
   domainName: "preferences",
   displayName: "Preferences",
 });
@@ -124,6 +126,33 @@ const item = await client.clientData.items.upsert({
   valueJson: { mode: "dark" },
 });
 
+const grant = await client.clientData.grants.create({
+  accountId: "account-1",
+  callerOwner: domainOwner,
+  domainId: domain.id,
+  granteeOwnerType: pluginOwner.ownerType,
+  granteeOwnerId: pluginOwner.ownerId,
+  canRead: true,
+  canWrite: false,
+  canDelete: false,
+  canList: true,
+});
+
+const scopedItem = await client.clientData.items.getByKey({
+  accountId: "account-1",
+  callerOwner: pluginOwner,
+  domainId: domain.id,
+  collectionName: "settings",
+  itemKey: "theme",
+});
+
+const auditLogs = await client.clientData.auditLogs.list({
+  accountId: "account-1",
+  callerOwner: domainOwner,
+  domainId: domain.id,
+  limit: 20,
+});
+
 const exported = await client.clientData.domains.export({
   accountId: "account-1",
   domainId: domain.id,
@@ -131,6 +160,9 @@ const exported = await client.clientData.domains.export({
 
 console.log(domain.version);
 console.log(item.item.version);
+console.log(grant.canRead);
+console.log(scopedItem.valueJson);
+console.log(auditLogs.data[0]?.action);
 console.log(exported.collections[0]?.items[0]?.valueJson);
 ```
 
@@ -159,6 +191,11 @@ console.log(exported.collections[0]?.items[0]?.valueJson);
 - `clientData.items.upsertBatch`
 - `clientData.items.remove`
 - `clientData.items.removeBatch`
+- `clientData.grants.list`
+- `clientData.grants.create`
+- `clientData.grants.update`
+- `clientData.grants.remove`
+- `clientData.auditLogs.list`
 
 请求协议仍与后端保持一致，使用 `snake_case`。SDK 返回值继续做 `camelCase` 映射。
 
@@ -186,7 +223,23 @@ console.log(exported.collections[0]?.items[0]?.valueJson);
 
 #### caller owner 头
 
-第二期 grant 模型要求接入方在需要插件级隔离时显式传递 caller owner：
+第二期 grant 模型要求接入方在需要插件级隔离时显式传递 caller owner。
+
+更稳妥的做法，是在每个 domain-scoped `clientData` 调用上直接传 `callerOwner`：
+
+```ts
+const pluginOwner = { ownerType: "plugin", ownerId: "chat-annotator" } as const;
+
+await client.clientData.items.getByKey({
+  accountId: "account-1",
+  domainId: "domain-1",
+  callerOwner: pluginOwner,
+  collectionName: "settings",
+  itemKey: "theme.dark",
+});
+```
+
+如果整个客户端都固定代表同一个 owner，也可以在默认请求头中加入：
 
 ```ts
 const client = createTavernClient({
@@ -201,9 +254,11 @@ const client = createTavernClient({
 
 说明：
 
+- SDK 的 `callerOwner` 参数会为单次请求补齐 `X-Client-Owner-Type` 和 `X-Client-Owner-Id`
 - 未传 caller owner 时，服务端保持第一期兼容行为，继续按 `account_id + domain_id` 控制
 - 传了非法 caller owner 头时，服务端会返回 `400 client_data_caller_owner_invalid`
 - grant / audit 管理接口要求 caller owner 必须是 domain owner；否则返回 `403 client_data_domain_grant_manage_forbidden`
+- 如果服务端把某个 domain 标记为 managed domain，raw client-data 写路径会返回 `403 client_data_managed_domain_raw_access_forbidden`；这时需要改走对应的受治理服务，而不是继续调用 raw `clientData` 资源
 
 ### 列出会话，然后生成一次回复
 
@@ -262,6 +317,26 @@ result.memory;
 // { mode: "async", status: "queued", jobId: "memory-job:ingest_turn:floor-1" }
 ```
 
+### 记忆 scope 说明
+
+`memories`、`memoryJobs`、`memoryScopes` 三组资源现在都接受四种记忆作用域：
+
+- `global`
+- `chat`
+- `branch`
+- `floor`
+
+其中：
+
+- 主聊天链默认把当前分支的记忆写入 `branch` scope。
+- `chat` scope 只表示显式的 session 级共享记忆。
+- `branch` scope 的 `scopeId` 不是单独的 `branchId`，而是 `JSON.stringify([sessionId, branchId])`。
+
+```ts
+const branchScopeId = JSON.stringify(["session-1", "main"]);
+const branchMemories = await client.memories.list({ scope: "branch", scopeId: branchScopeId });
+```
+
 如果你需要看 live 实际发送时的 prompt 摘要与 runtime trace，可以在请求里显式打开：
 
 - `debugOptions.includePromptSnapshot`
@@ -307,7 +382,7 @@ console.log(result.runtimeTrace);
 
 其中 `runtimeTrace.macro` 与同步接口保持同一套结构，便于复用同一份调试面代码。
 
-### 读取和更新 Prompt Runtime 默认策略
+### 读取、治理和比较 Prompt Runtime
 
 ```ts
 const state = await client.promptRuntime.getSession({
@@ -322,7 +397,24 @@ const policy = await client.promptRuntime.patchPolicy({
     mode: "strict_alternating",
     preserveSystemMessages: true,
   },
+  budget: {
+    maxInputTokens: 4096,
+    reservedCompletionTokens: 1024,
+  },
+  sourceSelection: {
+    history: { mode: "windowed", maxMessages: 24 },
+    examples: { enabled: false },
+  },
   delivery: null,
+});
+
+const branchPolicy = await client.promptRuntime.patchBranchPolicy({
+  accountId: "account-1",
+  sessionId: "session-1",
+  branchId: "main",
+  delivery: {
+    noAssistant: true,
+  },
 });
 
 const preview = await client.promptRuntime.previewText({
@@ -330,39 +422,86 @@ const preview = await client.promptRuntime.previewText({
   sessionId: "session-1",
   branchId: "main",
   text: "{{setvar::资产.金币::3}}{{getvar::资产}}",
+  budget: {
+    maxInputTokens: 4096,
+    reservedCompletionTokens: 1024,
+  },
+  sourceSelection: {
+    history: { mode: "windowed", maxMessages: 24 },
+    examples: { enabled: false },
+  },
   visibility: {
     mode: "allow_all_except_hidden",
     hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
   },
 });
 
+const explain = await client.promptRuntime.getFloorExplain({
+  accountId: "account-1",
+  floorId: "floor-12",
+});
+
+const diff = await client.promptRuntime.compare({
+  accountId: "account-1",
+  sessionId: "session-1",
+  leftFloorId: "floor-11",
+  rightFloorId: "floor-12",
+});
+
 const capabilities = await client.promptRuntime.getCapabilities();
 
 console.log(state.assets.characterCard?.name);
 console.log(policy.resolvedPolicy.structure.mode);
+console.log(policy.persistentPolicyEnvelope?.version);
+console.log(policy.persistentPolicyEnvelope?.updatedBy);
+console.log(branchPolicy.persistentPolicyEnvelope?.value.delivery?.noAssistant);
+console.log(preview.policy.budget);
 console.log(preview.text);
+console.log(preview.runtimeTrace.sourceSelection?.excludedSources);
+console.log(preview.runtimeTrace.visibility?.filteredFloorNos);
+console.log(preview.runtimeTrace.macro?.mutationPreview);
 console.log(preview.runtimeTrace.macro?.stagedMutations); // []
+console.log(explain.promptSnapshot?.promptDigest);
+console.log(explain.snapshotAvailable);
+console.log(explain.assets);
+console.log(explain.sectionStats);
+console.log(explain.resolvedPolicy); // 旧楼层 fallback 时可能为 null
+console.log(diff.policyChanges);
+console.log(diff.left.snapshotAvailable, diff.right.snapshotAvailable);
 console.log(capabilities.observability.preview.enabled);
+console.log(capabilities.observability.explain.enabled);
+console.log(capabilities.governance.session.envelopeMetadata);
+console.log(capabilities.compare.committedFloorsOnly);
 console.log(capabilities.unsupported);
 ```
 
 `promptRuntime` 当前覆盖：
 
+- `promptRuntime.compare(...)`
+- `promptRuntime.getAssets(...)`
+- `promptRuntime.getBranchPolicy(...)`
+- `promptRuntime.getCapabilities(...)`
+- `promptRuntime.getFloorExplain(...)`
 - `promptRuntime.getSession(...)`
 - `promptRuntime.getPolicy(...)`
+- `promptRuntime.patchBranchPolicy(...)`
 - `promptRuntime.patchPolicy(...)`
 - `promptRuntime.previewText(...)`
-- `promptRuntime.getAssets(...)`
-- `promptRuntime.getCapabilities(...)`
 
 需要注意：
 
 - 这是一组独立的高级 API 资源，不会创建第二条聊天执行链。
 - `characterCard` 仍然属于 Prompt Assets。
-- `patchPolicy(...)` 当前只允许写 `structure` 和 `delivery`。
+- `patchPolicy(...)` 与 `patchBranchPolicy(...)` 现在都支持 `structure`、`delivery`、`budget`、`sourceSelection`、`visibility`。
+- 读取侧继续兼容旧的 bare object metadata；写入侧统一升级为 envelope：`{ version, updatedAt, updatedBy, value }`。
 - `previewText(...)` 只做单段文本 preview，不走 LLM、不创建 floor、不写 `promptSnapshot`、不提交副作用。
-- `previewText(...)` 的宏诊断继续统一走 `runtimeTrace.macro`，并且 `runtimeTrace.macro.stagedMutations` 固定为空。
-- `delivery: null` 或 `structure: null` 会清空对应持久化 section。
+- `previewText(...)` 当前仍接受 request 级 `structure` / `delivery` / `budget` / `sourceSelection` / `visibility` 覆盖，但返回的 `runtimeTrace` 只投影 `macro`、`sourceSelection`、`visibility`。resolved budget / policy 请查看 `policy` 与 `sourceMap`。
+- `previewText(...)` 的宏诊断继续统一走 `runtimeTrace.macro`，并且 `runtimeTrace.macro.stagedMutations` 固定为空；结构化 budget trim reason 仍以 dry-run / live 为主。
+- `getFloorExplain(...)` 只读取 committed floor 的持久化真相，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。
+- `getFloorExplain(...)` 的 `snapshotAvailable` 表示 explain 是否来自 committed explain snapshot。旧楼层 fallback 时，`assets`、`resolvedPolicy`、`trimReasons`、`excludedSources`、`sectionStats` 可能为 `null`，并会保留 `diagnostics` / `limitations`。
+- `supportedSources` 与 `excludedSources[].source` 继续只承诺公开 source kind；具体 budget group 标签会出现在 `budgets.byGroup[].group`、`trimReasons[].group` 与 compare 的 `trimChanges` 中，例如 `section:main`。
+- `compare(...)` 只支持同一 session 内的两个 committed floor。返回值是结构化 path/value diff，不是全文级 diff；缺 snapshot 时会保留 `limitations`，而不是重算 explain。
+- `delivery: null`、`structure: null`、`budget: null`、`sourceSelection: null`、`visibility: null` 都会清空对应持久化 section。
 - 当前没有 `promptRuntime.macros(...)` 之类的专用 control plane 方法；宏边界继续通过统一观测面公开。
 
 ## 设计边界

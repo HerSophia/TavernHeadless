@@ -192,6 +192,7 @@ const blob = await response.blob();
 | `llmProfiles`      | `LlmProfilesResource`      | [LLM Profiles](/reference/api/llm-profiles)                          |
 | `llmInstances`     | `LlmInstancesResource`     | [LLM Instances](/reference/api/llm-instances)                        |
 | `tools`            | `ToolsResource`            | [Tools](/reference/api/tools)                                        |
+| `clientData`       | `ClientDataResource`       | [Client Data](/reference/api/client-data)                            |
 | `mcp`              | `McpResource`              | [MCP Servers](/reference/api/mcp)                                    |
 | `branches`         | `BranchesResource`         | [Sessions](/reference/api/sessions)                                  |
 | `health`           | `HealthResource`           | [API 总览](/reference/api)、[见下方](#health)                        |
@@ -208,6 +209,43 @@ const executions = await client.tools.listExecutions({ sessionId: session?.id ??
 console.log(imported.characterVersionId);
 console.log(executions.records[0]?.runtimeJobId);
 ```
+
+---
+
+## clientData
+
+`client.clientData` 对应 raw `/client-data` 资源。
+
+当前已经覆盖：
+
+- domain / collection / item 读写
+- domain 级 import / export / restore / quota update
+- domain-scoped `callerOwner` 参数
+- grants 管理：`list` / `create` / `update` / `remove`
+- audit logs 查询：`list`
+
+```ts
+const domainOwner = { ownerType: "application", ownerId: "my-app" } as const;
+
+const domain = await client.clientData.domains.create({
+  accountId: "account-1",
+  ...domainOwner,
+  domainName: "preferences",
+});
+
+const auditLogs = await client.clientData.auditLogs.list({
+  accountId: "account-1",
+  callerOwner: domainOwner,
+  domainId: domain.id,
+  limit: 20,
+});
+
+console.log(auditLogs.data[0]?.action);
+```
+
+如果服务端把某个 domain 标记为 managed domain，
+raw `clientData` 写路径会返回 `403 client_data_managed_domain_raw_access_forbidden`。
+这时应改走对应的受治理服务，而不是继续直接写 `clientData`。
 
 ---
 

@@ -7,14 +7,14 @@ const steps = [
     phase: '会话层',
     title: '绑定资产',
     summary: '角色卡、预设、世界书、正则和模型配置在创建会话时绑定。',
-    detail: 'Session 层固定本轮的全部基础资产，后续步骤沿用同一份上下文。',
+    detail: '创建会话时把配置定好，后面的步骤都沿用同一份上下文。',
     output: '不需要每次生成都重新传入配置。',
   },
   {
     icon: 'prompt',
     phase: '编排层',
     title: '编译 Prompt',
-    summary: '模板、世界书命中、变量展开和工具结果经过编排后落到 Prompt IR。',
+    summary: '把模板、世界书、变量和工具结果编排到一起，输出 Prompt IR。',
     detail: '兼容模式和原生图编译两条路径输出同一种中间格式。',
     output: '可以用 dry-run 查看编译结果，排查拼接问题。',
   },
@@ -38,8 +38,8 @@ const steps = [
     icon: 'memory',
     phase: '提交层',
     title: '提交变量与记忆',
-    summary: '页级结果确认后做变量提升，记忆链路同步或异步完成。',
-    detail: '变量隔离保证重新生成时不互相影响。',
+    summary: '页级结果确认后，变量写入上层，记忆同步或异步完成。',
+    detail: '变量按层级隔离，重新生成时不互相影响。',
     output: '下一轮上下文读到的是已提交状态。',
   },
   {
@@ -47,8 +47,8 @@ const steps = [
     phase: '接入层',
     title: 'API / SDK 输出',
     summary: 'REST、SSE、SDK、Client Helpers 对外输出。',
-    detail: '围绕资源方法、流式回调和类型化错误对象接入。',
-    output: '不同端复用同一套接入面。',
+    detail: '通过资源方法、流式回调和类型化错误对象接入。',
+    output: '不同客户端用的是同一套接口。',
   },
 ]
 
@@ -142,7 +142,7 @@ onUnmounted(() => {
   >
     <div class="landing-shell workflow-shell">
       <div class="workflow-header">
-        <h2 class="workflow-title">一次回复的内部链路</h2>
+        <h2 class="workflow-title">一次回复背后的六步</h2>
         <p class="workflow-desc">
           用户发一条消息到 AI 回一条消息，中间经过六步。
         </p>

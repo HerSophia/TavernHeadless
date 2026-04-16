@@ -3,6 +3,11 @@ import { buildQueryString, compactObject, readArray, readBoolean, readNullableNu
 
 export type ClientDataOwnerType = "application" | "plugin";
 export type ClientDataDomainStatus = "active" | "suspended" | "deleted";
+export type ClientDataCallerOwner = {
+  ownerType: ClientDataOwnerType;
+  ownerId: string;
+};
+
 
 export type ClientDataDomainRecord = {
   id: string;
@@ -58,8 +63,50 @@ export type ClientDataItemRecord = {
   updatedAt: number;
 };
 
+export type ClientDataGrantRecord = {
+  id: string;
+  domainId: string;
+  granteeOwnerType: ClientDataOwnerType;
+  granteeOwnerId: string;
+  canRead: boolean;
+  canWrite: boolean;
+  canDelete: boolean;
+  canList: boolean;
+  createdAt: number;
+  updatedAt: number;
+  expiresAt: number | null;
+};
+
+export type ClientDataAuditLogRecord = {
+  id: string;
+  accountId: string;
+  domainId: string | null;
+  ownerType: ClientDataOwnerType | null;
+  ownerId: string | null;
+  actorType: string;
+  actorId: string | null;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  requestId: string | null;
+  metadataJson: unknown;
+  createdAt: number;
+};
+
 export type ClientDataDomainsListResult = {
   data: ClientDataDomainRecord[];
+  meta: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+    sortBy: string;
+    sortOrder: "asc" | "desc";
+  };
+};
+
+export type ClientDataAuditLogsListResult = {
+  data: ClientDataAuditLogRecord[];
   meta: {
     total: number;
     limit: number;
@@ -169,34 +216,33 @@ export type ClientDataResource = {
       sortBy?: "updated_at" | "created_at" | "domain_name";
       sortOrder?: "asc" | "desc";
     }): Promise<ClientDataDomainsListResult>;
-    getDetail(options: { accountId?: AccountIdHint; domainId: string }): Promise<ClientDataDomainDetail>;
+    getDetail(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string }): Promise<ClientDataDomainDetail>;
     update(options: {
       accountId?: AccountIdHint;
+      callerOwner?: ClientDataCallerOwner;
       domainId: string;
       displayName?: string | null;
       description?: string | null;
       ifVersion?: number;
     }): Promise<ClientDataDomainRecord>;
-    updateQuota(options: { accountId?: AccountIdHint; domainId: string; quotaMaxEntries: number; quotaMaxBytes: number }): Promise<ClientDataDomainRecord>;
-    restore(options: { accountId?: AccountIdHint; domainId: string }): Promise<ClientDataDomainRecord>;
+    updateQuota(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string; quotaMaxEntries: number; quotaMaxBytes: number }): Promise<ClientDataDomainRecord>;
+    restore(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string }): Promise<ClientDataDomainRecord>;
     import(options: {
       accountId?: AccountIdHint;
+      callerOwner?: ClientDataCallerOwner;
       domainId: string;
       conflictPolicy: "fail" | "overwrite" | "skip";
       payload: ClientDataImportPayload;
     }): Promise<ClientDataImportResult>;
-    importAsNew(options: {
-      accountId?: AccountIdHint;
-      conflictPolicy: "fail" | "overwrite" | "skip";
-      payload: ClientDataImportPayload;
-    }): Promise<ClientDataImportResult>;
-    remove(options: { accountId?: AccountIdHint; domainId: string }): Promise<boolean>;
+    importAsNew(options: { accountId?: AccountIdHint; conflictPolicy: "fail" | "overwrite" | "skip"; payload: ClientDataImportPayload }): Promise<ClientDataImportResult>;
+    remove(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string }): Promise<boolean>;
     removeByOwner(options: { accountId?: AccountIdHint; ownerType: ClientDataOwnerType; ownerId: string }): Promise<ClientDataDomainRecord[]>;
-    export(options: { accountId?: AccountIdHint; domainId: string }): Promise<ClientDataExportResult>;
+    export(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string }): Promise<ClientDataExportResult>;
   };
   collections: {
     create(options: {
       accountId?: AccountIdHint;
+      callerOwner?: ClientDataCallerOwner;
       domainId: string;
       collectionName: string;
       description?: string;
@@ -204,10 +250,11 @@ export type ClientDataResource = {
       maxItemSizeBytes?: number | null;
       metadataJson?: unknown;
     }): Promise<ClientDataCollectionRecord>;
-    list(options: { accountId?: AccountIdHint; domainId: string }): Promise<ClientDataCollectionRecord[]>;
-    getDetail(options: { accountId?: AccountIdHint; domainId: string; collectionId: string }): Promise<ClientDataCollectionRecord>;
+    list(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string }): Promise<ClientDataCollectionRecord[]>;
+    getDetail(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string; collectionId: string }): Promise<ClientDataCollectionRecord>;
     update(options: {
       accountId?: AccountIdHint;
+      callerOwner?: ClientDataCallerOwner;
       domainId: string;
       collectionId: string;
       description?: string | null;
@@ -216,11 +263,12 @@ export type ClientDataResource = {
       metadataJson?: unknown;
       ifVersion?: number;
     }): Promise<ClientDataCollectionRecord>;
-    remove(options: { accountId?: AccountIdHint; domainId: string; collectionId: string }): Promise<boolean>;
+    remove(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string; collectionId: string }): Promise<boolean>;
   };
   items: {
     list(options: {
       accountId?: AccountIdHint;
+      callerOwner?: ClientDataCallerOwner;
       domainId: string;
       collectionId?: string;
       itemKeyPrefix?: string;
@@ -234,10 +282,11 @@ export type ClientDataResource = {
       sortBy?: "updated_at" | "created_at" | "item_key";
       sortOrder?: "asc" | "desc";
     }): Promise<ClientDataItemsListResult>;
-    getDetail(options: { accountId?: AccountIdHint; domainId: string; itemId: string }): Promise<ClientDataItemRecord>;
-    getByKey(options: { accountId?: AccountIdHint; domainId: string; collectionName: string; itemKey: string }): Promise<ClientDataItemRecord>;
+    getDetail(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string; itemId: string }): Promise<ClientDataItemRecord>;
+    getByKey(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string; collectionName: string; itemKey: string }): Promise<ClientDataItemRecord>;
     upsert(options: {
       accountId?: AccountIdHint;
+      callerOwner?: ClientDataCallerOwner;
       domainId: string;
       collectionName: string;
       itemKey: string;
@@ -247,6 +296,7 @@ export type ClientDataResource = {
     }): Promise<{ action: string; collection: ClientDataCollectionRecord; item: ClientDataItemRecord }>;
     upsertBatch(options: {
       accountId?: AccountIdHint;
+      callerOwner?: ClientDataCallerOwner;
       domainId: string;
       items: Array<{
         collectionName: string;
@@ -256,10 +306,57 @@ export type ClientDataResource = {
         ifVersion?: number;
       }>;
     }): Promise<{ results: Array<{ action: string; collection: ClientDataCollectionRecord; item: ClientDataItemRecord }> }>;
-    remove(options: { accountId?: AccountIdHint; domainId: string; itemId: string }): Promise<boolean>;
-    removeBatch(options: { accountId?: AccountIdHint; domainId: string; itemIds?: string[]; collectionId?: string }): Promise<Array<{ id: string; collectionId: string; itemKey: string }>>;
+    remove(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string; itemId: string }): Promise<boolean>;
+    removeBatch(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string; itemIds?: string[]; collectionId?: string }): Promise<Array<{ id: string; collectionId: string; itemKey: string }>>;
+  };
+  grants: {
+    list(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string }): Promise<ClientDataGrantRecord[]>;
+    create(options: {
+      accountId?: AccountIdHint;
+      callerOwner?: ClientDataCallerOwner;
+      domainId: string;
+      granteeOwnerType: ClientDataOwnerType;
+      granteeOwnerId: string;
+      canRead: boolean;
+      canWrite: boolean;
+      canDelete: boolean;
+      canList: boolean;
+      expiresAt?: number | null;
+    }): Promise<ClientDataGrantRecord>;
+    update(options: {
+      accountId?: AccountIdHint;
+      callerOwner?: ClientDataCallerOwner;
+      domainId: string;
+      grantId: string;
+      canRead?: boolean;
+      canWrite?: boolean;
+      canDelete?: boolean;
+      canList?: boolean;
+      expiresAt?: number | null;
+    }): Promise<ClientDataGrantRecord>;
+    remove(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string; grantId: string }): Promise<boolean>;
+  };
+  auditLogs: {
+    list(options: { accountId?: AccountIdHint; callerOwner?: ClientDataCallerOwner; domainId: string; actorType?: string; action?: string; limit?: number; offset?: number; sortOrder?: "asc" | "desc" }): Promise<ClientDataAuditLogsListResult>;
   };
 };
+
+function buildClientDataHeaders(
+  accountId?: AccountIdHint,
+  callerOwner?: ClientDataCallerOwner,
+): Record<string, string> | undefined {
+  const headers = {
+    ...(buildAccountHeaders(accountId) ?? {}),
+    ...(callerOwner
+      ? {
+          "x-client-owner-type": callerOwner.ownerType,
+          "x-client-owner-id": callerOwner.ownerId,
+        }
+      : {}),
+  };
+
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
 
 export function createClientDataResource(client: TransportClient): ClientDataResource {
   return {
@@ -301,14 +398,14 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async getDetail(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}`, {
           method: "GET",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return requireDomainDetail(readRecord(response.body)?.data, "Client data domain detail returned an invalid payload");
       },
       async update(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}`, {
           method: "PATCH",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
           body: compactObject({
             display_name: options.displayName,
             description: options.description,
@@ -320,7 +417,7 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async updateQuota(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/quota`, {
           method: "PATCH",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
           body: compactObject({
             quota_max_entries: options.quotaMaxEntries,
             quota_max_bytes: options.quotaMaxBytes,
@@ -331,14 +428,14 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async restore(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/restore`, {
           method: "POST",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return requireDomain(readRecord(response.body)?.data, "Client data domain restore returned an invalid payload");
       },
       async import(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/import`, {
           method: "POST",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
           body: {
             conflict_policy: options.conflictPolicy,
             payload: toImportPayloadBody(options.payload),
@@ -360,7 +457,7 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async remove(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}`, {
           method: "DELETE",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return readBoolean(readRecord(readRecord(response.body)?.data)?.deleted, response.status === 200);
       },
@@ -374,7 +471,7 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async export(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/export`, {
           method: "GET",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return requireExportResult(readRecord(response.body)?.data, "Client data export returned an invalid payload");
       },
@@ -383,7 +480,7 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async create(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/collections`, {
           method: "POST",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
           body: compactObject({
             collection_name: options.collectionName,
             description: options.description,
@@ -397,21 +494,21 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async list(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/collections`, {
           method: "GET",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return readArray(readRecord(response.body)?.data).map(mapCollection).filter((item): item is ClientDataCollectionRecord => item !== null);
       },
       async getDetail(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/collections/${encodeURIComponent(options.collectionId)}`, {
           method: "GET",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return requireCollection(readRecord(response.body)?.data, "Client data collection detail returned an invalid payload");
       },
       async update(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/collections/${encodeURIComponent(options.collectionId)}`, {
           method: "PATCH",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
           body: compactObject({
             description: options.description,
             default_expires_ttl_ms: options.defaultExpiresTtlMs,
@@ -425,7 +522,7 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async remove(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/collections/${encodeURIComponent(options.collectionId)}`, {
           method: "DELETE",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return readBoolean(readRecord(readRecord(response.body)?.data)?.deleted, response.status === 200);
       },
@@ -450,7 +547,7 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
           : `/client-data/domains/${encodeURIComponent(options.domainId)}/items`;
         const response = await client.fetchJson<Record<string, unknown>>(pathname, {
           method: "GET",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return {
           data: readArray(readRecord(response.body)?.data).map(mapItem).filter((item): item is ClientDataItemRecord => item !== null),
@@ -460,7 +557,7 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async getDetail(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items/${encodeURIComponent(options.itemId)}`, {
           method: "GET",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return requireItem(readRecord(response.body)?.data, "Client data item detail returned an invalid payload");
       },
@@ -471,14 +568,14 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
         });
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items/by-key?${query}`, {
           method: "GET",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return requireItem(readRecord(response.body)?.data, "Client data item by-key lookup returned an invalid payload");
       },
       async upsert(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items`, {
           method: "PUT",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
           body: compactObject({
             collection_name: options.collectionName,
             item_key: options.itemKey,
@@ -492,7 +589,7 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async upsertBatch(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items/batch`, {
           method: "PUT",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
           body: {
             items: options.items.map((item) => compactObject({
               collection_name: item.collectionName,
@@ -511,14 +608,14 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
       async remove(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items/${encodeURIComponent(options.itemId)}`, {
           method: "DELETE",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
         });
         return readBoolean(readRecord(readRecord(response.body)?.data)?.deleted, response.status === 200);
       },
       async removeBatch(options) {
         const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/items/delete-batch`, {
           method: "POST",
-          headers: buildAccountHeaders(options.accountId),
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
           body: compactObject({
             item_ids: options.itemIds,
             collection_id: options.collectionId,
@@ -535,6 +632,72 @@ export function createClientDataResource(client: TransportClient): ClientDataRes
             itemKey: readString(record.item_key),
           };
         }).filter((item): item is { id: string; collectionId: string; itemKey: string } => item !== null);
+      },
+    },
+    grants: {
+      async list(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/grants`, {
+          method: "GET",
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
+        });
+        return readArray(readRecord(response.body)?.data).map(mapGrant).filter((item): item is ClientDataGrantRecord => item !== null);
+      },
+      async create(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/grants`, {
+          method: "POST",
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
+          body: compactObject({
+            grantee_owner_type: options.granteeOwnerType,
+            grantee_owner_id: options.granteeOwnerId,
+            can_read: options.canRead,
+            can_write: options.canWrite,
+            can_delete: options.canDelete,
+            can_list: options.canList,
+            expires_at: options.expiresAt,
+          }),
+        });
+        return requireGrant(readRecord(response.body)?.data, "Client data grant create returned an invalid payload");
+      },
+      async update(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/grants/${encodeURIComponent(options.grantId)}`, {
+          method: "PATCH",
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
+          body: compactObject({
+            can_read: options.canRead,
+            can_write: options.canWrite,
+            can_delete: options.canDelete,
+            can_list: options.canList,
+            expires_at: options.expiresAt,
+          }),
+        });
+        return requireGrant(readRecord(response.body)?.data, "Client data grant update returned an invalid payload");
+      },
+      async remove(options) {
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/grants/${encodeURIComponent(options.grantId)}`, {
+          method: "DELETE",
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
+        });
+        return readBoolean(readRecord(readRecord(response.body)?.data)?.deleted, response.status === 200);
+      },
+    },
+    auditLogs: {
+      async list(options) {
+        const query = buildQueryString({
+          actor_type: options.actorType,
+          action: options.action,
+          limit: options.limit ?? 100,
+          offset: options.offset ?? 0,
+          sort_by: "created_at",
+          sort_order: options.sortOrder ?? "desc",
+        });
+        const response = await client.fetchJson<Record<string, unknown>>(`/client-data/domains/${encodeURIComponent(options.domainId)}/audit-logs?${query}`, {
+          method: "GET",
+          headers: buildClientDataHeaders(options.accountId, options.callerOwner),
+        });
+        return {
+          data: readArray(readRecord(response.body)?.data).map(mapAuditLog).filter((item): item is ClientDataAuditLogRecord => item !== null),
+          meta: mapListMeta(readRecord(response.body)?.meta),
+        };
       },
     },
   };
@@ -633,6 +796,48 @@ function mapItem(value: unknown): ClientDataItemRecord | null {
   };
 }
 
+function mapGrant(value: unknown): ClientDataGrantRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+  return {
+    id: readString(record.id),
+    domainId: readString(record.domain_id),
+    granteeOwnerType: readString(record.grantee_owner_type) as ClientDataOwnerType,
+    granteeOwnerId: readString(record.grantee_owner_id),
+    canRead: readBoolean(record.can_read),
+    canWrite: readBoolean(record.can_write),
+    canDelete: readBoolean(record.can_delete),
+    canList: readBoolean(record.can_list),
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
+    expiresAt: readNullableNumber(record.expires_at),
+  };
+}
+
+function mapAuditLog(value: unknown): ClientDataAuditLogRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+  return {
+    id: readString(record.id),
+    accountId: readString(record.account_id),
+    domainId: readNullableString(record.domain_id),
+    ownerType: readNullableString(record.owner_type) as ClientDataOwnerType | null,
+    ownerId: readNullableString(record.owner_id),
+    actorType: readString(record.actor_type),
+    actorId: readNullableString(record.actor_id),
+    action: readString(record.action),
+    targetType: readString(record.target_type),
+    targetId: readNullableString(record.target_id),
+    requestId: readNullableString(record.request_id),
+    metadataJson: record.metadata_json ?? null,
+    createdAt: readNumber(record.created_at),
+  };
+}
+
 function mapItemMutation(value: unknown) {
   const record = readRecord(value);
   if (!record) {
@@ -684,6 +889,14 @@ function requireItem(value: unknown, message: string): ClientDataItemRecord {
 
 function requireItemMutation(value: unknown, message: string): { action: string; collection: ClientDataCollectionRecord; item: ClientDataItemRecord } {
   const payload = mapItemMutation(value);
+  if (!payload) {
+    throw new Error(message);
+  }
+  return payload;
+}
+
+function requireGrant(value: unknown, message: string): ClientDataGrantRecord {
+  const payload = mapGrant(value);
   if (!payload) {
     throw new Error(message);
   }

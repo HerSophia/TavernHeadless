@@ -121,6 +121,15 @@ export interface AssembledPrompt {
     byGroup: Record<string, number>;
     /** 各预算组被裁剪的 token 占用 */
     prunedByGroup: Record<string, number>;
+    /** 可选：allocator 级预算分配信息 */
+    allocator?: {
+      /** 各预算组进入 allocator 前的可裁剪 token 估算 */
+      estimatedByGroup: Record<string, number>;
+      /** 各预算组的目标分配结果 */
+      allocatedByGroup: Record<string, number>;
+      /** allocator 生成的 trim reason */
+      trimReasons: PromptTrimReason[];
+    };
     /** 留给回复的 token 数 */
     availableForReply: number;
   };
@@ -184,11 +193,48 @@ export interface PromptRuntimeRegexTrace {
 export interface PromptRuntimeBudgetGroupTrace {
   group: string;
   tokenCount: number;
+  estimatedTokenCount?: number;
+  allocatedTokenCount?: number;
   prunedTokenCount?: number;
+}
+
+export type PromptTrimReasonCode =
+  | 'budget_exceeded'
+  | 'group_limit_exceeded'
+  | 'provider_constraint'
+  | 'policy_disabled';
+
+export interface PromptTrimReason {
+  group: string;
+  reason: PromptTrimReasonCode;
+  detail?: string;
+  prunedTokenCount?: number;
+}
+
+export type PromptRuntimeSourceKind =
+  | 'history'
+  | 'summary'
+  | 'memory'
+  | 'worldbook'
+  | 'examples'
+  | 'authors_note';
+
+export type PromptSourceExclusionReasonCode =
+  | 'disabled_by_policy'
+  | 'budget_trimmed'
+  | 'provider_constraint'
+  | 'visibility_filtered'
+  | 'not_triggered';
+
+export interface PromptSourceExclusionReason {
+  source: PromptRuntimeSourceKind;
+  reason: PromptSourceExclusionReasonCode;
+  detail?: string;
 }
 
 export interface PromptRuntimeBudgetTrace {
   byGroup: PromptRuntimeBudgetGroupTrace[];
+  trimReasons?: PromptTrimReason[];
 }
 
 export interface PromptRuntimeMemoryTrace {
@@ -230,9 +276,9 @@ export interface PromptRuntimeMacroTrace {
   traces: PromptRuntimeMacroTraceEntry[];
 }
 
-type PromptRuntimeAssistantPrefillStrategy = 'provider_native' | 'assistant_message_fallback' | 'unsupported' | 'none';
+type PromptRuntimeAssistantPrefillStrategy = 'provider_native' | 'assistant_message_fallback' | 'transcript_append' | 'unsupported' | 'none';
 
-type PromptRuntimeStructureMode = 'default' | 'strict_alternating' | 'no_assistant';
+type PromptRuntimeStructureMode = 'default' | 'strict_alternating' | 'no_assistant' | 'flattened';
 
 type PromptRuntimeStructureAssistantRewriteStrategy = 'to_system' | 'to_user_transcript';
 
@@ -242,6 +288,9 @@ export interface PromptRuntimeStructureTrace {
   assistantRewriteCount: number;
   assistantRewriteStrategy?: PromptRuntimeStructureAssistantRewriteStrategy;
   tailAssistantDetected: boolean;
+  transcriptized?: boolean;
+  transcriptMessageCount?: number;
+  assistantPrefillTranscriptized?: boolean;
 }
 
 export type PromptRuntimeDeliveryDegradeReason =
@@ -273,11 +322,30 @@ export interface PromptRuntimeVisibilityTrace {
   filteredFloorNos?: number[];
 }
 
+export interface PromptRuntimeSourceSelectionTrace {
+  excludedSources: PromptSourceExclusionReason[];
+}
+
+export interface PromptRuntimeSectionStat {
+  sectionName: string;
+  tokenCount: number;
+}
+
+export type PromptRuntimeDiffChangeType = 'added' | 'removed' | 'changed';
+
+export interface PromptRuntimeDiffEntry<TValue = unknown> {
+  path: string;
+  changeType: PromptRuntimeDiffChangeType;
+  left?: TValue;
+  right?: TValue;
+}
+
 export interface PromptRuntimeTrace<TWorldbookMatch = unknown> {
   preset?: PromptRuntimePresetTrace;
   worldbook?: PromptRuntimeWorldbookTrace<TWorldbookMatch>;
   regex?: PromptRuntimeRegexTrace;
   budgets?: PromptRuntimeBudgetTrace;
+  sourceSelection?: PromptRuntimeSourceSelectionTrace;
   memory?: PromptRuntimeMemoryTrace;
   macro?: PromptRuntimeMacroTrace;
   structure?: PromptRuntimeStructureTrace;

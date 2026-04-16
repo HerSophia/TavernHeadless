@@ -273,5 +273,118 @@ describe('TokenBudget', () => {
       expect(result.ir.sections[0]!.messages).toHaveLength(1);
       expect(result.ir.sections[1]!.messages).toHaveLength(1);
     });
+
+    it('applies group-level caps when explicit budget group policies are provided', () => {
+      const ir = makeIR(
+        [
+          section('examples', [
+            { role: 'system', content: '12345', priority: 1 },
+            { role: 'system', content: '67890', priority: 0 },
+          ], { order: 0, budgetGroup: 'examples' }),
+          section('history', [
+            { role: 'user', content: 'abcde', priority: 1 },
+            { role: 'assistant', content: 'fghij', priority: 0 },
+          ], { order: 1, budgetGroup: 'history' }),
+        ],
+        18,
+        0,
+      );
+
+      const result = budget.prune(ir, {
+        groupPolicies: [{ group: 'examples', maxTokens: 5 }],
+      });
+
+      expect(result.prunedCount).toBe(1);
+      expect(result.prunedTokensByGroup).toEqual({ examples: 5 });
+      expect(result.allocator?.allocatedByGroup).toEqual({ examples: 5, history: 10 });
+      expect(result.allocator?.trimReasons).toEqual([{
+        group: 'examples',
+        reason: 'group_limit_exceeded',
+        detail: "Budget allocator capped group 'examples' at 5 tokens and retained 5 of 10 estimated tokens.",
+        prunedTokenCount: 5,
+      }]);
+    });
+
+    it('retains higher-protection minimums before lower-protection groups when group floors compete', () => {
+      const ir = makeIR(
+        [
+          section(
+            'worldbook',
+            Array.from({ length: 4 }, (_, index) => ({
+              role: 'system' as const,
+              content: String.fromCharCode(97 + index),
+              priority: 3 - index,
+            })),
+            { order: 0, budgetGroup: 'worldbook' },
+          ),
+          section(
+            'history',
+            Array.from({ length: 4 }, (_, index) => ({
+              role: 'user' as const,
+              content: String.fromCharCode(107 + index),
+              priority: 3 - index,
+            })),
+            { order: 1, budgetGroup: 'history' },
+          ),
+        ],
+        6,
+        0,
+      );
+
+      const result = budget.prune(ir, {
+        groupPolicies: [
+          { group: 'history', minTokens: 4 },
+          { group: 'worldbook', minTokens: 4 },
+        ],
+      });
+
+      expect(result.prunedCount).toBe(2);
+      expect(result.prunedTokensByGroup).toEqual({ worldbook: 2 });
+      expect(result.allocator?.allocatedByGroup).toEqual({ history: 4, worldbook: 2 });
+      expect(result.ir.sections[0]!.messages).toHaveLength(2);
+      expect(result.ir.sections[1]!.messages).toHaveLength(4);
+    });
+
+    it('uses explicit weights to shape retained tokens across groups during pruning', () => {
+      const ir = makeIR(
+        [
+          section(
+            'examples',
+            Array.from({ length: 6 }, (_, index) => ({
+              role: 'system' as const,
+              content: String.fromCharCode(97 + index),
+              priority: 5 - index,
+            })),
+            { order: 0, budgetGroup: 'examples' },
+          ),
+          section(
+            'history',
+            Array.from({ length: 6 }, (_, index) => ({
+              role: 'user' as const,
+              content: String.fromCharCode(107 + index),
+              priority: 5 - index,
+            })),
+            { order: 1, budgetGroup: 'history' },
+          ),
+        ],
+        6,
+        0,
+      );
+
+      const result = budget.prune(ir, {
+        groupPolicies: [
+          { group: 'examples', weight: 1, pruneOrder: 0 },
+          { group: 'history', weight: 5, pruneOrder: 0 },
+        ],
+      });
+
+      expect(result.prunedCount).toBe(6);
+      expect(result.prunedTokensByGroup).toEqual({ examples: 5, history: 1 });
+      expect(result.allocator?.allocatedByGroup).toEqual({ examples: 1, history: 5 });
+      expect(result.allocator?.trimReasons).toEqual(expect.arrayContaining([
+        expect.objectContaining({ group: 'examples', reason: 'budget_exceeded' }),
+        expect.objectContaining({ group: 'history', reason: 'budget_exceeded' }),
+      ]));
+    });
   });
 });

@@ -54,7 +54,7 @@ You must respond with a JSON object in the following format:
 {
   "microSummary": "A concise micro summary of the latest committed floor",
   "factsAdd": [
-    { "factKey": "fact name", "value": "fact description", "scope": "chat", "importance": 0.7 }
+    { "factKey": "fact name", "value": "fact description", "scope": "branch", "importance": 0.7 }
   ],
   "factsUpdate": [
     { "id": "existing_fact_id", "value": "updated description", "importance": 0.8 }
@@ -63,7 +63,7 @@ You must respond with a JSON object in the following format:
     { "id": "outdated_fact_id", "reason": "why this fact is no longer relevant" }
   ],
   "openLoopsAdd": [
-    { "content": "an unresolved question or pending thread", "scope": "chat", "importance": 0.6 }
+    { "content": "an unresolved question or pending thread", "scope": "branch", "importance": 0.6 }
   ],
   "openLoopsResolve": [
     { "id": "existing_open_loop_id", "resolution": "how it was resolved in this floor" }
@@ -73,7 +73,7 @@ You must respond with a JSON object in the following format:
 Rules:
 - microSummary should usually be a short, concrete summary of the latest floor; it may be an empty string only if the floor contains no meaningful change
 - importance is a number between 0 and 1
-- prefer scope "chat" for session-level memory, "global" only for durable world facts, and "floor" only for floor-local details
+- prefer scope "branch" for branch-local memory, "chat" only for explicit session-shared memory, "global" only for durable world facts, and "floor" only for floor-local details
 - factsAdd items should include a structured factKey whenever possible
 - factsUpdate, factsDeprecate, and openLoopsResolve must use ids from the provided lists
 - openLoopsAdd should track unresolved questions, promises, suspicions, missing information, or pending actions
@@ -90,7 +90,7 @@ function normalizeFactKey(value: unknown): string | undefined {
 }
 
 function normalizeScope(value: unknown): MemoryScope | undefined {
-  return value === 'global' || value === 'chat' || value === 'floor' ? value : undefined;
+  return value === 'global' || value === 'chat' || value === 'branch' || value === 'floor' ? value : undefined;
 }
 
 function normalizeFactAddEntries(value: unknown): MemoryFactAddOperation[] {

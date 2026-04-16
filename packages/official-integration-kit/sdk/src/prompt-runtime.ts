@@ -112,21 +112,49 @@ export type PromptRuntimeRegexTrace = {
 };
 
 export type PromptRuntimeBudgetGroupTrace = {
+  allocatedTokenCount?: number;
+  estimatedTokenCount?: number;
   group: string;
   prunedTokenCount?: number;
   tokenCount: number;
 };
 
+export type PromptTrimReasonCode =
+  | "budget_exceeded"
+  | "group_limit_exceeded"
+  | "provider_constraint"
+  | "policy_disabled";
+
+export type PromptTrimReason = {
+  detail?: string;
+  group: string;
+  prunedTokenCount?: number;
+  reason: PromptTrimReasonCode;
+};
+
 export type PromptRuntimeBudgetTrace = {
   byGroup: PromptRuntimeBudgetGroupTrace[];
+  trimReasons?: PromptTrimReason[];
 };
+
+export type PromptRuntimeSourceKind = "history" | "summary" | "memory" | "worldbook" | "examples" | "authors_note";
+export type PromptSourceExclusionReasonCode = "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+export type PromptSourceExclusionReason = {
+  detail?: string;
+  reason: PromptSourceExclusionReasonCode;
+  source: PromptRuntimeSourceKind;
+};
+export type PromptRuntimeSourceSelectionTrace = { excludedSources: PromptSourceExclusionReason[] };
 
 export type PromptRuntimeStructureTrace = {
   assistantRewriteCount: number;
   assistantRewriteStrategy: "to_system" | "to_user_transcript" | null;
+  assistantPrefillTranscriptized?: boolean;
   mergeAdjacentSameRole: boolean;
-  mode: "default" | "strict_alternating" | "no_assistant";
+  mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
   tailAssistantDetected: boolean;
+  transcriptized?: boolean;
+  transcriptMessageCount?: number;
 };
 
 export type PromptRuntimeMemoryTrace = {
@@ -178,7 +206,7 @@ export type PromptRuntimeDeliveryTrace = {
   allowAssistantPrefill: boolean;
   assistantPrefillApplied: boolean;
   assistantPrefillRequested: boolean;
-  assistantPrefillStrategy: "provider_native" | "assistant_message_fallback" | "unsupported" | "none" | null;
+  assistantPrefillStrategy: "provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none" | null;
   degradeReasons: PromptRuntimeDeliveryDegradeReason[];
   degraded: boolean;
   endsWithUser: boolean;
@@ -202,12 +230,15 @@ export type PromptRuntimeTrace = {
   delivery?: PromptRuntimeDeliveryTrace;
   macro?: PromptRuntimeMacroTrace;
   memory?: PromptRuntimeMemoryTrace;
+  sourceSelection?: PromptRuntimeSourceSelectionTrace;
   preset?: PromptRuntimePresetTrace;
   regex?: PromptRuntimeRegexTrace;
   structure?: PromptRuntimeStructureTrace;
   visibility?: PromptRuntimeVisibilityTrace;
   worldbook?: PromptRuntimeWorldbookTrace;
 };
+
+export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility">;
 
 export type PromptDebugPayload = {
   promptSnapshot?: PromptSnapshotPreview;
@@ -274,6 +305,24 @@ export function mapPromptDebugPayload(value: unknown): PromptDebugPayload {
   };
 }
 
+export function mapPromptRuntimePreviewTracePayload(value: unknown): PromptRuntimePreviewTrace | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const runtimeTrace = mapPromptRuntimeTracePayload(record);
+  if (!runtimeTrace) {
+    return {};
+  }
+
+  return {
+    ...(runtimeTrace.macro ? { macro: runtimeTrace.macro } : {}),
+    ...(runtimeTrace.sourceSelection ? { sourceSelection: runtimeTrace.sourceSelection } : {}),
+    ...(runtimeTrace.visibility ? { visibility: runtimeTrace.visibility } : {}),
+  };
+}
+
 export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace | undefined {
   const record = readRecord(value);
   if (!record) {
@@ -337,6 +386,11 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
             byGroup: readArray(budgets.by_group)
               .map(mapPromptRuntimeBudgetGroupTrace)
               .filter((item): item is PromptRuntimeBudgetGroupTrace => item !== null),
+            ...(budgets.trim_reasons !== undefined
+              ? {
+                  trimReasons: readArray(budgets.trim_reasons).map(mapPromptTrimReason).filter((item): item is PromptTrimReason => item !== null),
+                }
+              : {}),
           },
         }
       : {}),
@@ -345,9 +399,12 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
           structure: {
             assistantRewriteCount: readNumber(structure.assistant_rewrite_count),
             assistantRewriteStrategy: readNullablePromptAssistantRewriteStrategy(structure.assistant_rewrite_strategy),
+            assistantPrefillTranscriptized: typeof structure.assistant_prefill_transcriptized === "boolean" ? structure.assistant_prefill_transcriptized : undefined,
             mergeAdjacentSameRole: readBoolean(structure.merge_adjacent_same_role),
             mode: readPromptStructureMode(structure.mode),
             tailAssistantDetected: readBoolean(structure.tail_assistant_detected),
+            transcriptized: typeof structure.transcriptized === "boolean" ? structure.transcriptized : undefined,
+            transcriptMessageCount: typeof structure.transcript_message_count === "number" ? structure.transcript_message_count : undefined,
           },
         }
       : {}),
@@ -403,6 +460,15 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
                     .filter((range): range is PromptRuntimeVisibilityRange => range !== null),
                 }
               : {}),
+          },
+        }
+      : {}),
+    ...(readRecord(record.source_selection)
+      ? {
+          sourceSelection: {
+            excludedSources: readArray(readRecord(record.source_selection)?.excluded_sources)
+              .map(mapPromptSourceExclusionReason)
+              .filter((item): item is PromptSourceExclusionReason => item !== null),
           },
         }
       : {}),
@@ -548,9 +614,43 @@ function mapPromptRuntimeBudgetGroupTrace(value: unknown): PromptRuntimeBudgetGr
   }
 
   return {
+    allocatedTokenCount: readNullableNumber(record.allocated_token_count) ?? undefined,
+    estimatedTokenCount: readNullableNumber(record.estimated_token_count) ?? undefined,
     group: readString(record.group),
     prunedTokenCount: readNullableNumber(record.pruned_token_count) ?? undefined,
     tokenCount: readNumber(record.token_count),
+  };
+}
+
+function mapPromptTrimReason(value: unknown): PromptTrimReason | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const reason = readString(record.reason);
+  if (reason !== "budget_exceeded" && reason !== "group_limit_exceeded" && reason !== "provider_constraint" && reason !== "policy_disabled") {
+    return null;
+  }
+
+  return {
+    group: readString(record.group),
+    reason,
+    detail: readOptionalString(record.detail),
+    prunedTokenCount: readNullableNumber(record.pruned_token_count) ?? undefined,
+  };
+}
+
+function mapPromptSourceExclusionReason(value: unknown): PromptSourceExclusionReason | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    source: readString(record.source) as PromptRuntimeSourceKind,
+    reason: readString(record.reason) as PromptSourceExclusionReasonCode,
+    detail: readOptionalString(record.detail),
   };
 }
 
@@ -589,7 +689,7 @@ function readPromptSnapshotMode(value: unknown): PromptSnapshotMode {
 
 function readPromptStructureMode(value: unknown): PromptRuntimeStructureTrace["mode"] {
   const mode = readString(value);
-  if (mode === "strict_alternating" || mode === "no_assistant") {
+  if (mode === "strict_alternating" || mode === "no_assistant" || mode === "flattened") {
     return mode;
   }
 
@@ -623,6 +723,7 @@ function readNullablePromptAssistantPrefillStrategy(
   if (
     strategy === "provider_native"
     || strategy === "assistant_message_fallback"
+    || strategy === "transcript_append"
     || strategy === "unsupported"
     || strategy === "none"
   ) {

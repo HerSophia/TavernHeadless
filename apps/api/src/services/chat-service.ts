@@ -10,32 +10,32 @@
  * - 重新生成（Regenerate）
  */
 
-import { createHash } from "node:crypto";
 import { asc, eq, and, desc, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
   assemblePrompt,
-  buildPromptSnapshotPreview,
-  buildPromptSnapshotRecord,
+  buildPromptAssemblyCompat,
   createRegexMacroSubstituter,
   materializePromptRuntimeMessages,
   previewPromptMacroText,
+  resolveEffectivePromptBudget,
   type AssembleResult,
-  type SessionPromptInfo,
-  type AssembleDebugInfo,
   type AssistantPrefillExecutionStrategy,
+  type PromptAssemblyCompat,
+  type SessionPromptInfo,
   type PromptMacroRunKind,
   type MaterializePromptRuntimeMessagesResult,
   type PromptSendDirectives,
+  type PromptBudgetPolicy,
   type PromptDeliveryPolicy,
+  type PromptTrimReason,
   type PromptRuntimeTrace,
+  type PromptSourceExclusionReason,
+  type PromptSourceSelectionPolicy,
   type PromptStructurePolicy,
   type PromptSnapshotPreview,
-
-  buildPromptRuntimeBudgetTrace,
-  buildPromptRuntimeTrace,
 } from "./prompt-assembler.js";
-import type { PromptVisibilityPolicy } from "./chat-history-loader.js";
+import type { PromptVisibilityPolicy, PromptVisibilityTrace } from "./chat-history-loader.js";
 import type {
   TurnOrchestrator,
   TurnInput,
@@ -70,6 +70,8 @@ import {
   isAutoReplaySafe,
   LLMTimeoutError,
   MemoryScopeResolver,
+  resolvePromptRuntimeBudgetGroupExclusionSource,
+  resolvePromptRuntimeBudgetGroupTraceLabel,
   ToolReplayBlockedError,
   ToolRegistry,
   UnsupportedToolModeError,
@@ -112,11 +114,45 @@ import type { StMacroJsonValue, StMacroStagedMutation } from "./st-macros/index.
 import { resolveAssistantPrefillStrategy } from "../lib/llm-provider-discovery.js";
 import { VariableService } from "./variable-service.js";
 import {
-  mergePromptDeliveryPolicy,
-  mergePromptStructurePolicy,
+  PromptRuntimeControlService,
+  buildPromptRuntimeDiagnostics,
+  buildPromptRuntimeSourceMap,
+  buildPromptRuntimeWarnings,
+  buildResolvedPromptRuntimePolicy,
+  mergePromptRuntimePersistentPolicies,
+  PROMPT_RUNTIME_LIMITATIONS,
+  readPromptRuntimeBranchPersistentPolicy,
   readPromptRuntimePersistentPolicy,
 } from "./prompt-runtime-control-service.js";
-import { BranchLocalVariableSnapshotService } from "./branch-local-variable-snapshot-service.js";
+import type {
+  PromptRuntimeDiagnostic,
+  PromptRuntimeDiagnosticPhase,
+  PromptRuntimeHistorySourceMode,
+  PromptRuntimeInspectionResult,
+  PromptRuntimePersistentPolicy,
+  PromptRuntimeSectionStat,
+  PromptRuntimeScopeRef,
+  PromptRuntimeSourceMap,
+  ResolvedPromptRuntimePolicy,
+} from "./prompt-runtime-control-service.js";
+import {
+  buildPromptRuntimeExecutionResult,
+  buildPromptRuntimeExecutionTrace,
+  buildPromptRuntimePreviewTrace,
+  resolvePromptRuntimeExecutionContext,
+} from "./prompt-runtime-execution.js";
+import type { PromptRuntimeExecutionResult, PromptRuntimePreviewTrace, PromptRuntimeResolvedContext } from "./prompt-runtime-execution.js";
+import {
+  BranchLocalSnapshotMissingError,
+  BranchLocalVariableSnapshotService,
+} from "./branch-local-variable-snapshot-service.js";
+import {
+  FirstPartyGameStateServiceError,
+  type FirstPartyGameStateService,
+} from "../session-state/first-party-game-state-service.js";
+import type { FirstPartyReplayBlocker, FirstPartySceneContext, FirstPartySceneResolutionMode } from "../session-state/session-state-types.js";
+import type { SessionStateService } from "../session-state/session-state-service.js";
+import type { FirstPartyGameStateConsumer } from "../session-state/session-state-first-party-consumer.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
@@ -191,6 +227,10 @@ export interface DryRunRequest {
   structure?: PromptStructurePolicy;
   /** dry-run 发送约束覆盖 */
   delivery?: PromptDeliveryPolicy;
+  /** dry-run Prompt 预算覆盖 */
+  budget?: PromptBudgetPolicy;
+  /** dry-run Prompt 来源选择覆盖 */
+  sourceSelection?: PromptSourceSelectionPolicy;
 }
 
 /** /respond/dry-run 响应体 */
@@ -205,11 +245,8 @@ export interface DryRunResult {
   memorySummary?: string;
   /** 与真实 commit 对齐的 Prompt 快照预览 */
   promptSnapshot: PromptSnapshotPreview;
-  /** 组装调试信息 */
-  assembly: AssembleDebugInfo & {
-    /** 当前用户消息应用 USER_INPUT 正则后的预览 */
-    preprocessedUserMessage?: string;
-  };
+  /** 组装调试信息兼容层 */
+  assembly: PromptAssemblyCompat;
   /** Prompt Runtime 运行轨迹（第一版增量输出） */
   runtimeTrace?: PromptRuntimeTrace;
 }
@@ -219,15 +256,32 @@ export interface PromptRuntimePreviewRequest {
   branchId?: string;
   sourceFloorId?: string;
   visibility?: PromptVisibilityPolicy;
+  structure?: PromptStructurePolicy;
+  delivery?: PromptDeliveryPolicy;
+  budget?: PromptBudgetPolicy;
+  sourceSelection?: PromptSourceSelectionPolicy;
 }
 
 export interface PromptRuntimePreviewResult {
+  scope: PromptRuntimeScopeRef;
+  policy: ResolvedPromptRuntimePolicy;
+  sourceMap?: PromptRuntimeSourceMap;
+  diagnostics: PromptRuntimeDiagnostic[];
+  limitations: string[];
   text: string;
-  runtimeTrace: PromptRuntimeTrace;
+  runtimeTrace: PromptRuntimePreviewTrace;
+}
+
+interface ReplayConfirmationRequest {
+  /** 显式确认允许重放的历史执行记录 ID 列表 */
+  confirmedExecutionIds?: string[];
+
+  /** 显式确认允许重放的 session-state mutation ID 列表 */
+  confirmedSessionStateMutationIds?: string[];
 }
 
 /** /regenerate 请求体 */
-export interface RegenerateRequest {
+export interface RegenerateRequest extends ReplayConfirmationRequest {
   /** 回合配置覆盖（可选） */
   config?: TurnConfig;
   /** 生成参数覆盖（可选） */
@@ -265,22 +319,7 @@ export interface RegenerateResult {
 }
 
 /** /floors/:id/retry 请求体 */
-export interface RetryFloorRequest {
-  /** 回合配置覆盖（可选） */
-  config?: TurnConfig;
-  /** 生成参数覆盖（可选） */
-  generationParams?: Partial<GenerationParams>;
-  /** 消息结构覆盖 */
-  structure?: PromptStructurePolicy;
-  /** 发送约束覆盖 */
-  delivery?: PromptDeliveryPolicy;
-
-  /** live 调试返回选项 */
-  debugOptions?: PromptLiveDebugOptions;
-
-  /** 显式确认允许重放的历史执行记录 ID 列表 */
-  confirmedExecutionIds?: string[];
-}
+export type RetryFloorRequest = RegenerateRequest;
 
 /** /floors/:id/retry 响应体 */
 export interface RetryFloorResult {
@@ -317,6 +356,19 @@ interface ReplayBlockingExecutionDetail {
   replay_safety: ToolReplaySafety;
   reason: string;
   error_message?: string;
+}
+
+interface ReplayBlockingSessionStateMutationDetail {
+  mutation_id: string;
+  state_namespace: string;
+  target_slot: string;
+  replay_safety: ToolReplaySafety;
+  status: string;
+  reason: "confirmation_required" | "never_auto_replay" | "uncertain" | "blocked";
+}
+
+interface FirstPartyStateContext {
+  scene: FirstPartySceneContext | null;
 }
 
 export interface EditAndRegenerateRequest extends RetryFloorRequest {
@@ -461,6 +513,9 @@ export interface ChatServiceOptions {
   resolveTurnModel?: ResolveTurnModelFn;
   /** 可选：外部注入提交服务。 */
   turnCommitService?: TurnCommitService;
+  sessionStateService?: SessionStateService;
+  firstPartyGameStateConsumer?: FirstPartyGameStateConsumer;
+  firstPartyGameStateService?: FirstPartyGameStateService;
   /**
    * 可选：按 slot 粒度为当前会话解析模型配置。
    * 优先于 resolveTurnModel。
@@ -509,17 +564,6 @@ export interface ChatServiceOptions {
   defaultAccountId?: string;
 }
 
-function createPromptDigestPreview(messages: ChatMessage[]): string {
-  const hash = createHash("sha256");
-  for (const message of messages) {
-    hash.update(message.role);
-    hash.update("\u0000");
-    hash.update(message.content);
-    hash.update("\u0001");
-  }
-  return hash.digest("hex");
-}
-
 // ── ChatService ───────────────────────────────────────
 
 export class ChatService {
@@ -545,6 +589,9 @@ export class ChatService {
   private readonly toolExecutionRepository: DrizzleToolExecutionRepository;
   private readonly generationCoordinator: GenerationCoordinator;
   private readonly executionPolicy: TurnExecutionPolicy;
+  private readonly sessionStateService?: SessionStateService;
+  private readonly firstPartyGameStateConsumer?: FirstPartyGameStateConsumer;
+  private readonly firstPartyGameStateService?: FirstPartyGameStateService;
   private readonly defaultNarratorProviderType?: ProviderType;
   private readonly accountContext: AccountContextOptions;
 
@@ -579,7 +626,11 @@ export class ChatService {
         enableAsyncMemoryIngest: this.enableAsyncMemoryIngest,
         accountMode: options.accountMode,
         defaultAccountId: options.defaultAccountId,
+        sessionStateService: options.sessionStateService,
       });
+    this.sessionStateService = options.sessionStateService;
+    this.firstPartyGameStateConsumer = options.firstPartyGameStateConsumer;
+    this.firstPartyGameStateService = options.firstPartyGameStateService;
     this.generationCoordinator = options.generationCoordinator
       ?? options.generationGuard
       ?? new InMemoryGenerationCoordinator();
@@ -625,16 +676,39 @@ export class ChatService {
         const session = await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot respond to an archived session");
         const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, resolvedAccountId);
         this.assertNarratorSlotEnabled(resolvedTurnModels);
-        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
-        const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request);
-
         // ── 2. 确定分支上下文 + 加载历史 ──
         const branchContext = await this.resolveRespondBranchContext(
           sessionId,
           branchId,
           request.sourceFloorId
         );
-        const history = await this.historyLoader.loadHistory(sessionId, branchId, branchContext.nextFloorNo);
+        const firstPartyStateContext = this.loadFirstPartyStateContext({
+          accountId: resolvedAccountId,
+          sessionId,
+          branchId,
+          sourceFloorId: branchContext.inheritanceSource?.floorId ?? null,
+          expectedSourceBranchId: branchContext.inheritanceSource?.branchId ?? null,
+          resolutionMode: branchContext.inheritanceSource ? "source_floor" : "current_effective",
+        });
+        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
+        const liveRequestPolicy = this.buildPromptRuntimeRequestPolicy(request);
+        const executionContext = resolvePromptRuntimeExecutionContext({
+          sessionId,
+          metadataJson: session.metadataJson,
+          branchId,
+          branchExists: branchContext.branchExists,
+          historySourceBranchId: branchContext.historySourceBranchId,
+          historySourceMode: branchContext.historySourceMode,
+          sourceFloorId: request.sourceFloorId ?? null,
+          request: liveRequestPolicy,
+        });
+        const { history, visibilityTrace } = await this.loadPromptRuntimeHistoryWindow({
+          sessionId,
+          branchId: branchContext.historySourceBranchId,
+          beforeFloorNo: branchContext.nextFloorNo,
+          visibility: executionContext.resolvedPolicy.visibility,
+          sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+        });
 
         // ── 3. 创建新楼层 ──
         const nextFloorNo = branchContext.nextFloorNo;
@@ -642,30 +716,36 @@ export class ChatService {
         const floorId = nanoid();
 
         // ── 2b. 记忆检索 ──
-        const memorySummary = await this.retrieveMemorySummary(sessionId, resolvedAccountId, floorId);
-        const { userMessageRef } = this.createDraftFloorWithUserMessage({
-          floorId,
-          sessionId,
-          floorNo: nextFloorNo,
-          branchId,
-          parentFloorId: branchContext.parentFloorId,
-          userMessage: request.message,
-          userId: session.userId,
-          userSnapshotJson: session.userSnapshotJson,
-          now,
-          afterCreate: branchContext.inheritanceSource
-            ? (tx) => {
-                new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
-                  accountId: resolvedAccountId,
-                  sessionId,
-                  sourceFloorId: branchContext.inheritanceSource!.floorId,
-                  sourceBranchId: branchContext.inheritanceSource!.branchId,
-                  targetBranchId: branchId,
-                  createdAt: now,
-                });
-              }
-            : undefined,
-        });
+        const memorySummary = await this.retrieveMemorySummary(sessionId, resolvedAccountId, floorId, branchId);
+        const effectiveMemorySummary = executionContext.resolvedPolicy.sourceSelection.memory.enabled === false ? undefined : memorySummary;
+        let userMessageRef: PersistedMessageRef;
+        try {
+          ({ userMessageRef } = this.createDraftFloorWithUserMessage({
+            floorId,
+            sessionId,
+            floorNo: nextFloorNo,
+            branchId,
+            parentFloorId: branchContext.parentFloorId,
+            userMessage: request.message,
+            userId: session.userId,
+            userSnapshotJson: session.userSnapshotJson,
+            now,
+            afterCreate: branchContext.inheritanceSource
+              ? (tx) => {
+                  new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
+                    accountId: resolvedAccountId,
+                    sessionId,
+                    sourceFloorId: branchContext.inheritanceSource!.floorId,
+                    sourceBranchId: branchContext.inheritanceSource!.branchId,
+                    targetBranchId: branchId,
+                    createdAt: now,
+                  });
+                }
+              : undefined,
+          }));
+        } catch (error) {
+          this.rethrowBranchLocalSnapshotError(error);
+        }
 
         await this.initializeFloorRun(sessionId, floorId, "respond", now);
         const persistedUserMessage = await this.applyPersistedUserInputRegex({
@@ -693,6 +773,7 @@ export class ChatService {
           const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
           const includeRuntimeTrace = request.debugOptions?.includeRuntimeTrace === true;
           const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
+          const maxOutputTokensOverride = this.resolveMaxOutputTokensOverride(request.generationParams, narratorParams);
 
           const assembled = await assemblePrompt(
             this.db,
@@ -701,15 +782,18 @@ export class ChatService {
             history,
             persistedUserMessage,
             this.tokenCounter,
-            memorySummary,
+            effectiveMemorySummary,
             {
               maxContextTokensOverride,
+              maxOutputTokensOverride,
               variableContext: { sessionId, branchId, floorId, pageId: userMessageRef.pageId },
               intent: request.promptIntent,
               includeDebug: includeRuntimeTrace,
               runKind: this.resolvePromptRunKind("respond"),
               includeWorldbookMatchTrace: includeRuntimeTrace && request.debugOptions?.includeWorldbookMatches === true,
               assistantPrefillStrategy,
+              budget: executionContext.effectivePolicy?.budget,
+              sourceSelection: executionContext.effectivePolicy?.sourceSelection,
             }
           );
           await this.trackFloorRunPhase(floorId, "prompt_assembled");
@@ -718,15 +802,28 @@ export class ChatService {
             assembled.messages,
             assembled.sendDirectives,
             assistantPrefillStrategy,
-            promptRuntimePolicies.structure,
-            promptRuntimePolicies.delivery,
+            executionContext.effectivePolicy?.structure,
+            executionContext.effectivePolicy?.delivery,
           );
+          const inspection = await this.buildPromptRuntimeInspection({
+            accountId: resolvedAccountId,
+            context: executionContext,
+            phase: "assemble",
+            history,
+            visibilityTrace,
+            memorySummary: effectiveMemorySummary,
+            assembled,
+            worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
+            extraDiagnostics: this.buildFirstPartyStateDiagnostics(firstPartyStateContext, "assemble"),
+          });
           const promptDebug = this.buildLivePromptDebugArtifacts({
             floorId,
             sessionId,
             userMessage: persistedUserMessage,
             assembled,
             materialized,
+            inspection,
+            visibilityTrace,
             debugOptions: request.debugOptions,
           });
 
@@ -750,6 +847,7 @@ export class ChatService {
             sessionId,
             resolvedAccountId,
             floorId,
+            branchId,
             persistedUserMessage,
             turnConfig
           );
@@ -782,7 +880,9 @@ export class ChatService {
             accountId: resolvedAccountId,
             turnInput,
             promptSnapshot: promptDebug.promptSnapshotRecord,
-            macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
+            promptRuntimeInspection: promptDebug.inspection,
+            macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
+            runType: "respond",
             resolvedTurnModels,
             orchestrationFailureCode: "orchestration_failed",
             orchestrationFailureMessage: "Turn orchestration failed",
@@ -835,14 +935,27 @@ export class ChatService {
       throw new ChatServiceError("session_archived", "Cannot dry-run in an archived session");
     }
 
-    const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request);
-    const history = await this.historyLoader.loadHistory(sessionId, "main", undefined, request.visibility);
-    const visibilityTrace = await this.historyLoader.previewVisibility(sessionId, "main", undefined, request.visibility);
-    const memorySummary = await this.retrieveMemorySummary(sessionId, accountId);
+    const executionContext = resolvePromptRuntimeExecutionContext({
+      sessionId,
+      metadataJson: session.metadataJson,
+      branchId: "main",
+      branchExists: true,
+      historySourceBranchId: "main",
+      historySourceMode: "existing_branch",
+      request,
+    });
+    const history = this.applyPromptRuntimeHistorySourceSelection(
+      await this.historyLoader.loadHistory(sessionId, "main", undefined, executionContext.resolvedPolicy.visibility),
+      executionContext.effectivePolicy?.sourceSelection,
+    );
+    const visibilityTrace = await this.historyLoader.previewVisibility(sessionId, "main", undefined, executionContext.resolvedPolicy.visibility);
+    const memorySummary = await this.retrieveMemorySummary(sessionId, accountId, undefined, "main");
+    const effectiveMemorySummary = executionContext.resolvedPolicy.sourceSelection.memory.enabled === false ? undefined : memorySummary;
     const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, accountId);
     const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
     const maxContextTokensOverride = normalizePositiveInt(narratorParams?.maxContextTokens);
+    const maxOutputTokensOverride = normalizePositiveInt(narratorParams?.maxOutputTokens);
 
     const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
     const persistedUserMessage = await this.applyPersistedUserInputRegex({
@@ -861,13 +974,15 @@ export class ChatService {
       history,
       persistedUserMessage,
       this.tokenCounter,
-      memorySummary,
+      effectiveMemorySummary,
       {
-        includeDebug: true, maxContextTokensOverride, variableContext: { sessionId, branchId: "main" },
+        includeDebug: true, maxContextTokensOverride, maxOutputTokensOverride, variableContext: { sessionId, branchId: "main" },
         intent: request.promptIntent,
         runKind: this.resolvePromptRunKind("dry_run"),
         includeWorldbookMatchTrace: request.debugOptions?.includeWorldbookMatches,
         assistantPrefillStrategy,
+        budget: executionContext.effectivePolicy?.budget,
+        sourceSelection: executionContext.effectivePolicy?.sourceSelection,
       }
     );
 
@@ -875,69 +990,46 @@ export class ChatService {
       messages: assembled.messages,
       sendDirectives: assembled.sendDirectives,
       assistantPrefillStrategy,
-      structurePolicy: promptRuntimePolicies.structure,
-      deliveryPolicy: promptRuntimePolicies.delivery,
+      structurePolicy: executionContext.effectivePolicy?.structure,
+      deliveryPolicy: executionContext.effectivePolicy?.delivery,
       materializeAssistantPrefillFallback: false,
     });
-    const maxPromptTokens = assembled.tokenUsage.total + assembled.tokenUsage.availableForReply;
-    const tokenEstimate = materialized.messages.reduce(
-      (sum, message) => sum + this.tokenCounter.count(message.content),
-      0,
-    );
-    const availableForReply = Math.max(0, maxPromptTokens - tokenEstimate);
-    const promptSnapshot = buildPromptSnapshotPreview(assembled.promptSnapshot);
-    promptSnapshot.promptDigest = createPromptDigestPreview(materialized.messages);
-    promptSnapshot.tokenEstimate = tokenEstimate;
-    const preprocessedUserMessage = assembled.preProcess
-      ? assembled.preProcess([{ role: "user", content: persistedUserMessage }])[0]?.content
-      : persistedUserMessage;
-    const budgetTrace = buildPromptRuntimeBudgetTrace({
-      byGroup: assembled.tokenUsage.byGroup,
-      prunedByGroup: assembled.tokenUsage.prunedByGroup,
-    });
 
-    const debug: AssembleDebugInfo = assembled.debug ?? {
-      mode: "fallback",
-      promptIntent: request.promptIntent ?? "normal",
-      assistantPrefillApplied: false,
-      assistantPrefillStrategy: "none",
-      presetUsed: false,
-      worldbookHits: 0,
-      regexPreRules: [],
-      regexPostRules: [],
-      memorySummaryInjected: false,
-      reservedVariableCollisions: [],
-      selectedPromptOrderCharacterId: null,
-      ignoredPromptOrderCharacterIds: [],
-      unsupportedPresetFields: [],
-      ignoredPresetFields: [],
-      unresolvedPresetMarkers: [],
-      presetWarnings: [],
-      continueNudgeApplied: false,
-      continueNudgeText: undefined,
-      namesBehaviorApplied: "off",
-      triggerFilteredEntryIds: [],
-      inChatInsertedEntryIds: [],
-      worldbookMatches: request.debugOptions?.includeWorldbookMatches ? [] : undefined,
-    };
+    const inspection = await this.buildPromptRuntimeInspection({
+      accountId,
+      context: executionContext,
+      phase: "dry_run",
+      history,
+      visibilityTrace,
+      memorySummary: effectiveMemorySummary,
+      assembled,
+      worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
+    });
+    const execution = buildPromptRuntimeExecutionResult({
+      tokenCounter: this.tokenCounter,
+      userMessage: persistedUserMessage,
+      includeRuntimeTrace: true,
+      artifacts: {
+        inspection,
+        assembled,
+        materialized,
+        visibilityTrace,
+      },
+    });
 
     return {
       messages: materialized.messages,
-      tokenEstimate,
-      availableForReply,
-      memorySummary,
-      promptSnapshot,
-      assembly: { ...debug, preprocessedUserMessage },
-      runtimeTrace: {
-        ...(budgetTrace ? { budgets: budgetTrace } : {}),
-        ...buildPromptRuntimeTrace({ debug, preprocessedUserMessage }),
-        ...(materialized.structureTrace ? { structure: materialized.structureTrace } : {}),
-        delivery: materialized.deliveryTrace,
-        visibility: {
-          ...(visibilityTrace.hiddenFloorRanges ? { hiddenFloorRanges: visibilityTrace.hiddenFloorRanges } : {}),
-          filteredFloorNos: visibilityTrace.filteredFloorNos,
-        },
-      },
+      tokenEstimate: execution.tokenEstimate!,
+      availableForReply: execution.availableForReply!,
+      memorySummary: effectiveMemorySummary,
+      promptSnapshot: execution.promptSnapshotPreview!,
+      assembly: buildPromptAssemblyCompat({
+        compatSeed: assembled.assemblyCompatSeed,
+        traceSeed: assembled.runtimeTraceSeed,
+        runtimeTrace: execution.runtimeTrace,
+        preprocessedUserMessage: execution.preprocessedUserMessage,
+      }),
+      runtimeTrace: execution.runtimeTrace,
     };
   }
 
@@ -958,20 +1050,55 @@ export class ChatService {
 
     const branchId = normalizeBranchId(request.branchId);
     const branchContext = await this.resolveRespondBranchContext(sessionId, branchId, request.sourceFloorId);
-    const history = await this.historyLoader.loadHistory(sessionId, branchId, branchContext.nextFloorNo, request.visibility);
-    const visibilityTrace = await this.historyLoader.previewVisibility(sessionId, branchId, branchContext.nextFloorNo, request.visibility);
-    const memorySummary = await this.retrieveMemorySummary(sessionId, resolvedAccountId);
-    const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, resolvedAccountId);
-    const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
-    const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
-    const variableState = await this.resolvePromptRuntimePreviewVariables({
-      accountId: resolvedAccountId,
+    const executionContext = resolvePromptRuntimeExecutionContext({
       sessionId,
+      metadataJson: session.metadataJson,
       branchId,
       branchExists: branchContext.branchExists,
-      inheritanceSource: branchContext.inheritanceSource,
+      historySourceBranchId: branchContext.historySourceBranchId,
+      historySourceMode: branchContext.historySourceMode,
+      sourceFloorId: request.sourceFloorId ?? null,
+      request,
     });
+    const visibilityTrace = await this.historyLoader.previewVisibility(
+      sessionId,
+      branchContext.historySourceBranchId,
+      branchContext.nextFloorNo,
+      executionContext.resolvedPolicy.visibility,
+    );
+    const memorySummary = await this.retrieveMemorySummary(sessionId, resolvedAccountId, undefined, branchId);
+    const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, resolvedAccountId);
+    const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
+    const effectivePreviewBudget = resolveEffectivePromptBudget({
+      budget: executionContext.effectivePolicy?.budget,
+      maxContextTokensOverride: narratorParams?.maxContextTokens,
+      maxOutputTokensOverride: narratorParams?.maxOutputTokens,
+    });
+    const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
+    let variableState: Awaited<ReturnType<ChatService["resolvePromptRuntimePreviewVariables"]>>;
+    const history = this.applyPromptRuntimeHistorySourceSelection(
+      await this.historyLoader.loadHistory(
+        sessionId,
+        branchContext.historySourceBranchId,
+        branchContext.nextFloorNo,
+        executionContext.resolvedPolicy.visibility,
+      ),
+      executionContext.resolvedPolicy.sourceSelection,
+    );
+    try {
+      variableState = await this.resolvePromptRuntimePreviewVariables({
+        accountId: resolvedAccountId,
+        sessionId,
+        branchId,
+        branchExists: branchContext.branchExists,
+        inheritanceSource: branchContext.inheritanceSource,
+      });
+    } catch (error) {
+      this.rethrowBranchLocalSnapshotError(error);
+    }
 
+    const effectivePreviewMemorySummary = executionContext.resolvedPolicy.sourceSelection.memory.enabled ? memorySummary : undefined;
+    const previewMaxPrompt = effectivePreviewBudget.maxInputTokens;
     const preview = previewPromptMacroText({
       session: sessionInfo,
       text: request.text,
@@ -981,20 +1108,44 @@ export class ChatService {
       ordinaryVariables: variableState.ordinaryVariables,
       localValues: variableState.localValues,
       globalValues: variableState.globalValues,
-      memorySummary,
-      maxPrompt: narratorParams?.maxContextTokens,
+      memorySummary: effectivePreviewMemorySummary,
+      maxPrompt: previewMaxPrompt,
       runKind: "dry_run",
     });
 
+    const inspection = await this.buildPromptRuntimeInspection({
+      accountId: resolvedAccountId,
+      context: executionContext,
+      phase: "preview",
+      history,
+      visibilityTrace,
+      memorySummary: effectivePreviewMemorySummary,
+      extraDiagnostics: branchContext.branchExists
+        ? []
+        : [{
+            code: "unmaterialized_branch_preview",
+            message: `Preview targeted unmaterialized branch '${branchId}'. Branch policy overlay is unavailable until the branch is materialized.`,
+            severity: "info",
+            source: "branch",
+            phase: "preview",
+          } satisfies PromptRuntimeDiagnostic],
+    });
+    const runtimeTrace = buildPromptRuntimePreviewTrace(
+      buildPromptRuntimeExecutionTrace({
+        inspection,
+        visibilityTrace,
+        baseRuntimeTrace: preview.runtimeTrace,
+      }) ?? preview.runtimeTrace,
+    );
+
     return {
+      scope: inspection.scope,
+      policy: executionContext.resolvedPolicy,
+      sourceMap: inspection.sourceMap,
+      diagnostics: inspection.diagnostics,
+      limitations: inspection.limitations,
       text: preview.text,
-      runtimeTrace: {
-        ...preview.runtimeTrace,
-        visibility: {
-          ...(visibilityTrace.hiddenFloorRanges ? { hiddenFloorRanges: visibilityTrace.hiddenFloorRanges } : {}),
-          filteredFloorNos: visibilityTrace.filteredFloorNos,
-        },
-      },
+      runtimeTrace,
     };
   }
 
@@ -1029,7 +1180,32 @@ export class ChatService {
     return this.withGenerationCoordinator(sessionId, "main", undefined, async (generationRuntime: CoordinatorRuntime) => {
       const session = await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot regenerate in an archived session");
       const targetFloor = await this.revalidateRegenerationTarget(sessionId, initialTargetFloor.id);
-      const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request);
+      await this.assertReplayConfirmedForFloor({
+        floorId: targetFloor.id,
+        sessionId,
+        accountId: resolvedAccountId,
+        confirmedExecutionIds: request.confirmedExecutionIds,
+        confirmedSessionStateMutationIds: request.confirmedSessionStateMutationIds,
+        actionLabel: "Regeneration",
+      });
+      const liveRequestPolicy = this.buildPromptRuntimeRequestPolicy(request);
+      const executionContext = resolvePromptRuntimeExecutionContext({
+        sessionId,
+        metadataJson: session.metadataJson,
+        branchId: targetFloor.branchId,
+        branchExists: true,
+        historySourceBranchId: targetFloor.branchId,
+        historySourceMode: "existing_branch",
+        request: liveRequestPolicy,
+      });
+      const firstPartyStateContext = this.loadFirstPartyStateContext({
+        accountId: resolvedAccountId,
+        sessionId,
+        branchId: targetFloor.branchId,
+        sourceFloorId: targetFloor.parentFloorId,
+        expectedSourceBranchId: targetFloor.branchId,
+        resolutionMode: "source_floor",
+      });
 
       // ── 3. 提取用户消息 ──
       const existingUserMessage = await this.getUserMessageFromFloor(targetFloor.id);
@@ -1042,7 +1218,13 @@ export class ChatService {
       const userMessage = existingUserMessage.content;
 
       // ── 4. 加载该楼层之前的历史 ──
-      const history = await this.historyLoader.loadHistoryBeforeFloor(sessionId, targetFloor.floorNo);
+      const { history, visibilityTrace } = await this.loadPromptRuntimeHistoryWindow({
+        sessionId,
+        branchId: targetFloor.branchId,
+        beforeFloorNo: targetFloor.floorNo,
+        visibility: executionContext.resolvedPolicy.visibility,
+        sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+      });
 
       const resolvedTurnModels = await this.resolveTurnModelsForSession(sessionId, resolvedAccountId);
       this.assertNarratorSlotEnabled(resolvedTurnModels);
@@ -1051,7 +1233,8 @@ export class ChatService {
       const now = Date.now();
 
       // ── 4b. 记忆检索 ──
-      const memorySummary = await this.retrieveMemorySummary(sessionId, resolvedAccountId, newFloorId);
+      const memorySummary = await this.retrieveMemorySummary(sessionId, resolvedAccountId, newFloorId, targetFloor.branchId);
+      const effectiveMemorySummary = executionContext.resolvedPolicy.sourceSelection.memory.enabled === false ? undefined : memorySummary;
       const { userMessageRef } = this.createDraftFloorWithUserMessage({
         floorId: newFloorId,
         sessionId,
@@ -1078,13 +1261,14 @@ export class ChatService {
       await this.initializeFloorRun(sessionId, newFloorId, "regenerate_page", now);
       try {
       // ── 8. 构建 TurnInput + 执行编排 ──
-      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
+      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
       const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
       await this.trackFloorRunPhase(newFloorId, "semantic_resolved");
       await this.trackFloorRunPhase(newFloorId, "prechecked");
       const includeRuntimeTrace = request.debugOptions?.includeRuntimeTrace === true;
       const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
       const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
+      const maxOutputTokensOverride = this.resolveMaxOutputTokensOverride(request.generationParams, narratorParams);
 
       const assembled = await assemblePrompt(
         this.db,
@@ -1093,14 +1277,17 @@ export class ChatService {
         history,
         userMessage,
         this.tokenCounter,
-        memorySummary,
+        effectiveMemorySummary,
         {
           maxContextTokensOverride,
+          maxOutputTokensOverride,
           variableContext: { sessionId, branchId: targetFloor.branchId, floorId: newFloorId, pageId: userMessageRef.pageId },
           includeDebug: includeRuntimeTrace,
           includeWorldbookMatchTrace: includeRuntimeTrace && request.debugOptions?.includeWorldbookMatches === true,
           runKind: this.resolvePromptRunKind("regenerate_page"),
           intent: "regenerate",
+          budget: executionContext.effectivePolicy?.budget,
+          sourceSelection: executionContext.effectivePolicy?.sourceSelection,
           assistantPrefillStrategy,
         }
       );
@@ -1110,15 +1297,28 @@ export class ChatService {
         assembled.messages,
         assembled.sendDirectives,
         assistantPrefillStrategy,
-        promptRuntimePolicies.structure,
-        promptRuntimePolicies.delivery,
+        executionContext.effectivePolicy?.structure,
+        executionContext.effectivePolicy?.delivery,
       );
+      const inspection = await this.buildPromptRuntimeInspection({
+        accountId: resolvedAccountId,
+        context: executionContext,
+        phase: "assemble",
+        history,
+        visibilityTrace,
+        memorySummary: effectiveMemorySummary,
+        assembled,
+        worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
+        extraDiagnostics: this.buildFirstPartyStateDiagnostics(firstPartyStateContext, "assemble"),
+      });
       const promptDebug = this.buildLivePromptDebugArtifacts({
         floorId: newFloorId,
         sessionId,
         userMessage,
         assembled,
         materialized,
+        inspection,
+        visibilityTrace,
         debugOptions: request.debugOptions,
       });
 
@@ -1141,6 +1341,7 @@ export class ChatService {
         sessionId,
         resolvedAccountId,
         newFloorId,
+        targetFloor.branchId,
         userMessage,
         turnConfig
       );
@@ -1172,8 +1373,10 @@ export class ChatService {
         accountId: resolvedAccountId,
         turnInput,
         promptSnapshot: promptDebug.promptSnapshotRecord,
-        macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
+        promptRuntimeInspection: promptDebug.inspection,
+        macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
         resolvedTurnModels,
+        runType: "regenerate_page",
         orchestrationFailureCode: "orchestration_failed",
         orchestrationFailureMessage: "Regeneration orchestration failed",
         commitFailureMessage: "Regeneration commit failed",
@@ -1217,8 +1420,30 @@ export class ChatService {
       async (generationRuntime) => {
         const targetFloor = await this.revalidateRetryTargetFloor(floorId, resolvedAccountId, initialTargetFloor);
         const session = await this.requireActiveSession(targetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session");
-        await this.assertRetryReplayConfirmed(targetFloor.id, request);
-        const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(session.metadataJson, request);
+        await this.assertRetryReplayConfirmed({
+          floorId: targetFloor.id,
+          sessionId: targetFloor.sessionId,
+          accountId: resolvedAccountId,
+          request,
+        });
+        const liveRequestPolicy = this.buildPromptRuntimeRequestPolicy(request);
+        const executionContext = resolvePromptRuntimeExecutionContext({
+          sessionId: targetFloor.sessionId,
+          metadataJson: session.metadataJson,
+          branchId: targetFloor.branchId,
+          branchExists: true,
+          historySourceBranchId: targetFloor.branchId,
+          historySourceMode: "existing_branch",
+          request: liveRequestPolicy,
+        });
+        const firstPartyStateContext = this.loadFirstPartyStateContext({
+          accountId: resolvedAccountId,
+          sessionId: targetFloor.sessionId,
+          branchId: targetFloor.branchId,
+          sourceFloorId: targetFloor.parentFloorId,
+          expectedSourceBranchId: targetFloor.branchId,
+          resolutionMode: "source_floor",
+        });
 
         const userMessageRef = await this.getUserMessageFromFloor(targetFloor.id);
         if (!userMessageRef) {
@@ -1226,12 +1451,15 @@ export class ChatService {
         }
         const userMessage = userMessageRef.content;
 
-        const history = await this.historyLoader.loadHistoryBeforeFloor(
-          targetFloor.sessionId,
-          targetFloor.floorNo,
-          targetFloor.branchId
-        );
-        const memorySummary = await this.retrieveMemorySummary(targetFloor.sessionId, resolvedAccountId, targetFloor.id);
+        const { history, visibilityTrace } = await this.loadPromptRuntimeHistoryWindow({
+          sessionId: targetFloor.sessionId,
+          branchId: targetFloor.branchId,
+          beforeFloorNo: targetFloor.floorNo,
+          visibility: executionContext.resolvedPolicy.visibility,
+          sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+        });
+        const memorySummary = await this.retrieveMemorySummary(targetFloor.sessionId, resolvedAccountId, targetFloor.id, targetFloor.branchId);
+        const effectiveMemorySummary = executionContext.resolvedPolicy.sourceSelection.memory.enabled === false ? undefined : memorySummary;
         const now = Date.now();
         const resolvedTurnModels = await this.resolveTurnModelsForSession(targetFloor.sessionId, resolvedAccountId);
         this.assertNarratorSlotEnabled(resolvedTurnModels);
@@ -1250,11 +1478,12 @@ export class ChatService {
         await this.trackFloorRunPhase(targetFloor.id, "prechecked");
         try {
 
-        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
+        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
         const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
         const includeRuntimeTrace = request.debugOptions?.includeRuntimeTrace === true;
         const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
         const maxContextTokensOverride = this.resolveMaxContextTokensOverride(request.generationParams, narratorParams);
+        const maxOutputTokensOverride = this.resolveMaxOutputTokensOverride(request.generationParams, narratorParams);
 
         const assembled = await assemblePrompt(
           this.db,
@@ -1263,9 +1492,10 @@ export class ChatService {
           history,
           userMessage,
           this.tokenCounter,
-          memorySummary,
+          effectiveMemorySummary,
           {
             maxContextTokensOverride,
+            maxOutputTokensOverride,
             variableContext: {
               sessionId: targetFloor.sessionId,
               branchId: targetFloor.branchId,
@@ -1275,6 +1505,8 @@ export class ChatService {
             includeDebug: includeRuntimeTrace,
             includeWorldbookMatchTrace: includeRuntimeTrace && request.debugOptions?.includeWorldbookMatches === true,
             runKind: this.resolvePromptRunKind("retry_turn"),
+            budget: executionContext.effectivePolicy?.budget,
+            sourceSelection: executionContext.effectivePolicy?.sourceSelection,
             assistantPrefillStrategy,
           }
         );
@@ -1284,15 +1516,28 @@ export class ChatService {
           assembled.messages,
           assembled.sendDirectives,
           assistantPrefillStrategy,
-          promptRuntimePolicies.structure,
-          promptRuntimePolicies.delivery,
+          executionContext.effectivePolicy?.structure,
+          executionContext.effectivePolicy?.delivery,
         );
+        const inspection = await this.buildPromptRuntimeInspection({
+          accountId: resolvedAccountId,
+          context: executionContext,
+          phase: "assemble",
+          history,
+          visibilityTrace,
+          memorySummary: effectiveMemorySummary,
+          assembled,
+          worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
+          extraDiagnostics: this.buildFirstPartyStateDiagnostics(firstPartyStateContext, "assemble"),
+        });
         const promptDebug = this.buildLivePromptDebugArtifacts({
           floorId: targetFloor.id,
           sessionId: targetFloor.sessionId,
           userMessage,
           assembled,
           materialized,
+          inspection,
+          visibilityTrace,
           debugOptions: request.debugOptions,
         });
 
@@ -1315,6 +1560,7 @@ export class ChatService {
           targetFloor.sessionId,
           resolvedAccountId,
           targetFloor.id,
+          targetFloor.branchId,
           userMessage,
           turnConfig
         );
@@ -1346,8 +1592,10 @@ export class ChatService {
           accountId: resolvedAccountId,
           turnInput,
           promptSnapshot: promptDebug.promptSnapshotRecord,
-          macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
+          promptRuntimeInspection: promptDebug.inspection,
+          macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
           resolvedTurnModels,
+          runType: "retry_turn",
           orchestrationFailureCode: "orchestration_failed",
           orchestrationFailureMessage: "Retry orchestration failed",
           persistMemory: this.memoryStore !== undefined,
@@ -1403,38 +1651,73 @@ export class ChatService {
         );
       }
 
-      const history = await this.historyLoader.loadHistoryBeforeFloor(
-        source.sessionId,
-        source.floorNo,
-        source.branchId
-      );
+      await this.assertReplayConfirmedForFloor({
+        floorId: source.floorId,
+        sessionId: source.sessionId,
+        accountId: resolvedAccountId,
+        confirmedExecutionIds: request.confirmedExecutionIds,
+        confirmedSessionStateMutationIds: request.confirmedSessionStateMutationIds,
+        actionLabel: "Edit-and-regenerate",
+      });
+
+      const liveRequestPolicy = this.buildPromptRuntimeRequestPolicy(request);
+      const executionContext = resolvePromptRuntimeExecutionContext({
+        sessionId: source.sessionId,
+        metadataJson: session.metadataJson,
+        branchId: newBranchId,
+        branchExists: false,
+        historySourceBranchId: source.branchId,
+        historySourceMode: "source_floor_branch",
+        sourceFloorId: source.floorId,
+        request: liveRequestPolicy,
+      });
+      const firstPartyStateContext = this.loadFirstPartyStateContext({
+        accountId: resolvedAccountId,
+        sessionId: source.sessionId,
+        branchId: newBranchId,
+        sourceFloorId: source.floorId,
+        expectedSourceBranchId: source.branchId,
+        resolutionMode: "source_floor",
+      });
+      const { history, visibilityTrace } = await this.loadPromptRuntimeHistoryWindow({
+        sessionId: source.sessionId,
+        branchId: source.branchId,
+        beforeFloorNo: source.floorNo,
+        visibility: executionContext.resolvedPolicy.visibility,
+        sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+      });
 
       const now = Date.now();
       const newFloorId = nanoid();
       const resolvedTurnModels = await this.resolveTurnModelsForSession(source.sessionId, resolvedAccountId);
       this.assertNarratorSlotEnabled(resolvedTurnModels);
-      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels);
-      const { userMessageRef } = this.createDraftFloorWithUserMessage({
-        floorId: newFloorId,
-        sessionId: source.sessionId,
-        floorNo: source.floorNo + 1,
-        branchId: newBranchId,
-        parentFloorId: source.floorId,
-        userMessage: request.content,
-        userId: session.userId,
-        userSnapshotJson: session.userSnapshotJson,
-        now,
-        afterCreate: (tx) => {
-          new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
-            accountId: resolvedAccountId,
-            sessionId: source.sessionId,
-            sourceFloorId: source.floorId,
-            sourceBranchId: source.branchId,
-            targetBranchId: newBranchId,
-            createdAt: now,
-          });
-        },
-      });
+      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
+      let userMessageRef: PersistedMessageRef;
+      try {
+        ({ userMessageRef } = this.createDraftFloorWithUserMessage({
+          floorId: newFloorId,
+          sessionId: source.sessionId,
+          floorNo: source.floorNo + 1,
+          branchId: newBranchId,
+          parentFloorId: source.floorId,
+          userMessage: request.content,
+          userId: session.userId,
+          userSnapshotJson: session.userSnapshotJson,
+          now,
+          afterCreate: (tx) => {
+            new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
+              accountId: resolvedAccountId,
+              sessionId: source.sessionId,
+              sourceFloorId: source.floorId,
+              sourceBranchId: source.branchId,
+              targetBranchId: newBranchId,
+              createdAt: now,
+            });
+          },
+        }));
+      } catch (error) {
+        this.rethrowBranchLocalSnapshotError(error);
+      }
 
       const persistedUserMessage = await this.applyPersistedUserInputRegex({
         accountId: resolvedAccountId,
@@ -1458,9 +1741,12 @@ export class ChatService {
         userMessageRef,
         history,
         request,
+        executionContext,
+        visibilityTrace,
         accountId: resolvedAccountId,
         abortSignal: generationRuntime.abortSignal,
         runType: "edit_and_regenerate",
+        firstPartyStateContext,
       });
 
       return {
@@ -1512,12 +1798,14 @@ export class ChatService {
     branchId?: string;
     accountId: string;
     turnInput: TurnInput;
-    promptSnapshot?: ReturnType<typeof buildPromptSnapshotRecord>;
+    promptSnapshot?: NonNullable<PromptRuntimeExecutionResult["promptSnapshotRecord"]>;
+    promptRuntimeInspection?: PromptRuntimeInspectionResult;
     macroStagedMutations?: StMacroStagedMutation[];
     resolvedTurnModels: ResolvedTurnModels;
     orchestrationFailureCode: string;
     orchestrationFailureMessage: string;
     persistMemory: boolean;
+    runType: FloorRunType;
     memoryConsolidationRequested: boolean;
     commitFailureMessage: string;
   }): Promise<{
@@ -1585,6 +1873,30 @@ export class ChatService {
       );
     }
 
+    if (this.firstPartyGameStateService || this.firstPartyGameStateConsumer) {
+      try {
+        const stageSceneState = this.firstPartyGameStateService?.stageSceneState.bind(this.firstPartyGameStateService)
+          ?? this.firstPartyGameStateConsumer?.stageSceneState.bind(this.firstPartyGameStateConsumer);
+        stageSceneState?.({
+          accountId: args.accountId,
+          sessionId: args.sessionId,
+          branchId: args.branchId ?? "main",
+          floorId: args.floorId,
+          runType: args.runType,
+          execution,
+        });
+      } catch (error) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+        await this.tryMarkRunFailed(args.floorId, error, "session_state_stage_failed");
+        await this.tryMarkFloorFailed(args.floorId, error);
+        throw new ChatServiceError(
+          "session_state_stage_failed",
+          `Failed to stage first-party session state: ${error instanceof Error ? error.message : String(error)}`,
+          error,
+        );
+      }
+    }
+
     await this.trackFloorRunPhase(args.floorId, "transaction_prepared");
 
     const commitInput = {
@@ -1597,6 +1909,7 @@ export class ChatService {
         pageId: turnInput.pageId,
       },
       promptSnapshot: args.promptSnapshot,
+      promptRuntimeInspection: args.promptRuntimeInspection,
       // commit 只消费 assemble 阶段已经冻结的 macroStagedMutations。
       // 这里不重新执行模板，也不应通过 commit_consume 重新触发写宏。
       // commit_consume 仅保留为结果消费语义，不是另一个通用模板执行阶段。
@@ -1645,6 +1958,7 @@ export class ChatService {
           attempts: Math.max(commitAttemptCount, 1),
           message: error instanceof Error ? error.message : String(error),
         });
+        this.discardStagedSessionStateBestEffort(args.accountId, args.sessionId, args.floorId, "commit_busy");
         await this.tryMarkRunFailed(args.floorId, error, "commit_busy");
         await this.tryMarkFloorFailed(args.floorId, error);
         throw new ChatServiceError(
@@ -1654,19 +1968,27 @@ export class ChatService {
         );
       }
 
+      this.discardStagedSessionStateBestEffort(args.accountId, args.sessionId, args.floorId, error instanceof FloorStateConflictError ? "commit_conflict" : error instanceof FloorNotFoundError ? "floor_not_found" : "turn_commit_failed");
+
       if (error instanceof FloorNotFoundError) {
         await this.tryMarkRunFailed(args.floorId, error, "floor_not_found");
         throw new ChatServiceError("floor_not_found", `Floor '${args.floorId}' not found`, error);
       }
 
       if (error instanceof FloorStateConflictError) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
         await this.tryMarkRunFailed(args.floorId, error, "commit_conflict");
         throw new ChatServiceError("commit_conflict", `${args.commitFailureMessage}: ${error.message}`, error);
       }
 
       if (!(error instanceof FloorStateConflictError) && !(error instanceof FloorNotFoundError)) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
         await this.tryMarkRunFailed(args.floorId, error, "turn_commit_failed");
         await this.tryMarkFloorFailed(args.floorId, error);
+      }
+
+      if (error instanceof FloorNotFoundError) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
       }
 
       throw new ChatServiceError(
@@ -1699,6 +2021,28 @@ export class ChatService {
     } catch {
       // 执行日志本体已经先行落库；失败边界上的归宿更新保持 best-effort，
       // 避免覆盖原始业务错误。
+    }
+  }
+
+  private discardStagedSessionStateBestEffort(
+    accountId: string,
+    sessionId: string,
+    floorId: string,
+    reason: string,
+  ): void {
+    if (!this.sessionStateService) {
+      return;
+    }
+
+    try {
+      this.sessionStateService.discardStagedMutationsForFloor({
+        accountId,
+        sessionId,
+        floorId,
+        reason,
+      });
+    } catch {
+      // best-effort discard on failed commit paths
     }
   }
 
@@ -1782,30 +2126,97 @@ export class ChatService {
     }
   }
 
-  private async assertRetryReplayConfirmed(
-    floorId: string,
-    request: RetryFloorRequest,
-  ): Promise<void> {
-    const blockingExecutions = await this.listReplayBlockingExecutionsForFloor(floorId);
-    if (blockingExecutions.length === 0) {
-      return;
-    }
+  private async assertRetryReplayConfirmed(input: {
+    floorId: string;
+    sessionId: string;
+    accountId: string;
+    request: RetryFloorRequest;
+  }): Promise<void> {
+    await this.assertReplayConfirmedForFloor({
+      floorId: input.floorId,
+      sessionId: input.sessionId,
+      accountId: input.accountId,
+      confirmedExecutionIds: input.request.confirmedExecutionIds,
+      confirmedSessionStateMutationIds: input.request.confirmedSessionStateMutationIds,
+      actionLabel: "Retry",
+    });
+  }
 
-    const confirmedExecutionIds = new Set(request.confirmedExecutionIds ?? []);
-    const missingConfirmations = blockingExecutions.filter(
+  private async assertReplayConfirmedForFloor(input: {
+    floorId: string;
+    sessionId: string;
+    accountId: string;
+    confirmedExecutionIds?: string[];
+    confirmedSessionStateMutationIds?: string[];
+    actionLabel: string;
+  }): Promise<void> {
+    const blockingExecutions = await this.listReplayBlockingExecutionsForFloor(input.floorId);
+    const confirmedExecutionIds = new Set(input.confirmedExecutionIds ?? []);
+    const missingExecutionConfirmations = blockingExecutions.filter(
       (execution) => !confirmedExecutionIds.has(execution.execution_id),
     );
 
-    if (missingConfirmations.length === 0) {
+    const sessionStateEvaluation = this.firstPartyGameStateService?.evaluateReplayBlockersForFloor({
+      accountId: input.accountId,
+      sessionId: input.sessionId,
+      floorId: input.floorId,
+      confirmedMutationIds: input.confirmedSessionStateMutationIds,
+    }) ?? { allowed: true, blockers: [] };
+    const blockingSessionStateMutations = sessionStateEvaluation.blockers.map((blocker) =>
+      this.toReplayBlockingSessionStateMutationDetail(blocker),
+    );
+    const hardSessionStateBlockers = blockingSessionStateMutations.filter(
+      (blocker) => blocker.reason !== "confirmation_required",
+    );
+    const missingSessionStateConfirmations = blockingSessionStateMutations.filter(
+      (blocker) => blocker.reason === "confirmation_required",
+    );
+
+    if (hardSessionStateBlockers.length > 0) {
+      throw new ChatServiceError(
+        "session_state_replay_blocked",
+        `${input.actionLabel} is blocked by ${hardSessionStateBlockers.length} prior session-state mutation(s).`,
+        undefined,
+        {
+          ...(blockingExecutions.length > 0 ? { blocking_executions: blockingExecutions } : {}),
+          blocking_session_state_mutations: blockingSessionStateMutations,
+        },
+      );
+    }
+
+    if (missingExecutionConfirmations.length === 0 && missingSessionStateConfirmations.length === 0) {
       return;
     }
 
+    if (missingExecutionConfirmations.length > 0 && missingSessionStateConfirmations.length === 0) {
+      throw new ChatServiceError(
+        "tool_replay_confirmation_required",
+        `${input.actionLabel} requires explicit confirmation for ${missingExecutionConfirmations.length} prior tool execution(s).`,
+        undefined,
+        {
+          blocking_executions: blockingExecutions,
+        },
+      );
+    }
+
+    if (missingExecutionConfirmations.length === 0) {
+      throw new ChatServiceError(
+        "session_state_replay_confirmation_required",
+        `${input.actionLabel} requires explicit confirmation for ${missingSessionStateConfirmations.length} prior session-state mutation(s).`,
+        undefined,
+        {
+          blocking_session_state_mutations: blockingSessionStateMutations,
+        },
+      );
+    }
+
     throw new ChatServiceError(
-      "tool_replay_confirmation_required",
-      `Retry requires explicit confirmation for ${missingConfirmations.length} prior tool execution(s).`,
+      "replay_confirmation_required",
+      `${input.actionLabel} requires explicit confirmation for ${missingExecutionConfirmations.length} prior tool execution(s) and ${missingSessionStateConfirmations.length} session-state mutation(s).`,
       undefined,
       {
         blocking_executions: blockingExecutions,
+        blocking_session_state_mutations: blockingSessionStateMutations,
       },
     );
   }
@@ -1839,6 +2250,97 @@ export class ChatService {
       reason: evaluation.reason,
       ...(record.errorMessage ? { error_message: record.errorMessage } : {}),
     };
+  }
+
+  private toReplayBlockingSessionStateMutationDetail(
+    blocker: FirstPartyReplayBlocker,
+  ): ReplayBlockingSessionStateMutationDetail {
+    return {
+      mutation_id: blocker.mutationId,
+      state_namespace: blocker.stateNamespace,
+      target_slot: blocker.targetSlot,
+      replay_safety: blocker.replaySafety,
+      status: blocker.status,
+      reason: blocker.reason,
+    };
+  }
+
+  private loadFirstPartyStateContext(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    sourceFloorId?: string | null;
+    expectedSourceBranchId?: string | null;
+    resolutionMode?: FirstPartySceneResolutionMode;
+  }): FirstPartyStateContext {
+    return {
+      scene: this.loadFirstPartySceneContext(input),
+    };
+  }
+
+  private loadFirstPartySceneContext(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    sourceFloorId?: string | null;
+    expectedSourceBranchId?: string | null;
+    resolutionMode?: FirstPartySceneResolutionMode;
+  }): FirstPartySceneContext | null {
+    if (!this.firstPartyGameStateService) {
+      return null;
+    }
+
+    try {
+      return this.firstPartyGameStateService.loadSceneContext(input);
+    } catch (error) {
+      if (!(error instanceof FirstPartyGameStateServiceError)) {
+        throw error;
+      }
+
+      switch (error.code) {
+        case "first_party_scene_source_floor_not_found":
+          throw new ChatServiceError("source_floor_not_found", error.message, error);
+        case "first_party_scene_source_floor_not_committed":
+        case "first_party_scene_source_floor_branch_mismatch":
+          throw new ChatServiceError("invalid_state", error.message, error);
+        case "first_party_scene_payload_invalid":
+          throw new ChatServiceError(
+            "invalid_state",
+            `Managed scene state is invalid: ${error.message}`,
+            error,
+          );
+        default:
+          throw new ChatServiceError(
+            "invalid_state",
+            error.message,
+            error,
+          );
+      }
+    }
+  }
+
+  private buildFirstPartyStateDiagnostics(
+    firstPartyStateContext: FirstPartyStateContext | undefined,
+    phase: PromptRuntimeDiagnosticPhase,
+  ): PromptRuntimeDiagnostic[] {
+    const scene = firstPartyStateContext?.scene;
+    if (!scene) {
+      return [];
+    }
+
+    const floorMessage = scene.floorId ? ` at floor '${scene.floorId}'` : "";
+    const message = scene.present
+      ? `Managed scene context resolved from '${scene.source}'${floorMessage}.`
+      : scene.source === "none"
+        ? "Managed scene context is currently empty."
+        : `Managed scene context baseline from '${scene.source}' is empty${floorMessage}.`;
+
+    return [{
+      code: scene.present ? "managed_scene_context_loaded" : "managed_scene_context_empty",
+      message,
+      severity: "info",
+      phase,
+    }];
   }
 
   private toReplayBlockingExecutionDetailFromBlockedError(
@@ -2041,6 +2543,14 @@ export class ChatService {
     return new OwnedSessionRepository(this.db).getById(this.resolveAccountId(accountId), sessionId);
   }
 
+  private rethrowBranchLocalSnapshotError(error: unknown): never {
+    if (error instanceof BranchLocalSnapshotMissingError) {
+      throw new ChatServiceError(error.code, error.message, error, error.details);
+    }
+
+    throw error;
+  }
+
   private async resolvePromptRuntimePreviewVariables(args: {
     accountId: string;
     sessionId: string;
@@ -2078,7 +2588,7 @@ export class ChatService {
 
     if (args.inheritanceSource) {
       const localValues = toPromptRuntimePreviewJsonRecord(
-        new BranchLocalVariableSnapshotService(this.db).resolveSourceFloorLocalValues({
+        new BranchLocalVariableSnapshotService(this.db).requireSourceFloorLocalValues({
           accountId: args.accountId,
           sessionId: args.sessionId,
           sourceFloorId: args.inheritanceSource.floorId,
@@ -2147,7 +2657,7 @@ export class ChatService {
   private async requireRetryTargetFloor(
     floorId: string,
     accountId: string,
-  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "state">> {
+  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "parentFloorId" | "state">> {
     const targetFloor = new OwnedFloorRepository(this.db).getById(accountId, floorId);
     if (!targetFloor) {
       throw new ChatServiceError("floor_not_found", `Floor '${floorId}' not found`);
@@ -2166,13 +2676,14 @@ export class ChatService {
   private async revalidateRetryTargetFloor(
     floorId: string,
     accountId: string,
-    expected: Pick<typeof floors.$inferSelect, "sessionId" | "floorNo" | "branchId">,
-  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "state">> {
+    expected: Pick<typeof floors.$inferSelect, "sessionId" | "floorNo" | "branchId" | "parentFloorId">,
+  ): Promise<Pick<typeof floors.$inferSelect, "id" | "sessionId" | "floorNo" | "branchId" | "parentFloorId" | "state">> {
     const targetFloor = await this.requireRetryTargetFloor(floorId, accountId);
     if (
       targetFloor.sessionId !== expected.sessionId
       || targetFloor.floorNo !== expected.floorNo
       || targetFloor.branchId !== expected.branchId
+      || targetFloor.parentFloorId !== expected.parentFloorId
     ) {
       throw new ChatServiceError(
         "generation_target_stale",
@@ -2258,35 +2769,50 @@ export class ChatService {
     userMessageRef: PersistedMessageRef;
     history: ChatMessage[];
     request: RetryFloorRequest;
+    executionContext?: PromptRuntimeResolvedContext;
+    visibilityTrace?: PromptVisibilityTrace;
     accountId: string;
     abortSignal?: AbortSignal;
     runType: FloorRunType;
+    firstPartyStateContext?: FirstPartyStateContext;
   }): Promise<RetryFloorResult> {
-    const memorySummary = await this.retrieveMemorySummary(args.sessionId, args.accountId, args.floorId);
+    const memorySummary = await this.retrieveMemorySummary(args.sessionId, args.accountId, args.floorId, args.branchId);
     await this.initializeFloorRun(args.sessionId, args.floorId, args.runType);
     try {
 
     const resolvedTurnModels = await this.resolveTurnModelsForSession(args.sessionId, args.accountId);
     this.assertNarratorSlotEnabled(resolvedTurnModels);
-    const sessionInfo = this.buildSessionPromptInfo(args.session, resolvedTurnModels);
-    const promptRuntimePolicies = this.resolveEffectivePromptRuntimePolicies(args.session.metadataJson, args.request);
+    const sessionInfo = this.buildSessionPromptInfo(args.session, resolvedTurnModels, args.firstPartyStateContext);
+    const executionContext = args.executionContext ?? resolvePromptRuntimeExecutionContext({
+      sessionId: args.sessionId,
+      metadataJson: args.session.metadataJson,
+      branchId: args.branchId ?? "main",
+      branchExists: true,
+      historySourceBranchId: args.branchId ?? "main",
+      historySourceMode: "existing_branch",
+      request: this.buildPromptRuntimeRequestPolicy(args.request),
+    });
+    const history = this.applyPromptRuntimeHistorySourceSelection(args.history, executionContext.effectivePolicy?.sourceSelection);
+    const effectiveMemorySummary = executionContext.resolvedPolicy.sourceSelection.memory.enabled === false ? undefined : memorySummary;
     const narratorParams = this.getSlotGenerationParams(resolvedTurnModels, "narrator");
     await this.trackFloorRunPhase(args.floorId, "semantic_resolved");
     await this.trackFloorRunPhase(args.floorId, "prechecked");
     const includeRuntimeTrace = args.request.debugOptions?.includeRuntimeTrace === true;
     const assistantPrefillStrategy = this.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
     const maxContextTokensOverride = this.resolveMaxContextTokensOverride(args.request.generationParams, narratorParams);
+    const maxOutputTokensOverride = this.resolveMaxOutputTokensOverride(args.request.generationParams, narratorParams);
 
     const assembled = await assemblePrompt(
       this.db,
       args.accountId,
       sessionInfo,
-      args.history,
+      history,
       args.userMessage,
       this.tokenCounter,
-      memorySummary,
+      effectiveMemorySummary,
       {
         maxContextTokensOverride,
+        maxOutputTokensOverride,
         variableContext: {
           sessionId: args.sessionId,
           branchId: args.branchId,
@@ -2296,6 +2822,8 @@ export class ChatService {
         includeDebug: includeRuntimeTrace,
         includeWorldbookMatchTrace: includeRuntimeTrace && args.request.debugOptions?.includeWorldbookMatches === true,
         runKind: this.resolvePromptRunKind(args.runType),
+        budget: executionContext.effectivePolicy?.budget,
+        sourceSelection: executionContext.effectivePolicy?.sourceSelection,
         assistantPrefillStrategy,
       }
     );
@@ -2305,15 +2833,28 @@ export class ChatService {
       assembled.messages,
       assembled.sendDirectives,
       assistantPrefillStrategy,
-      promptRuntimePolicies.structure,
-      promptRuntimePolicies.delivery,
+      executionContext.effectivePolicy?.structure,
+      executionContext.effectivePolicy?.delivery,
     );
+    const inspection = await this.buildPromptRuntimeInspection({
+      accountId: args.accountId,
+      context: executionContext,
+      phase: "assemble",
+      history,
+      visibilityTrace: args.visibilityTrace,
+      memorySummary: effectiveMemorySummary,
+      assembled,
+      worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
+      extraDiagnostics: this.buildFirstPartyStateDiagnostics(args.firstPartyStateContext, "assemble"),
+    });
     const promptDebug = this.buildLivePromptDebugArtifacts({
       floorId: args.floorId,
       sessionId: args.sessionId,
       userMessage: args.userMessage,
       assembled,
       materialized,
+      inspection,
+      visibilityTrace: args.visibilityTrace,
       debugOptions: args.request.debugOptions,
     });
 
@@ -2336,6 +2877,7 @@ export class ChatService {
       args.sessionId,
       args.accountId,
       args.floorId,
+      args.branchId,
       args.userMessage,
       turnConfig
     );
@@ -2367,8 +2909,10 @@ export class ChatService {
       accountId: args.accountId,
       turnInput,
       promptSnapshot: promptDebug.promptSnapshotRecord,
-      macroStagedMutations: assembled.promptSnapshot.macroStagedMutations,
+      promptRuntimeInspection: promptDebug.inspection,
+      macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
       resolvedTurnModels,
+      runType: args.runType,
       orchestrationFailureCode: "orchestration_failed",
       orchestrationFailureMessage: "Turn orchestration failed",
       commitFailureMessage: "Turn commit failed",
@@ -2456,12 +3000,13 @@ export class ChatService {
       | "userSnapshotJson"
     >,
     resolvedTurnModels: ResolvedTurnModels,
+    firstPartyStateContext?: FirstPartyStateContext,
   ): SessionPromptInfo {
     return {
       presetId: resolvedTurnModels.narrator?.presetId ?? session.presetId,
       worldbookProfileId: session.worldbookProfileId,
       regexProfileId: session.regexProfileId,
-      metadataJson: session.metadataJson,
+      metadataJson: mergeSessionMetadataWithFirstPartyState(session.metadataJson, firstPartyStateContext),
       characterSnapshotJson: session.characterSnapshotJson,
       promptMode: session.promptMode,
       userSnapshotJson: session.userSnapshotJson,
@@ -2593,6 +3138,14 @@ export class ChatService {
       ?? normalizePositiveInt(narratorParams?.maxContextTokens);
   }
 
+  private resolveMaxOutputTokensOverride(
+    requestParams?: Partial<GenerationParams>,
+    narratorParams?: Partial<GenerationParams>,
+  ): number | undefined {
+    return normalizePositiveInt(requestParams?.maxOutputTokens)
+      ?? normalizePositiveInt(narratorParams?.maxOutputTokens);
+  }
+
   /**
    * 从 MemoryStore 检索可注入的记忆上下文。
    * 如果未配置 MemoryStore 或无可用记忆，返回 undefined。
@@ -2601,6 +3154,7 @@ export class ChatService {
     sessionId: string,
     accountId: string,
     floorId?: string,
+    branchId?: string,
   ): Promise<string | undefined> {
     if (!this.memoryStore) return undefined;
 
@@ -2608,6 +3162,7 @@ export class ChatService {
       const scopeContext = {
         accountId,
         sessionId,
+        ...(branchId ? { branchId } : {}),
         ...(floorId ? { floorId } : {}),
       };
       const injection = await this.memoryStore.prepareInjection(
@@ -2790,15 +3345,315 @@ export class ChatService {
     request: {
       structure?: PromptStructurePolicy;
       delivery?: PromptDeliveryPolicy;
+      budget?: PromptBudgetPolicy;
+      sourceSelection?: PromptSourceSelectionPolicy;
     },
+    branchId = "main",
   ): {
     structure?: PromptStructurePolicy;
     delivery?: PromptDeliveryPolicy;
+    budget?: PromptBudgetPolicy;
+    sourceSelection?: PromptSourceSelectionPolicy;
   } {
     const { persistentPolicy } = readPromptRuntimePersistentPolicy(metadataJson);
+    const { persistentPolicy: branchPersistentPolicy } = readPromptRuntimeBranchPersistentPolicy(metadataJson, branchId);
+    const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(
+      persistentPolicy,
+      branchPersistentPolicy,
+      this.buildPromptRuntimeRequestPolicy(request),
+    );
+
     return {
-      structure: mergePromptStructurePolicy(persistentPolicy?.structure, request.structure),
-      delivery: mergePromptDeliveryPolicy(persistentPolicy?.delivery, request.delivery),
+      structure: effectivePersistentPolicy?.structure,
+      delivery: effectivePersistentPolicy?.delivery,
+      budget: effectivePersistentPolicy?.budget,
+      sourceSelection: effectivePersistentPolicy?.sourceSelection,
+    };
+  }
+
+  private buildPromptRuntimeRequestPolicy(request: {
+    structure?: PromptStructurePolicy;
+    delivery?: PromptDeliveryPolicy;
+    budget?: PromptBudgetPolicy;
+    sourceSelection?: PromptSourceSelectionPolicy;
+  }): PromptRuntimePersistentPolicy | undefined {
+    if (!request.structure && !request.delivery && !request.budget && !request.sourceSelection) {
+      return undefined;
+    }
+
+    return {
+      ...(request.structure ? { structure: request.structure } : {}),
+      ...(request.delivery ? { delivery: request.delivery } : {}),
+      ...(request.budget ? { budget: request.budget } : {}),
+      ...(request.sourceSelection ? { sourceSelection: request.sourceSelection } : {}),
+    };
+  }
+
+  private async loadPromptRuntimeHistoryWindow(args: {
+    sessionId: string;
+    branchId: string;
+    beforeFloorNo?: number;
+    visibility: PromptVisibilityPolicy;
+    sourceSelection?: PromptSourceSelectionPolicy;
+  }): Promise<{ history: ChatMessage[]; visibilityTrace: PromptVisibilityTrace }> {
+    const [history, visibilityTrace] = await Promise.all([
+      this.historyLoader.loadHistory(
+        args.sessionId,
+        args.branchId,
+        args.beforeFloorNo,
+        args.visibility,
+      ),
+      this.historyLoader.previewVisibility(
+        args.sessionId,
+        args.branchId,
+        args.beforeFloorNo,
+        args.visibility,
+      ),
+    ]);
+
+    return {
+      history: this.applyPromptRuntimeHistorySourceSelection(history, args.sourceSelection),
+      visibilityTrace,
+    };
+  }
+
+  private applyPromptRuntimeHistorySourceSelection(
+    history: ChatMessage[],
+    sourceSelection?: PromptSourceSelectionPolicy,
+  ): ChatMessage[] {
+    const maxMessages = normalizePositiveInt(sourceSelection?.history?.maxMessages);
+    if (!maxMessages || history.length <= maxMessages) {
+      return history;
+    }
+
+    return history.slice(-maxMessages);
+  }
+
+  private buildPromptRuntimeTrimReasons(
+    args: {
+      prunedByGroup?: Record<string, number>;
+      allocatorTrimReasons?: PromptTrimReason[];
+    },
+  ): PromptTrimReason[] | undefined {
+    if (args.allocatorTrimReasons && args.allocatorTrimReasons.length > 0) {
+      return args.allocatorTrimReasons;
+    }
+
+    const trimReasons = Object.entries(args.prunedByGroup ?? {})
+      .filter(([, prunedTokenCount]) => prunedTokenCount > 0)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([group, prunedTokenCount]) => ({
+        group,
+        reason: "budget_exceeded" as const,
+        prunedTokenCount,
+        detail: `Prompt runtime pruned ${prunedTokenCount} tokens from budget group '${resolvePromptRuntimeBudgetGroupTraceLabel(group)}'.`,
+      }));
+
+    return trimReasons.length > 0 ? trimReasons : undefined;
+  }
+
+  private buildPromptRuntimeSourceSelectionTrace(args: {
+    sourceSelection?: PromptSourceSelectionPolicy;
+    history: ChatMessage[];
+    visibilityTrace?: PromptRuntimeTrace["visibility"];
+    memorySummary?: string;
+    promptSnapshot?: AssembleResult["promptSnapshot"];
+    worldbookHitCount?: number;
+    budgetByGroup?: Record<string, number>;
+    prunedByGroup?: Record<string, number>;
+  }): PromptRuntimeTrace["sourceSelection"] | undefined {
+    const excludedSources: PromptSourceExclusionReason[] = [];
+    const seen = new Set<string>();
+    const pushExcludedSource = (
+      source: PromptSourceExclusionReason["source"],
+      reason: PromptSourceExclusionReason["reason"],
+      detail?: string,
+    ) => {
+      const key = `${source}:${reason}`;
+      if (seen.has(key)) {
+        return;
+      }
+
+      seen.add(key);
+      excludedSources.push({
+        source,
+        reason,
+        ...(detail ? { detail } : {}),
+      });
+    };
+
+    if (args.sourceSelection?.memory?.enabled === false && args.memorySummary?.trim()) {
+      pushExcludedSource("memory", "disabled_by_policy", "sourceSelection.memory.enabled=false removed memory summary injection.");
+    }
+
+    if (
+      args.sourceSelection?.worldbook?.enabled === false
+      && args.promptSnapshot
+      && hasPromptRuntimeWorldbookSource(args.promptSnapshot)
+    ) {
+      pushExcludedSource("worldbook", "disabled_by_policy", "sourceSelection.worldbook.enabled=false disabled worldbook injection.");
+    } else if (
+      args.promptSnapshot
+      && hasPromptRuntimeWorldbookSource(args.promptSnapshot)
+      && (args.worldbookHitCount ?? 0) === 0
+    ) {
+      pushExcludedSource("worldbook", "not_triggered", "No worldbook entry matched the current visible prompt context.");
+    }
+
+    if (
+      args.sourceSelection?.examples?.enabled === false
+      && args.promptSnapshot
+      && hasPromptRuntimeExamplesSource(args.promptSnapshot)
+    ) {
+      pushExcludedSource("examples", "disabled_by_policy", "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly.");
+    }
+
+    if (args.history.length === 0 && (args.visibilityTrace?.filteredFloorNos?.length ?? 0) > 0) {
+      pushExcludedSource(
+        "history",
+        "visibility_filtered",
+        `Visibility filtered ${args.visibilityTrace!.filteredFloorNos!.length} floor(s) from the available history window.`,
+      );
+    }
+
+    for (const [group, prunedTokenCount] of Object.entries(args.prunedByGroup ?? {})) {
+      if (prunedTokenCount <= 0) {
+        continue;
+      }
+
+      const source = resolvePromptRuntimeBudgetGroupExclusionSource(group);
+      if (!source) {
+        continue;
+      }
+
+      const remainingTokenCount = args.budgetByGroup?.[group] ?? 0;
+      if (remainingTokenCount === 0) {
+        const groupLabel = resolvePromptRuntimeBudgetGroupTraceLabel(group);
+        pushExcludedSource(source, "budget_trimmed", `Budget trimming removed all remaining '${groupLabel}' content from the prompt.`);
+      }
+    }
+
+    return excludedSources.length > 0 ? { excludedSources } : undefined;
+  }
+
+  private buildPromptRuntimeSectionStats(
+    bySection?: Record<string, number>,
+  ): PromptRuntimeSectionStat[] {
+    return Object.entries(bySection ?? {})
+      .filter(([, tokenCount]) => Number.isFinite(tokenCount) && tokenCount > 0)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([sectionName, tokenCount]) => ({
+        sectionName,
+        tokenCount,
+      }));
+  }
+
+  private async buildPromptRuntimeInspection(args: ({
+    accountId: string;
+    context: PromptRuntimeResolvedContext;
+    phase: PromptRuntimeDiagnosticPhase;
+    history: ChatMessage[];
+    visibilityTrace?: PromptVisibilityTrace;
+    memorySummary?: string;
+    assembled?: AssembleResult;
+    worldbookHitCount?: number;
+    extraDiagnostics?: PromptRuntimeDiagnostic[];
+  } | {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    branchExists: boolean;
+    sourceFloorId?: string | null;
+    historySourceBranchId: string;
+    historySourceMode: PromptRuntimeHistorySourceMode;
+    sessionPersistentPolicy?: PromptRuntimeResolvedContext["sessionPersistentPolicy"];
+    sessionPolicyWarnings?: string[];
+    branchPersistentPolicy?: PromptRuntimeResolvedContext["branchPersistentPolicy"];
+    branchPolicyWarnings?: string[];
+    requestPolicy?: PromptRuntimeResolvedContext["requestPolicy"];
+    resolvedPolicy?: ResolvedPromptRuntimePolicy;
+    phase: PromptRuntimeDiagnosticPhase;
+    history: ChatMessage[];
+    visibilityTrace?: PromptVisibilityTrace;
+    memorySummary?: string;
+    assembled?: AssembleResult;
+    worldbookHitCount?: number;
+    extraDiagnostics?: PromptRuntimeDiagnostic[];
+  })): Promise<PromptRuntimeInspectionResult> {
+    const context: PromptRuntimeResolvedContext = "context" in args
+      ? args.context
+      : {
+          scope: {
+            sessionId: args.sessionId,
+            targetBranchId: args.branchId,
+            branchExists: args.branchExists,
+            sourceFloorId: args.sourceFloorId ?? null,
+            historySourceBranchId: args.historySourceBranchId,
+            historySourceMode: args.historySourceMode,
+          },
+          sessionPersistentPolicy: args.sessionPersistentPolicy,
+          sessionPolicyWarnings: args.sessionPolicyWarnings ?? [],
+          branchPersistentPolicy: args.branchPersistentPolicy,
+          branchPolicyWarnings: args.branchPolicyWarnings ?? [],
+          requestPolicy: args.requestPolicy,
+          effectivePolicy: mergePromptRuntimePersistentPolicies(
+            args.sessionPersistentPolicy,
+            args.branchPersistentPolicy,
+            args.requestPolicy,
+          ),
+          resolvedPolicy: args.resolvedPolicy
+            ?? buildResolvedPromptRuntimePolicy(
+              args.sessionPersistentPolicy,
+              args.branchPersistentPolicy,
+              args.requestPolicy,
+            ),
+        };
+    const warnings = buildPromptRuntimeWarnings(context.effectivePolicy, [
+      ...context.sessionPolicyWarnings,
+      ...context.branchPolicyWarnings,
+    ]);
+    const diagnostics = [
+      ...buildPromptRuntimeDiagnostics(warnings, {
+        branchId: context.scope.targetBranchId,
+        phase: args.phase,
+      }),
+      ...(args.extraDiagnostics ?? []),
+    ];
+    const trimReasons = this.buildPromptRuntimeTrimReasons({
+      prunedByGroup: args.assembled?.tokenUsage.prunedByGroup,
+      allocatorTrimReasons: args.assembled?.tokenUsage.allocator?.trimReasons,
+    }) ?? [];
+    const sourceSelectionTrace = this.buildPromptRuntimeSourceSelectionTrace({
+      sourceSelection: context.resolvedPolicy.sourceSelection,
+      history: args.history,
+      visibilityTrace: args.visibilityTrace,
+      memorySummary: args.memorySummary,
+      promptSnapshot: args.assembled?.promptSnapshot,
+      worldbookHitCount: args.worldbookHitCount,
+      budgetByGroup: args.assembled?.tokenUsage.byGroup,
+      prunedByGroup: args.assembled?.tokenUsage.prunedByGroup,
+    });
+    const assets = await new PromptRuntimeControlService(this.db).getAssets(context.scope.sessionId, args.accountId);
+
+    return {
+      scope: context.scope,
+      assets,
+      resolvedPolicy: context.resolvedPolicy,
+      sourceMap: buildPromptRuntimeSourceMap({
+        sessionPolicy: context.sessionPersistentPolicy,
+        branchPolicy: context.branchPersistentPolicy,
+        requestPolicy: context.requestPolicy,
+        resolvedPolicy: context.resolvedPolicy,
+        history: {
+          sourceBranchId: context.scope.historySourceBranchId,
+          sourceMode: context.scope.historySourceMode,
+        },
+      }) ?? {},
+      diagnostics,
+      trimReasons,
+      excludedSources: sourceSelectionTrace?.excludedSources ?? [],
+      sectionStats: this.buildPromptRuntimeSectionStats(args.assembled?.tokenUsage.bySection),
+      limitations: [...PROMPT_RUNTIME_LIMITATIONS],
     };
   }
 
@@ -2808,58 +3663,42 @@ export class ChatService {
     userMessage: string;
     assembled: AssembleResult;
     materialized: MaterializePromptRuntimeMessagesResult;
+    inspection: PromptRuntimeInspectionResult;
+    visibilityTrace?: PromptVisibilityTrace;
     debugOptions?: PromptLiveDebugOptions;
   }): {
     availableForReply: number;
-    promptSnapshotRecord: ReturnType<typeof buildPromptSnapshotRecord>;
+    inspection: PromptRuntimeInspectionResult;
+    promptSnapshotRecord: NonNullable<PromptRuntimeExecutionResult["promptSnapshotRecord"]>;
     promptSnapshot?: PromptSnapshotPreview;
     runtimeTrace?: PromptRuntimeTrace;
   } {
-    const maxPromptTokens = args.assembled.tokenUsage.total + args.assembled.tokenUsage.availableForReply;
-    const tokenEstimate = args.materialized.messages.reduce(
-      (sum, message) => sum + this.tokenCounter.count(message.content),
-      0,
-    );
-    const availableForReply = Math.max(0, maxPromptTokens - tokenEstimate);
-    const snapshot = {
-      ...args.assembled.promptSnapshot,
-      promptDigest: createPromptDigestPreview(args.materialized.messages),
-      tokenEstimate,
-    };
-    const promptSnapshotRecord = buildPromptSnapshotRecord({
+    const execution = buildPromptRuntimeExecutionResult({
+      tokenCounter: this.tokenCounter,
+      userMessage: args.userMessage,
       floorId: args.floorId,
       sessionId: args.sessionId,
-      snapshot,
+      includeRuntimeTrace: args.debugOptions?.includeRuntimeTrace,
+      artifacts: {
+        inspection: args.inspection,
+        assembled: args.assembled,
+        materialized: args.materialized,
+        visibilityTrace: args.visibilityTrace,
+      },
     });
 
-    let runtimeTrace: PromptRuntimeTrace | undefined;
-    if (args.debugOptions?.includeRuntimeTrace && args.assembled.debug) {
-      const preprocessedUserMessage = args.assembled.preProcess
-        ? args.assembled.preProcess([{ role: "user", content: args.userMessage }])[0]?.content
-        : args.userMessage;
-      const budgetTrace = buildPromptRuntimeBudgetTrace({
-        byGroup: args.assembled.tokenUsage.byGroup,
-        prunedByGroup: args.assembled.tokenUsage.prunedByGroup,
-      });
-      runtimeTrace = {
-        ...(budgetTrace ? { budgets: budgetTrace } : {}),
-        ...buildPromptRuntimeTrace({ debug: args.assembled.debug, preprocessedUserMessage }),
-        ...(args.materialized.structureTrace ? { structure: args.materialized.structureTrace } : {}),
-        delivery: args.materialized.deliveryTrace,
-      };
-    }
-
     return {
-      availableForReply,
-      promptSnapshotRecord,
-      ...(args.debugOptions?.includePromptSnapshot
+      availableForReply: execution.availableForReply ?? 0,
+      inspection: args.inspection,
+      promptSnapshotRecord: execution.promptSnapshotRecord!,
+      ...(args.debugOptions?.includePromptSnapshot && execution.promptSnapshotPreview
         ? {
-            promptSnapshot: buildPromptSnapshotPreview(snapshot),
+            promptSnapshot: execution.promptSnapshotPreview,
           }
         : {}),
-      ...(runtimeTrace
+      ...(execution.runtimeTrace
         ? {
-            runtimeTrace,
+            runtimeTrace: execution.runtimeTrace,
           }
         : {}),
     };
@@ -3047,6 +3886,7 @@ export class ChatService {
     sessionId: string,
     accountId: string,
     floorId: string,
+    branchId: string | undefined,
     currentFloorContent: string,
     config?: TurnConfig,
   ): Promise<TurnInput["consolidationContext"] | undefined> {
@@ -3064,7 +3904,7 @@ export class ChatService {
     }
 
     try {
-      const scopeRefs = this.memoryScopeResolver.resolveVisibleRefs({ accountId, sessionId, floorId });
+      const scopeRefs = this.memoryScopeResolver.resolveVisibleRefs({ accountId, sessionId, branchId, floorId });
       const [recentSummaryItems, existingFacts] = await Promise.all([
         this.memoryStore.query({
           scopeRefs,
@@ -3156,6 +3996,8 @@ export class ChatService {
     sourceFloorId?: string
   ): Promise<{
     branchExists: boolean;
+    historySourceBranchId: string;
+    historySourceMode: "existing_branch" | "source_floor_branch" | "main_fallback";
     nextFloorNo: number;
     parentFloorId: string | null;
     inheritanceSource?: { floorId: string; branchId: string };
@@ -3178,6 +4020,8 @@ export class ChatService {
     if (lastFloorInBranch) {
       return {
         branchExists: true,
+        historySourceBranchId: branchId,
+        historySourceMode: "existing_branch",
         nextFloorNo: lastFloorInBranch.floorNo + 1,
         parentFloorId: lastCommittedFloorInBranch?.id
           ?? lastFloorInBranch.parentFloorId
@@ -3229,6 +4073,8 @@ export class ChatService {
 
     return {
       branchExists: false,
+      historySourceBranchId: sourceFloor?.branchId ?? "main",
+      historySourceMode: sourceFloorId ? "source_floor_branch" : "main_fallback",
       nextFloorNo: (sourceFloor?.floorNo ?? -1) + 1,
       parentFloorId: sourceFloor?.id ?? null,
       ...(sourceFloor
@@ -3352,6 +4198,72 @@ function normalizeBranchId(value: string | undefined): string {
   }
 
   return normalized;
+}
+
+function mergeSessionMetadataWithFirstPartyState(
+  metadataJson: string | null,
+  firstPartyStateContext?: FirstPartyStateContext,
+): string | null {
+  const scene = firstPartyStateContext?.scene;
+  if (!scene) {
+    return metadataJson;
+  }
+
+  const parsed = parseJsonRecord(metadataJson);
+  if (metadataJson !== null && parsed === null) {
+    return metadataJson;
+  }
+
+  const nextMetadata = parsed ?? {};
+  const currentFirstPartyState = asJsonRecord(nextMetadata.first_party_state) ?? {};
+  return JSON.stringify({
+    ...nextMetadata,
+    first_party_state: {
+      ...currentFirstPartyState,
+      scene: buildManagedSceneMetadata(scene),
+    },
+  });
+}
+
+function buildManagedSceneMetadata(scene: FirstPartySceneContext): Record<string, unknown> {
+  return {
+    namespace: scene.namespace,
+    slot: scene.slot,
+    resolution_mode: scene.resolutionMode,
+    source: scene.source,
+    present: scene.present,
+    schema_version: scene.schemaVersion,
+    floor_id: scene.floorId,
+    updated_at: scene.updatedAt,
+    source_mutation_ids: [...scene.sourceMutationIds],
+  };
+}
+
+function parseJsonRecord(raw: string | null): Record<string, unknown> | null {
+  if (raw === null) {
+    return {};
+  }
+
+  try {
+    return asJsonRecord(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function asJsonRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function hasPromptRuntimeWorldbookSource(promptSnapshot: AssembleResult["promptSnapshot"]): boolean {
+  return promptSnapshot.worldbook !== null || promptSnapshot.character?.characterBook !== undefined;
+}
+
+function hasPromptRuntimeExamplesSource(promptSnapshot: AssembleResult["promptSnapshot"]): boolean {
+  return typeof promptSnapshot.character?.exampleDialogue === "string"
+    && promptSnapshot.character.exampleDialogue.trim().length > 0;
 }
 
 function resolveTurnExecutionPolicy(policy?: TurnExecutionPolicyOverrides): TurnExecutionPolicy {

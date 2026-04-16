@@ -52,6 +52,7 @@ export default defineConfig({
           { text: 'Client Helpers', link: '/sdk/client-helpers' },
         ],
       },
+      { text: 'Agent', link: '/agent/' },
       { text: '进度', link: '/progress/' },
     ],
 
@@ -159,6 +160,22 @@ export default defineConfig({
           text: 'Client Helpers',
           items: [
             { text: 'Client Helpers', link: '/sdk/client-helpers' },
+          ],
+        },
+      ],
+      '/agent/': [
+        {
+          text: 'Agent 与 Skill',
+          items: [
+            { text: '总入口', link: '/agent/' },
+            {
+              text: 'Skill',
+              items: [
+                { text: 'Skill 索引', link: '/agent/skills/' },
+                { text: '客户端接入与升级', link: '/agent/skills/tavern-client-integration' },
+                { text: '参与开发与协作', link: '/agent/skills/tavern-project-contributing' },
+              ],
+            },
           ],
         },
       ],

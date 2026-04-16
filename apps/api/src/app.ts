@@ -69,8 +69,12 @@ import {
   purgeDeletedClientDataDomains,
 } from "./client-data/client-data-maintenance.js";
 
-import { PromptRuntimeControlService } from "./services/prompt-runtime-control-service.js";
+import { PromptRuntimeControlService, PromptRuntimeControlServiceError } from "./services/prompt-runtime-control-service.js";
 import { ToolWorker } from "./services/tool-worker.js";
+import {
+  FirstPartyGameStateService,
+  SessionStateService,
+} from "./session-state/index.js";
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
 const API_VERSION: string = _pkgJson.version ?? "unknown";
@@ -98,6 +102,35 @@ function toValidationDetails(error: { validation?: FastifyValidationIssue[] }) {
     message: issue.message ?? "Invalid value",
     code: issue.keyword ?? "validation"
   }));
+}
+
+function mapSqliteConstraintErrorCode(message: string): { code: string; publicMessage: string } | null {
+  if (message.includes("client_data_domain_owner_name_uq") || message.includes("client_data_domain.account_id, client_data_domain.owner_type, client_data_domain.owner_id, client_data_domain.domain_name")) {
+    return {
+      code: "client_data_domain_name_conflict",
+      publicMessage: "Client data domain owner/name already exists",
+    };
+  }
+  if (message.includes("client_data_collection_domain_name_uq") || message.includes("client_data_collection.domain_id, client_data_collection.collection_name")) {
+    return {
+      code: "client_data_collection_name_conflict",
+      publicMessage: "Client data collection name already exists in domain",
+    };
+  }
+  if (message.includes("client_data_domain_grant_unique_uq") || message.includes("client_data_domain_grant.domain_id, client_data_domain_grant.grantee_owner_type, client_data_domain_grant.grantee_owner_id")) {
+    return {
+      code: "client_data_domain_grant_conflict",
+      publicMessage: "Client data domain grant already exists for grantee owner",
+    };
+  }
+  if (message.includes("client_data_managed_domain_account_manager_host_namespace_uq") || message.includes("client_data_managed_domain.account_id, client_data_managed_domain.manager_kind, client_data_managed_domain.host_type, client_data_managed_domain.host_id, client_data_managed_domain.state_namespace")) {
+    return {
+      code: "client_data_managed_domain_conflict",
+      publicMessage: "Client data managed domain registry already exists for host namespace",
+    };
+  }
+
+  return null;
 }
 
 export type BuildAppOptions = {
@@ -168,7 +201,7 @@ export type BuildAppResult = {
 
 export type MemoryMaintenanceScopeRef = {
   accountId: string;
-  scope: "global" | "chat" | "floor";
+  scope: "global" | "chat" | "branch" | "floor";
   scopeId: string;
 };
 
@@ -313,10 +346,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
     if (code?.startsWith("SQLITE_CONSTRAINT")) {
+      const mappedConstraint = mapSqliteConstraintErrorCode(errorMessage);
+      if (mappedConstraint) {
+        return sendError(reply, 409, mappedConstraint.code, mappedConstraint.publicMessage, {
+          sqlite_code: code,
+          message: errorMessage,
+        });
+      }
       return sendError(reply, 409, "constraint_error", "Database constraint violation", {
         sqlite_code: code,
         message: errorMessage
       });
+    }
+
+    if (error instanceof PromptRuntimeControlServiceError) {
+      return sendError(reply, error.statusCode, error.code, error.message);
     }
 
     if (error instanceof ResourceBusyError || isSqliteBusyError(error)) {
@@ -424,6 +468,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let toolRuntimeComponents: ReturnType<typeof createDefaultToolRuntimeComponents> | undefined;
   let floorRunService: FloorRunService | undefined;
   let promptRuntimePreviewService: Pick<ChatService, "previewPromptRuntimeText"> | undefined;
+  let sessionStateService: SessionStateService | undefined;
+  let firstPartyGameStateService: FirstPartyGameStateService | undefined;
 
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
@@ -444,6 +490,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     );
 
     floorRunService = new FloorRunService(database.db, orchestrationContext.eventBus);
+  }
+
+  if (options.enableClientData === true && options.clientData) {
+    sessionStateService = new SessionStateService(database.db, {
+      clientData: options.clientData,
+    });
+    firstPartyGameStateService = new FirstPartyGameStateService(database.db, sessionStateService);
   }
 
   const mcpService = new McpService(database.db);
@@ -653,6 +706,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
           commitRetry: { maxRetries: options.turnCommitMaxRetries, baseDelayMs: options.turnCommitRetryBaseDelayMs },
         },
         accountMode,
+        sessionStateService,
+        firstPartyGameStateService,
         defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
       }
     );

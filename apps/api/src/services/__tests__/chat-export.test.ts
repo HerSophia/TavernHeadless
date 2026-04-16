@@ -7,7 +7,12 @@ import { createDatabase, type AppDb } from '../../db/client.js';
 import { accounts, sessions, floors, messagePages, memoryEdges, memoryItems, messages, variables } from '../../db/schema.js';
 import { DEFAULT_ADMIN_ACCOUNT_ID } from '../../accounts/constants.js';
 import { stringifyJsonField } from '../../lib/http.js';
-import { TH_CHAT_SPEC, TH_CHAT_SPEC_VERSION, buildBranchVariableScopeId } from '@tavern/shared';
+import {
+  TH_CHAT_SPEC,
+  TH_CHAT_SPEC_VERSION,
+  buildBranchMemoryScopeId,
+  buildBranchVariableScopeId,
+} from '@tavern/shared';
 import {
   serializeSessionToThChat,
   serializeSessionToStJsonl,
@@ -366,6 +371,7 @@ describe('serializeSessionToThChat', () => {
   it('exports memory v2 metadata and extended relations in thchat format', () => {
     const { sessionId, floorId, msg1Id } = seedMinimalSession(db);
     const microMemoryId = nanoid();
+    const branchMemoryId = nanoid();
     const macroMemoryId = nanoid();
 
     db.insert(memoryItems).values([
@@ -392,6 +398,30 @@ describe('serializeSessionToThChat', () => {
         derivedFromCount: null,
         createdAt: NOW,
         updatedAt: NOW,
+      },
+      {
+        id: branchMemoryId,
+        accountId: ACCOUNT_ID,
+        scope: 'branch',
+        scopeId: buildBranchMemoryScopeId(sessionId, 'main'),
+        type: 'fact',
+        summaryTier: null,
+        contentJson: JSON.stringify({ text: 'branch fact' }),
+        factKey: 'branch_fact',
+        importance: 0.7,
+        confidence: 1,
+        sourceFloorId: floorId,
+        sourceMessageId: msg1Id,
+        status: 'active',
+        lifecycleStatus: 'active',
+        sourceJobId: 'memory-job:ingest_turn:floor-1',
+        tokenCountEstimate: 32,
+        lastUsedAt: NOW + 1,
+        coverageStartFloorNo: null,
+        coverageEndFloorNo: null,
+        derivedFromCount: null,
+        createdAt: NOW,
+        updatedAt: NOW + 5,
       },
       {
         id: macroMemoryId,
@@ -433,6 +463,7 @@ describe('serializeSessionToThChat', () => {
     expect(result.data.memories).toEqual({
       items: expect.arrayContaining([
         expect.objectContaining({ _original_id: microMemoryId, summary_tier: 'micro', lifecycle_status: 'active', source_job_id: 'memory-job:ingest_turn:floor-1', token_count_estimate: 48 }),
+        expect.objectContaining({ _original_id: branchMemoryId, scope: 'branch', scope_id_ref: 'main', type: 'fact', content: { text: 'branch fact' } }),
         expect.objectContaining({ _original_id: macroMemoryId, summary_tier: 'macro', lifecycle_status: 'compacted', source_job_id: 'memory-job:compact_macro:chat:session-1:scope-micro-3', coverage_start_floor_no: 0, coverage_end_floor_no: 4, derived_from_count: 3 }),
       ]),
       edges: [

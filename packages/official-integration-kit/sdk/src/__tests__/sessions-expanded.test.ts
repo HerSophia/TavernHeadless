@@ -194,6 +194,25 @@ describe("sdk sessions expanded resource", () => {
             prompt_digest: "digest-1",
             token_estimate: 42,
           },
+          runtime_trace: {
+            budgets: {
+              by_group: [{ group: "section:main", token_count: 24, estimated_token_count: 32, allocated_token_count: 24, pruned_token_count: 8 }],
+              trim_reasons: [{ group: "section:main", reason: "budget_exceeded", pruned_token_count: 8, detail: "Prompt runtime pruned 8 tokens from budget group 'section:main'." }],
+            },
+            source_selection: {
+              excluded_sources: [
+                {
+                  source: "history",
+                  reason: "visibility_filtered",
+                  detail: "Visibility filtered 2 floor(s) from the available history window.",
+                },
+              ],
+            },
+            visibility: {
+              hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
+              filtered_floor_nos: [1, 2],
+            },
+          },
           token_estimate: 42,
         },
       }),
@@ -206,6 +225,8 @@ describe("sdk sessions expanded resource", () => {
         debugOptions: {
           includeWorldbookMatches: true,
         },
+        budget: { maxInputTokens: 4096, reservedCompletionTokens: 1024 },
+        sourceSelection: { history: { mode: "windowed", maxMessages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
         message: "hello",
         promptIntent: "continue",
         sessionId: "session-1",
@@ -285,6 +306,25 @@ describe("sdk sessions expanded resource", () => {
         promptDigest: "digest-1",
         tokenEstimate: 42,
       },
+      runtimeTrace: {
+        budgets: {
+          byGroup: [{ group: "section:main", tokenCount: 24, estimatedTokenCount: 32, allocatedTokenCount: 24, prunedTokenCount: 8 }],
+          trimReasons: [{ group: "section:main", reason: "budget_exceeded", prunedTokenCount: 8, detail: "Prompt runtime pruned 8 tokens from budget group 'section:main'." }],
+        },
+        sourceSelection: {
+          excludedSources: [
+            {
+              source: "history",
+              reason: "visibility_filtered",
+              detail: "Visibility filtered 2 floor(s) from the available history window.",
+            },
+          ],
+        },
+        visibility: {
+          hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+          filteredFloorNos: [1, 2],
+        },
+      },
       tokenEstimate: 42,
     });
 
@@ -295,8 +335,18 @@ describe("sdk sessions expanded resource", () => {
       debug_options: {
         include_worldbook_matches: true,
       },
+      budget: {
+        max_input_tokens: 4096,
+        reserved_completion_tokens: 1024,
+      },
       message: "hello",
       prompt_intent: "continue",
+      source_selection: {
+        history: { mode: "windowed", max_messages: 24 },
+        memory: { enabled: true },
+        worldbook: { enabled: true },
+        examples: { enabled: false },
+      },
     }));
   });
 

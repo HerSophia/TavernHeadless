@@ -14,7 +14,7 @@ outline: [2, 3]
 
 | 类型 | 说明 |
 | ---- | ---- |
-| `ingest_turn` | 回合提交后自动触发，从对话内容中提取记忆 |
+| `ingest_turn` | 回合提交后自动触发，从对话内容中提取记忆。主聊天链默认落到当前 `branch` scope |
 | `compact_macro` | 把多条短摘要压缩成一条长摘要 |
 | `maintenance` | 定期维护：衰减排序、弃用过期记忆 |
 | `rebuild_scope` | 当前是辅助维护入口：触发该 scope 的重整流程，并在需要时继续排入 `compact_macro` |
@@ -38,7 +38,8 @@ outline: [2, 3]
 | 作用域 | 说明 |
 | ---- | ---- |
 | `global` | 全局记忆 |
-| `chat` | 某次会话的记忆 |
+| `chat` | 显式 session 级共享记忆 |
+| `branch` | 某次会话下某个分支的隔离记忆 |
 | `floor` | 某个楼层的记忆 |
 
 ---
@@ -48,8 +49,8 @@ outline: [2, 3]
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
 | `id` | string | 作业 ID |
-| `scope` | string | 作用域：`global` / `chat` / `floor` |
-| `scope_id` | string | 作用域目标 ID |
+| `scope` | string | 作用域：`global` / `chat` / `branch` / `floor` |
+| `scope_id` | string | 作用域目标 ID。`branch` scope 使用 `JSON.stringify([sessionId, branchId])` 编码 |
 | `job_type` | string | 作业类型 |
 | `status` | string | 当前状态 |
 | `floor_id` | string \| null | 关联的楼层 ID（如果有） |
@@ -98,8 +99,8 @@ GET /memory/jobs
   "data": [
     {
       "id": "job_abc123",
-      "scope": "chat",
-      "scope_id": "sess_001",
+      "scope": "branch",
+      "scope_id": "[\"sess_001\",\"main\"]",
       "job_type": "ingest_turn",
       "status": "succeeded",
       "floor_id": "floor_xyz",
@@ -181,8 +182,8 @@ POST /memory/jobs/:id/cancel
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `scope` | string | 作用域：`global` / `chat` / `floor` |
-| `scope_id` | string | 作用域目标 ID |
+| `scope` | string | 作用域：`global` / `chat` / `branch` / `floor` |
+| `scope_id` | string | 作用域目标 ID。`branch` scope 使用 `JSON.stringify([sessionId, branchId])` 编码 |
 | `revision` | integer | 当前版本号，每次处理后递增 |
 | `lease_owner` | string \| null | 当前正在处理这个 scope 的 worker 标识 |
 | `lease_until` | integer \| null | 处理租约到期时间 |

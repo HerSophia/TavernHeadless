@@ -281,6 +281,27 @@
                         "when":  1763900000000,
                         "tag":  "0039_branch_local_variable_snapshot",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  40,
+                        "version":  "6",
+                        "when":  1764000000000,
+                        "tag":  "0040_memory_branch_isolation",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  41,
+                        "version":  "6",
+                        "when":  1764100000000,
+                        "tag":  "0041_prompt_runtime_explain_snapshot",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  42,
+                        "version":  "6",
+                        "when":  1764200000000,
+                        "tag":  "0042_session_state_governance",
+                        "breakpoints":  true
                     }
                 ]
 }

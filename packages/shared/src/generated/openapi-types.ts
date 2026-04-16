@@ -987,6 +987,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/floors/{id}/prompt-runtime/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Explain committed floor prompt runtime from persisted truth */
+        get: operations["getFloorPromptRuntimeExplain"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/floors/{id}/result": {
         parameters: {
             query?: never;
@@ -2212,7 +2229,7 @@ export interface paths {
                     offset?: number;
                     sort_order?: "asc" | "desc";
                     sort_by?: "created_at" | "updated_at" | "importance" | "confidence";
-                    scope?: "global" | "chat" | "floor";
+                    scope?: "global" | "chat" | "branch" | "floor";
                     scope_id?: string;
                     type?: "fact" | "summary" | "open_loop";
                     summary_tier?: "micro" | "macro";
@@ -2291,7 +2308,7 @@ export interface paths {
                                 /** @enum {string} */
                                 lifecycle_status?: "active" | "compacted" | "deprecated";
                                 /** @enum {string} */
-                                scope: "global" | "chat" | "floor";
+                                scope: "global" | "chat" | "branch" | "floor";
                                 scope_id: string;
                                 source_floor_id?: string | null;
                                 source_job_id?: string | null;
@@ -2356,7 +2373,7 @@ export interface paths {
                         /** @enum {string} */
                         lifecycle_status?: "active" | "compacted" | "deprecated";
                         /** @enum {string} */
-                        scope: "global" | "chat" | "floor";
+                        scope: "global" | "chat" | "branch" | "floor";
                         scope_id: string;
                         source_floor_id?: string;
                         source_message_id?: string;
@@ -2433,7 +2450,7 @@ export interface paths {
                                 /** @enum {string} */
                                 lifecycle_status?: "active" | "compacted" | "deprecated";
                                 /** @enum {string} */
-                                scope: "global" | "chat" | "floor";
+                                scope: "global" | "chat" | "branch" | "floor";
                                 scope_id: string;
                                 source_floor_id?: string | null;
                                 source_job_id?: string | null;
@@ -2573,7 +2590,7 @@ export interface paths {
                                 /** @enum {string} */
                                 lifecycle_status?: "active" | "compacted" | "deprecated";
                                 /** @enum {string} */
-                                scope: "global" | "chat" | "floor";
+                                scope: "global" | "chat" | "branch" | "floor";
                                 scope_id: string;
                                 source_floor_id?: string | null;
                                 source_job_id?: string | null;
@@ -2687,7 +2704,7 @@ export interface paths {
                         /** @enum {string} */
                         lifecycle_status?: "active" | "compacted" | "deprecated";
                         /** @enum {string} */
-                        scope?: "global" | "chat" | "floor";
+                        scope?: "global" | "chat" | "branch" | "floor";
                         scope_id?: string;
                         source_floor_id?: string;
                         source_message_id?: string;
@@ -2764,7 +2781,7 @@ export interface paths {
                                 /** @enum {string} */
                                 lifecycle_status?: "active" | "compacted" | "deprecated";
                                 /** @enum {string} */
-                                scope: "global" | "chat" | "floor";
+                                scope: "global" | "chat" | "branch" | "floor";
                                 scope_id: string;
                                 source_floor_id?: string | null;
                                 source_job_id?: string | null;
@@ -2863,7 +2880,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    scope?: "global" | "chat" | "floor";
+                    scope?: "global" | "chat" | "branch" | "floor";
                     scope_id?: string;
                     type?: "fact" | "summary" | "open_loop";
                     summary_tier?: "micro" | "macro";
@@ -3328,7 +3345,7 @@ export interface paths {
                     limit?: number;
                     offset?: number;
                     sort_order?: "asc" | "desc";
-                    scope?: "global" | "chat" | "floor";
+                    scope?: "global" | "chat" | "branch" | "floor";
                     scope_id?: string;
                     job_type?: "ingest_turn" | "compact_macro" | "maintenance" | "rebuild_scope";
                     status?: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
@@ -3368,7 +3385,7 @@ export interface paths {
                                 max_attempts: number;
                                 payload?: unknown;
                                 /** @enum {string} */
-                                scope: "global" | "chat" | "floor";
+                                scope: "global" | "chat" | "branch" | "floor";
                                 scope_id: string;
                                 /** @enum {string} */
                                 status: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
@@ -3451,7 +3468,7 @@ export interface paths {
                                 job_id: string;
                                 reason?: string;
                                 /** @enum {string} */
-                                scope?: "global" | "chat" | "floor";
+                                scope?: "global" | "chat" | "branch" | "floor";
                                 scope_id?: string;
                                 source_micro_ids?: string[];
                             };
@@ -3538,7 +3555,7 @@ export interface paths {
                                 job_id: string;
                                 reason?: string;
                                 /** @enum {string} */
-                                scope?: "global" | "chat" | "floor";
+                                scope?: "global" | "chat" | "branch" | "floor";
                                 scope_id?: string;
                                 source_micro_ids?: string[];
                             };
@@ -3604,7 +3621,7 @@ export interface paths {
                     limit?: number;
                     offset?: number;
                     sort_order?: "asc" | "desc";
-                    scope?: "global" | "chat" | "floor";
+                    scope?: "global" | "chat" | "branch" | "floor";
                     scope_id?: string;
                     sort_by?: "updated_at" | "revision" | "last_compaction_at" | "last_processed_floor_no";
                 };
@@ -3628,7 +3645,7 @@ export interface paths {
                                 lease_until?: number | null;
                                 revision: number;
                                 /** @enum {string} */
-                                scope: "global" | "chat" | "floor";
+                                scope: "global" | "chat" | "branch" | "floor";
                                 scope_id: string;
                                 updated_at: number;
                             }[];
@@ -3689,7 +3706,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    scope: "global" | "chat" | "floor";
+                    scope: "global" | "chat" | "branch" | "floor";
                     scopeId: string;
                 };
                 cookie?: never;
@@ -3717,7 +3734,7 @@ export interface paths {
                                 job_id: string;
                                 reason?: string;
                                 /** @enum {string} */
-                                scope?: "global" | "chat" | "floor";
+                                scope?: "global" | "chat" | "branch" | "floor";
                                 scope_id?: string;
                                 source_micro_ids?: string[];
                             };
@@ -3784,7 +3801,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    scope: "global" | "chat" | "floor";
+                    scope: "global" | "chat" | "branch" | "floor";
                     scopeId: string;
                 };
                 cookie?: never;
@@ -3812,7 +3829,7 @@ export interface paths {
                                 job_id: string;
                                 reason?: string;
                                 /** @enum {string} */
-                                scope?: "global" | "chat" | "floor";
+                                scope?: "global" | "chat" | "branch" | "floor";
                                 scope_id?: string;
                                 source_micro_ids?: string[];
                             };
@@ -5623,6 +5640,41 @@ export interface paths {
         get: operations["getSessionPromptRuntimeAssets"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/prompt-runtime/branches/{branchId}/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get branch prompt runtime persistent and resolved policy */
+        get: operations["getSessionPromptRuntimeBranchPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch branch prompt runtime persistent policy */
+        patch: operations["patchSessionPromptRuntimeBranchPolicy"];
+        trace?: never;
+    };
+    "/sessions/{id}/prompt-runtime/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compare committed floor prompt runtime snapshots */
+        post: operations["compareSessionPromptRuntime"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8762,6 +8814,521 @@ export interface operations {
             };
         };
     };
+    getFloorPromptRuntimeExplain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "assets": {
+                     *           "character_card": {
+                     *             "id": "char-hero",
+                     *             "name": "Hero"
+                     *           },
+                     *           "preset": {
+                     *             "id": "preset-story",
+                     *             "name": "Story Preset"
+                     *           },
+                     *           "regex_profile": {
+                     *             "id": "regex-safe",
+                     *             "name": "Safety Regex"
+                     *           },
+                     *           "worldbook": {
+                     *             "id": "wb-lore",
+                     *             "name": "Lorebook"
+                     *           }
+                     *         },
+                     *         "diagnostics": [
+                     *           {
+                     *             "code": "derived_no_assistant_structure",
+                     *             "field_path": "policy.structure.mode",
+                     *             "message": "delivery.noAssistant forced the resolved structure.mode to no_assistant.",
+                     *             "severity": "warning",
+                     *             "source": "policy"
+                     *           }
+                     *         ],
+                     *         "excluded_sources": [
+                     *           {
+                     *             "detail": "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly.",
+                     *             "reason": "disabled_by_policy",
+                     *             "source": "examples"
+                     *           }
+                     *         ],
+                     *         "floor": {
+                     *           "branch_id": "main",
+                     *           "committed_at": 1710000004000,
+                     *           "floor_no": 12,
+                     *           "id": "floor-12",
+                     *           "parent_floor_id": "floor-11",
+                     *           "prompt_snapshot_created_at": 1710000003000,
+                     *           "session_id": "session-1",
+                     *           "state": "committed"
+                     *         },
+                     *         "limitations": [
+                     *           "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+                     *           "Variable commit remains page -> floor. Branch promotion is not automatic."
+                     *         ],
+                     *         "prompt_snapshot": {
+                     *           "preset_id": "preset-story",
+                     *           "preset_updated_at": 1710000000000,
+                     *           "preset_version": 3,
+                     *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                     *           "prompt_mode": "compat_strict",
+                     *           "regex_post_rule_names": [],
+                     *           "regex_pre_rule_names": [
+                     *             "trim_whitespace"
+                     *           ],
+                     *           "regex_profile_id": "regex-safe",
+                     *           "regex_profile_updated_at": 1710000002000,
+                     *           "regex_profile_version": 2,
+                     *           "token_estimate": 512,
+                     *           "worldbook_activated_entry_uids": [
+                     *             7,
+                     *             12
+                     *           ],
+                     *           "worldbook_id": "wb-lore",
+                     *           "worldbook_updated_at": 1710000001000,
+                     *           "worldbook_version": 5
+                     *         },
+                     *         "resolved_policy": {
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
+                     *           },
+                     *           "debug": {
+                     *             "include_prompt_snapshot": false,
+                     *             "include_runtime_trace": false,
+                     *             "include_worldbook_matches": false
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": true,
+                     *             "no_assistant": true,
+                     *             "require_last_user": true
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "to_system",
+                     *             "merge_adjacent_same_role": true,
+                     *             "mode": "no_assistant",
+                     *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
+                     *           }
+                     *         },
+                     *         "result": {
+                     *           "assistant_message_id": "msg-assistant-12",
+                     *           "committed_at": 1710000004000,
+                     *           "generated_text": "The firelight wavers as the next part of the story begins.",
+                     *           "output_page_id": "page-output-12",
+                     *           "summaries": [
+                     *             "The group resumes the campfire planning scene."
+                     *           ],
+                     *           "usage": {
+                     *             "completion_tokens": 128,
+                     *             "prompt_tokens": 320,
+                     *             "total_tokens": 448
+                     *           },
+                     *           "verifier": null
+                     *         },
+                     *         "scope": {
+                     *           "branch_exists": true,
+                     *           "history_source_branch_id": "main",
+                     *           "history_source_mode": "existing_branch",
+                     *           "session_id": "session-1",
+                     *           "source_floor_id": null,
+                     *           "target_branch_id": "main"
+                     *         },
+                     *         "section_stats": [
+                     *           {
+                     *             "section_name": "history",
+                     *             "token_count": 320
+                     *           },
+                     *           {
+                     *             "section_name": "main",
+                     *             "token_count": 96
+                     *           }
+                     *         ],
+                     *         "snapshot_available": true,
+                     *         "source_map": {
+                     *           "budget": {
+                     *             "max_input_tokens": "request_override",
+                     *             "reserved_completion_tokens": "request_override"
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": "system_default",
+                     *             "no_assistant": "branch_policy",
+                     *             "require_last_user": "session_policy"
+                     *           },
+                     *           "history": {
+                     *             "source_branch_id": "alt-branch",
+                     *             "source_mode": "existing_branch"
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": "request_override"
+                     *             },
+                     *             "history": {
+                     *               "max_messages": "request_override",
+                     *               "mode": "request_override"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": "system_default"
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": "system_default"
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "system_default",
+                     *             "merge_adjacent_same_role": "branch_policy",
+                     *             "mode": "branch_policy",
+                     *             "preserve_system_messages": "system_default"
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": "request_override",
+                     *             "mode": "request_override"
+                     *           }
+                     *         },
+                     *         "trim_reasons": [
+                     *           {
+                     *             "detail": "Prompt runtime pruned 128 tokens from budget group 'section:main'.",
+                     *             "group": "section:main",
+                     *             "pruned_token_count": 128,
+                     *             "reason": "budget_exceeded"
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            assets: {
+                                character_card: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                                preset: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                                regex_profile: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                                worldbook: {
+                                    id: string;
+                                    name: string | null;
+                                } | null;
+                            } | null;
+                            diagnostics: {
+                                code: string;
+                                field_path?: string;
+                                message: string;
+                                /** @enum {string} */
+                                phase?: "preview" | "dry_run" | "assemble" | "commit_consume" | "explain";
+                                /** @enum {string} */
+                                severity: "info" | "warning" | "error";
+                                /** @enum {string} */
+                                source?: "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
+                            }[];
+                            excluded_sources: {
+                                detail?: string;
+                                /** @enum {string} */
+                                reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+                                /**
+                                 * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
+                                 * @enum {string}
+                                 */
+                                source: "history" | "memory" | "worldbook" | "examples";
+                            }[] | null;
+                            floor: {
+                                branch_id: string;
+                                committed_at: number;
+                                floor_no: number;
+                                id: string;
+                                parent_floor_id: string | null;
+                                prompt_snapshot_created_at: number;
+                                session_id: string;
+                                /** @enum {string} */
+                                state: "committed";
+                            };
+                            limitations: string[];
+                            prompt_snapshot: {
+                                preset_id: string | null;
+                                preset_updated_at: number | null;
+                                preset_version: number | null;
+                                prompt_digest: string;
+                                /** @enum {string} */
+                                prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                regex_post_rule_names: string[];
+                                regex_pre_rule_names: string[];
+                                regex_profile_id: string | null;
+                                regex_profile_updated_at: number | null;
+                                regex_profile_version: number | null;
+                                token_estimate: number;
+                                worldbook_activated_entry_uids: number[];
+                                worldbook_id: string | null;
+                                worldbook_updated_at: number | null;
+                                worldbook_version: number | null;
+                            };
+                            resolved_policy: {
+                                budget: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
+                                debug: {
+                                    include_prompt_snapshot: boolean;
+                                    include_runtime_trace: boolean;
+                                    include_worldbook_matches: boolean;
+                                };
+                                delivery: {
+                                    allow_assistant_prefill: boolean;
+                                    no_assistant: boolean;
+                                    require_last_user: boolean;
+                                };
+                                source_selection: {
+                                    examples: {
+                                        enabled: boolean;
+                                    };
+                                    history: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode: "full" | "windowed";
+                                    };
+                                    memory: {
+                                        enabled: boolean;
+                                    };
+                                    worldbook: {
+                                        enabled: boolean;
+                                    };
+                                };
+                                structure: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
+                            } | null;
+                            result: {
+                                assistant_message_id: string;
+                                committed_at: number;
+                                generated_text: string;
+                                output_page_id: string;
+                                summaries: string[];
+                                usage: {
+                                    completion_tokens: number;
+                                    prompt_tokens: number;
+                                    total_tokens: number;
+                                };
+                                verifier: {
+                                    issues: {
+                                        description: string;
+                                        /** @enum {string} */
+                                        severity: "warning" | "error";
+                                    }[] | null;
+                                    status: string;
+                                    suggestion: string | null;
+                                } | null;
+                            };
+                            scope: {
+                                branch_exists: boolean;
+                                history_source_branch_id: string;
+                                /** @enum {string} */
+                                history_source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                session_id: string;
+                                source_floor_id?: string | null;
+                                target_branch_id: string;
+                            };
+                            section_stats: {
+                                /** @description Prompt section name. Section stats remain section-level even when budget groups use concrete labels such as `section:main`. */
+                                section_name: string;
+                                token_count: number;
+                            }[] | null;
+                            snapshot_available: boolean;
+                            source_map?: {
+                                budget?: {
+                                    /** @enum {string} */
+                                    max_input_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    reserved_completion_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                debug?: {
+                                    /** @enum {string} */
+                                    include_prompt_snapshot?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    include_runtime_trace?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    include_worldbook_matches?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                delivery?: {
+                                    /** @enum {string} */
+                                    allow_assistant_prefill?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    no_assistant?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    require_last_user?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                history?: {
+                                    source_branch_id?: string;
+                                    /** @enum {string} */
+                                    source_mode?: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                };
+                                source_selection?: {
+                                    examples?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    history?: {
+                                        /** @enum {string} */
+                                        max_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                        /** @enum {string} */
+                                        mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    memory?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    worldbook?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                };
+                                structure?: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    merge_adjacent_same_role?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    preserve_system_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                visibility?: {
+                                    /** @enum {string} */
+                                    hidden_floor_ids?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    hidden_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    visible_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                            };
+                            trim_reasons: {
+                                detail?: string;
+                                /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                group: string;
+                                pruned_token_count?: number;
+                                /** @enum {string} */
+                                reason: "budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled";
+                            }[] | null;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     queryFloorToolExecutionRecords: {
         parameters: {
             query?: {
@@ -11826,7 +12393,7 @@ export interface operations {
                                     /** @enum {string} */
                                     lifecycle_status?: "active" | "compacted" | "deprecated";
                                     /** @enum {string} */
-                                    scope: "global" | "chat" | "floor";
+                                    scope: "global" | "chat" | "branch" | "floor";
                                     scope_id: string;
                                     source_floor_id?: string | null;
                                     source_job_id?: string | null;
@@ -14445,11 +15012,59 @@ export interface operations {
                     /**
                      * @example {
                      *       "data": {
+                     *         "budget": {
+                     *           "defaults": {},
+                     *           "persistent_patch_supported": true,
+                     *           "request_override_supported": true,
+                     *           "supported_fields": [
+                     *             "maxInputTokens",
+                     *             "reservedCompletionTokens"
+                     *           ],
+                     *           "trim_reason_codes": [
+                     *             "budget_exceeded",
+                     *             "group_limit_exceeded",
+                     *             "provider_constraint",
+                     *             "policy_disabled"
+                     *           ]
+                     *         },
+                     *         "compare": {
+                     *           "committed_floors_only": true,
+                     *           "enabled": true,
+                     *           "limitations_instead_of_recompute": true,
+                     *           "mixed_preview_supported": false
+                     *         },
                      *         "delivery": {
                      *           "defaults": {
                      *             "allow_assistant_prefill": true,
                      *             "no_assistant": false,
                      *             "require_last_user": false
+                     *           }
+                     *         },
+                     *         "governance": {
+                     *           "branch": {
+                     *             "envelope_metadata": true,
+                     *             "materialized_branches_only": true,
+                     *             "null_clears_field": true,
+                     *             "object_patch": "deep_merge",
+                     *             "supported_fields": [
+                     *               "structure",
+                     *               "delivery",
+                     *               "budget",
+                     *               "sourceSelection",
+                     *               "visibility"
+                     *             ]
+                     *           },
+                     *           "session": {
+                     *             "envelope_metadata": true,
+                     *             "null_clears_field": true,
+                     *             "object_patch": "deep_merge",
+                     *             "supported_fields": [
+                     *               "structure",
+                     *               "delivery",
+                     *               "budget",
+                     *               "sourceSelection",
+                     *               "visibility"
+                     *             ]
                      *           }
                      *         },
                      *         "macro": {
@@ -14467,6 +15082,16 @@ export interface operations {
                      *             "returns_assembly": true,
                      *             "returns_runtime_trace": true,
                      *             "supports_visibility": true
+                     *           },
+                     *           "explain": {
+                     *             "enabled": true,
+                     *             "legacy_floor_fallback": true,
+                     *             "persisted_truth_only": true,
+                     *             "read_only": true,
+                     *             "recompute": false,
+                     *             "requires_committed_floor": true,
+                     *             "snapshot_availability_field": "snapshot_available",
+                     *             "snapshot_supported": true
                      *           },
                      *           "live": {
                      *             "default_off": true,
@@ -14495,6 +15120,41 @@ export interface operations {
                      *             "prompt_debug_payload": "done_only"
                      *           }
                      *         },
+                     *         "source_selection": {
+                     *           "defaults": {
+                     *             "examples": {
+                     *               "enabled": true
+                     *             },
+                     *             "history": {
+                     *               "mode": "full"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "exclusion_reason_codes": [
+                     *             "disabled_by_policy",
+                     *             "budget_trimmed",
+                     *             "provider_constraint",
+                     *             "visibility_filtered",
+                     *             "not_triggered"
+                     *           ],
+                     *           "history_modes": [
+                     *             "full",
+                     *             "windowed"
+                     *           ],
+                     *           "persistent_patch_supported": true,
+                     *           "request_override_supported": true,
+                     *           "supported_sources": [
+                     *             "history",
+                     *             "memory",
+                     *             "worldbook",
+                     *             "examples"
+                     *           ]
+                     *         },
                      *         "structure": {
                      *           "defaults": {
                      *             "merge_adjacent_same_role": false,
@@ -14504,7 +15164,8 @@ export interface operations {
                      *           "modes": [
                      *             "default",
                      *             "strict_alternating",
-                     *             "no_assistant"
+                     *             "no_assistant",
+                     *             "flattened"
                      *           ]
                      *         },
                      *         "unsupported": [
@@ -14518,11 +15179,55 @@ export interface operations {
                      */
                     "application/json": {
                         data: {
+                            budget: {
+                                defaults: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
+                                /** @enum {unknown} */
+                                persistent_patch_supported: true;
+                                /** @enum {unknown} */
+                                request_override_supported: true;
+                                supported_fields: ("maxInputTokens" | "reservedCompletionTokens")[];
+                                trim_reason_codes: ("budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled")[];
+                            };
+                            compare: {
+                                /** @enum {unknown} */
+                                committed_floors_only: true;
+                                /** @enum {unknown} */
+                                enabled: true;
+                                /** @enum {unknown} */
+                                limitations_instead_of_recompute: true;
+                                /** @enum {unknown} */
+                                mixed_preview_supported: false;
+                            };
                             delivery: {
                                 defaults: {
                                     allow_assistant_prefill: boolean;
                                     no_assistant: boolean;
                                     require_last_user: boolean;
+                                };
+                            };
+                            governance: {
+                                branch: {
+                                    /** @enum {unknown} */
+                                    envelope_metadata: true;
+                                    /** @enum {unknown} */
+                                    materialized_branches_only: true;
+                                    /** @enum {unknown} */
+                                    null_clears_field: true;
+                                    /** @enum {string} */
+                                    object_patch: "deep_merge";
+                                    supported_fields: ("structure" | "delivery" | "budget" | "sourceSelection" | "visibility")[];
+                                };
+                                session: {
+                                    /** @enum {unknown} */
+                                    envelope_metadata: true;
+                                    /** @enum {unknown} */
+                                    null_clears_field: true;
+                                    /** @enum {string} */
+                                    object_patch: "deep_merge";
+                                    supported_fields: ("structure" | "delivery" | "budget" | "sourceSelection" | "visibility")[];
                                 };
                             };
                             macro: {
@@ -14550,6 +15255,24 @@ export interface operations {
                                     returns_runtime_trace: true;
                                     /** @enum {unknown} */
                                     supports_visibility: true;
+                                };
+                                explain: {
+                                    /** @enum {unknown} */
+                                    enabled: true;
+                                    /** @enum {unknown} */
+                                    legacy_floor_fallback: true;
+                                    /** @enum {unknown} */
+                                    persisted_truth_only: true;
+                                    /** @enum {unknown} */
+                                    read_only: true;
+                                    /** @enum {unknown} */
+                                    recompute: false;
+                                    /** @enum {unknown} */
+                                    requires_committed_floor: true;
+                                    /** @enum {string} */
+                                    snapshot_availability_field: "snapshot_available";
+                                    /** @enum {unknown} */
+                                    snapshot_supported: true;
                                 };
                                 live: {
                                     /** @enum {unknown} */
@@ -14595,16 +15318,42 @@ export interface operations {
                                     prompt_debug_payload: "done_only" | "unsupported";
                                 };
                             };
+                            source_selection: {
+                                defaults: {
+                                    examples: {
+                                        enabled: boolean;
+                                    };
+                                    history: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode: "full" | "windowed";
+                                    };
+                                    memory: {
+                                        enabled: boolean;
+                                    };
+                                    worldbook: {
+                                        enabled: boolean;
+                                    };
+                                };
+                                exclusion_reason_codes: ("disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered")[];
+                                history_modes: ("full" | "windowed")[];
+                                /** @enum {unknown} */
+                                persistent_patch_supported: true;
+                                /** @enum {unknown} */
+                                request_override_supported: true;
+                                /** @description Public source kinds only. Internal budget groups such as `section:*` do not appear here. */
+                                supported_sources: ("history" | "memory" | "worldbook" | "examples")[];
+                            };
                             structure: {
                                 defaults: {
                                     /** @enum {string} */
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
                                 };
-                                modes: ("default" | "strict_alternating" | "no_assistant")[];
+                                modes: ("default" | "strict_alternating" | "no_assistant" | "flattened")[];
                             };
                             unsupported: string[];
                         };
@@ -14986,7 +15735,9 @@ export interface operations {
     };
     getSessionPromptRuntime: {
         parameters: {
-            query?: never;
+            query?: {
+                branch_id?: string;
+            };
             header?: never;
             path: {
                 id: string;
@@ -15022,6 +15773,62 @@ export interface operations {
                      *             "name": "Lorebook"
                      *           }
                      *         },
+                     *         "branch_persistent_policy": {
+                     *           "delivery": {
+                     *             "no_assistant": true
+                     *           }
+                     *         },
+                     *         "branch_persistent_policy_envelope": {
+                     *           "updated_at": 1710000004500,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "budget": {
+                     *               "max_input_tokens": 4096,
+                     *               "reserved_completion_tokens": 1024
+                     *             },
+                     *             "delivery": {
+                     *               "no_assistant": true
+                     *             },
+                     *             "source_selection": {
+                     *               "examples": {
+                     *                 "enabled": false
+                     *               },
+                     *               "history": {
+                     *                 "max_messages": 24,
+                     *                 "mode": "windowed"
+                     *               },
+                     *               "memory": {
+                     *                 "enabled": true
+                     *               },
+                     *               "worldbook": {
+                     *                 "enabled": true
+                     *               }
+                     *             },
+                     *             "visibility": {
+                     *               "hidden_floor_ranges": [
+                     *                 {
+                     *                   "end_floor_no": 2,
+                     *                   "start_floor_no": 1
+                     *                 }
+                     *               ],
+                     *               "mode": "allow_all_except_hidden"
+                     *             }
+                     *           },
+                     *           "version": 2
+                     *         },
+                     *         "diagnostics": [
+                     *           {
+                     *             "code": "derived_no_assistant_structure",
+                     *             "field_path": "policy.structure.mode",
+                     *             "message": "delivery.noAssistant forced the resolved structure.mode to no_assistant.",
+                     *             "severity": "warning",
+                     *             "source": "policy"
+                     *           }
+                     *         ],
+                     *         "limitations": [
+                     *           "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+                     *           "Variable commit remains page -> floor. Branch promotion is not automatic."
+                     *         ],
                      *         "persistent_policy": {
                      *           "delivery": {
                      *             "require_last_user": true
@@ -15030,7 +15837,33 @@ export interface operations {
                      *             "mode": "strict_alternating"
                      *           }
                      *         },
+                     *         "persistent_policy_envelope": {
+                     *           "updated_at": 1710000004200,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "delivery": {
+                     *               "require_last_user": true
+                     *             },
+                     *             "structure": {
+                     *               "mode": "strict_alternating"
+                     *             },
+                     *             "visibility": {
+                     *               "hidden_floor_ranges": [
+                     *                 {
+                     *                   "end_floor_no": 2,
+                     *                   "start_floor_no": 1
+                     *                 }
+                     *               ],
+                     *               "mode": "allow_all_except_hidden"
+                     *             }
+                     *           },
+                     *           "version": 1
+                     *         },
                      *         "policy": {
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
+                     *           },
                      *           "debug": {
                      *             "include_prompt_snapshot": false,
                      *             "include_runtime_trace": false,
@@ -15038,28 +15871,91 @@ export interface operations {
                      *           },
                      *           "delivery": {
                      *             "allow_assistant_prefill": true,
-                     *             "no_assistant": false,
+                     *             "no_assistant": true,
                      *             "require_last_user": true
                      *           },
-                     *           "structure": {
-                     *             "merge_adjacent_same_role": true,
-                     *             "mode": "strict_alternating",
-                     *             "preserve_system_messages": true
-                     *           }
-                     *         },
-                     *         "source_map": {
-                     *           "delivery": {
-                     *             "allow_assistant_prefill": "system_default",
-                     *             "no_assistant": "system_default",
-                     *             "require_last_user": "session_policy"
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
                      *           },
                      *           "structure": {
-                     *             "merge_adjacent_same_role": "session_policy",
-                     *             "mode": "session_policy",
-                     *             "preserve_system_messages": "system_default"
+                     *             "assistant_rewrite_strategy": "to_system",
+                     *             "merge_adjacent_same_role": true,
+                     *             "mode": "no_assistant",
+                     *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
-                     *         "warnings": []
+                     *         "scope": {
+                     *           "branch_exists": true,
+                     *           "history_source_branch_id": "alt-branch",
+                     *           "history_source_mode": "existing_branch",
+                     *           "session_id": "session-1",
+                     *           "source_floor_id": null,
+                     *           "target_branch_id": "alt-branch"
+                     *         },
+                     *         "source_map": {
+                     *           "budget": {
+                     *             "max_input_tokens": "request_override",
+                     *             "reserved_completion_tokens": "request_override"
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": "system_default",
+                     *             "no_assistant": "branch_policy",
+                     *             "require_last_user": "session_policy"
+                     *           },
+                     *           "history": {
+                     *             "source_branch_id": "alt-branch",
+                     *             "source_mode": "existing_branch"
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": "request_override"
+                     *             },
+                     *             "history": {
+                     *               "max_messages": "request_override",
+                     *               "mode": "request_override"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": "system_default"
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": "system_default"
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "system_default",
+                     *             "merge_adjacent_same_role": "branch_policy",
+                     *             "mode": "branch_policy",
+                     *             "preserve_system_messages": "system_default"
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": "request_override",
+                     *             "mode": "request_override"
+                     *           }
+                     *         },
+                     *         "warnings": [
+                     *           "delivery.noAssistant forced the resolved structure.mode to no_assistant."
+                     *         ]
                      *       }
                      *     }
                      */
@@ -15083,22 +15979,269 @@ export interface operations {
                                     name: string | null;
                                 } | null;
                             };
-                            persistent_policy?: {
+                            branch_persistent_policy: {
+                                budget?: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
                                 delivery?: {
                                     allow_assistant_prefill?: boolean;
                                     no_assistant?: boolean;
                                     require_last_user?: boolean;
+                                };
+                                source_selection?: {
+                                    examples?: {
+                                        enabled?: boolean;
+                                    };
+                                    history?: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode?: "full" | "windowed";
+                                    };
+                                    memory?: {
+                                        enabled?: boolean;
+                                    };
+                                    worldbook?: {
+                                        enabled?: boolean;
+                                    };
                                 };
                                 structure?: {
                                     /** @enum {string} */
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
                                 };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
+                            } | null;
+                            branch_persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                    };
+                                };
+                                version: number;
+                            } | null;
+                            diagnostics: {
+                                code: string;
+                                field_path?: string;
+                                message: string;
+                                /** @enum {string} */
+                                phase?: "preview" | "dry_run" | "assemble" | "commit_consume" | "explain";
+                                /** @enum {string} */
+                                severity: "info" | "warning" | "error";
+                                /** @enum {string} */
+                                source?: "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
+                            }[];
+                            limitations: string[];
+                            persistent_policy?: {
+                                budget?: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
+                                delivery?: {
+                                    allow_assistant_prefill?: boolean;
+                                    no_assistant?: boolean;
+                                    require_last_user?: boolean;
+                                };
+                                source_selection?: {
+                                    examples?: {
+                                        enabled?: boolean;
+                                    };
+                                    history?: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode?: "full" | "windowed";
+                                    };
+                                    memory?: {
+                                        enabled?: boolean;
+                                    };
+                                    worldbook?: {
+                                        enabled?: boolean;
+                                    };
+                                };
+                                structure?: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role?: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    preserve_system_messages?: boolean;
+                                };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
                             };
+                            persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                    };
+                                };
+                                version: number;
+                            } | null;
                             policy: {
+                                budget: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
                                 debug: {
                                     include_prompt_snapshot: boolean;
                                     include_runtime_trace: boolean;
@@ -15109,41 +16252,120 @@ export interface operations {
                                     no_assistant: boolean;
                                     require_last_user: boolean;
                                 };
+                                source_selection: {
+                                    examples: {
+                                        enabled: boolean;
+                                    };
+                                    history: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode: "full" | "windowed";
+                                    };
+                                    memory: {
+                                        enabled: boolean;
+                                    };
+                                    worldbook: {
+                                        enabled: boolean;
+                                    };
+                                };
                                 structure: {
                                     /** @enum {string} */
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
                                 };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
+                            };
+                            scope: {
+                                branch_exists: boolean;
+                                history_source_branch_id: string;
+                                /** @enum {string} */
+                                history_source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                session_id: string;
+                                source_floor_id?: string | null;
+                                target_branch_id: string;
                             };
                             source_map?: {
+                                budget?: {
+                                    /** @enum {string} */
+                                    max_input_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    reserved_completion_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
                                 debug?: {
                                     /** @enum {string} */
-                                    include_prompt_snapshot?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    include_prompt_snapshot?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
-                                    include_runtime_trace?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    include_runtime_trace?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
-                                    include_worldbook_matches?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    include_worldbook_matches?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                                 delivery?: {
                                     /** @enum {string} */
-                                    allow_assistant_prefill?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    allow_assistant_prefill?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
-                                    no_assistant?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    no_assistant?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
-                                    require_last_user?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    require_last_user?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                history?: {
+                                    source_branch_id?: string;
+                                    /** @enum {string} */
+                                    source_mode?: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                };
+                                source_selection?: {
+                                    examples?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    history?: {
+                                        /** @enum {string} */
+                                        max_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                        /** @enum {string} */
+                                        mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    memory?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    worldbook?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
                                 };
                                 structure?: {
                                     /** @enum {string} */
-                                    assistant_rewrite_strategy?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    assistant_rewrite_strategy?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
-                                    merge_adjacent_same_role?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    merge_adjacent_same_role?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
-                                    mode?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
-                                    preserve_system_messages?: "system_default" | "asset_default" | "session_policy" | "request_override" | "provider_constraint";
+                                    preserve_system_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                visibility?: {
+                                    /** @enum {string} */
+                                    hidden_floor_ids?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    hidden_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    visible_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                             };
                             warnings: string[];
@@ -15284,6 +16506,938 @@ export interface operations {
             };
         };
     };
+    getSessionPromptRuntimeBranchPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                branchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "persistent_policy": {
+                     *           "delivery": {
+                     *             "require_last_user": true
+                     *           },
+                     *           "structure": {
+                     *             "mode": "strict_alternating"
+                     *           }
+                     *         },
+                     *         "persistent_policy_envelope": {
+                     *           "updated_at": 1710000004300,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "delivery": {
+                     *               "require_last_user": true
+                     *             },
+                     *             "structure": {
+                     *               "mode": "strict_alternating"
+                     *             }
+                     *           },
+                     *           "version": 1
+                     *         },
+                     *         "resolved_policy": {
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
+                     *           },
+                     *           "debug": {
+                     *             "include_prompt_snapshot": false,
+                     *             "include_runtime_trace": false,
+                     *             "include_worldbook_matches": false
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": true,
+                     *             "no_assistant": true,
+                     *             "require_last_user": true
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "to_system",
+                     *             "merge_adjacent_same_role": true,
+                     *             "mode": "no_assistant",
+                     *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
+                     *           }
+                     *         },
+                     *         "warnings": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            persistent_policy?: {
+                                budget?: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
+                                delivery?: {
+                                    allow_assistant_prefill?: boolean;
+                                    no_assistant?: boolean;
+                                    require_last_user?: boolean;
+                                };
+                                source_selection?: {
+                                    examples?: {
+                                        enabled?: boolean;
+                                    };
+                                    history?: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode?: "full" | "windowed";
+                                    };
+                                    memory?: {
+                                        enabled?: boolean;
+                                    };
+                                    worldbook?: {
+                                        enabled?: boolean;
+                                    };
+                                };
+                                structure?: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role?: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    preserve_system_messages?: boolean;
+                                };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
+                            };
+                            persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                    };
+                                };
+                                version: number;
+                            } | null;
+                            resolved_policy: {
+                                budget: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
+                                debug: {
+                                    include_prompt_snapshot: boolean;
+                                    include_runtime_trace: boolean;
+                                    include_worldbook_matches: boolean;
+                                };
+                                delivery: {
+                                    allow_assistant_prefill: boolean;
+                                    no_assistant: boolean;
+                                    require_last_user: boolean;
+                                };
+                                source_selection: {
+                                    examples: {
+                                        enabled: boolean;
+                                    };
+                                    history: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode: "full" | "windowed";
+                                    };
+                                    memory: {
+                                        enabled: boolean;
+                                    };
+                                    worldbook: {
+                                        enabled: boolean;
+                                    };
+                                };
+                                structure: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
+                            };
+                            warnings: string[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    patchSessionPromptRuntimeBranchPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                branchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "delivery": {
+                 *         "require_last_user": true
+                 *       },
+                 *       "structure": {
+                 *         "mode": "strict_alternating",
+                 *         "preserve_system_messages": true
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    budget?: {
+                        max_input_tokens?: number;
+                        reserved_completion_tokens?: number;
+                    } | null;
+                    delivery?: {
+                        allow_assistant_prefill?: boolean;
+                        no_assistant?: boolean;
+                        require_last_user?: boolean;
+                    } | null;
+                    source_selection?: {
+                        examples?: {
+                            enabled?: boolean;
+                        };
+                        history?: {
+                            max_messages?: number;
+                            /** @enum {string} */
+                            mode?: "full" | "windowed";
+                        };
+                        memory?: {
+                            enabled?: boolean;
+                        };
+                        worldbook?: {
+                            enabled?: boolean;
+                        };
+                    } | null;
+                    structure?: {
+                        /** @enum {string} */
+                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                        merge_adjacent_same_role?: boolean;
+                        /** @enum {string} */
+                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                        preserve_system_messages?: boolean;
+                    } | null;
+                    visibility?: {
+                        hidden_floor_ids?: string[];
+                        hidden_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                        /** @enum {string} */
+                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                        visible_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                    } | null;
+                } | unknown | unknown | unknown | unknown | unknown;
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "persistent_policy": {
+                     *           "delivery": {
+                     *             "require_last_user": true
+                     *           },
+                     *           "structure": {
+                     *             "mode": "strict_alternating"
+                     *           }
+                     *         },
+                     *         "persistent_policy_envelope": {
+                     *           "updated_at": 1710000004300,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "delivery": {
+                     *               "require_last_user": true
+                     *             },
+                     *             "structure": {
+                     *               "mode": "strict_alternating"
+                     *             }
+                     *           },
+                     *           "version": 1
+                     *         },
+                     *         "resolved_policy": {
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
+                     *           },
+                     *           "debug": {
+                     *             "include_prompt_snapshot": false,
+                     *             "include_runtime_trace": false,
+                     *             "include_worldbook_matches": false
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": true,
+                     *             "no_assistant": true,
+                     *             "require_last_user": true
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "to_system",
+                     *             "merge_adjacent_same_role": true,
+                     *             "mode": "no_assistant",
+                     *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
+                     *           }
+                     *         },
+                     *         "warnings": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            persistent_policy?: {
+                                budget?: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
+                                delivery?: {
+                                    allow_assistant_prefill?: boolean;
+                                    no_assistant?: boolean;
+                                    require_last_user?: boolean;
+                                };
+                                source_selection?: {
+                                    examples?: {
+                                        enabled?: boolean;
+                                    };
+                                    history?: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode?: "full" | "windowed";
+                                    };
+                                    memory?: {
+                                        enabled?: boolean;
+                                    };
+                                    worldbook?: {
+                                        enabled?: boolean;
+                                    };
+                                };
+                                structure?: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role?: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    preserve_system_messages?: boolean;
+                                };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
+                            };
+                            persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                    };
+                                };
+                                version: number;
+                            } | null;
+                            resolved_policy: {
+                                budget: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
+                                debug: {
+                                    include_prompt_snapshot: boolean;
+                                    include_runtime_trace: boolean;
+                                    include_worldbook_matches: boolean;
+                                };
+                                delivery: {
+                                    allow_assistant_prefill: boolean;
+                                    no_assistant: boolean;
+                                    require_last_user: boolean;
+                                };
+                                source_selection: {
+                                    examples: {
+                                        enabled: boolean;
+                                    };
+                                    history: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode: "full" | "windowed";
+                                    };
+                                    memory: {
+                                        enabled: boolean;
+                                    };
+                                    worldbook: {
+                                        enabled: boolean;
+                                    };
+                                };
+                                structure: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
+                            };
+                            warnings: string[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    compareSessionPromptRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    left: {
+                        floor_id: string;
+                    };
+                    right: {
+                        floor_id: string;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "asset_changes": [],
+                     *         "diagnostics_changes": [],
+                     *         "exclusion_changes": [
+                     *           {
+                     *             "change_type": "changed",
+                     *             "left": [
+                     *               {
+                     *                 "reason": "visibility_filtered",
+                     *                 "source": "history"
+                     *               }
+                     *             ],
+                     *             "path": "excluded_sources",
+                     *             "right": [
+                     *               {
+                     *                 "reason": "disabled_by_policy",
+                     *                 "source": "examples"
+                     *               }
+                     *             ]
+                     *           }
+                     *         ],
+                     *         "left": {
+                     *           "floor_id": "floor-left",
+                     *           "snapshot_available": true
+                     *         },
+                     *         "limitations": [],
+                     *         "policy_changes": [
+                     *           {
+                     *             "change_type": "changed",
+                     *             "left": 4096,
+                     *             "path": "policy.resolved_policy.budget.max_input_tokens",
+                     *             "right": 2048
+                     *           },
+                     *           {
+                     *             "change_type": "changed",
+                     *             "left": "allow_all_except_hidden",
+                     *             "path": "policy.resolved_policy.visibility.mode",
+                     *             "right": "deny_all_except_visible"
+                     *           },
+                     *           {
+                     *             "change_type": "changed",
+                     *             "left": "session_policy",
+                     *             "path": "policy.source_map.visibility.mode",
+                     *             "right": "request_override"
+                     *           }
+                     *         ],
+                     *         "right": {
+                     *           "floor_id": "floor-right",
+                     *           "snapshot_available": true
+                     *         },
+                     *         "scope_changes": [],
+                     *         "trim_changes": [
+                     *           {
+                     *             "change_type": "changed",
+                     *             "left": [
+                     *               {
+                     *                 "group": "section:main",
+                     *                 "pruned_token_count": 32,
+                     *                 "reason": "group_limit_exceeded"
+                     *               }
+                     *             ],
+                     *             "path": "trim_reasons",
+                     *             "right": [
+                     *               {
+                     *                 "group": "section:main",
+                     *                 "pruned_token_count": 64,
+                     *                 "reason": "group_limit_exceeded"
+                     *               }
+                     *             ]
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            asset_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            diagnostics_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            exclusion_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            left: {
+                                floor_id: string;
+                                snapshot_available: boolean;
+                            };
+                            limitations: string[];
+                            policy_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            right: {
+                                floor_id: string;
+                                snapshot_available: boolean;
+                            };
+                            scope_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            trim_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     getSessionPromptRuntimePolicy: {
         parameters: {
             query?: never;
@@ -15312,7 +17466,24 @@ export interface operations {
                      *             "mode": "strict_alternating"
                      *           }
                      *         },
+                     *         "persistent_policy_envelope": {
+                     *           "updated_at": 1710000004300,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "delivery": {
+                     *               "require_last_user": true
+                     *             },
+                     *             "structure": {
+                     *               "mode": "strict_alternating"
+                     *             }
+                     *           },
+                     *           "version": 1
+                     *         },
                      *         "resolved_policy": {
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
+                     *           },
                      *           "debug": {
                      *             "include_prompt_snapshot": false,
                      *             "include_runtime_trace": false,
@@ -15320,13 +17491,38 @@ export interface operations {
                      *           },
                      *           "delivery": {
                      *             "allow_assistant_prefill": true,
-                     *             "no_assistant": false,
+                     *             "no_assistant": true,
                      *             "require_last_user": true
                      *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
                      *           "structure": {
+                     *             "assistant_rewrite_strategy": "to_system",
                      *             "merge_adjacent_same_role": true,
-                     *             "mode": "strict_alternating",
+                     *             "mode": "no_assistant",
                      *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "warnings": []
@@ -15336,21 +17532,133 @@ export interface operations {
                     "application/json": {
                         data: {
                             persistent_policy?: {
+                                budget?: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
                                 delivery?: {
                                     allow_assistant_prefill?: boolean;
                                     no_assistant?: boolean;
                                     require_last_user?: boolean;
+                                };
+                                source_selection?: {
+                                    examples?: {
+                                        enabled?: boolean;
+                                    };
+                                    history?: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode?: "full" | "windowed";
+                                    };
+                                    memory?: {
+                                        enabled?: boolean;
+                                    };
+                                    worldbook?: {
+                                        enabled?: boolean;
+                                    };
                                 };
                                 structure?: {
                                     /** @enum {string} */
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
                                 };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
                             };
+                            persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                    };
+                                };
+                                version: number;
+                            } | null;
                             resolved_policy: {
+                                budget: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
                                 debug: {
                                     include_prompt_snapshot: boolean;
                                     include_runtime_trace: boolean;
@@ -15361,13 +17669,42 @@ export interface operations {
                                     no_assistant: boolean;
                                     require_last_user: boolean;
                                 };
+                                source_selection: {
+                                    examples: {
+                                        enabled: boolean;
+                                    };
+                                    history: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode: "full" | "windowed";
+                                    };
+                                    memory: {
+                                        enabled: boolean;
+                                    };
+                                    worldbook: {
+                                        enabled: boolean;
+                                    };
+                                };
                                 structure: {
                                     /** @enum {string} */
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             warnings: string[];
@@ -15434,20 +17771,53 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
+                    budget?: {
+                        max_input_tokens?: number;
+                        reserved_completion_tokens?: number;
+                    } | null;
                     delivery?: {
                         allow_assistant_prefill?: boolean;
                         no_assistant?: boolean;
                         require_last_user?: boolean;
+                    } | null;
+                    source_selection?: {
+                        examples?: {
+                            enabled?: boolean;
+                        };
+                        history?: {
+                            max_messages?: number;
+                            /** @enum {string} */
+                            mode?: "full" | "windowed";
+                        };
+                        memory?: {
+                            enabled?: boolean;
+                        };
+                        worldbook?: {
+                            enabled?: boolean;
+                        };
                     } | null;
                     structure?: {
                         /** @enum {string} */
                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                         merge_adjacent_same_role?: boolean;
                         /** @enum {string} */
-                        mode: "default" | "strict_alternating" | "no_assistant";
+                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                         preserve_system_messages?: boolean;
                     } | null;
-                } | unknown | unknown;
+                    visibility?: {
+                        hidden_floor_ids?: string[];
+                        hidden_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                        /** @enum {string} */
+                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                        visible_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                    } | null;
+                } | unknown | unknown | unknown | unknown | unknown;
             };
         };
         responses: {
@@ -15468,7 +17838,24 @@ export interface operations {
                      *             "mode": "strict_alternating"
                      *           }
                      *         },
+                     *         "persistent_policy_envelope": {
+                     *           "updated_at": 1710000004300,
+                     *           "updated_by": "user-1",
+                     *           "value": {
+                     *             "delivery": {
+                     *               "require_last_user": true
+                     *             },
+                     *             "structure": {
+                     *               "mode": "strict_alternating"
+                     *             }
+                     *           },
+                     *           "version": 1
+                     *         },
                      *         "resolved_policy": {
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
+                     *           },
                      *           "debug": {
                      *             "include_prompt_snapshot": false,
                      *             "include_runtime_trace": false,
@@ -15476,13 +17863,38 @@ export interface operations {
                      *           },
                      *           "delivery": {
                      *             "allow_assistant_prefill": true,
-                     *             "no_assistant": false,
+                     *             "no_assistant": true,
                      *             "require_last_user": true
                      *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
                      *           "structure": {
+                     *             "assistant_rewrite_strategy": "to_system",
                      *             "merge_adjacent_same_role": true,
-                     *             "mode": "strict_alternating",
+                     *             "mode": "no_assistant",
                      *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "warnings": []
@@ -15492,21 +17904,133 @@ export interface operations {
                     "application/json": {
                         data: {
                             persistent_policy?: {
+                                budget?: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
                                 delivery?: {
                                     allow_assistant_prefill?: boolean;
                                     no_assistant?: boolean;
                                     require_last_user?: boolean;
+                                };
+                                source_selection?: {
+                                    examples?: {
+                                        enabled?: boolean;
+                                    };
+                                    history?: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode?: "full" | "windowed";
+                                    };
+                                    memory?: {
+                                        enabled?: boolean;
+                                    };
+                                    worldbook?: {
+                                        enabled?: boolean;
+                                    };
                                 };
                                 structure?: {
                                     /** @enum {string} */
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
                                 };
+                                /**
+                                 * @example {
+                                 *       "hidden_floor_ranges": [
+                                 *         {
+                                 *           "end_floor_no": 2,
+                                 *           "start_floor_no": 1
+                                 *         }
+                                 *       ],
+                                 *       "mode": "allow_all_except_hidden"
+                                 *     }
+                                 */
+                                visibility?: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
                             };
+                            persistent_policy_envelope?: {
+                                updated_at: number;
+                                updated_by: string | null;
+                                value: {
+                                    budget?: {
+                                        max_input_tokens?: number;
+                                        reserved_completion_tokens?: number;
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill?: boolean;
+                                        no_assistant?: boolean;
+                                        require_last_user?: boolean;
+                                    };
+                                    source_selection?: {
+                                        examples?: {
+                                            enabled?: boolean;
+                                        };
+                                        history?: {
+                                            max_messages?: number;
+                                            /** @enum {string} */
+                                            mode?: "full" | "windowed";
+                                        };
+                                        memory?: {
+                                            enabled?: boolean;
+                                        };
+                                        worldbook?: {
+                                            enabled?: boolean;
+                                        };
+                                    };
+                                    structure?: {
+                                        /** @enum {string} */
+                                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                        merge_adjacent_same_role?: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        preserve_system_messages?: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "hidden_floor_ranges": [
+                                     *         {
+                                     *           "end_floor_no": 2,
+                                     *           "start_floor_no": 1
+                                     *         }
+                                     *       ],
+                                     *       "mode": "allow_all_except_hidden"
+                                     *     }
+                                     */
+                                    visibility?: {
+                                        hidden_floor_ids?: string[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                        /** @enum {string} */
+                                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                                        visible_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                    };
+                                };
+                                version: number;
+                            } | null;
                             resolved_policy: {
+                                budget: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
                                 debug: {
                                     include_prompt_snapshot: boolean;
                                     include_runtime_trace: boolean;
@@ -15517,13 +18041,42 @@ export interface operations {
                                     no_assistant: boolean;
                                     require_last_user: boolean;
                                 };
+                                source_selection: {
+                                    examples: {
+                                        enabled: boolean;
+                                    };
+                                    history: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode: "full" | "windowed";
+                                    };
+                                    memory: {
+                                        enabled: boolean;
+                                    };
+                                    worldbook: {
+                                        enabled: boolean;
+                                    };
+                                };
                                 structure: {
                                     /** @enum {string} */
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant";
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
                                 };
                             };
                             warnings: string[];
@@ -15597,7 +18150,30 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "branch_id": "main",
+                 *       "branch_id": "alt-preview",
+                 *       "budget": {
+                 *         "max_input_tokens": 4096,
+                 *         "reserved_completion_tokens": 1024
+                 *       },
+                 *       "delivery": {
+                 *         "no_assistant": true
+                 *       },
+                 *       "source_floor_id": "floor-source",
+                 *       "source_selection": {
+                 *         "examples": {
+                 *           "enabled": false
+                 *         },
+                 *         "history": {
+                 *           "max_messages": 24,
+                 *           "mode": "windowed"
+                 *         },
+                 *         "memory": {
+                 *           "enabled": true
+                 *         },
+                 *         "worldbook": {
+                 *           "enabled": true
+                 *         }
+                 *       },
                  *       "text": "{{setvar::资产.金币::3}}{{getvar::资产}}",
                  *       "visibility": {
                  *         "hidden_floor_ranges": [
@@ -15612,7 +18188,40 @@ export interface operations {
                  */
                 "application/json": {
                     branch_id?: string;
+                    budget?: {
+                        max_input_tokens?: number;
+                        reserved_completion_tokens?: number;
+                    };
+                    delivery?: {
+                        allow_assistant_prefill?: boolean;
+                        no_assistant?: boolean;
+                        require_last_user?: boolean;
+                    };
                     source_floor_id?: string;
+                    source_selection?: {
+                        examples?: {
+                            enabled?: boolean;
+                        };
+                        history?: {
+                            max_messages?: number;
+                            /** @enum {string} */
+                            mode?: "full" | "windowed";
+                        };
+                        memory?: {
+                            enabled?: boolean;
+                        };
+                        worldbook?: {
+                            enabled?: boolean;
+                        };
+                    };
+                    structure?: {
+                        /** @enum {string} */
+                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                        merge_adjacent_same_role?: boolean;
+                        /** @enum {string} */
+                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                        preserve_system_messages?: boolean;
+                    };
                     text: string;
                     visibility?: {
                         hidden_floor_ids?: string[];
@@ -15640,6 +18249,72 @@ export interface operations {
                     /**
                      * @example {
                      *       "data": {
+                     *         "diagnostics": [
+                     *           {
+                     *             "code": "derived_no_assistant_structure",
+                     *             "field_path": "policy.structure.mode",
+                     *             "message": "delivery.noAssistant forced the resolved structure.mode to no_assistant.",
+                     *             "severity": "warning",
+                     *             "source": "policy"
+                     *           },
+                     *           {
+                     *             "code": "unmaterialized_branch_preview",
+                     *             "message": "Preview targeted unmaterialized branch 'alt-preview'. Branch policy overlay is unavailable until the branch is materialized.",
+                     *             "phase": "preview",
+                     *             "severity": "info",
+                     *             "source": "branch"
+                     *           }
+                     *         ],
+                     *         "limitations": [
+                     *           "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+                     *           "Variable commit remains page -> floor. Branch promotion is not automatic."
+                     *         ],
+                     *         "policy": {
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
+                     *           },
+                     *           "debug": {
+                     *             "include_prompt_snapshot": false,
+                     *             "include_runtime_trace": false,
+                     *             "include_worldbook_matches": false
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": true,
+                     *             "no_assistant": true,
+                     *             "require_last_user": true
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "to_system",
+                     *             "merge_adjacent_same_role": true,
+                     *             "mode": "no_assistant",
+                     *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
+                     *           }
+                     *         },
                      *         "runtime_trace": {
                      *           "macro": {
                      *             "mutation_preview": [
@@ -15679,6 +18354,15 @@ export interface operations {
                      *               }
                      *             ]
                      *           },
+                     *           "source_selection": {
+                     *             "excluded_sources": [
+                     *               {
+                     *                 "detail": "Visibility filtered 2 floor(s) from the available history window.",
+                     *                 "reason": "visibility_filtered",
+                     *                 "source": "history"
+                     *               }
+                     *             ]
+                     *           },
                      *           "visibility": {
                      *             "filtered_floor_nos": [
                      *               1,
@@ -15692,12 +18376,125 @@ export interface operations {
                      *             ]
                      *           }
                      *         },
+                     *         "scope": {
+                     *           "branch_exists": false,
+                     *           "history_source_branch_id": "fork-branch",
+                     *           "history_source_mode": "source_floor_branch",
+                     *           "session_id": "session-1",
+                     *           "source_floor_id": "floor-source",
+                     *           "target_branch_id": "alt-preview"
+                     *         },
+                     *         "source_map": {
+                     *           "budget": {
+                     *             "max_input_tokens": "request_override",
+                     *             "reserved_completion_tokens": "request_override"
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": "system_default",
+                     *             "no_assistant": "request_override",
+                     *             "require_last_user": "session_policy"
+                     *           },
+                     *           "history": {
+                     *             "source_branch_id": "fork-branch",
+                     *             "source_mode": "source_floor_branch"
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": "request_override"
+                     *             },
+                     *             "history": {
+                     *               "max_messages": "request_override",
+                     *               "mode": "request_override"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": "system_default"
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": "system_default"
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "system_default",
+                     *             "merge_adjacent_same_role": "request_override",
+                     *             "mode": "request_override",
+                     *             "preserve_system_messages": "system_default"
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": "request_override",
+                     *             "mode": "request_override"
+                     *           }
+                     *         },
                      *         "text": "{\"金币\":3}"
                      *       }
                      *     }
                      */
                     "application/json": {
                         data: {
+                            diagnostics: {
+                                code: string;
+                                field_path?: string;
+                                message: string;
+                                /** @enum {string} */
+                                phase?: "preview" | "dry_run" | "assemble" | "commit_consume" | "explain";
+                                /** @enum {string} */
+                                severity: "info" | "warning" | "error";
+                                /** @enum {string} */
+                                source?: "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
+                            }[];
+                            limitations: string[];
+                            policy: {
+                                budget: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
+                                debug: {
+                                    include_prompt_snapshot: boolean;
+                                    include_runtime_trace: boolean;
+                                    include_worldbook_matches: boolean;
+                                };
+                                delivery: {
+                                    allow_assistant_prefill: boolean;
+                                    no_assistant: boolean;
+                                    require_last_user: boolean;
+                                };
+                                source_selection: {
+                                    examples: {
+                                        enabled: boolean;
+                                    };
+                                    history: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode: "full" | "windowed";
+                                    };
+                                    memory: {
+                                        enabled: boolean;
+                                    };
+                                    worldbook: {
+                                        enabled: boolean;
+                                    };
+                                };
+                                structure: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
+                            };
                             runtime_trace: {
                                 /**
                                  * @example {
@@ -15775,12 +18572,99 @@ export interface operations {
                                         raw_text?: string;
                                     }[];
                                 };
+                                source_selection?: {
+                                    excluded_sources: {
+                                        detail?: string;
+                                        /** @enum {string} */
+                                        reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+                                        /** @enum {string} */
+                                        source: "history" | "memory" | "worldbook" | "examples";
+                                    }[];
+                                };
                                 visibility?: {
                                     filtered_floor_nos: number[];
                                     hidden_floor_ranges?: {
                                         end_floor_no: number;
                                         start_floor_no: number;
                                     }[];
+                                };
+                            };
+                            scope: {
+                                branch_exists: boolean;
+                                history_source_branch_id: string;
+                                /** @enum {string} */
+                                history_source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                session_id: string;
+                                source_floor_id?: string | null;
+                                target_branch_id: string;
+                            };
+                            source_map?: {
+                                budget?: {
+                                    /** @enum {string} */
+                                    max_input_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    reserved_completion_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                debug?: {
+                                    /** @enum {string} */
+                                    include_prompt_snapshot?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    include_runtime_trace?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    include_worldbook_matches?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                delivery?: {
+                                    /** @enum {string} */
+                                    allow_assistant_prefill?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    no_assistant?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    require_last_user?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                history?: {
+                                    source_branch_id?: string;
+                                    /** @enum {string} */
+                                    source_mode?: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                };
+                                source_selection?: {
+                                    examples?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    history?: {
+                                        /** @enum {string} */
+                                        max_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                        /** @enum {string} */
+                                        mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    memory?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    worldbook?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                };
+                                structure?: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    merge_adjacent_same_role?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    preserve_system_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                visibility?: {
+                                    /** @enum {string} */
+                                    hidden_floor_ids?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    hidden_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    visible_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                             };
                             text: string;

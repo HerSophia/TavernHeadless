@@ -51,6 +51,7 @@ global 兼容视图 -> global 读取与 staged overlay
 - `getglobalvar` / `$name` 读取 global 兼容视图
 - `setvar` 与 `setglobalvar` 的同轮 staged 可见性彼此隔离
 - 真正持久化时，仍然通过既有变量提交链路落到 TavernHeadless 的底层作用域模型
+- 当前 `variableCommit` 仍只做 `page -> floor` 提交；不会自动改成 `toScope=branch`，也不会做多跳 promotion
 
 当前宏兼容层也支持对结构化 JSON 变量做路径访问，例如：
 
@@ -71,6 +72,7 @@ global 兼容视图 -> global 读取与 staged overlay
 
 - 当宏读取到对象值时，对外文本结果和 `runtime_trace.macro.mutation_preview` / `staged_mutations` 中的 `value` 会稳定输出为 JSON 字符串。
 - 当 `POST /sessions/:id/prompt-runtime/preview` 对一个尚未物化的新分支同时传入 `branch_id` 和 `source_floor_id` 时，local 兼容视图会先继承 source floor 当时可见的 local 值，再进入 preview overlay。
+- 这一继承语义现在只接受精确的 `branch_local_variable_snapshot`。如果 source floor 缺少该快照，服务端会返回 `409 branch_local_snapshot_missing`，而不会退回到当前 branch/chat 可见值。
 
 如果你需要查看宏系统的兼容边界、warning、trace 和 dry-run 调试字段，请参考 [Macros](./macros) 与 [Chat](./chat)。
 

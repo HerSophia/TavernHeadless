@@ -5,14 +5,19 @@
  */
 
 export const promptIntentValues = ["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"] as const;
-export const promptStructureModeValues = ["default", "strict_alternating", "no_assistant"] as const;
+export const promptStructureModeValues = ["default", "strict_alternating", "no_assistant", "flattened"] as const;
 export const promptStructureAssistantRewriteStrategyValues = ["to_system", "to_user_transcript"] as const;
 export const promptSnapshotModeValues = ["compat_strict", "compat_plus", "native"] as const;
 export const promptNamesBehaviorValues = ["off", "always"] as const;
-export const promptAssistantPrefillStrategyValues = ["provider_native", "assistant_message_fallback", "unsupported", "none"] as const;
+export const promptAssistantPrefillStrategyValues = ["provider_native", "assistant_message_fallback", "transcript_append", "unsupported", "none"] as const;
 export const promptMessageRoleValues = ["system", "user", "assistant"] as const;
 export const promptDeliveryDegradeReasonValues = ["assistant_prefill_disabled", "assistant_prefill_unsupported", "require_last_user", "no_assistant_override"] as const;
 export const dryRunVisibilityModeValues = ["allow_all_except_hidden", "deny_all_except_visible"] as const;
+export const promptBudgetFieldValues = ["maxInputTokens", "reservedCompletionTokens"] as const;
+export const promptSourceSelectionHistoryModeValues = ["full", "windowed"] as const;
+export const promptTrimReasonCodeValues = ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"] as const;
+export const promptSourceExclusionReasonValues = ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"] as const;
+export const promptSourceKindValues = ["history", "memory", "worldbook", "examples"] as const;
 
 // ── Example constants ─────────────────────────────────
 
@@ -115,7 +120,7 @@ export const liveRuntimeTraceExample = {
   },
   budgets: {
     by_group: [
-      { group: "history", token_count: 256, pruned_token_count: 64 },
+      { group: "history", token_count: 256, estimated_token_count: 320, allocated_token_count: 256, pruned_token_count: 64 },
       { group: "worldbook", token_count: 64 },
     ],
   },
@@ -189,6 +194,16 @@ export const dryRunBodyExample = {
     allow_assistant_prefill: false,
     require_last_user: true,
     no_assistant: false,
+  },
+  budget: {
+    max_input_tokens: 4096,
+    reserved_completion_tokens: 1024,
+  },
+  source_selection: {
+    history: { mode: "windowed", max_messages: 24 },
+    memory: { enabled: true },
+    worldbook: { enabled: true },
+    examples: { enabled: false },
   },
 } as const;
 
@@ -394,7 +409,7 @@ export const dryRunSuccessResponseExample = {
       },
       budgets: {
         by_group: [
-          { group: "history", token_count: 96, pruned_token_count: 32 },
+          { group: "history", token_count: 96, estimated_token_count: 128, allocated_token_count: 96, pruned_token_count: 32 },
           { group: "memory", token_count: 48 },
           { group: "worldbook", token_count: 64 },
           { group: "section:main", token_count: 80 },
@@ -533,6 +548,33 @@ export const promptStructureJsonSchema = {
   type: "object",
   required: ["mode"],
   properties: promptStructureProperties,
+  additionalProperties: false,
+} as const;
+
+export const promptBudgetJsonSchema = {
+  type: "object",
+  properties: {
+    max_input_tokens: { type: "integer", minimum: 1 },
+    reserved_completion_tokens: { type: "integer", minimum: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
+export const promptSourceSelectionJsonSchema = {
+  type: "object",
+  properties: {
+    history: {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: promptSourceSelectionHistoryModeValues },
+        max_messages: { type: "integer", minimum: 1 },
+      },
+      additionalProperties: false,
+    },
+    memory: { type: "object", properties: { enabled: { type: "boolean" } }, additionalProperties: false },
+    worldbook: { type: "object", properties: { enabled: { type: "boolean" } }, additionalProperties: false },
+    examples: { type: "object", properties: { enabled: { type: "boolean" } }, additionalProperties: false },
+  },
   additionalProperties: false,
 } as const;
 
@@ -722,8 +764,28 @@ const runtimeTraceBudgetGroupJsonSchema = {
   type: "object",
   required: ["group", "token_count"],
   properties: {
-    group: { type: "string" },
+    group: {
+      type: "string",
+      description: "Budget group label. This may include concrete section groups such as `section:main`.",
+    },
     token_count: { type: "integer", minimum: 0 },
+    estimated_token_count: { type: "integer", minimum: 0 },
+    allocated_token_count: { type: "integer", minimum: 0 },
+    pruned_token_count: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceTrimReasonJsonSchema = {
+  type: "object",
+  required: ["group", "reason"],
+  properties: {
+    group: {
+      type: "string",
+      description: "Budget group label. This may include concrete section groups such as `section:main`.",
+    },
+    reason: { type: "string", enum: promptTrimReasonCodeValues },
+    detail: { type: "string" },
     pruned_token_count: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
@@ -737,6 +799,34 @@ const runtimeTraceBudgetsJsonSchema = {
       type: "array",
       items: runtimeTraceBudgetGroupJsonSchema,
     },
+    trim_reasons: {
+      type: "array",
+      items: runtimeTraceTrimReasonJsonSchema,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceSourceExclusionReasonJsonSchema = {
+  type: "object",
+  required: ["source", "reason"],
+  properties: {
+    source: {
+      type: "string",
+      enum: promptSourceKindValues,
+      description: "Public source kind. Internal budget groups such as `section:*` do not appear here.",
+    },
+    reason: { type: "string", enum: promptSourceExclusionReasonValues },
+    detail: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceSourceSelectionJsonSchema = {
+  type: "object",
+  required: ["excluded_sources"],
+  properties: {
+    excluded_sources: { type: "array", items: runtimeTraceSourceExclusionReasonJsonSchema },
   },
   additionalProperties: false,
 } as const;
@@ -752,6 +842,9 @@ const runtimeTraceStructureJsonSchema = {
       anyOf: [{ type: "string", enum: promptStructureAssistantRewriteStrategyValues }, { type: "null" }],
     },
     tail_assistant_detected: { type: "boolean" },
+    transcriptized: { type: "boolean" },
+    transcript_message_count: { type: "integer", minimum: 0 },
+    assistant_prefill_transcriptized: { type: "boolean" },
   },
   additionalProperties: false,
 } as const;
@@ -880,6 +973,7 @@ const runtimeTraceBaseProperties = {
   regex: runtimeTraceRegexJsonSchema,
   budgets: runtimeTraceBudgetsJsonSchema,
   structure: runtimeTraceStructureJsonSchema,
+  source_selection: runtimeTraceSourceSelectionJsonSchema,
   memory: runtimeTraceMemoryJsonSchema,
   macro: runtimeTraceMacroJsonSchema,
   delivery: runtimeTraceDeliveryJsonSchema,
@@ -914,6 +1008,14 @@ export const editAndRegenerateBodyJsonSchema = {
     config: turnConfigJsonSchema,
     generation_params: generationParamsJsonSchema,
     debug_options: liveDebugOptionsJsonSchema,
+    confirmed_execution_ids: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
+    confirmed_session_state_mutation_ids: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
   },
   examples: [editAndRegenerateBodyExample],
   additionalProperties: false,
@@ -947,6 +1049,8 @@ export const dryRunBodyJsonSchema = {
     visibility: dryRunVisibilityJsonSchema,
     structure: promptStructureJsonSchema,
     delivery: promptDeliveryJsonSchema,
+    budget: promptBudgetJsonSchema,
+    source_selection: promptSourceSelectionJsonSchema,
   },
   examples: [dryRunBodyExample],
   additionalProperties: false,
@@ -960,6 +1064,14 @@ export const regenerateBodyJsonSchema = {
     config: turnConfigJsonSchema,
     generation_params: generationParamsJsonSchema,
     debug_options: liveDebugOptionsJsonSchema,
+    confirmed_execution_ids: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
+    confirmed_session_state_mutation_ids: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+    },
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,
@@ -973,10 +1085,8 @@ export const retryFloorBodyJsonSchema = {
     config: turnConfigJsonSchema,
     generation_params: generationParamsJsonSchema,
     debug_options: liveDebugOptionsJsonSchema,
-    confirmed_execution_ids: {
-      type: "array",
-      items: { type: "string", minLength: 1 },
-    },
+    confirmed_execution_ids: regenerateBodyJsonSchema.properties.confirmed_execution_ids,
+    confirmed_session_state_mutation_ids: regenerateBodyJsonSchema.properties.confirmed_session_state_mutation_ids,
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,

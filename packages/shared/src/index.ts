@@ -1,8 +1,11 @@
 export {
   FLOOR_STATES,
   SCOPE_PRIORITY,
+  buildBranchMemoryScopeId,
   buildBranchVariableScopeId,
+  isBranchMemoryScopeId,
   parseBranchVariableScopeId,
+  parseBranchMemoryScopeId,
   isBranchVariableScopeId,
   CoreEvents,
   MEMORY_SCOPES,
@@ -32,16 +35,17 @@ export {
 export type {
   FloorState,
   VariableScope,
-  VariableEntry,
+  BranchMemoryScopeRef,
   BranchVariableScopeRef,
-  MemoryScope,
-  MemoryType,
-  MemorySummaryTier,
-  MemoryStatus,
-  MemoryLifecycleStatus,
-  MemoryRelation,
-  MemoryJobType,
   MemoryJobStatus,
+  MemoryJobType,
+  MemoryLifecycleStatus,
+  MemoryScope,
+  MemoryStatus,
+  MemoryRelation,
+  MemorySummaryTier,
+  MemoryType,
+  VariableEntry,
 } from './types/index.js';
 
 export type {

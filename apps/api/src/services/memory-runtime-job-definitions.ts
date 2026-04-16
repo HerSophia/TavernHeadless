@@ -35,6 +35,7 @@ export const memoryIngestTurnJobPayloadSchema = z.object({
   floorId: z.string().min(1),
   floorNo: z.number().int().nonnegative(),
   assistantMessageId: z.string().min(1),
+  branchId: z.string().min(1).optional(),
   userInputDigest: z.string().min(1),
   committedAt: z.number().int(),
   summaries: z.array(z.string()).default([]),
@@ -115,10 +116,9 @@ export function parseMemoryRuntimeScopeKey(scopeKey: string): { scope: MemorySco
 
   const scope = scopeKey.slice(0, separatorIndex);
   const scopeId = scopeKey.slice(separatorIndex + 1);
+  const normalizedScope = MEMORY_SCOPES.includes(scope as MemoryScope) ? scope as MemoryScope : "chat";
   return {
-    scope: scope === "global" || scope === "chat" || scope === "floor"
-      ? scope
-      : "chat",
+    scope: normalizedScope,
     scopeId,
   };
 }

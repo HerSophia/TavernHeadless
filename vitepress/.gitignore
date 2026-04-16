@@ -1,3 +1,4 @@
 .vitepress/dist/
 .vitepress/cache/
+public/agent/
 node_modules/

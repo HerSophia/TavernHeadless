@@ -368,11 +368,75 @@ export const clientDataAuditLogs = sqliteTable(
   })
 );
 
+export const clientDataManagedDomains = sqliteTable(
+  "client_data_managed_domain",
+  {
+    domainId: text("domain_id").primaryKey().references(() => clientDataDomains.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    managerKind: text("manager_kind", { enum: ["session_state"] }).notNull(),
+    hostType: text("host_type", { enum: ["session"] }).notNull(),
+    hostId: text("host_id").notNull(),
+    stateNamespace: text("state_namespace").notNull(),
+    requireCallerOwner: integer("require_caller_owner", { mode: "boolean" }).notNull().default(true),
+    allowAutoCreateCollection: integer("allow_auto_create_collection", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountManagerHostNamespaceUnique: uniqueIndex("client_data_managed_domain_account_manager_host_namespace_uq").on(
+      table.accountId,
+      table.managerKind,
+      table.hostType,
+      table.hostId,
+      table.stateNamespace,
+    ),
+    accountHostIdx: index("client_data_managed_domain_account_host_idx").on(
+      table.accountId,
+      table.hostType,
+      table.hostId,
+      table.stateNamespace,
+    ),
+  })
+);
+
+export const sessionStateMutations = sqliteTable(
+  "session_state_mutation",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    domainId: text("domain_id").notNull().references(() => clientDataDomains.id, { onDelete: "cascade" }),
+    stateNamespace: text("state_namespace").notNull(),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    branchId: text("branch_id").notNull(),
+    sourceFloorId: text("source_floor_id").references(() => floors.id, { onDelete: "set null" }),
+    targetSlot: text("target_slot").notNull(),
+    visibilityMode: text("visibility_mode", { enum: ["session_shared", "branch_local", "fork_on_branch"] }).notNull(),
+    writeMode: text("write_mode", { enum: ["direct", "commit_bound"] }).notNull(),
+    replaySafety: text("replay_safety", { enum: ["safe", "confirm_on_replay", "never_auto_replay", "uncertain"] }).notNull(),
+    status: text("status", { enum: ["staged", "applied", "discarded", "blocked", "uncertain"] }).notNull().default("staged"),
+    requestId: text("request_id"),
+    runId: text("run_id"),
+    payloadJson: text("payload_json").notNull().default("{}"),
+    sourceSnapshotFloorId: text("source_snapshot_floor_id").references(() => floors.id, { onDelete: "set null" }),
+    liveHeadKey: text("live_head_key"),
+    discardReason: text("discard_reason"),
+    blockedReason: text("blocked_reason"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    appliedAt: integer("applied_at"),
+  },
+  (table) => ({
+    sessionBranchStatusCreatedIdx: index("session_state_mutation_session_branch_status_created_idx").on(table.sessionId, table.branchId, table.status, table.createdAt),
+    sourceFloorIdx: index("session_state_mutation_source_floor_idx").on(table.sourceFloorId, table.status, table.createdAt),
+    runIdx: index("session_state_mutation_run_idx").on(table.runId, table.createdAt),
+  })
+);
+
 export const memoryItems = sqliteTable(
   "memory_item",
   {
     id: text("id").primaryKey(),
-    scope: text("scope", { enum: ["global", "chat", "floor"] }).notNull(),
+    scope: text("scope", { enum: ["global", "chat", "branch", "floor"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     type: text("type", { enum: ["fact", "summary", "open_loop"] }).notNull(),
     summaryTier: text("summary_tier", { enum: ["micro", "macro"] }),
@@ -744,6 +808,33 @@ export const floorResultSnapshots = sqliteTable(
   (table) => ({
     committedAtIdx: index("floor_result_snapshot_committed_at_idx").on(table.committedAt),
     outputPageIdx: index("floor_result_snapshot_output_page_idx").on(table.outputPageId),
+  })
+);
+
+export const promptRuntimeExplainSnapshots = sqliteTable(
+  "prompt_runtime_explain_snapshot",
+  {
+    id: text("id").primaryKey(),
+    floorId: text("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    targetBranchId: text("target_branch_id"),
+    sourceFloorId: text("source_floor_id").references(() => floors.id, { onDelete: "set null" }),
+    historySourceBranchId: text("history_source_branch_id"),
+    historySourceMode: text("history_source_mode", { enum: ["existing_branch", "source_floor_branch", "main_fallback"] }).notNull().default("existing_branch"),
+    snapshotVersion: integer("snapshot_version").notNull().default(1),
+    assetsJson: text("assets_json").notNull().default("{}"),
+    resolvedPolicyJson: text("resolved_policy_json").notNull().default("{}"),
+    sourceMapJson: text("source_map_json").notNull().default("{}"),
+    diagnosticsJson: text("diagnostics_json").notNull().default("[]"),
+    trimReasonsJson: text("trim_reasons_json").notNull().default("[]"),
+    excludedSourcesJson: text("excluded_sources_json").notNull().default("[]"),
+    sectionStatsJson: text("section_stats_json").notNull().default("[]"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    floorIdUnique: uniqueIndex("prompt_runtime_explain_snapshot_floor_id_uq").on(table.floorId),
+    sessionCreatedIdx: index("prompt_runtime_explain_snapshot_session_created_idx").on(table.sessionId, table.createdAt),
+    sessionBranchCreatedIdx: index("prompt_runtime_explain_snapshot_session_branch_created_idx").on(table.sessionId, table.targetBranchId, table.createdAt),
   })
 );
 

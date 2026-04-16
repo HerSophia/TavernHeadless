@@ -1,16 +1,11 @@
 name: Deploy Docs
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "vitepress/**"
-      - "docs/**"
-      - "PROGRESS.md"
-      - "apps/api/PROGRESS.md"
-      - "apps/web/PROGRESS.md"
-      - ".github/workflows/deploy-docs.yml"
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -25,14 +20,30 @@ concurrency:
 jobs:
   build:
     name: Build Docs
+    if: >
+      (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main') ||
+      (github.event_name == 'workflow_dispatch' &&
+        github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      AGENT_BASE_PATH: /TavernHeadless/
+      AGENT_PUBLIC_SITE_URL: https://${{ github.repository_owner }}.github.io/TavernHeadless/
+      AGENT_REPOSITORY: ${{ github.repository }}
+      AGENT_WORKFLOW_NAME: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.name || github.workflow }}
+      AGENT_WORKFLOW_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || github.run_id }}
+      AGENT_HEAD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      AGENT_HEAD_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
+      AGENT_CONCLUSION: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion || 'success' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -47,7 +58,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build VitePress site
-        run: pnpm --filter @tavern/docs build
+        run: pnpm docs:build
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

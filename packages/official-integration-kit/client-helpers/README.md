@@ -82,8 +82,8 @@ const pluginOwner = buildPluginOwner("chat-annotator");
 这组 helper 适合用于：
 
 - 创建 client-data domain
-- 构造 caller owner 头
 - 统一应用层 owner 结构
+- 构造 SDK `callerOwner` 参数或 caller owner 头
 
 #### 按 collection 分组
 

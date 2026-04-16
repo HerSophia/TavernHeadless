@@ -8,6 +8,10 @@ outline: [2, 3]
 
 如果你只需要对一段文本做宏 preview，而不需要完整 prompt 组装，请改用 `POST /sessions/:id/prompt-runtime/preview`。它复用同一条宏主线，但不会创建 floor，也不会调用 LLM。
 
+如果你需要回看某个已提交楼层在当时真正落库的 `prompt_snapshot`、`prompt_runtime_explain_snapshot` 和 committed result，而不是当前请求的 live / dry-run 调试结果，请使用 `GET /floors/:id/prompt-runtime/explain`。它只读取持久化真相，不会重新组装 prompt，也不会重新计算 budget / source selection。
+
+如果你需要比较两个已提交楼层的 Prompt Runtime 差异，请使用 `POST /sessions/:id/prompt-runtime/compare`。这个接口同样只读取 committed truth，不会额外做 explain recompute。
+
 ## 发送消息并生成回复
 
 ```http
@@ -76,7 +80,11 @@ POST /sessions/:id/respond
 
 当 mutation value 是对象时，`runtime_trace.macro.mutation_preview` 和 `runtime_trace.macro.staged_mutations` 会返回稳定 JSON 字符串，而不是 `[object Object]`。
 
+当 `structure.mode=flattened` 时，`runtime_trace.structure` 还会附带 `transcriptized`、`transcript_message_count` 与 `assistant_prefill_transcriptized`。如果 assistant prefill 被转写进 transcript，`runtime_trace.delivery.assistant_prefill_strategy` 会返回 `transcript_append`。
+
 这两个字段默认都关闭。未打开时，同步成功响应保持兼容。
+
+当 live 生成成功并越过 commit 边界后，服务端还会在同一同步事务内写入 `prompt_runtime_explain_snapshot`。后续 `GET /floors/:id/prompt-runtime/explain` 和 `POST /sessions/:id/prompt-runtime/compare` 都以这份 committed snapshot 为主，不会事后重算 prompt 组装、宏展开、budget 或 source selection。
 
 ### 常见错误
 
@@ -84,7 +92,7 @@ POST /sessions/:id/respond
 | ------ | ---- | ---- |
 | `400` | `validation_error` / `invalid_message_scope` | 参数校验失败，或消息作用域错误 |
 | `404` | `not_found` | 会话不存在 |
-| `409` | `session_archived` / `generation_conflict` / `commit_conflict` / `generation_target_stale` | 会话状态冲突、提交边界冲突，或排队请求等待期间目标上下文已经变化 |
+| `409` | `session_archived` / `generation_conflict` / `commit_conflict` / `generation_target_stale` / `branch_local_snapshot_missing` | 会话状态冲突、提交边界冲突、排队请求等待期间目标上下文已经变化，或新分支所依赖的 source floor 缺少精确 local snapshot |
 | `503` | `secret_unavailable` / `commit_busy` / `generation_queue_timeout` | 密钥不可用，或生成 / 提交等待阶段已超时 |
 | `504` | `generation_timeout` | LLM 执行超时 |
 | `500` | `secret_invalid_format` / `orchestration_failed` / `turn_commit_failed` | 已保存的密文无法解密，或生成过程出现未分类内部错误 |
@@ -92,6 +100,8 @@ POST /sessions/:id/respond
 上表列出的是常见错误，不是穷尽列表。
 
 当前聊天链路还可能返回：`source_floor_not_found`、`invalid_tool_mode`、`tool_replay_blocked`、`tool_replay_confirmation_required`、`profile_not_found`、`profile_disabled`、`instance_slot_disabled_required`、`tool_catalog_conflict`、`generation_cancelled`（`499`）等 code。客户端应按 `error.code` 做分支处理，而不应只依赖状态码。
+
+如果 `respond` 或 `edit-and-regenerate` 要从一个尚未物化的新分支继承 source floor 的 local 兼容视图，但该 source floor 缺少 `branch_local_variable_snapshot`，服务端现在会直接返回 `409 branch_local_snapshot_missing`，不再退回到当前可见 branch/chat 值。
 
 这里的 `commit_busy` 是聊天提交链路专用错误，不复用资源写入路径上的 `resource_busy`。
 
@@ -171,6 +181,8 @@ POST /sessions/:id/respond/dry-run
 
 只组装 Prompt 并返回调试信息，不实际调用 LLM，无副作用。除了 `prompt_snapshot`，响应里的 `assembly` 还会返回 preset 兼容边界信息。
 
+dry-run 不会写入 `prompt_runtime_explain_snapshot`。这份 explain snapshot 只会在 live 聊天链成功 commit 时产生。
+
 如果需要查看命中的世界书条目、来源、注入位置和首个命中位置，可以在请求体里打开 `debug_options.include_worldbook_matches`。
 
 如果只想对单段文本做宏 preview，而不需要 `messages`、`assembly` 和 `prompt_snapshot`，请使用 `POST /sessions/:id/prompt-runtime/preview`。preview 与 dry-run 共享同一条宏求值主线，但 preview 只返回单段文本和 `runtime_trace`。
@@ -184,7 +196,10 @@ POST /sessions/:id/respond/dry-run
 | `debug_options` | object | 否 | dry-run 额外调试选项 |
 | `debug_options.include_worldbook_matches` | boolean | 否 | 是否返回 `assembly.worldbook_matches`。默认 `false` |
 
-当前 dry-run 使用独立请求契约。它只接受 `message`、`prompt_intent` 和 `debug_options`。
+当前 dry-run 使用独立请求契约。除 `message`、`prompt_intent`、`debug_options` 外，还支持：
+
+- `budget`：当前首轮支持 `max_input_tokens`、`reserved_completion_tokens`
+- `source_selection`：当前首轮支持 `history` / `memory` / `worldbook` / `examples`
 
 ### 响应 `200`
 
@@ -280,19 +295,23 @@ POST /sessions/:id/respond/dry-run
 
 ### 宏系统调试字段
 
-当当前会话的提示词里命中了 ST 宏兼容层时，`prompt_snapshot` 与 `assembly` 调试信息中还可能出现宏系统字段。
+当当前会话的提示词里命中了 ST 宏兼容层时，当前稳定的外部宏诊断面是 `runtime_trace.macro`。
 
-当前稳定可见的字段包括：
+`assembly` 与 `prompt_snapshot` 不再公开以下内部宏运行诊断字段：`macro_warnings`、`macro_used_names`、`macro_mutation_preview`、`macro_staged_mutations`、`macro_traces`。
+
+当前稳定可见的调试字段包括：
 
 | 字段 | 位置 | 类型 | 说明 |
 | ---- | ---- | ---- | ---- |
-| `macro_warnings` | `assembly` | array | 宏求值 warning 列表 |
-| `macro_used_names` | `assembly` | string[] | 本轮实际使用到的宏名 |
-| `macro_mutation_preview` | `assembly` | array | preview / dry-run 下的 would-write 列表 |
-| `macro_staged_mutations` | `assembly` | array | assemble 阶段冻结的 staged mutation |
-| `macro_traces` | `assembly` | array | 宏求值 trace 列表 |
+| `runtime_trace.macro.warnings` | `runtime_trace` | array | 宏求值 warning 列表 |
+| `runtime_trace.macro.used_names` | `runtime_trace` | string[] | 本轮实际使用到的宏名 |
+| `runtime_trace.macro.mutation_preview` | `runtime_trace` | array | preview / dry-run 下的 would-write 列表 |
+| `runtime_trace.macro.staged_mutations` | `runtime_trace` | array | assemble 阶段冻结的 staged mutation |
+| `runtime_trace.macro.traces` | `runtime_trace` | array | 宏求值 trace 列表 |
+| `runtime_trace.budgets.trim_reasons` | `runtime_trace` | array | 结构化 trim 原因。当前首轮主要覆盖 token budget 裁剪 |
+| `runtime_trace.source_selection.excluded_sources` | `runtime_trace` | array | 结构化 source exclusion 原因。当前首轮覆盖 history / memory / worldbook / examples 级说明 |
 
-当前 `macro_traces` 中已经包含最小调试元数据，典型字段包括：
+当前 `runtime_trace.macro.traces` 中已经包含最小调试元数据，典型字段包括：
 
 - `macro_name`
 - `raw_text`
@@ -305,7 +324,7 @@ POST /sessions/:id/respond/dry-run
 
 - `phase` 用于区分 `preview`、`dry_run`、`assemble`、`commit_consume` 等阶段
 - `source_kind` 用于区分 `macro`、`if`、`raw` 等来源
-- `used_names` 记录的是本轮实际参与求值的宏名
+- `runtime_trace.macro.used_names` 记录的是本轮实际参与求值的宏名
 - `selected_branch` 当前主要用于 `if` block，可能是 `then`、`else` 或 `raw`
 
 ### 宏系统行为边界
@@ -317,8 +336,18 @@ Prompt dry-run 与提示词调试场景对宏系统采用只读执行边界：
 - dry-run 不会触发 turn commit
 - 单段文本 preview 也不会触发 turn commit，且 `runtime_trace.macro.staged_mutations` 固定为空
 - dry-run 与 live 都会基于真实主链汇总宏诊断
-- 对外调试时优先查看 `runtime_trace.macro`
-- staged mutation 只在 respond / regenerate 的 assemble 阶段冻结，并在 commit 阶段消费
+- 对外调试时应优先查看 `runtime_trace.macro`
+- staged mutation 只在 respond / regenerate / retry / generateForFloor 的 assemble 阶段冻结，并在 commit 阶段消费
+
+Phase 2 首轮里，`runtime_trace` 新增两类更正式的 explain 输出：
+
+- `budgets.trim_reasons`：回答“为什么被裁剪”
+- `source_selection.excluded_sources`：回答“为什么没有进入 prompt”
+
+这里需要区分两层名字：
+
+- `budgets.by_group[].group` 与 `budgets.trim_reasons[].group` 是 budget group 标签，可以出现具体 section 标签，例如 `section:main`
+- `source_selection.excluded_sources[].source` 仍只使用公开 source kind；当前保持 `history`、`memory`、`worldbook`、`examples`
 
 ### `if` 条件块支持范围
 
@@ -395,12 +424,16 @@ Prompt dry-run 与提示词调试场景对宏系统采用只读执行边界：
 
 如需完整说明，请参考 [Macros](./macros)。
 
-`assembly` 中的字段分两类：
+`assembly` 继续只承担 dry-run 兼容摘要职责，不再承载宏运行诊断。当前可把它理解成两类字段：
 
-- **兼容边界**：`selected_prompt_order_character_id`、`unsupported_preset_fields`、`preset_warnings` 等，说明当前预设的哪些功能生效了、哪些被降级或忽略。
-- **运行语义**：`prompt_intent`、`assistant_prefill_applied`、`continue_nudge_applied`、`names_behavior_applied` 等，说明本轮提示词组装时各项功能是否真正执行。
+- **兼容 / 摘要字段**：`mode`、`prompt_intent`、`preset_used`、`reserved_variable_collisions`、`selected_prompt_order_character_id`、`unsupported_preset_fields`、`preset_warnings` 等，用来说明当前预设兼容边界和 dry-run 摘要。
+- **可与 `runtime_trace` 对齐的事实**：`assistant_prefill_*`、`regex_*`、`worldbook_hits`、`worldbook_matches`、`memory_summary_injected`、`continue_nudge_*`、`names_behavior_applied` 等。
+
+如果同一事实同时出现在 `assembly` 和 `runtime_trace`，应优先把 `runtime_trace` 视为更稳定的结构化观测面。典型映射包括：`assistant_prefill_* -> runtime_trace.delivery`、`regex_* / preprocessed_user_message -> runtime_trace.regex`、`worldbook_hits / worldbook_matches -> runtime_trace.worldbook`、`memory_summary_injected -> runtime_trace.memory`。
 
 `worldbook_matches` 只有在 `debug_options.include_worldbook_matches=true` 时才返回。它按命中的世界书条目逐条列出来源、注入位置和首个命中位置，适合做调试面板或高亮定位。
+
+顶层 `token_estimate`、顶层 `available_for_reply` 与 `prompt_snapshot.token_estimate` 当前仍同时保留。它们来自同一条已物化消息投影路径：前两者适合直接消费，`prompt_snapshot.token_estimate` 更适合和 `prompt_snapshot` 一起做快照展示、持久化比对或历史解释联读。
 
 各字段的含义见[官方集成层 - assembly 字段说明](/guide/integration-kit#assembly提示词组装的运行结果)。
 
