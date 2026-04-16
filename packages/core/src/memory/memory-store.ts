@@ -5,6 +5,7 @@ import type { TokenCounter } from '../prompt/types.js';
 import type {
   MemoryAccessOptions,
   MemoryConsolidationOutput,
+  MemoryEdge,
   MemoryInjectionOptions,
   MemoryInjectionResult,
   MemoryItem,
@@ -287,5 +288,113 @@ export class MemoryStore {
     });
 
     return updated;
+  }
+
+  /**
+   * 物理删除记忆条目（手动删除）。
+   *
+   * 写库成功之后广播 `memory.deleted`（source=manual）。事件 payload
+   * 中的 `item` 是删除前的快照，方便观察方重建真相。
+   */
+  async remove(
+    id: string,
+    access: MemoryAccessOptions = {},
+    options: { reason?: string; source?: 'manual' | 'maintenance' } = {},
+  ): Promise<MemoryItem | null> {
+    const removed = await this.repo.remove(id, access);
+    if (!removed) {
+      return null;
+    }
+
+    const eventContext = this.buildEventContext(removed);
+    await this.eventBus.emit('memory.deleted', {
+      ...eventContext,
+      item: removed,
+      source: options.source ?? 'manual',
+      ...(options.reason ? { reason: options.reason } : {}),
+    });
+
+    return removed;
+  }
+
+  /**
+   * 批量物理删除记忆条目。
+   *
+   * 对每个被删除的条目分别广播 `memory.deleted`，让批量操作仍然
+   * 在事件面上保持 item 级真相，与单条 remove 在事件粒度上一致。
+   */
+  async removeMany(
+    ids: readonly string[],
+    access: MemoryAccessOptions = {},
+    options: { reason?: string; source?: 'manual' | 'maintenance' } = {},
+  ): Promise<MemoryItem[]> {
+    if (ids.length === 0) return [];
+
+    const removed = await this.repo.removeMany(ids, access);
+    for (const item of removed) {
+      const eventContext = this.buildEventContext(item);
+      await this.eventBus.emit('memory.deleted', {
+        ...eventContext,
+        item,
+        source: options.source ?? 'manual',
+        ...(options.reason ? { reason: options.reason } : {}),
+      });
+    }
+
+    return removed;
+  }
+
+  /**
+   * 创建记忆关系边（手动创建）。
+   *
+   * 写入成功后广播 `memory.edge.created`。边事件 payload 主要面向
+   * 图变更观察者：edge 字段携带创建后的快照，session/scope 上下文
+   * 由调用方按需传入（默认对 edge 不做 scope 推导）。
+   */
+  async createEdge(
+    edge: Omit<MemoryEdge, 'id' | 'createdAt'>,
+    access: MemoryAccessOptions = {},
+    eventContext: { sessionId?: string; scope?: MemoryScope; scopeId?: string; floorId?: string } = {},
+  ): Promise<MemoryEdge> {
+    const created = await this.repo.createEdge(edge, access);
+
+    await this.eventBus.emit('memory.edge.created', {
+      edge: created,
+      source: 'manual',
+      ...(eventContext.sessionId ? { sessionId: eventContext.sessionId } : {}),
+      ...(eventContext.scope ? { scope: eventContext.scope } : {}),
+      ...(eventContext.scopeId ? { scopeId: eventContext.scopeId } : {}),
+      ...(eventContext.floorId ? { floorId: eventContext.floorId } : {}),
+    });
+
+    return created;
+  }
+
+  /**
+   * 物理删除记忆关系边（手动删除）。
+   *
+   * 写库成功后广播 `memory.edge.deleted`，edge 字段为删除前快照。
+   */
+  async removeEdge(
+    id: string,
+    access: MemoryAccessOptions = {},
+    options: { reason?: string; source?: 'manual' | 'maintenance'; sessionId?: string; scope?: MemoryScope; scopeId?: string; floorId?: string } = {},
+  ): Promise<MemoryEdge | null> {
+    const removed = await this.repo.removeEdge(id, access);
+    if (!removed) {
+      return null;
+    }
+
+    await this.eventBus.emit('memory.edge.deleted', {
+      edge: removed,
+      source: options.source ?? 'manual',
+      ...(options.reason ? { reason: options.reason } : {}),
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+      ...(options.scope ? { scope: options.scope } : {}),
+      ...(options.scopeId ? { scopeId: options.scopeId } : {}),
+      ...(options.floorId ? { floorId: options.floorId } : {}),
+    });
+
+    return removed;
   }
 }

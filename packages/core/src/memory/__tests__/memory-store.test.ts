@@ -106,8 +106,31 @@ function createMockRepo(): MemoryRepository {
       storage.set(id, deprecated);
       return deprecated;
     },
+    async remove(id, _options) {
+      const item = storage.get(id);
+      if (!item) return null;
+      storage.delete(id);
+      return item;
+    },
+    async removeMany(ids, _options) {
+      const removed: MemoryItem[] = [];
+      for (const id of ids) {
+        const item = storage.get(id);
+        if (item) {
+          storage.delete(id);
+          removed.push(item);
+        }
+      }
+      return removed;
+    },
     async createEdge(input, _options) {
       return { id: `edge_${nextId++}`, ...input, createdAt: Date.now() };
+    },
+    async findEdgeById(_id, _options) {
+      return null;
+    },
+    async removeEdge(_id, _options) {
+      return null;
     },
     async findEdges(_itemId, _options) {
       return [];

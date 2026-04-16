@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, or, type SQL } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type {
   MemoryAccessOptions,
@@ -327,6 +327,28 @@ export class DrizzleMemoryRepository implements MemoryRepository {
     return this.update(id, { status: "deprecated" as MemoryStatus }, options);
   }
 
+  async remove(id: string, options?: MemoryAccessOptions): Promise<MemoryItem | null> {
+    const accountId = this.resolveAccountId(undefined, options);
+    const [row] = await this.db
+      .delete(memoryItems)
+      .where(and(eq(memoryItems.id, id), eq(memoryItems.accountId, accountId)))
+      .returning();
+    return row ? toMemoryItem(row) : null;
+  }
+
+  async removeMany(
+    ids: readonly string[],
+    options?: MemoryAccessOptions,
+  ): Promise<MemoryItem[]> {
+    if (ids.length === 0) return [];
+    const accountId = this.resolveAccountId(undefined, options);
+    const rows = await this.db
+      .delete(memoryItems)
+      .where(and(eq(memoryItems.accountId, accountId), inArray(memoryItems.id, [...ids])))
+      .returning();
+    return rows.map(toMemoryItem);
+  }
+
   // ── 关系边操作 ──
 
   async createEdge(
@@ -367,5 +389,23 @@ export class DrizzleMemoryRepository implements MemoryRepository {
       );
 
     return rows.map(toMemoryEdge);
+  }
+
+  async findEdgeById(id: string, options?: MemoryAccessOptions): Promise<MemoryEdge | null> {
+    const accountId = this.resolveAccountId(undefined, options);
+    const [row] = await this.db
+      .select()
+      .from(memoryEdges)
+      .where(and(eq(memoryEdges.id, id), eq(memoryEdges.accountId, accountId)));
+    return row ? toMemoryEdge(row) : null;
+  }
+
+  async removeEdge(id: string, options?: MemoryAccessOptions): Promise<MemoryEdge | null> {
+    const accountId = this.resolveAccountId(undefined, options);
+    const [row] = await this.db
+      .delete(memoryEdges)
+      .where(and(eq(memoryEdges.id, id), eq(memoryEdges.accountId, accountId)))
+      .returning();
+    return row ? toMemoryEdge(row) : null;
   }
 }
