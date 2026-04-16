@@ -1261,13 +1261,16 @@ describe("prompt runtime routes", () => {
           },
           preview: {
             enabled: true,
+            mode: "macro_text_preview",
             returnsRuntimeTrace: true,
+            returnsAssemblyTruth: false,
             supportsVisibility: true,
             singleTextOnly: true,
             llmCall: false,
             createsFloor: false,
             writesPromptSnapshot: false,
             commitsSideEffects: false,
+            traceSubset: ["macro", "source_selection", "visibility"],
           },
           explain: {
             enabled: true,
@@ -1384,13 +1387,16 @@ describe("prompt runtime routes", () => {
           },
           preview: {
             enabled: true,
+            mode: "macro_text_preview",
             returns_runtime_trace: true,
+            returns_assembly_truth: false,
             supports_visibility: true,
             single_text_only: true,
             llm_call: false,
             creates_floor: false,
             writes_prompt_snapshot: false,
             commits_side_effects: false,
+            trace_subset: ["macro", "source_selection", "visibility"],
           },
           explain: {
             enabled: true,
