@@ -1,72 +1,23 @@
-import { and, eq, inArray, lt, sql, type SQL } from "drizzle-orm";
-import { parseBranchMemoryScopeId, type MemoryScope } from "@tavern/shared";
-import type { CoreEventBus, MemoryItem } from "@tavern/core";
+import { and, eq, inArray, lt, or, sql, type SQL } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import type { CoreEventBus, MemoryMutationSource } from "@tavern/core";
+import type { MemoryScope } from "@tavern/shared";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
-import { memoryItems } from "../db/schema.js";
+import { memoryEdges, memoryItems } from "../db/schema.js";
+import {
+  createEventContextResolver,
+  queueMemoryDeletedEvent,
+  queueMemoryDeprecatedEvent,
+  queueMemoryEdgeDeletedEvent,
+} from "./manual-memory-mutation-service.js";
+import {
+  emitPendingCoreEvents,
+  type PendingCoreEvent,
+} from "./memory-transaction-mutations.js";
 
 type MemoryItemRow = typeof memoryItems.$inferSelect;
-
-function rowToMemoryItem(row: MemoryItemRow): MemoryItem {
-  // 仅用于 maintenance 事件 payload，因此对 content 解析采取宽松策略：
-  // 失败时退回原 string，不影响主路径。
-  let content: string;
-  try {
-    const parsed = JSON.parse(row.contentJson) as unknown;
-    if (typeof parsed === "string") {
-      content = parsed;
-    } else if (parsed && typeof parsed === "object" && "text" in parsed && typeof (parsed as { text: unknown }).text === "string") {
-      content = (parsed as { text: string }).text;
-    } else {
-      content = row.contentJson;
-    }
-  } catch {
-    content = row.contentJson;
-  }
-
-  return {
-    id: row.id,
-    scope: row.scope,
-    scopeId: row.scopeId,
-    type: row.type,
-    ...(row.summaryTier ? { summaryTier: row.summaryTier } : {}),
-    content,
-    ...(row.factKey ? { factKey: row.factKey } : {}),
-    importance: row.importance,
-    confidence: row.confidence,
-    ...(row.sourceFloorId ? { sourceFloorId: row.sourceFloorId } : {}),
-    ...(row.sourceMessageId ? { sourceMessageId: row.sourceMessageId } : {}),
-    status: row.status,
-    ...(row.lifecycleStatus ? { lifecycleStatus: row.lifecycleStatus } : {}),
-    ...(row.sourceJobId ? { sourceJobId: row.sourceJobId } : {}),
-    ...(row.tokenCountEstimate !== null ? { tokenCountEstimate: row.tokenCountEstimate } : {}),
-    ...(row.lastUsedAt !== null ? { lastUsedAt: row.lastUsedAt } : {}),
-    ...(row.coverageStartFloorNo !== null ? { coverageStartFloorNo: row.coverageStartFloorNo } : {}),
-    ...(row.coverageEndFloorNo !== null ? { coverageEndFloorNo: row.coverageEndFloorNo } : {}),
-    ...(row.derivedFromCount !== null ? { derivedFromCount: row.derivedFromCount } : {}),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
-function resolveMaintenanceEventSessionId(item: MemoryItem): string | undefined {
-  if (item.scope === "chat") {
-    return item.scopeId;
-  }
-  if (item.scope === "branch") {
-    return parseBranchMemoryScopeId(item.scopeId)?.sessionId;
-  }
-  return undefined;
-}
-
-function buildMaintenanceEventContext(item: MemoryItem) {
-  return {
-    sessionId: resolveMaintenanceEventSessionId(item),
-    scope: item.scope,
-    scopeId: item.scopeId,
-    ...(item.sourceFloorId ? { floorId: item.sourceFloorId } : {}),
-  };
-}
+type MemoryEdgeRow = typeof memoryEdges.$inferSelect;
 
 export type MemoryMaintenancePolicy = {
   /** 将超过该 age 的 summary 标记为 deprecated（按 createdAt 计算）。 */
@@ -120,6 +71,10 @@ export type MemoryMaintenanceRunResult = {
   durationMs: number;
 };
 
+export interface MemoryMaintenanceServiceOptions {
+  eventBus?: CoreEventBus;
+}
+
 type MaintenanceExecutor = AppDb | DbExecutor;
 
 function buildScopeFilters(scope: MemoryMaintenanceScopeFilter | undefined): SQL[] {
@@ -142,57 +97,71 @@ function countRows(executor: MaintenanceExecutor, whereClause: SQL | undefined):
   return row?.count ?? 0;
 }
 
+function loadEdgesForItems(
+  executor: MaintenanceExecutor,
+  accountId: string,
+  itemIds: readonly string[],
+): MemoryEdgeRow[] {
+  if (itemIds.length === 0) {
+    return [];
+  }
+
+  const uniqueIds = [...new Set(itemIds)];
+  return executor
+    .select()
+    .from(memoryEdges)
+    .where(
+      and(
+        eq(memoryEdges.accountId, accountId),
+        or(
+          inArray(memoryEdges.fromId, uniqueIds),
+          inArray(memoryEdges.toId, uniqueIds),
+        ),
+      ),
+    )
+    .all();
+}
+
 export class MemoryMaintenanceService {
+  private readonly eventBus?: CoreEventBus;
+
   constructor(
     private readonly db: AppDb,
-    private readonly options: { eventBus?: CoreEventBus } = {},
-  ) {}
+    options: MemoryMaintenanceServiceOptions = {},
+  ) {
+    this.eventBus = options.eventBus;
+  }
 
   async run(options: MemoryMaintenanceRunOptions = {}): Promise<MemoryMaintenanceRunResult> {
-    // 收集 maintenance affected rows，便于在同步 SQL 完成后按 item
-    // 粒度发出 committed 事件（与手动 / 主链 mutation 保持事件面一致）。
-    const collected = {
-      deprecated: [] as MemoryItem[],
-      purged: [] as MemoryItem[],
-    };
-    const result = this.runWithExecutor(this.db, options, collected);
+    const pendingEvents: PendingCoreEvent[] = [];
+    const dryRun = options.dryRun === true;
+    const result = dryRun
+      ? this.runWithExecutor(this.db, options, pendingEvents)
+      : this.db.transaction((tx) => this.runWithExecutor(tx, options, pendingEvents));
 
-    if (this.options.eventBus && !options.dryRun) {
-      for (const item of collected.deprecated) {
-        await this.options.eventBus.emit("memory.deprecated", {
-          ...buildMaintenanceEventContext(item),
-          item,
-          reason: "maintenance",
-        });
-      }
-      for (const item of collected.purged) {
-        await this.options.eventBus.emit("memory.deleted", {
-          ...buildMaintenanceEventContext(item),
-          item,
-          source: "maintenance",
-          reason: "purge",
-        });
-      }
+    if (this.eventBus && pendingEvents.length > 0) {
+      await emitPendingCoreEvents(this.eventBus, pendingEvents);
     }
 
     return result;
   }
 
   /**
-   * 在外部事务里同步执行维护。
-   *
-   * 注意：本入口不会发出 memory.deprecated / memory.deleted 事件——
-   * 因为外部事务的 commit 时机由调用方掌控。如果需要事件面，
-   * 调用方应在事务成功提交后通过 eventBus 自行 emit。
+   * Run inside an existing transaction. Events are appended to `pendingEvents` and must
+   * be emitted by the caller only after the outer transaction commits durably.
    */
-  runInTransaction(tx: DbExecutor, options: MemoryMaintenanceRunOptions = {}): MemoryMaintenanceRunResult {
-    return this.runWithExecutor(tx, options);
+  runInTransaction(
+    tx: DbExecutor,
+    options: MemoryMaintenanceRunOptions = {},
+    pendingEvents: PendingCoreEvent[] = [],
+  ): MemoryMaintenanceRunResult {
+    return this.runWithExecutor(tx, options, pendingEvents);
   }
 
   private runWithExecutor(
     executor: MaintenanceExecutor,
     options: MemoryMaintenanceRunOptions,
-    collected?: { deprecated: MemoryItem[]; purged: MemoryItem[] },
+    pendingEvents: PendingCoreEvent[],
   ): MemoryMaintenanceRunResult {
     const startedAt = Date.now();
     const now = options.now ?? Date.now();
@@ -209,21 +178,21 @@ export class MemoryMaintenanceService {
       const createdBefore = now - policy.summaryMaxAgeMs;
       deprecatedSummary = dryRun
         ? this.countActiveBefore(executor, "summary", createdBefore, scope)
-        : this.deprecateActiveBefore(executor, "summary", createdBefore, batchSize, now, scope, collected);
+        : this.deprecateActiveBefore(executor, "summary", createdBefore, batchSize, now, scope, pendingEvents);
     }
 
     if (policy.openLoopMaxAgeMs !== undefined && policy.openLoopMaxAgeMs > 0) {
       const createdBefore = now - policy.openLoopMaxAgeMs;
       deprecatedOpenLoop = dryRun
         ? this.countActiveBefore(executor, "open_loop", createdBefore, scope)
-        : this.deprecateActiveBefore(executor, "open_loop", createdBefore, batchSize, now, scope, collected);
+        : this.deprecateActiveBefore(executor, "open_loop", createdBefore, batchSize, now, scope, pendingEvents);
     }
 
     if (policy.deprecatedPurgeAgeMs !== undefined && policy.deprecatedPurgeAgeMs > 0) {
       const deprecatedUntouchedBefore = now - policy.deprecatedPurgeAgeMs;
       purged = dryRun
         ? this.countDeprecatedBefore(executor, deprecatedUntouchedBefore, scope)
-        : this.purgeDeprecatedBefore(executor, deprecatedUntouchedBefore, batchSize, scope, collected);
+        : this.purgeDeprecatedBefore(executor, deprecatedUntouchedBefore, batchSize, scope, pendingEvents);
     }
 
     const durationMs = Date.now() - startedAt;
@@ -281,40 +250,29 @@ export class MemoryMaintenanceService {
     batchSize: number,
     now: number,
     scope: MemoryMaintenanceScopeFilter | undefined,
-    collected?: { deprecated: MemoryItem[]; purged: MemoryItem[] },
+    pendingEvents: PendingCoreEvent[],
   ): number {
     let total = 0;
+    const source: MemoryMutationSource = "maintenance";
 
     while (true) {
-      // collected!=undefined 时取整行用于事件 payload；否则只取 id 节省 IO
-      const rows = collected
-        ? executor
-            .select()
-            .from(memoryItems)
-            .where(and(
-              ...buildScopeFilters(scope),
-              eq(memoryItems.status, "active"),
-              eq(memoryItems.type, type),
-              lt(memoryItems.createdAt, createdBefore),
-            ))
-            .limit(batchSize)
-            .all()
-        : executor
-            .select({ id: memoryItems.id })
-            .from(memoryItems)
-            .where(and(
-              ...buildScopeFilters(scope),
-              eq(memoryItems.status, "active"),
-              eq(memoryItems.type, type),
-              lt(memoryItems.createdAt, createdBefore),
-            ))
-            .limit(batchSize)
-            .all();
+      const rows = executor
+        .select()
+        .from(memoryItems)
+        .where(and(
+          ...buildScopeFilters(scope),
+          eq(memoryItems.status, "active"),
+          eq(memoryItems.type, type),
+          lt(memoryItems.createdAt, createdBefore),
+        ))
+        .limit(batchSize)
+        .all();
 
-      const ids = rows.map((row) => row.id);
-      if (ids.length === 0) {
+      if (rows.length === 0) {
         break;
       }
+
+      const ids = rows.map((row) => row.id);
 
       executor
         .update(memoryItems)
@@ -322,21 +280,40 @@ export class MemoryMaintenanceService {
         .where(inArray(memoryItems.id, ids))
         .run();
 
-      total += ids.length;
+      // Group rows by accountId so event contexts stay account-isolated.
+      const rowsByAccount = new Map<string, MemoryItemRow[]>();
+      for (const row of rows) {
+        const bucket = rowsByAccount.get(row.accountId) ?? [];
+        bucket.push(row);
+        rowsByAccount.set(row.accountId, bucket);
+      }
 
-      if (collected) {
-        for (const row of rows as MemoryItemRow[]) {
-          // event 携带 deprecate 后的状态，与单条 deprecate 路径保持一致
-          collected.deprecated.push(rowToMemoryItem({
-            ...row,
+      const mutationId = nanoid();
+
+      for (const [accountId, accountRows] of rowsByAccount) {
+        const resolver = createEventContextResolver(executor as DbExecutor, accountId);
+        for (const beforeRow of accountRows) {
+          const afterRow: MemoryItemRow = {
+            ...beforeRow,
             status: "deprecated",
             lifecycleStatus: "deprecated",
             updatedAt: now,
-          }));
+          };
+          queueMemoryDeprecatedEvent(
+            pendingEvents,
+            resolver,
+            beforeRow,
+            afterRow,
+            mutationId,
+            "maintenance",
+            source,
+          );
         }
       }
 
-      if (ids.length < batchSize) {
+      total += rows.length;
+
+      if (rows.length < batchSize) {
         break;
       }
     }
@@ -349,49 +326,73 @@ export class MemoryMaintenanceService {
     deprecatedUntouchedBefore: number,
     batchSize: number,
     scope: MemoryMaintenanceScopeFilter | undefined,
-    collected?: { deprecated: MemoryItem[]; purged: MemoryItem[] },
+    pendingEvents: PendingCoreEvent[],
   ): number {
     let total = 0;
+    const source: MemoryMutationSource = "maintenance";
 
     while (true) {
-      // collected!=undefined 时取整行用于 memory.deleted 事件 payload
-      const rows = collected
-        ? executor
-            .select()
-            .from(memoryItems)
-            .where(and(
-              ...buildScopeFilters(scope),
-              eq(memoryItems.status, "deprecated"),
-              lt(memoryItems.updatedAt, deprecatedUntouchedBefore),
-            ))
-            .limit(batchSize)
-            .all()
-        : executor
-            .select({ id: memoryItems.id })
-            .from(memoryItems)
-            .where(and(
-              ...buildScopeFilters(scope),
-              eq(memoryItems.status, "deprecated"),
-              lt(memoryItems.updatedAt, deprecatedUntouchedBefore),
-            ))
-            .limit(batchSize)
-            .all();
+      const rows = executor
+        .select()
+        .from(memoryItems)
+        .where(and(
+          ...buildScopeFilters(scope),
+          eq(memoryItems.status, "deprecated"),
+          lt(memoryItems.updatedAt, deprecatedUntouchedBefore),
+        ))
+        .limit(batchSize)
+        .all();
 
-      const ids = rows.map((row) => row.id);
-      if (ids.length === 0) {
+      if (rows.length === 0) {
         break;
       }
 
-      executor.delete(memoryItems).where(inArray(memoryItems.id, ids)).run();
-      total += ids.length;
+      const ids = rows.map((row) => row.id);
 
-      if (collected) {
-        for (const row of rows as MemoryItemRow[]) {
-          collected.purged.push(rowToMemoryItem(row));
+      const rowsByAccount = new Map<string, MemoryItemRow[]>();
+      for (const row of rows) {
+        const bucket = rowsByAccount.get(row.accountId) ?? [];
+        bucket.push(row);
+        rowsByAccount.set(row.accountId, bucket);
+      }
+
+      const mutationId = nanoid();
+
+      for (const [accountId, accountRows] of rowsByAccount) {
+        const accountIds = accountRows.map((row) => row.id);
+        const accountRowsById = new Map(accountRows.map((row) => [row.id, row]));
+        const relatedEdges = loadEdgesForItems(executor, accountId, accountIds);
+        const resolver = createEventContextResolver(executor as DbExecutor, accountId);
+
+        // Delete the items' edges and items themselves for this account.
+        executor
+          .delete(memoryItems)
+          .where(and(
+            eq(memoryItems.accountId, accountId),
+            inArray(memoryItems.id, accountIds),
+          ))
+          .run();
+
+        for (const edge of relatedEdges) {
+          const sourceItem = accountRowsById.get(edge.fromId) ?? accountRowsById.get(edge.toId) ?? null;
+          queueMemoryEdgeDeletedEvent(
+            pendingEvents,
+            resolver,
+            edge,
+            mutationId,
+            sourceItem,
+            source,
+          );
+        }
+
+        for (const row of accountRows) {
+          queueMemoryDeletedEvent(pendingEvents, resolver, row, mutationId, source);
         }
       }
 
-      if (ids.length < batchSize) {
+      total += rows.length;
+
+      if (rows.length < batchSize) {
         break;
       }
     }

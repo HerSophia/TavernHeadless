@@ -12,6 +12,7 @@ import type {
   WorkspaceMessageUpdateResult,
   WorkspaceRegenerateResult,
   WorkspaceReplayBlockingExecution,
+  WorkspaceReplayBlockingSessionStateMutation,
   WorkspaceRespondResult
 } from "./types";
 
@@ -40,10 +41,16 @@ export async function updateMessageContent(
 export async function editAndRegenerateMessage(
   messageId: string,
   content: string,
-  accountId?: string
+  accountId?: string,
+  options: {
+    confirmedExecutionIds?: string[];
+    confirmedSessionStateMutationIds?: string[];
+  } = {}
 ): Promise<WorkspaceRegenerateResult> {
   const result = await apiClient.messages.editAndRegenerate({
     accountId,
+    confirmedExecutionIds: options.confirmedExecutionIds,
+    confirmedSessionStateMutationIds: options.confirmedSessionStateMutationIds,
     content,
     messageId
   });
@@ -54,11 +61,13 @@ export async function editAndRegenerateMessage(
 export async function retryFloor(
   floorId: string,
   accountId?: string,
-  confirmedExecutionIds?: string[]
+  confirmedExecutionIds?: string[],
+  confirmedSessionStateMutationIds?: string[]
 ): Promise<WorkspaceRegenerateResult> {
   const result = await apiClient.floors.retry({
     accountId,
     confirmedExecutionIds,
+    confirmedSessionStateMutationIds,
     floorId
   });
 
@@ -165,6 +174,24 @@ export function isToolReplayConfirmationRequiredError(error: unknown): boolean {
   return isTavernApiError(error) && error.code === "tool_replay_confirmation_required";
 }
 
+export function isSessionStateReplayBlockedError(error: unknown): boolean {
+  return isTavernApiError(error) && error.code === "session_state_replay_blocked";
+}
+
+export function isSessionStateReplayConfirmationRequiredError(error: unknown): boolean {
+  return isTavernApiError(error) && error.code === "session_state_replay_confirmation_required";
+}
+
+export function isReplayBlockedError(error: unknown): boolean {
+  return isToolReplayBlockedError(error) || isSessionStateReplayBlockedError(error);
+}
+
+export function isReplayConfirmationRequiredError(error: unknown): boolean {
+  return isToolReplayConfirmationRequiredError(error)
+    || isSessionStateReplayConfirmationRequiredError(error)
+    || (isTavernApiError(error) && error.code === "replay_confirmation_required");
+}
+
 export function extractToolReplayBlockingExecutions(error: unknown): WorkspaceReplayBlockingExecution[] {
   if (!isTavernApiError(error)) {
     return [];
@@ -176,6 +203,21 @@ export function extractToolReplayBlockingExecutions(error: unknown): WorkspaceRe
   return rawExecutions
     .map(mapReplayBlockingExecution)
     .filter((execution): execution is WorkspaceReplayBlockingExecution => execution !== null);
+}
+
+export function extractSessionStateReplayBlockingMutations(error: unknown): WorkspaceReplayBlockingSessionStateMutation[] {
+  if (!isTavernApiError(error)) {
+    return [];
+  }
+
+  const details = asRecord(error.details);
+  const rawMutations = Array.isArray(details?.blocking_session_state_mutations)
+    ? details.blocking_session_state_mutations
+    : [];
+
+  return rawMutations
+    .map(mapReplayBlockingSessionStateMutation)
+    .filter((mutation): mutation is WorkspaceReplayBlockingSessionStateMutation => mutation !== null);
 }
 
 function mapReplayBlockingExecution(value: unknown): WorkspaceReplayBlockingExecution | null {
@@ -206,6 +248,33 @@ function mapReplayBlockingExecution(value: unknown): WorkspaceReplayBlockingExec
     sideEffectLevel: readOptionalString(record.side_effect_level) ?? null,
     status,
     toolName
+  };
+}
+
+function mapReplayBlockingSessionStateMutation(value: unknown): WorkspaceReplayBlockingSessionStateMutation | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const mutationId = readRequiredString(record.mutation_id);
+  const stateNamespace = readRequiredString(record.state_namespace);
+  const targetSlot = readRequiredString(record.target_slot);
+  const replaySafety = readReplaySafety(record.replay_safety);
+  const status = readRequiredString(record.status);
+  const reason = readRequiredString(record.reason);
+
+  if (!mutationId || !stateNamespace || !targetSlot || !replaySafety || !status || !reason) {
+    return null;
+  }
+
+  return {
+    mutationId,
+    reason,
+    replaySafety,
+    stateNamespace,
+    status,
+    targetSlot
   };
 }
 

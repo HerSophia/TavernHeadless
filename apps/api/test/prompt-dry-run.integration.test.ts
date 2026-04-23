@@ -856,6 +856,7 @@ describe("ChatService.dryRun", () => {
 
   it("returns visibility trace when dry-run visibility override is provided", async () => {
     const now = Date.now();
+    let previousFloorId: string | null = null;
     for (let floorNo = 1; floorNo <= 2; floorNo += 1) {
       const floorId = nanoid();
       const pageId = nanoid();
@@ -864,7 +865,10 @@ describe("ChatService.dryRun", () => {
         sessionId,
         floorNo,
         branchId: "main",
-        parentFloorId: null,
+        // ancestry 修复后 floor 身份由 parentFloorId 链决定；
+        // 让 floor 2 的 parent 指向 floor 1，visibility filter 的 history
+        // 才能完整覆盖这两层。
+        parentFloorId: previousFloorId,
         state: "committed",
         tokenIn: 0,
         tokenOut: 0,
@@ -882,6 +886,7 @@ describe("ChatService.dryRun", () => {
         createdAt: now + floorNo,
         updatedAt: now + floorNo,
       });
+      previousFloorId = floorId;
     }
 
     const result = await chatService.dryRun(sessionId, {

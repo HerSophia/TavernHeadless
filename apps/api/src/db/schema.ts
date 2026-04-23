@@ -868,6 +868,13 @@ export const branchLocalVariableSnapshots = sqliteTable(
     sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
     branchId: text("branch_id").notNull(),
     valuesJson: text("values_json").notNull().default("{}"),
+    // Phase 2 additive 字段：保留旧 v1 读取路径的同时引入 provenance 元数据。
+    // - snapshotVersion：当前 payload 的结构版本，v1 仅有 valuesJson，v2 起附带 provenanceJson。
+    // - provenanceJson：按 key 记录来源 scope / scopeId / sourceVariableId /
+    //   sourceUpdatedAt / inheritedFromFloorId / inheritedFromBranchId / originKind。
+    //   旧数据无 provenance 时 column 为 NULL，视为 v1。
+    snapshotVersion: integer("snapshot_version").notNull().default(1),
+    provenanceJson: text("provenance_json"),
     createdAt: integer("created_at").notNull(),
   },
   (table) => ({
@@ -947,6 +954,16 @@ export const llmInstanceConfigs = sqliteTable(
 
 // ── Tool Calling ────────────────────────────────────────
 
+/**
+ * `tool_call_record` — **legacy-compatible projection** of tool executions.
+ *
+ * 这张表只作为兼容读面保留：
+ * - 旧 UI / 旧集成通过 `GET /tools/call-records` 按 page 读取
+ * - 状态只保留 `success | error | denied | queued | running` 的兼容枚举
+ * - 不承载 timeout / uncertain / blocked / commit outcome / delivery mode / runtime_job 绑定等新语义
+ *
+ * 新业务语义一律进入 `tool_execution_record`（主审计真相源）。
+ */
 export const toolCallRecords = sqliteTable(
   "tool_call_record",
   {
@@ -967,6 +984,20 @@ export const toolCallRecords = sqliteTable(
   })
 );
 
+/**
+ * `tool_execution_record` — **primary tool execution journal**.
+ *
+ * 工具执行的主审计真相源。所有新增语义（timeout / uncertain / blocked、
+ * lifecycle_state、commit_outcome、delivery_mode、runtime_job 绑定、
+ * attempt_no、replay_parent_execution_id、side_effect_level、provider_type 等）
+ * 均以此表为准。
+ *
+ * 对外接口：
+ * - `GET /tool-executions` 主查询接口（source of truth）
+ * - `GET /floors/:id/tool-executions` 按 floor 查询
+ *
+ * `tool_call_record` 为兼容读面，不参与新语义扩展。
+ */
 export const toolExecutionRecords = sqliteTable(
   "tool_execution_record",
   {

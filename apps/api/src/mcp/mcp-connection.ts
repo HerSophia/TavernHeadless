@@ -10,8 +10,20 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
-import type { ToolDefinition, ToolParameterProperty, ToolSideEffectLevel } from '@tavern/core';
+import type {
+  ToolDefinition,
+  ToolExecutionStatus,
+  ToolParameterProperty,
+  ToolSideEffectLevel,
+} from '@tavern/core';
 import type { McpServerConfig, McpConnectionState } from './types.js';
+
+export interface McpCallToolResult {
+  data?: unknown;
+  error?: string;
+  executionStatus?: ToolExecutionStatus;
+  executionReasonCode?: string;
+}
 
 // ── MCP 工具类型提取 ─────────────────────────────
 
@@ -223,9 +235,16 @@ export class McpConnection {
   async callTool(
     name: string,
     args: Record<string, unknown>,
-  ): Promise<{ data?: unknown; error?: string }> {
+  ): Promise<McpCallToolResult> {
     if (this._state !== 'connected' || !this.client) {
-      return { error: `MCP server "${this.config.name}" is not connected (state: ${this._state})` };
+      return {
+        error: `MCP server "${this.config.name}" is not connected (state: ${this._state})`,
+        executionStatus: 'error',
+        executionReasonCode:
+          this._state === 'reconnect_required'
+            ? 'mcp_connection_reconnect_required'
+            : 'mcp_not_connected',
+      };
     }
 
     try {
@@ -246,7 +265,11 @@ export class McpConnection {
       // 检查是否为错误响应
       if (result && typeof result === 'object' && 'isError' in result && result.isError) {
         const errorContent = this.extractTextContent(result);
-        return { error: errorContent || 'MCP tool returned an error' };
+        return {
+          error: errorContent || 'MCP tool returned an error',
+          executionStatus: 'error',
+          executionReasonCode: 'mcp_remote_error',
+        };
       }
 
       // 提取内容
@@ -257,10 +280,16 @@ export class McpConnection {
         await this.recycleAfterUncertainTimeout(err.message);
         return {
           error: `${err.message}; execution outcome is uncertain; reconnect required before the next call`,
+          executionStatus: 'uncertain',
+          executionReasonCode: 'mcp_call_timeout_uncertain',
         };
       }
 
-      return { error: err instanceof Error ? err.message : String(err) };
+      return {
+        error: err instanceof Error ? err.message : String(err),
+        executionStatus: 'error',
+        executionReasonCode: 'mcp_transport_error',
+      };
     }
   }
 

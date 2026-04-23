@@ -1,13 +1,14 @@
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SimpleTokenCounter, createEventBus, type TurnExecutionResult } from "@tavern/core";
 import { nanoid } from "nanoid";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
-import { accounts, floors, messagePages, messages, sessions } from "../../db/schema.js";
+import { accounts, floors, messagePages, messages, sessions, sessionStateMutations } from "../../db/schema.js";
 import { ChatMessagePersistence } from "../../services/chat-message-persistence.js";
 import { TurnCommitService } from "../../services/turn-commit-service.js";
 import { FirstPartyGameStateConsumer } from "../session-state-first-party-consumer.js";
-import { SessionStateService } from "../session-state-service.js";
+import { SessionStateService, SessionStateServiceError } from "../session-state-service.js";
 
 const CLIENT_DATA_CONFIG = {
   defaultMaxItemSizeBytes: 1_048_576,
@@ -184,6 +185,133 @@ describe("SessionStateService", () => {
       slot: "scene",
     });
     expect(asRecord(live?.value)?.label).toBe("alpha");
+  });
+
+  it("rejects commit-bound staging when the source floor branch does not match the requested branch", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_735_900_015_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect(() => service.stageCommitBoundValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "alt",
+      sourceFloorId: floorId,
+      namespace: "game_state",
+      slot: "scene",
+      value: { revision: 1, label: "wrong-branch" },
+    })).toThrowError(SessionStateServiceError);
+
+    try {
+      service.stageCommitBoundValue({
+        accountId: ACCOUNT_ID,
+        sessionId,
+        branchId: "alt",
+        sourceFloorId: floorId,
+        namespace: "game_state",
+        slot: "scene",
+        value: { revision: 1, label: "wrong-branch" },
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionStateServiceError);
+      expect((error as SessionStateServiceError).code).toBe("session_state_floor_branch_mismatch");
+    }
+  });
+
+  it("rejects tampered staged mutations whose source-floor context no longer matches the commit floor", async () => {
+    const sessionId = nanoid();
+    const floor1 = nanoid();
+    const floor2 = nanoid();
+    const now = 1_735_900_018_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floor1,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await seedFloor(database, {
+      id: floor2,
+      sessionId,
+      floorNo: 2,
+      branchId: "main",
+      parentFloorId: floor1,
+      state: "committed",
+      createdAt: now + 10,
+      updatedAt: now + 10,
+    });
+
+    const staged = service.stageCommitBoundValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      sourceFloorId: floor1,
+      namespace: "game_state",
+      slot: "scene",
+      value: { revision: 2, label: "tampered" },
+    });
+
+    database.db
+      .update(sessionStateMutations)
+      .set({ sourceSnapshotFloorId: floor2, updatedAt: now + 20 })
+      .where(eq(sessionStateMutations.id, staged.id))
+      .run();
+
+    expect(() => service.applyStagedMutationsForFloor({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId: floor1,
+      committedAt: now + 30,
+    })).toThrowError(SessionStateServiceError);
+
+    try {
+      service.applyStagedMutationsForFloor({
+        accountId: ACCOUNT_ID,
+        sessionId,
+        branchId: "main",
+        floorId: floor1,
+        committedAt: now + 30,
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionStateServiceError);
+      expect((error as SessionStateServiceError).code).toBe("session_state_staged_mutation_context_mismatch");
+    }
+
+    const mainLive = service.resolveLiveValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      namespace: "game_state",
+      slot: "scene",
+    });
+    const altLive = service.resolveLiveValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "alt",
+      namespace: "game_state",
+      slot: "scene",
+    });
+
+    expect(mainLive).toBeNull();
+    expect(altLive).toBeNull();
   });
 
   it("resolves fork_on_branch state from source floor snapshots instead of current main live head", async () => {
@@ -496,6 +624,74 @@ describe("SessionStateService", () => {
     expect(uncertainMutation.status).toBe("uncertain");
     expect(uncertain.allowed).toBe(false);
     expect(uncertain.blockers).toEqual([expect.objectContaining({ reason: "uncertain" })]);
+  });
+
+  it("prefers source floor snapshot over live head when resolving historical values", async () => {
+    const sessionId = nanoid();
+    const floor1 = nanoid();
+    const floor2 = nanoid();
+    const now = 1_735_900_050_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floor1,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await seedFloor(database, {
+      id: floor2,
+      sessionId,
+      floorNo: 2,
+      branchId: "main",
+      parentFloorId: floor1,
+      state: "committed",
+      createdAt: now + 20,
+      updatedAt: now + 20,
+    });
+
+    await stageAndApplySceneState(service, {
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId: floor1,
+      committedAt: now + 100,
+      value: { revision: 1, label: "historical" },
+    });
+    await stageAndApplySceneState(service, {
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId: floor2,
+      committedAt: now + 200,
+      value: { revision: 2, label: "current-live" },
+    });
+
+    const liveNoSource = service.resolveLiveValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      namespace: "game_state",
+      slot: "scene",
+    });
+    expect(liveNoSource?.source).toBe("live_head");
+    expect(asRecord(liveNoSource?.value)?.label).toBe("current-live");
+
+    const historical = service.resolveLiveValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      namespace: "game_state",
+      slot: "scene",
+      sourceFloorId: floor1,
+    });
+    expect(historical?.source).toBe("source_floor_snapshot");
+    expect(asRecord(historical?.value)?.label).toBe("historical");
+    expect(historical?.floorId).toBe(floor1);
   });
 });
 

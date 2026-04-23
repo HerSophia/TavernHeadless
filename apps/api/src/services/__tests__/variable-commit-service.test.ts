@@ -5,7 +5,7 @@ import { buildBranchVariableScopeId } from "@tavern/shared";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
-import { floors, messagePages, sessions, variables } from "../../db/schema.js";
+import { accounts, floors, messagePages, sessions, variables } from "../../db/schema.js";
 import { VariableCommitService } from "../variable-commit-service.js";
 import { createEventBus } from "@tavern/core";
 
@@ -72,10 +72,11 @@ async function seedVariable(args: {
   key: string;
   value: unknown;
   now: number;
+  accountId?: string;
 }): Promise<void> {
   await args.database.db.insert(variables).values({
     id: args.id ?? nanoid(),
-    accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+    accountId: args.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID,
     scope: args.scope,
     scopeId: args.scopeId,
     key: args.key,
@@ -334,5 +335,107 @@ describe("VariableCommitService", () => {
       .where(and(eq(variables.scope, "floor"), eq(variables.scopeId, floorId)));
 
     expect(floorRows).toEqual([]);
+  });
+
+  it("scopes page->floor promotion strictly by the requesting accountId", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const foreignAccountId = "account-foreign";
+    const now = 1_735_690_050_000;
+    const committedAt = now + 500;
+
+    // 当前账号的 page 真相源。
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, now });
+    await seedInputPage({ database, floorId, pageId, now });
+    await seedVariable({ database, scope: "page", scopeId: pageId, key: "mood", value: "focused", now });
+
+    // 另一个账号持有同 key 同 scope 结构的 page 与 floor 行。
+    // Phase 1 要求 promotion 既不能读取这里的 page 值，
+    // 也不能覆盖这里的 floor 值。
+    await database.db.insert(accounts).values({
+      id: foreignAccountId,
+      name: foreignAccountId,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoNothing();
+    await seedVariable({
+      database,
+      accountId: foreignAccountId,
+      scope: "page",
+      scopeId: pageId,
+      key: "mood",
+      value: "foreign-page",
+      now,
+    });
+    await seedVariable({
+      database,
+      accountId: foreignAccountId,
+      scope: "floor",
+      scopeId: floorId,
+      key: "mood",
+      value: "foreign-floor",
+      now,
+    });
+
+    const result = database.db.transaction((tx) => {
+      return service.promoteAll(
+        {
+          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+          pageId,
+          floorId,
+          sessionId,
+          policy: "replace",
+          committedAt,
+        },
+        tx,
+      );
+    });
+
+    expect(result).toMatchObject({
+      scannedCount: 1,
+      promotedCount: 1,
+      skippedCount: 0,
+    });
+    expect(result.promotedVariables.map((entry: PromotedVariableEntry) => entry.value)).toEqual(["focused"]);
+
+    const ownedFloorRows = await database.db
+      .select()
+      .from(variables)
+      .where(and(
+        eq(variables.accountId, DEFAULT_ADMIN_ACCOUNT_ID),
+        eq(variables.scope, "floor"),
+        eq(variables.scopeId, floorId),
+      ));
+    expect(ownedFloorRows.map((row) => [row.key, JSON.parse(row.valueJson)])).toEqual([
+      ["mood", "focused"],
+    ]);
+
+    // 另一个账号的 floor 行不应被覆盖。
+    const foreignFloorRows = await database.db
+      .select()
+      .from(variables)
+      .where(and(
+        eq(variables.accountId, foreignAccountId),
+        eq(variables.scope, "floor"),
+        eq(variables.scopeId, floorId),
+      ));
+    expect(foreignFloorRows.map((row) => [row.key, JSON.parse(row.valueJson)])).toEqual([
+      ["mood", "foreign-floor"],
+    ]);
+
+    // 另一个账号的 page 行也不应被读取到（等价校验它还在原位）。
+    const foreignPageRows = await database.db
+      .select()
+      .from(variables)
+      .where(and(
+        eq(variables.accountId, foreignAccountId),
+        eq(variables.scope, "page"),
+        eq(variables.scopeId, pageId),
+      ));
+    expect(foreignPageRows.map((row) => [row.key, JSON.parse(row.valueJson)])).toEqual([
+      ["mood", "foreign-page"],
+    ]);
   });
 });

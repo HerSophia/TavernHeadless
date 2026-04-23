@@ -745,4 +745,68 @@ describe("Memory Injection", () => {
 
     database2.close();
   });
+
+  it("should expose prepareInjection scope resolution diagnostics for branch-scoped visible refs", async () => {
+    const memoryStore = new CoreMemoryStore(
+      new DrizzleMemoryRepository(database.db),
+      createEventBus(),
+      new SimpleTokenCounter(),
+    );
+
+    await memoryStore.create(
+      {
+        scope: "branch",
+        scopeId: buildBranchMemoryScopeId(sessionId, "main"),
+        type: "fact",
+        content: "Branch-scoped memory fact",
+        importance: 0.7,
+        confidence: 1,
+        status: "active",
+      },
+      { accountId: DEFAULT_ADMIN_ACCOUNT_ID },
+    );
+
+    const injection = await memoryStore.prepareInjection(sessionId, {
+      maxTokens: 500,
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      scopeContext: {
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        sessionId,
+        branchId: "main",
+      },
+    });
+
+    expect(injection.scopeResolution).toBeDefined();
+    expect(injection.scopeResolution!.mode).toBe("visible_refs");
+    expect(injection.scopeResolution!.strict).toBe(false);
+    const refs = injection.scopeResolution!.scopeRefs ?? [];
+    expect(refs.some((ref) => ref.scope === "branch" && ref.scopeId === buildBranchMemoryScopeId(sessionId, "main"))).toBe(true);
+    expect(injection.items.some((item) => item.content === "Branch-scoped memory fact")).toBe(true);
+  });
+
+  it("should return strict_empty diagnostics and skip repo lookup when strict mode is on and scopeContext is empty", async () => {
+    const repository = new DrizzleMemoryRepository(database.db);
+    const findManySpy = vi.spyOn(repository, "findMany");
+    const memoryStore = new CoreMemoryStore(
+      repository,
+      createEventBus(),
+      new SimpleTokenCounter(),
+    );
+
+    const injection = await memoryStore.prepareInjection(sessionId, {
+      maxTokens: 500,
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      scopeContext: {},
+      strict: true,
+    });
+
+    expect(injection.items).toEqual([]);
+    expect(injection.formattedText).toBe("");
+    expect(injection.tokenCount).toBe(0);
+    expect(injection.scopeResolution).toBeDefined();
+    expect(injection.scopeResolution!.mode).toBe("strict_empty");
+    expect(injection.scopeResolution!.strict).toBe(true);
+    expect(findManySpy).not.toHaveBeenCalled();
+  });
+
 });

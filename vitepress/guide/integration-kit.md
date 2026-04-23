@@ -382,6 +382,15 @@ console.log(diff.policyChanges);
 | `organizeCollectionItems` | collection 内 item 整理 |
 | `toClientDataMap` | item 列表转嵌套 map |
 | `resolveItemByPath` | 按 `collectionName + itemKey` 直接读取单项数据 |
+## Session-state 观察面不在官方包的范围内
+
+`/sessions/:id/session-state/*` 与 `/floors/:id/session-state/*` 是 session-state 治理层的内部观察面。它们是只读端点，按账号严格鉴权，专门用于排错与运维。
+
+这组端点不会进入 `@tavern/sdk` 和 `@tavern/client-helpers`，也不会被官方包自动封装。目的是为 session-state 下一阶段（例如 scene payload 升级、公开 API）保留快速迭代空间，避免观察面提前变成公开契约。
+
+OpenAPI 会随路由生成这组端点的定义；如果你的集成方确实需要对接，请基于 OpenAPI 自行封装，并接受该契约在 session-state 迭代时可能变化。完整端点定义见 [`reference/api/session-state.md`](../reference/api/session-state.md)。
+
+
 
 ## 文档同步规则
 

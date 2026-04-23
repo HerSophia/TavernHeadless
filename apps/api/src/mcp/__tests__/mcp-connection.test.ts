@@ -304,6 +304,8 @@ describe("McpConnection", () => {
     const result = await connection.callTool("echo", { text: "hello" });
 
     expect(result.error).toContain('not connected');
+    expect(result.executionStatus).toBe('error');
+    expect(result.executionReasonCode).toBe('mcp_not_connected');
   });
 
   it("extracts text, rich content, and MCP error content from callTool() results", async () => {
@@ -336,7 +338,11 @@ describe("McpConnection", () => {
     });
 
     const errorResult = await connection.callTool("error_tool", {});
-    expect(errorResult).toEqual({ error: "tool failed" });
+    expect(errorResult).toMatchObject({
+      error: "tool failed",
+      executionStatus: "error",
+      executionReasonCode: "mcp_remote_error",
+    });
   });
 
   it("marks local tool-call timeouts as uncertain, recycles the connection, and allows clean reconnect", async () => {
@@ -350,8 +356,10 @@ describe("McpConnection", () => {
     await vi.advanceTimersByTimeAsync(51);
     const timeoutResult = await timeoutPromise;
 
-    expect(timeoutResult).toEqual({
+    expect(timeoutResult).toMatchObject({
       error: "Tool call timeout after 50ms; execution outcome is uncertain; reconnect required before the next call",
+      executionStatus: "uncertain",
+      executionReasonCode: "mcp_call_timeout_uncertain",
     });
     expect(connection.state).toBe("reconnect_required");
     expect(connection.reconnectRequired).toBe(true);
@@ -369,7 +377,11 @@ describe("McpConnection", () => {
     sdkMocks.callTool.mockRejectedValueOnce(new Error("boom"));
 
     const errorResult = await connection.callTool("broken_tool", {});
-    expect(errorResult).toEqual({ error: "boom" });
+    expect(errorResult).toMatchObject({
+      error: "boom",
+      executionStatus: "error",
+      executionReasonCode: "mcp_transport_error",
+    });
   });
 
   it("disconnect() clears timers, cached tools, and connection state", async () => {

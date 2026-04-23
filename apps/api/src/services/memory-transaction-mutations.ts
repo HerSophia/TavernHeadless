@@ -38,6 +38,7 @@ export interface TransactionalMemoryMutationInput {
   accountId: string;
   timestamp: number;
   pendingEvents: PendingCoreEvent[];
+  mutationId?: string;
   summaries?: string[];
   consolidationOutput?: MemoryConsolidationOutput;
   ingestOutput?: MemoryIngestOutput;
@@ -429,6 +430,8 @@ export function applyTransactionalMemoryMutations(
   let updated = 0;
   let deprecated = 0;
 
+  const mutationId = input.mutationId ?? nanoid();
+
   const summaries = input.summaries ?? [];
   if (summaries.length > 0) {
     const summaryResult = unwrapSyncResult(applier.ingestSummaries({
@@ -439,6 +442,7 @@ export function applyTransactionalMemoryMutations(
       sourceFloorId: input.sourceFloorId,
       sourceMessageId: input.sourceMessageId,
       source: "extraction",
+      mutationId,
     }));
     created += summaryResult.created;
     updated += summaryResult.updated;
@@ -455,6 +459,7 @@ export function applyTransactionalMemoryMutations(
       sourceFloorNo: input.sourceFloorNo,
       sourceMessageId: input.sourceMessageId,
       sourceJobId: input.sourceJobId,
+      mutationId,
     }));
     created += ingestResult.created;
     updated += ingestResult.updated;
@@ -472,6 +477,7 @@ export function applyTransactionalMemoryMutations(
       context: input.scopeContext,
       sourceFloorId: input.sourceFloorId,
       sourceJobId: input.sourceJobId,
+      mutationId,
     }));
     created += compactionResult.created;
     updated += compactionResult.updated;
@@ -488,6 +494,7 @@ export function applyTransactionalMemoryMutations(
       context: input.scopeContext,
       sourceFloorId: input.sourceFloorId!,
       sourceMessageId: input.sourceMessageId,
+      mutationId,
     }));
     created += consolidationResult.created;
     updated += consolidationResult.updated;

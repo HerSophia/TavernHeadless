@@ -12,6 +12,7 @@ import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination
 import { getRequestAuthContext } from "../plugins/auth";
 import { getLatestOwnedActiveCharacterVersion, getOwnedActiveCharacterVersionById } from "../services/resource-ownership";
 import { FloorRunService } from "../services/floor-run-service";
+import { FloorLineageService } from "../services/floor-lineage-service.js";
 import {
   getGreetingCandidates,
   getPrimaryGreeting,
@@ -386,7 +387,19 @@ const branchSummaryJsonSchema = {
 
 const timelineFloorJsonSchema = {
   type: "object",
-  required: ["id", "floor_no", "state", "token_in", "token_out", "created_at", "active_page", "page_count"],
+  required: [
+    "id",
+    "floor_no",
+    "state",
+    "token_in",
+    "token_out",
+    "created_at",
+    "pages",
+    "active_pages",
+    "active_page",
+    "messages",
+    "page_count",
+  ],
   properties: {
     id: { type: "string" },
     floor_no: { type: "integer", minimum: 0 },
@@ -394,6 +407,74 @@ const timelineFloorJsonSchema = {
     token_in: { type: "integer", minimum: 0 },
     token_out: { type: "integer", minimum: 0 },
     created_at: { type: "integer", minimum: 0 },
+    /**
+     * Page-aware truth source. 每个 active page 都在这里展开，包含自身的
+     * messages 列表。同一 floor 下可能同时存在 active input page 与 active output page。
+     */
+    pages: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "page_no", "page_kind", "is_active", "version", "messages"],
+        properties: {
+          id: { type: "string" },
+          page_no: { type: "integer", minimum: 0 },
+          page_kind: { type: "string" },
+          is_active: { type: "boolean" },
+          version: { type: "integer", minimum: 1 },
+          messages: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["id", "seq", "role", "content", "content_format"],
+              properties: {
+                id: { type: "string" },
+                seq: { type: "integer", minimum: 0 },
+                role: { type: "string" },
+                content: { type: "string" },
+                content_format: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+    /** `pages` 中 `is_active === true` 的子集。若无 active page 则为空数组。 */
+    active_pages: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "page_no", "page_kind", "version", "messages"],
+        properties: {
+          id: { type: "string" },
+          page_no: { type: "integer", minimum: 0 },
+          page_kind: { type: "string" },
+          version: { type: "integer", minimum: 1 },
+          messages: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["id", "seq", "role", "content", "content_format"],
+              properties: {
+                id: { type: "string" },
+                seq: { type: "integer", minimum: 0 },
+                role: { type: "string" },
+                content: { type: "string" },
+                content_format: { type: "string" },
+              },
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+    /**
+     * 兼容字段（deprecated）。当且仅当 `active_pages.length === 1` 时返回该 page，
+     * 其余情况固定返回 null。新调用方应改为消费 `active_pages`。
+     */
     active_page: {
       anyOf: [
         {
@@ -424,6 +505,26 @@ const timelineFloorJsonSchema = {
         },
         { type: "null" },
       ],
+    },
+    /**
+     * 兼容字段（deprecated）。floor 级扁平化消息列表。当存在多个 active page 时，
+     * 不同 page 的消息会被拼接在一起，调用方无法无损还原 page 结构，
+     * 请改为消费 `pages` / `active_pages`。
+     */
+    messages: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id", "seq", "role", "content", "content_format"],
+        properties: {
+          id: { type: "string" },
+          seq: { type: "integer", minimum: 0 },
+          role: { type: "string" },
+          content: { type: "string" },
+          content_format: { type: "string" },
+        },
+        additionalProperties: false,
+      },
     },
     page_count: { type: "integer", minimum: 0 },
   },
@@ -534,6 +635,41 @@ const timelineResponseJsonSchema = {
             token_in: 320,
             token_out: 128,
             created_at: 1735689720000,
+            pages: [
+              {
+                id: "page_12",
+                page_no: 0,
+                page_kind: "output",
+                is_active: true,
+                version: 1,
+                messages: [
+                  {
+                    id: "msg_21",
+                    seq: 0,
+                    role: "assistant",
+                    content: "The firelight wavers as the next part of the story begins.",
+                    content_format: "text",
+                  },
+                ],
+              },
+            ],
+            active_pages: [
+              {
+                id: "page_12",
+                page_no: 0,
+                page_kind: "output",
+                version: 1,
+                messages: [
+                  {
+                    id: "msg_21",
+                    seq: 0,
+                    role: "assistant",
+                    content: "The firelight wavers as the next part of the story begins.",
+                    content_format: "text",
+                  },
+                ],
+              },
+            ],
             active_page: {
               id: "page_12",
               page_no: 0,
@@ -549,6 +685,15 @@ const timelineResponseJsonSchema = {
                 },
               ],
             },
+            messages: [
+              {
+                id: "msg_21",
+                seq: 0,
+                role: "assistant",
+                content: "The firelight wavers as the next part of the story begins.",
+                content_format: "text",
+              },
+            ],
             page_count: 1,
           },
         ],
@@ -973,6 +1118,7 @@ export async function registerSessionRoutes(
 ): Promise<void> {
   const { db } = connection;
   const floorRunService = new FloorRunService(db);
+  const lineageService = new FloorLineageService(db);
 
   app.post("/sessions", {
     schema: {
@@ -1005,88 +1151,96 @@ export async function registerSessionRoutes(
       return sendError(reply, userBinding.statusCode, userBinding.code, userBinding.message);
     }
 
-    const createdRows = await db
-      .insert(sessions)
-      .values({
-        id: nanoid(),
-        title: parsedBody.data.title ?? null,
-        userId: userBinding.userId,
-        userSnapshotJson: userBinding.userSnapshotJson,
-        characterId: characterBinding.characterId,
-        accountId: auth.accountId,
-        characterVersionId: characterBinding.characterVersionId,
-        characterSnapshotJson: characterBinding.characterSnapshotJson,
-        characterSyncPolicy: characterBinding.characterSyncPolicy,
-        status: parsedBody.data.status ?? "active",
-        presetId: parsedBody.data.preset_id ?? null,
-        regexProfileId: parsedBody.data.regex_profile_id ?? null,
-        worldbookProfileId: parsedBody.data.worldbook_profile_id ?? null,
-        modelProvider: parsedBody.data.model_provider ?? null,
-        modelName: parsedBody.data.model_name ?? null,
-        modelParamsJson: stringifyJsonField(parsedBody.data.model_params),
-        promptMode: parsedBody.data.prompt_mode ?? null,
-        metadataJson: stringifyJsonField(parsedBody.data.metadata ?? {}),
-        createdAt: now,
-        updatedAt: now
-      })
-      .returning();
-
-    const created = requireRow(createdRows[0], "Failed to create session");
-
     const snapshot = parseSessionCharacterSnapshot(characterBinding.characterSnapshotJson);
     const greetingCandidates = getGreetingCandidates(snapshot);
-    const greeting = greetingCandidates[0] ?? "";
+    const tokenCounter = new SimpleTokenCounter();
+    const sessionId = nanoid();
 
-    if (greeting) {
-      const tokenCounter = new SimpleTokenCounter();
-      const floorId = nanoid();
-      const greetingTokens = tokenCounter.count(greeting);
-
-      await db.insert(floors).values({
-        id: floorId,
-        sessionId: created.id,
-        floorNo: 0,
-        branchId: "main",
-        parentFloorId: null,
-        metadataJson: stringifyJsonField(buildFloorMetadataForUserBinding(created.userId, created.userSnapshotJson, now)),
-        state: "committed",
-        tokenIn: 0,
-        tokenOut: greetingTokens,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      for (let index = 0; index < greetingCandidates.length; index += 1) {
-        const pageId = nanoid();
-        const content = greetingCandidates[index]!;
-        const isActive = index === 0;
-
-        await db.insert(messagePages).values({
-          id: pageId,
-          floorId,
-          pageNo: 0,
-          pageKind: "output",
-          isActive,
-          version: index + 1,
-          checksum: null,
+    const created = db.transaction((tx) => {
+      const [insertedSession] = tx
+        .insert(sessions)
+        .values({
+          id: sessionId,
+          title: parsedBody.data.title ?? null,
+          userId: userBinding.userId,
+          userSnapshotJson: userBinding.userSnapshotJson,
+          characterId: characterBinding.characterId,
+          accountId: auth.accountId,
+          characterVersionId: characterBinding.characterVersionId,
+          characterSnapshotJson: characterBinding.characterSnapshotJson,
+          characterSyncPolicy: characterBinding.characterSyncPolicy,
+          status: parsedBody.data.status ?? "active",
+          presetId: parsedBody.data.preset_id ?? null,
+          regexProfileId: parsedBody.data.regex_profile_id ?? null,
+          worldbookProfileId: parsedBody.data.worldbook_profile_id ?? null,
+          modelProvider: parsedBody.data.model_provider ?? null,
+          modelName: parsedBody.data.model_name ?? null,
+          modelParamsJson: stringifyJsonField(parsedBody.data.model_params),
+          promptMode: parsedBody.data.prompt_mode ?? null,
+          metadataJson: stringifyJsonField(parsedBody.data.metadata ?? {}),
           createdAt: now,
           updatedAt: now,
-        });
+        })
+        .returning()
+        .all();
 
-        await db.insert(messages).values({
-          id: nanoid(),
-          pageId,
-          seq: 0,
-          role: "assistant",
-          content,
-          contentFormat: "text",
-          tokenCount: tokenCounter.count(content),
-          isHidden: false,
-          source: "greeting",
+      const createdSession = requireRow(insertedSession, "Failed to create session");
+
+      if (greetingCandidates.length > 0) {
+        const greeting = greetingCandidates[0]!;
+        const greetingTokens = tokenCounter.count(greeting);
+        const floorId = nanoid();
+
+        tx.insert(floors).values({
+          id: floorId,
+          sessionId: createdSession.id,
+          floorNo: 0,
+          branchId: "main",
+          parentFloorId: null,
+          metadataJson: stringifyJsonField(
+            buildFloorMetadataForUserBinding(createdSession.userId, createdSession.userSnapshotJson, now),
+          ),
+          state: "committed",
+          tokenIn: 0,
+          tokenOut: greetingTokens,
           createdAt: now,
-        });
+          updatedAt: now,
+        }).run();
+
+        for (let index = 0; index < greetingCandidates.length; index += 1) {
+          const pageId = nanoid();
+          const content = greetingCandidates[index]!;
+          const isActive = index === 0;
+
+          tx.insert(messagePages).values({
+            id: pageId,
+            floorId,
+            pageNo: 0,
+            pageKind: "output",
+            isActive,
+            version: index + 1,
+            checksum: null,
+            createdAt: now,
+            updatedAt: now,
+          }).run();
+
+          tx.insert(messages).values({
+            id: nanoid(),
+            pageId,
+            seq: 0,
+            role: "assistant",
+            content,
+            contentFormat: "text",
+            tokenCount: tokenCounter.count(content),
+            isHidden: false,
+            source: "greeting",
+            createdAt: now,
+          }).run();
+        }
       }
-    }
+
+      return createdSession;
+    });
 
     return reply.code(201).send({ data: toSessionResponse(created) });
   });
@@ -1622,35 +1776,31 @@ export async function registerSessionRoutes(
       return sendError(reply, 404, "not_found", "Session not found");
     }
 
-    const diffRows = await db
-      .select({ id: floors.id, branchId: floors.branchId, floorNo: floors.floorNo, state: floors.state })
-      .from(floors)
-      .where(and(
-        eq(floors.sessionId, sessionId),
-        inArray(floors.branchId, [baseBranchId, targetBranchId]),
-        isNull(floors.supersededAt),
-      ))
-      .orderBy(asc(floors.floorNo));
+    // 复用统一 lineage 服务：先把 session 下所有 live 节点与 supersede 索引
+    // 一并加载。branch diff 需要覆盖 draft / generating / committed / failed 全部状态，
+    // 因此这里传空 states 让 loadSessionNodes 不做状态过滤，保持与之前 diff 行为一致。
+    // 不能只过滤两个 branch 自身的节点，否则两个 branch 的真实共同祖先
+    // 如果落在第三个分支（例如都来自 main 的某次分叉），回溯链会被错误截断。
+    // branch 校验以 FloorLineageService.findBranchTip() 的返回值为准。
+    const [nodes, supersedeIndex] = await Promise.all([
+      lineageService.loadSessionNodes(sessionId, { states: [] }),
+      lineageService.loadSupersedeIndex(sessionId),
+    ]);
 
-    const baseFloors = diffRows.filter((row) => row.branchId === baseBranchId);
-    const targetFloors = diffRows.filter((row) => row.branchId === targetBranchId);
+    const diff = lineageService.computeBranchDiff(nodes, baseBranchId, targetBranchId, supersedeIndex);
 
-    if (targetFloors.length === 0) {
+    if (!diff.targetTip) {
       return sendError(reply, 404, "branch_not_found", `Branch '${targetBranchId}' not found in session`);
     }
 
-    if (baseFloors.length === 0) {
+    if (!diff.baseTip) {
       return sendError(reply, 404, "base_branch_not_found", `Base branch '${baseBranchId}' not found in session`);
     }
 
-    const baseByFloorNo = new Map(baseFloors.map((row) => [row.floorNo, row]));
-    const targetByFloorNo = new Map(targetFloors.map((row) => [row.floorNo, row]));
-
-    const sharedFloorNos = Array.from(baseByFloorNo.keys())
-      .filter((floorNo) => targetByFloorNo.has(floorNo))
-      .sort((a, b) => a - b);
-
-    const forkFloorNo = sharedFloorNos.length === 0 ? null : sharedFloorNos[sharedFloorNos.length - 1];
+    // shared / base_only / target_only 都以 lineage service 给出的 ancestry 结果为准。
+    // `shared_floor_nos` 保留旧字段形状，仅从 ancestry 节点取 `floorNo` 作为展示字段。
+    const sharedFloorNos = diff.sharedFloors.map((node) => node.floorNo).sort((a, b) => a - b);
+    const forkFloorNo = diff.forkFloor?.floorNo ?? null;
 
     return reply.send({
       data: {
@@ -1659,9 +1809,19 @@ export async function registerSessionRoutes(
         target_branch_id: targetBranchId,
         fork_floor_no: forkFloorNo,
         shared_floor_nos: sharedFloorNos,
-        base_only_floors: baseFloors.filter((row) => !targetByFloorNo.has(row.floorNo)),
-        target_only_floors: targetFloors.filter((row) => !baseByFloorNo.has(row.floorNo))
-      }
+        base_only_floors: diff.baseOnlyFloors.map((node) => ({
+          id: node.id,
+          branchId: node.branchId,
+          floorNo: node.floorNo,
+          state: node.state,
+        })),
+        target_only_floors: diff.targetOnlyFloors.map((node) => ({
+          id: node.id,
+          branchId: node.branchId,
+          floorNo: node.floorNo,
+          state: node.state,
+        })),
+      },
     });
   });
 
@@ -1746,19 +1906,23 @@ export async function registerSessionRoutes(
 
     const floorIds = floorRows.map((f) => f.id);
 
-    // 一次性查询所有活跃页 + 非隐藏消息（JOIN 避免 N+1）
+    // 一次性查询所有活跃页 + 非隐藏消息（JOIN 避免 N+1）。
+    // 排序键按优先级从粗到细：page_no → seq → created_at → message id。
+    // 这样 input / output 默认都是 seq=0 时，排序仍然稳定。
     const rowData = await db
       .select({
         floorId: messagePages.floorId,
         pageId: messagePages.id,
         pageNo: messagePages.pageNo,
         pageKind: messagePages.pageKind,
+        pageIsActive: messagePages.isActive,
         pageVersion: messagePages.version,
         msgId: messages.id,
         msgSeq: messages.seq,
         msgRole: messages.role,
         msgContent: messages.content,
         msgContentFormat: messages.contentFormat,
+        msgCreatedAt: messages.createdAt,
       })
       .from(messagePages)
       .innerJoin(messages, eq(messages.pageId, messagePages.id))
@@ -1766,10 +1930,15 @@ export async function registerSessionRoutes(
         and(
           sql`${messagePages.floorId} IN (${sql.join(floorIds.map((id) => sql`${id}`), sql`, `)})`,
           eq(messagePages.isActive, true),
-          eq(messages.isHidden, false)
-        )
+          eq(messages.isHidden, false),
+        ),
       )
-      .orderBy(asc(messages.seq));
+      .orderBy(
+        asc(messagePages.pageNo),
+        asc(messages.seq),
+        asc(messages.createdAt),
+        asc(messages.id),
+      );
 
     // 查询每个楼层的总页数（用于 swipe 指示器）
     const pageCountRows = await db
@@ -1780,17 +1949,79 @@ export async function registerSessionRoutes(
 
     const pageCountMap = new Map(pageCountRows.map((r) => [r.floorId, Number(r.cnt)]));
 
-    // 按 floorId 聚合
-    const msgByFloor = new Map<string, typeof rowData>();
+    // 先按 (floorId, pageId) 聚合 page，再按 floorId 聚合 floor。
+    // 这样每个 active page 自带 messages 列表，不会被压扁到 floor 级别。
+    interface TimelinePageMessage {
+      id: string;
+      seq: number;
+      role: string;
+      content: string;
+      content_format: string;
+    }
+    interface TimelinePage {
+      id: string;
+      page_no: number;
+      page_kind: string;
+      is_active: boolean;
+      version: number;
+      messages: TimelinePageMessage[];
+    }
+
+    const pagesByFloor = new Map<string, Map<string, TimelinePage>>();
     for (const row of rowData) {
-      const arr = msgByFloor.get(row.floorId) ?? [];
-      arr.push(row);
-      msgByFloor.set(row.floorId, arr);
+      let pageMap = pagesByFloor.get(row.floorId);
+      if (!pageMap) {
+        pageMap = new Map();
+        pagesByFloor.set(row.floorId, pageMap);
+      }
+
+      let page = pageMap.get(row.pageId);
+      if (!page) {
+        page = {
+          id: row.pageId,
+          page_no: row.pageNo,
+          page_kind: row.pageKind,
+          is_active: row.pageIsActive,
+          version: row.pageVersion,
+          messages: [],
+        };
+        pageMap.set(row.pageId, page);
+      }
+
+      page.messages.push({
+        id: row.msgId,
+        seq: row.msgSeq,
+        role: row.msgRole,
+        content: row.msgContent,
+        content_format: row.msgContentFormat,
+      });
     }
 
     const timelineFloors = floorRows.map((f) => {
-      const rows = msgByFloor.get(f.id) ?? [];
-      const firstRow = rows[0];
+      const pageMap = pagesByFloor.get(f.id);
+      const pages: TimelinePage[] = pageMap ? Array.from(pageMap.values()) : [];
+      // 按 page_no 升序稳定排序，避免不同 Map 迭代顺序影响输出。
+      pages.sort((a, b) => a.page_no - b.page_no);
+
+      const activePages = pages
+        .filter((page) => page.is_active)
+        .map((page) => ({
+          id: page.id,
+          page_no: page.page_no,
+          page_kind: page.page_kind,
+          version: page.version,
+          messages: page.messages,
+        }));
+
+      // 兼容字段：仅当有且仅有一个 active page 时返回 active_page；
+      // 否则返回 null，避免在多 active page 场景伪造单一真相。
+      const active_page = activePages.length === 1 ? activePages[0]! : null;
+
+      // 兼容字段：floor 级扁平 messages。当有多 active page 时，
+      // 按照 active_pages 的顺序 concat 每个 page 的 messages。
+      // 新调用方应改为消费 pages / active_pages。
+      const flatMessages = activePages.flatMap((page) => page.messages);
+
       return {
         id: f.id,
         floor_no: f.floorNo,
@@ -1798,21 +2029,10 @@ export async function registerSessionRoutes(
         token_in: f.tokenIn,
         token_out: f.tokenOut,
         created_at: f.createdAt,
-        active_page: firstRow
-          ? {
-              id: firstRow.pageId,
-              page_no: firstRow.pageNo,
-              page_kind: firstRow.pageKind,
-              version: firstRow.pageVersion,
-              messages: rows.map((r) => ({
-                id: r.msgId,
-                seq: r.msgSeq,
-                role: r.msgRole,
-                content: r.msgContent,
-                content_format: r.msgContentFormat,
-              })),
-            }
-          : null,
+        pages,
+        active_pages: activePages,
+        active_page,
+        messages: flatMessages,
         page_count: pageCountMap.get(f.id) ?? 0,
       };
     });

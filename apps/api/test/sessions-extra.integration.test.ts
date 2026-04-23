@@ -12,8 +12,11 @@
 
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app";
+import { floors } from "../src/db/schema";
+import type { DatabaseConnection } from "../src/db/client";
 
 type D<T> = { data: T };
 type E={ error: { code: string; message: string } };
@@ -53,9 +56,10 @@ async function createUser(app: FastifyInstance, name: string) {
 
 describe("Sessions route extra branch coverage", () => {
   let app: FastifyInstance;
+  let database: DatabaseConnection["db"];
 
   beforeEach(async () => {
-    ({ app } = await buildApp({databasePath: ":memory:", logger: false }));
+    ({ app, database } = await buildApp({databasePath: ":memory:", logger: false }));
   });
 
   afterEach(async () => {
@@ -280,4 +284,135 @@ expect(res.json<E>().error.code).toBe("user_not_active");
     });
     expect(res.statusCode).toBe(400);
   });
+
+  // ── GET /sessions/:id/timeline page-aware 结构 ─────
+
+  it("GET /sessions/:id/timeline returns page-aware pages & active_pages for multi-active-page floor", async () => {
+    const session = await createSession(app, { title: "Timeline Page-Aware" });
+
+    const createFloorRes = await app.inject({
+      method: "POST",
+      url: "/floors",
+      payload: {
+        session_id: session.id,
+        floor_no: 10,
+        branch_id: "main",
+        state: "draft",
+      },
+    });
+    expect(createFloorRes.statusCode, createFloorRes.body).toBe(201);
+    const floorId = createFloorRes.json<D<{ id: string }>>().data.id;
+
+    async function createPage(pageNo: number, pageKind: "input" | "output") {
+      const res = await app.inject({
+        method: "POST",
+        url: "/pages",
+        payload: { floor_id: floorId, page_no: pageNo, page_kind: pageKind },
+      });
+      expect(res.statusCode, res.body).toBe(201);
+      return res.json<D<{ id: string; is_active: boolean }>>().data;
+    }
+
+    const inputPage = await createPage(0, "input");
+    const outputPage = await createPage(1, "output");
+    expect(inputPage.is_active).toBe(true);
+    expect(outputPage.is_active).toBe(true);
+
+    async function postMessage(pageId: string, role: string, content: string) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/messages",
+        payload: { page_id: pageId, role, content, seq: 0, content_format: "text" },
+      });
+      expect(res.statusCode, res.body).toBe(201);
+    }
+
+    await postMessage(inputPage.id, "user", "hello");
+    await postMessage(outputPage.id, "assistant", "world");
+
+    // Phase 4 guardrails 落地后，`PATCH /floors/:id` 不再允许改 `state`。
+    // 第二阶段拆分的 admin 接口（`POST /floors/:id/admin/force-state`）尚未上线，
+    // 本测试仅需要一个"先 draft 加 page、再让 floor 进入 committed"的夹具位置，
+    // 所以直接在测试里走 DB 层把 floor 手工置为 committed。
+    await database
+      .update(floors)
+      .set({ state: "committed", updatedAt: Date.now() })
+      .where(eq(floors.id, floorId));
+
+    const timelineRes = await app.inject({
+      method: "GET",
+      url: `/sessions/${session.id}/timeline?branch_id=main`,
+    });
+    expect(timelineRes.statusCode, timelineRes.body).toBe(200);
+
+    interface TimelineMessage { id: string; seq: number; role: string; content: string; content_format: string }
+    interface TimelinePage { id: string; page_no: number; page_kind: string; is_active?: boolean; version: number; messages: TimelineMessage[] }
+    interface TimelineFloor {
+      id: string;
+      floor_no: number;
+      pages: TimelinePage[];
+      active_pages: TimelinePage[];
+      active_page: TimelinePage | null;
+      messages: TimelineMessage[];
+      page_count: number;
+    }
+
+    const body = timelineRes.json<{ data: { floors: TimelineFloor[] } }>();
+    const floor = body.data.floors.find((f) => f.id === floorId);
+    expect(floor).toBeDefined();
+
+    // 同一 floor 下有两个 active page：pages 与 active_pages 应同时返回两条，
+    // 并分别携带自己的 messages 列表（不被压扁到 floor 级）。
+    expect(floor!.pages).toHaveLength(2);
+    expect(floor!.active_pages).toHaveLength(2);
+
+    const pagesByKind = Object.fromEntries(floor!.pages.map((p) => [p.page_kind, p]));
+    expect(pagesByKind.input!.is_active).toBe(true);
+    expect(pagesByKind.output!.is_active).toBe(true);
+    expect(pagesByKind.input!.messages.map((m) => m.content)).toEqual(["hello"]);
+    expect(pagesByKind.output!.messages.map((m) => m.content)).toEqual(["world"]);
+
+    // 存在多个 active page 时，兼容字段 active_page 必须为 null，避免伪造单一真相。
+    expect(floor!.active_page).toBeNull();
+
+    // 兼容字段 messages 仍会返回所有 active page 的消息拼接；调用方应改为消费 pages。
+    expect(floor!.messages.map((m) => m.content)).toEqual(["hello", "world"]);
+
+    expect(floor!.page_count).toBe(2);
+  });
+
+  it("GET /sessions/:id/timeline keeps active_page as compatibility field when only one active page exists", async () => {
+    const session = await createSession(app, {
+      character_snapshot: {
+        name: "GreetingOnly",
+        primaryGreeting: "Greetings, traveler.",
+      },
+    });
+
+    const timelineRes = await app.inject({
+      method: "GET",
+      url: `/sessions/${session.id}/timeline`,
+    });
+    expect(timelineRes.statusCode, timelineRes.body).toBe(200);
+
+    const body = timelineRes.json<{
+      data: {
+        floors: Array<{
+          active_page: { page_kind: string; messages: Array<{ content: string }> } | null;
+          active_pages: Array<{ page_kind: string }>;
+          pages: Array<{ page_kind: string; is_active: boolean }>;
+        }>;
+      };
+    }>();
+
+    expect(body.data.floors).toHaveLength(1);
+    const floor = body.data.floors[0]!;
+    expect(floor.active_pages).toHaveLength(1);
+    expect(floor.active_pages[0]!.page_kind).toBe("output");
+    // 单 active page 场景下兼容字段仍按旧语义返回。
+    expect(floor.active_page).not.toBeNull();
+    expect(floor.active_page!.page_kind).toBe("output");
+    expect(floor.active_page!.messages[0]!.content).toBe("Greetings, traveler.");
+  });
+
 });

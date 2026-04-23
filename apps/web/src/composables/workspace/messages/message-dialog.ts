@@ -7,7 +7,7 @@ import type {
   TimelineMessage,
   UpdateOrDeleteResult
 } from "../../../stores/workspace";
-import type { WorkspaceReplayBlockingExecution } from "../../../lib/workspace-api";
+import type { WorkspaceReplayBlockingExecution, WorkspaceReplayBlockingSessionStateMutation } from "../../../lib/workspace-api";
 import type { EventTone } from "../../../stores/workspace-ui";
 
 type AddEvent = (key: string, tone?: EventTone, vars?: Record<string, number | string>) => void;
@@ -17,7 +17,7 @@ type WorkspaceMessageStore = {
   editAndRegenerateFromMessage: (messageId: string, content: string) => Promise<RegenerateFromMessageResult>;
   retryMessageFloor: (
     messageId: string,
-    options?: { confirmedExecutionIds?: string[] }
+    options?: { confirmedExecutionIds?: string[]; confirmedSessionStateMutationIds?: string[] }
   ) => Promise<RegenerateFromMessageResult>;
   updateTimelineMessage: (messageId: string, content: string) => Promise<UpdateOrDeleteResult>;
 };
@@ -42,6 +42,7 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
 
   const toolReplayConfirmDialog = reactive({
     blockingExecutions: [] as WorkspaceReplayBlockingExecution[],
+    blockingSessionStateMutations: [] as WorkspaceReplayBlockingSessionStateMutation[],
     busy: false,
     open: false
   });
@@ -80,6 +81,7 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
 
   function resetToolReplayConfirmDialog(): void {
     toolReplayConfirmDialog.blockingExecutions = [];
+    toolReplayConfirmDialog.blockingSessionStateMutations = [];
     toolReplayConfirmDialog.busy = false;
     toolReplayConfirmDialog.open = false;
   }
@@ -322,10 +324,11 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
 
       if (result.reason === "confirmation_required") {
         toolReplayConfirmDialog.blockingExecutions = result.blockingExecutions ?? [];
+        toolReplayConfirmDialog.blockingSessionStateMutations = result.blockingSessionStateMutations ?? [];
         toolReplayConfirmDialog.open = true;
         messageDialog.retryOpen = false;
         options.addEvent("events.messageRetryConfirmationRequired", "warn", {
-          count: toolReplayConfirmDialog.blockingExecutions.length
+          count: toolReplayConfirmDialog.blockingExecutions.length + toolReplayConfirmDialog.blockingSessionStateMutations.length
         });
         return;
       }
@@ -334,7 +337,7 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
         closeMessageDialogs();
         clearMessageDialogTarget();
         options.addEvent("events.messageRetryReplayBlocked", "warn", {
-          count: result.blockingExecutions?.length ?? 0
+          count: (result.blockingExecutions?.length ?? 0) + (result.blockingSessionStateMutations?.length ?? 0)
         });
         return;
       }
@@ -387,15 +390,19 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
 
     try {
       const result = await options.workspace.retryMessageFloor(messageDialog.targetId, {
-        confirmedExecutionIds: toolReplayConfirmDialog.blockingExecutions.map((execution: WorkspaceReplayBlockingExecution) => execution.executionId)
+        confirmedExecutionIds: toolReplayConfirmDialog.blockingExecutions.map((execution: WorkspaceReplayBlockingExecution) => execution.executionId),
+        ...(toolReplayConfirmDialog.blockingSessionStateMutations.length > 0
+          ? { confirmedSessionStateMutationIds: toolReplayConfirmDialog.blockingSessionStateMutations.map((mutation) => mutation.mutationId) }
+          : {})
       });
 
       if (!result.ok) {
         if (result.reason === "confirmation_required") {
           toolReplayConfirmDialog.blockingExecutions = result.blockingExecutions ?? [];
+          toolReplayConfirmDialog.blockingSessionStateMutations = result.blockingSessionStateMutations ?? [];
           toolReplayConfirmDialog.open = true;
           options.addEvent("events.messageRetryConfirmationRequired", "warn", {
-            count: toolReplayConfirmDialog.blockingExecutions.length
+            count: toolReplayConfirmDialog.blockingExecutions.length + toolReplayConfirmDialog.blockingSessionStateMutations.length
           });
           return;
         }
@@ -404,7 +411,7 @@ export function useWorkspaceMessageDialog(options: UseWorkspaceMessageDialogOpti
           closeMessageDialogs();
           clearMessageDialogTarget();
           options.addEvent("events.messageRetryReplayBlocked", "warn", {
-            count: result.blockingExecutions?.length ?? 0
+            count: (result.blockingExecutions?.length ?? 0) + (result.blockingSessionStateMutations?.length ?? 0)
           });
           return;
         }

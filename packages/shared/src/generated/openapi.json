@@ -5380,6 +5380,7 @@
         ]
       },
       "patch": {
+        "description": "Updates topology-only fields on a floor: `floor_no`, `branch_id`, `parent_floor_id`. The runtime fields `state`, `token_in`, `token_out` are intentionally not patchable through this endpoint. Mutating them directly would bypass the floor run state machine and the commit-time token bookkeeping, which would corrupt downstream truth (history, branch ancestry, prompt budget). If a request body contains any restricted field, the endpoint responds with 400 `floor_patch_restricted_field`. If a request body mixes a restricted field with a topology field, the response is 400 `floor_patch_mixed_fields` and is rejected as a whole.",
         "parameters": [
           {
             "in": "path",
@@ -5643,7 +5644,7 @@
             "description": "Default Response"
           }
         },
-        "summary": "Update floor",
+        "summary": "Update floor topology fields",
         "tags": [
           "floors"
         ]
@@ -8365,7 +8366,7 @@
             "description": "Default Response"
           }
         },
-        "summary": "Query tool execution journal for a floor",
+        "summary": "Query primary tool execution journal for a floor",
         "tags": [
           "tools"
         ]
@@ -39476,10 +39477,54 @@
                           "page_no": 0,
                           "version": 1
                         },
+                        "active_pages": [
+                          {
+                            "id": "page_12",
+                            "messages": [
+                              {
+                                "content": "The firelight wavers as the next part of the story begins.",
+                                "content_format": "text",
+                                "id": "msg_21",
+                                "role": "assistant",
+                                "seq": 0
+                              }
+                            ],
+                            "page_kind": "output",
+                            "page_no": 0,
+                            "version": 1
+                          }
+                        ],
                         "created_at": 1735689720000,
                         "floor_no": 2,
                         "id": "floor_12",
+                        "messages": [
+                          {
+                            "content": "The firelight wavers as the next part of the story begins.",
+                            "content_format": "text",
+                            "id": "msg_21",
+                            "role": "assistant",
+                            "seq": 0
+                          }
+                        ],
                         "page_count": 1,
+                        "pages": [
+                          {
+                            "id": "page_12",
+                            "is_active": true,
+                            "messages": [
+                              {
+                                "content": "The firelight wavers as the next part of the story begins.",
+                                "content_format": "text",
+                                "id": "msg_21",
+                                "role": "assistant",
+                                "seq": 0
+                              }
+                            ],
+                            "page_kind": "output",
+                            "page_no": 0,
+                            "version": 1
+                          }
+                        ],
                         "state": "committed",
                         "token_in": 320,
                         "token_out": 128
@@ -39575,6 +39620,68 @@
                                   }
                                 ]
                               },
+                              "active_pages": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "messages": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "content": {
+                                            "type": "string"
+                                          },
+                                          "content_format": {
+                                            "type": "string"
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "role": {
+                                            "type": "string"
+                                          },
+                                          "seq": {
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "seq",
+                                          "role",
+                                          "content",
+                                          "content_format"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "page_kind": {
+                                      "type": "string"
+                                    },
+                                    "page_no": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "version": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "page_no",
+                                    "page_kind",
+                                    "version",
+                                    "messages"
+                                  ],
+                                  "type": "object"
+                                },
+                                "type": "array"
+                              },
                               "created_at": {
                                 "minimum": 0,
                                 "type": "integer"
@@ -39586,9 +39693,107 @@
                               "id": {
                                 "type": "string"
                               },
+                              "messages": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "content": {
+                                      "type": "string"
+                                    },
+                                    "content_format": {
+                                      "type": "string"
+                                    },
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "role": {
+                                      "type": "string"
+                                    },
+                                    "seq": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "seq",
+                                    "role",
+                                    "content",
+                                    "content_format"
+                                  ],
+                                  "type": "object"
+                                },
+                                "type": "array"
+                              },
                               "page_count": {
                                 "minimum": 0,
                                 "type": "integer"
+                              },
+                              "pages": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "is_active": {
+                                      "type": "boolean"
+                                    },
+                                    "messages": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "content": {
+                                            "type": "string"
+                                          },
+                                          "content_format": {
+                                            "type": "string"
+                                          },
+                                          "id": {
+                                            "type": "string"
+                                          },
+                                          "role": {
+                                            "type": "string"
+                                          },
+                                          "seq": {
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "seq",
+                                          "role",
+                                          "content",
+                                          "content_format"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "page_kind": {
+                                      "type": "string"
+                                    },
+                                    "page_no": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "version": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "page_no",
+                                    "page_kind",
+                                    "is_active",
+                                    "version",
+                                    "messages"
+                                  ],
+                                  "type": "object"
+                                },
+                                "type": "array"
                               },
                               "state": {
                                 "type": "string"
@@ -39609,7 +39814,10 @@
                               "token_in",
                               "token_out",
                               "created_at",
+                              "pages",
+                              "active_pages",
                               "active_page",
+                              "messages",
                               "page_count"
                             ],
                             "type": "object"
@@ -40270,6 +40478,23 @@
                                 },
                                 "type": "array"
                               },
+                              "allowed_slots_basis": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "tool_declared",
+                                      "server_default",
+                                      "platform_default",
+                                      "inferred_from_execution_policy",
+                                      "shallow_schema_projection"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "async_capability": {
                                 "enum": [
                                   "inline_only",
@@ -40300,7 +40525,8 @@
                                   {
                                     "enum": [
                                       "live",
-                                      "cached"
+                                      "cached",
+                                      "unavailable"
                                     ],
                                     "type": "string"
                                   },
@@ -40318,6 +40544,23 @@
                               },
                               "name": {
                                 "type": "string"
+                              },
+                              "parameter_schema_basis": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "tool_declared",
+                                      "server_default",
+                                      "platform_default",
+                                      "inferred_from_execution_policy",
+                                      "shallow_schema_projection"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "provider_id": {
                                 "type": "string"
@@ -40339,6 +40582,23 @@
                                 ],
                                 "type": "string"
                               },
+                              "replay_safety_basis": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "tool_declared",
+                                      "server_default",
+                                      "platform_default",
+                                      "inferred_from_execution_policy",
+                                      "shallow_schema_projection"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "result_visibility": {
                                 "enum": [
                                   "immediate",
@@ -40353,6 +40613,23 @@
                                   "irreversible"
                                 ],
                                 "type": "string"
+                              },
+                              "side_effect_level_basis": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "tool_declared",
+                                      "server_default",
+                                      "platform_default",
+                                      "inferred_from_execution_policy",
+                                      "shallow_schema_projection"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "source": {
                                 "enum": [
@@ -41184,7 +41461,7 @@
             "description": "Default Response"
           }
         },
-        "summary": "Query tool execution journal",
+        "summary": "Query primary tool execution journal (source of truth)",
         "tags": [
           "tools"
         ]

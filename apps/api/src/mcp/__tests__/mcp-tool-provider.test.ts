@@ -193,6 +193,19 @@ describe('McpToolProvider', () => {
       expect(cachedCatalog.source).toBe('cached');
       expect(cachedCatalog.tools.map((tool) => tool.name)).toEqual(['get_data']);
     });
+
+    it('returns unavailable catalog when live listing fails and there is no snapshot', async () => {
+      const config = makeConfig();
+      const snapshotStore = new InMemoryMcpToolCatalogSnapshotStore();
+
+      vi.spyOn(manager, 'getConnection').mockRejectedValue(new Error('boom'));
+
+      const provider = new McpToolProvider(config, manager, { snapshotStore });
+      const catalog = await provider.listToolsWithMetadata();
+
+      expect(catalog.source).toBe('unavailable');
+      expect(catalog.tools).toEqual([]);
+    });
   });
 
   describe('executeTool', () => {
@@ -266,6 +279,46 @@ describe('McpToolProvider', () => {
       const result = await provider.executeTool('tool', {}, makeContext());
 
       expect(result.error).toBe('boom');
+    });
+
+    it('连接不可用时附带结构化 executionReasonCode', async () => {
+      const config = makeConfig();
+      vi.spyOn(manager, 'getConnection').mockResolvedValue(null);
+
+      const provider = new McpToolProvider(config, manager);
+      const result = await provider.executeTool('tool', {}, makeContext());
+
+      expect(result.executionStatus).toBe('error');
+      expect(result.executionReasonCode).toBe('mcp_not_connected');
+    });
+
+    it('底层显式 executionStatus 优先透传，不被字符串推断覆盖', async () => {
+      const config = makeConfig();
+      const mockConn = createMockConnection();
+      mockConn.callTool = vi.fn().mockResolvedValue({
+        error: 'local timeout reported as uncertain',
+        executionStatus: 'uncertain',
+        executionReasonCode: 'mcp_call_timeout_uncertain',
+      });
+
+      vi.spyOn(manager, 'getConnection').mockResolvedValue(mockConn as any);
+
+      const provider = new McpToolProvider(config, manager);
+      const result = await provider.executeTool('slow', {}, makeContext());
+
+      expect(result.executionStatus).toBe('uncertain');
+      expect(result.executionReasonCode).toBe('mcp_call_timeout_uncertain');
+    });
+
+    it('provider 执行异常时返回 mcp_provider_error 原因码', async () => {
+      const config = makeConfig();
+      vi.spyOn(manager, 'getConnection').mockRejectedValue(new Error('boom'));
+
+      const provider = new McpToolProvider(config, manager);
+      const result = await provider.executeTool('tool', {}, makeContext());
+
+      expect(result.error).toBe('boom');
+      expect(result.executionReasonCode).toBe('mcp_provider_error');
     });
   });
 

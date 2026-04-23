@@ -14,6 +14,28 @@ const sessionIdParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+/**
+ * runtime catalog metadata basis 枚举。
+ *
+ * 不是 trust score，只描述字段来源，避免把粗推断伪装成 tool-declared 真相。
+ */
+const runtimeMetadataBasisSchema = {
+  anyOf: [
+    {
+      type: "string",
+      enum: [
+        "tool_declared",
+        "server_default",
+        "platform_default",
+        "inferred_from_execution_policy",
+        "shallow_schema_projection",
+      ],
+    },
+    { type: "null" },
+  ],
+} as const;
+
+
 const runtimeToolJsonSchema = {
   type: "object",
   required: [
@@ -41,8 +63,12 @@ const runtimeToolJsonSchema = {
     availability_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
     default_delivery_mode: { type: "string", enum: ["inline", "async_job"] },
     replay_safety: { type: "string", enum: ["safe", "confirm_on_replay", "never_auto_replay", "uncertain"] },
-    catalog_source: { anyOf: [{ type: "string", enum: ["live", "cached"] }, { type: "null" }] },
+    catalog_source: { anyOf: [{ type: "string", enum: ["live", "cached", "unavailable"] }, { type: "null" }] },
     result_visibility: { type: "string", enum: ["immediate", "deferred_receipt"] },
+    side_effect_level_basis: runtimeMetadataBasisSchema,
+    allowed_slots_basis: runtimeMetadataBasisSchema,
+    parameter_schema_basis: runtimeMetadataBasisSchema,
+    replay_safety_basis: runtimeMetadataBasisSchema,
   },
   additionalProperties: false,
 } as const;
@@ -101,6 +127,10 @@ function formatCatalog(snapshot: SessionRuntimeToolCatalogSnapshot) {
       catalog_source: tool.catalogSource ?? null,
       replay_safety: tool.replaySafety,
       result_visibility: tool.resultVisibility,
+      side_effect_level_basis: tool.sideEffectLevelBasis ?? null,
+      allowed_slots_basis: tool.allowedSlotsBasis ?? null,
+      parameter_schema_basis: tool.parameterSchemaBasis ?? null,
+      replay_safety_basis: tool.replaySafetyBasis ?? null,
     })),
     conflicts: snapshot.conflicts.map((conflict) => ({
       tool_name: conflict.toolName,

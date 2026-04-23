@@ -1,16 +1,19 @@
-import { and, count, eq, gte, inArray, like, lte, ne } from "drizzle-orm";
+import { and, count, eq, gte, inArray, like, lte } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { nanoid } from "nanoid";
-import { SimpleTokenCounter, type MemoryItem, type MemoryStore } from "@tavern/core";
+import { SimpleTokenCounter, type CoreEventBus } from "@tavern/core";
 import { MEMORY_SCOPES } from "@tavern/shared";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { memoryEdges, memoryItems } from "../db/schema";
-import { parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
+import { parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth.js";
+import {
+  ManualMemoryMutationService,
+  ManualMemoryMutationServiceError,
+} from "../services/manual-memory-mutation-service.js";
 
 const memoryScopeSchema = z.enum(MEMORY_SCOPES);
 const memoryTypeSchema = z.enum(["fact", "summary", "open_loop"]);
@@ -37,38 +40,6 @@ function isMemoryTextContentObject(value: unknown): value is { text: string } {
 function normalizeFactKey(value: string | null | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase();
   return normalized && normalized.length > 0 ? normalized : undefined;
-}
-
-function resolveStoredFactKey(
-  type: z.infer<typeof memoryTypeSchema>,
-  value: string | null | undefined
-): string | null {
-  if (type !== "fact") {
-    return null;
-  }
-
-  return normalizeFactKey(value) ?? null;
-}
-
-function toLifecycleStatus(
-  status: z.infer<typeof memoryStatusSchema>,
-): "deprecated" | "active" {
-  return status === "deprecated" ? "deprecated" : "active";
-}
-
-function resolveStoredStatus(
-  status: z.infer<typeof memoryStatusSchema> | undefined,
-  lifecycleStatus: z.infer<typeof memoryLifecycleStatusSchema> | undefined,
-) {
-  if (status !== undefined) {
-    return status;
-  }
-
-  return lifecycleStatus === "deprecated" ? "deprecated" : "active";
-}
-
-function resolveStoredLifecycleStatus(status: z.infer<typeof memoryStatusSchema>, lifecycleStatus: z.infer<typeof memoryLifecycleStatusSchema> | undefined) {
-  return lifecycleStatus ?? toLifecycleStatus(status);
 }
 
 function normalizeMemoryContent(value: unknown): MemoryTextContent {
@@ -756,37 +727,6 @@ function toMemoryItemResponse(row: typeof memoryItems.$inferSelect) {
   };
 }
 
-/**
- * Render a domain {@link MemoryItem} (returned by the canonical
- * `MemoryStore` mutation ingress) into the public memory-item response
- * shape. Output is wire-compatible with {@link toMemoryItemResponse}.
- */
-function toMemoryItemResponseFromDomain(item: MemoryItem) {
-  return {
-    id: item.id,
-    scope: item.scope,
-    scope_id: item.scopeId,
-    type: item.type,
-    summary_tier: item.summaryTier ?? null,
-    content: { text: item.content },
-    fact_key: item.factKey ?? null,
-    importance: item.importance,
-    confidence: item.confidence,
-    source_floor_id: item.sourceFloorId ?? null,
-    source_message_id: item.sourceMessageId ?? null,
-    status: item.status,
-    lifecycle_status: item.lifecycleStatus ?? null,
-    source_job_id: item.sourceJobId ?? null,
-    token_count_estimate: item.tokenCountEstimate ?? null,
-    last_used_at: item.lastUsedAt ?? null,
-    coverage_start_floor_no: item.coverageStartFloorNo ?? null,
-    coverage_end_floor_no: item.coverageEndFloorNo ?? null,
-    derived_from_count: item.derivedFromCount ?? null,
-    created_at: item.createdAt,
-    updated_at: item.updatedAt
-  };
-}
-
 function toMemoryEdgeResponse(row: typeof memoryEdges.$inferSelect) {
   return {
     id: row.id,
@@ -797,57 +737,16 @@ function toMemoryEdgeResponse(row: typeof memoryEdges.$inferSelect) {
   };
 }
 
-const MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE = "Memory edge endpoints must reference existing memory items in the current account";
-
-async function hasOwnedMemoryEdgeNodes(
-  db: DatabaseConnection["db"],
-  accountId: string,
-  nodeIds: readonly string[],
-): Promise<boolean> {
-  const uniqueNodeIds = Array.from(new Set(nodeIds));
-  const rows = await db
-    .select({ id: memoryItems.id })
-    .from(memoryItems)
-    .where(and(eq(memoryItems.accountId, accountId), inArray(memoryItems.id, uniqueNodeIds)));
-
-  return rows.length === uniqueNodeIds.length;
+export interface MemoryRoutesOptions {
+  eventBus?: CoreEventBus;
 }
 
-async function findConflictingMemoryEdge(
-  db: DatabaseConnection["db"],
-  accountId: string,
-  input: { fromId: string; toId: string; relation: z.infer<typeof memoryRelationSchema> },
-  excludeId?: string,
-): Promise<{ id: string } | null> {
-  const filters = [
-    eq(memoryEdges.accountId, accountId),
-    eq(memoryEdges.fromId, input.fromId),
-    eq(memoryEdges.toId, input.toId),
-    eq(memoryEdges.relation, input.relation),
-  ];
-
-  if (excludeId) {
-    filters.push(ne(memoryEdges.id, excludeId));
+function handleManualMemoryMutationError(reply: Parameters<typeof sendError>[0], error: unknown) {
+  if (error instanceof ManualMemoryMutationServiceError) {
+    return sendError(reply, error.statusCode, error.code, error.message);
   }
 
-  const [row] = await db
-    .select({ id: memoryEdges.id })
-    .from(memoryEdges)
-    .where(and(...filters))
-    .limit(1);
-
-  return row ?? null;
-}
-
-function mapMemoryEdgeWriteError(error: unknown): { statusCode: 404 | 409; code: string; message: string } | null {
-  const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: unknown }).code) : undefined;
-  if (code?.startsWith("SQLITE_CONSTRAINT_FOREIGNKEY")) {
-    return { statusCode: 404, code: "memory_edge_node_not_found", message: MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE };
-  }
-  if (code?.startsWith("SQLITE_CONSTRAINT")) {
-    return { statusCode: 409, code: "memory_edge_conflict", message: "Memory edge already exists in the current account" };
-  }
-  return null;
+  throw error;
 }
 
 function buildMemoryFilters(
@@ -952,21 +851,6 @@ function buildMemoryFilters(
   return filters;
 }
 
-/**
- * Options for {@link registerMemoryRoutes}.
- *
- * @remarks
- * `memoryStore` is the canonical memory mutation ingress. When supplied,
- * write routes route their visible mutations through it so that committed
- * memory events (`memory.created`, `memory.updated`, `memory.deprecated`,
- * etc.) are published on the same post-commit event plane as turn-commit
- * and runtime mutations. When omitted, write routes fall back to their
- * legacy route-local SQL path without event publication.
- */
-export interface MemoryRoutesOptions {
-  memoryStore?: MemoryStore;
-}
-
 export async function registerMemoryRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection,
@@ -974,7 +858,9 @@ export async function registerMemoryRoutes(
 ): Promise<void> {
   const { db } = connection;
   const tokenCounter = new SimpleTokenCounter();
-  const memoryStore = options.memoryStore;
+  const mutationService = new ManualMemoryMutationService(db, {
+    eventBus: options.eventBus,
+  });
 
   app.post("/memories", {
     schema: {
@@ -995,76 +881,28 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const contentText = getMemoryContentText(parsedBody.data.content);
-
-    if (contentText === null) {
-      return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
-    }
-
-    const storedStatus = resolveStoredStatus(parsedBody.data.status, parsedBody.data.lifecycle_status);
-    const storedLifecycleStatus = resolveStoredLifecycleStatus(storedStatus, parsedBody.data.lifecycle_status);
-    const normalizedFactKey = resolveStoredFactKey(parsedBody.data.type, parsedBody.data.fact_key);
-
-    if (memoryStore) {
-      // Canonical mutation ingress path. The store writes through the
-      // repository and emits `memory.created` on the same post-commit
-      // event plane that mainline turn-commit and runtime mutations use.
-      const createInput: Omit<MemoryItem, "id" | "createdAt" | "updatedAt"> = {
-        scope: parsedBody.data.scope,
-        scopeId: parsedBody.data.scope_id,
-        type: parsedBody.data.type,
-        ...(parsedBody.data.type === "summary" && parsedBody.data.summary_tier
-          ? { summaryTier: parsedBody.data.summary_tier }
-          : {}),
-        content: contentText,
-        ...(normalizedFactKey ? { factKey: normalizedFactKey } : {}),
-        importance: parsedBody.data.importance ?? 0.5,
-        confidence: parsedBody.data.confidence ?? 1,
-        ...(parsedBody.data.source_floor_id ? { sourceFloorId: parsedBody.data.source_floor_id } : {}),
-        ...(parsedBody.data.source_message_id ? { sourceMessageId: parsedBody.data.source_message_id } : {}),
-        status: storedStatus,
-        lifecycleStatus: storedLifecycleStatus,
-      };
-      const created = await memoryStore.create(createInput, { accountId: auth.accountId });
-      return reply.code(201).send({ data: toMemoryItemResponseFromDomain(created) });
-    }
-
-    // Fallback: legacy route-local path used when no canonical ingress is
-    // wired (e.g. environments that disable memory). This branch keeps the
-    // historical behavior intact and does not publish committed events.
     const contentJson = stringifyJsonField(parsedBody.data.content);
+
     if (contentJson === null) {
       return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
     }
-    const now = Date.now();
-    const createdRows = await db
-      .insert(memoryItems)
-      .values({
-        id: nanoid(),
-        accountId: auth.accountId,
-        scope: parsedBody.data.scope,
-        scopeId: parsedBody.data.scope_id,
-        type: parsedBody.data.type,
-        summaryTier: parsedBody.data.type === "summary" ? parsedBody.data.summary_tier ?? null : null,
-        contentJson,
-        factKey: normalizedFactKey,
-        importance: parsedBody.data.importance ?? 0.5,
-        confidence: parsedBody.data.confidence ?? 1,
-        sourceFloorId: parsedBody.data.source_floor_id ?? null,
-        sourceMessageId: parsedBody.data.source_message_id ?? null,
-        status: storedStatus,
-        lifecycleStatus: storedLifecycleStatus,
-        sourceJobId: null,
-        tokenCountEstimate: null,
-        lastUsedAt: null,
-        coverageStartFloorNo: null,
-        coverageEndFloorNo: null,
-        derivedFromCount: null,
-        createdAt: now,
-        updatedAt: now
-      })
-      .returning();
-    const created = requireRow(createdRows[0], "Failed to create memory item");
+
+    const created = await mutationService.createItem({
+      accountId: auth.accountId,
+      scope: parsedBody.data.scope,
+      scopeId: parsedBody.data.scope_id,
+      type: parsedBody.data.type,
+      summaryTier: parsedBody.data.summary_tier,
+      contentJson,
+      factKey: parsedBody.data.fact_key,
+      importance: parsedBody.data.importance,
+      confidence: parsedBody.data.confidence,
+      sourceFloorId: parsedBody.data.source_floor_id,
+      sourceMessageId: parsedBody.data.source_message_id,
+      status: parsedBody.data.status,
+      lifecycleStatus: parsedBody.data.lifecycle_status,
+    });
+
     return reply.code(201).send({ data: toMemoryItemResponse(created) });
   });
 
@@ -1248,67 +1086,25 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-
-    if (memoryStore) {
-      // canonical 路径：按 item 粒度逐条 update，让每个被更新的 item 都
-      // 进入 memory.updated 事件面，便于 WS 订阅者重建 per-entity 真相。
-      const patch = {
-        status: parsedBody.data.status,
-        lifecycleStatus: toLifecycleStatus(parsedBody.data.status),
-      };
-      const updatedItems: MemoryItem[] = [];
-      const results = await Promise.all(
-        parsedBody.data.ids.map(async (id, index) => {
-          const updated = await memoryStore.update(id, patch, { accountId: auth.accountId });
-          if (!updated) {
-            return { index, id, action: "not_found" as const };
-          }
-          updatedItems.push(updated);
-          return {
-            index,
-            id,
-            action: "updated" as const,
-            data: toMemoryItemResponseFromDomain(updated),
-          };
-        }),
-      );
-
-      return reply.send({
-        data: {
-          results,
-          meta: {
-            total: results.length,
-            updated: updatedItems.length,
-            not_found: results.length - updatedItems.length,
-            status: parsedBody.data.status,
-          },
-        },
-      });
-    }
-
-    // Fallback：未注入 canonical ingress 时退回原 route-local 批量 SQL
-    const now = Date.now();
-    const updatedRows = await db
-      .update(memoryItems)
-      .set({
-        status: parsedBody.data.status,
-        lifecycleStatus: toLifecycleStatus(parsedBody.data.status),
-        updatedAt: now,
-      })
-      .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
-      .returning();
+    const updatedRows = await mutationService.batchUpdateItemStatus({
+      accountId: auth.accountId,
+      ids: parsedBody.data.ids,
+      status: parsedBody.data.status,
+    });
 
     const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
     const results = parsedBody.data.ids.map((id, index) => {
       const row = updatedById.get(id);
+
       if (!row) {
         return { index, id, action: "not_found" as const };
       }
+
       return {
         index,
         id,
         action: "updated" as const,
-        data: toMemoryItemResponse(row),
+        data: toMemoryItemResponse(row)
       };
     });
 
@@ -1319,9 +1115,9 @@ export async function registerMemoryRoutes(
           total: results.length,
           updated: updatedRows.length,
           not_found: results.length - updatedRows.length,
-          status: parsedBody.data.status,
-        },
-      },
+          status: parsedBody.data.status
+        }
+      }
     });
   });
 
@@ -1344,24 +1140,12 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const deletedRows = await mutationService.deleteItems({
+      accountId: auth.accountId,
+      ids: parsedBody.data.ids,
+    });
 
-    let deletedCount = 0;
-    let deletedIds: Set<string>;
-
-    if (memoryStore) {
-      const removed = await memoryStore.removeMany(parsedBody.data.ids, { accountId: auth.accountId });
-      deletedCount = removed.length;
-      deletedIds = new Set(removed.map((item) => item.id));
-    } else {
-      // Fallback：未注入 canonical ingress 时退回 route-local 批量 SQL
-      const deletedRows = await db
-        .delete(memoryItems)
-        .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
-        .returning();
-      deletedCount = deletedRows.length;
-      deletedIds = new Set(deletedRows.map((row) => row.id));
-    }
-
+    const deletedIds = new Set(deletedRows.map((row) => row.id));
     const results = parsedBody.data.ids.map((id, index) => ({
       index,
       id,
@@ -1373,8 +1157,8 @@ export async function registerMemoryRoutes(
         results,
         meta: {
           total: results.length,
-          deleted: deletedCount,
-          not_found: results.length - deletedCount
+          deleted: deletedRows.length,
+          not_found: results.length - deletedRows.length
         }
       }
     });
@@ -1433,173 +1217,36 @@ export async function registerMemoryRoutes(
       return;
     }
 
-    const [existing] = await db
-      .select()
-      .from(memoryItems)
-      .where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId)));
+    const contentJson = parsedBody.data.content !== undefined
+      ? stringifyJsonField(parsedBody.data.content)
+      : undefined;
+    const normalizedContentJson = contentJson === null ? undefined : contentJson;
 
-    if (!existing) {
+    if (parsedBody.data.content !== undefined && contentJson === null) {
+      return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
+    }
+
+    const updated = await mutationService.updateItem({
+      accountId: auth.accountId,
+      id: parsedParams.data.id,
+      scope: parsedBody.data.scope,
+      scopeId: parsedBody.data.scope_id,
+      type: parsedBody.data.type,
+      summaryTier: parsedBody.data.summary_tier,
+      contentJson: normalizedContentJson,
+      factKey: parsedBody.data.fact_key,
+      importance: parsedBody.data.importance,
+      confidence: parsedBody.data.confidence,
+      sourceFloorId: parsedBody.data.source_floor_id,
+      sourceMessageId: parsedBody.data.source_message_id,
+      status: parsedBody.data.status,
+      lifecycleStatus: parsedBody.data.lifecycle_status,
+    });
+
+    if (!updated) {
       return sendError(reply, 404, "not_found", "Memory item not found");
     }
 
-    // 用 route 现有的字段折叠规则把请求体翻译成 canonical patch。
-    // 走 canonical ingress 时直接交给 MemoryStore.update，由它来发
-    // memory.updated 进入 committed event 面；否则保留 fallback 路径
-    // 写库（仅用于未注入 memoryStore 的环境）。
-    const nextType = parsedBody.data.type ?? existing.type;
-    const nextSummaryTier =
-      nextType === "summary"
-        ? parsedBody.data.summary_tier !== undefined
-          ? parsedBody.data.summary_tier
-          : (existing.summaryTier ?? undefined)
-        : null;
-    const nextFactKey =
-      nextType === "fact"
-        ? parsedBody.data.fact_key !== undefined
-          ? resolveStoredFactKey(nextType, parsedBody.data.fact_key)
-          : (existing.factKey ?? null)
-        : null;
-
-    let canonicalContent: string | undefined;
-    if (parsedBody.data.content !== undefined) {
-      const contentText = getMemoryContentText(parsedBody.data.content);
-      if (contentText === null) {
-        return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
-      }
-      canonicalContent = contentText;
-    }
-
-    if (memoryStore) {
-      const patch: Parameters<MemoryStore["update"]>[1] = {};
-      if (parsedBody.data.scope !== undefined) {
-        patch.scope = parsedBody.data.scope;
-      }
-      if (parsedBody.data.scope_id !== undefined) {
-        patch.scopeId = parsedBody.data.scope_id;
-      }
-      if (parsedBody.data.type !== undefined) {
-        patch.type = parsedBody.data.type;
-      }
-      if (
-        parsedBody.data.type !== undefined
-        || parsedBody.data.summary_tier !== undefined
-      ) {
-        // type 切换或显式 summary_tier 调整时统一对齐
-        patch.summaryTier = nextType === "summary" ? (nextSummaryTier ?? null) : null;
-      }
-      if (canonicalContent !== undefined) {
-        patch.content = canonicalContent;
-      }
-      if (parsedBody.data.importance !== undefined) {
-        patch.importance = parsedBody.data.importance;
-      }
-      if (parsedBody.data.confidence !== undefined) {
-        patch.confidence = parsedBody.data.confidence;
-      }
-      if (
-        parsedBody.data.type !== undefined
-        || parsedBody.data.fact_key !== undefined
-      ) {
-        patch.factKey = nextType === "fact" ? (nextFactKey ?? null) : null;
-      }
-      if (parsedBody.data.source_floor_id !== undefined) {
-        patch.sourceFloorId = parsedBody.data.source_floor_id ?? null;
-      }
-      if (parsedBody.data.source_message_id !== undefined) {
-        patch.sourceMessageId = parsedBody.data.source_message_id ?? null;
-      }
-      if (parsedBody.data.status !== undefined) {
-        patch.status = parsedBody.data.status;
-      }
-      if (parsedBody.data.lifecycle_status !== undefined) {
-        patch.lifecycleStatus = parsedBody.data.lifecycle_status;
-      } else if (parsedBody.data.status !== undefined) {
-        patch.lifecycleStatus = toLifecycleStatus(parsedBody.data.status);
-      }
-
-      const updated = await memoryStore.update(parsedParams.data.id, patch, { accountId: auth.accountId });
-      if (!updated) {
-        return sendError(reply, 404, "not_found", "Memory item not found");
-      }
-      return reply.send({ data: toMemoryItemResponseFromDomain(updated) });
-    }
-
-    // Fallback：未注入 canonical ingress 时退回 route-local SQL（保留原行为）
-    const updates: Partial<typeof memoryItems.$inferInsert> = {
-      updatedAt: Date.now()
-    };
-
-    if (parsedBody.data.scope !== undefined) {
-      updates.scope = parsedBody.data.scope;
-    }
-
-    if (parsedBody.data.scope_id !== undefined) {
-      updates.scopeId = parsedBody.data.scope_id;
-    }
-
-    if (parsedBody.data.type !== undefined) {
-      updates.type = parsedBody.data.type;
-    }
-
-    if (nextType === "summary") {
-      if (parsedBody.data.summary_tier !== undefined) {
-        updates.summaryTier = parsedBody.data.summary_tier;
-      }
-    } else if (parsedBody.data.type !== undefined || parsedBody.data.summary_tier !== undefined) {
-      updates.summaryTier = null;
-    }
-
-    if (parsedBody.data.content !== undefined) {
-      const contentJson = stringifyJsonField(parsedBody.data.content);
-
-      if (contentJson === null) {
-        return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
-      }
-
-      updates.contentJson = contentJson;
-    }
-
-    if (parsedBody.data.importance !== undefined) {
-      updates.importance = parsedBody.data.importance;
-    }
-
-    if (parsedBody.data.confidence !== undefined) {
-      updates.confidence = parsedBody.data.confidence;
-    }
-
-    if (nextType === "fact") {
-      if (parsedBody.data.fact_key !== undefined) {
-        updates.factKey = resolveStoredFactKey(nextType, parsedBody.data.fact_key);
-      }
-    } else if (parsedBody.data.type !== undefined || parsedBody.data.fact_key !== undefined) {
-      updates.factKey = null;
-    }
-
-    if (parsedBody.data.source_floor_id !== undefined) {
-      updates.sourceFloorId = parsedBody.data.source_floor_id;
-    }
-
-    if (parsedBody.data.source_message_id !== undefined) {
-      updates.sourceMessageId = parsedBody.data.source_message_id;
-    }
-
-    if (parsedBody.data.status !== undefined) {
-      updates.status = parsedBody.data.status;
-    }
-
-    if (parsedBody.data.lifecycle_status !== undefined) {
-      updates.lifecycleStatus = parsedBody.data.lifecycle_status;
-    } else if (parsedBody.data.status !== undefined) {
-      updates.lifecycleStatus = toLifecycleStatus(parsedBody.data.status);
-    }
-
-    const updatedRows = await db
-      .update(memoryItems)
-      .set(updates)
-      .where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId)))
-      .returning();
-
-    const updated = requireRow(updatedRows[0], "Failed to update memory item");
     return reply.send({ data: toMemoryItemResponse(updated) });
   });
 
@@ -1621,20 +1268,15 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const deleted = await mutationService.deleteItem({
+      accountId: auth.accountId,
+      id: parsedParams.data.id,
+    });
 
-    if (memoryStore) {
-      const removed = await memoryStore.remove(parsedParams.data.id, { accountId: auth.accountId });
-      if (!removed) {
-        return sendError(reply, 404, "not_found", "Memory item not found");
-      }
-      return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
-    }
-
-    // Fallback：未注入 canonical ingress 时退回 route-local SQL（保留原行为）
-    const deleted = await db.delete(memoryItems).where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId))).returning();
-    if (deleted.length === 0) {
+    if (!deleted) {
       return sendError(reply, 404, "not_found", "Memory item not found");
     }
+
     return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
   });
 
@@ -1658,53 +1300,17 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    if (!(await hasOwnedMemoryEdgeNodes(db, auth.accountId, [parsedBody.data.from_id, parsedBody.data.to_id]))) {
-      return sendError(reply, 404, "memory_edge_node_not_found", MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE);
-    }
-
-    const duplicate = await findConflictingMemoryEdge(db, auth.accountId, {
-      fromId: parsedBody.data.from_id,
-      toId: parsedBody.data.to_id,
-      relation: parsedBody.data.relation,
-    });
-    if (duplicate) {
-      return sendError(reply, 409, "memory_edge_conflict", "Memory edge already exists in the current account");
-    }
-
     try {
-      if (memoryStore) {
-        const created = await memoryStore.createEdge(
-          {
-            fromId: parsedBody.data.from_id,
-            toId: parsedBody.data.to_id,
-            relation: parsedBody.data.relation,
-          },
-          { accountId: auth.accountId },
-        );
-        return reply.code(201).send({ data: { id: created.id, from_id: created.fromId, to_id: created.toId, relation: created.relation, created_at: created.createdAt } });
-      }
+      const created = await mutationService.createEdge({
+        accountId: auth.accountId,
+        fromId: parsedBody.data.from_id,
+        toId: parsedBody.data.to_id,
+        relation: parsedBody.data.relation,
+      });
 
-      // Fallback：未注入 canonical ingress 时退回 route-local SQL
-      const createdRows = await db
-        .insert(memoryEdges)
-        .values({
-          id: nanoid(),
-          accountId: auth.accountId,
-          fromId: parsedBody.data.from_id,
-          toId: parsedBody.data.to_id,
-          relation: parsedBody.data.relation,
-          createdAt: Date.now()
-        })
-        .returning();
-      const created = requireRow(createdRows[0], "Failed to create memory edge");
       return reply.code(201).send({ data: toMemoryEdgeResponse(created) });
     } catch (error) {
-      const mapped = mapMemoryEdgeWriteError(error);
-      if (mapped) {
-        return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
-      }
-
-      throw error;
+      return handleManualMemoryMutationError(reply, error);
     }
   });
 
@@ -1831,35 +1437,12 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const [existing] = await db
-      .select()
-      .from(memoryEdges)
-      .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
-      .limit(1);
-
-    if (!existing) {
-      return sendError(reply, 404, "not_found", "Memory edge not found");
-    }
-
-    if (!(await hasOwnedMemoryEdgeNodes(db, auth.accountId, [existing.fromId, existing.toId]))) {
-      return sendError(reply, 404, "memory_edge_node_not_found", MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE);
-    }
-
-    const duplicate = await findConflictingMemoryEdge(db, auth.accountId, {
-      fromId: existing.fromId,
-      toId: existing.toId,
-      relation: parsedBody.data.relation,
-    }, existing.id);
-    if (duplicate) {
-      return sendError(reply, 409, "memory_edge_conflict", "Memory edge already exists in the current account");
-    }
-
     try {
-      const [updated] = await db
-        .update(memoryEdges)
-        .set({ relation: parsedBody.data.relation })
-        .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
-        .returning();
+      const updated = await mutationService.updateEdgeRelation({
+        accountId: auth.accountId,
+        id: parsedParams.data.id,
+        relation: parsedBody.data.relation,
+      });
 
       if (!updated) {
         return sendError(reply, 404, "not_found", "Memory edge not found");
@@ -1867,12 +1450,7 @@ export async function registerMemoryRoutes(
 
       return reply.send({ data: toMemoryEdgeResponse(updated) });
     } catch (error) {
-      const mapped = mapMemoryEdgeWriteError(error);
-      if (mapped) {
-        return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
-      }
-
-      throw error;
+      return handleManualMemoryMutationError(reply, error);
     }
   });
 
@@ -1894,23 +1472,15 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const deleted = await mutationService.deleteEdge({
+      accountId: auth.accountId,
+      id: parsedParams.data.id,
+    });
 
-    if (memoryStore) {
-      const removed = await memoryStore.removeEdge(parsedParams.data.id, { accountId: auth.accountId });
-      if (!removed) {
-        return sendError(reply, 404, "not_found", "Memory edge not found");
-      }
-      return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
-    }
-
-    // Fallback：未注入 canonical ingress 时退回 route-local SQL
-    const deleted = await db
-      .delete(memoryEdges)
-      .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
-      .returning();
-    if (deleted.length === 0) {
+    if (!deleted) {
       return sendError(reply, 404, "not_found", "Memory edge not found");
     }
+
     return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
   });
 }

@@ -609,7 +609,9 @@ export function createMemoryRuntimeJobProcessorRegistry(
   deps: MemoryRuntimeProcessorDependencies,
 ): RuntimeJobProcessorRegistry {
   const registry = new RuntimeJobProcessorRegistry();
-  const maintenanceService = new MemoryMaintenanceService(deps.db);
+  const maintenanceService = new MemoryMaintenanceService(deps.db, {
+    eventBus: deps.eventBus,
+  });
   const planner = new MemoryCompactionPlanner();
   const scheduler = new MemoryJobScheduler({
     eventBus: deps.eventBus,
@@ -763,6 +765,7 @@ export function createMemoryRuntimeJobProcessorRegistry(
     },
     commit({ tx, job, payload, completedAt, scopeState }) {
       const existingMetadata = readMemoryRuntimeScopeMetadata(scopeState.metadataJson);
+      const maintenancePendingEvents: PendingCoreEvent[] = [];
       const result = maintenanceService.runInTransaction(tx, {
         now: completedAt,
         batchSize: payload.batchSize,
@@ -773,7 +776,7 @@ export function createMemoryRuntimeJobProcessorRegistry(
           scope: payload.scope,
           scopeId: payload.scopeId,
         },
-      });
+      }, maintenancePendingEvents);
 
       const didMutate = payload.dryRun !== true && (result.deprecated.total + result.purged > 0);
 
@@ -783,6 +786,9 @@ export function createMemoryRuntimeJobProcessorRegistry(
         scopeMetadata: toScopeMetadataPatch(existingMetadata),
         afterCommit: didMutate
           ? async () => {
+            if (maintenancePendingEvents.length > 0) {
+              await emitPendingCoreEvents(deps.eventBus, maintenancePendingEvents);
+            }
             await emitBestEffortEvent(deps.eventBus, "memory.consolidated", {
               ...buildMemoryJobEventContext({
                 scope: payload.scope,

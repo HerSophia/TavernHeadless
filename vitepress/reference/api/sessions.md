@@ -224,7 +224,7 @@ POST /sessions/:id/character/sync
 GET /sessions/:id/timeline
 ```
 
-获取会话的楼层时间线，包含每个楼层当前生效的消息页和消息内容。
+获取会话的楼层时间线。响应按 page-aware 结构返回：每个楼层下可能同时存在多个 active page（例如 input + output），`pages` 与 `active_pages` 是新的真相源，`active_page` / `messages` 是兼容字段。
 
 ### 查询参数
 
@@ -249,6 +249,41 @@ GET /sessions/:id/timeline
         "token_in": 0,
         "token_out": 42,
         "created_at": 1735689600000,
+        "pages": [
+          {
+            "id": "page_001",
+            "page_no": 0,
+            "page_kind": "output",
+            "is_active": true,
+            "version": 1,
+            "messages": [
+              {
+                "id": "msg_001",
+                "seq": 0,
+                "role": "assistant",
+                "content": "*Luna sits by the campfire...*",
+                "content_format": "text"
+              }
+            ]
+          }
+        ],
+        "active_pages": [
+          {
+            "id": "page_001",
+            "page_no": 0,
+            "page_kind": "output",
+            "version": 1,
+            "messages": [
+              {
+                "id": "msg_001",
+                "seq": 0,
+                "role": "assistant",
+                "content": "*Luna sits by the campfire...*",
+                "content_format": "text"
+              }
+            ]
+          }
+        ],
         "active_page": {
           "id": "page_001",
           "page_no": 0,
@@ -264,6 +299,15 @@ GET /sessions/:id/timeline
             }
           ]
         },
+        "messages": [
+          {
+            "id": "msg_001",
+            "seq": 0,
+            "role": "assistant",
+            "content": "*Luna sits by the campfire...*",
+            "content_format": "text"
+          }
+        ],
         "page_count": 3
       }
     ]
@@ -271,6 +315,16 @@ GET /sessions/:id/timeline
   "meta": { "total": 1, "limit": 50, "offset": 0, "has_more": false, "sort_by": "floor_no", "sort_order": "asc" }
 }
 ```
+
+#### 字段语义
+
+| 字段 | 说明 |
+| ---- | ---- |
+| `pages` | 楼层下全部 page（含历史非 active 版本）。每个条目带 `is_active` 指示当前是否 active。新调用方应以此为主。 |
+| `active_pages` | `pages` 中 `is_active === true` 的子集。一个楼层可能同时包含多个 active page（例如 active input page + active output page）。 |
+| `active_page` | 兼容字段。**当且仅当** `active_pages.length === 1` 时返回该 page，其余情况（含 0 或 ≥ 2 条）固定为 `null`。不要依赖它做多 active page 展示。 |
+| `messages` | 兼容字段（deprecated）。按 `active_pages` 顺序拼接所有消息。多 active page 场景下无法无损还原 page 结构。 |
+| `page_count` | 楼层下 page 总数，包含 inactive 历史版本。 |
 
 ## 列出分支
 

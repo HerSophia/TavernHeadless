@@ -108,6 +108,12 @@ export type TimelineMessage = {
 
 export type TimelinePage = {
   id: string;
+  /**
+   * 该 page 当前是否为 active。TimelineFloor.pages 里同一 page_no 可能同时出现
+   * 历史非 active 版本与当前 active 版本；`isActive === true` 的子集等价于
+   * `activePages`。旧版后端未返回 is_active 时默认 true 以保持兼容。
+   */
+  isActive: boolean;
   messages: TimelineMessage[];
   pageKind: string;
   pageNo: number;
@@ -115,7 +121,26 @@ export type TimelinePage = {
 };
 
 export type TimelineFloor = {
+  /**
+   * Page-aware truth source。包含该 floor 下的全部 page（历史 + 当前）。
+   * 新调用方应以此为主；旧字段 `activePage` / `messages` 仅作兼容。
+   */
+  pages: TimelinePage[];
+  /**
+   * `pages` 中 `isActive === true` 的子集。可能包含多条（例如同 floor 的
+   * active input page + active output page）。
+   */
+  activePages: TimelinePage[];
+  /**
+   * 兼容字段：仅当 `activePages.length === 1` 时等于该 page，否则为 null。
+   * 旧接入点可以继续用它显示单 active page；多 active page 场景下请改用 `activePages`。
+   */
   activePage: TimelinePage | null;
+  /**
+   * 兼容字段：floor 级扁平化消息。多 active page 时会按 `activePages` 顺序拼接，
+   * 无法无损还原 page 结构。新调用方应改为消费 `pages` / `activePages`。
+   */
+  messages: TimelineMessage[];
   createdAt: number;
   floorNo: number;
   id: string;
@@ -217,7 +242,14 @@ export type SessionRuntimeToolSlot = "narrator" | "director" | "verifier" | "mem
 export type SessionRuntimeToolAsyncCapability = "inline_only" | "deferred_ok";
 export type SessionRuntimeToolDeliveryMode = "inline" | "async_job";
 export type SessionRuntimeToolResultVisibility = "immediate" | "deferred_receipt";
-export type SessionRuntimeToolCatalogSource = "live" | "cached";
+export type SessionRuntimeToolCatalogSource = "live" | "cached" | "unavailable";
+
+export type SessionRuntimeToolMetadataBasis =
+  | "tool_declared"
+  | "server_default"
+  | "platform_default"
+  | "inferred_from_execution_policy"
+  | "shallow_schema_projection";
 
 export type SessionRuntimeToolCatalogEntry = {
   allowedSlots: SessionRuntimeToolSlot[];
@@ -233,6 +265,10 @@ export type SessionRuntimeToolCatalogEntry = {
   resultVisibility: SessionRuntimeToolResultVisibility;
   sideEffectLevel: "none" | "sandbox" | "irreversible";
   source: SessionRuntimeToolSource;
+  sideEffectLevelBasis: SessionRuntimeToolMetadataBasis | null;
+  allowedSlotsBasis: SessionRuntimeToolMetadataBasis | null;
+  parameterSchemaBasis: SessionRuntimeToolMetadataBasis | null;
+  replaySafetyBasis: SessionRuntimeToolMetadataBasis | null;
 };
 
 export type SessionRuntimeToolCatalogConflict = {
@@ -399,6 +435,8 @@ export type SessionsRespondStreamOptions = SessionsRespondOptions &
 
 export type SessionsRegenerateOptions = {
   accountId?: AccountIdHint;
+  confirmedExecutionIds?: string[];
+  confirmedSessionStateMutationIds?: string[];
   config?: RespondTurnConfig;
   generationParams?: RespondGenerationParams;
   sessionId: string;
@@ -690,6 +728,8 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
     async regenerate(options): Promise<SessionRegenerateResult> {
       const response = await client.fetchJson<Record<string, unknown>>(`/sessions/${encodeURIComponent(options.sessionId)}/regenerate`, {
         body: compactObject({
+          confirmed_execution_ids: options.confirmedExecutionIds,
+          confirmed_session_state_mutation_ids: options.confirmedSessionStateMutationIds,
           config: options.config,
           debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
           generation_params: mapGenerationParams(options.generationParams),
@@ -1383,10 +1423,60 @@ function mapTimelineFloor(value: unknown): TimelineFloor | null {
     return null;
   }
 
-  const activePage = readRecord(record.active_page);
+  // 优先从 page-aware 字段读取；后端向后兼容的老响应只有 active_page。
+  const pagesRaw = readArray(record.pages);
+  const pages: TimelinePage[] = pagesRaw
+    .map((raw) => {
+      const pageRecord = readRecord(raw);
+      return pageRecord ? mapTimelinePage(pageRecord) : null;
+    })
+    .filter((page): page is TimelinePage => page !== null);
+
+  const activePagesRaw = readArray(record.active_pages);
+  let activePages: TimelinePage[] = activePagesRaw
+    .map((raw) => {
+      const pageRecord = readRecord(raw);
+      return pageRecord ? mapTimelinePage(pageRecord, { defaultIsActive: true }) : null;
+    })
+    .filter((page): page is TimelinePage => page !== null);
+
+  // 从 pages 推出 activePages；当后端没有返回 active_pages（旧版）时，
+  // 以 pages.isActive 为准；当 pages 也缺失时，退回到兼容字段 active_page。
+  if (activePages.length === 0 && pages.length > 0) {
+    activePages = pages.filter((page) => page.isActive);
+  }
+
+  const legacyActivePage = readRecord(record.active_page);
+  const activePageMapped = legacyActivePage
+    ? mapTimelinePage(legacyActivePage, { defaultIsActive: true })
+    : null;
+
+  // 当后端没有返回任何 pages/active_pages 时，用 legacy active_page 合成一个
+  // 单条 activePages，保证上层语义稳定。
+  let resolvedPages = pages;
+  let resolvedActivePages = activePages;
+  if (resolvedPages.length === 0 && activePageMapped) {
+    resolvedPages = [activePageMapped];
+    resolvedActivePages = [activePageMapped];
+  }
+
+  // 计算兼容字段 activePage：严格遵循"仅当 activePages 长度为 1 时返回该 page"。
+  const resolvedActivePage =
+    resolvedActivePages.length === 1 ? resolvedActivePages[0]! : null;
+
+  // 计算兼容字段 messages：优先取后端的 floor 级扁平字段；缺失时按 activePages 顺序拼接。
+  const floorMessagesRaw = readArray(record.messages);
+  const floorMessages: TimelineMessage[] = floorMessagesRaw.length > 0
+    ? floorMessagesRaw
+        .map(mapTimelineMessage)
+        .filter((msg): msg is TimelineMessage => msg !== null)
+    : resolvedActivePages.flatMap((page) => page.messages);
 
   return {
-    activePage: activePage ? mapTimelinePage(activePage) : null,
+    pages: resolvedPages,
+    activePages: resolvedActivePages,
+    activePage: resolvedActivePage,
+    messages: floorMessages,
     createdAt: readNumber(record.created_at),
     floorNo: readNumber(record.floor_no),
     id: readString(record.id),
@@ -1412,9 +1502,15 @@ function mapTimelineMessage(value: unknown): TimelineMessage | null {
   };
 }
 
-function mapTimelinePage(value: Record<string, unknown>): TimelinePage {
+function mapTimelinePage(
+  value: Record<string, unknown>,
+  options: { defaultIsActive?: boolean } = {},
+): TimelinePage {
   return {
     id: readString(value.id),
+    // 后端可能不返回 is_active（例如 active_pages 条目里不带该字段）。
+    // 在这种上下文里默认 true；`pages` 数组里才要求后端显式提供。
+    isActive: readBoolean(value.is_active, options.defaultIsActive ?? true),
     messages: readArray(value.messages)
       .map(mapTimelineMessage)
       .filter((message): message is TimelineMessage => message !== null),
@@ -1525,6 +1621,10 @@ function mapRuntimeToolCatalogEntry(value: unknown): SessionRuntimeToolCatalogEn
     resultVisibility: readString(record.result_visibility, "immediate") as SessionRuntimeToolCatalogEntry["resultVisibility"],
     sideEffectLevel: readString(record.side_effect_level, "none") as SessionRuntimeToolCatalogEntry["sideEffectLevel"],
     source: readString(record.source, "builtin") as SessionRuntimeToolCatalogEntry["source"],
+    sideEffectLevelBasis: readNullableString(record.side_effect_level_basis) as SessionRuntimeToolCatalogEntry["sideEffectLevelBasis"],
+    allowedSlotsBasis: readNullableString(record.allowed_slots_basis) as SessionRuntimeToolCatalogEntry["allowedSlotsBasis"],
+    parameterSchemaBasis: readNullableString(record.parameter_schema_basis) as SessionRuntimeToolCatalogEntry["parameterSchemaBasis"],
+    replaySafetyBasis: readNullableString(record.replay_safety_basis) as SessionRuntimeToolCatalogEntry["replaySafetyBasis"],
   };
 }
 

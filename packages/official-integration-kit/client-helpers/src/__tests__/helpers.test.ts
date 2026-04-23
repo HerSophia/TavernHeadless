@@ -256,6 +256,7 @@ describe("buildTimelineMessages", () => {
       {
         activePage: {
           id: "page-1",
+          isActive: true,
           messages: [
             {
               content: "hello",
@@ -269,6 +270,9 @@ describe("buildTimelineMessages", () => {
           pageNo: 1,
           version: 1,
         },
+        pages: [],
+        activePages: [],
+        messages: [],
         createdAt: 100,
         floorNo: 1,
         id: "floor-1",
@@ -301,6 +305,9 @@ describe("buildTimelineMessages", () => {
     const timeline = buildTimelineMessages([
       {
         activePage: null,
+        pages: [],
+        activePages: [],
+        messages: [],
         createdAt: 10,
         floorNo: 1,
         id: "floor-skip",
@@ -312,6 +319,7 @@ describe("buildTimelineMessages", () => {
       {
         activePage: {
           id: "page-2",
+          isActive: true,
           messages: [
             {
               content: "skip me",
@@ -345,6 +353,9 @@ describe("buildTimelineMessages", () => {
           pageNo: 2,
           version: 4,
         },
+        pages: [],
+        activePages: [],
+        messages: [],
         createdAt: 200,
         floorNo: 2,
         id: "floor-2",
@@ -624,9 +635,9 @@ describe("tool helpers", () => {
       sessionId: "session-1",
       generatedAt: 1,
       tools: [
-        { name: "set_variable", providerId: "builtin", providerType: "builtin", source: "builtin", sideEffectLevel: "sandbox", allowedSlots: ["narrator"], availability: "available", availabilityReason: null, catalogSource: null, replaySafety: "safe", asyncCapability: "inline_only", defaultDeliveryMode: "inline", resultVisibility: "immediate" },
-        { name: "mcp_fetch", providerId: "mcp:mcp-1", providerType: "mcp", source: "mcp", sideEffectLevel: "irreversible", allowedSlots: ["narrator"], availability: "available", availabilityReason: null, catalogSource: "live", replaySafety: "never_auto_replay", asyncCapability: "deferred_ok", defaultDeliveryMode: "async_job", resultVisibility: "deferred_receipt" },
-        { name: "conflict_tool", providerId: "mcp:mcp-2", providerType: "mcp", source: "mcp", sideEffectLevel: "sandbox", allowedSlots: ["narrator"], availability: "conflict", availabilityReason: "name_conflict", catalogSource: "cached", replaySafety: "confirm_on_replay", asyncCapability: "inline_only", defaultDeliveryMode: "inline", resultVisibility: "immediate" },
+        { name: "set_variable", providerId: "builtin", providerType: "builtin", source: "builtin", sideEffectLevel: "sandbox", allowedSlots: ["narrator"], availability: "available", availabilityReason: null, catalogSource: null, replaySafety: "safe", asyncCapability: "inline_only", defaultDeliveryMode: "inline", resultVisibility: "immediate", sideEffectLevelBasis: null, allowedSlotsBasis: null, parameterSchemaBasis: null, replaySafetyBasis: null },
+        { name: "mcp_fetch", providerId: "mcp:mcp-1", providerType: "mcp", source: "mcp", sideEffectLevel: "irreversible", allowedSlots: ["narrator"], availability: "available", availabilityReason: null, catalogSource: "live", replaySafety: "never_auto_replay", asyncCapability: "deferred_ok", defaultDeliveryMode: "async_job", resultVisibility: "deferred_receipt", sideEffectLevelBasis: "server_default", allowedSlotsBasis: "platform_default", parameterSchemaBasis: "shallow_schema_projection", replaySafetyBasis: "inferred_from_execution_policy" },
+        { name: "conflict_tool", providerId: "mcp:mcp-2", providerType: "mcp", source: "mcp", sideEffectLevel: "sandbox", allowedSlots: ["narrator"], availability: "conflict", availabilityReason: "name_conflict", catalogSource: "cached", replaySafety: "confirm_on_replay", asyncCapability: "inline_only", defaultDeliveryMode: "inline", resultVisibility: "immediate", sideEffectLevelBasis: "server_default", allowedSlotsBasis: "platform_default", parameterSchemaBasis: "shallow_schema_projection", replaySafetyBasis: "inferred_from_execution_policy" },
       ],
       conflicts: [{ toolName: "conflict_tool", providerIds: ["custom:acc-1", "mcp:mcp-2"], reason: "name_conflict" }],
     })).toEqual({
@@ -684,6 +695,9 @@ describe("mapApiErrorToUiState", () => {
     ["tool_catalog_conflict", 409, "conflict", true],
     ["tool_replay_blocked", 409, "conflict", true],
     ["tool_replay_confirmation_required", 409, "conflict", true],
+    ["session_state_replay_blocked", 409, "conflict", true],
+    ["session_state_replay_confirmation_required", 409, "conflict", true],
+    ["replay_confirmation_required", 409, "conflict", true],
     ["mcp_call_uncertain_timeout", 503, "server", true],
     ["generation_cancelled", 499, "network", true],
     ["resource_busy", 503, "server", true],

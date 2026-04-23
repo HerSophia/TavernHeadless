@@ -1,9 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 import { buildBranchVariableScopeId } from "@tavern/shared";
 
 import { buildApp } from "../src/app";
+import { floors } from "../src/db/schema";
+import type { DatabaseConnection } from "../src/db/client";
 
 type ItemResponse<T> = { data: T };
 type ErrorResponse = { error: { code: string; message: string } };
@@ -117,9 +120,10 @@ async function upsertVar(
 describe("variables routes", () => {
   describe("single-account behavior", () => {
     let app: FastifyInstance;
+    let database: DatabaseConnection["db"];
 
     beforeEach(async () => {
-      ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
+      ({ app, database } = await buildApp({ databasePath: ":memory:", logger: false }));
     });
 
     afterEach(async () => {
@@ -365,13 +369,12 @@ describe("variables routes", () => {
         pageKind: "input",
       });
 
-      const commitResponse = await app.inject({
-        method: "PATCH",
-        url: `/floors/${committedFloorId}`,
-        payload: { state: "committed" },
-      });
-
-      expect(commitResponse.statusCode, commitResponse.body).toBe(200);
+      // Phase 4.1 guardrails：PATCH /floors/:id 不再允许改 state；
+      // 这里只是需要一个已 committed 的 floor 作为夹具，走 DB 层直写即可。
+      await database
+        .update(floors)
+        .set({ state: "committed", updatedAt: Date.now() })
+        .where(eq(floors.id, committedFloorId));
 
       const floorRes = await app.inject({
         method: "PUT",

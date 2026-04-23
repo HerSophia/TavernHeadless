@@ -418,6 +418,19 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 - 如果记忆整理上下文加载失败，系统会发出 `memory.consolidation_context_failed`，并跳过本轮整理。
 - 如果整理 JSON 解析失败，系统会发出 `memory.consolidation_json_parse_failed`，并降级为仅保留 `turnSummary`。
 - 如果事务内记忆持久化失败，系统会发出 `memory.persist_failed`，并回滚整个 commit。
+- 所有 committed 记忆事件只在事务成功提交后发出。
+  涉及的事件名包括 `memory.created`、`memory.updated`、`memory.deprecated`、
+  `memory.deleted`、`memory.edge.created`、`memory.edge.deleted`。
+  事务回滚的写入不会发出任何 committed 记忆事件。
+- 这些 committed 记忆事件在 turn commit、runtime ingest / compaction、
+  manual CRUD、maintenance 四条路径上共享同一组路由字段。
+  路由字段包括 `mutationId`、`accountId`、`scope`、`scopeId`、`sessionId`
+  （chat / branch scope 可解析时填充）、`branchId`（branch scope 时填充）、
+  `floorId`、`entityType`、`entityId`、`source`（取值为
+  `extraction` / `consolidation` / `manual` / `runtime` / `maintenance`），
+  以及 `before` / `after` 实体快照。
+- `memory.consolidated` 仍然是 additive 的整理汇总事件，
+  不替代上述 item-level 真相。
 
 ### Background Job Runtime 与高级开发者路由
 
@@ -848,13 +861,13 @@ CREATE TABLE tool_execution_record (
 | `generation.chunk`     | 收到流式片段   | floorId + chunk + accumulatedLength |
 | `generation.completed` | 生成完成       | floorId + text + usage + summaries |
 | `generation.failed`    | 生成失败       | floorId + error |
-| `memory.created`       | 创建记忆       | item + source（`extraction` / `consolidation` / `manual`） |
+| `memory.created`       | 创建记忆       | item + source |
 | `memory.updated`       | 更新记忆       | item + previousContent |
-| `memory.deprecated`    | 记忆废弃       | item + reason（手动 / `maintenance`） |
-| `memory.deleted`       | 物理删除记忆   | item + source（`manual` / `maintenance`） + 可选 reason |
-| `memory.edge.created`  | 创建记忆关系边 | edge + source（`manual` / `consolidation` / `maintenance`） |
-| `memory.edge.deleted`  | 删除记忆关系边 | edge + source（`manual` / `maintenance`） + 可选 reason |
-| `memory.consolidated`  | consolidation 写回完成（聚合事件） | floorId + created / updated / deprecated |
+| `memory.deprecated`    | 记忆废弃       | item + reason |
+| `memory.deleted`       | 物理删除记忆条目的 committed 真相 | item + before + source |
+| `memory.edge.created`  | 新建记忆关系边的 committed 真相   | edge + after + source |
+| `memory.edge.deleted`  | 删除记忆关系边的 committed 真相   | edge + before + source |
+| `memory.consolidated`  | consolidation 写回完成 | floorId + created / updated / deprecated |
 | `memory.injection_failed` | 记忆注入失败但主流程继续 | sessionId + error |
 | `memory.persist_failed` | 记忆事务写回失败并触发回滚 | floorId + sessionId + error |
 | `memory.consolidation_context_failed` | 整理上下文加载失败 | sessionId + error |
@@ -870,13 +883,6 @@ CREATE TABLE tool_execution_record (
 - 在前端实时显示生成进度（通过 WebSocket 转发）。
 - 记录日志和调试信息。
 - 触发自定义逻辑（插件系统的基础）。
-
-#### 记忆事件的事件面契约
-
-- 所有 `memory.*` committed 事件统一遵守"durable commit 之后才发"的语义。失败或回滚的写入不会发出事件。
-- 同名事件在四种触发源（`turn_commit` 主链、`manual_route` 手动 CRUD、`maintenance` 维护任务、`runtime_job` 运行时整理）下含义一致；`source` / `reason` 字段用来区分来源。
-- `memory.consolidated` 是聚合事件，不替代 item 级真相；订阅方应基于 `memory.created` / `memory.updated` / `memory.deprecated` / `memory.deleted` / `memory.edge.*` 来重建状态。
-- WebSocket 订阅者按 `sessionId` 过滤时：`chat` scope 用 `scopeId` 推导；`branch` scope 通过 `parseBranchMemoryScopeId(scopeId)` 推导；`floor` scope 必须由 publisher 在事件里显式带 `sessionId`，否则 fail-closed（不会投递到任何 session client）。
 
 ---
 

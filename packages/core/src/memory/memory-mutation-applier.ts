@@ -4,6 +4,7 @@ import {
 } from '@tavern/shared';
 
 import type { CoreEventMap } from '../events/index.js';
+import type { MemoryMutationSource } from '../events/event-types.js';
 import type {
   MemoryEdge,
   MemoryItem,
@@ -30,6 +31,9 @@ type MemoryMutationEventName =
   | 'memory.created'
   | 'memory.updated'
   | 'memory.deprecated'
+  | 'memory.deleted'
+  | 'memory.edge.created'
+  | 'memory.edge.deleted'
   | 'memory.consolidated';
 
 export type MemoryMutationEvent = {
@@ -65,7 +69,8 @@ export interface SummaryIngestionArgs {
   context?: MemoryScopeResolutionContext;
   sourceFloorId?: string;
   sourceMessageId?: string;
-  source: CoreEventMap['memory.created']['source'];
+  source: MemoryMutationSource;
+  mutationId?: string;
   importance?: number;
   confidence?: number;
   status?: MemoryItem['status'];
@@ -78,6 +83,7 @@ export interface ConsolidationApplyArgs {
   context?: MemoryScopeResolutionContext;
   sourceFloorId: string;
   sourceMessageId?: string;
+  mutationId?: string;
 }
 
 export interface IngestApplyArgs {
@@ -89,6 +95,7 @@ export interface IngestApplyArgs {
   sourceFloorNo?: number;
   sourceMessageId?: string;
   sourceJobId?: string;
+  mutationId?: string;
 }
 
 export interface CompactionApplyArgs {
@@ -99,6 +106,7 @@ export interface CompactionApplyArgs {
   context?: MemoryScopeResolutionContext;
   sourceFloorId?: string;
   sourceJobId?: string;
+  mutationId?: string;
 }
 
 function isPromiseLike<T>(value: MaybePromise<T>): value is Promise<T> {
@@ -178,10 +186,18 @@ function compareFactItemsForConflictResolution(
   return b.id.localeCompare(a.id);
 }
 
+type MemoryMutationEventEntityType = 'memory_item' | 'memory_edge';
+
 type MemoryMutationEventContextPayload = Pick<
   CoreEventMap['memory.created'],
   'sessionId' | 'scope' | 'scopeId' | 'floorId' | 'sourceJobId'
->;
+> & {
+  mutationId?: string;
+  accountId?: string;
+  branchId?: string;
+  entityType?: MemoryMutationEventEntityType;
+  entityId?: string;
+};
 
 function resolveMemoryEventSessionId(
   scope: MemoryScope,
@@ -201,19 +217,43 @@ function resolveMemoryEventSessionId(
   return normalizeScopeValue(context?.sessionId) ?? undefined;
 }
 
+function resolveMemoryEventBranchId(
+  scope: MemoryScope,
+  scopeId: string,
+  context: MemoryScopeResolutionContext | undefined,
+): string | undefined {
+  if (scope === 'branch') {
+    return parseBranchMemoryScopeId(scopeId)?.branchId
+      ?? normalizeScopeValue(context?.branchId)
+      ?? undefined;
+  }
+
+  return normalizeScopeValue(context?.branchId) ?? undefined;
+}
+
 function buildMemoryEventContextPayload(args: {
   scope: MemoryScope;
   scopeId: string;
   context?: MemoryScopeResolutionContext;
   floorId?: string;
   sourceJobId?: string;
+  mutationId?: string;
+  entityType?: MemoryMutationEventEntityType;
+  entityId?: string;
 }): MemoryMutationEventContextPayload {
   return {
+    ...(args.mutationId ? { mutationId: args.mutationId } : {}),
+    ...(args.context?.accountId ? { accountId: args.context.accountId } : {}),
     sessionId: resolveMemoryEventSessionId(args.scope, args.scopeId, args.context),
+    ...(resolveMemoryEventBranchId(args.scope, args.scopeId, args.context)
+      ? { branchId: resolveMemoryEventBranchId(args.scope, args.scopeId, args.context) }
+      : {}),
     scope: args.scope,
     scopeId: args.scopeId,
     ...(args.floorId ? { floorId: args.floorId } : {}),
     ...(args.sourceJobId ? { sourceJobId: args.sourceJobId } : {}),
+    ...(args.entityType ? { entityType: args.entityType } : {}),
+    ...(args.entityId ? { entityId: args.entityId } : {}),
   };
 }
 
@@ -255,12 +295,33 @@ function resolveEffectiveCompactionSourceIds(
   return [...new Set(requestedSourceIds)];
 }
 
+function nanoidMutationId(): string {
+  const rand = Math.random().toString(36).slice(2, 10);
+  const time = Date.now().toString(36);
+  return `mut-${time}-${rand}`;
+}
+
 export class MemoryMutationApplier {
   constructor(
     private readonly store: MemoryMutationStore,
     private readonly scopeResolver = new MemoryScopeResolver(),
     private readonly onEvent?: (event: MemoryMutationEvent) => MaybePromise<void>,
   ) {}
+
+  private currentMutationId?: string;
+  private currentResolutionContext?: MemoryScopeResolutionContext;
+  private currentSource: MemoryMutationSource = 'consolidation';
+
+  private setMutationContext(
+    source: MemoryMutationSource,
+    resolutionContext: MemoryScopeResolutionContext,
+    mutationId: string | undefined,
+  ): void {
+    this.currentSource = source;
+    this.currentResolutionContext = resolutionContext;
+    this.currentMutationId = mutationId ?? nanoidMutationId();
+  }
+
 
   ingestSummaries(args: SummaryIngestionArgs): MaybePromise<MemorySummaryMutationResult> {
     const createdItems: MemoryItem[] = [];
@@ -275,6 +336,7 @@ export class MemoryMutationApplier {
       resolutionContext,
       args.defaultScopeId,
     );
+    this.setMutationContext(args.source, resolutionContext, args.mutationId);
 
     const execution = forEachSerial(args.summaries, (summary) => {
       const trimmed = summary.trim();
@@ -336,6 +398,7 @@ export class MemoryMutationApplier {
       resolutionContext,
       args.defaultScopeId,
     );
+    this.setMutationContext('consolidation', resolutionContext, args.mutationId);
     const touchedFactKeysByScope = new Map<string, {
       scope: MemoryScope;
       scopeId: string;
@@ -628,6 +691,7 @@ export class MemoryMutationApplier {
       resolutionContext,
       args.defaultScopeId,
     );
+    this.setMutationContext('consolidation', resolutionContext, args.mutationId);
     const touchedFactKeysByScope = new Map<string, {
       scope: MemoryScope;
       scopeId: string;
@@ -1046,6 +1110,7 @@ export class MemoryMutationApplier {
       resolutionContext,
       args.defaultScopeId,
     );
+    this.setMutationContext('consolidation', resolutionContext, args.mutationId);
     const touchedFactKeysByScope = new Map<string, {
       scope: MemoryScope;
       scopeId: string;
@@ -1532,9 +1597,78 @@ export class MemoryMutationApplier {
       return undefined;
     }
 
+    const enriched = this.enrichMutationEventPayload(name, payload);
     return this.onEvent({
       name,
-      payload,
+      payload: enriched,
     } as MemoryMutationEvent);
+  }
+
+  private enrichMutationEventPayload<K extends MemoryMutationEventName>(
+    name: K,
+    payload: CoreEventMap[K],
+  ): CoreEventMap[K] {
+    // 只补齐 item 类事件；consolidated / edge / deleted 在本类里目前不会直接发。
+    if (name !== 'memory.created' && name !== 'memory.updated' && name !== 'memory.deprecated') {
+      return payload;
+    }
+
+    const itemPayload = payload as unknown as (
+      CoreEventMap['memory.created'] | CoreEventMap['memory.updated'] | CoreEventMap['memory.deprecated']
+    ) & Record<string, unknown>;
+    const item = itemPayload.item as MemoryItem | undefined;
+    if (!item) {
+      return payload;
+    }
+
+    const mutationId = (itemPayload.mutationId as string | undefined) ?? this.currentMutationId;
+    const contextAccountId = this.currentResolutionContext?.accountId;
+    const resolvedBranchId = resolveMemoryEventBranchId(
+      item.scope,
+      item.scopeId,
+      this.currentResolutionContext,
+    );
+
+    const enriched: Record<string, unknown> = { ...itemPayload };
+    if (mutationId && !enriched.mutationId) {
+      enriched.mutationId = mutationId;
+    }
+    if (contextAccountId && !enriched.accountId) {
+      enriched.accountId = contextAccountId;
+    }
+    if (resolvedBranchId && !enriched.branchId) {
+      enriched.branchId = resolvedBranchId;
+    }
+    if (!enriched.entityType) {
+      enriched.entityType = 'memory_item';
+    }
+    if (!enriched.entityId) {
+      enriched.entityId = item.id;
+    }
+    if (name === 'memory.created') {
+      if (!enriched.after) {
+        enriched.after = item;
+      }
+      if (!enriched.source) {
+        enriched.source = this.currentSource;
+      }
+    } else if (name === 'memory.updated') {
+      if (!enriched.after) {
+        enriched.after = item;
+      }
+      if (!enriched.source) {
+        enriched.source = this.currentSource;
+      }
+    } else {
+      // memory.deprecated
+      if (!enriched.after) {
+        enriched.after = item;
+      }
+      if (!enriched.source) {
+        enriched.source = this.currentSource;
+      }
+    }
+
+    return enriched as unknown as CoreEventMap[K];
   }
 }

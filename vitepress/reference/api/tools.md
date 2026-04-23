@@ -20,10 +20,18 @@ Beta3 默认关闭它的创建、更新和执行。
 | 能力 | 路径 | 说明 |
 | ---- | ---- | ---- |
 | 内置工具定义列表 | `GET /tools/builtin` | 只返回当前 `BuiltinToolProvider` 可公开的工具定义，不等于完整运行时目录 |
-| 会话运行时工具目录 | `GET /sessions/:id/tools/runtime` | 返回某个会话实际可见的完整运行时工具目录，可能包含 builtin、resource、MCP 工具，并标记 MCP 目录来自 `live` 还是 `cached` |
-| 执行 journal | `GET /tool-executions` / `GET /floors/:id/tool-executions` | 返回主执行审计记录。新的工具审计应优先读取这里，对应 `tool_execution_record` |
-| 调用记录 | `GET /tools/call-records` | 返回兼容页级调用记录，对应 `tool_call_record`，只用于旧读取面 |
+| 会话运行时工具目录 | `GET /sessions/:id/tools/runtime` | 返回某个会话实际可见的完整运行时工具目录，可能包含 builtin、resource、MCP 工具，并标记 MCP 目录来自 `live` / `cached` / `unavailable` |
+| 执行 journal（source of truth） | `GET /tool-executions` / `GET /floors/:id/tool-executions` | 返回**主执行审计记录**。新的工具审计只应读取这里，对应 `tool_execution_record`，承载所有新运行语义 |
+| 调用记录（legacy 兼容投影） | `GET /tools/call-records` | 返回旧的页级调用记录，对应 `tool_call_record`；只作为 legacy-compatible projection 保留，不再承载新语义 |
 | 会话权限 | `GET/PUT/PATCH /sessions/:id/tool-permissions` | 读取或修改单个会话的工具权限快照 |
+
+## 执行真相源口径
+
+工具执行只有一个主审计真相源：`tool_execution_record`。
+
+- `GET /tool-executions` / `GET /floors/:id/tool-executions` 直接读取它，是 source of truth。
+- `GET /tools/call-records` 是兼容投影，仅保留 `success | error | denied | queued | running` 五个兼容状态；不再承载 `timeout` / `uncertain` / `blocked`、lifecycle / commit outcome、`delivery_mode`、`runtime_job_id` 等主语义。
+- 所有新业务语义（运行时作业绑定、deferred receipt、结构化 `executionStatus` 等）都只进入执行 journal。对外接入层如果需要这些字段，应直接使用 `/tool-executions`。
 
 ## 会话运行时工具目录
 
@@ -38,8 +46,26 @@ GET /sessions/:id/tools/runtime
 - 它是**会话级**快照，不是全局静态目录
 - MCP 工具 live 列举成功时，`catalog_source` 为 `live`
 - MCP 工具 live 列举失败但已有快照时，`catalog_source` 为 `cached`
+- MCP 工具 live 列举失败且本地没有快照时，`catalog_source` 为 `unavailable`；这时 `tools` 不应被理解成“MCP server 确认零工具”，而是“当前不可确认”
 - 非 MCP 工具的 `catalog_source` 为 `null`
 - 当 script handler 被服务端策略关闭时，历史 definition-backed tools 会继续出现在目录里，但 `availability = unavailable`
+
+除了“值”本身，每个工具条目还会附带 **metadata basis** 字段，说明治理字段是怎么来的：
+
+- `side_effect_level_basis`
+- `allowed_slots_basis`
+- `parameter_schema_basis`
+- `replay_safety_basis`
+
+basis 枚举：
+
+- `tool_declared`：值直接来自本地明确定义或工具自身声明
+- `server_default`：值来自 MCP server 级默认配置
+- `platform_default`：值来自平台硬编码默认
+- `inferred_from_execution_policy`：值由 replay / 副作用策略推导得出
+- `shallow_schema_projection`：值由浅层 schema 投影得出
+
+basis **不是** trust score。它只用于让上层知道字段是声明值还是推断值，不应据此直接判定工具是否可信。
 
 #### 响应 `200`
 
@@ -62,7 +88,11 @@ GET /sessions/:id/tools/runtime
         "default_delivery_mode": "async_job",
         "catalog_source": "cached",
         "replay_safety": "never_auto_replay",
-        "result_visibility": "deferred_receipt"
+        "result_visibility": "deferred_receipt",
+        "side_effect_level_basis": "server_default",
+        "allowed_slots_basis": "platform_default",
+        "parameter_schema_basis": "shallow_schema_projection",
+        "replay_safety_basis": "inferred_from_execution_policy"
       }
     ],
     "conflicts": []
@@ -78,9 +108,13 @@ GET /sessions/:id/tools/runtime
 | `availability_reason` | string \| null | 当前不可用或冲突时的原因 |
 | `async_capability` | string | `inline_only` / `deferred_ok` |
 | `default_delivery_mode` | string | `inline` / `async_job` |
-| `catalog_source` | string \| null | MCP 目录来源：`live` / `cached`；非 MCP 工具为 `null` |
+| `catalog_source` | string \| null | MCP 目录来源：`live` / `cached` / `unavailable`；非 MCP 工具为 `null` |
 | `replay_safety` | string | `safe` / `confirm_on_replay` / `never_auto_replay` / `uncertain` |
 | `result_visibility` | string | `immediate` / `deferred_receipt` |
+| `side_effect_level_basis` | string \| null | 字段来源依据，见 metadata basis 说明 |
+| `allowed_slots_basis` | string \| null | 同上 |
+| `parameter_schema_basis` | string \| null | 同上 |
+| `replay_safety_basis` | string \| null | 同上 |
 
 当前公开配置里的 `toolMode` 仍只有 `inline`。但 `inline` 回合内部并不等于“所有工具都同步完成”：当 `async_capability = deferred_ok` 且 `default_delivery_mode = async_job` 时，本轮会先返回 deferred receipt，再通过 `runtime_job_id` 继续后台执行。
 
@@ -434,7 +468,7 @@ GET /floors/:id/tool-executions
 
 返回结构与 `GET /tool-executions` 相同。
 
-## 调用记录
+## 调用记录（legacy-compatible projection）
 
 ### 查询调用记录
 
@@ -444,7 +478,15 @@ GET /tools/call-records
 
 至少需要提供 `page_id` 或 `floor_id` 之一。
 
-这个端点返回的是较旧的页级调用记录视图。它适合查看兼容页级结果，但新的工具审计应优先读取 `GET /tool-executions`。该兼容面现在也可能返回 `queued` / `running`，但仍不会覆盖 `delivery_mode`、`runtime_job_id` 等主执行 journal 字段。
+::: warning
+这个端点是**兼容投影（legacy-compatible projection）**，不是执行真相源。
+
+- 状态只保留 `success` / `error` / `denied` / `queued` / `running` 五个兼容枚举。
+- `timeout` / `uncertain` / `blocked` 等新状态会在此处被压缩为 `error`；`blocked` 与 `denied` 也会合并为 `denied`。
+- 不会承载 `delivery_mode` / `runtime_job_id` / `lifecycle_state` / `commit_outcome` / `attempt_no` / `replay_parent_execution_id` / `side_effect_level` / `provider_type` 等主语义字段。
+
+**新的工具审计只应读取 `GET /tool-executions`。**
+:::
 
 #### 查询参数
 

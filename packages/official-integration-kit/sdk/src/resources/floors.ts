@@ -171,6 +171,7 @@ export type FloorsBranchOptions = {
 export type FloorsRetryOptions = {
   accountId?: AccountIdHint;
   confirmedExecutionIds?: string[];
+  confirmedSessionStateMutationIds?: string[];
   config?: RespondTurnConfig;
   floorId: string;
   generationParams?: RespondGenerationParams;
@@ -299,6 +300,7 @@ export function createFloorsResource(client: TransportClient): FloorsResource {
       const response = await client.fetchJson<Record<string, unknown>>(`/floors/${encodeURIComponent(options.floorId)}/retry`, {
         body: compactObject({
           confirmed_execution_ids: options.confirmedExecutionIds,
+          confirmed_session_state_mutation_ids: options.confirmedSessionStateMutationIds,
           config: options.config,
           debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
           generation_params: mapGenerationParams(options.generationParams),
