@@ -246,6 +246,19 @@ export interface MemoryInjectionOptions {
   scope?: MemoryScope;
   /** 当前账户 ID（多账号场景下必须传入） */
   accountId?: string;
+  /**
+   * 严格模式开关（opt-in）。
+   *
+   * 默认 false，保留现有的 `direct_scope_fallback` 兼容行为：
+   * 当根据 `scopeContext` 无法解析到任何可见 scope 时，会退回用传入的 `scopeId` 直查。
+   *
+   * 设为 true 时，无法解析到可见 scope 的请求直接返回空结果，并在
+   * `MemoryInjectionResult.scopeResolution` 中标记 `mode = 'strict_empty'`，
+   * 便于测试与诊断定位真正的 scope 配置问题。
+   *
+   * 生产默认不应开启严格模式，以免破坏已有调用方的兼容性。
+   */
+  strict?: boolean;
 }
 
 /**
@@ -260,4 +273,43 @@ export interface MemoryInjectionResult {
   formattedText: string;
   /** 估算 token 数 */
   tokenCount: number;
+  /**
+   * 本次 prepareInjection 的 scope 解析诊断信息。
+   *
+   * 由 MemoryStore.prepareInjection 填充，供调用方与测试区分以下几种情况：
+   *   - visible_refs：按 scopeContext 成功解析到至少一个可见 scope
+   *   - explicit_scope：显式传入 scope，按显式 scope 查询
+   *   - direct_scope_fallback：无法解析到可见 scope，退回到用 scopeId 直查
+   *   - strict_empty：严格模式下无法解析到可见 scope，主动返回空
+   *   - resolver_error：MemoryScopeResolver 抛出异常，主动返回空
+   */
+  scopeResolution?: MemoryInjectionScopeResolutionDiagnostics;
+}
+
+/**
+ * prepareInjection 的 scope 解析诊断模式。
+ */
+export type MemoryInjectionScopeResolutionMode =
+  | 'visible_refs'
+  | 'explicit_scope'
+  | 'direct_scope_fallback'
+  | 'strict_empty'
+  | 'resolver_error';
+
+/**
+ * prepareInjection 的 scope 解析诊断信息。
+ */
+export interface MemoryInjectionScopeResolutionDiagnostics {
+  /** 本次 scope 解析的最终模式。 */
+  mode: MemoryInjectionScopeResolutionMode;
+  /** 本次调用是否启用了严格模式。 */
+  strict: boolean;
+  /** mode='visible_refs' 时填：命中的可见 scope 引用列表。 */
+  scopeRefs?: MemoryScopeRef[];
+  /** mode='explicit_scope' 时填：显式 scope + 实际使用的 scopeId。 */
+  explicitScope?: MemoryScopeRef;
+  /** mode='direct_scope_fallback' 时填：退回时使用的 scopeId。 */
+  fallbackScopeId?: string;
+  /** mode='resolver_error' 时填：解析异常信息（只包含名称与消息）。 */
+  error?: { name: string; message: string };
 }

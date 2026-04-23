@@ -95,6 +95,20 @@ export interface TurnCommitInput {
   variableCommit?: VariableCommitOptions;
   memoryCommit?: MemoryCommitInput;
   macroStagedMutations?: StMacroStagedMutation[];
+  /**
+   * 仅用于 `regenerate()` 等“成功 commit 后替代旧楼层”的场景。
+   *
+   * 若设置，则在目标 floor 事务内完成 `generating -> committed` 状态流转之后，
+   * 于同一事务内把指定的源楼层标记为 `superseded`。校验项：
+   * - 源 floor 存在
+   * - 源 floor 与目标 floor 属于同一 `sessionId`
+   * - 源 floor 状态为 `committed`
+   * - 源 floor 尚未被 superseded
+   *
+   * 任一校验失败都会触发事务回滚，确保不会出现
+   * “新楼层 committed 但旧楼层未正确 supersede” 的部分成功状态。
+   */
+  supersedeSourceFloor?: { floorId: string };
 }
 
 export interface TurnCommitMemoryReceipt {
@@ -125,6 +139,20 @@ class MemoryPersistError extends Error {
   constructor(message: string, override readonly cause?: unknown) {
     super(message);
     this.name = "MemoryPersistError";
+  }
+}
+
+export class SupersedeSourceFloorError extends Error {
+  constructor(
+    public readonly code:
+      | "supersede_source_floor_not_found"
+      | "supersede_source_floor_session_mismatch"
+      | "supersede_source_floor_not_committed"
+      | "supersede_source_floor_already_superseded",
+    message: string,
+  ) {
+    super(message);
+    this.name = "SupersedeSourceFloorError";
   }
 }
 
@@ -278,6 +306,16 @@ function toToolExecutionInsert(record: ExecutedToolCallRecord): ToolExecutionIns
   };
 }
 
+/**
+ * 兼容投影：把 `ExecutedToolCallRecord` 压缩为 legacy `ToolCallRecord`。
+ *
+ * `tool_execution_record` 是工具执行的**主审计真相源**（primary tool execution journal）。
+ * `tool_call_record` 仅作为 legacy-compatible projection 使用，
+ * 旧 UI / 旧集成读取；新语义不应在此表扩展。
+ *
+ * 因此这里主动把 execution journal 中新增的状态（timeout / uncertain / blocked）
+ * 压缩回 `success | error | denied | queued | running` 的兼容态。
+ */
 function toLegacyToolCallRecord(
   record: ExecutedToolCallRecord,
   seq: number
@@ -455,6 +493,8 @@ export class TurnCommitService {
       mutations: actualBufferedVariableMutations,
       committedAt,
       accountId: input.accountId,
+      sessionId: input.sessionId,
+      branchId: input.branchId ?? "main",
     });
     for (const mutation of input.macroStagedMutations ?? []) {
       if (mutation.kind !== "delete") {
@@ -667,6 +707,66 @@ export class TurnCommitService {
         }
 
         const floorTransition = this.floorStateMachine.completeTransition(preparedFloorTransition, toFloorEntity(updatedFloorRow));
+
+        if (input.supersedeSourceFloor) {
+          const sourceFloorId = input.supersedeSourceFloor.floorId;
+          const sourceRow = tx
+            .select({
+              id: floors.id,
+              sessionId: floors.sessionId,
+              state: floors.state,
+              supersededAt: floors.supersededAt,
+              supersededByFloorId: floors.supersededByFloorId,
+            })
+            .from(floors)
+            .where(eq(floors.id, sourceFloorId))
+            .limit(1)
+            .all()[0];
+
+          if (!sourceRow) {
+            throw new SupersedeSourceFloorError(
+              "supersede_source_floor_not_found",
+              `Supersede source floor '${sourceFloorId}' not found`,
+            );
+          }
+
+          if (sourceRow.sessionId !== input.sessionId) {
+            throw new SupersedeSourceFloorError(
+              "supersede_source_floor_session_mismatch",
+              `Supersede source floor '${sourceFloorId}' does not belong to session '${input.sessionId}'`,
+            );
+          }
+
+          if (sourceRow.state !== "committed") {
+            throw new SupersedeSourceFloorError(
+              "supersede_source_floor_not_committed",
+              `Supersede source floor '${sourceFloorId}' must be committed, got '${sourceRow.state}'`,
+            );
+          }
+
+          // 允许源楼层已被同一目标楼层临时 supersede（例如 regenerate() 为绕过
+          // `floor_session_no_branch_live_uq` 部分唯一索引而先行写入的占位 supersede）。
+          // 但若被其他楼层 supersede，则视为真实冲突。
+          if (
+            sourceRow.supersededAt !== null &&
+            sourceRow.supersededByFloorId !== input.floorId
+          ) {
+            throw new SupersedeSourceFloorError(
+              "supersede_source_floor_already_superseded",
+              `Supersede source floor '${sourceFloorId}' is already superseded by a different floor`,
+            );
+          }
+
+          tx
+            .update(floors)
+            .set({
+              supersededAt: committedAt,
+              supersededByFloorId: input.floorId,
+              updatedAt: committedAt,
+            })
+            .where(eq(floors.id, sourceFloorId))
+            .run();
+        }
 
         tx
           .insert(floorResultSnapshots)

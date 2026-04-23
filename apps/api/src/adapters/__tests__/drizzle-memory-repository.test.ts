@@ -306,6 +306,31 @@ describe("DrizzleMemoryRepository", () => {
     expect(deprecated!.updatedAt).toBeGreaterThanOrEqual(created.updatedAt);
   });
 
+  // ── remove / removeMany ──────────────────────────────
+
+  it("removes item and returns the deleted snapshot", async () => {
+    const created = await repo.create(makeItem({ content: "Disposable" }));
+
+    const removed = await repo.remove(created.id);
+
+    expect(removed).not.toBeNull();
+    expect(removed!.id).toBe(created.id);
+    expect(removed!.content).toBe("Disposable");
+    expect(await repo.findById(created.id)).toBeNull();
+  });
+
+  it("removes many items in input order and skips missing ids", async () => {
+    const first = await repo.create(makeItem({ content: "First" }));
+    const second = await repo.create(makeItem({ content: "Second" }));
+
+    const removed = await repo.removeMany(["missing", second.id, first.id]);
+
+    expect(removed.map((item) => item.id)).toEqual([second.id, first.id]);
+    expect(removed.map((item) => item.content)).toEqual(["Second", "First"]);
+    expect(await repo.findById(first.id)).toBeNull();
+    expect(await repo.findById(second.id)).toBeNull();
+  });
+
   // ── createEdge ──────────────────────────────────────
 
   it("creates edge with generated id and timestamp", async () => {
@@ -324,6 +349,31 @@ describe("DrizzleMemoryRepository", () => {
     expect(edge.toId).toBe(item2.id);
     expect(edge.relation).toBe("supports");
     expect(edge.createdAt).toBeGreaterThanOrEqual(before);
+  });
+
+  // ── findEdgeById / removeEdge ───────────────────────
+
+  it("finds and removes edges by id", async () => {
+    const item1 = await repo.create(makeItem({ content: "A" }));
+    const item2 = await repo.create(makeItem({ content: "B" }));
+    const created = await repo.createEdge({
+      fromId: item1.id,
+      toId: item2.id,
+      relation: "supports",
+    });
+
+    const found = await repo.findEdgeById(created.id);
+    expect(found).toEqual(created);
+
+    const removed = await repo.removeEdge(created.id);
+    expect(removed).toEqual(created);
+    expect(await repo.findEdgeById(created.id)).toBeNull();
+    expect(await repo.findEdges(item1.id)).toEqual([]);
+  });
+
+  it("returns null for missing edge ids", async () => {
+    expect(await repo.findEdgeById("missing-edge")).toBeNull();
+    expect(await repo.removeEdge("missing-edge")).toBeNull();
   });
 
   // ── findEdges ───────────────────────────────────────
@@ -392,6 +442,7 @@ describe("DrizzleMemoryRepository", () => {
     expect(await accountARepo.findById(accountBItem.id)).toBeNull();
     expect(await accountARepo.update(accountBItem.id, { content: "changed" })).toBeNull();
     expect(await accountARepo.deprecate(accountBItem.id)).toBeNull();
+    expect(await accountARepo.remove(accountBItem.id)).toBeNull();
 
     const stillOwnedByAccountB = await accountBRepo.findById(accountBItem.id);
     expect(stillOwnedByAccountB).not.toBeNull();
@@ -399,6 +450,8 @@ describe("DrizzleMemoryRepository", () => {
     expect(stillOwnedByAccountB!.status).toBe("active");
 
     const edge = await accountBRepo.createEdge({ fromId: accountBItem.id, toId: accountBItem.id, relation: "supports" });
+    expect(await accountARepo.findEdgeById(edge.id)).toBeNull();
+    expect(await accountARepo.removeEdge(edge.id)).toBeNull();
     expect(await accountARepo.findEdges(accountBItem.id)).toEqual([]);
     expect(await accountBRepo.findEdges(accountBItem.id)).toEqual([edge]);
   });

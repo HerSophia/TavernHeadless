@@ -830,4 +830,118 @@ describe('MemoryStore', () => {
       }));
     });
   });
+
+  // ── prepareInjection scope 诊断 ───────────────────────────
+
+  describe('prepareInjection scope resolution diagnostics', () => {
+    it('reports mode=direct_scope_fallback when no scopeContext is provided', async () => {
+      const { store } = createStore();
+      const result = await store.prepareInjection('session-1', {
+        maxTokens: 500,
+      });
+
+      expect(result.scopeResolution).toBeDefined();
+      expect(result.scopeResolution!.mode).toBe('direct_scope_fallback');
+      expect(result.scopeResolution!.strict).toBe(false);
+      expect(result.scopeResolution!.fallbackScopeId).toBe('session-1');
+    });
+
+    it('reports mode=explicit_scope when scope and scopeContext are provided', async () => {
+      const { store } = createStore();
+      const result = await store.prepareInjection('session-1', {
+        maxTokens: 500,
+        scope: 'chat',
+        scopeContext: { accountId: 'acc-1', sessionId: 'session-1' },
+      });
+
+      expect(result.scopeResolution).toBeDefined();
+      expect(result.scopeResolution!.mode).toBe('explicit_scope');
+      expect(result.scopeResolution!.explicitScope).toEqual({
+        scope: 'chat',
+        scopeId: 'session-1',
+      });
+    });
+
+    it('reports mode=visible_refs when resolveVisibleRefs returns at least one ref', async () => {
+      const { store } = createStore();
+      const result = await store.prepareInjection('session-1', {
+        maxTokens: 500,
+        scopeContext: { accountId: 'acc-1', sessionId: 'session-1' },
+      });
+
+      expect(result.scopeResolution).toBeDefined();
+      expect(result.scopeResolution!.mode).toBe('visible_refs');
+      expect(Array.isArray(result.scopeResolution!.scopeRefs)).toBe(true);
+      expect(result.scopeResolution!.scopeRefs!.length).toBeGreaterThan(0);
+    });
+
+    it('resolves branch scope via buildBranchMemoryScopeId inside visible_refs diagnostics', async () => {
+      const { store } = createStore();
+      const branchScopeId = buildBranchMemoryScopeId('session-1', 'branch-a');
+      const result = await store.prepareInjection('session-1', {
+        maxTokens: 500,
+        scopeContext: { accountId: 'acc-1', sessionId: 'session-1', branchId: 'branch-a' },
+      });
+
+      expect(result.scopeResolution).toBeDefined();
+      expect(result.scopeResolution!.mode).toBe('visible_refs');
+      const refs = result.scopeResolution!.scopeRefs ?? [];
+      expect(refs.some((ref) => ref.scope === 'branch' && ref.scopeId === branchScopeId)).toBe(true);
+      // branch 上下文下 chat 粗粒度不再被作为可见 scope，避免与 branch 内容重叠。
+      expect(refs.some((ref) => ref.scope === 'chat')).toBe(false);
+    });
+
+    it('falls back to direct_scope_fallback when scopeContext yields no visible refs (strict=false)', async () => {
+      const { store } = createStore();
+      // 不传 accountId / sessionId / branchId / floorId，resolveVisibleRefs 返回空。
+      const result = await store.prepareInjection('scope-direct', {
+        maxTokens: 500,
+        scopeContext: {},
+      });
+
+      expect(result.scopeResolution).toBeDefined();
+      expect(result.scopeResolution!.mode).toBe('direct_scope_fallback');
+      expect(result.scopeResolution!.strict).toBe(false);
+      expect(result.scopeResolution!.fallbackScopeId).toBe('scope-direct');
+    });
+
+    it('returns empty result with mode=strict_empty when strict mode is on and no visible refs resolve', async () => {
+      const { store, repo } = createStore();
+      const findManySpy = vi.spyOn(repo, 'findMany');
+      const result = await store.prepareInjection('scope-direct', {
+        maxTokens: 500,
+        scopeContext: {},
+        strict: true,
+      });
+
+      expect(result.items).toEqual([]);
+      expect(result.formattedText).toBe('');
+      expect(result.tokenCount).toBe(0);
+      expect(result.scopeResolution).toBeDefined();
+      expect(result.scopeResolution!.mode).toBe('strict_empty');
+      expect(result.scopeResolution!.strict).toBe(true);
+      // 严格模式下不应触发对库查询。
+      expect(findManySpy).not.toHaveBeenCalled();
+    });
+
+    it('reports mode=resolver_error and returns empty result when explicit scope resolution throws', async () => {
+      const { store, repo } = createStore();
+      const findManySpy = vi.spyOn(repo, 'findMany');
+      // scope='global' 但 scopeContext 缺失 accountId，MemoryScopeResolver 会抛出。
+      const result = await store.prepareInjection('ignored', {
+        maxTokens: 500,
+        scope: 'global',
+        scopeContext: {},
+      });
+
+      expect(result.items).toEqual([]);
+      expect(result.formattedText).toBe('');
+      expect(result.tokenCount).toBe(0);
+      expect(result.scopeResolution).toBeDefined();
+      expect(result.scopeResolution!.mode).toBe('resolver_error');
+      expect(result.scopeResolution!.error?.name).toBe('MemoryScopeResolutionError');
+      expect(findManySpy).not.toHaveBeenCalled();
+    });
+  });
+
 });

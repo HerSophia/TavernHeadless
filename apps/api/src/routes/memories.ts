@@ -1,16 +1,19 @@
-import { and, count, eq, gte, inArray, like, lte, ne } from "drizzle-orm";
+import { and, count, eq, gte, inArray, like, lte } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { nanoid } from "nanoid";
-import { SimpleTokenCounter } from "@tavern/core";
+import { SimpleTokenCounter, type CoreEventBus } from "@tavern/core";
 import { MEMORY_SCOPES } from "@tavern/shared";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { memoryEdges, memoryItems } from "../db/schema";
-import { parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
+import { parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth.js";
+import {
+  ManualMemoryMutationService,
+  ManualMemoryMutationServiceError,
+} from "../services/manual-memory-mutation-service.js";
 
 const memoryScopeSchema = z.enum(MEMORY_SCOPES);
 const memoryTypeSchema = z.enum(["fact", "summary", "open_loop"]);
@@ -37,36 +40,6 @@ function isMemoryTextContentObject(value: unknown): value is { text: string } {
 function normalizeFactKey(value: string | null | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase();
   return normalized && normalized.length > 0 ? normalized : undefined;
-}
-
-function resolveStoredFactKey(
-  type: z.infer<typeof memoryTypeSchema>,
-  value: string | null | undefined
-): string | null {
-  if (type !== "fact") {
-    return null;
-  }
-
-  return normalizeFactKey(value) ?? null;
-}
-
-function toLifecycleStatus(status: z.infer<typeof memoryStatusSchema>) {
-  return status === "deprecated" ? "deprecated" : "active";
-}
-
-function resolveStoredStatus(
-  status: z.infer<typeof memoryStatusSchema> | undefined,
-  lifecycleStatus: z.infer<typeof memoryLifecycleStatusSchema> | undefined,
-) {
-  if (status !== undefined) {
-    return status;
-  }
-
-  return lifecycleStatus === "deprecated" ? "deprecated" : "active";
-}
-
-function resolveStoredLifecycleStatus(status: z.infer<typeof memoryStatusSchema>, lifecycleStatus: z.infer<typeof memoryLifecycleStatusSchema> | undefined) {
-  return lifecycleStatus ?? toLifecycleStatus(status);
 }
 
 function normalizeMemoryContent(value: unknown): MemoryTextContent {
@@ -764,57 +737,16 @@ function toMemoryEdgeResponse(row: typeof memoryEdges.$inferSelect) {
   };
 }
 
-const MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE = "Memory edge endpoints must reference existing memory items in the current account";
-
-async function hasOwnedMemoryEdgeNodes(
-  db: DatabaseConnection["db"],
-  accountId: string,
-  nodeIds: readonly string[],
-): Promise<boolean> {
-  const uniqueNodeIds = Array.from(new Set(nodeIds));
-  const rows = await db
-    .select({ id: memoryItems.id })
-    .from(memoryItems)
-    .where(and(eq(memoryItems.accountId, accountId), inArray(memoryItems.id, uniqueNodeIds)));
-
-  return rows.length === uniqueNodeIds.length;
+export interface MemoryRoutesOptions {
+  eventBus?: CoreEventBus;
 }
 
-async function findConflictingMemoryEdge(
-  db: DatabaseConnection["db"],
-  accountId: string,
-  input: { fromId: string; toId: string; relation: z.infer<typeof memoryRelationSchema> },
-  excludeId?: string,
-): Promise<{ id: string } | null> {
-  const filters = [
-    eq(memoryEdges.accountId, accountId),
-    eq(memoryEdges.fromId, input.fromId),
-    eq(memoryEdges.toId, input.toId),
-    eq(memoryEdges.relation, input.relation),
-  ];
-
-  if (excludeId) {
-    filters.push(ne(memoryEdges.id, excludeId));
+function handleManualMemoryMutationError(reply: Parameters<typeof sendError>[0], error: unknown) {
+  if (error instanceof ManualMemoryMutationServiceError) {
+    return sendError(reply, error.statusCode, error.code, error.message);
   }
 
-  const [row] = await db
-    .select({ id: memoryEdges.id })
-    .from(memoryEdges)
-    .where(and(...filters))
-    .limit(1);
-
-  return row ?? null;
-}
-
-function mapMemoryEdgeWriteError(error: unknown): { statusCode: 404 | 409; code: string; message: string } | null {
-  const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: unknown }).code) : undefined;
-  if (code?.startsWith("SQLITE_CONSTRAINT_FOREIGNKEY")) {
-    return { statusCode: 404, code: "memory_edge_node_not_found", message: MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE };
-  }
-  if (code?.startsWith("SQLITE_CONSTRAINT")) {
-    return { statusCode: 409, code: "memory_edge_conflict", message: "Memory edge already exists in the current account" };
-  }
-  return null;
+  throw error;
 }
 
 function buildMemoryFilters(
@@ -921,10 +853,14 @@ function buildMemoryFilters(
 
 export async function registerMemoryRoutes(
   app: FastifyInstance,
-  connection: DatabaseConnection
+  connection: DatabaseConnection,
+  options: MemoryRoutesOptions = {}
 ): Promise<void> {
   const { db } = connection;
   const tokenCounter = new SimpleTokenCounter();
+  const mutationService = new ManualMemoryMutationService(db, {
+    eventBus: options.eventBus,
+  });
 
   app.post("/memories", {
     schema: {
@@ -951,39 +887,21 @@ export async function registerMemoryRoutes(
       return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
     }
 
-    const now = Date.now();
-    const storedStatus = resolveStoredStatus(parsedBody.data.status, parsedBody.data.lifecycle_status);
-    const storedLifecycleStatus = resolveStoredLifecycleStatus(storedStatus, parsedBody.data.lifecycle_status);
-
-    const createdRows = await db
-      .insert(memoryItems)
-      .values({
-        id: nanoid(),
-        accountId: auth.accountId,
-        scope: parsedBody.data.scope,
-        scopeId: parsedBody.data.scope_id,
-        type: parsedBody.data.type,
-        summaryTier: parsedBody.data.type === "summary" ? parsedBody.data.summary_tier ?? null : null,
-        contentJson,
-        factKey: resolveStoredFactKey(parsedBody.data.type, parsedBody.data.fact_key),
-        importance: parsedBody.data.importance ?? 0.5,
-        confidence: parsedBody.data.confidence ?? 1,
-        sourceFloorId: parsedBody.data.source_floor_id ?? null,
-        sourceMessageId: parsedBody.data.source_message_id ?? null,
-        status: storedStatus,
-        lifecycleStatus: storedLifecycleStatus,
-        sourceJobId: null,
-        tokenCountEstimate: null,
-        lastUsedAt: null,
-        coverageStartFloorNo: null,
-        coverageEndFloorNo: null,
-        derivedFromCount: null,
-        createdAt: now,
-        updatedAt: now
-      })
-      .returning();
-
-    const created = requireRow(createdRows[0], "Failed to create memory item");
+    const created = await mutationService.createItem({
+      accountId: auth.accountId,
+      scope: parsedBody.data.scope,
+      scopeId: parsedBody.data.scope_id,
+      type: parsedBody.data.type,
+      summaryTier: parsedBody.data.summary_tier,
+      contentJson,
+      factKey: parsedBody.data.fact_key,
+      importance: parsedBody.data.importance,
+      confidence: parsedBody.data.confidence,
+      sourceFloorId: parsedBody.data.source_floor_id,
+      sourceMessageId: parsedBody.data.source_message_id,
+      status: parsedBody.data.status,
+      lifecycleStatus: parsedBody.data.lifecycle_status,
+    });
 
     return reply.code(201).send({ data: toMemoryItemResponse(created) });
   });
@@ -1168,16 +1086,11 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const now = Date.now();
-    const updatedRows = await db
-      .update(memoryItems)
-      .set({
-        status: parsedBody.data.status,
-        lifecycleStatus: toLifecycleStatus(parsedBody.data.status),
-        updatedAt: now,
-      })
-      .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
-      .returning();
+    const updatedRows = await mutationService.batchUpdateItemStatus({
+      accountId: auth.accountId,
+      ids: parsedBody.data.ids,
+      status: parsedBody.data.status,
+    });
 
     const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
     const results = parsedBody.data.ids.map((id, index) => {
@@ -1227,10 +1140,10 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const deletedRows = await db
-      .delete(memoryItems)
-      .where(and(inArray(memoryItems.id, parsedBody.data.ids), eq(memoryItems.accountId, auth.accountId)))
-      .returning();
+    const deletedRows = await mutationService.deleteItems({
+      accountId: auth.accountId,
+      ids: parsedBody.data.ids,
+    });
 
     const deletedIds = new Set(deletedRows.map((row) => row.id));
     const results = parsedBody.data.ids.map((id, index) => ({
@@ -1304,91 +1217,36 @@ export async function registerMemoryRoutes(
       return;
     }
 
-    const [existing] = await db
-      .select()
-      .from(memoryItems)
-      .where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId)));
+    const contentJson = parsedBody.data.content !== undefined
+      ? stringifyJsonField(parsedBody.data.content)
+      : undefined;
+    const normalizedContentJson = contentJson === null ? undefined : contentJson;
 
-    if (!existing) {
+    if (parsedBody.data.content !== undefined && contentJson === null) {
+      return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
+    }
+
+    const updated = await mutationService.updateItem({
+      accountId: auth.accountId,
+      id: parsedParams.data.id,
+      scope: parsedBody.data.scope,
+      scopeId: parsedBody.data.scope_id,
+      type: parsedBody.data.type,
+      summaryTier: parsedBody.data.summary_tier,
+      contentJson: normalizedContentJson,
+      factKey: parsedBody.data.fact_key,
+      importance: parsedBody.data.importance,
+      confidence: parsedBody.data.confidence,
+      sourceFloorId: parsedBody.data.source_floor_id,
+      sourceMessageId: parsedBody.data.source_message_id,
+      status: parsedBody.data.status,
+      lifecycleStatus: parsedBody.data.lifecycle_status,
+    });
+
+    if (!updated) {
       return sendError(reply, 404, "not_found", "Memory item not found");
     }
 
-    const updates: Partial<typeof memoryItems.$inferInsert> = {
-      updatedAt: Date.now()
-    };
-    const nextType = parsedBody.data.type ?? existing.type;
-
-    if (parsedBody.data.scope !== undefined) {
-      updates.scope = parsedBody.data.scope;
-    }
-
-    if (parsedBody.data.scope_id !== undefined) {
-      updates.scopeId = parsedBody.data.scope_id;
-    }
-
-    if (parsedBody.data.type !== undefined) {
-      updates.type = parsedBody.data.type;
-    }
-
-    if (nextType === "summary") {
-      if (parsedBody.data.summary_tier !== undefined) {
-        updates.summaryTier = parsedBody.data.summary_tier;
-      }
-    } else if (parsedBody.data.type !== undefined || parsedBody.data.summary_tier !== undefined) {
-      updates.summaryTier = null;
-    }
-
-    if (parsedBody.data.content !== undefined) {
-      const contentJson = stringifyJsonField(parsedBody.data.content);
-
-      if (contentJson === null) {
-        return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
-      }
-
-      updates.contentJson = contentJson;
-    }
-
-    if (parsedBody.data.importance !== undefined) {
-      updates.importance = parsedBody.data.importance;
-    }
-
-    if (parsedBody.data.confidence !== undefined) {
-      updates.confidence = parsedBody.data.confidence;
-    }
-
-    if (nextType === "fact") {
-      if (parsedBody.data.fact_key !== undefined) {
-        updates.factKey = resolveStoredFactKey(nextType, parsedBody.data.fact_key);
-      }
-    } else if (parsedBody.data.type !== undefined || parsedBody.data.fact_key !== undefined) {
-      updates.factKey = null;
-    }
-
-    if (parsedBody.data.source_floor_id !== undefined) {
-      updates.sourceFloorId = parsedBody.data.source_floor_id;
-    }
-
-    if (parsedBody.data.source_message_id !== undefined) {
-      updates.sourceMessageId = parsedBody.data.source_message_id;
-    }
-
-    if (parsedBody.data.status !== undefined) {
-      updates.status = parsedBody.data.status;
-    }
-
-    if (parsedBody.data.lifecycle_status !== undefined) {
-      updates.lifecycleStatus = parsedBody.data.lifecycle_status;
-    } else if (parsedBody.data.status !== undefined) {
-      updates.lifecycleStatus = toLifecycleStatus(parsedBody.data.status);
-    }
-
-    const updatedRows = await db
-      .update(memoryItems)
-      .set(updates)
-      .where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId)))
-      .returning();
-
-    const updated = requireRow(updatedRows[0], "Failed to update memory item");
     return reply.send({ data: toMemoryItemResponse(updated) });
   });
 
@@ -1410,9 +1268,12 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const deleted = await db.delete(memoryItems).where(and(eq(memoryItems.id, parsedParams.data.id), eq(memoryItems.accountId, auth.accountId))).returning();
+    const deleted = await mutationService.deleteItem({
+      accountId: auth.accountId,
+      id: parsedParams.data.id,
+    });
 
-    if (deleted.length === 0) {
+    if (!deleted) {
       return sendError(reply, 404, "not_found", "Memory item not found");
     }
 
@@ -1439,42 +1300,17 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    if (!(await hasOwnedMemoryEdgeNodes(db, auth.accountId, [parsedBody.data.from_id, parsedBody.data.to_id]))) {
-      return sendError(reply, 404, "memory_edge_node_not_found", MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE);
-    }
-
-    const duplicate = await findConflictingMemoryEdge(db, auth.accountId, {
-      fromId: parsedBody.data.from_id,
-      toId: parsedBody.data.to_id,
-      relation: parsedBody.data.relation,
-    });
-    if (duplicate) {
-      return sendError(reply, 409, "memory_edge_conflict", "Memory edge already exists in the current account");
-    }
-
     try {
-      const createdRows = await db
-        .insert(memoryEdges)
-        .values({
-          id: nanoid(),
-          accountId: auth.accountId,
-          fromId: parsedBody.data.from_id,
-          toId: parsedBody.data.to_id,
-          relation: parsedBody.data.relation,
-          createdAt: Date.now()
-        })
-        .returning();
-
-      const created = requireRow(createdRows[0], "Failed to create memory edge");
+      const created = await mutationService.createEdge({
+        accountId: auth.accountId,
+        fromId: parsedBody.data.from_id,
+        toId: parsedBody.data.to_id,
+        relation: parsedBody.data.relation,
+      });
 
       return reply.code(201).send({ data: toMemoryEdgeResponse(created) });
     } catch (error) {
-      const mapped = mapMemoryEdgeWriteError(error);
-      if (mapped) {
-        return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
-      }
-
-      throw error;
+      return handleManualMemoryMutationError(reply, error);
     }
   });
 
@@ -1601,35 +1437,12 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const [existing] = await db
-      .select()
-      .from(memoryEdges)
-      .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
-      .limit(1);
-
-    if (!existing) {
-      return sendError(reply, 404, "not_found", "Memory edge not found");
-    }
-
-    if (!(await hasOwnedMemoryEdgeNodes(db, auth.accountId, [existing.fromId, existing.toId]))) {
-      return sendError(reply, 404, "memory_edge_node_not_found", MEMORY_EDGE_NODE_NOT_FOUND_MESSAGE);
-    }
-
-    const duplicate = await findConflictingMemoryEdge(db, auth.accountId, {
-      fromId: existing.fromId,
-      toId: existing.toId,
-      relation: parsedBody.data.relation,
-    }, existing.id);
-    if (duplicate) {
-      return sendError(reply, 409, "memory_edge_conflict", "Memory edge already exists in the current account");
-    }
-
     try {
-      const [updated] = await db
-        .update(memoryEdges)
-        .set({ relation: parsedBody.data.relation })
-        .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
-        .returning();
+      const updated = await mutationService.updateEdgeRelation({
+        accountId: auth.accountId,
+        id: parsedParams.data.id,
+        relation: parsedBody.data.relation,
+      });
 
       if (!updated) {
         return sendError(reply, 404, "not_found", "Memory edge not found");
@@ -1637,12 +1450,7 @@ export async function registerMemoryRoutes(
 
       return reply.send({ data: toMemoryEdgeResponse(updated) });
     } catch (error) {
-      const mapped = mapMemoryEdgeWriteError(error);
-      if (mapped) {
-        return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
-      }
-
-      throw error;
+      return handleManualMemoryMutationError(reply, error);
     }
   });
 
@@ -1664,12 +1472,12 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const deleted = await db
-      .delete(memoryEdges)
-      .where(and(eq(memoryEdges.id, parsedParams.data.id), eq(memoryEdges.accountId, auth.accountId)))
-      .returning();
+    const deleted = await mutationService.deleteEdge({
+      accountId: auth.accountId,
+      id: parsedParams.data.id,
+    });
 
-    if (deleted.length === 0) {
+    if (!deleted) {
       return sendError(reply, 404, "not_found", "Memory edge not found");
     }
 

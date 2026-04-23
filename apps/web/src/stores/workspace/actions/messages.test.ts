@@ -9,9 +9,10 @@ import type { SessionState, TimelineMessage } from "../types";
 const workspaceApiMocks = vi.hoisted(() => ({
   deleteMessageById: vi.fn(),
   editAndRegenerateMessage: vi.fn(),
+  extractSessionStateReplayBlockingMutations: vi.fn(),
   extractToolReplayBlockingExecutions: vi.fn(),
-  isToolReplayBlockedError: vi.fn(),
-  isToolReplayConfirmationRequiredError: vi.fn(),
+  isReplayBlockedError: vi.fn(),
+  isReplayConfirmationRequiredError: vi.fn(),
   respondInSession: vi.fn(),
   retryFloor: vi.fn(),
   streamSessionResponse: vi.fn(),
@@ -30,9 +31,10 @@ import { createMessageActions } from "./messages";
 describe("createMessageActions.sendMessage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    workspaceApiMocks.extractSessionStateReplayBlockingMutations.mockReturnValue([]);
     workspaceApiMocks.extractToolReplayBlockingExecutions.mockReturnValue([]);
-    workspaceApiMocks.isToolReplayBlockedError.mockReturnValue(false);
-    workspaceApiMocks.isToolReplayConfirmationRequiredError.mockReturnValue(false);
+    workspaceApiMocks.isReplayBlockedError.mockReturnValue(false);
+    workspaceApiMocks.isReplayConfirmationRequiredError.mockReturnValue(false);
   });
 
   it("keeps floor metadata and the respond result when timeline hydration fails after stream success", async () => {
@@ -384,8 +386,9 @@ describe("createMessageActions.sendMessage", () => {
       message: "Retry requires explicit confirmation",
       status: 409
     }));
+    workspaceApiMocks.extractSessionStateReplayBlockingMutations.mockReturnValue([]);
     workspaceApiMocks.extractToolReplayBlockingExecutions.mockReturnValue(blockingExecutions);
-    workspaceApiMocks.isToolReplayConfirmationRequiredError.mockReturnValue(true);
+    workspaceApiMocks.isReplayConfirmationRequiredError.mockReturnValue(true);
 
     const actions = createMessageActions({
       activeSession: computed(() => ({
@@ -410,8 +413,103 @@ describe("createMessageActions.sendMessage", () => {
     await expect(actions.retryMessageFloor("assistant-1")).resolves.toEqual({
       apiSyncFailed: false,
       blockingExecutions,
+      blockingSessionStateMutations: [],
       ok: false,
       reason: "confirmation_required"
     });
+  });
+
+  it("returns session-state replay blockers and forwards confirmed mutation ids on retry", async () => {
+    const bucket: TimelineMessage[] = [
+      {
+        at: 1,
+        content: "Need retry",
+        contentFormat: "text",
+        floorId: "floor-2",
+        floorNo: 3,
+        floorState: "committed",
+        id: "assistant-2",
+        persisted: true,
+        role: "assistant",
+        seq: 0,
+        source: "remote"
+      }
+    ];
+
+    const blockingSessionStateMutations = [
+      {
+        mutationId: "mutation-1",
+        reason: "confirmation_required",
+        replaySafety: "confirm_on_replay",
+        stateNamespace: "game_state",
+        status: "applied",
+        targetSlot: "scene"
+      }
+    ];
+
+    workspaceApiMocks.retryFloor
+      .mockRejectedValueOnce(new TavernApiError({
+        code: "session_state_replay_confirmation_required",
+        details: {
+          blocking_session_state_mutations: [
+            {
+              mutation_id: "mutation-1",
+              reason: "confirmation_required",
+              replay_safety: "confirm_on_replay",
+              state_namespace: "game_state",
+              status: "applied",
+              target_slot: "scene"
+            }
+          ]
+        },
+        message: "Retry requires session-state confirmation",
+        status: 409
+      }))
+      .mockResolvedValueOnce({
+        branchId: "main",
+        finalState: "committed",
+        floorId: "floor-2",
+        floorNo: 3,
+        generatedText: "retry success",
+        inputTokens: 4,
+        outputTokens: 8,
+        summaries: [],
+        totalTokens: 12,
+        totalUsage: { inputTokens: 4, outputTokens: 8, totalTokens: 12 }
+      });
+    workspaceApiMocks.extractSessionStateReplayBlockingMutations.mockReturnValue(blockingSessionStateMutations);
+    workspaceApiMocks.extractToolReplayBlockingExecutions.mockReturnValue([]);
+    workspaceApiMocks.isReplayConfirmationRequiredError.mockReturnValue(true);
+
+    const actions = createMessageActions({
+      activeSession: computed(() => ({
+        account: "account-1",
+        archived: false,
+        characterName: "Seraphina",
+        id: "session-1",
+        title: { en: "Session 1", zh: "会话 1" },
+        userName: "Rowan",
+        worldbookCount: 0,
+        worldbookProfileId: null
+      })),
+      createMessageId: () => "draft-2",
+      currentAccount: computed(() => "account-1"),
+      ensureTimeline: () => bucket,
+      findActiveMessage: (messageId) => messageId === "assistant-2" ? { bucket, index: 0 } : null,
+      hydrateActiveTimeline: async () => ({ apiSyncFailed: false, count: bucket.length }),
+      hydrateSessionTimeline: async () => ({ apiSyncFailed: false, count: bucket.length }),
+      isStreaming: computed(() => false)
+    });
+
+    await expect(actions.retryMessageFloor("assistant-2")).resolves.toEqual({
+      apiSyncFailed: false,
+      blockingExecutions: [],
+      blockingSessionStateMutations,
+      ok: false,
+      reason: "confirmation_required"
+    });
+
+    await actions.retryMessageFloor("assistant-2", { confirmedSessionStateMutationIds: ["mutation-1"] });
+    expect(workspaceApiMocks.retryFloor).toHaveBeenNthCalledWith(2, "floor-2", "account-1", undefined, ["mutation-1"]);
   });
 });

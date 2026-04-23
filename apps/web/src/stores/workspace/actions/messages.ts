@@ -3,9 +3,10 @@ import type { ComputedRef } from "vue";
 import {
   deleteMessageById,
   editAndRegenerateMessage as editAndRegenerateMessageApi,
+  extractSessionStateReplayBlockingMutations,
   extractToolReplayBlockingExecutions,
-  isToolReplayBlockedError,
-  isToolReplayConfirmationRequiredError,
+  isReplayBlockedError,
+  isReplayConfirmationRequiredError,
   respondInSession,
   retryFloor as retryFloorApi,
   streamSessionResponse,
@@ -268,7 +269,7 @@ export function createMessageActions(context: MessageActionsContext) {
 
   async function retryMessageFloor(
     messageId: string,
-    options?: { confirmedExecutionIds?: string[] }
+    options?: { confirmedExecutionIds?: string[]; confirmedSessionStateMutationIds?: string[] }
   ): Promise<RegenerateFromMessageResult> {
     const location = context.findActiveMessage(messageId);
     if (!location) {
@@ -308,7 +309,8 @@ export function createMessageActions(context: MessageActionsContext) {
       const regenerateResult = await retryFloorApi(
         message.floorId,
         context.currentAccount.value,
-        options?.confirmedExecutionIds
+        options?.confirmedExecutionIds,
+        options?.confirmedSessionStateMutationIds
       );
       const timelineResult = await context.hydrateActiveTimeline();
       return {
@@ -319,19 +321,22 @@ export function createMessageActions(context: MessageActionsContext) {
       };
     } catch (error) {
       const blockingExecutions = extractToolReplayBlockingExecutions(error);
-      if (isToolReplayConfirmationRequiredError(error)) {
+      const blockingSessionStateMutations = extractSessionStateReplayBlockingMutations(error);
+      if (isReplayConfirmationRequiredError(error)) {
         return {
           apiSyncFailed: false,
           blockingExecutions,
+          blockingSessionStateMutations,
           ok: false,
           reason: "confirmation_required"
         };
       }
 
-      if (isToolReplayBlockedError(error)) {
+      if (isReplayBlockedError(error)) {
         return {
           apiSyncFailed: false,
           blockingExecutions,
+          blockingSessionStateMutations,
           ok: false,
           reason: "blocked"
         };

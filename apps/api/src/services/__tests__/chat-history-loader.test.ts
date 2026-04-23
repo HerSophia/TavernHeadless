@@ -33,6 +33,7 @@ describe("ChatHistoryLoader visibility policy", () => {
       updatedAt: now,
     });
 
+    let previousFloorId: string | null = null;
     for (let floorNo = 1; floorNo <= 5; floorNo += 1) {
       const floorId = nanoid();
       const pageId = nanoid();
@@ -41,7 +42,7 @@ describe("ChatHistoryLoader visibility policy", () => {
         sessionId,
         floorNo,
         branchId: "main",
-        parentFloorId: floorNo > 1 ? `parent-${floorNo - 1}` : null,
+        parentFloorId: previousFloorId,
         state: "committed",
         tokenIn: 0,
         tokenOut: 0,
@@ -68,6 +69,7 @@ describe("ChatHistoryLoader visibility policy", () => {
         isHidden: false,
         createdAt: now + floorNo,
       });
+      previousFloorId = floorId;
     }
 
     return sessionId;
@@ -139,6 +141,7 @@ describe("ChatHistoryLoader visibility policy", () => {
     });
 
     const floorIds: string[] = [];
+    let previousFloorId: string | null = null;
     for (let floorNo = 1; floorNo <= 3; floorNo += 1) {
       const floorId = nanoid();
       floorIds.push(floorId);
@@ -148,7 +151,7 @@ describe("ChatHistoryLoader visibility policy", () => {
         sessionId,
         floorNo,
         branchId: "main",
-        parentFloorId: null,
+        parentFloorId: previousFloorId,
         state: "committed",
         tokenIn: 0,
         tokenOut: 0,
@@ -175,6 +178,7 @@ describe("ChatHistoryLoader visibility policy", () => {
         isHidden: false,
         createdAt: now + floorNo,
       });
+      previousFloorId = floorId;
     }
 
     const messagesLoaded = await loadVisibleMessages({

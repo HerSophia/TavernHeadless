@@ -16,12 +16,10 @@ import {
 import type { AppDb } from "../db/client.js";
 import { sessions, toolDefinitions } from "../db/schema.js";
 import { parseJsonField } from "../lib/http.js";
-import {
-  McpToolProvider,
-  type McpToolCatalogSource,
-} from "../mcp/mcp-tool-provider.js";
+import type { McpToolCatalogSource } from "../mcp/mcp-tool-provider.js";
 import type { McpConnectionManager } from "../mcp/mcp-connection-manager.js";
 import { InMemoryMcpToolCatalogSnapshotStore, type McpToolCatalogSnapshotStore } from "../mcp/mcp-tool-catalog-snapshot-store.js";
+import { McpToolProviderFactory } from "../mcp/mcp-tool-provider-factory.js";
 import { McpService } from "./mcp-service.js";
 import type { ToolRuntimePolicy } from "./tool-runtime-policy.js";
 
@@ -47,6 +45,24 @@ export type SessionRuntimeToolReplaySafety = ToolReplaySafety;
 
 export type SessionRuntimeToolCatalogSource = McpToolCatalogSource;
 
+/**
+ * runtime catalog 中治理字段的来源依据（basis）。
+ *
+ * 该枚举不是 trust score。它只描述“这个字段是从哪里来的”。
+ *
+ * - `tool_declared` — 值直接来自本地明确定义或工具自身声明
+ * - `server_default` — 值来自服务器级（MCP server）默认配置
+ * - `platform_default` — 值来自平台硬编码的默认值
+ * - `inferred_from_execution_policy` — 值由 replay/副作用策略推导得出
+ * - `shallow_schema_projection` — 值由浅层 schema 投影得出（如参数 schema 的浅拷贝）
+ */
+export type RuntimeMetadataBasis =
+  | "tool_declared"
+  | "server_default"
+  | "platform_default"
+  | "inferred_from_execution_policy"
+  | "shallow_schema_projection";
+
 export interface SessionRuntimeToolCatalogEntry {
   name: string;
   providerId: string;
@@ -61,6 +77,10 @@ export interface SessionRuntimeToolCatalogEntry {
   defaultDeliveryMode: "inline" | "async_job";
   catalogSource?: SessionRuntimeToolCatalogSource;
   resultVisibility: "immediate" | "deferred_receipt";
+  sideEffectLevelBasis?: RuntimeMetadataBasis;
+  allowedSlotsBasis?: RuntimeMetadataBasis;
+  parameterSchemaBasis?: RuntimeMetadataBasis;
+  replaySafetyBasis?: RuntimeMetadataBasis;
 }
 
 export interface SessionRuntimeToolCatalogConflict {
@@ -100,6 +120,7 @@ export interface SessionToolRegistryServiceOptions {
   baseRegistry: ToolRegistry;
   mcpManager?: McpConnectionManager;
   mcpSnapshotStore?: McpToolCatalogSnapshotStore;
+  mcpToolProviderFactory?: McpToolProviderFactory;
   toolRuntimePolicy?: ToolRuntimePolicy;
   enableUnsafeScriptHandler?: boolean;
 }
@@ -115,6 +136,10 @@ interface RuntimeToolCandidate {
   asyncCapability: "inline_only" | "deferred_ok";
   defaultDeliveryMode: "inline" | "async_job";
   resultVisibility: "immediate" | "deferred_receipt";
+  sideEffectLevelBasis?: RuntimeMetadataBasis;
+  allowedSlotsBasis?: RuntimeMetadataBasis;
+  parameterSchemaBasis?: RuntimeMetadataBasis;
+  replaySafetyBasis?: RuntimeMetadataBasis;
 }
 
 interface DefinitionProviderDescriptor {
@@ -224,6 +249,10 @@ function buildCatalogEntry(candidate: RuntimeToolCandidate, availability: Sessio
     defaultDeliveryMode: candidate.defaultDeliveryMode,
     resultVisibility: candidate.resultVisibility,
     replaySafety,
+    ...(candidate.sideEffectLevelBasis ? { sideEffectLevelBasis: candidate.sideEffectLevelBasis } : {}),
+    ...(candidate.allowedSlotsBasis ? { allowedSlotsBasis: candidate.allowedSlotsBasis } : {}),
+    ...(candidate.parameterSchemaBasis ? { parameterSchemaBasis: candidate.parameterSchemaBasis } : {}),
+    ...(candidate.replaySafetyBasis ? { replaySafetyBasis: candidate.replaySafetyBasis } : {}),
   };
 }
 
@@ -281,6 +310,7 @@ function toPresetToolInput(row: typeof toolDefinitions.$inferSelect): PresetTool
 export class SessionToolRegistryService {
   private readonly mcpService?: McpService;
   private readonly mcpSnapshotStore?: McpToolCatalogSnapshotStore;
+  private readonly mcpToolProviderFactory?: McpToolProviderFactory;
 
   constructor(
     private readonly db: AppDb,
@@ -290,6 +320,16 @@ export class SessionToolRegistryService {
     this.mcpSnapshotStore = options.mcpManager
       ? options.mcpSnapshotStore ?? new InMemoryMcpToolCatalogSnapshotStore()
       : undefined;
+
+    if (options.mcpToolProviderFactory) {
+      this.mcpToolProviderFactory = options.mcpToolProviderFactory;
+    } else if (options.mcpManager) {
+      this.mcpToolProviderFactory = new McpToolProviderFactory({
+        connectionManager: options.mcpManager,
+        ...(options.toolRuntimePolicy ? { toolRuntimePolicy: options.toolRuntimePolicy } : {}),
+        ...(this.mcpSnapshotStore ? { snapshotStore: this.mcpSnapshotStore } : {}),
+      });
+    }
   }
 
   async buildRuntime(
@@ -328,6 +368,10 @@ export class SessionToolRegistryService {
         asyncCapability: "inline_only",
         defaultDeliveryMode: "inline",
         resultVisibility: "immediate",
+        sideEffectLevelBasis: "tool_declared",
+        allowedSlotsBasis: "tool_declared",
+        parameterSchemaBasis: "tool_declared",
+        replaySafetyBasis: "inferred_from_execution_policy",
       })),
     );
 
@@ -461,6 +505,10 @@ export class SessionToolRegistryService {
           asyncCapability: tool.asyncCapability ?? "inline_only",
           defaultDeliveryMode: tool.defaultDeliveryMode ?? "inline",
           resultVisibility: tool.resultVisibility ?? "immediate",
+          sideEffectLevelBasis: "tool_declared",
+          allowedSlotsBasis: "tool_declared",
+          parameterSchemaBasis: "tool_declared",
+          replaySafetyBasis: "inferred_from_execution_policy",
         };
 
         snapshot.tools.push(buildCatalogEntry(candidate, "available"));
@@ -556,11 +604,15 @@ export class SessionToolRegistryService {
     }>();
     const mcpCandidatesByName = new Map<string, RuntimeToolCandidate[]>();
 
-    for (const config of configs) {
-      const provider = new McpToolProvider(config, this.options.mcpManager, {
-        snapshotStore: this.mcpSnapshotStore,
-        toolRuntimePolicy: this.options.toolRuntimePolicy,
+    const factory = this.mcpToolProviderFactory
+      ?? new McpToolProviderFactory({
+        connectionManager: this.options.mcpManager,
+        ...(this.options.toolRuntimePolicy ? { toolRuntimePolicy: this.options.toolRuntimePolicy } : {}),
+        ...(this.mcpSnapshotStore ? { snapshotStore: this.mcpSnapshotStore } : {}),
       });
+
+    for (const config of configs) {
+      const provider = factory.create(config);
       const catalog = await provider.listToolsWithMetadata();
       const candidates = catalog.tools.map<RuntimeToolCandidate>((tool) => ({
         name: tool.name,
@@ -573,6 +625,10 @@ export class SessionToolRegistryService {
         asyncCapability: tool.asyncCapability ?? "inline_only",
         defaultDeliveryMode: tool.defaultDeliveryMode ?? "inline",
         resultVisibility: tool.resultVisibility ?? "immediate",
+        sideEffectLevelBasis: "server_default",
+        allowedSlotsBasis: "platform_default",
+        parameterSchemaBasis: "shallow_schema_projection",
+        replaySafetyBasis: "inferred_from_execution_policy",
       }));
 
       providerToolCandidates.set(provider.id, {

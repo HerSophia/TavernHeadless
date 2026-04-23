@@ -6,6 +6,8 @@ export type {
   MemoryConsolidationOutput,
   MemoryInjectionOptions,
   MemoryInjectionResult,
+  MemoryInjectionScopeResolutionDiagnostics,
+  MemoryInjectionScopeResolutionMode,
   MemoryAccessOptions,
   MemoryScopeContext,
   MemoryScopeRef,

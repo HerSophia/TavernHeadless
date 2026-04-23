@@ -314,6 +314,38 @@ POST /mcp/servers/:id/test
 - stdio 类型的服务器在系统启动时自动连接（如果 `enabled=true`），HTTP 类型按需连接。
 - 多账号模式下，MCP 配置不会跨账号共享；两个账号可以创建同名配置，但彼此不可见、不可操作。
 
+## 运行时目录与执行状态
+
+MCP 工具在 `GET /sessions/:id/tools/runtime` 响应中会附带两类语义：
+
+1. `catalog_source`：工具来源，取值：
+   - `live`：本次从 MCP server 成功 live 拉取
+   - `cached`：live 失败，回退到本地 snapshot
+   - `unavailable`：live 失败且无 snapshot，**不等于**“MCP server 确认零工具”，而是“当前不可确认”
+2. metadata basis 字段：`side_effect_level_basis` / `allowed_slots_basis` / `parameter_schema_basis` / `replay_safety_basis`。对 MCP 工具，绝大多数基线为：
+   - `side_effect_level_basis = server_default`
+   - `allowed_slots_basis = platform_default`
+   - `parameter_schema_basis = shallow_schema_projection`
+   - `replay_safety_basis = inferred_from_execution_policy`
+
+   这些 basis **不是** trust score，只用于让上层知道字段是声明值还是推导值。
+
+MCP 工具执行失败时，执行 journal（`GET /tool-executions`）会优先使用结构化 `executionStatus` / `execution_reason_code`，而不是错误字符串推断。当前稳定 reason code 包括：
+
+| Reason code | 对应情况 |
+| ---- | ---- |
+| `mcp_not_connected` | provider 未连接 |
+| `mcp_connection_reconnect_required` | 本地标记需重新连接 |
+| `mcp_call_timeout_uncertain` | 本地 call timeout，执行结果不确定 |
+| `mcp_remote_error` | MCP 服务器返回 `isError` 响应 |
+| `mcp_transport_error` | 传输层异常 |
+| `mcp_provider_error` | provider 包装层异常 |
+| `mcp_account_required` | deferred 执行缺少 account 上下文 |
+| `mcp_invalid_provider_id` | deferred provider id 无效 |
+| `mcp_server_unavailable` | deferred 执行时配置被禁用或不存在 |
+
+如果底层未给出 `executionStatus`，`finalizeToolCallResult` 会退回到错误字符串推断，但**新接入方不应依赖这条 fallback**。
+
 ## 相关事件
 
 | 事件名 | 触发时机 | 携带数据 |

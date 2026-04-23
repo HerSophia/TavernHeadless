@@ -34,6 +34,7 @@ describe("branch management routes", () => {
     floorNo: number;
     branchId: string;
     state?: "draft" | "generating" | "committed" | "failed";
+    parentFloorId?: string;
   }): Promise<string> {
     const response = await app.inject({
       method: "POST",
@@ -43,6 +44,7 @@ describe("branch management routes", () => {
         floor_no: args.floorNo,
         branch_id: args.branchId,
         state: args.state ?? "committed",
+        ...(args.parentFloorId ? { parent_floor_id: args.parentFloorId } : {}),
       },
     });
 
@@ -76,10 +78,19 @@ describe("branch management routes", () => {
   it("returns branch diff against main", async () => {
     const sessionId = await createSession();
 
-    await createFloor({ sessionId, floorNo: 0, branchId: "main" });
-    await createFloor({ sessionId, floorNo: 1, branchId: "main" });
-    await createFloor({ sessionId, floorNo: 1, branchId: "alt" });
-    await createFloor({ sessionId, floorNo: 2, branchId: "alt" });
+    // 通过真实 parent_floor_id 链构造 ancestry：
+    //   main: f0 → f1
+    //   alt:  f0 → alt_f1 → alt_f2
+    // 两支在 f0 处分叉，diff 的 fork 应落在 f0（floor_no=0）。
+    const mainF0 = await createFloor({ sessionId, floorNo: 0, branchId: "main" });
+    await createFloor({ sessionId, floorNo: 1, branchId: "main", parentFloorId: mainF0 });
+    const altF1 = await createFloor({
+      sessionId,
+      floorNo: 1,
+      branchId: "alt",
+      parentFloorId: mainF0,
+    });
+    await createFloor({ sessionId, floorNo: 2, branchId: "alt", parentFloorId: altF1 });
 
     const response = await app.inject({
       method: "GET",
@@ -99,8 +110,9 @@ describe("branch management routes", () => {
 
     expect(body.data.base_branch_id).toBe("main");
     expect(body.data.target_branch_id).toBe("alt");
-    expect(body.data.fork_floor_no).toBe(1);
-    expect(body.data.shared_floor_nos).toEqual([1]);
+    // ancestry-based diff：两支在 f0 处是真实共同祖先。
+    expect(body.data.fork_floor_no).toBe(0);
+    expect(body.data.shared_floor_nos).toEqual([0]);
   });
 
   it("deletes a non-main branch", async () => {

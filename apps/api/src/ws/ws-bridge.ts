@@ -1,7 +1,8 @@
 import type { WebSocket } from 'ws';
 import type { CoreEventBus, CoreEventMap } from '@tavern/core';
+import { parseBranchMemoryScopeId } from '@tavern/shared';
 
-// ── 推送协议 ──────────────────────────────────────────
+// ── 推送协议 ──────────────────────────────
 
 export interface WsMessage {
   type: 'event';
@@ -10,7 +11,7 @@ export interface WsMessage {
   timestamp: number;
 }
 
-// ── 客户端信息 ────────────────────────────────────────
+// ── 客户端信息 ────────────────────────────
 
 interface ClientInfo {
   socket: WebSocket;
@@ -18,7 +19,7 @@ interface ClientInfo {
   sessionId?: string;
 }
 
-// ── WsBridge ──────────────────────────────────────────
+// ── WsBridge ───────────────────────────────
 
 /**
  * EventBus → WebSocket 桥接器
@@ -83,6 +84,9 @@ export class WsBridge {
       'memory.created',
       'memory.updated',
       'memory.deprecated',
+      'memory.deleted',
+      'memory.edge.created',
+      'memory.edge.deleted',
       'memory.consolidated',
       'runtime.job_enqueued',
       'runtime.job_leased',
@@ -121,7 +125,7 @@ export class WsBridge {
     this.unsubscribers.length = 0;
   }
 
-  // ── 内部方法 ────────────────────────────────────────
+  // ── 内部方法 ────────────────────────────
 
   private broadcast(eventName: string, data: unknown): void {
     const message: WsMessage = {
@@ -154,41 +158,76 @@ export class WsBridge {
   }
 }
 
-// ── 工具函数 ──────────────────────────────────────────
+// ── 工具函数 ──────────────────────────────
 
 /**
  * 从事件数据中提取 sessionId。
  *
- * 优先级：
- * - floor 事件：data.floor.sessionId
- * - 通用直接字段：data.sessionId
- * - memory 事件兜底：data.item.scope === 'chat' 时使用 data.item.scopeId
- * - memory 汇总兜底：data.scope === 'chat' 时使用 data.scopeId
+ * 解析顺序（fail closed，解析不到返回 undefined，session client 会丢弃该事件）：
+ *   1. 顶层 data.sessionId
+ *   2. data.floor.sessionId
+ *   3. data.item.scope === 'chat' 时的 data.item.scopeId
+ *   4. data.item.scope === 'branch' 时 parseBranchMemoryScopeId(data.item.scopeId).sessionId
+ *   5. data.scope === 'chat' 时的 data.scopeId
+ *   6. data.scope === 'branch' 时 parseBranchMemoryScopeId(data.scopeId).sessionId
+ *   7. data.scope === 'floor' 时仅在有显式 data.sessionId 时才解析（已在第 1 步命中）
+ *
+ * 注意：
+ * • scope === 'global' 的记忆事件本身没有 sessionId 归属，因此 session client 不会接收，全局客户端仍然接收。
+ * • scope === 'floor' 且未携带顶层 sessionId 的事件也归类为解析不到；调用方应以 MemoryEventContext.sessionId 显式携带。
  */
 function extractSessionId(_eventName: string, data: unknown): string | undefined {
   if (!data || typeof data !== 'object') return undefined;
 
   const d = data as Record<string, unknown>;
 
-  if (d.floor && typeof d.floor === 'object') {
-    return (d.floor as Record<string, unknown>).sessionId as string | undefined;
+  if (typeof d.sessionId === 'string' && d.sessionId.length > 0) {
+    return d.sessionId;
   }
 
-  if (typeof d.sessionId === 'string') {
-    return d.sessionId;
+  if (d.floor && typeof d.floor === 'object') {
+    const floorSessionId = (d.floor as Record<string, unknown>).sessionId;
+    if (typeof floorSessionId === 'string' && floorSessionId.length > 0) {
+      return floorSessionId;
+    }
   }
 
   const item = d.item;
   if (item && typeof item === 'object') {
-    const itemRecord = item as Record<string, unknown>;
-    if (itemRecord.scope === 'chat' && typeof itemRecord.scopeId === 'string') {
-      return itemRecord.scopeId;
+    const resolved = resolveSessionFromScopeCarrier(item as Record<string, unknown>);
+    if (resolved) {
+      return resolved;
     }
   }
 
-  if (d.scope === 'chat' && typeof d.scopeId === 'string') {
-    return d.scopeId;
+  const resolvedTopLevel = resolveSessionFromScopeCarrier(d);
+  if (resolvedTopLevel) {
+    return resolvedTopLevel;
   }
 
+  return undefined;
+}
+
+function resolveSessionFromScopeCarrier(carrier: Record<string, unknown>): string | undefined {
+  const scope = typeof carrier.scope === 'string' ? carrier.scope : undefined;
+  const scopeId = typeof carrier.scopeId === 'string' ? carrier.scopeId : undefined;
+
+  if (!scope || !scopeId) {
+    return undefined;
+  }
+
+  if (scope === 'chat') {
+    return scopeId;
+  }
+
+  if (scope === 'branch') {
+    const parsed = parseBranchMemoryScopeId(scopeId);
+    if (parsed?.sessionId) {
+      return parsed.sessionId;
+    }
+    return undefined;
+  }
+
+  // scope === 'floor' 或 scope === 'global'：仅依赖显式的顶层 sessionId。
   return undefined;
 }

@@ -1,6 +1,7 @@
 import type { CoreEventBus } from "@tavern/core";
 
 import type { AppDb } from "../db/client.js";
+import { McpToolProviderFactory } from "../mcp/mcp-tool-provider-factory.js";
 import type { McpConnectionManager } from "../mcp/mcp-connection-manager.js";
 import {
   createDefaultToolAsyncHandlerRegistry,
@@ -26,6 +27,7 @@ export interface DefaultToolRuntimeComponents {
   policy: ToolRuntimePolicy;
   bridge: ToolRuntimeJobBridge;
   handlerRegistry: ToolAsyncHandlerRegistry;
+  mcpToolProviderFactory?: McpToolProviderFactory;
   worker?: ToolWorker;
 }
 
@@ -40,8 +42,18 @@ export function createDefaultToolRuntimeComponents(
   const bridge = createToolRuntimeJobBridge(db, {
     eventBus: options.eventBus,
   });
+
+  const mcpToolProviderFactory = options.mcpManager
+    ? new McpToolProviderFactory({
+        connectionManager: options.mcpManager,
+        toolRuntimePolicy: policy,
+      })
+    : undefined;
+
   const handlerRegistry = createDefaultToolAsyncHandlerRegistry(db, {
     mcpManager: options.mcpManager,
+    toolRuntimePolicy: policy,
+    ...(mcpToolProviderFactory ? { mcpToolProviderFactory } : {}),
   });
 
   const worker = options.enableDeferredIrreversibleTools === true && options.mcpManager
@@ -56,6 +68,7 @@ export function createDefaultToolRuntimeComponents(
     policy,
     bridge,
     handlerRegistry,
+    ...(mcpToolProviderFactory ? { mcpToolProviderFactory } : {}),
     ...(worker ? { worker } : {}),
   };
 }

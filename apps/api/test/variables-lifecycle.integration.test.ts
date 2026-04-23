@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../src/db/client.js";
-import { accounts, sessions } from "../src/db/schema.js";
+import { accounts, floors, sessions } from "../src/db/schema.js";
 import { registerFloorRoutes } from "../src/routes/floors.js";
 import { registerMessagePageRoutes } from "../src/routes/pages.js";
 import { registerSessionRoutes } from "../src/routes/sessions.js";
@@ -272,12 +272,13 @@ describe("variable lifecycle integrity", () => {
     const floorVar = await upsertVariable({ scope: "floor", scopeId: floorId, key: "floor-key", value: "floor" });
     const pageVar = await upsertVariable({ scope: "page", scopeId: pageId, key: "page-key", value: "page" });
 
-    const markGeneratingResponse = await app.inject({
-      method: "PATCH",
-      url: `/floors/${floorId}`,
-      payload: { state: "generating" },
-    });
-    expect(markGeneratingResponse.statusCode, markGeneratingResponse.body).toBe(200);
+    // Phase 4.1 guardrails 后，PATCH /floors/:id 不再允许改 state；
+    // 这里仅需要让 floor 处于 generating 态触发 variable_target_locked，
+    // 直接 DB 层改状态即可。
+    await database.db
+      .update(floors)
+      .set({ state: "generating", updatedAt: Date.now() })
+      .where(eq(floors.id, floorId));
 
     const floorWriteResponse = await app.inject({
       method: "PUT",

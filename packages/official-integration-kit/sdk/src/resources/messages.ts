@@ -132,6 +132,8 @@ export type MessagesBatchDeleteResult = {
 export type MessagesEditAndRegenerateOptions = {
   accountId?: AccountIdHint;
   branchId?: string;
+  confirmedExecutionIds?: string[];
+  confirmedSessionStateMutationIds?: string[];
   config?: RespondTurnConfig;
   content: string;
   generationParams?: RespondGenerationParams;
@@ -204,6 +206,8 @@ export function createMessagesResource(client: TransportClient): MessagesResourc
         {
           body: compactObject({
             branch_id: options.branchId,
+            confirmed_execution_ids: options.confirmedExecutionIds,
+            confirmed_session_state_mutation_ids: options.confirmedSessionStateMutationIds,
             config: options.config,
             content: options.content,
             debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),

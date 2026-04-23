@@ -550,6 +550,8 @@ describe("sdk sessions expanded resource", () => {
     const client = createTavernClient({ baseUrl, fetchImpl });
 
     await expect(client.sessions.regenerate({
+      confirmedExecutionIds: ["exec-3"],
+      confirmedSessionStateMutationIds: ["mutation-3"],
       sessionId: "session-1",
       debugOptions: {
         includePromptSnapshot: true,
@@ -615,6 +617,8 @@ describe("sdk sessions expanded resource", () => {
 
     const [, init] = fetchImpl.mock.calls[0]!;
     expect(init?.body).toBe(JSON.stringify({
+      confirmed_execution_ids: ["exec-3"],
+      confirmed_session_state_mutation_ids: ["mutation-3"],
       debug_options: {
         include_prompt_snapshot: true,
         include_runtime_trace: true,

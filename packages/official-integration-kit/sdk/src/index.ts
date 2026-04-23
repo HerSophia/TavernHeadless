@@ -211,6 +211,7 @@ export {
   type SessionRuntimeToolCatalogConflict,
   type SessionRuntimeToolCatalogEntry,
   type SessionRuntimeToolCatalogSource,
+  type SessionRuntimeToolMetadataBasis,
   type SessionRuntimeToolProviderType,
   type SessionRuntimeToolReplaySafety,
   type SessionRuntimeToolSlot,

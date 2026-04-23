@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { createEventBus } from '@tavern/core';
 import type { CoreEventBus } from '@tavern/core';
+import { buildBranchMemoryScopeId } from '@tavern/shared';
 import { WsBridge, type WsMessage } from '../ws-bridge';
 
 // ── Mock WebSocket ────────────────────────────────────
@@ -500,5 +501,289 @@ describe('WsBridge', () => {
   it('start is idempotent', () => {
     bridge.start(); // already started in beforeEach
     expect(bridge.clientCount).toBe(0); // no error
+  });
+
+  // ── 记忆事件路由补充 ──────────────────────────
+
+  it('forwards memory.deleted event and filters by top-level sessionId', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-1');
+    bridge.addClient(socket2, 'session-2');
+
+    await eventBus.emit('memory.deleted', {
+      mutationId: 'mut-1',
+      accountId: 'acc-1',
+      sessionId: 'session-1',
+      scope: 'chat',
+      scopeId: 'session-1',
+      entityType: 'memory_item',
+      entityId: 'mem-9',
+      item: {
+        id: 'mem-9',
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'fact',
+        content: 'deleted fact',
+        importance: 0.5,
+        confidence: 1,
+        status: 'deprecated',
+        lifecycleStatus: 'deprecated',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      before: {
+        id: 'mem-9',
+        scope: 'chat',
+        scopeId: 'session-1',
+        type: 'fact',
+        content: 'deleted fact',
+        importance: 0.5,
+        confidence: 1,
+        status: 'deprecated',
+        lifecycleStatus: 'deprecated',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      source: 'manual',
+    });
+
+    expect(parseSent(socket1)).toHaveLength(1);
+    expect(parseSent(socket1)[0]!.event).toBe('memory.deleted');
+    expect(parseSent(socket2)).toHaveLength(0);
+  });
+
+  it('forwards memory.edge.created and memory.edge.deleted events with session routing', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-1');
+    bridge.addClient(socket2, 'session-2');
+
+    await eventBus.emit('memory.edge.created', {
+      mutationId: 'mut-2',
+      accountId: 'acc-1',
+      sessionId: 'session-1',
+      scope: 'chat',
+      scopeId: 'session-1',
+      entityType: 'memory_edge',
+      entityId: 'edge-1',
+      edge: {
+        id: 'edge-1',
+        fromId: 'mem-1',
+        toId: 'mem-2',
+        relation: 'updates',
+        createdAt: 1,
+      },
+      after: {
+        id: 'edge-1',
+        fromId: 'mem-1',
+        toId: 'mem-2',
+        relation: 'updates',
+        createdAt: 1,
+      },
+      source: 'manual',
+    });
+
+    await eventBus.emit('memory.edge.deleted', {
+      mutationId: 'mut-2',
+      accountId: 'acc-1',
+      sessionId: 'session-1',
+      scope: 'chat',
+      scopeId: 'session-1',
+      entityType: 'memory_edge',
+      entityId: 'edge-old',
+      edge: {
+        id: 'edge-old',
+        fromId: 'mem-1',
+        toId: 'mem-3',
+        relation: 'updates',
+        createdAt: 0,
+      },
+      before: {
+        id: 'edge-old',
+        fromId: 'mem-1',
+        toId: 'mem-3',
+        relation: 'updates',
+        createdAt: 0,
+      },
+      source: 'manual',
+    });
+
+    const messages1 = parseSent(socket1).map((m) => m.event);
+    expect(messages1).toEqual(['memory.edge.created', 'memory.edge.deleted']);
+    expect(parseSent(socket2)).toHaveLength(0);
+  });
+
+  it('routes branch-scoped memory events to the right session via parseBranchMemoryScopeId', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-branch-1');
+    bridge.addClient(socket2, 'session-branch-2');
+    const scopeId = buildBranchMemoryScopeId('session-branch-1', 'branch-a');
+
+    await eventBus.emit('memory.created', {
+      accountId: 'acc-1',
+      branchId: 'branch-a',
+      scope: 'branch',
+      scopeId,
+      entityType: 'memory_item',
+      entityId: 'mem-branch-1',
+      item: {
+        id: 'mem-branch-1',
+        scope: 'branch',
+        scopeId,
+        type: 'fact',
+        content: 'branch truth',
+        importance: 0.5,
+        confidence: 1,
+        status: 'active',
+        lifecycleStatus: 'active',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      after: {
+        id: 'mem-branch-1',
+        scope: 'branch',
+        scopeId,
+        type: 'fact',
+        content: 'branch truth',
+        importance: 0.5,
+        confidence: 1,
+        status: 'active',
+        lifecycleStatus: 'active',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      source: 'manual',
+    });
+
+    expect(parseSent(socket1)).toHaveLength(1);
+    expect(parseSent(socket1)[0]!.event).toBe('memory.created');
+    expect(parseSent(socket2)).toHaveLength(0);
+  });
+
+  it('falls back to item.scope=branch routing when top-level carrier is missing branch scope fields', async () => {
+    const socket1 = createMockSocket();
+    const socket2 = createMockSocket();
+    bridge.addClient(socket1, 'session-branch-1');
+    bridge.addClient(socket2, 'session-branch-2');
+    const scopeId = buildBranchMemoryScopeId('session-branch-1', 'branch-a');
+
+    // 故意不带顶层 scope / scopeId，走 item 兜底分支。
+    await eventBus.emit('memory.updated', {
+      item: {
+        id: 'mem-branch-2',
+        scope: 'branch',
+        scopeId,
+        type: 'fact',
+        content: 'branch truth v2',
+        importance: 0.5,
+        confidence: 1,
+        status: 'active',
+        lifecycleStatus: 'active',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      previousContent: 'branch truth v1',
+    } as any);
+
+    expect(parseSent(socket1)).toHaveLength(1);
+    expect(parseSent(socket1)[0]!.event).toBe('memory.updated');
+    expect(parseSent(socket2)).toHaveLength(0);
+  });
+
+  it('fails closed for scope=floor memory events without explicit sessionId', async () => {
+    const sessionSocket = createMockSocket();
+    const globalSocket = createMockSocket();
+    bridge.addClient(sessionSocket, 'session-1');
+    bridge.addClient(globalSocket);
+
+    // scope === 'floor' 不携带显式 sessionId：按规矩 session client 不应该收到。
+    await eventBus.emit('memory.deprecated', {
+      scope: 'floor',
+      scopeId: 'floor-xyz',
+      entityType: 'memory_item',
+      entityId: 'mem-floor-1',
+      item: {
+        id: 'mem-floor-1',
+        scope: 'floor',
+        scopeId: 'floor-xyz',
+        type: 'open_loop',
+        content: 'stale loop',
+        importance: 0.5,
+        confidence: 1,
+        status: 'deprecated',
+        lifecycleStatus: 'deprecated',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      reason: 'maintenance',
+    });
+
+    expect(parseSent(sessionSocket)).toHaveLength(0);
+    expect(parseSent(globalSocket)).toHaveLength(1);
+  });
+
+  it('fails closed for scope=global memory events without explicit sessionId', async () => {
+    const sessionSocket = createMockSocket();
+    const globalSocket = createMockSocket();
+    bridge.addClient(sessionSocket, 'session-1');
+    bridge.addClient(globalSocket);
+
+    await eventBus.emit('memory.created', {
+      accountId: 'acc-1',
+      scope: 'global',
+      scopeId: 'acc-1',
+      entityType: 'memory_item',
+      entityId: 'mem-global-1',
+      item: {
+        id: 'mem-global-1',
+        scope: 'global',
+        scopeId: 'acc-1',
+        type: 'fact',
+        content: 'account fact',
+        importance: 0.5,
+        confidence: 1,
+        status: 'active',
+        lifecycleStatus: 'active',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      source: 'manual',
+    });
+
+    expect(parseSent(sessionSocket)).toHaveLength(0);
+    expect(parseSent(globalSocket)).toHaveLength(1);
+  });
+
+  it('fails closed when branch scopeId is malformed (no trailing session)', async () => {
+    const sessionSocket = createMockSocket();
+    const globalSocket = createMockSocket();
+    bridge.addClient(sessionSocket, 'session-1');
+    bridge.addClient(globalSocket);
+
+    await eventBus.emit('memory.created', {
+      scope: 'branch',
+      scopeId: 'not-a-valid-branch-scope',
+      entityType: 'memory_item',
+      entityId: 'mem-bad-branch',
+      item: {
+        id: 'mem-bad-branch',
+        scope: 'branch',
+        scopeId: 'not-a-valid-branch-scope',
+        type: 'fact',
+        content: 'bad branch scope',
+        importance: 0.5,
+        confidence: 1,
+        status: 'active',
+        lifecycleStatus: 'active',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      source: 'manual',
+    });
+
+    expect(parseSent(sessionSocket)).toHaveLength(0);
+    expect(parseSent(globalSocket)).toHaveLength(1);
   });
 });

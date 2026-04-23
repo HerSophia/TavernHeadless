@@ -418,6 +418,19 @@ Memory 实例的输出是严格的 JSON 格式，不是自由文本。比如：
 - 如果记忆整理上下文加载失败，系统会发出 `memory.consolidation_context_failed`，并跳过本轮整理。
 - 如果整理 JSON 解析失败，系统会发出 `memory.consolidation_json_parse_failed`，并降级为仅保留 `turnSummary`。
 - 如果事务内记忆持久化失败，系统会发出 `memory.persist_failed`，并回滚整个 commit。
+- 所有 committed 记忆事件只在事务成功提交后发出。
+  涉及的事件名包括 `memory.created`、`memory.updated`、`memory.deprecated`、
+  `memory.deleted`、`memory.edge.created`、`memory.edge.deleted`。
+  事务回滚的写入不会发出任何 committed 记忆事件。
+- 这些 committed 记忆事件在 turn commit、runtime ingest / compaction、
+  manual CRUD、maintenance 四条路径上共享同一组路由字段。
+  路由字段包括 `mutationId`、`accountId`、`scope`、`scopeId`、`sessionId`
+  （chat / branch scope 可解析时填充）、`branchId`（branch scope 时填充）、
+  `floorId`、`entityType`、`entityId`、`source`（取值为
+  `extraction` / `consolidation` / `manual` / `runtime` / `maintenance`），
+  以及 `before` / `after` 实体快照。
+- `memory.consolidated` 仍然是 additive 的整理汇总事件，
+  不替代上述 item-level 真相。
 
 ### Background Job Runtime 与高级开发者路由
 
@@ -851,6 +864,9 @@ CREATE TABLE tool_execution_record (
 | `memory.created`       | 创建记忆       | item + source |
 | `memory.updated`       | 更新记忆       | item + previousContent |
 | `memory.deprecated`    | 记忆废弃       | item + reason |
+| `memory.deleted`       | 物理删除记忆条目的 committed 真相 | item + before + source |
+| `memory.edge.created`  | 新建记忆关系边的 committed 真相   | edge + after + source |
+| `memory.edge.deleted`  | 删除记忆关系边的 committed 真相   | edge + before + source |
 | `memory.consolidated`  | consolidation 写回完成 | floorId + created / updated / deprecated |
 | `memory.injection_failed` | 记忆注入失败但主流程继续 | sessionId + error |
 | `memory.persist_failed` | 记忆事务写回失败并触发回滚 | floorId + sessionId + error |

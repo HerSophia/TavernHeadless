@@ -1,7 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app";
+import { floors } from "../src/db/schema";
+import type { DatabaseConnection } from "../src/db/client";
 
 type ItemResponse<T> = { data: T };
 
@@ -44,9 +47,10 @@ type MessageDto = {
 
 describe("message routes", () => {
   let app: FastifyInstance;
+  let database: DatabaseConnection["db"];
 
   beforeEach(async () => {
-    ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
+    ({ app, database } = await buildApp({ databasePath: ":memory:", logger: false }));
   });
 
   afterEach(async () => {
@@ -277,12 +281,12 @@ describe("message routes", () => {
     const messageA = await createMessage({ pageId, seq: 1, role: "user", content: "A" });
     const messageB = await createMessage({ pageId, seq: 2, role: "assistant", content: "B" });
 
-    const commitResponse = await app.inject({
-      method: "PATCH",
-      url: `/floors/${floorId}`,
-      payload: { state: "committed" }
-    });
-    expect(commitResponse.statusCode, commitResponse.body).toBe(200);
+    // Phase 4.1 guardrails 后，PATCH /floors/:id 拒绝直接改 state。
+    // 测试夹具通过 DB 直写把 floor 置为 committed。
+    await database
+      .update(floors)
+      .set({ state: "committed", updatedAt: Date.now() })
+      .where(eq(floors.id, floorId));
 
     const lockedCreateResponse = await app.inject({
       method: "POST",

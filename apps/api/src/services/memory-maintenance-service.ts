@@ -1,8 +1,23 @@
-import { and, eq, inArray, lt, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, lt, or, sql, type SQL } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import type { CoreEventBus, MemoryMutationSource } from "@tavern/core";
 import type { MemoryScope } from "@tavern/shared";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
-import { memoryItems } from "../db/schema.js";
+import { memoryEdges, memoryItems } from "../db/schema.js";
+import {
+  createEventContextResolver,
+  queueMemoryDeletedEvent,
+  queueMemoryDeprecatedEvent,
+  queueMemoryEdgeDeletedEvent,
+} from "./manual-memory-mutation-service.js";
+import {
+  emitPendingCoreEvents,
+  type PendingCoreEvent,
+} from "./memory-transaction-mutations.js";
+
+type MemoryItemRow = typeof memoryItems.$inferSelect;
+type MemoryEdgeRow = typeof memoryEdges.$inferSelect;
 
 export type MemoryMaintenancePolicy = {
   /** 将超过该 age 的 summary 标记为 deprecated（按 createdAt 计算）。 */
@@ -56,6 +71,10 @@ export type MemoryMaintenanceRunResult = {
   durationMs: number;
 };
 
+export interface MemoryMaintenanceServiceOptions {
+  eventBus?: CoreEventBus;
+}
+
 type MaintenanceExecutor = AppDb | DbExecutor;
 
 function buildScopeFilters(scope: MemoryMaintenanceScopeFilter | undefined): SQL[] {
@@ -78,20 +97,71 @@ function countRows(executor: MaintenanceExecutor, whereClause: SQL | undefined):
   return row?.count ?? 0;
 }
 
-export class MemoryMaintenanceService {
-  constructor(private readonly db: AppDb) {}
-
-  async run(options: MemoryMaintenanceRunOptions = {}): Promise<MemoryMaintenanceRunResult> {
-    return this.runWithExecutor(this.db, options);
+function loadEdgesForItems(
+  executor: MaintenanceExecutor,
+  accountId: string,
+  itemIds: readonly string[],
+): MemoryEdgeRow[] {
+  if (itemIds.length === 0) {
+    return [];
   }
 
-  runInTransaction(tx: DbExecutor, options: MemoryMaintenanceRunOptions = {}): MemoryMaintenanceRunResult {
-    return this.runWithExecutor(tx, options);
+  const uniqueIds = [...new Set(itemIds)];
+  return executor
+    .select()
+    .from(memoryEdges)
+    .where(
+      and(
+        eq(memoryEdges.accountId, accountId),
+        or(
+          inArray(memoryEdges.fromId, uniqueIds),
+          inArray(memoryEdges.toId, uniqueIds),
+        ),
+      ),
+    )
+    .all();
+}
+
+export class MemoryMaintenanceService {
+  private readonly eventBus?: CoreEventBus;
+
+  constructor(
+    private readonly db: AppDb,
+    options: MemoryMaintenanceServiceOptions = {},
+  ) {
+    this.eventBus = options.eventBus;
+  }
+
+  async run(options: MemoryMaintenanceRunOptions = {}): Promise<MemoryMaintenanceRunResult> {
+    const pendingEvents: PendingCoreEvent[] = [];
+    const dryRun = options.dryRun === true;
+    const result = dryRun
+      ? this.runWithExecutor(this.db, options, pendingEvents)
+      : this.db.transaction((tx) => this.runWithExecutor(tx, options, pendingEvents));
+
+    if (this.eventBus && pendingEvents.length > 0) {
+      await emitPendingCoreEvents(this.eventBus, pendingEvents);
+    }
+
+    return result;
+  }
+
+  /**
+   * Run inside an existing transaction. Events are appended to `pendingEvents` and must
+   * be emitted by the caller only after the outer transaction commits durably.
+   */
+  runInTransaction(
+    tx: DbExecutor,
+    options: MemoryMaintenanceRunOptions = {},
+    pendingEvents: PendingCoreEvent[] = [],
+  ): MemoryMaintenanceRunResult {
+    return this.runWithExecutor(tx, options, pendingEvents);
   }
 
   private runWithExecutor(
     executor: MaintenanceExecutor,
     options: MemoryMaintenanceRunOptions,
+    pendingEvents: PendingCoreEvent[],
   ): MemoryMaintenanceRunResult {
     const startedAt = Date.now();
     const now = options.now ?? Date.now();
@@ -108,21 +178,21 @@ export class MemoryMaintenanceService {
       const createdBefore = now - policy.summaryMaxAgeMs;
       deprecatedSummary = dryRun
         ? this.countActiveBefore(executor, "summary", createdBefore, scope)
-        : this.deprecateActiveBefore(executor, "summary", createdBefore, batchSize, now, scope);
+        : this.deprecateActiveBefore(executor, "summary", createdBefore, batchSize, now, scope, pendingEvents);
     }
 
     if (policy.openLoopMaxAgeMs !== undefined && policy.openLoopMaxAgeMs > 0) {
       const createdBefore = now - policy.openLoopMaxAgeMs;
       deprecatedOpenLoop = dryRun
         ? this.countActiveBefore(executor, "open_loop", createdBefore, scope)
-        : this.deprecateActiveBefore(executor, "open_loop", createdBefore, batchSize, now, scope);
+        : this.deprecateActiveBefore(executor, "open_loop", createdBefore, batchSize, now, scope, pendingEvents);
     }
 
     if (policy.deprecatedPurgeAgeMs !== undefined && policy.deprecatedPurgeAgeMs > 0) {
       const deprecatedUntouchedBefore = now - policy.deprecatedPurgeAgeMs;
       purged = dryRun
         ? this.countDeprecatedBefore(executor, deprecatedUntouchedBefore, scope)
-        : this.purgeDeprecatedBefore(executor, deprecatedUntouchedBefore, batchSize, scope);
+        : this.purgeDeprecatedBefore(executor, deprecatedUntouchedBefore, batchSize, scope, pendingEvents);
     }
 
     const durationMs = Date.now() - startedAt;
@@ -180,12 +250,14 @@ export class MemoryMaintenanceService {
     batchSize: number,
     now: number,
     scope: MemoryMaintenanceScopeFilter | undefined,
+    pendingEvents: PendingCoreEvent[],
   ): number {
     let total = 0;
+    const source: MemoryMutationSource = "maintenance";
 
     while (true) {
       const rows = executor
-        .select({ id: memoryItems.id })
+        .select()
         .from(memoryItems)
         .where(and(
           ...buildScopeFilters(scope),
@@ -196,10 +268,11 @@ export class MemoryMaintenanceService {
         .limit(batchSize)
         .all();
 
-      const ids = rows.map((row) => row.id);
-      if (ids.length === 0) {
+      if (rows.length === 0) {
         break;
       }
+
+      const ids = rows.map((row) => row.id);
 
       executor
         .update(memoryItems)
@@ -207,9 +280,40 @@ export class MemoryMaintenanceService {
         .where(inArray(memoryItems.id, ids))
         .run();
 
-      total += ids.length;
+      // Group rows by accountId so event contexts stay account-isolated.
+      const rowsByAccount = new Map<string, MemoryItemRow[]>();
+      for (const row of rows) {
+        const bucket = rowsByAccount.get(row.accountId) ?? [];
+        bucket.push(row);
+        rowsByAccount.set(row.accountId, bucket);
+      }
 
-      if (ids.length < batchSize) {
+      const mutationId = nanoid();
+
+      for (const [accountId, accountRows] of rowsByAccount) {
+        const resolver = createEventContextResolver(executor as DbExecutor, accountId);
+        for (const beforeRow of accountRows) {
+          const afterRow: MemoryItemRow = {
+            ...beforeRow,
+            status: "deprecated",
+            lifecycleStatus: "deprecated",
+            updatedAt: now,
+          };
+          queueMemoryDeprecatedEvent(
+            pendingEvents,
+            resolver,
+            beforeRow,
+            afterRow,
+            mutationId,
+            "maintenance",
+            source,
+          );
+        }
+      }
+
+      total += rows.length;
+
+      if (rows.length < batchSize) {
         break;
       }
     }
@@ -222,12 +326,14 @@ export class MemoryMaintenanceService {
     deprecatedUntouchedBefore: number,
     batchSize: number,
     scope: MemoryMaintenanceScopeFilter | undefined,
+    pendingEvents: PendingCoreEvent[],
   ): number {
     let total = 0;
+    const source: MemoryMutationSource = "maintenance";
 
     while (true) {
       const rows = executor
-        .select({ id: memoryItems.id })
+        .select()
         .from(memoryItems)
         .where(and(
           ...buildScopeFilters(scope),
@@ -237,15 +343,56 @@ export class MemoryMaintenanceService {
         .limit(batchSize)
         .all();
 
-      const ids = rows.map((row) => row.id);
-      if (ids.length === 0) {
+      if (rows.length === 0) {
         break;
       }
 
-      executor.delete(memoryItems).where(inArray(memoryItems.id, ids)).run();
-      total += ids.length;
+      const ids = rows.map((row) => row.id);
 
-      if (ids.length < batchSize) {
+      const rowsByAccount = new Map<string, MemoryItemRow[]>();
+      for (const row of rows) {
+        const bucket = rowsByAccount.get(row.accountId) ?? [];
+        bucket.push(row);
+        rowsByAccount.set(row.accountId, bucket);
+      }
+
+      const mutationId = nanoid();
+
+      for (const [accountId, accountRows] of rowsByAccount) {
+        const accountIds = accountRows.map((row) => row.id);
+        const accountRowsById = new Map(accountRows.map((row) => [row.id, row]));
+        const relatedEdges = loadEdgesForItems(executor, accountId, accountIds);
+        const resolver = createEventContextResolver(executor as DbExecutor, accountId);
+
+        // Delete the items' edges and items themselves for this account.
+        executor
+          .delete(memoryItems)
+          .where(and(
+            eq(memoryItems.accountId, accountId),
+            inArray(memoryItems.id, accountIds),
+          ))
+          .run();
+
+        for (const edge of relatedEdges) {
+          const sourceItem = accountRowsById.get(edge.fromId) ?? accountRowsById.get(edge.toId) ?? null;
+          queueMemoryEdgeDeletedEvent(
+            pendingEvents,
+            resolver,
+            edge,
+            mutationId,
+            sourceItem,
+            source,
+          );
+        }
+
+        for (const row of accountRows) {
+          queueMemoryDeletedEvent(pendingEvents, resolver, row, mutationId, source);
+        }
+      }
+
+      total += rows.length;
+
+      if (rows.length < batchSize) {
         break;
       }
     }

@@ -567,8 +567,13 @@ export async function registerChatRoutes(
   app.post("/floors/:id/retry", {
     schema: {
       tags: ["chat"],
-      summary: "Retry a failed floor",
-      description: "Retry generation for an existing failed floor.",
+      summary: "Retry a committed floor in place",
+      description:
+        "Retry generation for an existing committed floor in place. " +
+        "The target floor must be in the 'committed' state. " +
+        "The current output page and assistant message are cleared, the floor is reset, " +
+        "and a new generation attempt is run under the same floor id. " +
+        "This endpoint is not a recovery path for failed floors.",
       params: idParamsJsonSchema,
       body: retryFloorBodyJsonSchema,
       response: {

@@ -1,4 +1,4 @@
-import type { MemoryScope } from '@tavern/shared';
+import { parseBranchMemoryScopeId, type MemoryScope } from '@tavern/shared';
 import type { CoreEventBus } from '../events/index.js';
 import type { MemoryRepository } from '../ports/memory-repository.js';
 import type { TokenCounter } from '../prompt/types.js';
@@ -7,6 +7,7 @@ import type {
   MemoryConsolidationOutput,
   MemoryInjectionOptions,
   MemoryInjectionResult,
+  MemoryInjectionScopeResolutionDiagnostics,
   MemoryItem,
   MemoryQuery,
 } from './types.js';
@@ -48,19 +49,36 @@ export class MemoryStore {
     private readonly counter: TokenCounter,
   ) {}
 
-  private buildEventContext(item: MemoryItem): {
+  private buildEventContext(item: MemoryItem, access?: MemoryAccessOptions): {
+    mutationId: string;
+    accountId?: string;
     sessionId?: string;
+    branchId?: string;
     scope: MemoryScope;
     scopeId: string;
     floorId?: string;
     sourceJobId?: string;
+    entityType: 'memory_item';
+    entityId: string;
   } {
+    const mutationId = createLocalMutationId();
+    const branchScopeRef = item.scope === 'branch' ? parseBranchMemoryScopeId(item.scopeId) : null;
+    const sessionId = item.scope === 'chat'
+      ? item.scopeId
+      : branchScopeRef?.sessionId;
+    const branchId = branchScopeRef?.branchId;
+
     return {
-      sessionId: item.scope === 'chat' ? item.scopeId : undefined,
+      mutationId,
+      ...(access?.accountId ? { accountId: access.accountId } : {}),
+      ...(sessionId ? { sessionId } : {}),
+      ...(branchId ? { branchId } : {}),
       scope: item.scope,
       scopeId: item.scopeId,
       ...(item.sourceFloorId ? { floorId: item.sourceFloorId } : {}),
       ...(item.sourceJobId ? { sourceJobId: item.sourceJobId } : {}),
+      entityType: 'memory_item',
+      entityId: item.id,
     };
   }
 
@@ -142,16 +160,65 @@ export class MemoryStore {
       accountId: options.accountId,
     };
 
+    const strict = options.strict === true;
+    let diagnostics: MemoryInjectionScopeResolutionDiagnostics;
+
     if (options.scopeContext) {
       if (options.scope) {
-        query.scope = options.scope;
-        query.scopeId = this.scopeResolver.resolve(options.scope, options.scopeContext, scopeId);
+        try {
+          const resolvedScopeId = this.scopeResolver.resolve(
+            options.scope,
+            options.scopeContext,
+            scopeId,
+          );
+          query.scope = options.scope;
+          query.scopeId = resolvedScopeId;
+          diagnostics = {
+            mode: 'explicit_scope',
+            strict,
+            explicitScope: { scope: options.scope, scopeId: resolvedScopeId },
+          };
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          // 解析失败：按诊断规则上抛给调用方；同时标记一次结果为 resolver_error。
+          return emptyInjectionResult({
+            mode: 'resolver_error',
+            strict,
+            error: { name: err.name, message: err.message },
+          });
+        }
       } else {
-        const scopeRefs = this.scopeResolver.resolveVisibleRefs(options.scopeContext);
+        let scopeRefs;
+        try {
+          scopeRefs = this.scopeResolver.resolveVisibleRefs(options.scopeContext);
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          return emptyInjectionResult({
+            mode: 'resolver_error',
+            strict,
+            error: { name: err.name, message: err.message },
+          });
+        }
+
         if (scopeRefs.length > 0) {
           query.scopeRefs = scopeRefs;
+          diagnostics = {
+            mode: 'visible_refs',
+            strict,
+            scopeRefs: scopeRefs.map((ref) => ({ scope: ref.scope, scopeId: ref.scopeId })),
+          };
+        } else if (strict) {
+          return emptyInjectionResult({
+            mode: 'strict_empty',
+            strict,
+          });
         } else {
           query.scopeId = scopeId;
+          diagnostics = {
+            mode: 'direct_scope_fallback',
+            strict,
+            fallbackScopeId: scopeId,
+          };
         }
       }
     } else {
@@ -159,6 +226,11 @@ export class MemoryStore {
       if (options.scope) {
         query.scope = options.scope;
       }
+      diagnostics = {
+        mode: 'direct_scope_fallback',
+        strict,
+        fallbackScopeId: scopeId,
+      };
     }
 
     if (options.minImportance !== undefined) query.minImportance = options.minImportance;
@@ -174,7 +246,8 @@ export class MemoryStore {
 
     let candidates = await this.repo.findMany(query);
 
-    return new MemoryInjectionSelector(this.counter).select(candidates, options);
+    const result = new MemoryInjectionSelector(this.counter).select(candidates, options);
+    return { ...result, scopeResolution: diagnostics };
   }
 
   /**
@@ -221,12 +294,14 @@ export class MemoryStore {
   async deprecate(id: string, reason: string, access: MemoryAccessOptions = {}): Promise<void> {
     const deprecated = await this.repo.deprecate(id, access);
     if (deprecated) {
-      const eventContext = this.buildEventContext(deprecated);
+      const eventContext = this.buildEventContext(deprecated, access);
 
       await this.eventBus.emit('memory.deprecated', {
         ...eventContext,
         item: deprecated,
         reason,
+        after: deprecated,
+        source: 'manual',
       });
     }
   }
@@ -240,14 +315,33 @@ export class MemoryStore {
   ): Promise<MemoryItem> {
     const created = await this.repo.create(item, access);
 
-    const eventContext = this.buildEventContext(created);
+    const eventContext = this.buildEventContext(created, access);
 
     await this.eventBus.emit('memory.created', {
       ...eventContext,
       item: created,
       source: 'manual',
+      after: created,
     });
 
     return created;
   }
 }
+
+function createLocalMutationId(): string {
+  const rand = Math.random().toString(36).slice(2, 10);
+  const time = Date.now().toString(36);
+  return `mut-${time}-${rand}`;
+}
+
+function emptyInjectionResult(
+  diagnostics: MemoryInjectionScopeResolutionDiagnostics,
+): MemoryInjectionResult {
+  return {
+    items: [],
+    formattedText: '',
+    tokenCount: 0,
+    scopeResolution: diagnostics,
+  };
+}
+

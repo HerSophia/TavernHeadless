@@ -1,6 +1,9 @@
 import {
   TH_CHAT_SPEC,
   TH_CHAT_SPEC_VERSION,
+  parseBranchVariableScopeId,
+  type ThChatBranchLocalVariableProvenance,
+  type ThChatBranchLocalVariableSnapshot,
   type ThChatFile,
   type ThChatFloor,
   type ThChatMemoryEdge,
@@ -10,7 +13,11 @@ import {
   type ThChatVariable,
 } from "@tavern/shared";
 
-import type { SessionExportSnapshot } from "./chat-export-snapshot.js";
+import type {
+  ExportSnapshotBranchLocalVariableSnapshot,
+  SessionExportSnapshot,
+} from "./chat-export-snapshot.js";
+import type { BranchLocalVariableProvenance } from "./branch-local-variable-snapshot-service.js";
 
 export interface ChatExportRendererOptions {
   appVersion?: string;
@@ -116,6 +123,11 @@ export function renderExportSnapshotToThChat(
       }
     : undefined;
 
+  const exportBranchLocalSnapshots: ThChatBranchLocalVariableSnapshot[] | undefined =
+    snapshot.branchLocalVariableSnapshots?.map(
+      (row) => toThChatBranchLocalVariableSnapshot(row, snapshot.sessionId),
+    );
+
   return {
     spec: TH_CHAT_SPEC,
     spec_version: TH_CHAT_SPEC_VERSION,
@@ -137,6 +149,9 @@ export function renderExportSnapshotToThChat(
       metadata: snapshot.metadata,
       floors: exportFloors,
       ...(exportVariables ? { variables: exportVariables } : {}),
+      ...(exportBranchLocalSnapshots && exportBranchLocalSnapshots.length > 0
+        ? { branch_local_variable_snapshots: exportBranchLocalSnapshots }
+        : {}),
       ...(exportMemories ? { memories: exportMemories } : {}),
     },
   };
@@ -243,3 +258,90 @@ function inferStName(
 
   return role === "user" ? userName : characterName;
 }
+
+/**
+ * 把 ExportSnapshotBranchLocalVariableSnapshot 转换为 chat-file 里的
+ * ThChatBranchLocalVariableSnapshot：
+ *
+ * - floor id / provenance.inherited_from_floor_id 都按 `_ref` 风格序列化成
+ *   导出文件里的原始 floor id（import 时再通过 idMap 翻译为新 id）
+ * - provenance.source_scope_id 的编码策略与 thChatVariable 对齐：
+ *   - chat + session.id -> null
+ *   - branch + buildBranchVariableScopeId -> branch_id
+ *   - 其他按原 scopeId 直出（floor/page 的 scopeId 即原 id，import 时会走 idMap）
+ */
+function toThChatBranchLocalVariableSnapshot(
+  row: ExportSnapshotBranchLocalVariableSnapshot,
+  sessionId: string,
+): ThChatBranchLocalVariableSnapshot {
+  const provenanceEntries = Object.entries(row.provenance ?? {});
+  const provenance: Record<string, ThChatBranchLocalVariableProvenance> | undefined =
+    provenanceEntries.length > 0
+      ? Object.fromEntries(
+          provenanceEntries.map(([key, entry]) => [
+            key,
+            toThChatBranchLocalVariableProvenance(entry, sessionId),
+          ]),
+        )
+      : undefined;
+
+  return {
+    floor_id_ref: row.floorId,
+    branch_id: row.branchId,
+    snapshot_version: row.schemaVersion,
+    values: row.values,
+    ...(provenance ? { provenance } : {}),
+    created_at: row.createdAt,
+  };
+}
+
+function toThChatBranchLocalVariableProvenance(
+  entry: BranchLocalVariableProvenance,
+  sessionId: string,
+): ThChatBranchLocalVariableProvenance {
+  const sourceScopeIdRef = encodeProvenanceScopeIdRef(
+    entry.sourceScope,
+    entry.sourceScopeId,
+    sessionId,
+    entry.inheritedFromBranchId,
+  );
+
+  return {
+    source_scope: entry.sourceScope,
+    ...(sourceScopeIdRef === undefined ? {} : { source_scope_id_ref: sourceScopeIdRef }),
+    ...(entry.sourceVariableId ? { source_variable_id: entry.sourceVariableId } : {}),
+    ...(entry.sourceUpdatedAt !== undefined ? { source_updated_at: entry.sourceUpdatedAt } : {}),
+    ...(entry.inheritedFromFloorId
+      ? { inherited_from_floor_id_ref: entry.inheritedFromFloorId }
+      : {}),
+    ...(entry.inheritedFromBranchId
+      ? { inherited_from_branch_id: entry.inheritedFromBranchId }
+      : {}),
+    origin_kind: entry.originKind,
+  };
+}
+
+function encodeProvenanceScopeIdRef(
+  sourceScope: BranchLocalVariableProvenance["sourceScope"],
+  sourceScopeId: string,
+  sessionId: string,
+  inheritedFromBranchId: string | undefined,
+): string | null | undefined {
+  if (sourceScope === "chat") {
+    return sourceScopeId === sessionId ? null : sourceScopeId;
+  }
+
+  if (sourceScope === "branch") {
+    // branch scope id 形如 "branch:<sessionId>:<branchId>"。
+    // 导出时统一压缩为 branch_id，import 侧会再用当前 session 重建
+    // buildBranchVariableScopeId(sessionId, branchId)。
+    const parsed = parseBranchVariableScopeId(sourceScopeId);
+    if (parsed) {
+      return parsed.branchId;
+    }
+    return inheritedFromBranchId ?? sourceScopeId;
+  }
+
+  return sourceScopeId;
+}
+

@@ -103,9 +103,34 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
   );
   const committedBranchFloorId = must(committedBranchFloor.body?.data?.id, "Missing committed branch floor id");
 
+  // 为下游需要 committed 状态的冒烟步骤（例如 Prompt Runtime compare 的 left）
+  // 预留一个额外的 committed 裸 CRUD 楼层。chat-main-flow-repair 之后 PATCH
+  // /floors/:id 已禁止修改 state，原先通过 PATCH 把 draft 楼层推到 committed
+  // 的旧路径不再可用，改成直接创建一个 committed 楼层。
+  const contentFloorCommitted = await runStep("POST /floors (committed content floor)", () =>
+    api.request<{ data: { id: string } }>(
+      "POST",
+      "/floors",
+      {
+        session_id: sessionId,
+        floor_no: 3,
+        branch_id: "main",
+        state: "committed",
+      },
+      [201]
+    )
+  );
+  const contentFloorCommittedId = must(contentFloorCommitted.body?.data?.id, "Missing committed content floor id");
+
   await runStep("GET /floors/:id", () => api.request("GET", `/floors/${floorId}`, undefined, [200]));
-  await runStep("PATCH /floors/:id", () =>
-    api.request("PATCH", `/floors/${floorId}`, { token_in: 7, token_out: 11 }, [200])
+  // `token_in` / `token_out` 由 commit 事务写入，PATCH /floors/:id 仅接受 topology
+  // 字段（`floor_no` / `branch_id` / `parent_floor_id`）。冒烟在此只验证：
+  // 传受限字段会被 400 `floor_patch_restricted_field` 拒绝。
+  // 合法 topology 的 PATCH 涉及拓扑一致性（parent_floor_id 必须指向同分支、
+  // floor_no 严格小于目标的已提交楼层），这类场景交给集成测试覆盖，
+  // 冒烟脚本不在这里构造完整的父楼层前置条件。
+  await runStep("PATCH /floors/:id (restricted field => 400)", () =>
+    api.request("PATCH", `/floors/${floorId}`, { token_in: 7, token_out: 11 }, [400])
   );
   await runStep("GET /floors list", () =>
     api.request("GET", `/floors?session_id=${encodeURIComponent(sessionId)}&sort_by=floor_no&sort_order=asc`, undefined, [200])
@@ -239,24 +264,39 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
   const disposablePageId = must(disposablePage.body?.data?.id, "Missing disposable page id");
   await runStep("DELETE /pages/:id", () => api.request("DELETE", `/pages/${disposablePageId}`, undefined, [200]));
 
-  await runStep("PATCH /floors/:id (commit content floor)", () =>
-    api.request("PATCH", `/floors/${floorId}`, { state: "committed" }, [200])
+  // `state` 归 floor run state machine 管理，PATCH /floors/:id 不再接受直接修改。
+  // 冒烟在此只验证：通过 PATCH 修改 `state` 会被 400 `floor_patch_restricted_field` 拒绝。
+  await runStep("PATCH /floors/:id (state restricted => 400)", () =>
+    api.request(
+      "PATCH",
+      `/floors/${floorId}`,
+      { state: "committed" },
+      [400]
+    )
   );
 
   // ── Timeline with data ───────────────────────────────
 
+  // timeline 在 chat-main-flow-repair 之后升级为 page-aware，且只返回 committed
+  // 楼层。冒烟里做 page/message CRUD 的 `floorId` 保持在 draft（新的 PATCH
+  // guardrail 已禁止通过 PATCH 修改 state），所以这里不再断言 draft 楼层出现在
+  // timeline；改为断言 committedBranchFloorId 这个已 committed 的楼层出现在
+  // timeline 中，用来覆盖 timeline 路由本身的基础返回结构。
   const timeline = await runStep("GET /sessions/:id/timeline (with data)", () =>
-    api.request<{ data: { floors: Array<{ page_count: number; active_page: { id: string } | null }> } }>(
+    api.request<{ data: { floors: Array<{ id: string; page_count: number; active_page: { id: string } | null }> } }>(
       "GET",
       `/sessions/${sessionId}/timeline`,
       undefined,
       [200]
     )
   );
-  const contentFloor = timeline.body?.data?.floors?.find((entry) => entry.active_page?.id === pageV1Id);
-  assert(Boolean(contentFloor), "Timeline should include the smoke content floor");
-  assert(contentFloor?.page_count === 2, "Timeline page_count should be 2 for the smoke content floor");
-  assert(contentFloor?.active_page?.id === pageV1Id, "Initial active page should be v1 for the smoke content floor");
+  const timelineFloors = timeline.body?.data?.floors ?? [];
+  assert(Array.isArray(timelineFloors), "Timeline floors should be an array");
+  const committedEntry = timelineFloors.find((entry) => entry.id === committedBranchFloorId);
+  assert(
+    Boolean(committedEntry),
+    "Timeline should include the committed branch source floor"
+  );
 
   await runStep("PATCH /pages/:id/activate", () =>
     api.request("PATCH", `/pages/${pageV2Id}/activate`, undefined, [200])
@@ -351,4 +391,5 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
   ctx.shared.pageV1Id = pageV1Id;
   ctx.shared.pageV2Id = pageV2Id;
   ctx.shared.committedBranchFloorId = committedBranchFloorId;
+  ctx.shared.contentFloorCommittedId = contentFloorCommittedId;
 }

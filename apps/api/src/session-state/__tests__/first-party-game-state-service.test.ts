@@ -5,7 +5,7 @@ import type { TurnExecutionResult } from "@tavern/core";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { accounts, floors, sessions } from "../../db/schema.js";
 import { FirstPartyGameStateService, FirstPartyGameStateServiceError } from "../first-party-game-state-service.js";
-import { SessionStateService } from "../session-state-service.js";
+import { SessionStateService, SessionStateServiceError } from "../session-state-service.js";
 
 const CLIENT_DATA_CONFIG = {
   defaultMaxItemSizeBytes: 1_048_576,
@@ -206,6 +206,49 @@ describe("FirstPartyGameStateService", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(FirstPartyGameStateServiceError);
       expect((error as FirstPartyGameStateServiceError).code).toBe("first_party_scene_source_floor_branch_mismatch");
+    }
+  });
+
+  it("rejects staging scene state when the target floor belongs to a different branch", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_736_020_025_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "generating",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect(() => service.stageSceneState({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "alt",
+      floorId,
+      runType: "respond",
+      execution: createExecution(floorId, "A bell rings in the tower."),
+      stagedAt: now + 10,
+    })).toThrowError(SessionStateServiceError);
+
+    try {
+      service.stageSceneState({
+        accountId: ACCOUNT_ID,
+        sessionId,
+        branchId: "alt",
+        floorId,
+        runType: "respond",
+        execution: createExecution(floorId, "A bell rings in the tower."),
+        stagedAt: now + 10,
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionStateServiceError);
+      expect((error as SessionStateServiceError).code).toBe("session_state_floor_branch_mismatch");
     }
   });
 

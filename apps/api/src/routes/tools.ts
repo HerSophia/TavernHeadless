@@ -1,6 +1,14 @@
 /**
  * Tool Management API Routes
  *
+ * Tool execution truth-source layout:
+ *   - `tool_execution_record` is the **primary tool execution journal**.
+ *     所有新增的执行语义（`timeout` / `uncertain` / `blocked`、
+ *     lifecycle / commit outcome、deferred delivery、runtime_job 绑定等）
+ *     只进入 execution journal。
+ *   - `tool_call_record` 仅作为 legacy-compatible projection 保留，
+ *     仅暴露 `success | error | denied | queued | running` 的兼容态。
+ *
  * 13 endpoints:
  *   GET    /tools/builtin                       — List built-in tools
  *   GET    /tools/definitions                    — List custom tool definitions
@@ -9,9 +17,9 @@
  *   PATCH  /tools/definitions/:id                — Update definition
  *   DELETE /tools/definitions/:id                — Delete definition
  *   PATCH  /tools/definitions/:id/toggle         — Toggle enable/disable
- *   GET    /tool-executions                      — Query primary tool execution journal
- *   GET    /floors/:id/tool-executions           — Query tool execution journal for a floor
- *   GET    /tools/call-records                   — Query tool call records
+ *   GET    /tool-executions                      — Query primary tool execution journal (source of truth)
+ *   GET    /floors/:id/tool-executions           — Query primary tool execution journal for a floor
+ *   GET    /tools/call-records                   — Query legacy-compatible tool call records (projection only)
  *   GET    /sessions/:id/tool-permissions        — Get session tool permissions
  *   PUT    /sessions/:id/tool-permissions        — Replace session tool permissions
  *   PATCH  /sessions/:id/tool-permissions        — Partial update session tool permissions
@@ -708,7 +716,7 @@ export async function registerToolRoutes(
   app.get("/tool-executions", {
     schema: {
       tags: ["tools"],
-      summary: "Query tool execution journal",
+      summary: "Query primary tool execution journal (source of truth)",
       operationId: "queryToolExecutionRecords",
       querystring: toolExecutionsQueryJsonSchema,
       response: {
@@ -755,7 +763,7 @@ export async function registerToolRoutes(
   app.get("/floors/:id/tool-executions", {
     schema: {
       tags: ["tools"],
-      summary: "Query tool execution journal for a floor",
+      summary: "Query primary tool execution journal for a floor",
       operationId: "queryFloorToolExecutionRecords",
       params: idParamsJsonSchema,
       querystring: floorToolExecutionsQueryJsonSchema,

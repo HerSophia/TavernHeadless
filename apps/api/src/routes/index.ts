@@ -31,6 +31,7 @@ import type { AccountMode } from "../accounts/constants.js";
 
 export interface CrudRoutesOptions {
   variableEventBus?: CoreEventBus;
+  memoryEventBus?: CoreEventBus;
   sessionToolRegistryService?: SessionToolRegistryService;
   memoryJobs?: MemoryJobRoutesOptions;
   chatTransferJobs?: ChatTransferJobRoutesOptions & { importMaxBytes?: number; exportSyncMaxMessages?: number; exportArtifactTtlMs?: number };
@@ -63,7 +64,9 @@ export async function registerCrudRoutes(
     eventBus: options.variableEventBus,
     mutationRuntime: options.mutationRuntime,
   });
-  await registerMemoryRoutes(app, connection);
+  await registerMemoryRoutes(app, connection, {
+    eventBus: options.memoryEventBus,
+  });
   await registerMemoryJobRoutes(app, connection, options.memoryJobs);
   await registerImportRoutes(app, connection, options.chatTransferJobs);
   await registerLlmProfileRoutes(app, connection, {

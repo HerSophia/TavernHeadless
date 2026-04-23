@@ -162,7 +162,8 @@ describe("floor routes", () => {
     const parent = await createFloor({ sessionId, floorNo: 0, branchId: "main", state: "committed" });
     const floor = await createFloor({ sessionId, floorNo: 1, branchId: "alt", state: "draft" });
 
-    const patchResponse = await app.inject({
+    // Phase 4.1 guardrails：混合拓扑字段 + 受限字段应整条被拒。
+    const mixedPatch = await app.inject({
       method: "PATCH",
       url: `/floors/${floor.id}`,
       payload: {
@@ -174,17 +175,26 @@ describe("floor routes", () => {
         token_out: 22,
       },
     });
+    expect(mixedPatch.statusCode, mixedPatch.body).toBe(400);
+    expect(mixedPatch.json<ErrorResponse>().error.code).toBe("floor_patch_mixed_fields");
 
-    expect(patchResponse.statusCode, patchResponse.body).toBe(200);
-    expect(patchResponse.json<ItemResponse<FloorDto>>().data).toEqual(expect.objectContaining({
+    // 只改拓扑字段是合法路径，应成功并返回更新后的 floor。
+    const topologyPatch = await app.inject({
+      method: "PATCH",
+      url: `/floors/${floor.id}`,
+      payload: {
+        floor_no: 2,
+        branch_id: "fork-1",
+        parent_floor_id: parent.id,
+      },
+    });
+    expect(topologyPatch.statusCode, topologyPatch.body).toBe(200);
+    expect(topologyPatch.json<ItemResponse<FloorDto>>().data).toEqual(expect.objectContaining({
       id: floor.id,
       session_id: sessionId,
       floor_no: 2,
       branch_id: "fork-1",
       parent_floor_id: parent.id,
-      state: "failed",
-      token_in: 11,
-      token_out: 22,
     }));
 
     const invalidResponse = await app.inject({
@@ -196,10 +206,11 @@ describe("floor routes", () => {
     expect(invalidResponse.statusCode).toBe(400);
     expect(invalidResponse.json<ErrorResponse>().error.code).toBe("validation_error");
 
+    // guardrails 下 `state` 属于受限字段，无论目标 floor 是否存在，都会先因 restricted 字段返 400。
     const missingResponse = await app.inject({
       method: "PATCH",
       url: "/floors/missing-floor",
-      payload: { state: "draft" },
+      payload: { floor_no: 99 },
     });
 
     expect(missingResponse.statusCode).toBe(404);

@@ -1,7 +1,7 @@
 import type { FloorState, MemoryJobType, MemoryScope, VariableScope, VariableEntry } from '@tavern/shared';
 import type { FloorEntity } from '../types.js';
 import type { ModelConfig, TokenUsage } from '../llm/types.js';
-import type { MemoryItem } from '../memory/types.js';
+import type { MemoryEdge, MemoryItem } from '../memory/types.js';
 import type { InstanceSlot } from '../llm/types.js';
 import type {
   ToolExecutionProviderType,
@@ -105,7 +105,18 @@ export type FloorRunCompletedEvent = FloorRunSnapshot;
 
 export type FloorRunFailedEvent = FloorRunSnapshot;
 
-/** 变量写入事件 */
+/**
+ * 变量写入事件（durable-only）。
+ *
+ * 语义：`variable.set` 仅表示一次 durable create/update 已经在数据库事务中
+ * 成功提交。工具执行期的 buffered 可见性不会通过该事件对外广播。
+ *
+ * 发射时机：
+ * - 工具缓冲写入 → 事务提交成功后 flush 一次 `variable.set`
+ * - Prompt macro `setvar` / `setglobalvar` → 事务提交成功后 flush 一次 `variable.set`
+ * - page → floor 的 durable promotion 走独立的 `variable.promoted`，
+ *   不会额外再发一条 `variable.set`
+ */
 export interface VariableSetEvent {
   sessionId?: string;
   branchId?: string;
@@ -113,7 +124,12 @@ export interface VariableSetEvent {
   isNew: boolean;
 }
 
-/** 变量提升事件 */
+/**
+ * 变量提升事件（durable-only）。
+ *
+ * 语义：`variable.promoted` 仅表示一次 page → floor 的 durable promotion 已在
+ * 事务中成功提交。同一次 promotion 不会再额外触发 `variable.set`。
+ */
 export interface VariablePromotedEvent {
   sessionId?: string;
   branchId?: string;
@@ -123,7 +139,12 @@ export interface VariablePromotedEvent {
   value: unknown;
 }
 
-/** 变量删除事件 */
+/**
+ * 变量删除事件（durable-only）。
+ *
+ * 语义：`variable.deleted` 仅表示 durable delete 已经在事务中成功提交。
+ * 工具执行期的 buffered delete 不会通过该事件对外广播。
+ */
 export interface VariableDeletedEvent {
   sessionId?: string;
   branchId?: string;
@@ -194,13 +215,21 @@ export interface CommitSucceededAfterRetryEvent {
 
 // ── Memory 事件 ──────────────────────────────────────
 
+export type MemoryMutationSource = 'extraction' | 'consolidation' | 'manual' | 'runtime' | 'maintenance';
+export type MemoryEventEntityType = 'memory_item' | 'memory_edge';
+
 /** 记忆事件共享上下文 */
 export interface MemoryEventContext {
+  mutationId?: string;
+  accountId?: string;
   sessionId?: string;
+  branchId?: string;
   scope: MemoryScope;
   scopeId: string;
   floorId?: string;
   sourceJobId?: string;
+  entityType?: MemoryEventEntityType;
+  entityId?: string;
 }
 
 /** 记忆作业 / 处理事件共享上下文 */
@@ -211,19 +240,47 @@ export interface MemoryJobEventContext extends MemoryEventContext {
 /** 记忆创建事件 */
 export interface MemoryCreatedEvent extends MemoryEventContext {
   item: MemoryItem;
-  source: 'extraction' | 'consolidation' | 'manual';
+  source: MemoryMutationSource;
+  after?: MemoryItem;
 }
 
 /** 记忆更新事件 */
 export interface MemoryUpdatedEvent extends MemoryEventContext {
   item: MemoryItem;
   previousContent?: string;
+  before?: MemoryItem;
+  after?: MemoryItem;
+  source?: MemoryMutationSource;
 }
 
 /** 记忆标记过时事件 */
 export interface MemoryDeprecatedEvent extends MemoryEventContext {
   item: MemoryItem;
   reason: string;
+  before?: MemoryItem;
+  after?: MemoryItem;
+  source?: MemoryMutationSource;
+}
+
+/** 记忆删除事件 */
+export interface MemoryDeletedEvent extends MemoryEventContext {
+  item: MemoryItem;
+  before: MemoryItem;
+  source: MemoryMutationSource;
+}
+
+/** 记忆关系边创建事件 */
+export interface MemoryEdgeCreatedEvent extends MemoryEventContext {
+  edge: MemoryEdge;
+  after?: MemoryEdge;
+  source: MemoryMutationSource;
+}
+
+/** 记忆关系边删除事件 */
+export interface MemoryEdgeDeletedEvent extends MemoryEventContext {
+  edge: MemoryEdge;
+  before: MemoryEdge;
+  source: MemoryMutationSource;
 }
 
 /** 记忆整理完成事件 */
@@ -457,6 +514,9 @@ export interface CoreEventMap {
   'memory.created': MemoryCreatedEvent;
   'memory.updated': MemoryUpdatedEvent;
   'memory.deprecated': MemoryDeprecatedEvent;
+  'memory.deleted': MemoryDeletedEvent;
+  'memory.edge.created': MemoryEdgeCreatedEvent;
+  'memory.edge.deleted': MemoryEdgeDeletedEvent;
   'memory.injection_failed': MemoryInjectionFailedEvent;
   'memory.persist_failed': MemoryPersistFailedEvent;
   'memory.consolidation_context_failed': MemoryConsolidationContextFailedEvent;

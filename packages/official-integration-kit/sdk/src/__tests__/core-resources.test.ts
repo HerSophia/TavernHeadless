@@ -184,6 +184,10 @@ describe("sdk core resources", () => {
         resultVisibility: "immediate",
         sideEffectLevel: "sandbox",
         source: "builtin",
+        sideEffectLevelBasis: null,
+        allowedSlotsBasis: null,
+        parameterSchemaBasis: null,
+        replaySafetyBasis: null,
       }],
     });
   });
@@ -557,8 +561,45 @@ describe("sdk core resources", () => {
       branchId: "main",
       floors: [
         {
+          pages: [
+            {
+              id: "page-1",
+              isActive: true,
+              messages: [
+                {
+                  content: "hello",
+                  contentFormat: "markdown",
+                  id: "msg-1",
+                  role: "assistant",
+                  seq: 1,
+                },
+              ],
+              pageKind: "main",
+              pageNo: 1,
+              version: 2,
+            },
+          ],
+          activePages: [
+            {
+              id: "page-1",
+              isActive: true,
+              messages: [
+                {
+                  content: "hello",
+                  contentFormat: "markdown",
+                  id: "msg-1",
+                  role: "assistant",
+                  seq: 1,
+                },
+              ],
+              pageKind: "main",
+              pageNo: 1,
+              version: 2,
+            },
+          ],
           activePage: {
             id: "page-1",
+            isActive: true,
             messages: [
               {
                 content: "hello",
@@ -572,6 +613,15 @@ describe("sdk core resources", () => {
             pageNo: 1,
             version: 2,
           },
+          messages: [
+            {
+              content: "hello",
+              contentFormat: "markdown",
+              id: "msg-1",
+              role: "assistant",
+              seq: 1,
+            },
+          ],
           createdAt: 100,
           floorNo: 1,
           id: "floor-1",
@@ -581,7 +631,10 @@ describe("sdk core resources", () => {
           tokenOut: 7,
         },
         {
+          pages: [],
+          activePages: [],
           activePage: null,
+          messages: [],
           createdAt: 101,
           floorNo: 2,
           id: "floor-2",
@@ -602,6 +655,90 @@ describe("sdk core resources", () => {
     expect(requestUrl.searchParams.get("limit")).toBe("200");
     expect(requestUrl.searchParams.get("offset")).toBe("0");
   });
+
+  it("maps page-aware timeline payloads with multi active page and null activePage", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          branch_id: "main",
+          session_id: "session-1",
+          floors: [
+            {
+              id: "floor-1",
+              floor_no: 1,
+              state: "committed",
+              token_in: 0,
+              token_out: 0,
+              created_at: 100,
+              pages: [
+                {
+                  id: "page-in",
+                  page_no: 0,
+                  page_kind: "input",
+                  is_active: true,
+                  version: 1,
+                  messages: [
+                    { id: "msg-u", seq: 0, role: "user", content: "hello", content_format: "text" },
+                  ],
+                },
+                {
+                  id: "page-out",
+                  page_no: 1,
+                  page_kind: "output",
+                  is_active: true,
+                  version: 1,
+                  messages: [
+                    { id: "msg-a", seq: 0, role: "assistant", content: "world", content_format: "text" },
+                  ],
+                },
+              ],
+              active_pages: [
+                {
+                  id: "page-in",
+                  page_no: 0,
+                  page_kind: "input",
+                  version: 1,
+                  messages: [
+                    { id: "msg-u", seq: 0, role: "user", content: "hello", content_format: "text" },
+                  ],
+                },
+                {
+                  id: "page-out",
+                  page_no: 1,
+                  page_kind: "output",
+                  version: 1,
+                  messages: [
+                    { id: "msg-a", seq: 0, role: "assistant", content: "world", content_format: "text" },
+                  ],
+                },
+              ],
+              // 后端在多 active page 场景下返回 null；序列化要确保 SDK 保持同语义。
+              active_page: null,
+              messages: [
+                { id: "msg-u", seq: 0, role: "user", content: "hello", content_format: "text" },
+                { id: "msg-a", seq: 0, role: "assistant", content: "world", content_format: "text" },
+              ],
+              page_count: 2,
+            },
+          ],
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    const result = await client.sessions.timeline({
+      accountId: "acc-1",
+      sessionId: "session-1",
+    });
+
+    const floor = result.floors[0]!;
+    expect(floor.pages).toHaveLength(2);
+    expect(floor.activePages).toHaveLength(2);
+    expect(floor.activePage).toBeNull();
+    expect(floor.messages.map((m) => m.content)).toEqual(["hello", "world"]);
+    expect(floor.pages.every((p) => p.isActive)).toBe(true);
+  });
+
 
   it("updates sessions with expanded payloads and returns the updated session", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(

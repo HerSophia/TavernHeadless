@@ -297,6 +297,11 @@ export class VariableMutationApplier implements RuntimeMutationApplier<unknown, 
       }
     }
 
+    // Phase 1: promotion 必须严格按当前请求所属的 accountId 进行 source/target 查询，
+    // 避免在多账号模式下读取或覆盖到另一个账号的变量行。
+    const promotionAccountId =
+      request.envelope.payload.accountId ?? request.envelope.accountId
+
     const inputPage = request.context.tx
       .select({ id: messagePages.id })
       .from(messagePages)
@@ -318,6 +323,7 @@ export class VariableMutationApplier implements RuntimeMutationApplier<unknown, 
       .select()
       .from(variables)
       .where(and(
+        eq(variables.accountId, promotionAccountId),
         eq(variables.scope, "page"),
         eq(variables.scopeId, request.envelope.payload.pageId),
       ))
@@ -334,6 +340,7 @@ export class VariableMutationApplier implements RuntimeMutationApplier<unknown, 
       .select()
       .from(variables)
       .where(and(
+        eq(variables.accountId, promotionAccountId),
         eq(variables.scope, "floor"),
         eq(variables.scopeId, request.envelope.payload.floorId),
       ))

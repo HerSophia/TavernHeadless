@@ -150,16 +150,80 @@ describe("apps/api integration", () => {
     expect(listBody.data[0]?.id).toBe(createdFloor.id);
     expect(listBody.meta.total).toBe(1);
 
-    const patchResponse = await app.inject({
+    // Phase 4.1 guardrails：PATCH /floors/:id 禁止直接改 state；
+    // 同时仍允许修改拓扑字段。这里用两次请求分别覆盖这两条语义。
+    const restrictedPatch = await app.inject({
       method: "PATCH",
       url: `/floors/${createdFloor.id}`,
       payload: { state: "committed" }
     });
+    expect(restrictedPatch.statusCode).toBe(400);
+    expect(restrictedPatch.json<ErrorResponse>().error.code).toBe("floor_patch_restricted_field");
 
-    expect(patchResponse.statusCode).toBe(200);
+    const topologyPatch = await app.inject({
+      method: "PATCH",
+      url: `/floors/${createdFloor.id}`,
+      payload: { floor_no: 2 }
+    });
+    expect(topologyPatch.statusCode).toBe(200);
 
     const deleteResponse = await app.inject({ method: "DELETE", url: `/floors/${createdFloor.id}` });
     expect(deleteResponse.statusCode).toBe(200);
+  });
+
+  it("PATCH /floors/:id guardrails: rejects restricted, mixed and invalid topology requests", async () => {
+    const session = await createSession(app, { title: "Session for guardrails" });
+    const parentFloor = await createFloor(app, { session_id: session.id, floor_no: 1, branch_id: "main" });
+    const childFloor = await createFloor(app, {
+      session_id: session.id,
+      floor_no: 2,
+      branch_id: "main",
+      parent_floor_id: parentFloor.id,
+    });
+
+    // 1. 单独修改受限字段 token_in -> 400 restricted
+    const tokenInPatch = await app.inject({
+      method: "PATCH",
+      url: `/floors/${childFloor.id}`,
+      payload: { token_in: 100 },
+    });
+    expect(tokenInPatch.statusCode).toBe(400);
+    expect(tokenInPatch.json<ErrorResponse>().error.code).toBe("floor_patch_restricted_field");
+
+    // 2. 混合拓扑字段 + 受限字段 -> 400 mixed
+    const mixedPatch = await app.inject({
+      method: "PATCH",
+      url: `/floors/${childFloor.id}`,
+      payload: { floor_no: 3, state: "committed" },
+    });
+    expect(mixedPatch.statusCode).toBe(400);
+    expect(mixedPatch.json<ErrorResponse>().error.code).toBe("floor_patch_mixed_fields");
+
+    // 3. parent_floor_id 自环 -> 400 topology
+    const selfParentPatch = await app.inject({
+      method: "PATCH",
+      url: `/floors/${childFloor.id}`,
+      payload: { parent_floor_id: childFloor.id },
+    });
+    expect(selfParentPatch.statusCode).toBe(400);
+    expect(selfParentPatch.json<ErrorResponse>().error.code).toBe("floor_patch_topology_invalid");
+
+    // 4. parent.floor_no 与 target 同值 -> 400 topology
+    const equalFloorNoParentPatch = await app.inject({
+      method: "PATCH",
+      url: `/floors/${childFloor.id}`,
+      payload: { parent_floor_id: parentFloor.id, floor_no: parentFloor.floor_no },
+    });
+    expect(equalFloorNoParentPatch.statusCode).toBe(400);
+    expect(equalFloorNoParentPatch.json<ErrorResponse>().error.code).toBe("floor_patch_topology_invalid");
+
+    // 5. 合法拓扑修改仍可成功
+    const okPatch = await app.inject({
+      method: "PATCH",
+      url: `/floors/${childFloor.id}`,
+      payload: { parent_floor_id: parentFloor.id },
+    });
+    expect(okPatch.statusCode).toBe(200);
   });
 
   it("covers pages CRUD", async () => {

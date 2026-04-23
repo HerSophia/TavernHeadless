@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, type SQL } from "drizzle-orm";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { floors, sessions, sessionStateMutations } from "../db/schema.js";
@@ -6,9 +6,12 @@ import type {
   SessionStateMutationStatus,
   SessionStateMutationView,
   SessionStateNamespace,
+  SessionStateReplaySafety,
   SessionStateVisibilityMode,
   SessionStateWriteMode,
 } from "./session-state-types.js";
+
+export type SessionStateMutationSortOrder = "asc" | "desc";
 
 export interface SessionStateSessionHostRecord {
   id: string;
@@ -25,6 +28,34 @@ export interface SessionStateFloorHostRecord {
   state: typeof floors.$inferSelect["state"];
   createdAt: number;
   updatedAt: number;
+}
+
+export interface SessionStateMutationListFilters {
+  /**
+   * 必填。listMutations 永远按 session 维度收口，避免出现全表扫。
+   */
+  sessionId: string;
+  branchId?: string;
+  status?: SessionStateMutationStatus;
+  sourceFloorId?: string;
+  runId?: string;
+  targetSlot?: string;
+  stateNamespace?: SessionStateNamespace;
+  writeMode?: SessionStateWriteMode;
+  replaySafety?: SessionStateReplaySafety;
+  createdAfter?: number;
+  createdBefore?: number;
+}
+
+export interface SessionStateMutationListPagination {
+  limit: number;
+  offset: number;
+  sortOrder: SessionStateMutationSortOrder;
+}
+
+export interface SessionStateMutationListResult {
+  rows: SessionStateMutationView[];
+  total: number;
 }
 
 export class SessionStateRepository {
@@ -205,6 +236,78 @@ export class SessionStateRepository {
       .all()
       .map(toMutationView);
   }
+
+  listMutations(
+    filters: SessionStateMutationListFilters,
+    pagination: SessionStateMutationListPagination,
+  ): SessionStateMutationListResult {
+    const conditions = buildListMutationsConditions(filters);
+    const whereClause = conditions.length === 1 ? conditions[0]! : and(...conditions);
+
+    const totalRow = this.db
+      .select({ total: count() })
+      .from(sessionStateMutations)
+      .where(whereClause)
+      .get();
+
+    const total = totalRow?.total ?? 0;
+
+    const rows = this.db
+      .select()
+      .from(sessionStateMutations)
+      .where(whereClause)
+      .orderBy(
+        pagination.sortOrder === "asc"
+          ? asc(sessionStateMutations.createdAt)
+          : desc(sessionStateMutations.createdAt),
+        pagination.sortOrder === "asc"
+          ? asc(sessionStateMutations.id)
+          : desc(sessionStateMutations.id),
+      )
+      .limit(pagination.limit)
+      .offset(pagination.offset)
+      .all()
+      .map(toMutationView);
+
+    return { rows, total };
+  }
+}
+
+function buildListMutationsConditions(filters: SessionStateMutationListFilters): SQL[] {
+  const conditions: SQL[] = [eq(sessionStateMutations.sessionId, filters.sessionId)];
+
+  if (filters.branchId !== undefined) {
+    conditions.push(eq(sessionStateMutations.branchId, filters.branchId));
+  }
+  if (filters.status !== undefined) {
+    conditions.push(eq(sessionStateMutations.status, filters.status));
+  }
+  if (filters.sourceFloorId !== undefined) {
+    conditions.push(eq(sessionStateMutations.sourceFloorId, filters.sourceFloorId));
+  }
+  if (filters.runId !== undefined) {
+    conditions.push(eq(sessionStateMutations.runId, filters.runId));
+  }
+  if (filters.targetSlot !== undefined) {
+    conditions.push(eq(sessionStateMutations.targetSlot, filters.targetSlot));
+  }
+  if (filters.stateNamespace !== undefined) {
+    conditions.push(eq(sessionStateMutations.stateNamespace, filters.stateNamespace));
+  }
+  if (filters.writeMode !== undefined) {
+    conditions.push(eq(sessionStateMutations.writeMode, filters.writeMode));
+  }
+  if (filters.replaySafety !== undefined) {
+    conditions.push(eq(sessionStateMutations.replaySafety, filters.replaySafety));
+  }
+  if (filters.createdAfter !== undefined) {
+    conditions.push(gte(sessionStateMutations.createdAt, filters.createdAfter));
+  }
+  if (filters.createdBefore !== undefined) {
+    conditions.push(lte(sessionStateMutations.createdAt, filters.createdBefore));
+  }
+
+  return conditions;
 }
 
 function toMutationView(row: typeof sessionStateMutations.$inferSelect): SessionStateMutationView {
