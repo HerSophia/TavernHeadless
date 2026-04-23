@@ -5,11 +5,12 @@
  * 从 ChatService 提取以降低单文件认知负荷。
  */
 
-import { asc, eq, and, desc, lt, inArray, isNull } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull } from "drizzle-orm";
 import type { ChatMessage } from "@tavern/core";
 
 import type { AppDb } from "../db/client.js";
 import { floors, messagePages, messages } from "../db/schema.js";
+import { FloorLineageService, type FloorLineageNode } from "./floor-lineage-service.js";
 
 export interface FloorVisibilityRange {
   startFloorNo: number;
@@ -29,10 +30,15 @@ export interface PromptVisibilityTrace {
 }
 
 export class ChatHistoryLoader {
+  private readonly lineageService: FloorLineageService;
+
   constructor(
     private readonly db: AppDb,
-    private readonly historyMaxFloors?: number
-  ) {}
+    private readonly historyMaxFloors?: number,
+    lineageService?: FloorLineageService,
+  ) {
+    this.lineageService = lineageService ?? new FloorLineageService(db);
+  }
 
   async loadHistory(
     sessionId: string,
@@ -145,21 +151,15 @@ export class ChatHistoryLoader {
     beforeFloorNo?: number,
     visibility?: PromptVisibilityPolicy,
   ): Promise<Array<{ id: string; floorNo: number }>> {
-    const mainOrMergedRows = await this.selectHistoryFloorRows(sessionId, branchId, beforeFloorNo);
-
-    if (branchId === "main") {
-      const mainRows = mainOrMergedRows;
-      const visibleRows = applyPromptVisibilityPolicy(mainRows, visibility);
-      const limitedRows =
-        this.historyMaxFloors === undefined ? visibleRows : visibleRows.slice(0, this.historyMaxFloors);
-
-      return limitedRows.reverse();
-    }
-
-    const mergedRows = mainOrMergedRows;
-    const visibleRows = applyPromptVisibilityPolicy(mergedRows, visibility);
+    // ancestry 视角下，所有 branch 走同一套流程：按 ancestry 顺序（root → tip）拿到 floor。
+    // `selectHistoryFloorRows` 已经返回正序列表，所以这里只需应用 visibility 过滤 + 按
+    // historyMaxFloors 截断最近 N 个。
+    const ancestryRows = await this.selectHistoryFloorRows(sessionId, branchId, beforeFloorNo);
+    const visibleRows = applyPromptVisibilityPolicy(ancestryRows, visibility);
     const limitedRows =
-      this.historyMaxFloors === undefined ? visibleRows : visibleRows.slice(-this.historyMaxFloors);
+      this.historyMaxFloors === undefined
+        ? visibleRows
+        : visibleRows.slice(-this.historyMaxFloors);
 
     return limitedRows.map((row) => ({ id: row.id, floorNo: row.floorNo }));
   }
@@ -169,50 +169,34 @@ export class ChatHistoryLoader {
     branchId: string,
     beforeFloorNo?: number,
   ): Promise<Array<{ id: string; floorNo: number }>> {
-    const baseConditions = [
-      eq(floors.sessionId, sessionId),
-      eq(floors.state, "committed"),
-      isNull(floors.supersededAt),
-    ];
+    // 通过统一的 lineage service 取该 branch 的 ancestry floor id 列表，
+    // 不再按 `floorNo` 合并 main / branch。ancestry 身份由 `parentFloorId` 链决定。
+    //
+    // 同时加载 supersede 索引，让 regenerate 后指向"被替代旧楼层"的 parent 链
+    // 能正确穿透到更上层的祖先。
+    const [nodes, supersedeIndex] = await Promise.all([
+      this.lineageService.loadSessionNodes(sessionId),
+      this.lineageService.loadSupersedeIndex(sessionId),
+    ]);
+    const ancestryIds = this.lineageService.resolveVisibleAncestryFloorIds(
+      nodes,
+      branchId,
+      beforeFloorNo,
+      supersedeIndex,
+    );
 
-    if (beforeFloorNo !== undefined) {
-      baseConditions.push(lt(floors.floorNo, beforeFloorNo));
+    if (ancestryIds.length === 0) {
+      return [];
     }
 
-    if (branchId === "main") {
-      return this.db
-        .select({ id: floors.id, floorNo: floors.floorNo })
-        .from(floors)
-        .where(and(...baseConditions, eq(floors.branchId, "main")))
-        .orderBy(desc(floors.floorNo));
-    }
-
-    const branchRows = await this.db
-      .select({
-        id: floors.id,
-        floorNo: floors.floorNo,
-        branchId: floors.branchId,
-      })
-      .from(floors)
-      .where(and(...baseConditions, inArray(floors.branchId, ["main", branchId])))
-      .orderBy(asc(floors.floorNo), asc(floors.createdAt));
-
-    const mergedByFloorNo = new Map<number, { id: string; floorNo: number; branchId: string }>();
-
-    for (const row of branchRows) {
-      const existing = mergedByFloorNo.get(row.floorNo);
-
-      if (!existing) {
-        mergedByFloorNo.set(row.floorNo, row);
-        continue;
-      }
-
-      if (row.branchId === branchId && existing.branchId !== branchId) {
-        mergedByFloorNo.set(row.floorNo, row);
-      }
-    }
-
-    return Array.from(mergedByFloorNo.values()).sort((a, b) => a.floorNo - b.floorNo).map((row) => ({ id: row.id, floorNo: row.floorNo }));
+    // resolveVisibleAncestryFloorIds 返回 root → tip 顺序的 floor id 列表；
+    // 这里保持同序输出 { id, floorNo } 投影，供 loadMessagesFromFloorScope 按
+    // ancestry 顺序加载消息。
+    const nodeById = new Map<string, FloorLineageNode>(nodes.map((node) => [node.id, node]));
+    return ancestryIds
+      .map((id) => nodeById.get(id))
+      .filter((node): node is FloorLineageNode => node !== undefined)
+      .map((node) => ({ id: node.id, floorNo: node.floorNo }));
   }
 
   private async loadMessagesFromFloorScope(

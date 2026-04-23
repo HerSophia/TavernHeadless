@@ -366,6 +366,8 @@ describe("sdk floors expanded resource", () => {
 
     await expect(
       client.floors.retry({
+        confirmedExecutionIds: ["exec-1"],
+        confirmedSessionStateMutationIds: ["mutation-1"],
         config: {
           enableDirector: true,
         },
@@ -433,6 +435,8 @@ describe("sdk floors expanded resource", () => {
 
     const [, init] = fetchImpl.mock.calls[0]!;
     expect(init?.body).toBe(JSON.stringify({
+      confirmed_execution_ids: ["exec-1"],
+      confirmed_session_state_mutation_ids: ["mutation-1"],
       config: {
         enableDirector: true,
       },

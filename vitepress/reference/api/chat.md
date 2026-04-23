@@ -99,7 +99,7 @@ POST /sessions/:id/respond
 
 上表列出的是常见错误，不是穷尽列表。
 
-当前聊天链路还可能返回：`source_floor_not_found`、`invalid_tool_mode`、`tool_replay_blocked`、`tool_replay_confirmation_required`、`profile_not_found`、`profile_disabled`、`instance_slot_disabled_required`、`tool_catalog_conflict`、`generation_cancelled`（`499`）等 code。客户端应按 `error.code` 做分支处理，而不应只依赖状态码。
+当前聊天链路还可能返回：`source_floor_not_found`、`invalid_tool_mode`、`tool_replay_blocked`、`tool_replay_confirmation_required`、`session_state_replay_blocked`、`session_state_replay_confirmation_required`、`replay_confirmation_required`、`profile_not_found`、`profile_disabled`、`instance_slot_disabled_required`、`tool_catalog_conflict`、`generation_cancelled`（`499`）等 code。客户端应按 `error.code` 做分支处理，而不应只依赖状态码。
 
 如果 `respond` 或 `edit-and-regenerate` 要从一个尚未物化的新分支继承 source floor 的 local 兼容视图，但该 source floor 缺少 `branch_local_variable_snapshot`，服务端现在会直接返回 `409 branch_local_snapshot_missing`，不再退回到当前可见 branch/chat 值。
 
@@ -451,10 +451,19 @@ POST /sessions/:id/regenerate
 | ---- | ---- | ---- | ---- |
 | `config` | TurnConfig | 否 | 回合配置覆盖 |
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
+| `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
+| `confirmed_session_state_mutation_ids` | string[] | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
 | `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
 | `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
 | `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
 | `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开世界书命中详情 |
+
+如果目标楼层关联的历史工具执行或 session-state mutation 需要人工确认，服务端会返回 `409 tool_replay_confirmation_required`、`409 session_state_replay_confirmation_required` 或 `409 replay_confirmation_required`。
+
+- `error.details.blocking_executions` 列出需要确认的工具执行
+- `error.details.blocking_session_state_mutations` 列出需要确认的 session-state mutation
+
+确认后应把允许继续 replay 的 ID 分别写入 `confirmed_execution_ids` 与 `confirmed_session_state_mutation_ids` 后重试。
 
 ### 响应 `200`
 
@@ -489,7 +498,9 @@ POST /sessions/:id/regenerate
 POST /floors/:id/retry
 ```
 
-对指定楼层重试生成。与 regenerate 类似，但可以指定任意楼层。
+对一个**已 commit** 的楼层执行原地重试（in-place retry）。目标楼层的 state 必须为 `committed`，服务端会清空当前 output page / assistant message，然后在该楼层上重新生成。
+
+这个接口**不是**用来恢复 `failed` 楼层的。如果目标楼层的 state 不是 `committed`，接口返回 `409` 且错误消息为 `Floor is not committed`。
 
 ### 请求体
 
@@ -498,12 +509,24 @@ POST /floors/:id/retry
 | `config` | TurnConfig | 否 | 回合配置覆盖 |
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
 | `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
+| `confirmed_session_state_mutation_ids` | string[] | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
 | `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
 | `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
 | `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
 | `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开世界书命中详情 |
 
-当目标楼层包含需要人工确认的工具回放时，服务端会返回 `409 tool_replay_confirmation_required`。此时应把允许继续回放的 execution id 放入 `confirmed_execution_ids` 后重试。
+当目标楼层包含需要人工确认的历史 replay blocker 时，服务端会返回：
+
+- `409 tool_replay_confirmation_required`
+- `409 session_state_replay_confirmation_required`
+- `409 replay_confirmation_required`
+
+其中：
+
+- `error.details.blocking_executions` 对应工具回放 blocker
+- `error.details.blocking_session_state_mutations` 对应 session-state 回放 blocker
+
+此时应把允许继续回放的 ID 分别放入 `confirmed_execution_ids` 与 `confirmed_session_state_mutation_ids` 后重试。若遇到 `tool_replay_blocked` 或 `session_state_replay_blocked`，则表示对应 blocker 不能通过确认直接自动继续。
 
 ### 响应 `200`
 
@@ -548,10 +571,19 @@ POST /messages/:id/edit-and-regenerate
 | `branch_id` | string | 否 | 指定分支 ID（可创建新分支） |
 | `config` | TurnConfig | 否 | 回合配置覆盖 |
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
+| `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
+| `confirmed_session_state_mutation_ids` | string[] | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
 | `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
 | `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
 | `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
 | `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开世界书命中详情 |
+
+如果源楼层关联的历史工具执行或 session-state mutation 需要人工确认，服务端会返回 `409 tool_replay_confirmation_required`、`409 session_state_replay_confirmation_required` 或 `409 replay_confirmation_required`。
+
+- `error.details.blocking_executions` 列出工具回放 blocker
+- `error.details.blocking_session_state_mutations` 列出 session-state 回放 blocker
+
+确认后应把允许继续 replay 的 ID 分别写入 `confirmed_execution_ids` 与 `confirmed_session_state_mutation_ids`。若返回 `tool_replay_blocked` 或 `session_state_replay_blocked`，则表示该 blocker 不能通过确认自动继续。
 
 ### 响应 `200`
 

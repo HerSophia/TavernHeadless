@@ -430,6 +430,17 @@ describe("MemoryWorker", () => {
       floorId,
       sourceJobId: `memory-job:ingest_turn:${floorId}`,
     }));
+    // Committed event contract: runtime ingest path must carry the normalized
+    // payload fields too (mutationId / accountId / branchId / entityType / entityId / after / source).
+    expect(memoryCreatedHandler).toHaveBeenCalledWith(expect.objectContaining({
+      accountId: DEFAULT_ACCOUNT_ID,
+      branchId: "main",
+      entityType: "memory_item",
+      entityId: expect.any(String),
+      mutationId: expect.any(String),
+      source: "consolidation",
+      after: expect.objectContaining({ id: expect.any(String) }),
+    }));
     expect(memoryConsolidatedHandler).toHaveBeenCalledOnce();
     expect(memoryConsolidatedHandler).toHaveBeenCalledWith(expect.objectContaining({
       sessionId,

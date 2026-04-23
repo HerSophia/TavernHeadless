@@ -8,8 +8,11 @@
  */
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app";
+import { floors } from "../src/db/schema";
+import type { DatabaseConnection } from "../src/db/client";
 
 type ItemResponse<T> = { data: T };
 type TimelineResponse = {
@@ -51,9 +54,10 @@ type TimelineResponse = {
 
 describe("M8: Core RP Experience", () => {
   let app: FastifyInstance;
+  let database: DatabaseConnection["db"];
 
   beforeEach(async () => {
-    ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
+    ({ app, database } = await buildApp({ databasePath: ":memory:", logger: false }));
   });
 
   afterEach(async () => {
@@ -89,13 +93,11 @@ describe("M8: Core RP Experience", () => {
       const page = await createPage(app, { floor_id: floor.id, page_no: 0, page_kind: "output" });
       await createMessage(app, { page_id: page.id, seq: 0, role: "assistant", content: "Hello!" });
 
-      const commitResponse = await app.inject({
-        method: "PATCH",
-        url: `/floors/${floor.id}`,
-        payload: { state: "committed" },
-      });
-
-      expect(commitResponse.statusCode).toBe(200);
+      // Phase 4.1 guardrails 后 PATCH /floors/:id 不再允许改 state，夹具改走 DB 直写。
+      await database
+        .update(floors)
+        .set({ state: "committed", updatedAt: Date.now() })
+        .where(eq(floors.id, floor.id));
 
       const res = await app.inject({
         method: "GET",
@@ -185,13 +187,12 @@ describe("M8: Core RP Experience", () => {
       await createPage(app, { floor_id: floor.id, page_no: 0, page_kind: "output", is_active: true, version: 1 });
       await createPage(app, { floor_id: floor.id, page_no: 0, page_kind: "output", is_active: false, version: 2 });
 
-      const commitResponse = await app.inject({
-        method: "PATCH",
-        url: `/floors/${floor.id}`,
-        payload: { state: "committed" },
-      });
+      // Phase 4.1 guardrails 后 PATCH /floors/:id 不再允许改 state，夹具改走 DB 直写。
+      await database
+        .update(floors)
+        .set({ state: "committed", updatedAt: Date.now() })
+        .where(eq(floors.id, floor.id));
 
-      expect(commitResponse.statusCode).toBe(200);
 
       const res = await app.inject({
         method: "GET",

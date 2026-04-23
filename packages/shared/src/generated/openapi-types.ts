@@ -797,7 +797,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Update floor */
+        /**
+         * Update floor topology fields
+         * @description Updates topology-only fields on a floor: `floor_no`, `branch_id`, `parent_floor_id`. The runtime fields `state`, `token_in`, `token_out` are intentionally not patchable through this endpoint. Mutating them directly would bypass the floor run state machine and the commit-time token bookkeeping, which would corrupt downstream truth (history, branch ancestry, prompt budget). If a request body contains any restricted field, the endpoint responds with 400 `floor_patch_restricted_field`. If a request body mixes a restricted field with a topology field, the response is 400 `floor_patch_mixed_fields` and is rejected as a whole.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -1210,7 +1213,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Query tool execution journal for a floor */
+        /** Query primary tool execution journal for a floor */
         get: operations["queryFloorToolExecutionRecords"];
         put?: never;
         post?: never;
@@ -5772,10 +5775,54 @@ export interface paths {
                          *               "page_no": 0,
                          *               "version": 1
                          *             },
+                         *             "active_pages": [
+                         *               {
+                         *                 "id": "page_12",
+                         *                 "messages": [
+                         *                   {
+                         *                     "content": "The firelight wavers as the next part of the story begins.",
+                         *                     "content_format": "text",
+                         *                     "id": "msg_21",
+                         *                     "role": "assistant",
+                         *                     "seq": 0
+                         *                   }
+                         *                 ],
+                         *                 "page_kind": "output",
+                         *                 "page_no": 0,
+                         *                 "version": 1
+                         *               }
+                         *             ],
                          *             "created_at": 1735689720000,
                          *             "floor_no": 2,
                          *             "id": "floor_12",
+                         *             "messages": [
+                         *               {
+                         *                 "content": "The firelight wavers as the next part of the story begins.",
+                         *                 "content_format": "text",
+                         *                 "id": "msg_21",
+                         *                 "role": "assistant",
+                         *                 "seq": 0
+                         *               }
+                         *             ],
                          *             "page_count": 1,
+                         *             "pages": [
+                         *               {
+                         *                 "id": "page_12",
+                         *                 "is_active": true,
+                         *                 "messages": [
+                         *                   {
+                         *                     "content": "The firelight wavers as the next part of the story begins.",
+                         *                     "content_format": "text",
+                         *                     "id": "msg_21",
+                         *                     "role": "assistant",
+                         *                     "seq": 0
+                         *                   }
+                         *                 ],
+                         *                 "page_kind": "output",
+                         *                 "page_no": 0,
+                         *                 "version": 1
+                         *               }
+                         *             ],
                          *             "state": "committed",
                          *             "token_in": 320,
                          *             "token_out": 128
@@ -5810,10 +5857,44 @@ export interface paths {
                                         page_no: number;
                                         version: number;
                                     } | null;
+                                    active_pages: {
+                                        id: string;
+                                        messages: {
+                                            content: string;
+                                            content_format: string;
+                                            id: string;
+                                            role: string;
+                                            seq: number;
+                                        }[];
+                                        page_kind: string;
+                                        page_no: number;
+                                        version: number;
+                                    }[];
                                     created_at: number;
                                     floor_no: number;
                                     id: string;
+                                    messages: {
+                                        content: string;
+                                        content_format: string;
+                                        id: string;
+                                        role: string;
+                                        seq: number;
+                                    }[];
                                     page_count: number;
+                                    pages: {
+                                        id: string;
+                                        is_active: boolean;
+                                        messages: {
+                                            content: string;
+                                            content_format: string;
+                                            id: string;
+                                            role: string;
+                                            seq: number;
+                                        }[];
+                                        page_kind: string;
+                                        page_no: number;
+                                        version: number;
+                                    }[];
                                     state: string;
                                     token_in: number;
                                     token_out: number;
@@ -5936,7 +6017,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Query tool execution journal */
+        /** Query primary tool execution journal (source of truth) */
         get: operations["queryToolExecutionRecords"];
         put?: never;
         post?: never;
@@ -19009,24 +19090,28 @@ export interface operations {
                             session_id: string;
                             tools: {
                                 allowed_slots: string[];
+                                allowed_slots_basis?: ("tool_declared" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
                                 /** @enum {string} */
                                 async_capability: "inline_only" | "deferred_ok";
                                 /** @enum {string} */
                                 availability: "available" | "unavailable" | "conflict";
                                 availability_reason?: string | null;
-                                catalog_source?: ("live" | "cached") | null;
+                                catalog_source?: ("live" | "cached" | "unavailable") | null;
                                 /** @enum {string} */
                                 default_delivery_mode: "inline" | "async_job";
                                 name: string;
+                                parameter_schema_basis?: ("tool_declared" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
                                 provider_id: string;
                                 /** @enum {string} */
                                 provider_type: "builtin" | "preset" | "mcp";
                                 /** @enum {string} */
                                 replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                replay_safety_basis?: ("tool_declared" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
                                 /** @enum {string} */
                                 result_visibility: "immediate" | "deferred_receipt";
                                 /** @enum {string} */
                                 side_effect_level: "none" | "sandbox" | "irreversible";
+                                side_effect_level_basis?: ("tool_declared" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
                                 /** @enum {string} */
                                 source: "builtin" | "resource" | "custom" | "preset" | "character" | "mcp";
                             }[];

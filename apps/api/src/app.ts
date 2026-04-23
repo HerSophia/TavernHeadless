@@ -12,6 +12,8 @@ import { registerCrudRoutes } from "./routes";
 import { isSqliteBusyError, ResourceBusyError } from "./lib/retry.js";
 import { registerChatRoutes } from "./routes/chat";
 import { registerPromptRuntimeRoutes } from "./routes/prompt-runtime";
+import { registerSessionStateObservationRoutes } from "./routes/session-state-observation";
+
 import { registerWsPlugin, type WsBridge } from "./ws";
 import {
   DrizzleFloorRepository,
@@ -75,6 +77,7 @@ import {
   FirstPartyGameStateService,
   SessionStateService,
 } from "./session-state/index.js";
+import { SessionStateObservationService } from "./session-state/session-state-observation-service.js";
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
 const API_VERSION: string = _pkgJson.version ?? "unknown";
@@ -470,6 +473,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let promptRuntimePreviewService: Pick<ChatService, "previewPromptRuntimeText"> | undefined;
   let sessionStateService: SessionStateService | undefined;
   let firstPartyGameStateService: FirstPartyGameStateService | undefined;
+  let sessionStateObservationService: SessionStateObservationService | undefined;
+
 
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
@@ -497,6 +502,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       clientData: options.clientData,
     });
     firstPartyGameStateService = new FirstPartyGameStateService(database.db, sessionStateService);
+    sessionStateObservationService = new SessionStateObservationService(database.db, sessionStateService);
   }
 
   const mcpService = new McpService(database.db);
@@ -577,14 +583,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       mcpManager,
       enableUnsafeScriptHandler: options.enableUnsafeScriptHandler,
       toolRuntimePolicy: toolRuntimeComponents.policy,
+      ...(toolRuntimeComponents.mcpToolProviderFactory ? { mcpToolProviderFactory: toolRuntimeComponents.mcpToolProviderFactory } : {}),
     });
   }
 
   await registerCrudRoutes(app, database, {
     variableEventBus: orchestrationContext?.eventBus,
+    memoryEventBus: orchestrationContext?.eventBus,
     sessionToolRegistryService,
     mutationRuntime: mutationRuntimeComponents?.runtime,
-    memoryStore: options.enableMemory ? orchestrationContext?.memoryStore : undefined,
     memoryJobs: {
       enableBackgroundWorker: options.enableMemory === true && options.orchestration !== undefined && (
         options.enableAsyncMemoryIngest === true
@@ -731,6 +738,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   await registerPromptRuntimeRoutes(app, promptRuntimeControlService, {
     previewService: promptRuntimePreviewService,
   });
+
+  if (sessionStateObservationService) {
+    await registerSessionStateObservationRoutes(app, {
+      observationService: sessionStateObservationService,
+    });
+  }
+
 
 
   if (options.enableMemory === true && options.memoryMaintenance) {

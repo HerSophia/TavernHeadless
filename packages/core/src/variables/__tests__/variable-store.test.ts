@@ -275,12 +275,18 @@ describe('VariableStore', () => {
         toolMutationAttemptNo: 1,
       };
 
+      const handler = vi.fn();
+      bus.on('variable.set', handler);
+
       const entry = await store.set('mood', 'happy', bufferedContext);
 
       expect(entry.scope).toBe('page');
       expect(await store.get('mood', bufferedContext)).toBe('happy');
       expect(await store.get('mood', fullContext)).toBeUndefined();
       await expect(repo.findByKey('page', 'page-1', 'mood')).resolves.toBeNull();
+      // Phase 1 语义：buffered 路径不再发出公共 variable.set，
+      // 公共事件只能在 commit 成功之后由 commit 服务 flush。
+      expect(handler).not.toHaveBeenCalled();
     });
 
     it('prefers buffered tool writes over persisted variables during the active attempt', async () => {
@@ -292,11 +298,15 @@ describe('VariableStore', () => {
         toolMutationAttemptNo: 1,
       };
 
+      const handler = vi.fn();
+      bus.on('variable.set', handler);
+
       await store.set('mood', 'happy', bufferedContext);
 
       expect(await store.get('mood', bufferedContext)).toBe('happy');
       expect(await store.get('mood', fullContext)).toBe('sad');
       await expect(repo.findByKey('page', 'page-1', 'mood')).resolves.toMatchObject({ value: 'sad' });
+      expect(handler).not.toHaveBeenCalled();
     });
   });
 

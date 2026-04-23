@@ -66,6 +66,16 @@ interface TimelineResponse {
         id: string;
         messages: Array<{ content: string }>;
       } | null;
+      active_pages?: Array<{
+        id: string;
+        messages: Array<{ content: string }>;
+      }>;
+      pages?: Array<{
+        id: string;
+        is_active: boolean;
+        messages: Array<{ content: string }>;
+      }>;
+      messages?: Array<{ content: string }>;
     }>;
   };
 }
@@ -274,7 +284,11 @@ describe("Import chat routes", () => {
     expect(timelineBody.data.floors).toHaveLength(1);
     expect(timelineBody.data.floors[0]!.page_count).toBe(4);
 
-    const contents = timelineBody.data.floors[0]!.active_page?.messages.map((message) => message.content) ?? [];
+    // timeline 升级 page-aware 后，导入的 floor 同时包含 input / output 两条 active page，
+    // 兼容字段 active_page 会返回 null。直接消费 floor 级扁平 messages（兼容字段）或
+    // 新的 active_pages 都可以；这里用 active_pages 以对齐 page-aware 真相。
+    const activePages = timelineBody.data.floors[0]!.active_pages ?? [];
+    const contents = activePages.flatMap((page) => page.messages.map((message) => message.content));
     expect(contents).toEqual(expect.arrayContaining(["Question", "Answer v2"]));
   });
 

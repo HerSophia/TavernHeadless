@@ -990,6 +990,9 @@ describe("TurnCommitService", () => {
       ],
     };
 
+    const variableSetHandler = vi.fn();
+    eventBus.on("variable.set", variableSetHandler);
+
     await service.commit({
       accountId: DEFAULT_ACCOUNT_ID,
       floorId,
@@ -1020,6 +1023,24 @@ describe("TurnCommitService", () => {
       updatedAt: committedAt,
     });
     expect(floorVariable && JSON.parse(floorVariable.valueJson)).toBe("hopeful");
+
+    // Phase 1 语义：buffered tool 写入在 commit 成功后必须 flush 一次
+    // durable variable.set。事件里应带上 session 上下文，便于 WS 转发按
+    // sessionId 过滤。
+    const bufferedSetCall = variableSetHandler.mock.calls.find(
+      ([payload]) => payload?.entry?.scope === "page" && payload?.entry?.key === "mood",
+    );
+    expect(bufferedSetCall).toBeDefined();
+    expect(bufferedSetCall![0]).toMatchObject({
+      sessionId,
+      branchId: "main",
+      entry: expect.objectContaining({
+        scope: "page",
+        scopeId: pageId,
+        key: "mood",
+        value: "hopeful",
+      }),
+    });
   });
 
   it("derives legacy tool_call_record rows from real toolExecutionRecords when needed", async () => {
@@ -1353,6 +1374,11 @@ describe("TurnCommitService", () => {
       },
     };
 
+    const variableSetHandler = vi.fn();
+    const variableDeletedHandler = vi.fn();
+    eventBus.on("variable.set", variableSetHandler);
+    eventBus.on("variable.deleted", variableDeletedHandler);
+
     await service.commit({
       accountId: DEFAULT_ACCOUNT_ID,
       floorId,
@@ -1379,6 +1405,31 @@ describe("TurnCommitService", () => {
       and(eq(variables.scope, "branch"), eq(variables.scopeId, buildBranchVariableScopeId(sessionId, "main")), eq(variables.key, "mood")),
     );
     expect(branchVariable).toBeUndefined();
+
+    // Phase 1 语义：macro set 在 commit 成功后发 durable variable.set；
+    // macro delete 在 commit 成功后发 durable variable.deleted。
+    const macroSetCall = variableSetHandler.mock.calls.find(
+      ([payload]) => payload?.entry?.key === "world_rule",
+    );
+    expect(macroSetCall).toBeDefined();
+    expect(macroSetCall![0]).toMatchObject({
+      sessionId,
+      branchId: "main",
+      entry: expect.objectContaining({
+        scope: "global",
+        scopeId: "global",
+        key: "world_rule",
+        value: "magic has a price",
+      }),
+    });
+
+    expect(variableDeletedHandler).toHaveBeenCalledTimes(1);
+    expect(variableDeletedHandler).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId,
+      branchId: "main",
+      scope: "branch",
+      key: "mood",
+    }));
   });
 
   it("persists structured root objects from macro staged mutations", async () => {
@@ -1512,6 +1563,27 @@ describe("TurnCommitService", () => {
       },
     };
 
+    const memoryCreatedHandler = vi.fn();
+    const memoryUpdatedHandler = vi.fn();
+    const memoryDeprecatedHandler = vi.fn();
+    const memoryDeletedHandler = vi.fn();
+    const memoryEdgeCreatedHandler = vi.fn();
+    const memoryEdgeDeletedHandler = vi.fn();
+    const memoryConsolidatedHandler = vi.fn();
+    const variableSetHandler = vi.fn();
+    const variableDeletedHandler = vi.fn();
+    const variablePromotedHandler = vi.fn();
+    eventBus.on("memory.created", memoryCreatedHandler);
+    eventBus.on("memory.updated", memoryUpdatedHandler);
+    eventBus.on("memory.deprecated", memoryDeprecatedHandler);
+    eventBus.on("memory.deleted", memoryDeletedHandler);
+    eventBus.on("memory.edge.created", memoryEdgeCreatedHandler);
+    eventBus.on("memory.edge.deleted", memoryEdgeDeletedHandler);
+    eventBus.on("memory.consolidated", memoryConsolidatedHandler);
+    eventBus.on("variable.set", variableSetHandler);
+    eventBus.on("variable.deleted", variableDeletedHandler);
+    eventBus.on("variable.promoted", variablePromotedHandler);
+
     await expect(
       service.commit({
         accountId: DEFAULT_ACCOUNT_ID,
@@ -1589,5 +1661,19 @@ describe("TurnCommitService", () => {
     );
 
     expect(structuredVariable).toBeUndefined();
+
+    // Rolled-back turn commit must not publish any committed memory event.
+    expect(memoryCreatedHandler).not.toHaveBeenCalled();
+    expect(memoryUpdatedHandler).not.toHaveBeenCalled();
+    expect(memoryDeprecatedHandler).not.toHaveBeenCalled();
+    expect(memoryDeletedHandler).not.toHaveBeenCalled();
+    expect(memoryEdgeCreatedHandler).not.toHaveBeenCalled();
+    expect(memoryEdgeDeletedHandler).not.toHaveBeenCalled();
+    expect(memoryConsolidatedHandler).not.toHaveBeenCalled();
+    // Phase 1 语义：failed commit / rollback 不能发出任何 durable
+    // variable.* 事件。
+    expect(variableSetHandler).not.toHaveBeenCalled();
+    expect(variableDeletedHandler).not.toHaveBeenCalled();
+    expect(variablePromotedHandler).not.toHaveBeenCalled();
   });
 });

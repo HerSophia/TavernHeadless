@@ -20,6 +20,12 @@ export interface FinalizedToolAsyncExecution {
   errorMessage?: string;
   finishedAt: number;
   durationMs: number;
+  /**
+   * 可选：供执行日志与审计链使用的稳定原因码。
+   *
+   * 仅当 provider 或 runtime 明确给出时才返回。
+   */
+  reasonCode?: string;
 }
 
 function safeJsonStringify(value: unknown): string {
@@ -61,6 +67,7 @@ function inferFinalStatus(result: ToolCallResult): Exclude<ToolExecutionStatus, 
     return "success";
   }
 
+  // 优先使用 provider / connection 层给出的显式结构化状态。
   if (
     result.executionStatus
     && result.executionStatus !== "running"
@@ -69,6 +76,7 @@ function inferFinalStatus(result: ToolCallResult): Exclude<ToolExecutionStatus, 
     return result.executionStatus;
   }
 
+  // legacy fallback：仅当显式状态缺失时，才从错误字符串里兜底推断。
   const normalized = result.error.toLowerCase();
   if (normalized.includes("execution outcome is uncertain")) {
     return "uncertain";
@@ -87,6 +95,7 @@ export function finalizeToolCallResult(
   finishedAt: number,
 ): FinalizedToolAsyncExecution {
   const status = inferFinalStatus(result);
+  const reasonCode = result.executionReasonCode;
 
   if (result.error) {
     return {
@@ -95,6 +104,7 @@ export function finalizeToolCallResult(
       errorMessage: result.error,
       finishedAt,
       durationMs: Math.max(0, finishedAt - envelope.acceptedAt),
+      ...(reasonCode ? { reasonCode } : {}),
     };
   }
 
@@ -103,5 +113,6 @@ export function finalizeToolCallResult(
     status,
     finishedAt,
     durationMs: Math.max(0, finishedAt - envelope.acceptedAt),
+    ...(reasonCode ? { reasonCode } : {}),
   };
 }

@@ -167,6 +167,15 @@ export type WorkspaceReplayBlockingExecution = {
   toolName: string;
 };
 
+export type WorkspaceReplayBlockingSessionStateMutation = {
+  mutationId: string;
+  reason: string;
+  replaySafety: WorkspaceToolReplaySafety;
+  stateNamespace: string;
+  status: string;
+  targetSlot: string;
+};
+
 export type StreamRespondOptions = {
   accountId?: string;
   generationParams?: WorkspaceGenerationParams;

@@ -5,8 +5,9 @@ import type {
 } from "@tavern/core";
 
 import type { AppDb } from "../db/client.js";
-import { McpToolProvider } from "../mcp/mcp-tool-provider.js";
 import type { McpConnectionManager } from "../mcp/mcp-connection-manager.js";
+import { McpToolProviderFactory } from "../mcp/mcp-tool-provider-factory.js";
+import type { ToolRuntimePolicy } from "./tool-runtime-policy.js";
 import { McpService } from "./mcp-service.js";
 
 export interface ToolAsyncHandler {
@@ -58,12 +59,19 @@ export class McpDeferredToolHandler implements ToolAsyncHandler {
   readonly providerType = "mcp" as const;
 
   private readonly mcpService: McpService;
+  private readonly providerFactory: McpToolProviderFactory;
 
   constructor(
     db: AppDb,
     private readonly manager: McpConnectionManager,
+    options: { toolRuntimePolicy?: ToolRuntimePolicy; providerFactory?: McpToolProviderFactory } = {},
   ) {
     this.mcpService = new McpService(db);
+    this.providerFactory = options.providerFactory
+      ?? new McpToolProviderFactory({
+        connectionManager: manager,
+        ...(options.toolRuntimePolicy ? { toolRuntimePolicy: options.toolRuntimePolicy } : {}),
+      });
   }
 
   async execute(envelope: RuntimeToolEnvelope): Promise<ToolCallResult> {
@@ -71,6 +79,7 @@ export class McpDeferredToolHandler implements ToolAsyncHandler {
       return {
         error: "Deferred MCP tool execution requires accountId",
         executionStatus: "error",
+        executionReasonCode: "mcp_account_required",
       };
     }
 
@@ -79,6 +88,7 @@ export class McpDeferredToolHandler implements ToolAsyncHandler {
       return {
         error: `Invalid deferred MCP provider id '${envelope.providerId}'`,
         executionStatus: "error",
+        executionReasonCode: "mcp_invalid_provider_id",
       };
     }
 
@@ -88,6 +98,7 @@ export class McpDeferredToolHandler implements ToolAsyncHandler {
         return {
           error: `MCP server '${serverId}' is unavailable for deferred execution`,
           executionStatus: "error",
+          executionReasonCode: "mcp_server_unavailable",
         };
       }
 
@@ -95,7 +106,7 @@ export class McpDeferredToolHandler implements ToolAsyncHandler {
         await this.manager.addServer(config);
       }
 
-      const provider = new McpToolProvider(config, this.manager);
+      const provider = this.providerFactory.create(config);
       return await provider.executeTool(
         envelope.toolName,
         envelope.args,
@@ -105,6 +116,7 @@ export class McpDeferredToolHandler implements ToolAsyncHandler {
       return {
         error: error instanceof Error ? error.message : String(error),
         executionStatus: "error",
+        executionReasonCode: "mcp_provider_error",
       };
     }
   }
@@ -112,6 +124,8 @@ export class McpDeferredToolHandler implements ToolAsyncHandler {
 
 export interface CreateDefaultToolAsyncHandlerRegistryOptions {
   mcpManager?: McpConnectionManager;
+  toolRuntimePolicy?: ToolRuntimePolicy;
+  mcpToolProviderFactory?: McpToolProviderFactory;
 }
 
 export function createDefaultToolAsyncHandlerRegistry(
@@ -121,7 +135,12 @@ export function createDefaultToolAsyncHandlerRegistry(
   const registry = new ToolAsyncHandlerRegistry();
 
   if (options.mcpManager) {
-    registry.register(new McpDeferredToolHandler(db, options.mcpManager));
+    registry.register(
+      new McpDeferredToolHandler(db, options.mcpManager, {
+        ...(options.toolRuntimePolicy ? { toolRuntimePolicy: options.toolRuntimePolicy } : {}),
+        ...(options.mcpToolProviderFactory ? { providerFactory: options.mcpToolProviderFactory } : {}),
+      }),
+    );
   }
 
   return registry;

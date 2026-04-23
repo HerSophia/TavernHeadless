@@ -721,7 +721,7 @@ describe("chat routes", () => {
   it("maps generation params and invalid_state on /floors/:id/retry", async () => {
     const chatService = createChatService({
       retryFloor: vi.fn(async () => {
-        throw new ChatServiceError("invalid_state", "Floor is not failed");
+        throw new ChatServiceError("invalid_state", "Floor is not committed");
       }),
     });
 

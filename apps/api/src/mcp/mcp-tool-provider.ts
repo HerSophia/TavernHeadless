@@ -19,6 +19,12 @@ import type { McpConnectionManager } from './mcp-connection-manager.js';
 import type { McpToolCatalogSnapshotStore } from './mcp-tool-catalog-snapshot-store.js';
 import type { ToolRuntimePolicy } from '../services/tool-runtime-policy.js';
 
+/**
+ * Structured status inference fallback for MCP providers.
+ *
+ * 注意：仅当底层连接层未返回显式 `executionStatus` / `executionReasonCode` 时使用。
+ * 新代码应优先传递显式结构化状态，避免依赖错误字符串。
+ */
 function inferExecutionStatus(error: string): Exclude<ToolExecutionStatus, 'running' | 'queued'> {
   const normalized = error.toLowerCase();
   if (normalized.includes('execution outcome is uncertain')) {
@@ -55,7 +61,14 @@ function normalizeListedTools(
   });
 }
 
-export type McpToolCatalogSource = 'live' | 'cached';
+/**
+ * runtime catalog 中 MCP 工具来源状态。
+ *
+ * - `live` — 来自本次 live 拉取成功的结果
+ * - `cached` — 来自本地 snapshot 回退
+ * - `unavailable` — 当前 live 不可达且没有 snapshot，**不等于**“MCP server 确认零工具”
+ */
+export type McpToolCatalogSource = 'live' | 'cached' | 'unavailable';
 
 export interface McpToolCatalogResult {
   tools: ToolDefinition[];
@@ -137,7 +150,7 @@ export class McpToolProvider implements ToolProvider {
       };
     }
 
-    return { tools: [], source: 'live', capturedAt };
+    return { tools: [], source: 'unavailable', capturedAt };
   }
 
   /**
@@ -156,7 +169,8 @@ export class McpToolProvider implements ToolProvider {
         const error = `MCP server "${this.config.name}" is not connected`;
         return {
           error,
-          executionStatus: inferExecutionStatus(error),
+          executionStatus: 'error',
+          executionReasonCode: 'mcp_not_connected',
         };
       }
 
@@ -166,9 +180,19 @@ export class McpToolProvider implements ToolProvider {
       const result = await connection.callTool(rawName, args);
 
       if (result.error) {
+        // 优先透传底层显式状态 / 原因码，不再主动覆盖
+        if (result.executionStatus) {
+          return {
+            error: result.error,
+            executionStatus: result.executionStatus,
+            ...(result.executionReasonCode ? { executionReasonCode: result.executionReasonCode } : {}),
+          };
+        }
+
         return {
           error: result.error,
           executionStatus: inferExecutionStatus(result.error),
+          executionReasonCode: 'mcp_remote_error',
         };
       }
 
@@ -178,6 +202,7 @@ export class McpToolProvider implements ToolProvider {
       return {
         error,
         executionStatus: inferExecutionStatus(error),
+        executionReasonCode: 'mcp_provider_error',
       };
     }
   }

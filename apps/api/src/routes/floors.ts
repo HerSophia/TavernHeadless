@@ -45,16 +45,33 @@ const createFloorSchema = z.object({
   token_out: z.number().int().nonnegative().optional()
 });
 
-const updateFloorSchema = z
+/**
+ * `PATCH /floors/:id` 的请求 schema。
+ *
+ * 设计约束（见 `.limcode/design/chat-main-flow-repair-design-2026-04-15.md` Phase 4.1）：
+ *
+ * - 拓扑字段族：`branch_id` / `parent_floor_id` / `floor_no` 允许修改，但需要拓扑校验。
+ * - 受限字段族：`state` / `token_in` / `token_out` 不允许通过本接口修改。
+ *   运行态由 floor run 状态机驱动，token 统计由 commit 事务内写入。直接改这些字段
+ *   会污染真相，因此本接口直接拒绝。
+ *
+ * 这里 zod 层只解析拓扑字段，受限字段由 route handler 单独检测并返回 400，
+ * 以便错误响应中明确是"受限字段"还是"混合语义族"违规。
+ */
+const updateFloorTopologySchema = z
   .object({
     floor_no: z.number().int().nonnegative().optional(),
     branch_id: z.string().min(1).optional(),
     parent_floor_id: z.string().min(1).optional(),
-    state: floorStateSchema.optional(),
-    token_in: z.number().int().nonnegative().optional(),
-    token_out: z.number().int().nonnegative().optional()
   })
   .refine((value) => Object.keys(value).length > 0, "At least one field is required");
+
+/** `PATCH /floors/:id` 明确拒绝的字段清单。 */
+const FLOOR_PATCH_RESTRICTED_FIELDS = ["state", "token_in", "token_out"] as const;
+type FloorPatchRestrictedField = (typeof FLOOR_PATCH_RESTRICTED_FIELDS)[number];
+
+/** 拓扑字段族名单，用于与受限字段做混合检测。 */
+const FLOOR_PATCH_TOPOLOGY_FIELDS = ["floor_no", "branch_id", "parent_floor_id"] as const;
 
 const branchBodySchema = z.object({
   branch_id: z.string().trim().min(1).max(100).optional(),
@@ -614,7 +631,16 @@ export async function registerFloorRoutes(
   app.patch("/floors/:id", {
     schema: {
       tags: ["floors"],
-      summary: "Update floor",
+      summary: "Update floor topology fields",
+      description:
+        "Updates topology-only fields on a floor: `floor_no`, `branch_id`, `parent_floor_id`. " +
+        "The runtime fields `state`, `token_in`, `token_out` are intentionally not patchable " +
+        "through this endpoint. Mutating them directly would bypass the floor run state machine " +
+        "and the commit-time token bookkeeping, which would corrupt downstream truth (history, " +
+        "branch ancestry, prompt budget). If a request body contains any restricted field, the " +
+        "endpoint responds with 400 `floor_patch_restricted_field`. If a request body mixes a " +
+        "restricted field with a topology field, the response is 400 `floor_patch_mixed_fields` " +
+        "and is rejected as a whole.",
       params: idParamsJsonSchema,
       body: {
         ...floorBodyJsonSchema,
@@ -634,10 +660,16 @@ export async function registerFloorRoutes(
       return;
     }
 
-    const parsedBody = parseWithSchema(updateFloorSchema, request.body, reply);
+    // Phase 4.1 guardrails：先做"请求体是否为 JSON 对象"的最轻校验；
+    // 更具体的受限字段 / 混合违规检测延后到"确认当前账号拥有该 floor"之后，
+    // 避免在跨账号探测场景下泄露字段语义。
+    const rawBody =
+      request.body !== null && typeof request.body === "object" && !Array.isArray(request.body)
+        ? (request.body as Record<string, unknown>)
+        : null;
 
-    if (!parsedBody.ok) {
-      return;
+    if (!rawBody) {
+      return sendError(reply, 400, "validation_error", "Request body must be a JSON object");
     }
 
     const auth = getRequestAuthContext(request);
@@ -647,9 +679,64 @@ export async function registerFloorRoutes(
       return sendError(reply, 404, "not_found", "Floor not found");
     }
 
+    // floor 确认属于当前账号后，再做 guardrails 字段检测与 zod 解析。
+    const presentRestrictedFields = FLOOR_PATCH_RESTRICTED_FIELDS.filter(
+      (field) => Object.prototype.hasOwnProperty.call(rawBody, field),
+    );
+    const presentTopologyFields = FLOOR_PATCH_TOPOLOGY_FIELDS.filter(
+      (field) => Object.prototype.hasOwnProperty.call(rawBody, field),
+    );
+
+    if (presentRestrictedFields.length > 0 && presentTopologyFields.length > 0) {
+      return sendError(
+        reply,
+        400,
+        "floor_patch_mixed_fields",
+        `Request mixes restricted fields (${presentRestrictedFields.join(", ")}) with topology ` +
+          `fields (${presentTopologyFields.join(", ")}). PATCH /floors/:id only accepts topology ` +
+          `fields. Move runtime / counter changes to the dedicated admin endpoints (planned).`,
+      );
+    }
+
+    if (presentRestrictedFields.length > 0) {
+      return sendError(
+        reply,
+        400,
+        "floor_patch_restricted_field",
+        `Field(s) ${presentRestrictedFields.join(", ")} cannot be modified through PATCH /floors/:id. ` +
+          `\`state\` is owned by the floor run state machine; \`token_in\` and \`token_out\` are ` +
+          `written by the commit transaction. Use the floor run / commit pipeline instead.`,
+      );
+    }
+
+    const parsedBody = parseWithSchema(updateFloorTopologySchema, request.body, reply);
+
+    if (!parsedBody.ok) {
+      return;
+    }
+
     const activeRun = await floorRunService.getActiveRunForFloor(existingFloor.id);
     if (activeRun) {
       return sendError(reply, 409, "active_run_in_progress", `Floor '${existingFloor.id}' cannot be updated while a run is in progress`);
+    }
+
+    // 拓扑校验：先取本次 PATCH 后的最终（floorNo / branchId / parentFloorId）取值，
+    // 再跑各项一致性校验。这里只阻挡明显违反真相的拓扑变更，DB 层的部分唯一索引
+    // (floor_session_no_branch_live_uq) 仍是最终守门人，会以 409 透传给上层。
+    const nextFloorNo = parsedBody.data.floor_no ?? existingFloor.floorNo;
+    const nextBranchId = parsedBody.data.branch_id ?? existingFloor.branchId;
+    const nextParentFloorId =
+      parsedBody.data.parent_floor_id !== undefined
+        ? parsedBody.data.parent_floor_id
+        : existingFloor.parentFloorId;
+
+    if (nextParentFloorId === existingFloor.id) {
+      return sendError(
+        reply,
+        400,
+        "floor_patch_topology_invalid",
+        "Floor cannot be its own parent",
+      );
     }
 
     if (parsedBody.data.parent_floor_id !== undefined) {
@@ -661,6 +748,37 @@ export async function registerFloorRoutes(
 
       if (parentFloor.sessionId !== existingFloor.sessionId) {
         return sendError(reply, 409, "floor_parent_session_mismatch", "Parent floor must belong to the same session");
+      }
+
+      // 拓扑约束：parent 的 floorNo 必须严格小于本 floor 在本次 PATCH 后的 floorNo，
+      // 否则就构成"祖先比子孙编号大"的污染真相。跨 branch 场景同样适用。
+      if (parentFloor.floorNo >= nextFloorNo) {
+        return sendError(
+          reply,
+          400,
+          "floor_patch_topology_invalid",
+          `Parent floor '${parentFloor.id}' has floor_no ${parentFloor.floorNo}, ` +
+            `which is not strictly less than the target floor_no ${nextFloorNo}.`,
+        );
+      }
+    }
+
+    // 当请求只改 branch_id 但不带 parent_floor_id 时，需要校验当前的 parentFloorId
+    // 仍指向同 session 的合法祖先（branch 切换不应留下悬空 parent）。
+    if (
+      parsedBody.data.branch_id !== undefined &&
+      parsedBody.data.parent_floor_id === undefined &&
+      nextParentFloorId !== null &&
+      nextBranchId !== existingFloor.branchId
+    ) {
+      const currentParent = await getOwnedFloorById(db, auth.accountId, nextParentFloorId);
+      if (!currentParent || currentParent.sessionId !== existingFloor.sessionId) {
+        return sendError(
+          reply,
+          400,
+          "floor_patch_topology_invalid",
+          "Cannot move floor to a different branch without re-anchoring parent_floor_id",
+        );
       }
     }
 
@@ -678,18 +796,6 @@ export async function registerFloorRoutes(
 
     if (parsedBody.data.parent_floor_id !== undefined) {
       updates.parentFloorId = parsedBody.data.parent_floor_id;
-    }
-
-    if (parsedBody.data.state !== undefined) {
-      updates.state = parsedBody.data.state;
-    }
-
-    if (parsedBody.data.token_in !== undefined) {
-      updates.tokenIn = parsedBody.data.token_in;
-    }
-
-    if (parsedBody.data.token_out !== undefined) {
-      updates.tokenOut = parsedBody.data.token_out;
     }
 
     const [updated] = await db

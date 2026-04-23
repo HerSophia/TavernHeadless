@@ -158,10 +158,10 @@ describe("SessionToolRegistryService", () => {
 
     expect(runtime.catalog.tools).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "custom_lookup", source: "custom", availability: "available" }),
-        expect.objectContaining({ name: "preset_lookup", source: "preset", availability: "available" }),
-        expect.objectContaining({ name: "character_lookup", source: "character", availability: "available" }),
-        expect.objectContaining({ name: "mcp_lookup", source: "mcp", availability: "available", catalogSource: "live" }),
+        expect.objectContaining({ name: "custom_lookup", source: "custom", availability: "available", sideEffectLevelBasis: "tool_declared" }),
+        expect.objectContaining({ name: "preset_lookup", source: "preset", availability: "available", parameterSchemaBasis: "tool_declared" }),
+        expect.objectContaining({ name: "character_lookup", source: "character", availability: "available", allowedSlotsBasis: "tool_declared" }),
+        expect.objectContaining({ name: "mcp_lookup", source: "mcp", availability: "available", catalogSource: "live", sideEffectLevelBasis: "server_default", allowedSlotsBasis: "platform_default", parameterSchemaBasis: "shallow_schema_projection", replaySafetyBasis: "inferred_from_execution_policy" }),
       ]),
     );
   });
@@ -241,6 +241,27 @@ describe("SessionToolRegistryService", () => {
       catalogSource: "cached",
     });
   });
+  it("reports catalog source as unavailable when live listing fails and there is no snapshot", async () => {
+    await insertSession();
+    await insertMcpConfig();
+
+    const manager = {
+      getConnection: vi.fn().mockRejectedValue(new Error("mcp unavailable")),
+    } as any;
+
+    const service = new SessionToolRegistryService(db, {
+      baseRegistry,
+      mcpManager: manager,
+      enableUnsafeScriptHandler: true,
+    });
+
+    const runtime = await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
+
+    expect(runtime.catalog.tools.some((entry) => entry.source === "mcp")).toBe(false);
+    expect((await runtime.registry.listAll()).some((entry) => entry.source === "mcp")).toBe(false);
+  });
+
+
 
   it("throws tool_catalog_conflict when a definition-backed tool uses a reserved base name", async () => {
     await insertSession();

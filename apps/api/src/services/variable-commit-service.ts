@@ -26,6 +26,8 @@ interface StageBufferedMutationsInput {
   mutations: BufferedToolVariableMutation[];
   committedAt: number;
   accountId: string;
+  sessionId?: string;
+  branchId?: string;
 }
 
 interface StageDeleteMutationInput {
@@ -83,6 +85,8 @@ export class VariableCommitService {
       key: mutation.key,
       valueJson: JSON.stringify(mutation.value),
       updatedAt: input.committedAt,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.branchId ? { branchId: input.branchId } : {}),
     }));
 
     batch.stage({
@@ -90,6 +94,7 @@ export class VariableCommitService {
       kind: VARIABLE_MUTATION_KINDS.set,
       source: "system",
       accountId: input.accountId,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       scopeType: "variable",
       scopeKey: input.accountId,
       applyPhase: "commit",
@@ -97,7 +102,9 @@ export class VariableCommitService {
       replaySafety: "safe",
       payload: {
         items,
-        emitEvents: false,
+        // Phase 1: durable variable.set 事件必须在事务提交成功后才对外发射。
+        // mutation-batch 的 afterCommit hook 只会在外层事务 commit 完成后运行。
+        emitEvents: true,
       },
       createdAt: input.committedAt,
     });
@@ -112,7 +119,8 @@ export class VariableCommitService {
       key: input.key,
       sessionId: input.sessionId,
       branchId: input.branchId,
-      emitEvent: false,
+      // Phase 1: durable variable.deleted 事件必须在事务提交成功后才对外发射。
+      emitEvent: true,
     };
 
     batch.stage({

@@ -4,7 +4,6 @@ import type {
   MemoryAccessOptions,
   MemoryEdge,
   MemoryItem,
-  MemoryItemUpdatePatch,
   MemoryQuery,
   MemoryRepository,
 } from "@tavern/core";
@@ -259,42 +258,20 @@ export class DrizzleMemoryRepository implements MemoryRepository {
 
   async update(
     id: string,
-    patch: MemoryItemUpdatePatch,
+    patch: Partial<Pick<MemoryItem, "content" | "factKey" | "importance" | "confidence" | "status" | "lifecycleStatus">>,
     options?: MemoryAccessOptions,
   ): Promise<MemoryItem | null> {
     const accountId = this.resolveAccountId(undefined, options);
     const updates: Record<string, unknown> = {
       updatedAt: Date.now(),
     };
-
-    // 标量重定位字段：scope / scopeId / type / summaryTier / 源信息
-    if (patch.scope !== undefined) {
-      updates.scope = patch.scope;
-    }
-    if (patch.scopeId !== undefined) {
-      updates.scopeId = patch.scopeId;
-    }
-    if (patch.type !== undefined) {
-      updates.type = patch.type;
-    }
-    if (patch.summaryTier !== undefined) {
-      updates.summaryTier = patch.summaryTier ?? null;
-    }
-    if (patch.sourceFloorId !== undefined) {
-      updates.sourceFloorId = patch.sourceFloorId ?? null;
-    }
-    if (patch.sourceMessageId !== undefined) {
-      updates.sourceMessageId = patch.sourceMessageId ?? null;
-    }
+    const normalizedFactKey = normalizeFactKey(patch.factKey);
 
     if (patch.content !== undefined) {
       updates.contentJson = toContentJson(patch.content);
     }
     if (patch.factKey !== undefined) {
-      // factKey 可显式 null 来清空；否则归一化非空字符串
-      updates.factKey = patch.factKey === null
-        ? null
-        : (normalizeFactKey(patch.factKey) ?? null);
+      updates.factKey = normalizedFactKey ?? null;
     }
     if (patch.importance !== undefined) {
       updates.importance = patch.importance;
@@ -329,24 +306,40 @@ export class DrizzleMemoryRepository implements MemoryRepository {
 
   async remove(id: string, options?: MemoryAccessOptions): Promise<MemoryItem | null> {
     const accountId = this.resolveAccountId(undefined, options);
-    const [row] = await this.db
+    const existing = await this.findById(id, { accountId });
+    if (!existing) {
+      return null;
+    }
+
+    await this.db
       .delete(memoryItems)
-      .where(and(eq(memoryItems.id, id), eq(memoryItems.accountId, accountId)))
-      .returning();
-    return row ? toMemoryItem(row) : null;
+      .where(and(eq(memoryItems.id, id), eq(memoryItems.accountId, accountId)));
+
+    return existing;
   }
 
-  async removeMany(
-    ids: readonly string[],
-    options?: MemoryAccessOptions,
-  ): Promise<MemoryItem[]> {
-    if (ids.length === 0) return [];
+  async removeMany(ids: readonly string[], options?: MemoryAccessOptions): Promise<MemoryItem[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
     const accountId = this.resolveAccountId(undefined, options);
+    const uniqueIds = [...new Set(ids)];
     const rows = await this.db
+      .select()
+      .from(memoryItems)
+      .where(and(eq(memoryItems.accountId, accountId), inArray(memoryItems.id, uniqueIds)));
+
+    if (rows.length === 0) {
+      return [];
+    }
+
+    await this.db
       .delete(memoryItems)
-      .where(and(eq(memoryItems.accountId, accountId), inArray(memoryItems.id, [...ids])))
-      .returning();
-    return rows.map(toMemoryItem);
+      .where(and(eq(memoryItems.accountId, accountId), inArray(memoryItems.id, rows.map((row) => row.id))));
+
+    const removedById = new Map(rows.map((row) => [row.id, toMemoryItem(row)]));
+    return uniqueIds.map((id) => removedById.get(id)).filter((item): item is MemoryItem => item !== undefined);
   }
 
   // ── 关系边操作 ──
@@ -373,6 +366,30 @@ export class DrizzleMemoryRepository implements MemoryRepository {
     return toMemoryEdge(row!);
   }
 
+  async findEdgeById(id: string, options?: MemoryAccessOptions): Promise<MemoryEdge | null> {
+    const accountId = this.resolveAccountId(undefined, options);
+    const [row] = await this.db
+      .select()
+      .from(memoryEdges)
+      .where(and(eq(memoryEdges.id, id), eq(memoryEdges.accountId, accountId)));
+
+    return row ? toMemoryEdge(row) : null;
+  }
+
+  async removeEdge(id: string, options?: MemoryAccessOptions): Promise<MemoryEdge | null> {
+    const accountId = this.resolveAccountId(undefined, options);
+    const existing = await this.findEdgeById(id, { accountId });
+    if (!existing) {
+      return null;
+    }
+
+    await this.db
+      .delete(memoryEdges)
+      .where(and(eq(memoryEdges.id, id), eq(memoryEdges.accountId, accountId)));
+
+    return existing;
+  }
+
   async findEdges(itemId: string, options?: MemoryAccessOptions): Promise<MemoryEdge[]> {
     const accountId = this.resolveAccountId(undefined, options);
     const rows = await this.db
@@ -389,23 +406,5 @@ export class DrizzleMemoryRepository implements MemoryRepository {
       );
 
     return rows.map(toMemoryEdge);
-  }
-
-  async findEdgeById(id: string, options?: MemoryAccessOptions): Promise<MemoryEdge | null> {
-    const accountId = this.resolveAccountId(undefined, options);
-    const [row] = await this.db
-      .select()
-      .from(memoryEdges)
-      .where(and(eq(memoryEdges.id, id), eq(memoryEdges.accountId, accountId)));
-    return row ? toMemoryEdge(row) : null;
-  }
-
-  async removeEdge(id: string, options?: MemoryAccessOptions): Promise<MemoryEdge | null> {
-    const accountId = this.resolveAccountId(undefined, options);
-    const [row] = await this.db
-      .delete(memoryEdges)
-      .where(and(eq(memoryEdges.id, id), eq(memoryEdges.accountId, accountId)))
-      .returning();
-    return row ? toMemoryEdge(row) : null;
   }
 }

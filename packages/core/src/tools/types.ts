@@ -137,6 +137,12 @@ export interface ToolCallResult {
   error?: string;
   /** 可选：供执行日志使用的更细粒度状态 */
   executionStatus?: ToolExecutionStatus;
+  /**
+   * 可选：供执行日志使用的稳定原因码。
+   *
+   * 供上层与审计层优先使用，不再依赖错误字符串推断。
+   */
+  executionReasonCode?: string;
 }
 
 // ── Tool Call Record ──────────────────────────────────

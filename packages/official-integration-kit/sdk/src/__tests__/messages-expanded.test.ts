@@ -364,6 +364,8 @@ describe("sdk messages expanded resource", () => {
     await expect(
       client.messages.editAndRegenerate({
         branchId: "branch-1",
+        confirmedExecutionIds: ["exec-2"],
+        confirmedSessionStateMutationIds: ["mutation-2"],
         config: {
           enableVerifier: true,
         },
@@ -435,6 +437,8 @@ describe("sdk messages expanded resource", () => {
     const [, init] = fetchImpl.mock.calls[0]!;
     expect(init?.body).toBe(JSON.stringify({
       branch_id: "branch-1",
+      confirmed_execution_ids: ["exec-2"],
+      confirmed_session_state_mutation_ids: ["mutation-2"],
       config: {
         enableVerifier: true,
       },

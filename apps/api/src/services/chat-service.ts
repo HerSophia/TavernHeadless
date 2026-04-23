@@ -749,18 +749,24 @@ export class ChatService {
         }
 
         await this.initializeFloorRun(sessionId, floorId, "respond", now);
-        const persistedUserMessage = await this.applyPersistedUserInputRegex({
-          accountId: resolvedAccountId,
-          sessionId,
-          branchId,
-          floorId,
-          pageId: userMessageRef.pageId,
-          session,
-          sessionInfo,
-          rawUserMessage: request.message,
-          regexChannel: "persist",
-          persistedMessageId: userMessageRef.messageId,
-        });
+        let persistedUserMessage: string;
+        try {
+          persistedUserMessage = await this.applyPersistedUserInputRegex({
+            accountId: resolvedAccountId,
+            sessionId,
+            branchId,
+            floorId,
+            pageId: userMessageRef.pageId,
+            session,
+            sessionInfo,
+            rawUserMessage: request.message,
+            regexChannel: "persist",
+            persistedMessageId: userMessageRef.messageId,
+          });
+        } catch (error) {
+          await this.failRunAndFloorBestEffort(floorId, error, "respond_input_regex_failed");
+          throw error;
+        }
 
         runtimeOptions.onStart?.({ floorId, floorNo: nextFloorNo, branchId });
         const unsubscribeRuntimeToolEvents = this.subscribeRuntimeToolEvents(floorId, runtimeOptions);
@@ -905,7 +911,7 @@ export class ChatService {
             runtimeTrace: promptDebug.runtimeTrace,
           };
         } catch (error) {
-          await this.tryMarkRunFailed(floorId, error, "respond_failed");
+          await this.failRunAndFloorBestEffort(floorId, error, "respond_failed");
           throw error;
         } finally {
           unsubscribeRuntimeToolEvents();
@@ -1246,6 +1252,12 @@ export class ChatService {
         userId: session.userId,
         userSnapshotJson: session.userSnapshotJson,
         now,
+        // 物理约束：`floor_session_no_branch_live_uq` 要求同 session/floorNo/branch 下
+        // 只能存在一个 `supersededAt IS NULL` 的楼层。因此必须在插入 draft 新楼层前
+        // 先把源楼层暂时 superseded。
+        //
+        // 真相语义由 commit 成功事务内再次写入的 `supersededAt = committedAt` 决定；
+        // 如果 commit 失败，`failRunAndFloorBestEffort(...)` 会撤销此处的临时写入。
         prepare: (tx) => {
           tx
             .update(floors)
@@ -1383,6 +1395,7 @@ export class ChatService {
         commitFailureMessage: "Regeneration commit failed",
         memoryConsolidationRequested,
         persistMemory: this.memoryStore !== undefined,
+        supersedeSourceFloor: { floorId: targetFloor.id },
       });
 
       return {
@@ -1398,7 +1411,9 @@ export class ChatService {
         runtimeTrace: promptDebug.runtimeTrace,
       };
       } catch (error) {
-        await this.tryMarkRunFailed(newFloorId, error, "regenerate_failed");
+        await this.failRunAndFloorBestEffort(newFloorId, error, "regenerate_failed", {
+          restoreSupersededSourceFloor: targetFloor.id,
+        });
         throw error;
       }
     });
@@ -1617,7 +1632,7 @@ export class ChatService {
           runtimeTrace: promptDebug.runtimeTrace,
         };
         } catch (error) {
-          await this.tryMarkRunFailed(targetFloor.id, error, "retry_turn_failed");
+          await this.failRunAndFloorBestEffort(targetFloor.id, error, "retry_turn_failed");
           throw error;
         }
       }
@@ -1809,6 +1824,7 @@ export class ChatService {
     runType: FloorRunType;
     memoryConsolidationRequested: boolean;
     commitFailureMessage: string;
+    supersedeSourceFloor?: { floorId: string };
   }): Promise<{
     execution: TurnExecutionResult;
     commit: Awaited<ReturnType<TurnCommitService["commit"]>>;
@@ -1828,8 +1844,7 @@ export class ChatService {
       const replayBlockedError = findErrorByConstructor(error, ToolReplayBlockedError);
       if (replayBlockedError) {
         await this.markToolExecutionRunOutcome(toolExecutionRunId, "replay_blocked");
-        await this.tryMarkRunFailed(args.floorId, replayBlockedError, "tool_replay_blocked");
-        await this.tryMarkFloorFailed(args.floorId, replayBlockedError);
+        await this.failRunAndFloorBestEffort(args.floorId, replayBlockedError, "tool_replay_blocked");
         throw new ChatServiceError(
           "tool_replay_blocked",
           replayBlockedError.message,
@@ -1844,8 +1859,7 @@ export class ChatService {
       const unsupportedToolModeError = findErrorByConstructor(error, UnsupportedToolModeError);
       if (unsupportedToolModeError) {
         await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
-        await this.tryMarkRunFailed(args.floorId, unsupportedToolModeError, "invalid_tool_mode");
-        await this.tryMarkFloorFailed(args.floorId, unsupportedToolModeError);
+        await this.failRunAndFloorBestEffort(args.floorId, unsupportedToolModeError, "invalid_tool_mode");
         throw new ChatServiceError(
           "invalid_tool_mode",
           unsupportedToolModeError.message,
@@ -1856,8 +1870,7 @@ export class ChatService {
       const timeoutError = findErrorByConstructor(error, LLMTimeoutError);
       if (timeoutError) {
         await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
-        await this.tryMarkRunFailed(args.floorId, timeoutError, "generation_timeout");
-        await this.tryMarkFloorFailed(args.floorId, timeoutError);
+        await this.failRunAndFloorBestEffort(args.floorId, timeoutError, "generation_timeout");
         throw new ChatServiceError(
           "generation_timeout",
           `${args.orchestrationFailureMessage}: ${timeoutError.message}`,
@@ -1866,7 +1879,7 @@ export class ChatService {
       }
 
       await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
-      await this.tryMarkRunFailed(args.floorId, error, args.orchestrationFailureCode);
+      await this.failRunAndFloorBestEffort(args.floorId, error, args.orchestrationFailureCode);
       throw new ChatServiceError(
         args.orchestrationFailureCode,
         `${args.orchestrationFailureMessage}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1888,8 +1901,7 @@ export class ChatService {
         });
       } catch (error) {
         await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
-        await this.tryMarkRunFailed(args.floorId, error, "session_state_stage_failed");
-        await this.tryMarkFloorFailed(args.floorId, error);
+        await this.failRunAndFloorBestEffort(args.floorId, error, "session_state_stage_failed");
         throw new ChatServiceError(
           "session_state_stage_failed",
           `Failed to stage first-party session state: ${error instanceof Error ? error.message : String(error)}`,
@@ -1924,6 +1936,7 @@ export class ChatService {
             consolidationOutput: execution.consolidationResult?.output,
           }
         : undefined,
+      ...(args.supersedeSourceFloor ? { supersedeSourceFloor: args.supersedeSourceFloor } : {}),
     };
 
     let commit: Awaited<ReturnType<TurnCommitService["commit"]>>;
@@ -1960,8 +1973,7 @@ export class ChatService {
           message: error instanceof Error ? error.message : String(error),
         });
         this.discardStagedSessionStateBestEffort(args.accountId, args.sessionId, args.floorId, "commit_busy");
-        await this.tryMarkRunFailed(args.floorId, error, "commit_busy");
-        await this.tryMarkFloorFailed(args.floorId, error);
+        await this.failRunAndFloorBestEffort(args.floorId, error, "commit_busy");
         throw new ChatServiceError(
           "commit_busy",
           `${args.commitFailureMessage}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1984,8 +1996,7 @@ export class ChatService {
 
       if (!(error instanceof FloorStateConflictError) && !(error instanceof FloorNotFoundError)) {
         await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
-        await this.tryMarkRunFailed(args.floorId, error, "turn_commit_failed");
-        await this.tryMarkFloorFailed(args.floorId, error);
+        await this.failRunAndFloorBestEffort(args.floorId, error, "turn_commit_failed");
       }
 
       if (error instanceof FloorNotFoundError) {
@@ -2124,6 +2135,57 @@ export class ChatService {
       await this.floorRunService?.markFailed(floorId, { code, message: normalizedError.message });
     } catch {
       // best-effort run tracking
+    }
+  }
+
+  /**
+   * 统一把 floor run 与 floor 一起终态化为 failed。
+   *
+   * 在 `initializeFloorRun(...)` 成功之后，任何未恢复失败都应通过该方法落到统一终态，
+   * 避免出现 `run=failed` 但 `floor=draft` 的真相污染。
+   *
+   * 两侧都按 best-effort 处理：任一失败都不应覆盖原始业务错误。
+   *
+   * 如果传入 `restoreSupersededSourceFloor`，则额外尝试撤销 `regenerate()` 在
+   * prepare 阶段为绕过 live uniqueness 索引而临时写入的源楼层 supersede 标记。
+   * 仅当源楼层确实被当前 `floorId` supersede 时才会撤销，避免影响其他路径。
+   */
+  private async failRunAndFloorBestEffort(
+    floorId: string,
+    error: unknown,
+    code = "floor_run_failed",
+    options?: { restoreSupersededSourceFloor?: string },
+  ): Promise<void> {
+    await this.tryMarkRunFailed(floorId, error, code);
+    await this.tryMarkFloorFailed(floorId, error);
+
+    if (options?.restoreSupersededSourceFloor) {
+      await this.restoreSupersededSourceFloorBestEffort(
+        options.restoreSupersededSourceFloor,
+        floorId,
+      );
+    }
+  }
+
+  private async restoreSupersededSourceFloorBestEffort(
+    sourceFloorId: string,
+    supersededByFloorId: string,
+  ): Promise<void> {
+    try {
+      this.db
+        .update(floors)
+        .set({
+          supersededAt: null,
+          supersededByFloorId: null,
+          updatedAt: Date.now(),
+        })
+        .where(and(
+          eq(floors.id, sourceFloorId),
+          eq(floors.supersededByFloorId, supersededByFloorId),
+        ))
+        .run();
+    } catch {
+      // best-effort compensation; avoid overriding the originating error.
     }
   }
 
@@ -2667,7 +2729,7 @@ export class ChatService {
     if (targetFloor.state !== "committed") {
       throw new ChatServiceError(
         "invalid_state",
-        `Floor '${floorId}' must be in committed state to retry`
+        `Floor '${floorId}' is not committed`
       );
     }
 
@@ -2944,7 +3006,7 @@ export class ChatService {
       runtimeTrace: promptDebug.runtimeTrace,
     };
     } catch (error) {
-      await this.tryMarkRunFailed(args.floorId, error, "generate_for_floor_failed");
+      await this.failRunAndFloorBestEffort(args.floorId, error, "generate_for_floor_failed");
       throw error;
     }
   }

@@ -6,6 +6,10 @@ export async function smokeChat(ctx: SmokeContext): Promise<void> {
   const sessionId = must(ctx.shared.sessionId, "smokeChat requires sessionId");
   const floorId = must(ctx.shared.floorId, "smokeChat requires floorId");
   const committedBranchFloorId = must(ctx.shared.committedBranchFloorId, "smokeChat requires committedBranchFloorId");
+  const contentFloorCommittedId = must(
+    ctx.shared.contentFloorCommittedId,
+    "smokeChat requires contentFloorCommittedId"
+  );
   let previewEnabled = false;
 
   await runStep("GET /prompt-runtime/capabilities", async () => {
@@ -113,10 +117,15 @@ export async function smokeChat(ctx: SmokeContext): Promise<void> {
     assert(structureSourceMap?.mode === "session_policy", "Prompt Runtime source_map must reflect session-sourced structure.mode");
   });
 
+  // 复用 core smoke 里创建的 committedBranchFloorId：它是裸 CRUD 创建、直接落在
+  // committed 状态的楼层，没有 prompt/runtime truth snapshot，是该分支上唯一可用
+  // 的 committed 裸 CRUD 样本。之前这里用的是 core smoke 里的 `floorId`，依赖
+  // "先建 draft、再 PATCH 成 committed" 的旧路径；chat-main-flow-repair 之后
+  // PATCH /floors/:id 不再允许修改 `state`，因此改为复用 committedBranchFloorId。
   await runStep("GET /floors/:id/prompt-runtime/explain (raw CRUD floor => 404)", async () => {
     const response = await api.request<{ error?: { code?: string; message?: string } }>(
       "GET",
-      `/floors/${floorId}/prompt-runtime/explain`,
+      `/floors/${committedBranchFloorId}/prompt-runtime/explain`,
       undefined,
       [404]
     );
@@ -132,7 +141,7 @@ export async function smokeChat(ctx: SmokeContext): Promise<void> {
       "POST",
       `/sessions/${sessionId}/prompt-runtime/compare`,
       {
-        left: { floor_id: floorId },
+        left: { floor_id: contentFloorCommittedId },
         right: { floor_id: committedBranchFloorId },
       },
       [200]
@@ -141,7 +150,7 @@ export async function smokeChat(ctx: SmokeContext): Promise<void> {
     const left = data?.left as Record<string, unknown> | undefined;
     const right = data?.right as Record<string, unknown> | undefined;
 
-    assert(left?.floor_id === floorId, "Prompt Runtime compare must echo the left floor id");
+    assert(left?.floor_id === contentFloorCommittedId, "Prompt Runtime compare must echo the left floor id");
     assert(right?.floor_id === committedBranchFloorId, "Prompt Runtime compare must echo the right floor id");
     assert(Array.isArray(data?.limitations), "Prompt Runtime compare must expose limitations for legacy floors");
   });
@@ -385,9 +394,47 @@ export async function smokeChat(ctx: SmokeContext): Promise<void> {
     });
   }
 
+  // dry-run 的 `structure.mode = "no_assistant"` 行为验证在一个独立的新会话里进行。
+  // chat-main-flow-repair 之后 history 只取 committed 楼层，而共享 sessionId 的
+  // 主链路上存在 draft 楼层、额外 committed 裸 CRUD 楼层以及多次 ancestry 操作，
+  // 会让 history 实际落在初始 user 消息上、不包含 greeting。为了只验证 policy 对
+  // history 的改写语义，这里新起一个只带 greeting 的会话。
+  const dryRunSessionId = await (async () => {
+    const created = await api.request<{ data: { id: string } }>(
+      "POST",
+      "/sessions",
+      {
+        title: `${runId}-dryrun-policy`,
+        character_snapshot: { name: "Knight", primaryGreeting: "Hello there." },
+      },
+      [201]
+    );
+    const id = must(created.body?.data?.id, "dry-run policy smoke must return a session_id");
+    track("sessions", id);
+    addCleanup(async () => {
+      await api.request("DELETE", `/sessions/${id}`, undefined, [200, 404]);
+    });
+    await api.request(
+      "PATCH",
+      `/sessions/${id}/prompt-runtime/policy`,
+      {
+        structure: { mode: "no_assistant", assistant_rewrite_strategy: "to_user_transcript" },
+        budget: { max_input_tokens: 4096, reserved_completion_tokens: 1024 },
+        source_selection: {
+          history: { mode: "windowed", max_messages: 24 },
+          memory: { enabled: true },
+          worldbook: { enabled: true },
+          examples: { enabled: false },
+        },
+      },
+      [200]
+    );
+    return id;
+  })();
+
   const dryRunResponse = await api.request<{ data?: Record<string, unknown> }>(
     "POST",
-    `/sessions/${sessionId}/respond/dry-run`,
+    `/sessions/${dryRunSessionId}/respond/dry-run`,
     { message: "Prompt Runtime smoke dry-run" },
     [200, 404]
   );
@@ -401,7 +448,15 @@ export async function smokeChat(ctx: SmokeContext): Promise<void> {
 
       const messages = messagesValue as Array<Record<string, unknown>>;
       assert(!messages.some((message) => message.role === "assistant"), "Prompt Runtime dry-run verification must rewrite assistant history under no_assistant mode");
-      assert(messages.some((message) => message.role === "user" && message.content === `Assistant: ${runId}-v2-edited`), "Prompt Runtime dry-run verification must materialize rewritten assistant history as user transcript");
+      // 新会话只带一条 committed 的 greeting assistant 消息（"Hello there."），
+      // 在 `structure.mode = "no_assistant"` 下应被改写为 user transcript。
+      const rewritten = messages.some(
+        (message) => message.role === "user" && message.content === "Assistant: Hello there.",
+      );
+      assert(
+        rewritten,
+        `Prompt Runtime dry-run verification must materialize rewritten assistant history as user transcript. Got messages: ${JSON.stringify(messages)}`,
+      );
     });
   }
 

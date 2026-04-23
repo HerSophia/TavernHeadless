@@ -400,6 +400,8 @@
 
 - 该表只标记某个底层 domain 已进入 managed 模式，不新建第二套状态存储
 - `session_state` 当前通过它把 managed domain 绑定到具体 `session + namespace`
+- 相关只读观察端点见 `vitepress/reference/api/session-state.md`。这组端点是 session-state 的内部调试面，不会进入 `@tavern/sdk` 或 `@tavern/client-helpers`。
+
 
 ## `session_state_mutation`
 
@@ -444,6 +446,8 @@
 - 普通索引 `session_state_mutation_run_idx(run_id, created_at)`
 
 说明：
+
+- 相关只读观察端点（mutation 列表、live head、floor snapshot、replay safety、diff）见 `vitepress/reference/api/session-state.md`。
 
 - 状态值本身仍落在 `client_data_item` 中，`session_state_mutation` 负责治理日志与提交边界
 - 当前第一批内置 namespace 是 `game_state`，默认 slot 包括 `world`、`scene`、`inventory`、`combat`

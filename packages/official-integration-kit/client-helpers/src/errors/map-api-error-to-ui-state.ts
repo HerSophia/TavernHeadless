@@ -21,6 +21,9 @@ type KnownApiErrorCode =
   | "tool_catalog_conflict"
   | "tool_replay_blocked"
   | "tool_replay_confirmation_required"
+  | "session_state_replay_blocked"
+  | "session_state_replay_confirmation_required"
+  | "replay_confirmation_required"
   | "mcp_call_uncertain_timeout"
   | "turn_commit_failed"
   | "profile_conflict"
@@ -44,6 +47,9 @@ const KNOWN_API_ERROR_CODE_MAP: Record<KnownApiErrorCode, Pick<UiStateError, "ki
   tool_catalog_conflict: { kind: "conflict", retryable: true },
   tool_replay_blocked: { kind: "conflict", retryable: true },
   tool_replay_confirmation_required: { kind: "conflict", retryable: true },
+  session_state_replay_blocked: { kind: "conflict", retryable: true },
+  session_state_replay_confirmation_required: { kind: "conflict", retryable: true },
+  replay_confirmation_required: { kind: "conflict", retryable: true },
   mcp_call_uncertain_timeout: { kind: "server", retryable: true },
   turn_commit_failed: { kind: "server", retryable: true },
   profile_conflict: { kind: "conflict", retryable: false },

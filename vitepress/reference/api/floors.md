@@ -125,13 +125,27 @@ GET /floors/:id/result
 PATCH /floors/:id
 ```
 
-至少提供一个字段。可更新字段：`floor_no`、`branch_id`、`parent_floor_id`、`state`、`token_in`、`token_out`。
+只接受**拓扑字段**的局部更新：`floor_no`、`branch_id`、`parent_floor_id`。至少提供一个字段。
+
+以下字段**不再允许**通过本接口修改：
+
+- `state`：由楼层 run 状态机驱动。要推进一个 floor 的状态，应走 `/sessions/:id/respond` / `/floors/:id/retry` / commit pipeline，而不是直接 PATCH。
+- `token_in` / `token_out`：由 commit 事务根据本次生成的真实 prompt/output 写入。直接改这两个字段会污染会话预算真相。
+
+如果请求体**仅包含**上述受限字段，接口返回 `400 floor_patch_restricted_field`。如果请求体同时包含受限字段与拓扑字段，接口返回 `400 floor_patch_mixed_fields`，整条请求被拒绝。
+
+拓扑字段还会做额外校验：
+
+- `parent_floor_id` 不能指向当前 floor 自身，否则返回 `400 floor_patch_topology_invalid`。
+- `parent_floor_id` 对应的 floor 必须属于同一 session，否则返回 `409 floor_parent_session_mismatch`。
+- parent floor 的 `floor_no` 必须严格小于本次 PATCH 后的 `floor_no`，否则返回 `400 floor_patch_topology_invalid`。
+- 如果只改 `branch_id` 而不同时显式更新 `parent_floor_id`，而当前 `parent_floor_id` 指向的 floor 又不属于同一 session，接口返回 `400 floor_patch_topology_invalid`。
 
 ### 响应 `200`
 
 返回更新后的 Floor 对象。
 
-如果目标 floor 当前仍有活跃运行，接口返回 `409 active_run_in_progress`。如果更新后的 `parent_floor_id` 不属于当前 floor 的同一会话，接口返回 `409 floor_parent_session_mismatch`。
+如果目标 floor 当前仍有活跃运行，接口返回 `409 active_run_in_progress`。
 
 ## 删除楼层
 

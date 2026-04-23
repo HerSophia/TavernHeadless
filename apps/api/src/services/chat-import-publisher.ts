@@ -26,6 +26,18 @@ import type {
   StJsonlImportManifest,
   ThChatImportManifest,
 } from "./chat-import-manifest.js";
+import {
+  BRANCH_LOCAL_SNAPSHOT_SCHEMA_V1,
+  BRANCH_LOCAL_SNAPSHOT_SCHEMA_V2,
+  BranchLocalVariableSnapshotService,
+  type BranchLocalSnapshotSchemaVersion,
+  type BranchLocalVariableProvenance,
+  type BranchLocalVariableProvenanceMap,
+} from "./branch-local-variable-snapshot-service.js";
+import type {
+  ThChatBranchLocalVariableProvenance,
+  ThChatBranchLocalVariableSnapshot,
+} from "@tavern/shared";
 
 export interface PublishChatImportManifestOptions {
   manifest: ChatImportManifest;
@@ -347,12 +359,12 @@ function publishThChatManifest(
   }
 
   if (data.variables && data.variables.length > 0) {
-    // Imported chat formats currently restore persisted variable rows only.
-    // They do not carry per-floor branch_local_variable_snapshot material, and
-    // we intentionally do not synthesize that snapshot from visible variables
-    // because the exact source-floor local view cannot be reconstructed.
-    // Later branch inheritance should therefore fail with
-    // branch_local_snapshot_missing until exact snapshot data exists.
+    // Phase 3 起，imported chat 格式可以额外携带 per-floor
+    // branch_local_variable_snapshot（见下方 `data.branch_local_variable_snapshots`）。
+    // 这里仍然只恢复持久化 variable 行；若导出文件包含 snapshot section，
+    // 后续会按 floor 精确恢复 runtime local truth。
+    // 旧文件（1.0.x）未带 snapshot section 时，行为与此前一致，
+    // 即后续分支继承可能触发 branch_local_snapshot_missing。
     const variableService = new VariableService(tx);
     variableService.restoreMany({
       accountId: manifest.accountId,
@@ -369,6 +381,45 @@ function publishThChatManifest(
         updatedAt: variable.updated_at,
       })),
     });
+  }
+
+  // Phase 3: 如果导出文件带了 branch_local_variable_snapshots，优先按 floor 精确
+  // 恢复 snapshot，保留 provenance；否则保持旧行为（缺省语义 =
+  // branch_local_snapshot_missing）。
+  if (data.branch_local_variable_snapshots && data.branch_local_variable_snapshots.length > 0) {
+    const snapshotService = new BranchLocalVariableSnapshotService(tx);
+    for (const snapshotRow of data.branch_local_variable_snapshots) {
+      const targetFloorId = manifest.idMap[snapshotRow.floor_id_ref];
+      if (!targetFloorId) {
+        // 对不上 floor 的 snapshot 直接跳过：依旧走旧缺省语义，避免写脏数据
+        continue;
+      }
+
+      const schemaVersion: BranchLocalSnapshotSchemaVersion =
+        snapshotRow.snapshot_version === BRANCH_LOCAL_SNAPSHOT_SCHEMA_V2
+          ? BRANCH_LOCAL_SNAPSHOT_SCHEMA_V2
+          : BRANCH_LOCAL_SNAPSHOT_SCHEMA_V1;
+
+      const provenance = schemaVersion === BRANCH_LOCAL_SNAPSHOT_SCHEMA_V2
+        ? buildImportedProvenance({
+            sessionId,
+            branchId: snapshotRow.branch_id,
+            provenance: snapshotRow.provenance ?? {},
+            idMap: manifest.idMap,
+          })
+        : undefined;
+
+      snapshotService.restoreSnapshot({
+        accountId: manifest.accountId,
+        floorId: targetFloorId,
+        sessionId,
+        branchId: snapshotRow.branch_id,
+        createdAt: snapshotRow.created_at,
+        values: snapshotRow.values,
+        schemaVersion,
+        provenance,
+      });
+    }
   }
 
   if (data.memories) {
@@ -491,6 +542,81 @@ function resolveThChatImportMemoryScopeId(input: {
 
   return input.idMap[input.scopeIdRef] ?? input.scopeIdRef;
 }
+function buildImportedProvenance(input: {
+  sessionId: string;
+  branchId: string;
+  provenance: Record<string, ThChatBranchLocalVariableProvenance>;
+  idMap: Record<string, string>;
+}): BranchLocalVariableProvenanceMap {
+  const result: BranchLocalVariableProvenanceMap = {};
+  for (const [key, entry] of Object.entries(input.provenance)) {
+    result[key] = translateProvenanceEntry(entry, {
+      sessionId: input.sessionId,
+      branchId: input.branchId,
+      idMap: input.idMap,
+    });
+  }
+  return result;
+}
+
+function translateProvenanceEntry(
+  entry: ThChatBranchLocalVariableProvenance,
+  ctx: { sessionId: string; branchId: string; idMap: Record<string, string> },
+): BranchLocalVariableProvenance {
+  const sourceScope = entry.source_scope;
+  const sourceScopeId = decodeProvenanceScopeIdRef({
+    sourceScope,
+    scopeIdRef: entry.source_scope_id_ref ?? null,
+    sessionId: ctx.sessionId,
+    branchId: ctx.branchId,
+    idMap: ctx.idMap,
+  });
+
+  const inheritedFromFloorId = entry.inherited_from_floor_id_ref
+    ? ctx.idMap[entry.inherited_from_floor_id_ref] ?? entry.inherited_from_floor_id_ref
+    : undefined;
+
+  return {
+    sourceScope,
+    sourceScopeId,
+    ...(entry.source_variable_id ? { sourceVariableId: entry.source_variable_id } : {}),
+    ...(typeof entry.source_updated_at === "number" ? { sourceUpdatedAt: entry.source_updated_at } : {}),
+    ...(inheritedFromFloorId ? { inheritedFromFloorId } : {}),
+    ...(entry.inherited_from_branch_id ? { inheritedFromBranchId: entry.inherited_from_branch_id } : {}),
+    originKind: entry.origin_kind,
+  };
+}
+
+function decodeProvenanceScopeIdRef(input: {
+  sourceScope: ThChatBranchLocalVariableProvenance["source_scope"];
+  scopeIdRef: string | null;
+  sessionId: string;
+  branchId: string;
+  idMap: Record<string, string>;
+}): string {
+  if (input.sourceScope === "chat") {
+    // chat 层 ref 为 null 意味着对应当前 session
+    return input.scopeIdRef ?? input.sessionId;
+  }
+
+  if (input.sourceScope === "branch") {
+    // branch 层的 ref 为 branch_id（导出时做了规范化），
+    // 如果缺省就归到当前 branchId
+    return buildBranchVariableScopeId(input.sessionId, input.scopeIdRef ?? input.branchId);
+  }
+
+  if (input.sourceScope === "global") {
+    return input.scopeIdRef ?? "global";
+  }
+
+  // floor / page：用 idMap 翻译回导入后的新 id，翻不到就原值
+  if (!input.scopeIdRef) {
+    return input.sessionId;
+  }
+  return input.idMap[input.scopeIdRef] ?? input.scopeIdRef;
+}
+
+
 
 function buildImportedMemoryScopeStateRows(input: {
   accountId: string;

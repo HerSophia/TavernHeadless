@@ -31,10 +31,15 @@ export type {
   CommitBusyEvent,
   CommitSucceededAfterRetryEvent,
   MemoryEventContext,
+  MemoryEventEntityType,
   MemoryJobEventContext,
+  MemoryMutationSource,
   MemoryCreatedEvent,
   MemoryUpdatedEvent,
   MemoryDeprecatedEvent,
+  MemoryDeletedEvent,
+  MemoryEdgeCreatedEvent,
+  MemoryEdgeDeletedEvent,
   MemoryInjectionFailedEvent,
   MemoryPersistFailedEvent,
   MemoryConsolidationContextFailedEvent,
@@ -80,7 +85,7 @@ export type { VariableContext } from './types.js';
 export type { VariableRepository, VariableRepositoryOptions } from './ports/variable-repository.js';
 
 // ── Repository Ports ──────────────────────────────────
-export type { MemoryItemUpdatePatch, MemoryRepository } from './ports/memory-repository.js';
+export type { MemoryRepository } from './ports/memory-repository.js';
 
 // ── Prompt ────────────────────────────────────────────
 export type {
@@ -246,9 +251,8 @@ export type {
   MemoryIngestOutput,
   MemoryInjectionOptions,
   MemoryInjectionResult,
-  MemoryScopeResolutionDiagnostic,
-  MemoryScopeResolutionMode,
-  MemoryScopeResolutionStatus,
+  MemoryInjectionScopeResolutionDiagnostics,
+  MemoryInjectionScopeResolutionMode,
   MemoryAccessOptions,
   MemoryScopeContext,
   MemoryScopeRef,

@@ -132,14 +132,9 @@ export class VariableStore {
     const toolMutationState = getToolMutationState(context);
 
     if (toolMutationState) {
-      const existing = toolMutationState.buffer.findByKey({
-        generationAttemptNo: toolMutationState.generationAttemptNo,
-        scope: targetScope,
-        scopeId,
-        key,
-        accountId: context.accountId,
-      }) ?? await this.variableRepo.findByKey(targetScope, scopeId, key, repoOptions);
-
+      // buffered 写入属于 attempt-local 可见性，不在此时发射任何公共
+      // variable.* 事件。公共 variable.set 只能在 commit 成功之后由
+      // VariableCommitService/TurnCommitService 统一 flush。
       const entry = toolMutationState.buffer.upsert({
         generationAttemptNo: toolMutationState.generationAttemptNo,
         scope: targetScope,
@@ -147,12 +142,6 @@ export class VariableStore {
         key,
         value,
         accountId: context.accountId,
-      });
-
-      await this.eventBus.emit('variable.set', {
-        ...getEventContext(context),
-        entry,
-        isNew: existing === null,
       });
 
       return entry;

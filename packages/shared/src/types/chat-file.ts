@@ -3,7 +3,10 @@ import { z } from 'zod';
 // ── 常量 ──────────────────────────────────────────────
 
 export const TH_CHAT_SPEC = 'tavern_headless_chat' as const;
-export const TH_CHAT_SPEC_VERSION = '1.0.0' as const;
+// Phase 3 为 branch_local_variable_snapshot 的导出/导入保真引入 additive
+// 扩展：`data.branch_local_variable_snapshots` 为可选字段，新文件不再写
+// 1.0.0，而是写 1.1.0。1.0.x 的旧文件仍然兼容读取。
+export const TH_CHAT_SPEC_VERSION = '1.1.0' as const;
 
 // ── Message ───────────────────────────────────────────
 
@@ -68,6 +71,51 @@ export const thChatVariableSchema = z.object({
 });
 
 export type ThChatVariable = z.infer<typeof thChatVariableSchema>;
+
+// ── Branch local variable snapshot ────────────────────
+
+/**
+ * 单 key 的 provenance 元数据，镜像
+ * BranchLocalVariableSnapshotService 中的 provenance 结构。
+ *
+ * 所有字段（除 originKind）均为可选：旧数据或部分路径不一定能采集到
+ * source variable id / source updated_at。
+ */
+export const thChatBranchLocalVariableProvenanceSchema = z.object({
+  source_scope: z.enum(['chat', 'branch', 'floor', 'page', 'global']),
+  source_scope_id_ref: z.string().nullable().optional(),
+  source_variable_id: z.string().optional(),
+  source_updated_at: z.number().optional(),
+  inherited_from_floor_id_ref: z.string().nullable().optional(),
+  inherited_from_branch_id: z.string().optional(),
+  origin_kind: z.enum(['authored', 'inherited', 'unknown']),
+});
+
+export type ThChatBranchLocalVariableProvenance = z.infer<
+  typeof thChatBranchLocalVariableProvenanceSchema
+>;
+
+/**
+ * 单个 floor 级的 branch_local_variable_snapshot 载荷。
+ *
+ * - `floor_id_ref` 指向 floor 的 `_original_id`，import 时通过 idMap 翻译成新 floorId
+ * - `values` 为兼容性值视图（对应 v1 的 valuesJson）
+ * - `snapshot_version` / `provenance` 为 Phase 2 additive 字段
+ *   - v1 文件若无 provenance，读作 schema version 1
+ *   - v2 文件必须给出按 key 的 provenance map
+ */
+export const thChatBranchLocalVariableSnapshotSchema = z.object({
+  floor_id_ref: z.string(),
+  branch_id: z.string(),
+  snapshot_version: z.union([z.literal(1), z.literal(2)]).default(1),
+  values: z.record(z.unknown()),
+  provenance: z.record(thChatBranchLocalVariableProvenanceSchema).optional(),
+  created_at: z.number(),
+});
+
+export type ThChatBranchLocalVariableSnapshot = z.infer<
+  typeof thChatBranchLocalVariableSnapshotSchema
+>;
 
 // ── Memory ────────────────────────────────────────────
 
@@ -134,6 +182,7 @@ export const thChatDataSchema = z.object({
   floors: z.array(thChatFloorSchema),
 
   variables: z.array(thChatVariableSchema).optional(),
+  branch_local_variable_snapshots: z.array(thChatBranchLocalVariableSnapshotSchema).optional(),
   memories: thChatMemoriesSchema.optional(),
 });
 

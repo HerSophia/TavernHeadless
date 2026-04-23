@@ -21,6 +21,11 @@ import {
 } from "../db/schema.js";
 import { parseJsonField } from "../lib/http.js";
 import { VariableService } from "./variable-service.js";
+import {
+  BranchLocalVariableSnapshotService,
+  type BranchLocalVariableProvenanceMap,
+  type BranchLocalSnapshotSchemaVersion,
+} from "./branch-local-variable-snapshot-service.js";
 
 export interface ChatExportSnapshotOptions extends AccountContextOptions {
   accountId?: string;
@@ -117,6 +122,22 @@ export interface ExportSnapshotMemoryEdge {
   createdAt: number;
 }
 
+/**
+ * 导出侧对 branch_local_variable_snapshot 的行级视图。
+ *
+ * Phase 3：additive 携带在导出文件里，import 时可据此恢复精确 runtime
+ * local truth，旧文件/未携带时继续按旧语义（缺省将触发
+ * branch_local_snapshot_missing）。
+ */
+export interface ExportSnapshotBranchLocalVariableSnapshot {
+  floorId: string;
+  branchId: string;
+  schemaVersion: BranchLocalSnapshotSchemaVersion;
+  values: Record<string, unknown>;
+  provenance: BranchLocalVariableProvenanceMap;
+  createdAt: number;
+}
+
 export interface SessionExportSnapshot {
   sessionId: string;
   accountId: string;
@@ -134,6 +155,7 @@ export interface SessionExportSnapshot {
   presetName: string | null;
   floors: ExportSnapshotFloor[];
   variables?: ExportSnapshotVariable[];
+  branchLocalVariableSnapshots?: ExportSnapshotBranchLocalVariableSnapshot[];
   memories?: {
     items: ExportSnapshotMemoryItem[];
     edges: ExportSnapshotMemoryEdge[];
@@ -371,6 +393,29 @@ export function captureSessionExportSnapshot(
       };
     }
 
+    // Phase 3: 拉取当前 session 下全部 floor 的 branch_local_variable_snapshot，
+    // 与其余导出内容走同一事务，保证一致性快照。
+    // 仅在有 floor 时才查询，空会话直接跳过。
+    const branchLocalSnapshotService = new BranchLocalVariableSnapshotService(tx);
+    const branchLocalSnapshotList: ExportSnapshotBranchLocalVariableSnapshot[] = [];
+    for (const floorId of floorIds) {
+      const record = branchLocalSnapshotService.getFloorLocalSnapshot({
+        accountId,
+        floorId,
+      });
+      if (!record) {
+        continue;
+      }
+      branchLocalSnapshotList.push({
+        floorId: record.floorId,
+        branchId: record.branchId,
+        schemaVersion: record.schemaVersion,
+        values: record.values,
+        provenance: record.provenance,
+        createdAt: record.createdAt,
+      });
+    }
+
     return {
       sessionId: session.id,
       accountId,
@@ -388,6 +433,9 @@ export function captureSessionExportSnapshot(
       presetName,
       floors: snapshotFloors,
       ...(snapshotVariables ? { variables: snapshotVariables } : {}),
+      ...(branchLocalSnapshotList.length > 0
+        ? { branchLocalVariableSnapshots: branchLocalSnapshotList }
+        : {}),
       ...(snapshotMemories ? { memories: snapshotMemories } : {}),
       messageCount: messageRows.length,
     };

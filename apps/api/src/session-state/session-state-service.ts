@@ -92,7 +92,8 @@ export class SessionStateService {
       this.ensureWriteModeAllowed(definition, "commit_bound");
       const replaySafety = this.resolveReplaySafety(definition, input.replaySafety);
       const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
-      this.requireFloorInSession(tx, host.id, input.sourceFloorId);
+      const sourceFloor = this.requireFloorInSession(tx, host.id, input.sourceFloorId);
+      this.requireFloorBranchMatch(sourceFloor, input.branchId, "Source floor");
       const binding = this.ensureManagedDomainBinding(tx, host.accountId, host.id, input.namespace);
       const payload = this.createMutationPayload({
         present: input.present ?? true,
@@ -241,6 +242,7 @@ export class SessionStateService {
     const tx = executor;
     const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: false });
     const floor = this.requireFloorInSession(tx, host.id, input.floorId);
+    this.requireFloorBranchMatch(floor, input.branchId, "Commit floor");
     const managedBindings = this.clientDataRepository(tx).listManagedDomainsByHost({
       accountId: host.accountId,
       managerKind: SESSION_STATE_MANAGER_KIND,
@@ -256,6 +258,7 @@ export class SessionStateService {
 
     for (const mutationBase of stagedMutations) {
       const definition = this.requireSlotDefinition(mutationBase.stateNamespace, mutationBase.targetSlot);
+      this.assertStagedMutationCommitContext(floor, definition, mutationBase);
       const payload = this.parseMutationPayload(mutationBase.payloadJson);
       if (mutationBase.replaySafety === "uncertain") {
         this.sessionStateRepository(tx).updateMutation({
@@ -323,6 +326,32 @@ export class SessionStateService {
       return null;
     }
 
+    if (input.sourceFloorId) {
+      const historicalSnapshot = this.getFloorSnapshot({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        floorId: input.sourceFloorId,
+        namespace: input.namespace,
+        slot: input.slot,
+      });
+      if (historicalSnapshot) {
+        return {
+          namespace: historicalSnapshot.namespace,
+          slot: historicalSnapshot.slot,
+          source: "source_floor_snapshot",
+          visibilityMode: historicalSnapshot.visibilityMode,
+          schemaVersion: historicalSnapshot.schemaVersion,
+          present: historicalSnapshot.present,
+          value: historicalSnapshot.value,
+          sessionId: historicalSnapshot.sessionId,
+          branchId: historicalSnapshot.branchId,
+          floorId: historicalSnapshot.floorId,
+          sourceMutationIds: historicalSnapshot.sourceMutationIds,
+          updatedAt: historicalSnapshot.committedAt,
+        };
+      }
+    }
+
     const liveHead = this.getLiveHeadEnvelope(
       this.db,
       input.accountId,
@@ -348,32 +377,6 @@ export class SessionStateService {
         sourceMutationIds: liveHead.lastMutationId ? [liveHead.lastMutationId] : [],
         updatedAt: liveHead.updatedAt,
       };
-    }
-
-    if (input.sourceFloorId) {
-      const snapshot = this.getFloorSnapshot({
-        accountId: input.accountId,
-        sessionId: input.sessionId,
-        floorId: input.sourceFloorId,
-        namespace: input.namespace,
-        slot: input.slot,
-      });
-      if (snapshot) {
-        return {
-          namespace: snapshot.namespace,
-          slot: snapshot.slot,
-          source: "source_floor_snapshot",
-          visibilityMode: snapshot.visibilityMode,
-          schemaVersion: snapshot.schemaVersion,
-          present: snapshot.present,
-          value: snapshot.value,
-          sessionId: snapshot.sessionId,
-          branchId: snapshot.branchId,
-          floorId: snapshot.floorId,
-          sourceMutationIds: snapshot.sourceMutationIds,
-          updatedAt: snapshot.committedAt,
-        };
-      }
     }
 
     const latestBranchFloor = this.sessionStateRepository(this.db).getLatestCommittedFloorInBranch(input.sessionId, input.branchId);
@@ -928,6 +931,50 @@ export class SessionStateService {
     return floor;
   }
 
+  private requireFloorBranchMatch(
+    floor: SessionStateFloorHostRecord,
+    branchId: string,
+    label: string,
+  ): SessionStateFloorHostRecord {
+    if (floor.branchId !== branchId) {
+      throw new SessionStateServiceError(
+        409,
+        "session_state_floor_branch_mismatch",
+        `${label} '${floor.id}' belongs to branch '${floor.branchId}', expected '${branchId}'`,
+      );
+    }
+
+    return floor;
+  }
+
+  private assertStagedMutationCommitContext(
+    floor: SessionStateFloorHostRecord,
+    definition: SessionStateSlotDefinition,
+    mutation: SessionStateMutationView,
+  ): void {
+    const expectedLiveHeadKey = this.buildLiveHeadItemKey(
+      definition.namespace,
+      definition.slot,
+      definition.visibilityMode,
+      floor.sessionId,
+      floor.branchId,
+    );
+
+    if (
+      mutation.sessionId !== floor.sessionId
+      || mutation.branchId !== floor.branchId
+      || mutation.sourceFloorId !== floor.id
+      || mutation.sourceSnapshotFloorId !== floor.id
+      || mutation.liveHeadKey !== expectedLiveHeadKey
+    ) {
+      throw new SessionStateServiceError(
+        409,
+        "session_state_staged_mutation_context_mismatch",
+        `Staged mutation '${mutation.id}' does not match commit context for floor '${floor.id}' in branch '${floor.branchId}'`,
+      );
+    }
+  }
+
   private getFloorSnapshotFromStorage(
     executor: AppDb | DbExecutor,
     input: {
@@ -990,7 +1037,11 @@ export class SessionStateService {
     }
   }
 
-  private parseLiveHeadEnvelope(valueJson: string): SessionStateLiveHeadEnvelope | null {
+  /**
+   * 解析 live head item 的 json payload 为结构化 envelope。
+   * 公开给同一模块内的观察面 facade 使用，保证解析行为只有一份实现。
+   */
+  parseLiveHeadEnvelope(valueJson: string): SessionStateLiveHeadEnvelope | null {
     const record = asRecord(parseJsonField(valueJson));
     if (!record) {
       return null;
@@ -1011,7 +1062,11 @@ export class SessionStateService {
     };
   }
 
-  private parseFloorSnapshotEnvelope(valueJson: string): SessionStateFloorSnapshotView | null {
+  /**
+   * 解析 floor snapshot item 的 json payload 为结构化 view。
+   * 公开给同一模块内的观察面 facade 使用，保证解析行为只有一份实现。
+   */
+  parseFloorSnapshotEnvelope(valueJson: string): SessionStateFloorSnapshotView | null {
     const record = asRecord(parseJsonField(valueJson));
     if (!record) {
       return null;
@@ -1031,7 +1086,11 @@ export class SessionStateService {
     };
   }
 
-  private parseMutationPayload(payload: SessionStateMutationView["payload"] | string): SessionStateMutationPayload {
+  /**
+   * 解析 mutation 存储时的 json payload 为结构化 payload。
+   * 公开给同一模块内的观察面 facade 使用，保证解析行为只有一份实现。
+   */
+  parseMutationPayload(payload: SessionStateMutationView["payload"] | string): SessionStateMutationPayload {
     if (typeof payload === "string") {
       const parsed = asRecord(parseJsonField(payload));
       return {
@@ -1223,7 +1282,55 @@ export class SessionStateService {
   private sessionStateRepository(executor: AppDb | DbExecutor): SessionStateRepository {
     return new SessionStateRepository(executor);
   }
+
+  /**
+   * 只读访问入口，专供 session-state 模块内部的观察面 facade 使用。
+   *
+   * 只暴露观察面需要的 helper 与 key 构造方法，不提供任何写路径。外部模块不应直接调用它。
+   */
+  getObservationAccess(): SessionStateObservationAccess {
+    return {
+      db: this.db,
+      slotRegistry: this.slotRegistry,
+      sessionStateRepository: (executor) => this.sessionStateRepository(executor),
+      clientDataRepository: (executor) => this.clientDataRepository(executor),
+      buildLiveHeadItemKey: (namespace, slot, visibilityMode, sessionId, branchId) =>
+        this.buildLiveHeadItemKey(namespace, slot, visibilityMode, sessionId, branchId),
+      buildSnapshotItemKey: (namespace, slot, floorId) => this.buildSnapshotItemKey(namespace, slot, floorId),
+      requireSlotDefinition: (namespace, slot) => this.requireSlotDefinition(namespace, slot),
+      findManagedDomainBinding: (executor, accountId, sessionId, namespace) =>
+        this.findManagedDomainBinding(executor, accountId, sessionId, namespace),
+    };
+  }
+
 }
+
+export interface SessionStateObservationAccess {
+  db: AppDb;
+  slotRegistry: SessionStateSlotRegistry;
+  sessionStateRepository: (executor: AppDb | DbExecutor) => SessionStateRepository;
+  clientDataRepository: (executor: AppDb | DbExecutor) => ClientDataRepository;
+  buildLiveHeadItemKey: (
+    namespace: SessionStateNamespace,
+    slot: string,
+    visibilityMode: SessionStateVisibilityMode,
+    sessionId: string,
+    branchId: string,
+  ) => string;
+  buildSnapshotItemKey: (
+    namespace: SessionStateNamespace,
+    slot: string,
+    floorId: string,
+  ) => string;
+  requireSlotDefinition: (namespace: SessionStateNamespace, slot: string) => SessionStateSlotDefinition;
+  findManagedDomainBinding: (
+    executor: AppDb | DbExecutor,
+    accountId: string,
+    sessionId: string,
+    namespace: SessionStateNamespace,
+  ) => ClientDataManagedDomainRecord | null;
+}
+
 
 export class SessionStateServiceError extends Error {
   constructor(
