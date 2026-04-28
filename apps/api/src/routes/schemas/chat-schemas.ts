@@ -1027,13 +1027,13 @@ const liveRuntimeTraceJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const dryRunRuntimeTraceJsonSchema = {
+export const dryRunRuntimeTraceJsonSchema = {
   type: "object",
   properties: dryRunRuntimeTraceProperties,
   additionalProperties: false,
 } as const;
 
-const turnSessionStateWriteJsonSchema = {
+export const turnSessionStateWriteJsonSchema = {
   type: "object",
   properties: {
     namespace: { type: "string", minLength: 1 },
@@ -1044,7 +1044,7 @@ const turnSessionStateWriteJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const turnSessionStateWritesJsonSchema = {
+export const turnSessionStateWritesJsonSchema = {
   type: "array",
   items: turnSessionStateWriteJsonSchema,
 } as const;

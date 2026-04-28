@@ -10598,6 +10598,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{id}/prompt-runtime/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect branch-aware prepared prompt turn without side effects
+         * @description Builds the full prepared-turn prompt view for a branch-aware request without calling an LLM, creating floors, staging session state writes, or committing any side effects.
+         */
+        post: operations["inspectSessionPromptRuntime"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{id}/prompt-runtime/policy": {
         parameters: {
             query?: never;
@@ -17438,6 +17458,46 @@ export interface operations {
                      *           "session_id": "session-1",
                      *           "state": "committed"
                      *         },
+                     *         "governance": {
+                     *           "entries": [
+                     *             {
+                     *               "budget_groups": [
+                     *                 "history"
+                     *               ],
+                     *               "declared_level": "budget_prunable",
+                     *               "effective_retention": "budget_prunable",
+                     *               "pinned": false,
+                     *               "prunable": true,
+                     *               "pruned_token_count": 64,
+                     *               "registered": true,
+                     *               "retained_token_count": 256,
+                     *               "section_names": [
+                     *                 "chatHistory"
+                     *               ],
+                     *               "source_kind": "history",
+                     *               "token_count": 320
+                     *             },
+                     *             {
+                     *               "budget_groups": [
+                     *                 "memory"
+                     *               ],
+                     *               "declared_level": "soft_required",
+                     *               "effective_retention": "soft_required",
+                     *               "pinned": false,
+                     *               "prunable": false,
+                     *               "pruned_token_count": 0,
+                     *               "registered": true,
+                     *               "retained_token_count": 64,
+                     *               "section_names": [
+                     *                 "memory"
+                     *               ],
+                     *               "source_kind": "memory",
+                     *               "token_count": 64
+                     *             }
+                     *           ],
+                     *           "limitations": [],
+                     *           "mismatches": []
+                     *         },
                      *         "limitations": [
                      *           "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
                      *           "Variable commit remains page -> floor. Branch promotion is not automatic."
@@ -17647,6 +17707,33 @@ export interface operations {
                                 /** @enum {string} */
                                 state: "committed";
                             };
+                            governance: {
+                                entries: {
+                                    budget_groups: string[];
+                                    declared_level?: ("hard_required" | "soft_required" | "budget_prunable") | null;
+                                    /** @enum {string} */
+                                    effective_retention: "fixed" | "soft_required" | "budget_prunable" | "mixed";
+                                    pinned: boolean | null;
+                                    prunable: boolean | null;
+                                    pruned_token_count: number;
+                                    registered: boolean;
+                                    retained_token_count: number;
+                                    section_names: string[];
+                                    source_kind: string;
+                                    token_count: number;
+                                }[];
+                                limitations: string[];
+                                mismatches: {
+                                    budget_groups: string[];
+                                    /** @enum {string} */
+                                    code: "declared_budget_prunable_but_effectively_fixed" | "declared_soft_required_but_effectively_budget_prunable" | "unregistered_governed_source" | "mixed_effective_retention";
+                                    declared_level?: ("hard_required" | "soft_required" | "budget_prunable") | null;
+                                    /** @enum {string} */
+                                    effective_retention: "fixed" | "soft_required" | "budget_prunable" | "mixed";
+                                    message: string;
+                                    source_kind: string;
+                                }[];
+                            } | null;
                             limitations: string[];
                             prompt_snapshot: {
                                 preset_id: string | null;
@@ -23650,8 +23737,23 @@ export interface operations {
                      *             "read_only": true,
                      *             "recompute": false,
                      *             "requires_committed_floor": true,
+                     *             "returns_governance": true,
                      *             "snapshot_availability_field": "snapshot_available",
                      *             "snapshot_supported": true
+                     *           },
+                     *           "inspect": {
+                     *             "commits_side_effects": false,
+                     *             "creates_floor": false,
+                     *             "enabled": true,
+                     *             "llm_call": false,
+                     *             "mode": "prepared_turn",
+                     *             "returns_governance": true,
+                     *             "returns_prepared_turn": true,
+                     *             "supports_branch": true,
+                     *             "supports_source_floor": true,
+                     *             "supports_visibility": true,
+                     *             "writes_explain_snapshot": false,
+                     *             "writes_prompt_snapshot": false
                      *           },
                      *           "live": {
                      *             "default_off": true,
@@ -23836,10 +23938,37 @@ export interface operations {
                                     recompute: false;
                                     /** @enum {unknown} */
                                     requires_committed_floor: true;
+                                    /** @enum {unknown} */
+                                    returns_governance: true;
                                     /** @enum {string} */
                                     snapshot_availability_field: "snapshot_available";
                                     /** @enum {unknown} */
                                     snapshot_supported: true;
+                                };
+                                inspect: {
+                                    /** @enum {unknown} */
+                                    commits_side_effects: false;
+                                    /** @enum {unknown} */
+                                    creates_floor: false;
+                                    enabled: boolean;
+                                    /** @enum {unknown} */
+                                    llm_call: false;
+                                    /** @enum {string} */
+                                    mode: "prepared_turn";
+                                    /** @enum {unknown} */
+                                    returns_governance: true;
+                                    /** @enum {unknown} */
+                                    returns_prepared_turn: true;
+                                    /** @enum {unknown} */
+                                    supports_branch: true;
+                                    /** @enum {unknown} */
+                                    supports_source_floor: true;
+                                    /** @enum {unknown} */
+                                    supports_visibility: true;
+                                    /** @enum {unknown} */
+                                    writes_explain_snapshot: false;
+                                    /** @enum {unknown} */
+                                    writes_prompt_snapshot: false;
                                 };
                                 live: {
                                     /** @enum {unknown} */
@@ -25830,6 +25959,7 @@ export interface operations {
                      *             ]
                      *           }
                      *         ],
+                     *         "governance_changes": [],
                      *         "left": {
                      *           "floor_id": "floor-left",
                      *           "snapshot_available": true
@@ -25900,6 +26030,13 @@ export interface operations {
                                 right?: unknown;
                             }[];
                             exclusion_changes: {
+                                /** @enum {string} */
+                                change_type: "added" | "removed" | "changed";
+                                left?: unknown;
+                                path: string;
+                                right?: unknown;
+                            }[];
+                            governance_changes: {
                                 /** @enum {string} */
                                 change_type: "added" | "removed" | "changed";
                                 left?: unknown;
@@ -25993,6 +26130,1047 @@ export interface operations {
             };
             /** @description Default Response */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    inspectSessionPromptRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "branch_id": "alt-branch",
+                 *       "budget": {
+                 *         "max_input_tokens": 4096,
+                 *         "reserved_completion_tokens": 1024
+                 *       },
+                 *       "config": {
+                 *         "enableDirector": false,
+                 *         "enableTools": false,
+                 *         "enableVerifier": false
+                 *       },
+                 *       "debug_options": {
+                 *         "include_worldbook_matches": true
+                 *       },
+                 *       "delivery": {
+                 *         "allow_assistant_prefill": true,
+                 *         "no_assistant": true,
+                 *         "require_last_user": true
+                 *       },
+                 *       "generation_params": {
+                 *         "max_output_tokens": 256,
+                 *         "temperature": 0.7
+                 *       },
+                 *       "message": "Please continue the campfire scene.",
+                 *       "prompt_intent": "normal",
+                 *       "session_state_writes": [
+                 *         {
+                 *           "namespace": "quest_flags",
+                 *           "slot": "companion",
+                 *           "value": {
+                 *             "mood": "ally"
+                 *           }
+                 *         }
+                 *       ],
+                 *       "source_floor_id": "floor-source",
+                 *       "source_selection": {
+                 *         "examples": {
+                 *           "enabled": false
+                 *         },
+                 *         "history": {
+                 *           "max_messages": 24,
+                 *           "mode": "windowed"
+                 *         },
+                 *         "memory": {
+                 *           "enabled": true
+                 *         },
+                 *         "worldbook": {
+                 *           "enabled": true
+                 *         }
+                 *       },
+                 *       "structure": {
+                 *         "assistant_rewrite_strategy": "to_system",
+                 *         "merge_adjacent_same_role": true,
+                 *         "mode": "no_assistant",
+                 *         "preserve_system_messages": true
+                 *       },
+                 *       "visibility": {
+                 *         "hidden_floor_ranges": [
+                 *           {
+                 *             "end_floor_no": 2,
+                 *             "start_floor_no": 1
+                 *           }
+                 *         ],
+                 *         "mode": "allow_all_except_hidden"
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    branch_id?: string;
+                    budget?: {
+                        max_input_tokens?: number;
+                        reserved_completion_tokens?: number;
+                    };
+                    /**
+                     * @example {
+                     *       "enableDirector": true,
+                     *       "enableMemoryConsolidation": true,
+                     *       "enableTools": true,
+                     *       "enableVerifier": true,
+                     *       "maxRetries": 1,
+                     *       "toolMode": "inline",
+                     *       "verifierFailStrategy": "warn"
+                     *     }
+                     */
+                    config?: {
+                        enableDirector?: boolean;
+                        enableMemoryConsolidation?: boolean;
+                        enableTools?: boolean;
+                        enableVerifier?: boolean;
+                        maxRetries?: number;
+                        /** @enum {string} */
+                        toolMode?: "inline" | "standalone" | "both";
+                        /** @enum {string} */
+                        verifierFailStrategy?: "warn" | "block" | "retry";
+                    };
+                    /**
+                     * @example {
+                     *       "include_prompt_snapshot": true,
+                     *       "include_runtime_trace": true,
+                     *       "include_worldbook_matches": false
+                     *     }
+                     */
+                    debug_options?: {
+                        include_prompt_snapshot?: boolean;
+                        include_runtime_trace?: boolean;
+                        include_worldbook_matches?: boolean;
+                    };
+                    delivery?: {
+                        allow_assistant_prefill?: boolean;
+                        no_assistant?: boolean;
+                        require_last_user?: boolean;
+                    };
+                    /**
+                     * @example {
+                     *       "max_output_tokens": 256,
+                     *       "reasoning_effort": "low",
+                     *       "temperature": 0.7,
+                     *       "top_p": 0.9
+                     *     }
+                     */
+                    generation_params?: {
+                        frequency_penalty?: number;
+                        max_output_tokens?: number;
+                        presence_penalty?: number;
+                        /** @enum {string} */
+                        reasoning_effort?: "low" | "medium" | "high";
+                        stop_sequences?: string[];
+                        stream?: boolean;
+                        temperature?: number;
+                        top_k?: number;
+                        top_p?: number;
+                    };
+                    message: string;
+                    /** @enum {string} */
+                    prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+                    session_state_writes?: {
+                        /** @enum {boolean} */
+                        delete?: true;
+                        namespace?: string;
+                        slot?: string;
+                        value?: unknown;
+                    }[];
+                    source_floor_id?: string;
+                    source_selection?: {
+                        examples?: {
+                            enabled?: boolean;
+                        };
+                        history?: {
+                            max_messages?: number;
+                            /** @enum {string} */
+                            mode?: "full" | "windowed";
+                        };
+                        memory?: {
+                            enabled?: boolean;
+                        };
+                        worldbook?: {
+                            enabled?: boolean;
+                        };
+                    };
+                    structure?: {
+                        /** @enum {string} */
+                        assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                        merge_adjacent_same_role?: boolean;
+                        /** @enum {string} */
+                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                        preserve_system_messages?: boolean;
+                    };
+                    visibility?: {
+                        hidden_floor_ids?: string[];
+                        hidden_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                        /** @enum {string} */
+                        mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                        visible_floor_ranges?: {
+                            end_floor_no: number;
+                            start_floor_no: number;
+                        }[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "diagnostics": [
+                     *           {
+                     *             "code": "derived_no_assistant_structure",
+                     *             "field_path": "policy.structure.mode",
+                     *             "message": "delivery.noAssistant forced the resolved structure.mode to no_assistant.",
+                     *             "severity": "warning",
+                     *             "source": "policy"
+                     *           }
+                     *         ],
+                     *         "excluded_sources": [
+                     *           {
+                     *             "detail": "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly.",
+                     *             "reason": "disabled_by_policy",
+                     *             "source": "examples"
+                     *           }
+                     *         ],
+                     *         "governance": {
+                     *           "entries": [
+                     *             {
+                     *               "budget_groups": [
+                     *                 "history"
+                     *               ],
+                     *               "declared_level": "budget_prunable",
+                     *               "effective_retention": "budget_prunable",
+                     *               "pinned": false,
+                     *               "prunable": true,
+                     *               "pruned_token_count": 64,
+                     *               "registered": true,
+                     *               "retained_token_count": 256,
+                     *               "section_names": [
+                     *                 "chatHistory"
+                     *               ],
+                     *               "source_kind": "history",
+                     *               "token_count": 320
+                     *             },
+                     *             {
+                     *               "budget_groups": [
+                     *                 "memory"
+                     *               ],
+                     *               "declared_level": "soft_required",
+                     *               "effective_retention": "soft_required",
+                     *               "pinned": false,
+                     *               "prunable": false,
+                     *               "pruned_token_count": 0,
+                     *               "registered": true,
+                     *               "retained_token_count": 64,
+                     *               "section_names": [
+                     *                 "memory"
+                     *               ],
+                     *               "source_kind": "memory",
+                     *               "token_count": 64
+                     *             }
+                     *           ],
+                     *           "limitations": [],
+                     *           "mismatches": []
+                     *         },
+                     *         "limitations": [
+                     *           "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+                     *           "Variable commit remains page -> floor. Branch promotion is not automatic."
+                     *         ],
+                     *         "policy": {
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
+                     *           },
+                     *           "debug": {
+                     *             "include_prompt_snapshot": false,
+                     *             "include_runtime_trace": false,
+                     *             "include_worldbook_matches": false
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": true,
+                     *             "no_assistant": true,
+                     *             "require_last_user": true
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "to_system",
+                     *             "merge_adjacent_same_role": true,
+                     *             "mode": "no_assistant",
+                     *             "preserve_system_messages": true
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
+                     *           }
+                     *         },
+                     *         "prepared_turn": {
+                     *           "available_for_reply": 1536,
+                     *           "generation_params": {
+                     *             "max_output_tokens": 256,
+                     *             "temperature": 0.7
+                     *           },
+                     *           "memory_summary": "The party recently agreed to search the northern pass.",
+                     *           "messages": [
+                     *             {
+                     *               "content": "Stay in character and keep the tone warm.",
+                     *               "role": "system"
+                     *             },
+                     *             {
+                     *               "content": "Please continue the campfire scene.",
+                     *               "role": "user"
+                     *             }
+                     *           ],
+                     *           "preprocessed_user_message": "Please continue the campfire scene.",
+                     *           "prompt_snapshot": {
+                     *             "preset_id": "preset-story",
+                     *             "preset_updated_at": 1710000000000,
+                     *             "preset_version": 3,
+                     *             "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                     *             "prompt_mode": "compat_strict",
+                     *             "regex_post_rule_names": [],
+                     *             "regex_pre_rule_names": [
+                     *               "trim_whitespace"
+                     *             ],
+                     *             "regex_profile_id": "regex-safe",
+                     *             "regex_profile_updated_at": 1710000002000,
+                     *             "regex_profile_version": 2,
+                     *             "token_estimate": 512,
+                     *             "worldbook_activated_entry_uids": [
+                     *               7,
+                     *               12
+                     *             ],
+                     *             "worldbook_id": "wb-lore",
+                     *             "worldbook_updated_at": 1710000001000,
+                     *             "worldbook_version": 5
+                     *           },
+                     *           "requested_turn_config": {
+                     *             "enableDirector": false,
+                     *             "enableTools": false,
+                     *             "enableVerifier": false
+                     *           },
+                     *           "runtime_trace": {
+                     *             "macro": {
+                     *               "mutation_preview": [
+                     *                 {
+                     *                   "key": "资产",
+                     *                   "kind": "set",
+                     *                   "scope": "branch",
+                     *                   "value": "{\"金币\":3}"
+                     *                 }
+                     *               ],
+                     *               "staged_mutations": [],
+                     *               "traces": [
+                     *                 {
+                     *                   "macro_name": "setvar",
+                     *                   "phase": "preview",
+                     *                   "raw_text": "{{setvar::资产.金币::3}}",
+                     *                   "resolved_text": "",
+                     *                   "source_kind": "macro"
+                     *                 },
+                     *                 {
+                     *                   "macro_name": "getvar",
+                     *                   "phase": "preview",
+                     *                   "raw_text": "{{getvar::资产}}",
+                     *                   "resolved_text": "{\"金币\":3}",
+                     *                   "source_kind": "macro"
+                     *                 }
+                     *               ],
+                     *               "used_names": [
+                     *                 "setvar",
+                     *                 "getvar"
+                     *               ],
+                     *               "warnings": [
+                     *                 {
+                     *                   "code": "macro_preview_side_effect_suppressed",
+                     *                   "macro_name": "setvar",
+                     *                   "message": "Macro setvar side effect was previewed but not committed."
+                     *                 }
+                     *               ]
+                     *             },
+                     *             "source_selection": {
+                     *               "excluded_sources": [
+                     *                 {
+                     *                   "detail": "Visibility filtered 2 floor(s) from the available history window.",
+                     *                   "reason": "visibility_filtered",
+                     *                   "source": "history"
+                     *                 }
+                     *               ]
+                     *             },
+                     *             "visibility": {
+                     *               "filtered_floor_nos": [
+                     *                 1,
+                     *                 2
+                     *               ],
+                     *               "hidden_floor_ranges": [
+                     *                 {
+                     *                   "end_floor_no": 2,
+                     *                   "start_floor_no": 1
+                     *                 }
+                     *               ]
+                     *             }
+                     *           },
+                     *           "session_state_writes": {
+                     *             "total": 1,
+                     *             "writes": [
+                     *               {
+                     *                 "namespace": "quest_flags",
+                     *                 "operation": "set",
+                     *                 "slot": "companion"
+                     *               }
+                     *             ]
+                     *           },
+                     *           "token_estimate": 512,
+                     *           "turn_config": {
+                     *             "enableDirector": false,
+                     *             "enableTools": false,
+                     *             "enableVerifier": false
+                     *           }
+                     *         },
+                     *         "scope": {
+                     *           "branch_exists": true,
+                     *           "history_source_branch_id": "alt-branch",
+                     *           "history_source_mode": "existing_branch",
+                     *           "session_id": "session-1",
+                     *           "source_floor_id": null,
+                     *           "target_branch_id": "alt-branch"
+                     *         },
+                     *         "section_stats": [
+                     *           {
+                     *             "section_name": "history",
+                     *             "token_count": 320
+                     *           },
+                     *           {
+                     *             "section_name": "main",
+                     *             "token_count": 96
+                     *           }
+                     *         ],
+                     *         "source_map": {
+                     *           "budget": {
+                     *             "max_input_tokens": "request_override",
+                     *             "reserved_completion_tokens": "request_override"
+                     *           },
+                     *           "delivery": {
+                     *             "allow_assistant_prefill": "system_default",
+                     *             "no_assistant": "branch_policy",
+                     *             "require_last_user": "session_policy"
+                     *           },
+                     *           "history": {
+                     *             "source_branch_id": "alt-branch",
+                     *             "source_mode": "existing_branch"
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": "request_override"
+                     *             },
+                     *             "history": {
+                     *               "max_messages": "request_override",
+                     *               "mode": "request_override"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": "system_default"
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": "system_default"
+                     *             }
+                     *           },
+                     *           "structure": {
+                     *             "assistant_rewrite_strategy": "system_default",
+                     *             "merge_adjacent_same_role": "branch_policy",
+                     *             "mode": "branch_policy",
+                     *             "preserve_system_messages": "system_default"
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": "request_override",
+                     *             "mode": "request_override"
+                     *           }
+                     *         },
+                     *         "trim_reasons": [
+                     *           {
+                     *             "detail": "Prompt runtime pruned 64 tokens from budget group 'history'.",
+                     *             "group": "history",
+                     *             "pruned_token_count": 64,
+                     *             "reason": "group_limit_exceeded"
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            diagnostics: {
+                                code: string;
+                                field_path?: string;
+                                message: string;
+                                /** @enum {string} */
+                                phase?: "preview" | "dry_run" | "assemble" | "commit_consume" | "explain";
+                                /** @enum {string} */
+                                severity: "info" | "warning" | "error";
+                                /** @enum {string} */
+                                source?: "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
+                            }[];
+                            excluded_sources: {
+                                detail?: string;
+                                /** @enum {string} */
+                                reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+                                /**
+                                 * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
+                                 * @enum {string}
+                                 */
+                                source: "history" | "memory" | "worldbook" | "examples";
+                            }[];
+                            governance: {
+                                entries: {
+                                    budget_groups: string[];
+                                    declared_level?: ("hard_required" | "soft_required" | "budget_prunable") | null;
+                                    /** @enum {string} */
+                                    effective_retention: "fixed" | "soft_required" | "budget_prunable" | "mixed";
+                                    pinned: boolean | null;
+                                    prunable: boolean | null;
+                                    pruned_token_count: number;
+                                    registered: boolean;
+                                    retained_token_count: number;
+                                    section_names: string[];
+                                    source_kind: string;
+                                    token_count: number;
+                                }[];
+                                limitations: string[];
+                                mismatches: {
+                                    budget_groups: string[];
+                                    /** @enum {string} */
+                                    code: "declared_budget_prunable_but_effectively_fixed" | "declared_soft_required_but_effectively_budget_prunable" | "unregistered_governed_source" | "mixed_effective_retention";
+                                    declared_level?: ("hard_required" | "soft_required" | "budget_prunable") | null;
+                                    /** @enum {string} */
+                                    effective_retention: "fixed" | "soft_required" | "budget_prunable" | "mixed";
+                                    message: string;
+                                    source_kind: string;
+                                }[];
+                            };
+                            limitations: string[];
+                            policy: {
+                                budget: {
+                                    max_input_tokens?: number;
+                                    reserved_completion_tokens?: number;
+                                };
+                                debug: {
+                                    include_prompt_snapshot: boolean;
+                                    include_runtime_trace: boolean;
+                                    include_worldbook_matches: boolean;
+                                };
+                                delivery: {
+                                    allow_assistant_prefill: boolean;
+                                    no_assistant: boolean;
+                                    require_last_user: boolean;
+                                };
+                                source_selection: {
+                                    examples: {
+                                        enabled: boolean;
+                                    };
+                                    history: {
+                                        max_messages?: number;
+                                        /** @enum {string} */
+                                        mode: "full" | "windowed";
+                                    };
+                                    memory: {
+                                        enabled: boolean;
+                                    };
+                                    worldbook: {
+                                        enabled: boolean;
+                                    };
+                                };
+                                structure: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    merge_adjacent_same_role: boolean;
+                                    /** @enum {string} */
+                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    preserve_system_messages: boolean;
+                                };
+                                visibility: {
+                                    hidden_floor_ids?: string[];
+                                    hidden_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                    /** @enum {string} */
+                                    mode: "allow_all_except_hidden" | "deny_all_except_visible";
+                                    visible_floor_ranges?: {
+                                        end_floor_no: number;
+                                        start_floor_no: number;
+                                    }[];
+                                };
+                            };
+                            prepared_turn: {
+                                available_for_reply: number;
+                                generation_params: Record<string, never>;
+                                memory_summary: string | null;
+                                messages: {
+                                    content: string;
+                                    /** @enum {string} */
+                                    role: "system" | "user" | "assistant";
+                                }[];
+                                preprocessed_user_message: string | null;
+                                prompt_snapshot: {
+                                    preset_id: string | null;
+                                    preset_updated_at: number | null;
+                                    preset_version: number | null;
+                                    prompt_digest: string;
+                                    /** @enum {string} */
+                                    prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                    regex_post_rule_names: string[];
+                                    regex_pre_rule_names: string[];
+                                    regex_profile_id: string | null;
+                                    regex_profile_updated_at: number | null;
+                                    regex_profile_version: number | null;
+                                    token_estimate: number;
+                                    worldbook_activated_entry_uids: number[];
+                                    worldbook_id: string | null;
+                                    worldbook_updated_at: number | null;
+                                    worldbook_version: number | null;
+                                } | null;
+                                requested_turn_config: Record<string, never> | null;
+                                runtime_trace: {
+                                    budgets?: {
+                                        by_group: {
+                                            allocated_token_count?: number;
+                                            estimated_token_count?: number;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            token_count: number;
+                                        }[];
+                                        trim_reasons?: {
+                                            detail?: string;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            /** @enum {string} */
+                                            reason: "budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled";
+                                        }[];
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill: boolean;
+                                        assistant_prefill_applied: boolean;
+                                        assistant_prefill_requested: boolean;
+                                        assistant_prefill_strategy: ("provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none") | null;
+                                        degrade_reasons: ("assistant_prefill_disabled" | "assistant_prefill_unsupported" | "require_last_user" | "no_assistant_override")[];
+                                        degraded: boolean;
+                                        ends_with_user: boolean;
+                                        last_message_role: ("system" | "user" | "assistant") | null;
+                                        no_assistant: boolean;
+                                        require_last_user: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "mutation_preview": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "staged_mutations": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "source_macro": "setvar",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "traces": [
+                                     *         {
+                                     *           "macro_name": "lastGenerationType",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{lastGenerationType}}",
+                                     *           "resolved_text": "respond",
+                                     *           "source_kind": "macro"
+                                     *         },
+                                     *         {
+                                     *           "macro_name": "if",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                     *           "resolved_text": "YES",
+                                     *           "selected_branch": "then",
+                                     *           "source_kind": "if"
+                                     *         }
+                                     *       ],
+                                     *       "used_names": [
+                                     *         "if",
+                                     *         "lastGenerationType",
+                                     *         "setvar"
+                                     *       ],
+                                     *       "warnings": [
+                                     *         {
+                                     *           "code": "macro_preview_side_effect_suppressed",
+                                     *           "macro_name": "setvar",
+                                     *           "message": "Macro setvar side effect was previewed but not committed."
+                                     *         }
+                                     *       ]
+                                     *     }
+                                     */
+                                    macro?: {
+                                        mutation_preview: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            value?: string;
+                                        }[];
+                                        staged_mutations: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            source_macro: string;
+                                            value?: string;
+                                        }[];
+                                        traces: {
+                                            macro_name: string;
+                                            phase?: string;
+                                            raw_text: string;
+                                            resolved_text: string;
+                                            /** @enum {string} */
+                                            selected_branch?: "then" | "else" | "raw";
+                                            /** @enum {string} */
+                                            source_kind?: "text" | "raw" | "macro" | "if";
+                                        }[];
+                                        used_names: string[];
+                                        warnings: {
+                                            code: string;
+                                            macro_name?: string;
+                                            message: string;
+                                            raw_text?: string;
+                                        }[];
+                                    };
+                                    memory?: {
+                                        summary_injected: boolean;
+                                    };
+                                    preset?: {
+                                        continue_nudge_applied: boolean;
+                                        continue_nudge_text: string | null;
+                                        ignored_fields: string[];
+                                        ignored_prompt_order_character_ids: number[];
+                                        in_chat_inserted_entry_ids: string[];
+                                        names_behavior_applied: ("off" | "always") | null;
+                                        selected_prompt_order_character_id: number | null;
+                                        trigger_filtered_entry_ids: string[];
+                                        unresolved_markers: string[];
+                                        unsupported_fields: string[];
+                                        warnings: string[];
+                                    };
+                                    regex?: {
+                                        ai_output_rules: string[];
+                                        preprocessed_user_message: string | null;
+                                        user_input_rules: string[];
+                                    };
+                                    source_selection?: {
+                                        excluded_sources: {
+                                            detail?: string;
+                                            /** @enum {string} */
+                                            reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+                                            /**
+                                             * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
+                                             * @enum {string}
+                                             */
+                                            source: "history" | "memory" | "worldbook" | "examples";
+                                        }[];
+                                    };
+                                    structure?: {
+                                        assistant_prefill_transcriptized?: boolean;
+                                        assistant_rewrite_count: number;
+                                        assistant_rewrite_strategy: ("to_system" | "to_user_transcript") | null;
+                                        merge_adjacent_same_role: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        tail_assistant_detected: boolean;
+                                        transcript_message_count?: number;
+                                        transcriptized?: boolean;
+                                    };
+                                    visibility?: {
+                                        filtered_floor_nos: number[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                    };
+                                    worldbook?: {
+                                        hit_count: number;
+                                        matches?: {
+                                            activation: {
+                                                first_match: {
+                                                    char_end: number;
+                                                    char_start: number;
+                                                    excerpt: string;
+                                                    injection_index?: number;
+                                                    matched_key: string;
+                                                    /** @enum {string} */
+                                                    matched_key_scope: "primary" | "secondary";
+                                                    /** @enum {string} */
+                                                    matched_key_type: "plain" | "regex";
+                                                    message_index_from_latest?: number;
+                                                    /** @enum {string} */
+                                                    source_kind: "message" | "persona_description" | "character_description" | "character_personality" | "character_depth_prompt" | "scenario" | "creator_notes" | "injection" | "recursion_buffer";
+                                                } | null;
+                                                /** @enum {string} */
+                                                mode: "constant" | "triggered";
+                                                recursion_level: number;
+                                            };
+                                            comment: string;
+                                            content_preview: string;
+                                            insertion: {
+                                                depth?: number;
+                                                outlet_name?: string;
+                                                /** @enum {string} */
+                                                position: "before" | "after" | "at_depth" | "outlet";
+                                                /** @enum {string} */
+                                                role?: "system" | "user" | "assistant";
+                                            };
+                                            order: number;
+                                            source: {
+                                                /** @enum {string} */
+                                                kind: "session_worldbook" | "character_book";
+                                                worldbook_id: string | null;
+                                                worldbook_name: string;
+                                            };
+                                            uid: number;
+                                        }[];
+                                    };
+                                } | null;
+                                session_state_writes: {
+                                    total: number;
+                                    writes: {
+                                        namespace: string;
+                                        /** @enum {string} */
+                                        operation: "set" | "delete";
+                                        slot: string;
+                                    }[];
+                                };
+                                token_estimate: number;
+                                turn_config: Record<string, never> | null;
+                            };
+                            scope: {
+                                branch_exists: boolean;
+                                history_source_branch_id: string;
+                                /** @enum {string} */
+                                history_source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                session_id: string;
+                                source_floor_id?: string | null;
+                                target_branch_id: string;
+                            };
+                            section_stats: {
+                                /** @description Prompt section name. Section stats remain section-level even when budget groups use concrete labels such as `section:main`. */
+                                section_name: string;
+                                token_count: number;
+                            }[];
+                            source_map: {
+                                budget?: {
+                                    /** @enum {string} */
+                                    max_input_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    reserved_completion_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                debug?: {
+                                    /** @enum {string} */
+                                    include_prompt_snapshot?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    include_runtime_trace?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    include_worldbook_matches?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                delivery?: {
+                                    /** @enum {string} */
+                                    allow_assistant_prefill?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    no_assistant?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    require_last_user?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                history?: {
+                                    source_branch_id?: string;
+                                    /** @enum {string} */
+                                    source_mode?: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                };
+                                source_selection?: {
+                                    examples?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    history?: {
+                                        /** @enum {string} */
+                                        max_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                        /** @enum {string} */
+                                        mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    memory?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                    worldbook?: {
+                                        /** @enum {string} */
+                                        enabled?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    };
+                                };
+                                structure?: {
+                                    /** @enum {string} */
+                                    assistant_rewrite_strategy?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    merge_adjacent_same_role?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    preserve_system_messages?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                                visibility?: {
+                                    /** @enum {string} */
+                                    hidden_floor_ids?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    hidden_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    mode?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                    /** @enum {string} */
+                                    visible_floor_ranges?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
+                                };
+                            };
+                            trim_reasons: {
+                                detail?: string;
+                                /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                group: string;
+                                pruned_token_count?: number;
+                                /** @enum {string} */
+                                reason: "budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled";
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

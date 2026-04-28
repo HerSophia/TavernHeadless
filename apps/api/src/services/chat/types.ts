@@ -24,6 +24,10 @@ export type ChatWorkflowMode =
   | "edit_and_regenerate"
   | "generate_for_floor";
 
+export type PreparedPromptArtifactsMode =
+  | ChatWorkflowMode
+  | "inspect";
+
 export type ChatServiceErrorFactory = (
   code: string,
   message: string,
@@ -77,6 +81,33 @@ export interface PreparedTurnPromptDebugArtifacts {
   promptSnapshotRecord: NonNullable<PromptRuntimeExecutionResult["promptSnapshotRecord"]>;
   promptSnapshot?: PromptSnapshotPreview;
   runtimeTrace?: PromptRuntimeTrace;
+}
+
+export interface PreparedPromptArtifacts {
+  mode: PreparedPromptArtifactsMode;
+  runType: FloorRunType | "inspect";
+  sessionId: string;
+  branchId?: string;
+  accountId: string;
+  userMessage: string;
+  rawUserMessage: string;
+  executionContext: PromptRuntimeResolvedContext;
+  history: ChatMessage[];
+  visibilityTrace?: PromptVisibilityTrace;
+  memorySummary?: string;
+  resolvedTurnModels: ResolvedTurnModels;
+  assembled: AssembleResult;
+  materialized: MaterializePromptRuntimeMessagesResult;
+  inspection: PromptRuntimeInspectionResult;
+  tokenEstimate: number;
+  availableForReply: number;
+  preprocessedUserMessage?: string;
+  promptSnapshot?: PromptSnapshotPreview;
+  promptSnapshotRecord?: NonNullable<PromptRuntimeExecutionResult["promptSnapshotRecord"]>;
+  runtimeTrace?: PromptRuntimeTrace;
+  generationParams: GenerationParams;
+  requestedTurnConfig?: TurnConfig;
+  turnConfig?: TurnConfig;
 }
 
 export interface PreparedTurnContext {

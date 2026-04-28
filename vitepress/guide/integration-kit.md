@@ -275,6 +275,39 @@ console.log(preview.runtimeTrace.macro?.stagedMutations); // []
 
 这个方法正式契约是 `macro_text_preview`，对应 `capabilities.observability.preview.mode === "macro_text_preview"` 且 `returnsAssemblyTruth === false`。它不会调用 LLM，不会创建 floor，也不会写 `promptSnapshot`，同时也不会执行 prompt assembly、budget allocation 或 delivery materialization。当前 request 级 `structure` / `delivery` / `budget` / `sourceSelection` / `visibility` 覆盖会进入返回结果里的 `policy` 与 `sourceMap`，但返回的 `runtimeTrace` 固定只投影 `capabilities.observability.preview.traceSubset`，即 `macro`、`sourceSelection`、`visibility`。宏诊断继续统一走 `runtimeTrace.macro`；响应的 `limitations` 会额外说明 preview 只是 `macro_text_preview` 子视图，便于 UI 上与 live / dry-run 区分。
 
+## Prompt Runtime inspect 示例
+
+```ts
+const inspect = await client.promptRuntime.inspect({
+  accountId: "account-1",
+  sessionId: "session-1",
+  message: "Please continue the campfire scene.",
+  branchId: "alt-branch",
+  sourceFloorId: "floor-12",
+  promptIntent: "continue",
+  generationParams: {
+    maxOutputTokens: 256,
+    temperature: 0.7,
+  },
+  sessionStateWrites: [
+    {
+      namespace: "quest_flags",
+      slot: "companion",
+      value: { mood: "ally" },
+    },
+  ],
+});
+
+console.log(inspect.preparedTurn.messages);
+console.log(inspect.preparedTurn.promptSnapshot?.promptDigest);
+console.log(inspect.preparedTurn.runtimeTrace?.budgets?.byGroup);
+console.log(inspect.preparedTurn.sessionStateWrites);
+console.log(inspect.governance.entries);
+console.log(inspect.governance.mismatches);
+```
+
+`inspect(...)` 是只读 prepared-turn 检查接口。它会准备完整 prompt turn，并返回 `preparedTurn`、`policy`、`sourceMap`、`governance`、`diagnostics`、`trimReasons`、`excludedSources`、`sectionStats`，但不会调用模型，也不会创建 floor、写 `promptSnapshot`、写 explain snapshot，或者提交任何副作用。对应能力位是 `capabilities.observability.inspect.mode === "prepared_turn"`。
+
 ## Prompt Runtime governance / explain / compare 示例
 
 ```ts
@@ -296,6 +329,12 @@ const explain = await client.promptRuntime.getFloorExplain({
   floorId: "floor-12",
 });
 
+const inspect = await client.promptRuntime.inspect({
+  accountId: "account-1",
+  sessionId: "session-1",
+  message: "Please continue the campfire scene.",
+});
+
 const diff = await client.promptRuntime.compare({
   accountId: "account-1",
   sessionId: "session-1",
@@ -311,10 +350,14 @@ console.log(policy.persistentPolicyEnvelope?.value.budget);
 console.log(explain.snapshotAvailable);
 console.log(explain.assets);
 console.log(explain.sectionStats);
+console.log(explain.governance); // 旧 snapshot 可能为 null
 console.log(explain.resolvedPolicy);
 
+console.log(inspect.preparedTurn.messages);
+console.log(inspect.governance.entries);
 console.log(diff.left.snapshotAvailable, diff.right.snapshotAvailable);
 console.log(diff.policyChanges);
+console.log(diff.governanceChanges);
 ```
 
 - `patchPolicy(...)` 和 `patchBranchPolicy(...)` 现在都支持 `structure`、`delivery`、`budget`、`sourceSelection`。

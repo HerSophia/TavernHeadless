@@ -110,15 +110,15 @@ export function assembleCompatPlus(input: CompatPlusAssemblerInput): PromptIR {
     name: PROMPT_MEMORY_SECTION_NAME,
     order: memoryOrder,
     budgetGroup: 'memory',
-    pinned: true,
+    pinned: false,
     messages: [{
       role: 'system',
       content: memoryInjection.formattedText,
       source: PROMPT_MEMORY_MESSAGE_SOURCE,
-      // Phase 3 governance: memory registry 记为 `soft_required`。首轮
-      // 保留 `prunable: false`，对外治理走 `sourceSelection.memory.enabled`。
-      // 若后续允许在极端 budget 压力下裁剪 memory，应参考
-      // `resolvePromptRuntimeSourceGovernanceLevel('memory')` 重新决策。
+      // Phase 3 governance: memory registry 记为 `soft_required`。
+      // 因此 section 不固定，但 message 继续保持 `prunable: false`。
+      // 对外治理仍走 `sourceSelection.memory.enabled`。
+      // 若后续允许在极端 budget 压力下裁剪 memory，应重新决策。
       prunable: false,
     }],
   };

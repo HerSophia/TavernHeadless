@@ -16,6 +16,7 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 
 - 想确认当前会话绑定了哪些提示词资源，例如预设、角色卡、世界书、正则。
 - 想查看 session 或 branch 当前真正生效的提示词策略。
+- 想在不调用模型、不创建 floor 的前提下，查看某次分支感知 turn 最终会被组装成什么 prepared-turn 提示词。
 - 想预览一小段文本里的宏会被展开成什么结果，但又不想真的发起一次聊天。
 - 想回看某个已提交楼层在当时真正落库的提示词快照，或者比较两个已提交楼层之间的差异。
 
@@ -24,20 +25,24 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 假设你在排查“为什么这个会话最近发给模型的提示词变短了”。可以按下面的顺序看：
 
 1. `GET /sessions/:id/prompt-runtime`：先看当前绑定了哪些提示词资源，当前预算和来源选择规则是什么。
-2. `POST /sessions/:id/prompt-runtime/preview`：拿一小段包含宏的文本做预览，确认宏展开结果是否符合预期。
-3. `GET /floors/:id/prompt-runtime/explain`：如果问题只出现在某个已提交楼层，再回看当时真正落库的解释快照。
+2. `POST /sessions/:id/prompt-runtime/inspect`：先看这次分支感知请求最终会被准备成什么完整 prompt turn，以及各个来源的治理结果。
+3. `POST /sessions/:id/prompt-runtime/preview`：如果你只想确认一小段文本中的宏展开，再单独做 `macro_text_preview`。
+4. `GET /floors/:id/prompt-runtime/explain`：如果问题只出现在某个已提交楼层，再回看当时真正落库的解释快照。
 
 ## 先理解几个词
 
 | 词 | 这里的意思 |
 | ---- | ---- |
 | Prompt Assets | 组成提示词的资源，例如预设、角色卡、世界书、正则配置 |
+| inspect | 只读地准备一次完整 prompt turn，不调用模型，不创建 floor，也不提交任何副作用 |
 | policy | 提示词组装规则，例如结构、投递方式、预算、来源选择 |
 | preview | 只对一小段文本做预览，不发起真实聊天，不创建 floor |
 | explain | 读取某个已提交楼层当时真正保存下来的提示词解释快照 |
 | compare | 比较两个已提交楼层的提示词快照差异 |
 
 当前还提供一个**单段文本宏预览**入口：`POST /sessions/:id/prompt-runtime/preview`。它只处理一段 `text`，不会创建第二条执行链，也不会真正发起一次聊天。
+
+另外还提供一个**完整 prepared turn 只读检查**入口：`POST /sessions/:id/prompt-runtime/inspect`。它会准备完整 prompt turn，并返回 prepared messages、token 估算、prompt snapshot 预览、runtime trace 和治理视图，但不会调用模型，也不会创建 floor、写 `prompt_snapshot`、写 `prompt_runtime_explain_snapshot`、stage `session_state_writes` 或提交其他副作用。
 
 这个入口的正式能力名是 `macro_text_preview`。它不是“完整提示词预览”：不会执行完整 prompt 组装、不会分配预算、不会生成最终投递内容，返回的 `runtime_trace` 也只会投影 `macro`、`source_selection`、`visibility` 这三个子字段。
 
@@ -48,6 +53,7 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 - `character_card` 仍然属于 Prompt Assets。
 - 当前不提供 `GET /sessions/:id/prompt-runtime/macros`。
 - 当前不提供 `GET /sessions/:id/prompt-runtime/run`。
+- inspect 只读准备完整 prompt turn，不走 LLM、不创建楼层、不写 `prompt_snapshot`、不写 `prompt_runtime_explain_snapshot`、不提交副作用。
 - preview 只提供 `POST /sessions/:id/prompt-runtime/preview`，一次只处理一段文本。它的正式能力名是 `macro_text_preview`。
 - preview 不调用模型、不创建楼层、不写 `prompt_snapshot`、不提交副作用。它也不做完整提示词组装、预算分配和最终投递内容生成，`returns_assembly_truth` 固定为 `false`。
 - preview 返回的 `runtime_trace` 只包含三个子字段：`macro`、`source_selection`、`visibility`。完整的预算、投递和结构信息，请读取 `policy` 与 `source_map`。
@@ -55,6 +61,7 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 - branch 策略也只对已经存在的分支生效；不能对还没创建的分支预先写入策略。
 - session 与 branch 的策略现在都支持持久化管理：`structure`、`delivery`、`budget`、`source_selection`、`visibility`。
 - 策略写入后统一包裹一层 envelope（`version`、`updated_at`、`updated_by`、`value`）。读取侧会继续兼容旧的裸对象格式。
+- historical explain snapshot 现在会把 `source_map` 与 `governance` 一起写入 `snapshotVersion = 2` 的 envelope；旧的 `snapshotVersion = 1` 仍然可读，但会返回 `governance = null` 并在 `limitations` 中明确说明。
 - 一次真实聊天在成功提交后，会把 `prompt_runtime_explain_snapshot` 与助理消息、楼层状态、`prompt_snapshot`、提交结果等数据一起写入同一个数据库事务。
 - `GET /floors/:id/prompt-runtime/explain` 和 `POST /sessions/:id/prompt-runtime/compare` 只读取已持久化的真相，不会重新组装提示词、重新展开宏、重新计算预算或来源选择。
 - 对于没有 committed snapshot 的旧楼层，会显式返回 `snapshot_available: false` 和结构化 `limitations`，不会试图用启发式方法补数据。
@@ -164,6 +171,31 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 - 记忆相关 section 在 `compat_plus` 与 `native` 两条装配路径下统一为 `memory`。
 - `compat` 路径下记忆仍以后置 `system` 消息形式注入，不会产生 `memory` section，`section_stats` 中也不会出现对应条目。
 
+### GovernanceView
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `entries` | object[] | 各个受治理来源的聚合视图 |
+| `entries[].source_kind` | string | 来源种类，例如 `history`、`memory`、`worldbook`、`examples`、`native_system` |
+| `entries[].declared_level` | string \| null | 注册表声明的治理级别：`hard_required` / `soft_required` / `budget_prunable` |
+| `entries[].registered` | boolean | 该来源是否在 runtime registry 中注册 |
+| `entries[].effective_retention` | string | 实际保留语义：`fixed` / `soft_required` / `budget_prunable` / `mixed` |
+| `entries[].pinned` | boolean \| null | 实际是否固定保留。`mixed` 时返回 `null` |
+| `entries[].prunable` | boolean \| null | 实际是否可裁剪。`mixed` 时返回 `null` |
+| `entries[].budget_groups` | string[] | 对应的 budget group |
+| `entries[].section_names` | string[] | 对应的 IR section 名称 |
+| `entries[].token_count` | integer | 该来源总 token 数 |
+| `entries[].retained_token_count` | integer | 保留 token 数 |
+| `entries[].pruned_token_count` | integer | 被裁剪 token 数 |
+| `mismatches` | object[] | 治理声明与实际结果之间的结构化差异 |
+| `mismatches[].code` | string | 当前可能为 `declared_budget_prunable_but_effectively_fixed`、`declared_soft_required_but_effectively_budget_prunable`、`unregistered_governed_source`、`mixed_effective_retention` |
+| `mismatches[].source_kind` | string | 命中的来源种类 |
+| `mismatches[].declared_level` | string \| null | 注册表声明的治理级别 |
+| `mismatches[].effective_retention` | string | 实际保留语义 |
+| `mismatches[].budget_groups` | string[] | 关联的 budget group |
+| `mismatches[].message` | string | 说明文本 |
+| `limitations` | string[] | 治理视图当前已知限制 |
+
 ### DiffEntry
 
 | 字段 | 类型 | 说明 |
@@ -271,6 +303,18 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 | `observability.dry_run.returns_runtime_trace` | boolean | dry-run 是否返回 `runtime_trace` |
 | `observability.dry_run.supports_visibility` | boolean | dry-run 是否支持 `visibility` |
 | `observability.dry_run.include_worldbook_matches` | boolean | dry-run 是否支持 `worldbook_matches` |
+| `observability.inspect.enabled` | boolean | inspect 能力是否可用 |
+| `observability.inspect.mode` | string | 当前固定为 `prepared_turn` |
+| `observability.inspect.supports_branch` | boolean | inspect 是否支持 branch-aware 请求 |
+| `observability.inspect.supports_source_floor` | boolean | inspect 是否支持 `source_floor_id` |
+| `observability.inspect.supports_visibility` | boolean | inspect 是否支持 request 级 `visibility` |
+| `observability.inspect.returns_prepared_turn` | boolean | inspect 是否返回完整 prepared turn |
+| `observability.inspect.returns_governance` | boolean | inspect 是否返回治理视图 |
+| `observability.inspect.llm_call` | boolean | inspect 是否会调用 LLM |
+| `observability.inspect.creates_floor` | boolean | inspect 是否会创建 floor |
+| `observability.inspect.writes_prompt_snapshot` | boolean | inspect 是否会写 `prompt_snapshot` |
+| `observability.inspect.writes_explain_snapshot` | boolean | inspect 是否会写 `prompt_runtime_explain_snapshot` |
+| `observability.inspect.commits_side_effects` | boolean | inspect 是否会提交副作用 |
 | `observability.preview.enabled` | boolean | preview 能力是否可用 |
 | `observability.preview.mode` | string | preview 正式契约。当前固定为 `macro_text_preview`，表示 preview 只是宏解析子视图 |
 | `observability.preview.returns_assembly_truth` | boolean | preview 是否暴露 full prompt assembly 真相。当前固定为 `false` |
@@ -284,6 +328,7 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 | `observability.preview.trace_subset` | string[] | preview 会投影到 `runtime_trace` 的子字段列表。当前固定为 `["macro", "source_selection", "visibility"]` |
 | `observability.explain.enabled` | boolean | historical explain 是否可用 |
 | `observability.explain.read_only` | boolean | explain 是否只读 |
+| `observability.explain.returns_governance` | boolean | explain 是否返回治理视图。旧 snapshot 会返回 `null` |
 | `observability.explain.requires_committed_floor` | boolean | explain 是否只面向 committed floor |
 | `observability.explain.persisted_truth_only` | boolean | explain 是否只读取持久化真相 |
 | `observability.explain.recompute` | boolean | explain 是否会重新组装 / 重算。当前固定为 `false` |
@@ -1227,6 +1272,257 @@ POST /sessions/:id/prompt-runtime/preview
 
 ### 兼容说明
 
+## 检查分支感知 prepared turn
+
+```http
+POST /sessions/:id/prompt-runtime/inspect
+```
+
+只读地准备一次完整 prompt turn，并返回当前请求在 Prompt Runtime 控制面下的完整解释结果。
+
+这个接口的定位是：**看完整 prepared turn，但不真正执行聊天。**
+
+它固定遵守以下边界：
+
+- 不走 LLM
+- 不创建 floor
+- 不创建 page
+- 不写 `prompt_snapshot`
+- 不写 `prompt_runtime_explain_snapshot`
+- 不 stage `session_state_writes`
+- 不提交任何副作用
+
+### 路径参数
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 会话 ID |
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `message` | string | **是** | 本次要准备的用户输入 |
+| `branch_id` | string | 否 | 目标 branch。可以是尚未物化的新分支 |
+| `source_floor_id` | string | 否 | 当 `branch_id` 指向未物化分支时，可用它指定继承 source |
+| `prompt_intent` | string | 否 | `normal` / `continue` / `impersonate` / `swipe` / `regenerate` / `quiet` |
+| `config` | object | 否 | turn config 覆盖 |
+| `generation_params` | object | 否 | generation 参数覆盖 |
+| `session_state_writes` | object[] | 否 | 只做可用性校验并原样回显摘要，不会 stage 或提交 |
+| `debug_options` | object | 否 | inspect 当前始终返回 prepared turn 所需的 prompt snapshot 预览、runtime trace 与治理视图；这里仍可沿用统一调试字段 |
+| `visibility` | object | 否 | request 级可见性覆盖 |
+| `structure` | object | 否 | request 级结构策略覆盖 |
+| `delivery` | object | 否 | request 级投递策略覆盖 |
+| `budget` | object | 否 | request 级 budget 覆盖 |
+| `source_selection` | object | 否 | request 级 source selection 覆盖 |
+
+### 请求示例
+
+```json
+{
+  "message": "Please continue the campfire scene.",
+  "branch_id": "alt-branch",
+  "source_floor_id": "floor-12",
+  "prompt_intent": "continue",
+  "generation_params": {
+    "max_output_tokens": 256,
+    "temperature": 0.7
+  },
+  "session_state_writes": [
+    {
+      "namespace": "quest_flags",
+      "slot": "companion",
+      "value": { "mood": "ally" }
+    }
+  ],
+  "visibility": {
+    "mode": "allow_all_except_hidden",
+    "hidden_floor_ranges": [
+      { "start_floor_no": 1, "end_floor_no": 2 }
+    ]
+  },
+  "budget": {
+    "max_input_tokens": 4096,
+    "reserved_completion_tokens": 1024
+  }
+}
+```
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "scope": {
+      "session_id": "session-1",
+      "target_branch_id": "alt-branch",
+      "branch_exists": false,
+      "source_floor_id": "floor-12",
+      "history_source_branch_id": "fork-branch",
+      "history_source_mode": "source_floor_branch"
+    },
+    "policy": {
+      "structure": {
+        "mode": "no_assistant",
+        "merge_adjacent_same_role": false,
+        "preserve_system_messages": true,
+        "assistant_rewrite_strategy": "to_system"
+      },
+      "delivery": {
+        "allow_assistant_prefill": true,
+        "require_last_user": false,
+        "no_assistant": true
+      },
+      "budget": {
+        "max_input_tokens": 4096,
+        "reserved_completion_tokens": 1024
+      },
+      "source_selection": {
+        "history": { "mode": "windowed", "max_messages": 24 },
+        "memory": { "enabled": true },
+        "worldbook": { "enabled": true },
+        "examples": { "enabled": false }
+      },
+      "visibility": {
+        "mode": "allow_all_except_hidden",
+        "hidden_floor_ranges": [
+          { "start_floor_no": 1, "end_floor_no": 2 }
+        ]
+      },
+      "debug": {
+        "include_prompt_snapshot": false,
+        "include_runtime_trace": true,
+        "include_worldbook_matches": true
+      }
+    },
+    "source_map": {
+      "delivery": {
+        "no_assistant": "request_override"
+      },
+      "history": {
+        "source_branch_id": "fork-branch",
+        "source_mode": "source_floor_branch"
+      }
+    },
+    "prepared_turn": {
+      "messages": [
+        { "role": "system", "content": "System prompt" },
+        { "role": "user", "content": "Please continue the campfire scene." }
+      ],
+      "token_estimate": 320,
+      "available_for_reply": 704,
+      "preprocessed_user_message": "Please continue the campfire scene.",
+      "prompt_snapshot": {
+        "preset_id": "preset-story",
+        "preset_updated_at": 1710000000000,
+        "preset_version": 3,
+        "worldbook_id": null,
+        "worldbook_updated_at": null,
+        "worldbook_version": null,
+        "regex_profile_id": null,
+        "regex_profile_updated_at": null,
+        "regex_profile_version": null,
+        "worldbook_activated_entry_uids": [7],
+        "regex_pre_rule_names": ["trim_whitespace"],
+        "regex_post_rule_names": [],
+        "prompt_mode": "native",
+        "prompt_digest": "digest-inspect",
+        "token_estimate": 320
+      },
+      "runtime_trace": {
+        "budgets": {
+          "by_group": [
+            { "group": "history", "token_count": 256 }
+          ]
+        }
+      },
+      "memory_summary": "Remember the promise.",
+      "generation_params": {
+        "max_output_tokens": 256,
+        "temperature": 0.7
+      },
+      "requested_turn_config": {
+        "enable_tools": true,
+        "tool_mode": "both"
+      },
+      "turn_config": {
+        "enable_tools": true,
+        "tool_mode": "both"
+      },
+      "session_state_writes": {
+        "total": 1,
+        "writes": [
+          {
+            "namespace": "quest_flags",
+            "slot": "companion",
+            "operation": "set"
+          }
+        ]
+      }
+    },
+    "governance": {
+      "entries": [
+        {
+          "source_kind": "memory",
+          "declared_level": "soft_required",
+          "registered": true,
+          "effective_retention": "soft_required",
+          "pinned": false,
+          "prunable": false,
+          "budget_groups": ["memory"],
+          "section_names": ["memory"],
+          "token_count": 64,
+          "retained_token_count": 64,
+          "pruned_token_count": 0
+        }
+      ],
+      "mismatches": [],
+      "limitations": []
+    },
+    "diagnostics": [],
+    "trim_reasons": [],
+    "excluded_sources": [],
+    "section_stats": [],
+    "limitations": [
+      "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+      "Variable commit remains page -> floor. Branch promotion is not automatic."
+    ]
+  }
+}
+```
+
+### inspect 当前返回面的解释
+
+- `prepared_turn.messages` 是已经 materialize 完成、可直接送入模型前的消息序列。
+- `prepared_turn.prompt_snapshot` 是这次 inspect 对应的 prompt snapshot 预览值，不会落库。
+- `prepared_turn.runtime_trace` 是这次 inspect 的完整 runtime trace 预览值，不会落库。
+- `prepared_turn.session_state_writes` 只总结请求里带来的写入意图，不代表已经 stage 或提交。
+- `governance` 聚合了各个来源的声明治理级别、实际保留语义和不一致项。
+
+### 常见错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体不合法 |
+| `404` | `not_found` / `source_floor_not_found` | 会话不存在，或 `source_floor_id` 不存在、不属于当前 session，或当前账号不可访问 |
+| `409` | `session_archived` / `invalid_state` / `branch_local_snapshot_missing` | 会话已归档、目标 branch 已有 generating floor，或 source floor 缺少精确 local snapshot |
+| `503` | `feature_unavailable` | 当前部署没有开启 client-data，但请求里携带了 `session_state_writes` |
+| `500` | `internal_error` | 服务端内部错误 |
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/sessions/session-1/prompt-runtime/inspect \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "Please continue the campfire scene.",
+    "branch_id": "alt-branch",
+    "source_floor_id": "floor-12"
+  }'
+```
+
+
 - 路径读取与写入继续遵守 **exact-key-first**：先按完整 flat key 读取，找不到时才回退到路径语义。
 - 支持 quoted key，例如：
 
@@ -1393,6 +1689,25 @@ GET /floors/:id/prompt-runtime/explain
         "include_worldbook_matches": false
       }
     },
+    "governance": {
+      "entries": [
+        {
+          "source_kind": "history",
+          "declared_level": "budget_prunable",
+          "registered": true,
+          "effective_retention": "budget_prunable",
+          "pinned": false,
+          "prunable": true,
+          "budget_groups": ["history"],
+          "section_names": ["chatHistory"],
+          "token_count": 320,
+          "retained_token_count": 256,
+          "pruned_token_count": 64
+        }
+      ],
+      "mismatches": [],
+      "limitations": []
+    },
     "source_map": {
       "structure": {
         "mode": "branch_policy",
@@ -1491,6 +1806,7 @@ GET /floors/:id/prompt-runtime/explain
 - `assets = null`
 - `resolved_policy = null`
 - `trim_reasons = null`
+- `governance = null`
 - `excluded_sources = null`
 - `section_stats = null`
 - `source_map` 只保留 `history` 子对象
@@ -1528,6 +1844,7 @@ GET /floors/:id/prompt-runtime/explain
 
 - `prompt_snapshot`、`floor`、`result` 都来自已持久化记录。
 - `snapshot_available = true` 表示 explain 已读到 `prompt_runtime_explain_snapshot`，因此可以返回完整 `assets`、`resolved_policy`、`source_map`、`trim_reasons`、`excluded_sources`、`section_stats`。
+- 新写入的 `snapshotVersion = 2` explain snapshot 会同时返回 `governance`；旧的 `snapshotVersion = 1` snapshot 仍然可读，但会返回 `governance = null`，并在 `limitations` 中说明这是旧版本兼容行为。
 - `snapshot_available = false` 表示目标 floor 没有这份 committed snapshot。服务会保留最小只读 explain，并通过 `diagnostics` 与 `limitations` 显式说明缺失字段。
 - 无论 snapshot 是否存在，这个接口都不会重跑 prompt 组装、宏展开、budget 或 source selection。
 
@@ -1638,6 +1955,18 @@ POST /sessions/:id/prompt-runtime/compare
         ]
       }
     ],
+    "governance_changes": [
+      {
+        "path": "governance.entries",
+        "change_type": "changed",
+        "left": [
+          { "source_kind": "history", "effective_retention": "budget_prunable" }
+        ],
+        "right": [
+          { "source_kind": "history", "effective_retention": "fixed" }
+        ]
+      }
+    ],
     "limitations": []
   }
 }
@@ -1649,6 +1978,7 @@ POST /sessions/:id/prompt-runtime/compare
 - 不支持 preview 与 committed floor 混合比较。
 - 差异项是结构化 path/value diff，不是全文级 diff。
 - `path` 固定使用 `snake_case`。
+- `governance_changes` 只比较已持久化 explain snapshot 中的治理视图，不会重算治理结果。
 - `policy_changes` 会同时覆盖 `resolved_policy` 与 `source_map`，因此 budget 和 visibility 的变化也会出现在这里；budget trim 与 source exclusion 的变化分别出现在 `trim_changes` 与 `exclusion_changes`。
 - 如果某一侧缺少 committed snapshot，会把对应侧的 `snapshot_available` 置为 `false`，并在 `limitations` 中说明 compare 因缺 snapshot 而跳过了 recompute。
 
@@ -1760,6 +2090,20 @@ GET /prompt-runtime/capabilities
         "supports_visibility": true,
         "include_worldbook_matches": true
       },
+      "inspect": {
+        "enabled": true,
+        "mode": "prepared_turn",
+        "supports_branch": true,
+        "supports_source_floor": true,
+        "supports_visibility": true,
+        "returns_prepared_turn": true,
+        "returns_governance": true,
+        "llm_call": false,
+        "creates_floor": false,
+        "writes_prompt_snapshot": false,
+        "writes_explain_snapshot": false,
+        "commits_side_effects": false
+      },
       "preview": {
         "enabled": true,
         "returns_runtime_trace": true,
@@ -1773,6 +2117,7 @@ GET /prompt-runtime/capabilities
       "explain": {
         "enabled": true,
         "read_only": true,
+        "returns_governance": true,
         "requires_committed_floor": true,
         "persisted_truth_only": true,
         "recompute": false,
