@@ -334,6 +334,18 @@ console.log(values[0]?.source, values[0]?.value);
 - 当前公开稳定的 built-in slot 只有 `game_state.scene` 与 `game_state.world`
 - `game_state` 仍然对客户端只读；public `deleteValue(...)` 与 turn 内 `delete: true` 的治理语义都是把值写成 `present: false`
 - turn-embedded `sessionStateWrites` 不会新增独立 stage API，也不接受客户端自带 `branchId` / `sourceFloorId` / `writeMode` / `replaySafety`
+- `registerNamespace(...)` 当前遵循已经冻结的 identity contract：
+  - `namespace` 与 `logicalOwnerType` 必须使用小写稳定标识，可带点分段
+  - `logicalOwnerId` 必须使用小写稳定 id，允许字符 `a-z0-9._:@/-`
+  - `game_state` 与 `game_state.*` 这类 built-in namespace / prefix 仍然保留，不能注册为 custom namespace
+  - 服务端只会先做 `trim()`，不会自动转小写
+- `listNamespaces(...)`、`resolve(...)`、`getFloorSnapshots(...)`、`diff(...)` 当前都不提供 `limit` / `offset` 分页；服务端会直接返回当前过滤条件命中的完整结果
+- `listNamespaces(...)` 返回的 `sizeBudgetBytes` 就是 slot 当前有效的 payload budget。custom namespace 默认继承当前部署的 Client Data item size limit；built-in slot 使用各自固定预算
+- Session State 的规模限制来自底层 managed storage。触发时，SDK 会抛出 `TavernApiError`，常见 `error.code` 包括：
+  - `validation_error`
+  - `session_state_namespace_count_limit_exceeded`、`session_state_namespace_item_limit_exceeded`、`session_state_namespace_byte_limit_exceeded`
+  - `session_state_account_item_limit_exceeded`、`session_state_account_byte_limit_exceeded`
+  - `session_state_payload_too_large`
 
 ### 内部 observation 面仍不在 SDK 包装范围内
 

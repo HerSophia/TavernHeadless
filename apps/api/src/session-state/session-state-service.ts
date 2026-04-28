@@ -752,13 +752,17 @@ export class SessionStateService {
       updatedAt: appliedAt,
     };
 
-    this.getClientDataService(tx).upsertItem({
-      accountId: mutation.accountId,
-      domainId: binding.domainId,
-      collectionName: SESSION_STATE_LIVE_COLLECTION,
-      itemKey: liveHeadKey,
-      valueJson: liveHeadEnvelope,
-    });
+    try {
+      this.getClientDataService(tx).upsertItem({
+        accountId: mutation.accountId,
+        domainId: binding.domainId,
+        collectionName: SESSION_STATE_LIVE_COLLECTION,
+        itemKey: liveHeadKey,
+        valueJson: liveHeadEnvelope,
+      });
+    } catch (error) {
+      this.throwMappedClientDataStorageError(error, definition.namespace, definition.slot);
+    }
 
     const updated = this.sessionStateRepository(tx).updateMutation({
       mutationId: mutation.id,
@@ -842,13 +846,17 @@ export class SessionStateService {
       snapshotEnvelope.sourceMutationIds = currentLiveHead.lastMutationId ? [currentLiveHead.lastMutationId] : [];
     }
 
-    this.getClientDataService(tx).upsertItem({
-      accountId: input.accountId,
-      domainId: input.binding.domainId,
-      collectionName: SESSION_STATE_SNAPSHOT_COLLECTION,
-      itemKey: this.buildSnapshotItemKey(input.definition.namespace, input.definition.slot, input.floor.id),
-      valueJson: snapshotEnvelope,
-    });
+    try {
+      this.getClientDataService(tx).upsertItem({
+        accountId: input.accountId,
+        domainId: input.binding.domainId,
+        collectionName: SESSION_STATE_SNAPSHOT_COLLECTION,
+        itemKey: this.buildSnapshotItemKey(input.definition.namespace, input.definition.slot, input.floor.id),
+        valueJson: snapshotEnvelope,
+      });
+    } catch (error) {
+      this.throwMappedClientDataStorageError(error, input.definition.namespace, input.definition.slot);
+    }
 
     return {
       namespace: snapshotEnvelope.namespace,
@@ -902,16 +910,32 @@ export class SessionStateService {
     });
 
     if (!domain) {
-      domain = clientDataService.createDomain({
-        accountId,
-        ownerType: this.managedOwnerType,
-        ownerId: this.managedOwnerId,
-        domainName,
-        displayName: `Session State ${namespace}`,
-        description: `Managed session state backing domain for session '${sessionId}' and namespace '${namespace}'`,
-        actor: { actorType: "system:session_state", actorId: sessionId },
-        requestId: `session-state-bootstrap:${sessionId}:${namespace}`,
-      });
+      try {
+        domain = clientDataService.createDomain({
+          accountId,
+          ownerType: this.managedOwnerType,
+          ownerId: this.managedOwnerId,
+          domainName,
+          displayName: `Session State ${namespace}`,
+          description: `Managed session state backing domain for session '${sessionId}' and namespace '${namespace}'`,
+          actor: { actorType: "system:session_state", actorId: sessionId },
+          requestId: `session-state-bootstrap:${sessionId}:${namespace}`,
+        });
+      } catch (error) {
+        if (error instanceof ClientDataServiceError && error.code === "client_data_domain_name_conflict") {
+          domain = clientDataRepository.getDomainByOwnerName({
+            accountId,
+            ownerType: this.managedOwnerType,
+            ownerId: this.managedOwnerId,
+            domainName,
+          });
+          if (!domain) {
+            throw error;
+          }
+        } else {
+          this.throwMappedClientDataStorageError(error, namespace);
+        }
+      }
     }
 
     this.ensureInternalCollections(executor, accountId, domain.id);
@@ -1371,6 +1395,47 @@ export class SessionStateService {
 
   private valuesEqual(left: unknown, right: unknown): boolean {
     return stableStringify(left) === stableStringify(right);
+  }
+
+  private throwMappedClientDataStorageError(
+    error: unknown,
+    namespace: SessionStateNamespace,
+    slot?: string,
+  ): never {
+    throw this.mapClientDataStorageError(error, namespace, slot) ?? error;
+  }
+
+  private mapClientDataStorageError(
+    error: unknown,
+    namespace: SessionStateNamespace,
+    slot?: string,
+  ): SessionStateServiceError | null {
+    if (!(error instanceof ClientDataServiceError)) {
+      return null;
+    }
+
+    switch (error.code) {
+      case "client_data_account_domain_limit_exceeded":
+        return new SessionStateServiceError(409, "session_state_namespace_count_limit_exceeded", `Session State namespace '${namespace}' cannot be materialized because the account has reached the managed namespace capacity`);
+      case "client_data_domain_entries_quota_exceeded":
+        return new SessionStateServiceError(409, "session_state_namespace_item_limit_exceeded", `Session State namespace '${namespace}' has reached its managed storage item limit`);
+      case "client_data_domain_bytes_quota_exceeded":
+        return new SessionStateServiceError(409, "session_state_namespace_byte_limit_exceeded", `Session State namespace '${namespace}' has reached its managed storage byte limit`);
+      case "client_data_account_entries_quota_exceeded":
+        return new SessionStateServiceError(409, "session_state_account_item_limit_exceeded", "Session State account storage item limit exceeded");
+      case "client_data_account_bytes_quota_exceeded":
+        return new SessionStateServiceError(409, "session_state_account_byte_limit_exceeded", "Session State account storage byte limit exceeded");
+      case "client_data_item_too_large":
+        return new SessionStateServiceError(
+          409,
+          "session_state_payload_too_large",
+          slot
+            ? `Session state payload for slot '${namespace}/${slot}' exceeds its size budget`
+            : `Session state payload for namespace '${namespace}' exceeds its size budget`,
+        );
+      default:
+        return null;
+    }
   }
 
   private appendGovernanceAudit(

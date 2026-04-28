@@ -53,9 +53,6 @@ curl -X POST http://localhost:3000/sessions/sess_001/respond \
 如果你需要回看某个已提交楼层当时真正保存的提示词快照，而不是当前请求的调试结果，请使用 `GET /floors/:id/prompt-runtime/explain`。
 
 如果你需要比较两个已提交楼层的提示词差异，请使用 `POST /sessions/:id/prompt-runtime/compare`。
-
-
-
 ## 发送消息并生成回复
 
 ```http
@@ -98,6 +95,7 @@ POST /sessions/:id/respond
 - 只有在 `enableClientData === true && clientData` 时才可用；否则返回 `503 feature_unavailable`
 - 写入会在生成成功后先 stage，并在当前 turn commit 成功时一并落地
 - `delete: true` 的治理语义是写成 `present: false`
+- 如果写入命中 Session State 的 managed storage 上限或 payload budget，上层会返回同一组 `session_state_*` 正式错误码，而不会把底层 `client_data_*` 错误直接暴露给调用方
 
 ### 响应 `200`
 
@@ -149,9 +147,9 @@ POST /sessions/:id/respond
 
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
-| `400` | `validation_error` / `invalid_message_scope` | 参数校验失败，或消息作用域错误 |
+| `400` | `validation_error` / `invalid_message_scope` | 参数校验失败、消息作用域错误，或 `session_state_writes` 同时传入 `value` 和 `delete: true` / 两者都未传 |
 | `404` | `not_found` / `session_state_namespace_not_registered` | 会话不存在，或 turn 内声明的 custom namespace 尚未注册 |
-| `409` | `session_archived` / `generation_conflict` / `commit_conflict` / `generation_target_stale` / `branch_local_snapshot_missing` / `session_state_public_write_forbidden` / `session_state_payload_too_large` | 会话状态冲突、提交边界冲突、排队请求等待期间目标上下文已经变化、新分支所依赖的 source floor 缺少精确 local snapshot，或 turn 内 session-state 写入不被允许 / 超预算 |
+| `409` | `session_archived` / `generation_conflict` / `commit_conflict` / `generation_target_stale` / `branch_local_snapshot_missing` / `session_state_public_write_forbidden` / `session_state_namespace_item_limit_exceeded` / `session_state_namespace_byte_limit_exceeded` / `session_state_account_item_limit_exceeded` / `session_state_account_byte_limit_exceeded` / `session_state_payload_too_large` | 会话状态冲突、提交边界冲突、排队请求等待期间目标上下文已经变化、新分支所依赖的 source floor 缺少精确 local snapshot，或 turn 内 Session State 写入不被允许、命中规模限制或超出 payload budget |
 | `503` | `feature_unavailable` / `secret_unavailable` / `commit_busy` / `generation_queue_timeout` | client-data 未启用，密钥不可用，或生成 / 提交等待阶段已超时 |
 | `504` | `generation_timeout` | LLM 执行超时 |
 | `500` | `secret_invalid_format` / `orchestration_failed` / `turn_commit_failed` / `session_state_stage_failed` | 已保存的密文无法解密，生成过程出现未分类内部错误，或 turn 内 session-state staging 失败 |
@@ -518,6 +516,8 @@ POST /sessions/:id/regenerate
 | `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
 | `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开世界书命中详情 |
 
+这组 `session_state_writes` 的字段边界、删除语义和常见错误，与 `/sessions/:id/respond` 一致。
+
 如果目标楼层关联的历史工具执行或 session-state mutation 需要人工确认，服务端会返回 `409 tool_replay_confirmation_required`、`409 session_state_replay_confirmation_required` 或 `409 replay_confirmation_required`。
 
 - `error.details.blocking_executions` 列出需要确认的工具执行
@@ -575,6 +575,8 @@ POST /floors/:id/retry
 | `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
 | `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
 | `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开世界书命中详情 |
+
+这组 `session_state_writes` 的字段边界、删除语义和常见错误，与 `/sessions/:id/respond` 一致。
 
 当目标楼层包含需要人工确认的历史 replay blocker 时，服务端会返回：
 
@@ -639,6 +641,8 @@ POST /messages/:id/edit-and-regenerate
 | `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
 | `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
 | `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开世界书命中详情 |
+
+这组 `session_state_writes` 的字段边界、删除语义和常见错误，与 `/sessions/:id/respond` 一致。
 
 如果源楼层关联的历史工具执行或 session-state mutation 需要人工确认，服务端会返回 `409 tool_replay_confirmation_required`、`409 session_state_replay_confirmation_required` 或 `409 replay_confirmation_required`。
 

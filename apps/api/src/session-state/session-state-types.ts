@@ -9,6 +9,14 @@ export const SESSION_STATE_NAMESPACE_GAME_STATE = "game_state" as const;
 export const SESSION_STATE_LIVE_COLLECTION = "__session_state_live_heads" as const;
 export const SESSION_STATE_SNAPSHOT_COLLECTION = "__session_state_floor_snapshots" as const;
 
+export const SESSION_STATE_NAMESPACE_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$/;
+export const SESSION_STATE_LOGICAL_OWNER_TYPE_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$/;
+export const SESSION_STATE_LOGICAL_OWNER_ID_PATTERN = /^[a-z0-9@][a-z0-9._:@/-]*$/;
+
+export const SESSION_STATE_NAMESPACE_PATTERN_HINT = "lowercase letters, digits, underscore, with optional dot-separated segments" as const;
+export const SESSION_STATE_LOGICAL_OWNER_TYPE_PATTERN_HINT = "lowercase letters, digits, underscore, with optional dot-separated segments" as const;
+export const SESSION_STATE_LOGICAL_OWNER_ID_PATTERN_HINT = "lowercase letters, digits, '.', '_', ':', '@', '/', '-'" as const;
+
 export type SessionStateManagerKind = typeof SESSION_STATE_MANAGER_KIND;
 export type SessionStateHostType = typeof SESSION_STATE_HOST_TYPE;
 export type SessionStateNamespace = typeof SESSION_STATE_NAMESPACE_GAME_STATE | (string & {});
