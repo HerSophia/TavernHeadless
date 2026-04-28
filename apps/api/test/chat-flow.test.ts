@@ -104,7 +104,7 @@ describe("POST /sessions/:id/respond", () => {
 
 // ── ChatService 单元测试 ──────────────────────────────
 
-import { ChatService, ChatServiceError, type RespondRuntimeToolEvent } from "../src/services/chat-service";
+import { ChatService, ChatServiceError, type RespondRuntimeToolEvent } from "../src/services/chat/chat-service";
 import {
   GenerationCoordinatorCancelledError,
   type GenerationCoordinator,

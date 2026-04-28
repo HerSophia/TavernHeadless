@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { NativePipelineError } from "@tavern/core";
 
 import { findNativePipelineError } from "../src/lib/native-pipeline-error";
-import { ChatServiceError } from "../src/services/chat-service";
+import { ChatServiceError } from "../src/services/chat/chat-service";
 
 function createNativePipelineError(): NativePipelineError {
   return new NativePipelineError({

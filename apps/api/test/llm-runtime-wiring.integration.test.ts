@@ -7,8 +7,8 @@ const runtimeWiringState = vi.hoisted(() => ({
   lastChatServiceOptions: null as Record<string, unknown> | null,
 }));
 
-vi.mock("../src/services/chat-service", async () => {
-  const actual = await vi.importActual<typeof import("../src/services/chat-service")>("../src/services/chat-service");
+vi.mock("../src/services/chat/chat-service", async () => {
+  const actual = await vi.importActual<typeof import("../src/services/chat/chat-service")>("../src/services/chat/chat-service");
 
   class MockChatService {
     constructor(
@@ -48,7 +48,7 @@ vi.mock("../src/services/chat-service", async () => {
 });
 
 import { buildApp } from "../src/app";
-import { ChatServiceError } from "../src/services/chat-service";
+import { ChatServiceError } from "../src/services/chat/chat-service";
 
 describe("buildApp LLM runtime wiring", () => {
   let app: FastifyInstance;
