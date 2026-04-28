@@ -9,6 +9,15 @@ on:
       - main
       - dev
   workflow_dispatch:
+    inputs:
+      run_coverage:
+        description: "Whether to run the coverage job"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
 
 jobs:
   changes:
@@ -325,7 +334,7 @@ jobs:
 
   coverage:
     name: Coverage
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.run_coverage == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs:
