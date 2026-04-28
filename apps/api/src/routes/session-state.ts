@@ -16,6 +16,23 @@ import {
   SessionStatePublicServiceError,
 } from "../session-state/session-state-public-service.js";
 import { SessionStateServiceError } from "../session-state/session-state-service.js";
+import {
+  diffSessionStateQueryJsonSchema,
+  diffSessionStateValuesResponseJsonSchema,
+  listSessionStateNamespacesResponseJsonSchema,
+  registerSessionStateNamespaceBodyJsonSchema,
+  registerSessionStateNamespaceResponseJsonSchema,
+  resolveSessionStateQueryJsonSchema,
+  resolveSessionStateValuesResponseJsonSchema,
+  sessionStateRouteErrorResponses,
+  sessionStateSessionIdParamsJsonSchema,
+  sessionStateSnapshotParamsJsonSchema,
+  sessionStateResolvedValueResponseJsonSchema,
+  snapshotSessionStateQueryJsonSchema,
+  snapshotSessionStateValuesResponseJsonSchema,
+  writeSessionStateValueBodyJsonSchema,
+  deleteSessionStateValueBodyJsonSchema,
+} from "./schemas/session-state-schemas.js";
 
 export interface RegisterSessionStateRoutesOptions {
   publicService?: SessionStatePublicService;
@@ -136,8 +153,15 @@ export async function registerSessionStateRoutes(
   app.post("/sessions/:sessionId/state/namespaces", {
     schema: {
       tags: ["session-state"],
+      operationId: "registerSessionStateNamespace",
       summary: "Register a custom Session State namespace",
       description: "Control-plane write surface for creating a per-session custom namespace registration and managed binding.",
+      params: sessionStateSessionIdParamsJsonSchema,
+      body: registerSessionStateNamespaceBodyJsonSchema,
+      response: {
+        201: registerSessionStateNamespaceResponseJsonSchema,
+        ...sessionStateRouteErrorResponses,
+      },
     },
   }, async (request, reply) => {
     const service = ensureCustomNamespaceServiceAvailable(reply);
@@ -168,8 +192,14 @@ export async function registerSessionStateRoutes(
   app.get("/sessions/:sessionId/state/namespaces", {
     schema: {
       tags: ["session-state"],
+      operationId: "listSessionStateNamespaces",
       summary: "List public session-state namespaces and slot definitions",
       description: "Public read surface for Session State. Returns public-stable built-in slot definitions plus registered custom namespaces.",
+      params: sessionStateSessionIdParamsJsonSchema,
+      response: {
+        200: listSessionStateNamespacesResponseJsonSchema,
+        ...sessionStateRouteErrorResponses,
+      },
     },
   }, async (request, reply) => {
     const service = ensureServiceAvailable(reply);
@@ -192,8 +222,15 @@ export async function registerSessionStateRoutes(
   app.post("/sessions/:sessionId/state/values/write", {
     schema: {
       tags: ["session-state"],
+      operationId: "writeSessionStateValue",
       summary: "Write a custom Session State value",
       description: "Public write surface for registered custom namespaces. Performs governed direct write and returns the current-effective single-slot view.",
+      params: sessionStateSessionIdParamsJsonSchema,
+      body: writeSessionStateValueBodyJsonSchema,
+      response: {
+        200: sessionStateResolvedValueResponseJsonSchema,
+        ...sessionStateRouteErrorResponses,
+      },
     },
   }, async (request, reply) => {
     const service = ensureServiceAvailable(reply);
@@ -223,8 +260,15 @@ export async function registerSessionStateRoutes(
   app.delete("/sessions/:sessionId/state/values", {
     schema: {
       tags: ["session-state"],
+      operationId: "deleteSessionStateValue",
       summary: "Delete a custom Session State value",
       description: "Public delete surface for registered custom namespaces. Maps delete to governed `present: false` and returns the current-effective single-slot view.",
+      params: sessionStateSessionIdParamsJsonSchema,
+      body: deleteSessionStateValueBodyJsonSchema,
+      response: {
+        200: sessionStateResolvedValueResponseJsonSchema,
+        ...sessionStateRouteErrorResponses,
+      },
     },
   }, async (request, reply) => {
     const service = ensureServiceAvailable(reply);
@@ -253,8 +297,15 @@ export async function registerSessionStateRoutes(
   app.get("/sessions/:sessionId/state/resolve", {
     schema: {
       tags: ["session-state"],
+      operationId: "resolveSessionStateValues",
       summary: "Resolve current-effective Session State values",
       description: "Public read surface for resolving current-effective or source-floor Session State values.",
+      params: sessionStateSessionIdParamsJsonSchema,
+      querystring: resolveSessionStateQueryJsonSchema,
+      response: {
+        200: resolveSessionStateValuesResponseJsonSchema,
+        ...sessionStateRouteErrorResponses,
+      },
     },
   }, async (request, reply) => {
     const service = ensureServiceAvailable(reply);
@@ -284,8 +335,15 @@ export async function registerSessionStateRoutes(
   app.get("/sessions/:sessionId/state/floors/:floorId/snapshot", {
     schema: {
       tags: ["session-state"],
+      operationId: "getSessionStateFloorSnapshot",
       summary: "Read public Session State floor snapshots",
       description: "Public read surface for floor snapshot values of public-stable Session State slots.",
+      params: sessionStateSnapshotParamsJsonSchema,
+      querystring: snapshotSessionStateQueryJsonSchema,
+      response: {
+        200: snapshotSessionStateValuesResponseJsonSchema,
+        ...sessionStateRouteErrorResponses,
+      },
     },
   }, async (request, reply) => {
     const service = ensureServiceAvailable(reply);
@@ -328,8 +386,15 @@ export async function registerSessionStateRoutes(
   app.get("/sessions/:sessionId/state/diff", {
     schema: {
       tags: ["session-state"],
+      operationId: "diffSessionStateValues",
       summary: "Diff public Session State values against live or another floor",
       description: "Public read surface for Session State diffs. Returns full values for public-stable slots.",
+      params: sessionStateSessionIdParamsJsonSchema,
+      querystring: diffSessionStateQueryJsonSchema,
+      response: {
+        200: diffSessionStateValuesResponseJsonSchema,
+        ...sessionStateRouteErrorResponses,
+      },
     },
   }, async (request, reply) => {
     const service = ensureServiceAvailable(reply);

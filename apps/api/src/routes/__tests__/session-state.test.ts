@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 
 import { buildApp, type BuildAppResult } from "../../app.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
+import { ClientDataService } from "../../client-data/client-data-service.js";
 import { accounts, floors, sessions } from "../../db/schema.js";
 import { SessionStateCustomNamespaceService } from "../../session-state/session-state-custom-namespace-service.js";
 import { SessionStateService } from "../../session-state/session-state-service.js";
@@ -30,13 +31,14 @@ describe("session-state public routes", () => {
     }
   });
 
-  async function buildStateApp(overrides?: { enableClientData?: boolean }) {
+  async function buildStateApp(overrides?: { enableClientData?: boolean; clientDataConfig?: Partial<typeof clientDataConfig> }) {
+    const resolvedClientDataConfig = { ...clientDataConfig, ...overrides?.clientDataConfig };
     const built = await buildApp({
       databasePath: ":memory:",
       auth: { mode: "off" },
       accountMode: "single",
       enableClientData: overrides?.enableClientData ?? true,
-      clientData: clientDataConfig,
+      clientData: resolvedClientDataConfig,
     });
     builtApps.push(built);
     await built.app.ready();
@@ -478,6 +480,57 @@ describe("session-state public routes", () => {
     expect(JSON.parse(duplicateRes.body).error.code).toBe("session_state_namespace_already_registered");
   });
 
+  it("rejects invalid custom namespace identity inputs on the public registration route", async () => {
+    const built = await buildStateApp();
+    const sessionId = nanoid();
+    const now = 650;
+
+    await built.database.insert(sessions).values({
+      id: sessionId,
+      title: "Invalid namespace route test",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const invalidNamespaceRes = await built.app.inject({
+      method: "POST",
+      url: `/sessions/${encodeURIComponent(sessionId)}/state/namespaces`,
+      payload: {
+        namespace: "quest-flags",
+        logical_owner_type: "plugin",
+        logical_owner_id: "quest-plugin",
+      },
+    });
+    expect(invalidNamespaceRes.statusCode).toBe(400);
+    expect(JSON.parse(invalidNamespaceRes.body).error.code).toBe("validation_error");
+
+    const reservedPrefixRes = await built.app.inject({
+      method: "POST",
+      url: `/sessions/${encodeURIComponent(sessionId)}/state/namespaces`,
+      payload: {
+        namespace: "game_state.scene",
+        logical_owner_type: "plugin",
+        logical_owner_id: "quest-plugin",
+      },
+    });
+    expect(reservedPrefixRes.statusCode).toBe(409);
+    expect(JSON.parse(reservedPrefixRes.body).error.code).toBe("session_state_namespace_reserved");
+
+    const invalidOwnerIdRes = await built.app.inject({
+      method: "POST",
+      url: `/sessions/${encodeURIComponent(sessionId)}/state/namespaces`,
+      payload: {
+        namespace: "quest_flags",
+        logical_owner_type: "plugin",
+        logical_owner_id: "QuestPlugin",
+      },
+    });
+    expect(invalidOwnerIdRes.statusCode).toBe(400);
+    expect(JSON.parse(invalidOwnerIdRes.body).error.code).toBe("validation_error");
+  });
+
   it("rejects built-in writes and unregistered custom writes on the public routes", async () => {
     const built = await buildStateApp();
     const sessionId = nanoid();
@@ -518,6 +571,178 @@ describe("session-state public routes", () => {
     expect(unregisteredWriteRes.statusCode).toBe(404);
     expect(JSON.parse(unregisteredWriteRes.body).error.code).toBe("session_state_namespace_not_registered");
   });
+
+  it("maps managed namespace registration capacity errors to Session State formal errors", async () => {
+    const constrainedClientDataConfig = {
+      ...clientDataConfig,
+      maxDomainsPerAccount: 1,
+    };
+    const built = await buildStateApp({ clientDataConfig: constrainedClientDataConfig });
+    const sessionId = nanoid();
+    const now = 720;
+
+    await built.database.insert(sessions).values({
+      id: sessionId,
+      title: "Managed namespace capacity route test",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    seedRawClientDataDomain(built, constrainedClientDataConfig, { ownerId: `seed-owner-${nanoid()}` });
+
+    const registerRes = await built.app.inject({
+      method: "POST",
+      url: `/sessions/${encodeURIComponent(sessionId)}/state/namespaces`,
+      payload: {
+        namespace: "quest_flags",
+        logical_owner_type: "plugin",
+        logical_owner_id: "quest-plugin",
+      },
+    });
+
+    expect(registerRes.statusCode).toBe(409);
+    expect(JSON.parse(registerRes.body).error.code).toBe("session_state_namespace_count_limit_exceeded");
+  });
+
+  it("maps payload size budget rejections to a stable Session State error on the public write route", async () => {
+    const constrainedClientDataConfig = {
+      ...clientDataConfig,
+      defaultMaxItemSizeBytes: 64,
+    };
+    const built = await buildStateApp({ clientDataConfig: constrainedClientDataConfig });
+    const sessionId = nanoid();
+    const now = 730;
+
+    await built.database.insert(sessions).values({
+      id: sessionId,
+      title: "Payload size budget route test",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await registerNamespace(built, sessionId, "quest_flags");
+
+    const writeRes = await built.app.inject({
+      method: "POST",
+      url: `/sessions/${encodeURIComponent(sessionId)}/state/values/write`,
+      payload: {
+        branch_id: "main",
+        namespace: "quest_flags",
+        slot: "companion",
+        value: { note: "x".repeat(80) },
+      },
+    });
+
+    expect(writeRes.statusCode).toBe(409);
+    expect(JSON.parse(writeRes.body).error.code).toBe("session_state_payload_too_large");
+  });
+
+  it("maps namespace storage item limits to Session State formal errors on the public write route", async () => {
+    const constrainedClientDataConfig = {
+      ...clientDataConfig,
+      defaultQuotaMaxEntries: 1,
+    };
+    const built = await buildStateApp({ clientDataConfig: constrainedClientDataConfig });
+    const sessionId = nanoid();
+    const now = 740;
+
+    await built.database.insert(sessions).values({
+      id: sessionId,
+      title: "Namespace item limit route test",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await registerNamespace(built, sessionId, "quest_flags");
+    const firstWriteRes = await writeCustomState(built, sessionId, { namespace: "quest_flags", slot: "companion", value: { mood: "ally" } });
+    expect(firstWriteRes.statusCode).toBe(200);
+
+    const secondWriteRes = await writeCustomState(built, sessionId, { namespace: "quest_flags", slot: "reputation", value: { standing: "trusted" } });
+    expect(secondWriteRes.statusCode).toBe(409);
+    expect(JSON.parse(secondWriteRes.body).error.code).toBe("session_state_namespace_item_limit_exceeded");
+  });
+
+  it("maps namespace storage byte limits to Session State formal errors on the public write route", async () => {
+    const constrainedClientDataConfig = {
+      ...clientDataConfig,
+      defaultMaxItemSizeBytes: 10_000,
+      defaultQuotaMaxBytes: 1,
+    };
+    const built = await buildStateApp({ clientDataConfig: constrainedClientDataConfig });
+    const sessionId = nanoid();
+    const now = 750;
+
+    await built.database.insert(sessions).values({
+      id: sessionId,
+      title: "Namespace byte limit route test",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await registerNamespace(built, sessionId, "quest_flags");
+
+    const writeRes = await writeCustomState(built, sessionId, { namespace: "quest_flags", slot: "companion", value: { mood: "ally" } });
+    expect(writeRes.statusCode).toBe(409);
+    expect(JSON.parse(writeRes.body).error.code).toBe("session_state_namespace_byte_limit_exceeded");
+  });
+
+  it("maps account-level storage item and byte limits to Session State formal errors on the public write route", async () => {
+    const itemConstrainedClientDataConfig = {
+      ...clientDataConfig,
+      maxTotalEntriesPerAccount: 1,
+    };
+    const itemBuilt = await buildStateApp({ clientDataConfig: itemConstrainedClientDataConfig });
+    const itemSessionId = nanoid();
+    const itemNow = 760;
+
+    await itemBuilt.database.insert(sessions).values({
+      id: itemSessionId,
+      title: "Account item limit route test",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: itemNow,
+      updatedAt: itemNow,
+    });
+
+    seedRawClientDataItem(itemBuilt, itemConstrainedClientDataConfig);
+    await registerNamespace(itemBuilt, itemSessionId, "quest_flags");
+
+    const itemWriteRes = await writeCustomState(itemBuilt, itemSessionId, { namespace: "quest_flags", slot: "companion", value: { mood: "ally" } });
+    expect(itemWriteRes.statusCode).toBe(409);
+    expect(JSON.parse(itemWriteRes.body).error.code).toBe("session_state_account_item_limit_exceeded");
+
+    const byteConstrainedClientDataConfig = {
+      ...clientDataConfig,
+      defaultMaxItemSizeBytes: 10_000,
+      maxTotalBytesPerAccount: 1,
+    };
+    const byteBuilt = await buildStateApp({ clientDataConfig: byteConstrainedClientDataConfig });
+    const byteSessionId = nanoid();
+    const byteNow = 770;
+
+    await byteBuilt.database.insert(sessions).values({
+      id: byteSessionId,
+      title: "Account byte limit route test",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      createdAt: byteNow,
+      updatedAt: byteNow,
+    });
+
+    await registerNamespace(byteBuilt, byteSessionId, "quest_flags");
+
+    const byteWriteRes = await writeCustomState(byteBuilt, byteSessionId, { namespace: "quest_flags", slot: "companion", value: { mood: "ally" } });
+    expect(byteWriteRes.statusCode).toBe(409);
+    expect(JSON.parse(byteWriteRes.body).error.code).toBe("session_state_account_byte_limit_exceeded");
+  });
 });
 
 function stageAndApplyState(
@@ -545,5 +770,79 @@ function stageAndApplyState(
     branchId: "main",
     floorId: input.floorId,
     committedAt: input.committedAt,
+  });
+}
+
+async function registerNamespace(
+  built: BuildAppResult,
+  sessionId: string,
+  namespace: string,
+) {
+  return built.app.inject({
+    method: "POST",
+    url: `/sessions/${encodeURIComponent(sessionId)}/state/namespaces`,
+    payload: {
+      namespace,
+      logical_owner_type: "plugin",
+      logical_owner_id: "quest-plugin",
+    },
+  });
+}
+
+async function writeCustomState(
+  built: BuildAppResult,
+  sessionId: string,
+  input: {
+    namespace: string;
+    slot: string;
+    value: unknown;
+  },
+) {
+  return built.app.inject({
+    method: "POST",
+    url: `/sessions/${encodeURIComponent(sessionId)}/state/values/write`,
+    payload: {
+      branch_id: "main",
+      namespace: input.namespace,
+      slot: input.slot,
+      value: input.value,
+    },
+  });
+}
+
+function seedRawClientDataDomain(
+  built: BuildAppResult,
+  config: typeof clientDataConfig,
+  input?: {
+    ownerId?: string;
+    domainName?: string;
+  },
+) {
+  const service = new ClientDataService(built.database, config);
+  return service.createDomain({
+    accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+    ownerType: "plugin",
+    ownerId: input?.ownerId ?? `seed-owner-${nanoid()}`,
+    domainName: input?.domainName ?? `seed-domain-${nanoid()}`,
+  });
+}
+
+function seedRawClientDataItem(
+  built: BuildAppResult,
+  config: typeof clientDataConfig,
+) {
+  const service = new ClientDataService(built.database, config);
+  const domain = seedRawClientDataDomain(built, config);
+  service.createCollection({
+    accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+    domainId: domain.id,
+    collectionName: "seed_collection",
+  });
+  return service.upsertItem({
+    accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+    domainId: domain.id,
+    collectionName: "seed_collection",
+    itemKey: "seed_item",
+    valueJson: { seed: true },
   });
 }

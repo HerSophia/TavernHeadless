@@ -24,16 +24,22 @@ import type {
   SessionStateNamespaceRegistrationRecord,
   SessionStatePublicCustomNamespaceDefinition,
   SessionStatePublicSlotDefinition,
-  SessionStateWriteMode,
   SessionStateSlotDefinition,
   SessionStateSlotPublicExposure,
+  SessionStateWriteMode,
 } from "./session-state-types.js";
 import {
   SESSION_STATE_HOST_TYPE,
   SESSION_STATE_INTERNAL_OWNER_ID,
   SESSION_STATE_INTERNAL_OWNER_TYPE,
   SESSION_STATE_LIVE_COLLECTION,
+  SESSION_STATE_LOGICAL_OWNER_ID_PATTERN,
+  SESSION_STATE_LOGICAL_OWNER_ID_PATTERN_HINT,
+  SESSION_STATE_LOGICAL_OWNER_TYPE_PATTERN,
+  SESSION_STATE_LOGICAL_OWNER_TYPE_PATTERN_HINT,
   SESSION_STATE_MANAGER_KIND,
+  SESSION_STATE_NAMESPACE_PATTERN,
+  SESSION_STATE_NAMESPACE_PATTERN_HINT,
   SESSION_STATE_SNAPSHOT_COLLECTION,
 } from "./session-state-types.js";
 
@@ -85,62 +91,61 @@ export class SessionStateCustomNamespaceService {
     logicalOwnerType: SessionStateLogicalOwnerType;
     logicalOwnerId: string;
   }): SessionStatePublicCustomNamespaceDefinition {
-    return this.executeTransaction((tx) => {
-      const session = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
-      const namespace = this.normalizeRequiredString(input.namespace, "namespace") as SessionStateNamespace;
-      const logicalOwnerType = this.normalizeRequiredString(input.logicalOwnerType, "logical_owner_type") as SessionStateLogicalOwnerType;
-      const logicalOwnerId = this.normalizeRequiredString(input.logicalOwnerId, "logical_owner_id");
+    const requestedNamespace = input.namespace.trim() || input.namespace;
+    try {
+      return this.executeTransaction((tx) => {
+        const session = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
+        const namespace = this.normalizeNamespace(input.namespace);
+        const logicalOwnerType = this.normalizeLogicalOwnerType(input.logicalOwnerType);
+        const logicalOwnerId = this.normalizeLogicalOwnerId(input.logicalOwnerId);
 
-      if (this.reservedNamespaces.has(namespace)) {
-        throw new SessionStateCustomNamespaceServiceError(
-          409,
-          "session_state_namespace_reserved",
-          `Session State namespace '${namespace}' is reserved`,
-        );
-      }
+        this.assertNamespaceIsNotReserved(namespace);
 
-      const repository = this.sessionStateRepository(tx);
-      const existing = repository.getNamespaceRegistration({
-        accountId: session.accountId,
-        sessionId: session.id,
-        namespace,
-      });
-      if (existing) {
-        throw new SessionStateCustomNamespaceServiceError(
-          409,
-          "session_state_namespace_already_registered",
-          `Session State namespace '${namespace}' is already registered for session '${session.id}'`,
-        );
-      }
-
-      const domain = this.ensureManagedDomain(tx, session.accountId, session.id, namespace);
-      this.ensureManagedDomainBinding(tx, session.accountId, session.id, namespace, domain.id);
-
-      try {
-        const registration = repository.createNamespaceRegistration({
-          id: nanoid(),
+        const repository = this.sessionStateRepository(tx);
+        const existing = repository.getNamespaceRegistration({
           accountId: session.accountId,
           sessionId: session.id,
-          domainId: domain.id,
           namespace,
-          logicalOwnerType,
-          logicalOwnerId,
-          defaultVisibilityMode: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.defaultVisibilityMode,
-          defaultWriteMode: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.defaultWriteMode,
-          defaultReplaySafety: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.defaultReplaySafety,
-          clientWritable: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.clientWritable,
-          allowedWriteModes: [...DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.allowedWriteModes],
-          supportsSnapshot: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.supportsSnapshot,
-          supportsDiff: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.supportsDiff,
-          replayPolicySource: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.replayPolicySource,
-          createdAt: this.now(),
-          updatedAt: this.now(),
         });
-        return this.toPublicNamespaceDefinition(registration);
-      } catch (error) {
-        throw mapNamespaceRegistrationConstraintError(error) ?? error;
-      }
-    });
+        if (existing) {
+          throw new SessionStateCustomNamespaceServiceError(
+            409,
+            "session_state_namespace_already_registered",
+            `Session State namespace '${namespace}' is already registered for session '${session.id}'`,
+          );
+        }
+
+        const domain = this.ensureManagedDomain(tx, session.accountId, session.id, namespace);
+        this.ensureManagedDomainBinding(tx, session.accountId, session.id, namespace, domain.id);
+
+        try {
+          const registration = repository.createNamespaceRegistration({
+            id: nanoid(),
+            accountId: session.accountId,
+            sessionId: session.id,
+            domainId: domain.id,
+            namespace,
+            logicalOwnerType,
+            logicalOwnerId,
+            defaultVisibilityMode: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.defaultVisibilityMode,
+            defaultWriteMode: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.defaultWriteMode,
+            defaultReplaySafety: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.defaultReplaySafety,
+            clientWritable: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.clientWritable,
+            allowedWriteModes: [...DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.allowedWriteModes],
+            supportsSnapshot: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.supportsSnapshot,
+            supportsDiff: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.supportsDiff,
+            replayPolicySource: DEFAULT_CUSTOM_NAMESPACE_SLOT_TEMPLATE.replayPolicySource,
+            createdAt: this.now(),
+            updatedAt: this.now(),
+          });
+          return this.toPublicNamespaceDefinition(registration);
+        } catch (error) {
+          throw mapNamespaceRegistrationConstraintError(error) ?? error;
+        }
+      });
+    } catch (error) {
+      throw mapNamespaceBootstrapStorageError(error, requestedNamespace) ?? error;
+    }
   }
 
   listNamespaces(accountId: string, sessionId: string): SessionStatePublicCustomNamespaceDefinition[] {
@@ -353,7 +358,7 @@ export class SessionStateCustomNamespaceService {
             throw error;
           }
         } else {
-          throw error;
+          throw mapNamespaceBootstrapStorageError(error, namespace) ?? error;
         }
       }
     }
@@ -459,6 +464,55 @@ export class SessionStateCustomNamespaceService {
     return normalized;
   }
 
+  private normalizeNamespace(value: string): SessionStateNamespace {
+    const normalized = this.normalizeRequiredString(value, "namespace");
+    if (!SESSION_STATE_NAMESPACE_PATTERN.test(normalized)) {
+      throw new SessionStateCustomNamespaceServiceError(
+        400,
+        "session_state_namespace_invalid",
+        `Field 'namespace' must use ${SESSION_STATE_NAMESPACE_PATTERN_HINT}`,
+      );
+    }
+
+    return normalized as SessionStateNamespace;
+  }
+
+  private normalizeLogicalOwnerType(value: string): SessionStateLogicalOwnerType {
+    const normalized = this.normalizeRequiredString(value, "logical_owner_type");
+    if (!SESSION_STATE_LOGICAL_OWNER_TYPE_PATTERN.test(normalized)) {
+      throw new SessionStateCustomNamespaceServiceError(
+        400,
+        "session_state_logical_owner_type_invalid",
+        `Field 'logical_owner_type' must use ${SESSION_STATE_LOGICAL_OWNER_TYPE_PATTERN_HINT}`,
+      );
+    }
+
+    return normalized as SessionStateLogicalOwnerType;
+  }
+
+  private normalizeLogicalOwnerId(value: string): string {
+    const normalized = this.normalizeRequiredString(value, "logical_owner_id");
+    if (!SESSION_STATE_LOGICAL_OWNER_ID_PATTERN.test(normalized)) {
+      throw new SessionStateCustomNamespaceServiceError(
+        400,
+        "session_state_logical_owner_id_invalid",
+        `Field 'logical_owner_id' must use ${SESSION_STATE_LOGICAL_OWNER_ID_PATTERN_HINT}`,
+      );
+    }
+
+    return normalized;
+  }
+
+  private assertNamespaceIsNotReserved(namespace: SessionStateNamespace): void {
+    if ([...this.reservedNamespaces].some((reservedNamespace) => namespace === reservedNamespace || namespace.startsWith(`${reservedNamespace}.`))) {
+      throw new SessionStateCustomNamespaceServiceError(
+        409,
+        "session_state_namespace_reserved",
+        `Session State namespace '${namespace}' is reserved`,
+      );
+    }
+  }
+
   private executeTransaction<T>(action: (tx: DbExecutor) => T): T {
     return this.db.transaction((tx) => action(tx));
   }
@@ -507,6 +561,24 @@ function mapNamespaceRegistrationConstraintError(error: unknown): SessionStateCu
       409,
       "session_state_namespace_already_registered",
       "Session State namespace backing domain is already registered",
+    );
+  }
+  return null;
+}
+
+function mapNamespaceBootstrapStorageError(
+  error: unknown,
+  namespace: string,
+): SessionStateCustomNamespaceServiceError | null {
+  if (!(error instanceof ClientDataServiceError)) {
+    return null;
+  }
+
+  if (error.code === "client_data_account_domain_limit_exceeded") {
+    return new SessionStateCustomNamespaceServiceError(
+      409,
+      "session_state_namespace_count_limit_exceeded",
+      `Session State namespace '${namespace}' cannot be registered because the account has reached the managed namespace capacity`,
     );
   }
   return null;

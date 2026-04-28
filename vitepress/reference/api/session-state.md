@@ -96,6 +96,19 @@ Session State 是会话里的受治理状态存储。
 - `game_state` 继续保持客户端只读
 - 自定义状态的值当前仍然按任意 JSON 处理
 
+## 规模限制与分页
+
+- 当前 public `Session State` 读取面不提供 `limit` / `offset` 分页。也就是说，`namespaces`、`resolve`、`snapshot`、`diff` 都会直接返回当前过滤条件命中的完整结果。
+- 这套公开面当前保持无分页，是因为公开稳定的 built-in slot 仍然只有 `game_state.scene` 与 `game_state.world`，而 custom namespace / slot 的规模继续受底层受治理存储限制约束。
+- 每个 custom namespace 都会占用一块 managed backing storage，因此 custom namespace 的总体数量会受账号级 managed namespace capacity 限制约束。命中时返回 `409 session_state_namespace_count_limit_exceeded`。
+- 每个 namespace 背后的 managed storage item 数量也受限制。当前 live head 与 floor snapshot 都会消耗这类内部 item 配额。命中时返回：
+  - `409 session_state_namespace_item_limit_exceeded`
+  - `409 session_state_namespace_byte_limit_exceeded`
+- 账号级总 managed storage 用量同样受限制。命中时返回：
+  - `409 session_state_account_item_limit_exceeded`
+  - `409 session_state_account_byte_limit_exceeded`
+- 单 slot payload 仍受治理大小预算限制。custom namespace 默认继承当前部署的 Client Data item size limit；built-in slot 使用各自固定 budget。当前公开定义里的 `size_budget_bytes` 会直接回显该 slot 的有效预算。命中时返回 `409 session_state_payload_too_large`。
+
 ## 注册 custom namespace
 
 ```http
@@ -112,11 +125,18 @@ POST /sessions/:sessionId/state/namespaces
 }
 ```
 
+当前 Phase E 已冻结这组三字段的基础 identity contract：
+
+- `namespace` 必须是小写稳定标识，只允许小写字母、数字、下划线，以及可选的点分段
+- `logical_owner_type` 使用同一套小写标识规则
+- `logical_owner_id` 必须是小写稳定 owner id，允许字符 `a-z0-9._:@/-`
+- `namespace` 不能等于内建 namespace，也不能以内建 namespace 作为前缀，例如 `game_state` 与 `game_state.scene` 都不可注册为 custom namespace
+
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
-| `namespace` | string | 是 | 要注册的 custom namespace。当前按 `account_id + session_id + namespace` 保证唯一 |
-| `logical_owner_type` | string | 是 | 逻辑 owner 类型。当前保留为开放字符串 |
-| `logical_owner_id` | string | 是 | 逻辑 owner 标识 |
+| `namespace` | string | 是 | 要注册的 custom namespace。按 `account_id + session_id + namespace` 保证唯一；必须使用小写稳定标识，不允许与 built-in namespace 冲突或共用前缀 |
+| `logical_owner_type` | string | 是 | 逻辑 owner 类型。必须使用小写稳定标识，不再保留为任意开放字符串 |
+| `logical_owner_id` | string | 是 | 逻辑 owner 标识。必须使用小写稳定 id，允许字符 `a-z0-9._:@/-` |
 
 ### 响应 201
 
@@ -542,12 +562,17 @@ GET /sessions/:sessionId/state/diff
 
 | 状态码 | code | 说明 |
 | ---- | ---- | ---- |
-| `400` | `validation_error` | 请求参数不合法，例如 `slot` 未配套 `namespace`，或 `against=live` 时缺少 `branch_id` |
+| `400` | `validation_error` | 请求参数或 route schema 校验不合法，例如 `slot` 未配套 `namespace`、`against=live` 时缺少 `branch_id`、custom namespace identity pattern 不合法，或 turn `session_state_writes` 同时传了 `value` 和 `delete: true` |
 | `404` | `session_state_namespace_not_registered` | public write / delete 命中的 custom namespace 尚未在当前 session 下注册 |
 | `404` | `not_found` | session / floor 不存在，或资源不归属当前账号 |
 | `409` | `session_state_public_write_forbidden` | 试图对 built-in namespace 写入，或 namespace 当前不允许 client direct write |
 | `409` | `session_state_namespace_reserved` | 注册时试图占用内建保留 namespace，例如 `game_state` |
 | `409` | `session_state_namespace_already_registered` | 同一账号、同一 session 下重复注册了同名 custom namespace |
+| `409` | `session_state_namespace_count_limit_exceeded` | custom namespace 注册或 materialize 需要新的 managed backing storage，但账号已达到 managed namespace capacity 上限 |
+| `409` | `session_state_namespace_item_limit_exceeded` | 当前 namespace 背后的 managed storage item 数量已达到上限 |
+| `409` | `session_state_namespace_byte_limit_exceeded` | 当前 namespace 背后的 managed storage 总字节数已达到上限 |
+| `409` | `session_state_account_item_limit_exceeded` | 当前账号的 Session State managed storage item 总量已达到上限 |
+| `409` | `session_state_account_byte_limit_exceeded` | 当前账号的 Session State managed storage 总字节数已达到上限 |
 | `409` | `session_state_payload_too_large` | payload 超过当前 slot 的治理预算 |
 | `503` | `feature_unavailable` | `enableClientData` 关闭时这组端点不可用；部分部署也可能直接返回 `404` |
 

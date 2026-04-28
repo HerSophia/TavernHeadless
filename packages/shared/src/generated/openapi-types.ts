@@ -308,6 +308,2769 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/client-data/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List client data domains */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                created_at: number;
+                                current_byte_count: number;
+                                current_entry_count: number;
+                                deleted_at: null | number;
+                                description: null | string;
+                                display_name: null | string;
+                                domain_name: string;
+                                id: string;
+                                owner_id: string;
+                                /** @enum {string} */
+                                owner_type: "application" | "plugin";
+                                quota_max_bytes: number;
+                                quota_max_entries: number;
+                                /** @enum {string} */
+                                status: "active" | "suspended" | "deleted";
+                                updated_at: number;
+                                version: number;
+                            }[];
+                            meta: {
+                                has_more: boolean;
+                                limit: number;
+                                offset: number;
+                                sort_by: string;
+                                sort_order: string;
+                                total: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create client data domain */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                created_at: number;
+                                current_byte_count: number;
+                                current_entry_count: number;
+                                deleted_at: null | number;
+                                description: null | string;
+                                display_name: null | string;
+                                domain_name: string;
+                                id: string;
+                                owner_id: string;
+                                /** @enum {string} */
+                                owner_type: "application" | "plugin";
+                                quota_max_bytes: number;
+                                quota_max_entries: number;
+                                /** @enum {string} */
+                                status: "active" | "suspended" | "deleted";
+                                updated_at: number;
+                                version: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                created_at?: number;
+                                current_byte_count?: number;
+                                current_entry_count?: number;
+                                deleted_at?: null | number;
+                                description?: null | string;
+                                display_name?: null | string;
+                                domain_name?: string;
+                                id?: string;
+                                owner_id?: string;
+                                /** @enum {string} */
+                                owner_type?: "application" | "plugin";
+                                quota_max_bytes?: number;
+                                quota_max_entries?: number;
+                                quota_usage: {
+                                    byte_count: number;
+                                    entry_count: number;
+                                };
+                                restorable_until: null | number;
+                                /** @enum {string} */
+                                status?: "active" | "suspended" | "deleted";
+                                updated_at?: number;
+                                version?: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                deleted: boolean;
+                                id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                created_at: number;
+                                current_byte_count: number;
+                                current_entry_count: number;
+                                deleted_at: null | number;
+                                description: null | string;
+                                display_name: null | string;
+                                domain_name: string;
+                                id: string;
+                                owner_id: string;
+                                /** @enum {string} */
+                                owner_type: "application" | "plugin";
+                                quota_max_bytes: number;
+                                quota_max_entries: number;
+                                /** @enum {string} */
+                                status: "active" | "suspended" | "deleted";
+                                updated_at: number;
+                                version: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/audit-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                account_id: string;
+                                action: string;
+                                actor_id: null | string;
+                                actor_type: string;
+                                created_at: number;
+                                domain_id: null | string;
+                                id: string;
+                                metadata_json: unknown;
+                                owner_id: null | string;
+                                owner_type: null | string;
+                                request_id: null | string;
+                                target_id: null | string;
+                                target_type: string;
+                            }[];
+                            meta: {
+                                has_more: boolean;
+                                limit: number;
+                                offset: number;
+                                sort_by: string;
+                                sort_order: string;
+                                total: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                byte_count: number;
+                                collection_name: string;
+                                created_at: number;
+                                default_expires_ttl_ms: null | number;
+                                description: null | string;
+                                domain_id: string;
+                                id: string;
+                                item_count: number;
+                                max_item_size_bytes: null | number;
+                                metadata_json: unknown;
+                                updated_at: number;
+                                version: number;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                byte_count: number;
+                                collection_name: string;
+                                created_at: number;
+                                default_expires_ttl_ms: null | number;
+                                description: null | string;
+                                domain_id: string;
+                                id: string;
+                                item_count: number;
+                                max_item_size_bytes: null | number;
+                                metadata_json: unknown;
+                                updated_at: number;
+                                version: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/collections/{collectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                    collectionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                byte_count: number;
+                                collection_name: string;
+                                created_at: number;
+                                default_expires_ttl_ms: null | number;
+                                description: null | string;
+                                domain_id: string;
+                                id: string;
+                                item_count: number;
+                                max_item_size_bytes: null | number;
+                                metadata_json: unknown;
+                                updated_at: number;
+                                version: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                    collectionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                deleted: boolean;
+                                id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                    collectionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                byte_count: number;
+                                collection_name: string;
+                                created_at: number;
+                                default_expires_ttl_ms: null | number;
+                                description: null | string;
+                                domain_id: string;
+                                id: string;
+                                item_count: number;
+                                max_item_size_bytes: null | number;
+                                metadata_json: unknown;
+                                updated_at: number;
+                                version: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                collections: {
+                                    collection_name: string;
+                                    default_expires_ttl_ms: null | number;
+                                    description: null | string;
+                                    items: {
+                                        created_at: number;
+                                        expires_at: null | number;
+                                        item_key: string;
+                                        updated_at: number;
+                                        value_json: unknown;
+                                        version: number;
+                                    }[];
+                                    max_item_size_bytes: null | number;
+                                    metadata_json: unknown;
+                                }[];
+                                domain: {
+                                    created_at: number;
+                                    description: null | string;
+                                    display_name: null | string;
+                                    domain_name: string;
+                                    id: string;
+                                    owner_id: string;
+                                    /** @enum {string} */
+                                    owner_type: "application" | "plugin";
+                                };
+                                exported_at: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                can_delete: boolean;
+                                can_list: boolean;
+                                can_read: boolean;
+                                can_write: boolean;
+                                created_at: number;
+                                domain_id: string;
+                                expires_at: null | number;
+                                grantee_owner_id: string;
+                                /** @enum {string} */
+                                grantee_owner_type: "application" | "plugin";
+                                id: string;
+                                updated_at: number;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                can_delete: boolean;
+                                can_list: boolean;
+                                can_read: boolean;
+                                can_write: boolean;
+                                created_at: number;
+                                domain_id: string;
+                                expires_at: null | number;
+                                grantee_owner_id: string;
+                                /** @enum {string} */
+                                grantee_owner_type: "application" | "plugin";
+                                id: string;
+                                updated_at: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/grants/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                    grantId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                deleted: boolean;
+                                id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                    grantId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                can_delete: boolean;
+                                can_list: boolean;
+                                can_read: boolean;
+                                can_write: boolean;
+                                created_at: number;
+                                domain_id: string;
+                                expires_at: null | number;
+                                grantee_owner_id: string;
+                                /** @enum {string} */
+                                grantee_owner_type: "application" | "plugin";
+                                id: string;
+                                updated_at: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                collections: {
+                                    byte_count: number;
+                                    collection_name: string;
+                                    created_at: number;
+                                    default_expires_ttl_ms: null | number;
+                                    description: null | string;
+                                    domain_id: string;
+                                    id: string;
+                                    item_count: number;
+                                    max_item_size_bytes: null | number;
+                                    metadata_json: unknown;
+                                    updated_at: number;
+                                    version: number;
+                                }[];
+                                domain: {
+                                    created_at: number;
+                                    current_byte_count: number;
+                                    current_entry_count: number;
+                                    deleted_at: null | number;
+                                    description: null | string;
+                                    display_name: null | string;
+                                    domain_name: string;
+                                    id: string;
+                                    owner_id: string;
+                                    /** @enum {string} */
+                                    owner_type: "application" | "plugin";
+                                    quota_max_bytes: number;
+                                    quota_max_entries: number;
+                                    /** @enum {string} */
+                                    status: "active" | "suspended" | "deleted";
+                                    updated_at: number;
+                                    version: number;
+                                };
+                                summary: {
+                                    collections_created: number;
+                                    /** @enum {string} */
+                                    conflict_policy: "fail" | "overwrite" | "skip";
+                                    imported_byte_count: number;
+                                    imported_item_count: number;
+                                    items_created: number;
+                                    items_skipped: number;
+                                    items_updated: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                byte_size: number;
+                                collection_id: string;
+                                created_at: number;
+                                domain_id: string;
+                                expires_at: null | number;
+                                id: string;
+                                item_key: string;
+                                updated_at: number;
+                                value_json: unknown;
+                                version: number;
+                            }[];
+                            meta: {
+                                has_more: boolean;
+                                limit: number;
+                                offset: number;
+                                sort_by: string;
+                                sort_order: string;
+                                total: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                /** @enum {string} */
+                                action: "created" | "updated";
+                                collection: {
+                                    byte_count: number;
+                                    collection_name: string;
+                                    created_at: number;
+                                    default_expires_ttl_ms: null | number;
+                                    description: null | string;
+                                    domain_id: string;
+                                    id: string;
+                                    item_count: number;
+                                    max_item_size_bytes: null | number;
+                                    metadata_json: unknown;
+                                    updated_at: number;
+                                    version: number;
+                                };
+                                item: {
+                                    byte_size: number;
+                                    collection_id: string;
+                                    created_at: number;
+                                    domain_id: string;
+                                    expires_at: null | number;
+                                    id: string;
+                                    item_key: string;
+                                    updated_at: number;
+                                    value_json: unknown;
+                                    version: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/items/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                    itemId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                byte_size: number;
+                                collection_id: string;
+                                created_at: number;
+                                domain_id: string;
+                                expires_at: null | number;
+                                id: string;
+                                item_key: string;
+                                updated_at: number;
+                                value_json: unknown;
+                                version: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                    itemId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                deleted: boolean;
+                                id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/items/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                results: {
+                                    /** @enum {string} */
+                                    action: "created" | "updated";
+                                    collection: {
+                                        byte_count: number;
+                                        collection_name: string;
+                                        created_at: number;
+                                        default_expires_ttl_ms: null | number;
+                                        description: null | string;
+                                        domain_id: string;
+                                        id: string;
+                                        item_count: number;
+                                        max_item_size_bytes: null | number;
+                                        metadata_json: unknown;
+                                        updated_at: number;
+                                        version: number;
+                                    };
+                                    item: {
+                                        byte_size: number;
+                                        collection_id: string;
+                                        created_at: number;
+                                        domain_id: string;
+                                        expires_at: null | number;
+                                        id: string;
+                                        item_key: string;
+                                        updated_at: number;
+                                        value_json: unknown;
+                                        version: number;
+                                    };
+                                }[];
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/items/by-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                byte_size: number;
+                                collection_id: string;
+                                created_at: number;
+                                domain_id: string;
+                                expires_at: null | number;
+                                id: string;
+                                item_key: string;
+                                updated_at: number;
+                                value_json: unknown;
+                                version: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/items/delete-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                collection_id: string;
+                                id: string;
+                                item_key: string;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                created_at: number;
+                                current_byte_count: number;
+                                current_entry_count: number;
+                                deleted_at: null | number;
+                                description: null | string;
+                                display_name: null | string;
+                                domain_name: string;
+                                id: string;
+                                owner_id: string;
+                                /** @enum {string} */
+                                owner_type: "application" | "plugin";
+                                quota_max_bytes: number;
+                                quota_max_entries: number;
+                                /** @enum {string} */
+                                status: "active" | "suspended" | "deleted";
+                                updated_at: number;
+                                version: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/client-data/domains/{domainId}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    domainId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                created_at: number;
+                                current_byte_count: number;
+                                current_entry_count: number;
+                                deleted_at: null | number;
+                                description: null | string;
+                                display_name: null | string;
+                                domain_name: string;
+                                id: string;
+                                owner_id: string;
+                                /** @enum {string} */
+                                owner_type: "application" | "plugin";
+                                quota_max_bytes: number;
+                                quota_max_entries: number;
+                                /** @enum {string} */
+                                status: "active" | "suspended" | "deleted";
+                                updated_at: number;
+                                version: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/domains/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                collections: {
+                                    byte_count: number;
+                                    collection_name: string;
+                                    created_at: number;
+                                    default_expires_ttl_ms: null | number;
+                                    description: null | string;
+                                    domain_id: string;
+                                    id: string;
+                                    item_count: number;
+                                    max_item_size_bytes: null | number;
+                                    metadata_json: unknown;
+                                    updated_at: number;
+                                    version: number;
+                                }[];
+                                domain: {
+                                    created_at: number;
+                                    current_byte_count: number;
+                                    current_entry_count: number;
+                                    deleted_at: null | number;
+                                    description: null | string;
+                                    display_name: null | string;
+                                    domain_name: string;
+                                    id: string;
+                                    owner_id: string;
+                                    /** @enum {string} */
+                                    owner_type: "application" | "plugin";
+                                    quota_max_bytes: number;
+                                    quota_max_entries: number;
+                                    /** @enum {string} */
+                                    status: "active" | "suspended" | "deleted";
+                                    updated_at: number;
+                                    version: number;
+                                };
+                                summary: {
+                                    collections_created: number;
+                                    /** @enum {string} */
+                                    conflict_policy: "fail" | "overwrite" | "skip";
+                                    imported_byte_count: number;
+                                    imported_item_count: number;
+                                    items_created: number;
+                                    items_skipped: number;
+                                    items_updated: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/client-data/owners/{ownerType}/{ownerId}/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    ownerType: string;
+                    ownerId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                created_at: number;
+                                current_byte_count: number;
+                                current_entry_count: number;
+                                deleted_at: null | number;
+                                description: null | string;
+                                display_name: null | string;
+                                domain_name: string;
+                                id: string;
+                                owner_id: string;
+                                /** @enum {string} */
+                                owner_type: "application" | "plugin";
+                                quota_max_bytes: number;
+                                quota_max_entries: number;
+                                /** @enum {string} */
+                                status: "active" | "suspended" | "deleted";
+                                updated_at: number;
+                                version: number;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/docs-en": {
         parameters: {
             query?: never;
@@ -662,6 +3425,164 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/floors/{floorId}/session-state/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diff a floor snapshot against another floor or live
+         * @description Internal observation endpoint. against=floor:<id> compares two floor snapshots; against=live compares live head vs floor snapshot. include_values=true opt-in returns raw value bodies.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    floorId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/floors/{floorId}/session-state/replay-safety": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Evaluate session-state replay blockers for a floor
+         * @description Internal observation endpoint. Mirrors SessionStateService.evaluateReplaySafetyForFloor.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    floorId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/floors/{floorId}/session-state/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List floor snapshot metadata
+         * @description Internal observation endpoint. Returns metadata only; the full value is not returned in the list endpoint.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    floorId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/floors/{floorId}/session-state/snapshots/{namespace}/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a single floor snapshot with full value
+         * @description Internal observation endpoint. Returns the full snapshot value for one slot.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    floorId: string;
+                    namespace: string;
+                    slot: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1100,6 +4021,996 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/floors/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a committed floor in place
+         * @description Retry generation for an existing committed floor in place. The target floor must be in the 'committed' state. The current output page and assistant message are cleared, the floor is reset, and a new generation attempt is run under the same floor id. This endpoint is not a recovery path for failed floors.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    /**
+                     * @example {
+                     *       "config": {
+                     *         "enableDirector": true
+                     *       },
+                     *       "debug_options": {
+                     *         "include_prompt_snapshot": true,
+                     *         "include_runtime_trace": true,
+                     *         "include_worldbook_matches": false
+                     *       },
+                     *       "delivery": {
+                     *         "allow_assistant_prefill": false,
+                     *         "no_assistant": false,
+                     *         "require_last_user": true
+                     *       },
+                     *       "generation_params": {
+                     *         "max_output_tokens": 256,
+                     *         "reasoning_effort": "low",
+                     *         "temperature": 0.7,
+                     *         "top_p": 0.9
+                     *       },
+                     *       "session_state_writes": [
+                     *         {
+                     *           "namespace": "quest_flags",
+                     *           "slot": "companion",
+                     *           "value": {
+                     *             "mood": "ally"
+                     *           }
+                     *         },
+                     *         {
+                     *           "delete": true,
+                     *           "namespace": "quest_flags",
+                     *           "slot": "expired_hint"
+                     *         }
+                     *       ],
+                     *       "structure": {
+                     *         "assistant_rewrite_strategy": "to_system",
+                     *         "merge_adjacent_same_role": false,
+                     *         "mode": "no_assistant",
+                     *         "preserve_system_messages": true
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "enableDirector": true,
+                         *       "enableMemoryConsolidation": true,
+                         *       "enableTools": true,
+                         *       "enableVerifier": true,
+                         *       "maxRetries": 1,
+                         *       "toolMode": "inline",
+                         *       "verifierFailStrategy": "warn"
+                         *     }
+                         */
+                        config?: {
+                            enableDirector?: boolean;
+                            enableMemoryConsolidation?: boolean;
+                            enableTools?: boolean;
+                            enableVerifier?: boolean;
+                            maxRetries?: number;
+                            /** @enum {string} */
+                            toolMode?: "inline" | "standalone" | "both";
+                            /** @enum {string} */
+                            verifierFailStrategy?: "warn" | "block" | "retry";
+                        };
+                        confirmed_execution_ids?: string[];
+                        confirmed_session_state_mutation_ids?: string[];
+                        /**
+                         * @example {
+                         *       "include_prompt_snapshot": true,
+                         *       "include_runtime_trace": true,
+                         *       "include_worldbook_matches": false
+                         *     }
+                         */
+                        debug_options?: {
+                            include_prompt_snapshot?: boolean;
+                            include_runtime_trace?: boolean;
+                            include_worldbook_matches?: boolean;
+                        };
+                        delivery?: {
+                            allow_assistant_prefill?: boolean;
+                            no_assistant?: boolean;
+                            require_last_user?: boolean;
+                        };
+                        /**
+                         * @example {
+                         *       "max_output_tokens": 256,
+                         *       "reasoning_effort": "low",
+                         *       "temperature": 0.7,
+                         *       "top_p": 0.9
+                         *     }
+                         */
+                        generation_params?: {
+                            frequency_penalty?: number;
+                            max_output_tokens?: number;
+                            presence_penalty?: number;
+                            /** @enum {string} */
+                            reasoning_effort?: "low" | "medium" | "high";
+                            stop_sequences?: string[];
+                            stream?: boolean;
+                            temperature?: number;
+                            top_k?: number;
+                            top_p?: number;
+                        };
+                        session_state_writes?: {
+                            /** @enum {boolean} */
+                            delete?: true;
+                            namespace?: string;
+                            slot?: string;
+                            value?: unknown;
+                        }[];
+                        structure?: {
+                            /** @enum {string} */
+                            assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                            merge_adjacent_same_role?: boolean;
+                            /** @enum {string} */
+                            mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                            preserve_system_messages?: boolean;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "branch_id": "main",
+                         *         "final_state": "committed",
+                         *         "floor_id": "floor_12",
+                         *         "floor_no": 12,
+                         *         "generated_text": "The firelight wavers as the next part of the story begins.",
+                         *         "memory": {
+                         *           "job_id": null,
+                         *           "mode": "sync",
+                         *           "status": "applied"
+                         *         },
+                         *         "prompt_snapshot": {
+                         *           "preset_id": "preset-1",
+                         *           "preset_updated_at": 1710000000000,
+                         *           "preset_version": 3,
+                         *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                         *           "prompt_mode": "compat_strict",
+                         *           "regex_post_rule_names": [],
+                         *           "regex_pre_rule_names": [
+                         *             "trim_whitespace"
+                         *           ],
+                         *           "regex_profile_id": "regex-1",
+                         *           "regex_profile_updated_at": 1710000002000,
+                         *           "regex_profile_version": 2,
+                         *           "token_estimate": 512,
+                         *           "worldbook_activated_entry_uids": [
+                         *             7
+                         *           ],
+                         *           "worldbook_id": "worldbook-1",
+                         *           "worldbook_updated_at": 1710000001000,
+                         *           "worldbook_version": 5
+                         *         },
+                         *         "runtime_trace": {
+                         *           "budgets": {
+                         *             "by_group": [
+                         *               {
+                         *                 "allocated_token_count": 256,
+                         *                 "estimated_token_count": 320,
+                         *                 "group": "history",
+                         *                 "pruned_token_count": 64,
+                         *                 "token_count": 256
+                         *               },
+                         *               {
+                         *                 "group": "worldbook",
+                         *                 "token_count": 64
+                         *               }
+                         *             ]
+                         *           },
+                         *           "delivery": {
+                         *             "allow_assistant_prefill": true,
+                         *             "assistant_prefill_applied": false,
+                         *             "assistant_prefill_requested": true,
+                         *             "assistant_prefill_strategy": "assistant_message_fallback",
+                         *             "degrade_reasons": [
+                         *               "require_last_user"
+                         *             ],
+                         *             "degraded": true,
+                         *             "ends_with_user": true,
+                         *             "last_message_role": "user",
+                         *             "no_assistant": false,
+                         *             "require_last_user": true
+                         *           },
+                         *           "macro": {
+                         *             "mutation_preview": [
+                         *               {
+                         *                 "key": "mood",
+                         *                 "kind": "set",
+                         *                 "scope": "branch",
+                         *                 "value": "steady"
+                         *               }
+                         *             ],
+                         *             "staged_mutations": [
+                         *               {
+                         *                 "key": "mood",
+                         *                 "kind": "set",
+                         *                 "scope": "branch",
+                         *                 "source_macro": "setvar",
+                         *                 "value": "steady"
+                         *               }
+                         *             ],
+                         *             "traces": [
+                         *               {
+                         *                 "macro_name": "lastGenerationType",
+                         *                 "phase": "assemble",
+                         *                 "raw_text": "{{lastGenerationType}}",
+                         *                 "resolved_text": "respond",
+                         *                 "source_kind": "macro"
+                         *               },
+                         *               {
+                         *                 "macro_name": "if",
+                         *                 "phase": "assemble",
+                         *                 "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                         *                 "resolved_text": "YES",
+                         *                 "selected_branch": "then",
+                         *                 "source_kind": "if"
+                         *               }
+                         *             ],
+                         *             "used_names": [
+                         *               "if",
+                         *               "lastGenerationType",
+                         *               "setvar"
+                         *             ],
+                         *             "warnings": [
+                         *               {
+                         *                 "code": "macro_preview_side_effect_suppressed",
+                         *                 "macro_name": "setvar",
+                         *                 "message": "Macro setvar side effect was previewed but not committed."
+                         *               }
+                         *             ]
+                         *           },
+                         *           "memory": {
+                         *             "summary_injected": true
+                         *           },
+                         *           "preset": {
+                         *             "continue_nudge_applied": false,
+                         *             "continue_nudge_text": null,
+                         *             "ignored_fields": [],
+                         *             "ignored_prompt_order_character_ids": [],
+                         *             "in_chat_inserted_entry_ids": [],
+                         *             "names_behavior_applied": "off",
+                         *             "selected_prompt_order_character_id": 100000,
+                         *             "trigger_filtered_entry_ids": [],
+                         *             "unresolved_markers": [],
+                         *             "unsupported_fields": [],
+                         *             "warnings": []
+                         *           },
+                         *           "regex": {
+                         *             "ai_output_rules": [],
+                         *             "preprocessed_user_message": "Please continue the campfire scene.",
+                         *             "user_input_rules": [
+                         *               "trim_whitespace"
+                         *             ]
+                         *           },
+                         *           "structure": {
+                         *             "assistant_rewrite_count": 1,
+                         *             "assistant_rewrite_strategy": "to_system",
+                         *             "merge_adjacent_same_role": false,
+                         *             "mode": "no_assistant",
+                         *             "tail_assistant_detected": false
+                         *           },
+                         *           "worldbook": {
+                         *             "hit_count": 1
+                         *           }
+                         *         },
+                         *         "summaries": [
+                         *           "The group resumes the campfire planning scene."
+                         *         ],
+                         *         "total_usage": {
+                         *           "completion_tokens": 128,
+                         *           "prompt_tokens": 320,
+                         *           "total_tokens": 448
+                         *         }
+                         *       }
+                         *     }
+                         */
+                        "application/json": {
+                            /**
+                             * @example {
+                             *       "branch_id": "main",
+                             *       "final_state": "committed",
+                             *       "floor_id": "floor_12",
+                             *       "floor_no": 12,
+                             *       "generated_text": "The firelight wavers as the next part of the story begins.",
+                             *       "memory": {
+                             *         "job_id": null,
+                             *         "mode": "sync",
+                             *         "status": "applied"
+                             *       },
+                             *       "prompt_snapshot": {
+                             *         "preset_id": "preset-1",
+                             *         "preset_updated_at": 1710000000000,
+                             *         "preset_version": 3,
+                             *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                             *         "prompt_mode": "compat_strict",
+                             *         "regex_post_rule_names": [],
+                             *         "regex_pre_rule_names": [
+                             *           "trim_whitespace"
+                             *         ],
+                             *         "regex_profile_id": "regex-1",
+                             *         "regex_profile_updated_at": 1710000002000,
+                             *         "regex_profile_version": 2,
+                             *         "token_estimate": 512,
+                             *         "worldbook_activated_entry_uids": [
+                             *           7
+                             *         ],
+                             *         "worldbook_id": "worldbook-1",
+                             *         "worldbook_updated_at": 1710000001000,
+                             *         "worldbook_version": 5
+                             *       },
+                             *       "runtime_trace": {
+                             *         "budgets": {
+                             *           "by_group": [
+                             *             {
+                             *               "allocated_token_count": 256,
+                             *               "estimated_token_count": 320,
+                             *               "group": "history",
+                             *               "pruned_token_count": 64,
+                             *               "token_count": 256
+                             *             },
+                             *             {
+                             *               "group": "worldbook",
+                             *               "token_count": 64
+                             *             }
+                             *           ]
+                             *         },
+                             *         "delivery": {
+                             *           "allow_assistant_prefill": true,
+                             *           "assistant_prefill_applied": false,
+                             *           "assistant_prefill_requested": true,
+                             *           "assistant_prefill_strategy": "assistant_message_fallback",
+                             *           "degrade_reasons": [
+                             *             "require_last_user"
+                             *           ],
+                             *           "degraded": true,
+                             *           "ends_with_user": true,
+                             *           "last_message_role": "user",
+                             *           "no_assistant": false,
+                             *           "require_last_user": true
+                             *         },
+                             *         "macro": {
+                             *           "mutation_preview": [
+                             *             {
+                             *               "key": "mood",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "value": "steady"
+                             *             }
+                             *           ],
+                             *           "staged_mutations": [
+                             *             {
+                             *               "key": "mood",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "source_macro": "setvar",
+                             *               "value": "steady"
+                             *             }
+                             *           ],
+                             *           "traces": [
+                             *             {
+                             *               "macro_name": "lastGenerationType",
+                             *               "phase": "assemble",
+                             *               "raw_text": "{{lastGenerationType}}",
+                             *               "resolved_text": "respond",
+                             *               "source_kind": "macro"
+                             *             },
+                             *             {
+                             *               "macro_name": "if",
+                             *               "phase": "assemble",
+                             *               "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                             *               "resolved_text": "YES",
+                             *               "selected_branch": "then",
+                             *               "source_kind": "if"
+                             *             }
+                             *           ],
+                             *           "used_names": [
+                             *             "if",
+                             *             "lastGenerationType",
+                             *             "setvar"
+                             *           ],
+                             *           "warnings": [
+                             *             {
+                             *               "code": "macro_preview_side_effect_suppressed",
+                             *               "macro_name": "setvar",
+                             *               "message": "Macro setvar side effect was previewed but not committed."
+                             *             }
+                             *           ]
+                             *         },
+                             *         "memory": {
+                             *           "summary_injected": true
+                             *         },
+                             *         "preset": {
+                             *           "continue_nudge_applied": false,
+                             *           "continue_nudge_text": null,
+                             *           "ignored_fields": [],
+                             *           "ignored_prompt_order_character_ids": [],
+                             *           "in_chat_inserted_entry_ids": [],
+                             *           "names_behavior_applied": "off",
+                             *           "selected_prompt_order_character_id": 100000,
+                             *           "trigger_filtered_entry_ids": [],
+                             *           "unresolved_markers": [],
+                             *           "unsupported_fields": [],
+                             *           "warnings": []
+                             *         },
+                             *         "regex": {
+                             *           "ai_output_rules": [],
+                             *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "user_input_rules": [
+                             *             "trim_whitespace"
+                             *           ]
+                             *         },
+                             *         "structure": {
+                             *           "assistant_rewrite_count": 1,
+                             *           "assistant_rewrite_strategy": "to_system",
+                             *           "merge_adjacent_same_role": false,
+                             *           "mode": "no_assistant",
+                             *           "tail_assistant_detected": false
+                             *         },
+                             *         "worldbook": {
+                             *           "hit_count": 1
+                             *         }
+                             *       },
+                             *       "summaries": [
+                             *         "The group resumes the campfire planning scene."
+                             *       ],
+                             *       "total_usage": {
+                             *         "completion_tokens": 128,
+                             *         "prompt_tokens": 320,
+                             *         "total_tokens": 448
+                             *       }
+                             *     }
+                             */
+                            data: {
+                                branch_id: string;
+                                final_state: string;
+                                floor_id: string;
+                                floor_no: number;
+                                generated_text: string;
+                                /**
+                                 * @example {
+                                 *       "job_id": null,
+                                 *       "mode": "sync",
+                                 *       "status": "applied"
+                                 *     }
+                                 */
+                                memory?: {
+                                    job_id: string | null;
+                                    /** @enum {string} */
+                                    mode: "sync" | "async";
+                                    /** @enum {string} */
+                                    status: "applied" | "queued";
+                                };
+                                /**
+                                 * @example {
+                                 *       "preset_id": "preset-1",
+                                 *       "preset_updated_at": 1710000000000,
+                                 *       "preset_version": 3,
+                                 *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                                 *       "prompt_mode": "compat_strict",
+                                 *       "regex_post_rule_names": [],
+                                 *       "regex_pre_rule_names": [
+                                 *         "trim_whitespace"
+                                 *       ],
+                                 *       "regex_profile_id": "regex-1",
+                                 *       "regex_profile_updated_at": 1710000002000,
+                                 *       "regex_profile_version": 2,
+                                 *       "token_estimate": 512,
+                                 *       "worldbook_activated_entry_uids": [
+                                 *         7
+                                 *       ],
+                                 *       "worldbook_id": "worldbook-1",
+                                 *       "worldbook_updated_at": 1710000001000,
+                                 *       "worldbook_version": 5
+                                 *     }
+                                 */
+                                prompt_snapshot?: {
+                                    preset_id: string | null;
+                                    preset_updated_at: number | null;
+                                    preset_version: number | null;
+                                    prompt_digest: string;
+                                    /** @enum {string} */
+                                    prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                    regex_post_rule_names: string[];
+                                    regex_pre_rule_names: string[];
+                                    regex_profile_id: string | null;
+                                    regex_profile_updated_at: number | null;
+                                    regex_profile_version: number | null;
+                                    token_estimate: number;
+                                    worldbook_activated_entry_uids: number[];
+                                    worldbook_id: string | null;
+                                    worldbook_updated_at: number | null;
+                                    worldbook_version: number | null;
+                                };
+                                /**
+                                 * @example {
+                                 *       "budgets": {
+                                 *         "by_group": [
+                                 *           {
+                                 *             "allocated_token_count": 256,
+                                 *             "estimated_token_count": 320,
+                                 *             "group": "history",
+                                 *             "pruned_token_count": 64,
+                                 *             "token_count": 256
+                                 *           },
+                                 *           {
+                                 *             "group": "worldbook",
+                                 *             "token_count": 64
+                                 *           }
+                                 *         ]
+                                 *       },
+                                 *       "delivery": {
+                                 *         "allow_assistant_prefill": true,
+                                 *         "assistant_prefill_applied": false,
+                                 *         "assistant_prefill_requested": true,
+                                 *         "assistant_prefill_strategy": "assistant_message_fallback",
+                                 *         "degrade_reasons": [
+                                 *           "require_last_user"
+                                 *         ],
+                                 *         "degraded": true,
+                                 *         "ends_with_user": true,
+                                 *         "last_message_role": "user",
+                                 *         "no_assistant": false,
+                                 *         "require_last_user": true
+                                 *       },
+                                 *       "macro": {
+                                 *         "mutation_preview": [
+                                 *           {
+                                 *             "key": "mood",
+                                 *             "kind": "set",
+                                 *             "scope": "branch",
+                                 *             "value": "steady"
+                                 *           }
+                                 *         ],
+                                 *         "staged_mutations": [
+                                 *           {
+                                 *             "key": "mood",
+                                 *             "kind": "set",
+                                 *             "scope": "branch",
+                                 *             "source_macro": "setvar",
+                                 *             "value": "steady"
+                                 *           }
+                                 *         ],
+                                 *         "traces": [
+                                 *           {
+                                 *             "macro_name": "lastGenerationType",
+                                 *             "phase": "assemble",
+                                 *             "raw_text": "{{lastGenerationType}}",
+                                 *             "resolved_text": "respond",
+                                 *             "source_kind": "macro"
+                                 *           },
+                                 *           {
+                                 *             "macro_name": "if",
+                                 *             "phase": "assemble",
+                                 *             "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                 *             "resolved_text": "YES",
+                                 *             "selected_branch": "then",
+                                 *             "source_kind": "if"
+                                 *           }
+                                 *         ],
+                                 *         "used_names": [
+                                 *           "if",
+                                 *           "lastGenerationType",
+                                 *           "setvar"
+                                 *         ],
+                                 *         "warnings": [
+                                 *           {
+                                 *             "code": "macro_preview_side_effect_suppressed",
+                                 *             "macro_name": "setvar",
+                                 *             "message": "Macro setvar side effect was previewed but not committed."
+                                 *           }
+                                 *         ]
+                                 *       },
+                                 *       "memory": {
+                                 *         "summary_injected": true
+                                 *       },
+                                 *       "preset": {
+                                 *         "continue_nudge_applied": false,
+                                 *         "continue_nudge_text": null,
+                                 *         "ignored_fields": [],
+                                 *         "ignored_prompt_order_character_ids": [],
+                                 *         "in_chat_inserted_entry_ids": [],
+                                 *         "names_behavior_applied": "off",
+                                 *         "selected_prompt_order_character_id": 100000,
+                                 *         "trigger_filtered_entry_ids": [],
+                                 *         "unresolved_markers": [],
+                                 *         "unsupported_fields": [],
+                                 *         "warnings": []
+                                 *       },
+                                 *       "regex": {
+                                 *         "ai_output_rules": [],
+                                 *         "preprocessed_user_message": "Please continue the campfire scene.",
+                                 *         "user_input_rules": [
+                                 *           "trim_whitespace"
+                                 *         ]
+                                 *       },
+                                 *       "structure": {
+                                 *         "assistant_rewrite_count": 1,
+                                 *         "assistant_rewrite_strategy": "to_system",
+                                 *         "merge_adjacent_same_role": false,
+                                 *         "mode": "no_assistant",
+                                 *         "tail_assistant_detected": false
+                                 *       },
+                                 *       "worldbook": {
+                                 *         "hit_count": 1
+                                 *       }
+                                 *     }
+                                 */
+                                runtime_trace?: {
+                                    budgets?: {
+                                        by_group: {
+                                            allocated_token_count?: number;
+                                            estimated_token_count?: number;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            token_count: number;
+                                        }[];
+                                        trim_reasons?: {
+                                            detail?: string;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            /** @enum {string} */
+                                            reason: "budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled";
+                                        }[];
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill: boolean;
+                                        assistant_prefill_applied: boolean;
+                                        assistant_prefill_requested: boolean;
+                                        assistant_prefill_strategy: ("provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none") | null;
+                                        degrade_reasons: ("assistant_prefill_disabled" | "assistant_prefill_unsupported" | "require_last_user" | "no_assistant_override")[];
+                                        degraded: boolean;
+                                        ends_with_user: boolean;
+                                        last_message_role: ("system" | "user" | "assistant") | null;
+                                        no_assistant: boolean;
+                                        require_last_user: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "mutation_preview": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "staged_mutations": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "source_macro": "setvar",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "traces": [
+                                     *         {
+                                     *           "macro_name": "lastGenerationType",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{lastGenerationType}}",
+                                     *           "resolved_text": "respond",
+                                     *           "source_kind": "macro"
+                                     *         },
+                                     *         {
+                                     *           "macro_name": "if",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                     *           "resolved_text": "YES",
+                                     *           "selected_branch": "then",
+                                     *           "source_kind": "if"
+                                     *         }
+                                     *       ],
+                                     *       "used_names": [
+                                     *         "if",
+                                     *         "lastGenerationType",
+                                     *         "setvar"
+                                     *       ],
+                                     *       "warnings": [
+                                     *         {
+                                     *           "code": "macro_preview_side_effect_suppressed",
+                                     *           "macro_name": "setvar",
+                                     *           "message": "Macro setvar side effect was previewed but not committed."
+                                     *         }
+                                     *       ]
+                                     *     }
+                                     */
+                                    macro?: {
+                                        mutation_preview: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            value?: string;
+                                        }[];
+                                        staged_mutations: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            source_macro: string;
+                                            value?: string;
+                                        }[];
+                                        traces: {
+                                            macro_name: string;
+                                            phase?: string;
+                                            raw_text: string;
+                                            resolved_text: string;
+                                            /** @enum {string} */
+                                            selected_branch?: "then" | "else" | "raw";
+                                            /** @enum {string} */
+                                            source_kind?: "text" | "raw" | "macro" | "if";
+                                        }[];
+                                        used_names: string[];
+                                        warnings: {
+                                            code: string;
+                                            macro_name?: string;
+                                            message: string;
+                                            raw_text?: string;
+                                        }[];
+                                    };
+                                    memory?: {
+                                        summary_injected: boolean;
+                                    };
+                                    preset?: {
+                                        continue_nudge_applied: boolean;
+                                        continue_nudge_text: string | null;
+                                        ignored_fields: string[];
+                                        ignored_prompt_order_character_ids: number[];
+                                        in_chat_inserted_entry_ids: string[];
+                                        names_behavior_applied: ("off" | "always") | null;
+                                        selected_prompt_order_character_id: number | null;
+                                        trigger_filtered_entry_ids: string[];
+                                        unresolved_markers: string[];
+                                        unsupported_fields: string[];
+                                        warnings: string[];
+                                    };
+                                    regex?: {
+                                        ai_output_rules: string[];
+                                        preprocessed_user_message: string | null;
+                                        user_input_rules: string[];
+                                    };
+                                    source_selection?: {
+                                        excluded_sources: {
+                                            detail?: string;
+                                            /** @enum {string} */
+                                            reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+                                            /**
+                                             * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
+                                             * @enum {string}
+                                             */
+                                            source: "history" | "memory" | "worldbook" | "examples";
+                                        }[];
+                                    };
+                                    structure?: {
+                                        assistant_prefill_transcriptized?: boolean;
+                                        assistant_rewrite_count: number;
+                                        assistant_rewrite_strategy: ("to_system" | "to_user_transcript") | null;
+                                        merge_adjacent_same_role: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        tail_assistant_detected: boolean;
+                                        transcript_message_count?: number;
+                                        transcriptized?: boolean;
+                                    };
+                                    worldbook?: {
+                                        hit_count: number;
+                                        matches?: {
+                                            activation: {
+                                                first_match: {
+                                                    char_end: number;
+                                                    char_start: number;
+                                                    excerpt: string;
+                                                    injection_index?: number;
+                                                    matched_key: string;
+                                                    /** @enum {string} */
+                                                    matched_key_scope: "primary" | "secondary";
+                                                    /** @enum {string} */
+                                                    matched_key_type: "plain" | "regex";
+                                                    message_index_from_latest?: number;
+                                                    /** @enum {string} */
+                                                    source_kind: "message" | "persona_description" | "character_description" | "character_personality" | "character_depth_prompt" | "scenario" | "creator_notes" | "injection" | "recursion_buffer";
+                                                } | null;
+                                                /** @enum {string} */
+                                                mode: "constant" | "triggered";
+                                                recursion_level: number;
+                                            };
+                                            comment: string;
+                                            content_preview: string;
+                                            insertion: {
+                                                depth?: number;
+                                                outlet_name?: string;
+                                                /** @enum {string} */
+                                                position: "before" | "after" | "at_depth" | "outlet";
+                                                /** @enum {string} */
+                                                role?: "system" | "user" | "assistant";
+                                            };
+                                            order: number;
+                                            source: {
+                                                /** @enum {string} */
+                                                kind: "session_worldbook" | "character_book";
+                                                worldbook_id: string | null;
+                                                worldbook_name: string;
+                                            };
+                                            uid: number;
+                                        }[];
+                                    };
+                                };
+                                summaries: string[];
+                                /**
+                                 * @example {
+                                 *       "completion_tokens": 128,
+                                 *       "prompt_tokens": 320,
+                                 *       "total_tokens": 448
+                                 *     }
+                                 */
+                                total_usage: {
+                                    completion_tokens: number;
+                                    prompt_tokens: number;
+                                    total_tokens: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                499: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                504: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -3921,6 +7832,1006 @@ export interface paths {
         patch: operations["updateMessage"];
         trace?: never;
     };
+    "/messages/{id}/edit-and-regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Edit a user message and regenerate
+         * @description Create a new branch floor from an edited user message and regenerate assistant response.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    /**
+                     * @example {
+                     *       "branch_id": "alt-branch",
+                     *       "config": {
+                     *         "enableDirector": false
+                     *       },
+                     *       "content": "I step closer to the fire and lower my voice.",
+                     *       "debug_options": {
+                     *         "include_prompt_snapshot": true,
+                     *         "include_runtime_trace": true,
+                     *         "include_worldbook_matches": false
+                     *       },
+                     *       "delivery": {
+                     *         "allow_assistant_prefill": false,
+                     *         "no_assistant": false,
+                     *         "require_last_user": true
+                     *       },
+                     *       "generation_params": {
+                     *         "max_output_tokens": 256,
+                     *         "reasoning_effort": "low",
+                     *         "temperature": 0.7,
+                     *         "top_p": 0.9
+                     *       },
+                     *       "session_state_writes": [
+                     *         {
+                     *           "namespace": "quest_flags",
+                     *           "slot": "companion",
+                     *           "value": {
+                     *             "mood": "ally"
+                     *           }
+                     *         },
+                     *         {
+                     *           "delete": true,
+                     *           "namespace": "quest_flags",
+                     *           "slot": "expired_hint"
+                     *         }
+                     *       ],
+                     *       "structure": {
+                     *         "assistant_rewrite_strategy": "to_system",
+                     *         "merge_adjacent_same_role": false,
+                     *         "mode": "no_assistant",
+                     *         "preserve_system_messages": true
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        branch_id?: string;
+                        /**
+                         * @example {
+                         *       "enableDirector": true,
+                         *       "enableMemoryConsolidation": true,
+                         *       "enableTools": true,
+                         *       "enableVerifier": true,
+                         *       "maxRetries": 1,
+                         *       "toolMode": "inline",
+                         *       "verifierFailStrategy": "warn"
+                         *     }
+                         */
+                        config?: {
+                            enableDirector?: boolean;
+                            enableMemoryConsolidation?: boolean;
+                            enableTools?: boolean;
+                            enableVerifier?: boolean;
+                            maxRetries?: number;
+                            /** @enum {string} */
+                            toolMode?: "inline" | "standalone" | "both";
+                            /** @enum {string} */
+                            verifierFailStrategy?: "warn" | "block" | "retry";
+                        };
+                        confirmed_execution_ids?: string[];
+                        confirmed_session_state_mutation_ids?: string[];
+                        content: string;
+                        /**
+                         * @example {
+                         *       "include_prompt_snapshot": true,
+                         *       "include_runtime_trace": true,
+                         *       "include_worldbook_matches": false
+                         *     }
+                         */
+                        debug_options?: {
+                            include_prompt_snapshot?: boolean;
+                            include_runtime_trace?: boolean;
+                            include_worldbook_matches?: boolean;
+                        };
+                        delivery?: {
+                            allow_assistant_prefill?: boolean;
+                            no_assistant?: boolean;
+                            require_last_user?: boolean;
+                        };
+                        /**
+                         * @example {
+                         *       "max_output_tokens": 256,
+                         *       "reasoning_effort": "low",
+                         *       "temperature": 0.7,
+                         *       "top_p": 0.9
+                         *     }
+                         */
+                        generation_params?: {
+                            frequency_penalty?: number;
+                            max_output_tokens?: number;
+                            presence_penalty?: number;
+                            /** @enum {string} */
+                            reasoning_effort?: "low" | "medium" | "high";
+                            stop_sequences?: string[];
+                            stream?: boolean;
+                            temperature?: number;
+                            top_k?: number;
+                            top_p?: number;
+                        };
+                        session_state_writes?: {
+                            /** @enum {boolean} */
+                            delete?: true;
+                            namespace?: string;
+                            slot?: string;
+                            value?: unknown;
+                        }[];
+                        structure?: {
+                            /** @enum {string} */
+                            assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                            merge_adjacent_same_role?: boolean;
+                            /** @enum {string} */
+                            mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                            preserve_system_messages?: boolean;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "branch_id": "alt-branch",
+                         *         "final_state": "committed",
+                         *         "floor_id": "floor_12",
+                         *         "floor_no": 12,
+                         *         "generated_text": "The firelight wavers as the next part of the story begins.",
+                         *         "memory": {
+                         *           "job_id": null,
+                         *           "mode": "sync",
+                         *           "status": "applied"
+                         *         },
+                         *         "prompt_snapshot": {
+                         *           "preset_id": "preset-1",
+                         *           "preset_updated_at": 1710000000000,
+                         *           "preset_version": 3,
+                         *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                         *           "prompt_mode": "compat_strict",
+                         *           "regex_post_rule_names": [],
+                         *           "regex_pre_rule_names": [
+                         *             "trim_whitespace"
+                         *           ],
+                         *           "regex_profile_id": "regex-1",
+                         *           "regex_profile_updated_at": 1710000002000,
+                         *           "regex_profile_version": 2,
+                         *           "token_estimate": 512,
+                         *           "worldbook_activated_entry_uids": [
+                         *             7
+                         *           ],
+                         *           "worldbook_id": "worldbook-1",
+                         *           "worldbook_updated_at": 1710000001000,
+                         *           "worldbook_version": 5
+                         *         },
+                         *         "runtime_trace": {
+                         *           "budgets": {
+                         *             "by_group": [
+                         *               {
+                         *                 "allocated_token_count": 256,
+                         *                 "estimated_token_count": 320,
+                         *                 "group": "history",
+                         *                 "pruned_token_count": 64,
+                         *                 "token_count": 256
+                         *               },
+                         *               {
+                         *                 "group": "worldbook",
+                         *                 "token_count": 64
+                         *               }
+                         *             ]
+                         *           },
+                         *           "delivery": {
+                         *             "allow_assistant_prefill": true,
+                         *             "assistant_prefill_applied": false,
+                         *             "assistant_prefill_requested": true,
+                         *             "assistant_prefill_strategy": "assistant_message_fallback",
+                         *             "degrade_reasons": [
+                         *               "require_last_user"
+                         *             ],
+                         *             "degraded": true,
+                         *             "ends_with_user": true,
+                         *             "last_message_role": "user",
+                         *             "no_assistant": false,
+                         *             "require_last_user": true
+                         *           },
+                         *           "macro": {
+                         *             "mutation_preview": [
+                         *               {
+                         *                 "key": "mood",
+                         *                 "kind": "set",
+                         *                 "scope": "branch",
+                         *                 "value": "steady"
+                         *               }
+                         *             ],
+                         *             "staged_mutations": [
+                         *               {
+                         *                 "key": "mood",
+                         *                 "kind": "set",
+                         *                 "scope": "branch",
+                         *                 "source_macro": "setvar",
+                         *                 "value": "steady"
+                         *               }
+                         *             ],
+                         *             "traces": [
+                         *               {
+                         *                 "macro_name": "lastGenerationType",
+                         *                 "phase": "assemble",
+                         *                 "raw_text": "{{lastGenerationType}}",
+                         *                 "resolved_text": "respond",
+                         *                 "source_kind": "macro"
+                         *               },
+                         *               {
+                         *                 "macro_name": "if",
+                         *                 "phase": "assemble",
+                         *                 "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                         *                 "resolved_text": "YES",
+                         *                 "selected_branch": "then",
+                         *                 "source_kind": "if"
+                         *               }
+                         *             ],
+                         *             "used_names": [
+                         *               "if",
+                         *               "lastGenerationType",
+                         *               "setvar"
+                         *             ],
+                         *             "warnings": [
+                         *               {
+                         *                 "code": "macro_preview_side_effect_suppressed",
+                         *                 "macro_name": "setvar",
+                         *                 "message": "Macro setvar side effect was previewed but not committed."
+                         *               }
+                         *             ]
+                         *           },
+                         *           "memory": {
+                         *             "summary_injected": true
+                         *           },
+                         *           "preset": {
+                         *             "continue_nudge_applied": false,
+                         *             "continue_nudge_text": null,
+                         *             "ignored_fields": [],
+                         *             "ignored_prompt_order_character_ids": [],
+                         *             "in_chat_inserted_entry_ids": [],
+                         *             "names_behavior_applied": "off",
+                         *             "selected_prompt_order_character_id": 100000,
+                         *             "trigger_filtered_entry_ids": [],
+                         *             "unresolved_markers": [],
+                         *             "unsupported_fields": [],
+                         *             "warnings": []
+                         *           },
+                         *           "regex": {
+                         *             "ai_output_rules": [],
+                         *             "preprocessed_user_message": "Please continue the campfire scene.",
+                         *             "user_input_rules": [
+                         *               "trim_whitespace"
+                         *             ]
+                         *           },
+                         *           "structure": {
+                         *             "assistant_rewrite_count": 1,
+                         *             "assistant_rewrite_strategy": "to_system",
+                         *             "merge_adjacent_same_role": false,
+                         *             "mode": "no_assistant",
+                         *             "tail_assistant_detected": false
+                         *           },
+                         *           "worldbook": {
+                         *             "hit_count": 1
+                         *           }
+                         *         },
+                         *         "source_floor_id": "floor_11",
+                         *         "source_message_id": "msg_21",
+                         *         "summaries": [
+                         *           "The group resumes the campfire planning scene."
+                         *         ],
+                         *         "total_usage": {
+                         *           "completion_tokens": 128,
+                         *           "prompt_tokens": 320,
+                         *           "total_tokens": 448
+                         *         }
+                         *       }
+                         *     }
+                         */
+                        "application/json": {
+                            /**
+                             * @example {
+                             *       "branch_id": "alt-branch",
+                             *       "final_state": "committed",
+                             *       "floor_id": "floor_12",
+                             *       "floor_no": 12,
+                             *       "generated_text": "The firelight wavers as the next part of the story begins.",
+                             *       "memory": {
+                             *         "job_id": null,
+                             *         "mode": "sync",
+                             *         "status": "applied"
+                             *       },
+                             *       "prompt_snapshot": {
+                             *         "preset_id": "preset-1",
+                             *         "preset_updated_at": 1710000000000,
+                             *         "preset_version": 3,
+                             *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                             *         "prompt_mode": "compat_strict",
+                             *         "regex_post_rule_names": [],
+                             *         "regex_pre_rule_names": [
+                             *           "trim_whitespace"
+                             *         ],
+                             *         "regex_profile_id": "regex-1",
+                             *         "regex_profile_updated_at": 1710000002000,
+                             *         "regex_profile_version": 2,
+                             *         "token_estimate": 512,
+                             *         "worldbook_activated_entry_uids": [
+                             *           7
+                             *         ],
+                             *         "worldbook_id": "worldbook-1",
+                             *         "worldbook_updated_at": 1710000001000,
+                             *         "worldbook_version": 5
+                             *       },
+                             *       "runtime_trace": {
+                             *         "budgets": {
+                             *           "by_group": [
+                             *             {
+                             *               "allocated_token_count": 256,
+                             *               "estimated_token_count": 320,
+                             *               "group": "history",
+                             *               "pruned_token_count": 64,
+                             *               "token_count": 256
+                             *             },
+                             *             {
+                             *               "group": "worldbook",
+                             *               "token_count": 64
+                             *             }
+                             *           ]
+                             *         },
+                             *         "delivery": {
+                             *           "allow_assistant_prefill": true,
+                             *           "assistant_prefill_applied": false,
+                             *           "assistant_prefill_requested": true,
+                             *           "assistant_prefill_strategy": "assistant_message_fallback",
+                             *           "degrade_reasons": [
+                             *             "require_last_user"
+                             *           ],
+                             *           "degraded": true,
+                             *           "ends_with_user": true,
+                             *           "last_message_role": "user",
+                             *           "no_assistant": false,
+                             *           "require_last_user": true
+                             *         },
+                             *         "macro": {
+                             *           "mutation_preview": [
+                             *             {
+                             *               "key": "mood",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "value": "steady"
+                             *             }
+                             *           ],
+                             *           "staged_mutations": [
+                             *             {
+                             *               "key": "mood",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "source_macro": "setvar",
+                             *               "value": "steady"
+                             *             }
+                             *           ],
+                             *           "traces": [
+                             *             {
+                             *               "macro_name": "lastGenerationType",
+                             *               "phase": "assemble",
+                             *               "raw_text": "{{lastGenerationType}}",
+                             *               "resolved_text": "respond",
+                             *               "source_kind": "macro"
+                             *             },
+                             *             {
+                             *               "macro_name": "if",
+                             *               "phase": "assemble",
+                             *               "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                             *               "resolved_text": "YES",
+                             *               "selected_branch": "then",
+                             *               "source_kind": "if"
+                             *             }
+                             *           ],
+                             *           "used_names": [
+                             *             "if",
+                             *             "lastGenerationType",
+                             *             "setvar"
+                             *           ],
+                             *           "warnings": [
+                             *             {
+                             *               "code": "macro_preview_side_effect_suppressed",
+                             *               "macro_name": "setvar",
+                             *               "message": "Macro setvar side effect was previewed but not committed."
+                             *             }
+                             *           ]
+                             *         },
+                             *         "memory": {
+                             *           "summary_injected": true
+                             *         },
+                             *         "preset": {
+                             *           "continue_nudge_applied": false,
+                             *           "continue_nudge_text": null,
+                             *           "ignored_fields": [],
+                             *           "ignored_prompt_order_character_ids": [],
+                             *           "in_chat_inserted_entry_ids": [],
+                             *           "names_behavior_applied": "off",
+                             *           "selected_prompt_order_character_id": 100000,
+                             *           "trigger_filtered_entry_ids": [],
+                             *           "unresolved_markers": [],
+                             *           "unsupported_fields": [],
+                             *           "warnings": []
+                             *         },
+                             *         "regex": {
+                             *           "ai_output_rules": [],
+                             *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "user_input_rules": [
+                             *             "trim_whitespace"
+                             *           ]
+                             *         },
+                             *         "structure": {
+                             *           "assistant_rewrite_count": 1,
+                             *           "assistant_rewrite_strategy": "to_system",
+                             *           "merge_adjacent_same_role": false,
+                             *           "mode": "no_assistant",
+                             *           "tail_assistant_detected": false
+                             *         },
+                             *         "worldbook": {
+                             *           "hit_count": 1
+                             *         }
+                             *       },
+                             *       "source_floor_id": "floor_11",
+                             *       "source_message_id": "msg_21",
+                             *       "summaries": [
+                             *         "The group resumes the campfire planning scene."
+                             *       ],
+                             *       "total_usage": {
+                             *         "completion_tokens": 128,
+                             *         "prompt_tokens": 320,
+                             *         "total_tokens": 448
+                             *       }
+                             *     }
+                             */
+                            data: {
+                                branch_id: string;
+                                final_state: string;
+                                floor_id: string;
+                                floor_no: number;
+                                generated_text: string;
+                                /**
+                                 * @example {
+                                 *       "job_id": null,
+                                 *       "mode": "sync",
+                                 *       "status": "applied"
+                                 *     }
+                                 */
+                                memory?: {
+                                    job_id: string | null;
+                                    /** @enum {string} */
+                                    mode: "sync" | "async";
+                                    /** @enum {string} */
+                                    status: "applied" | "queued";
+                                };
+                                /**
+                                 * @example {
+                                 *       "preset_id": "preset-1",
+                                 *       "preset_updated_at": 1710000000000,
+                                 *       "preset_version": 3,
+                                 *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                                 *       "prompt_mode": "compat_strict",
+                                 *       "regex_post_rule_names": [],
+                                 *       "regex_pre_rule_names": [
+                                 *         "trim_whitespace"
+                                 *       ],
+                                 *       "regex_profile_id": "regex-1",
+                                 *       "regex_profile_updated_at": 1710000002000,
+                                 *       "regex_profile_version": 2,
+                                 *       "token_estimate": 512,
+                                 *       "worldbook_activated_entry_uids": [
+                                 *         7
+                                 *       ],
+                                 *       "worldbook_id": "worldbook-1",
+                                 *       "worldbook_updated_at": 1710000001000,
+                                 *       "worldbook_version": 5
+                                 *     }
+                                 */
+                                prompt_snapshot?: {
+                                    preset_id: string | null;
+                                    preset_updated_at: number | null;
+                                    preset_version: number | null;
+                                    prompt_digest: string;
+                                    /** @enum {string} */
+                                    prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                    regex_post_rule_names: string[];
+                                    regex_pre_rule_names: string[];
+                                    regex_profile_id: string | null;
+                                    regex_profile_updated_at: number | null;
+                                    regex_profile_version: number | null;
+                                    token_estimate: number;
+                                    worldbook_activated_entry_uids: number[];
+                                    worldbook_id: string | null;
+                                    worldbook_updated_at: number | null;
+                                    worldbook_version: number | null;
+                                };
+                                /**
+                                 * @example {
+                                 *       "budgets": {
+                                 *         "by_group": [
+                                 *           {
+                                 *             "allocated_token_count": 256,
+                                 *             "estimated_token_count": 320,
+                                 *             "group": "history",
+                                 *             "pruned_token_count": 64,
+                                 *             "token_count": 256
+                                 *           },
+                                 *           {
+                                 *             "group": "worldbook",
+                                 *             "token_count": 64
+                                 *           }
+                                 *         ]
+                                 *       },
+                                 *       "delivery": {
+                                 *         "allow_assistant_prefill": true,
+                                 *         "assistant_prefill_applied": false,
+                                 *         "assistant_prefill_requested": true,
+                                 *         "assistant_prefill_strategy": "assistant_message_fallback",
+                                 *         "degrade_reasons": [
+                                 *           "require_last_user"
+                                 *         ],
+                                 *         "degraded": true,
+                                 *         "ends_with_user": true,
+                                 *         "last_message_role": "user",
+                                 *         "no_assistant": false,
+                                 *         "require_last_user": true
+                                 *       },
+                                 *       "macro": {
+                                 *         "mutation_preview": [
+                                 *           {
+                                 *             "key": "mood",
+                                 *             "kind": "set",
+                                 *             "scope": "branch",
+                                 *             "value": "steady"
+                                 *           }
+                                 *         ],
+                                 *         "staged_mutations": [
+                                 *           {
+                                 *             "key": "mood",
+                                 *             "kind": "set",
+                                 *             "scope": "branch",
+                                 *             "source_macro": "setvar",
+                                 *             "value": "steady"
+                                 *           }
+                                 *         ],
+                                 *         "traces": [
+                                 *           {
+                                 *             "macro_name": "lastGenerationType",
+                                 *             "phase": "assemble",
+                                 *             "raw_text": "{{lastGenerationType}}",
+                                 *             "resolved_text": "respond",
+                                 *             "source_kind": "macro"
+                                 *           },
+                                 *           {
+                                 *             "macro_name": "if",
+                                 *             "phase": "assemble",
+                                 *             "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                 *             "resolved_text": "YES",
+                                 *             "selected_branch": "then",
+                                 *             "source_kind": "if"
+                                 *           }
+                                 *         ],
+                                 *         "used_names": [
+                                 *           "if",
+                                 *           "lastGenerationType",
+                                 *           "setvar"
+                                 *         ],
+                                 *         "warnings": [
+                                 *           {
+                                 *             "code": "macro_preview_side_effect_suppressed",
+                                 *             "macro_name": "setvar",
+                                 *             "message": "Macro setvar side effect was previewed but not committed."
+                                 *           }
+                                 *         ]
+                                 *       },
+                                 *       "memory": {
+                                 *         "summary_injected": true
+                                 *       },
+                                 *       "preset": {
+                                 *         "continue_nudge_applied": false,
+                                 *         "continue_nudge_text": null,
+                                 *         "ignored_fields": [],
+                                 *         "ignored_prompt_order_character_ids": [],
+                                 *         "in_chat_inserted_entry_ids": [],
+                                 *         "names_behavior_applied": "off",
+                                 *         "selected_prompt_order_character_id": 100000,
+                                 *         "trigger_filtered_entry_ids": [],
+                                 *         "unresolved_markers": [],
+                                 *         "unsupported_fields": [],
+                                 *         "warnings": []
+                                 *       },
+                                 *       "regex": {
+                                 *         "ai_output_rules": [],
+                                 *         "preprocessed_user_message": "Please continue the campfire scene.",
+                                 *         "user_input_rules": [
+                                 *           "trim_whitespace"
+                                 *         ]
+                                 *       },
+                                 *       "structure": {
+                                 *         "assistant_rewrite_count": 1,
+                                 *         "assistant_rewrite_strategy": "to_system",
+                                 *         "merge_adjacent_same_role": false,
+                                 *         "mode": "no_assistant",
+                                 *         "tail_assistant_detected": false
+                                 *       },
+                                 *       "worldbook": {
+                                 *         "hit_count": 1
+                                 *       }
+                                 *     }
+                                 */
+                                runtime_trace?: {
+                                    budgets?: {
+                                        by_group: {
+                                            allocated_token_count?: number;
+                                            estimated_token_count?: number;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            token_count: number;
+                                        }[];
+                                        trim_reasons?: {
+                                            detail?: string;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            /** @enum {string} */
+                                            reason: "budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled";
+                                        }[];
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill: boolean;
+                                        assistant_prefill_applied: boolean;
+                                        assistant_prefill_requested: boolean;
+                                        assistant_prefill_strategy: ("provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none") | null;
+                                        degrade_reasons: ("assistant_prefill_disabled" | "assistant_prefill_unsupported" | "require_last_user" | "no_assistant_override")[];
+                                        degraded: boolean;
+                                        ends_with_user: boolean;
+                                        last_message_role: ("system" | "user" | "assistant") | null;
+                                        no_assistant: boolean;
+                                        require_last_user: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "mutation_preview": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "staged_mutations": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "source_macro": "setvar",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "traces": [
+                                     *         {
+                                     *           "macro_name": "lastGenerationType",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{lastGenerationType}}",
+                                     *           "resolved_text": "respond",
+                                     *           "source_kind": "macro"
+                                     *         },
+                                     *         {
+                                     *           "macro_name": "if",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                     *           "resolved_text": "YES",
+                                     *           "selected_branch": "then",
+                                     *           "source_kind": "if"
+                                     *         }
+                                     *       ],
+                                     *       "used_names": [
+                                     *         "if",
+                                     *         "lastGenerationType",
+                                     *         "setvar"
+                                     *       ],
+                                     *       "warnings": [
+                                     *         {
+                                     *           "code": "macro_preview_side_effect_suppressed",
+                                     *           "macro_name": "setvar",
+                                     *           "message": "Macro setvar side effect was previewed but not committed."
+                                     *         }
+                                     *       ]
+                                     *     }
+                                     */
+                                    macro?: {
+                                        mutation_preview: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            value?: string;
+                                        }[];
+                                        staged_mutations: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            source_macro: string;
+                                            value?: string;
+                                        }[];
+                                        traces: {
+                                            macro_name: string;
+                                            phase?: string;
+                                            raw_text: string;
+                                            resolved_text: string;
+                                            /** @enum {string} */
+                                            selected_branch?: "then" | "else" | "raw";
+                                            /** @enum {string} */
+                                            source_kind?: "text" | "raw" | "macro" | "if";
+                                        }[];
+                                        used_names: string[];
+                                        warnings: {
+                                            code: string;
+                                            macro_name?: string;
+                                            message: string;
+                                            raw_text?: string;
+                                        }[];
+                                    };
+                                    memory?: {
+                                        summary_injected: boolean;
+                                    };
+                                    preset?: {
+                                        continue_nudge_applied: boolean;
+                                        continue_nudge_text: string | null;
+                                        ignored_fields: string[];
+                                        ignored_prompt_order_character_ids: number[];
+                                        in_chat_inserted_entry_ids: string[];
+                                        names_behavior_applied: ("off" | "always") | null;
+                                        selected_prompt_order_character_id: number | null;
+                                        trigger_filtered_entry_ids: string[];
+                                        unresolved_markers: string[];
+                                        unsupported_fields: string[];
+                                        warnings: string[];
+                                    };
+                                    regex?: {
+                                        ai_output_rules: string[];
+                                        preprocessed_user_message: string | null;
+                                        user_input_rules: string[];
+                                    };
+                                    source_selection?: {
+                                        excluded_sources: {
+                                            detail?: string;
+                                            /** @enum {string} */
+                                            reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+                                            /**
+                                             * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
+                                             * @enum {string}
+                                             */
+                                            source: "history" | "memory" | "worldbook" | "examples";
+                                        }[];
+                                    };
+                                    structure?: {
+                                        assistant_prefill_transcriptized?: boolean;
+                                        assistant_rewrite_count: number;
+                                        assistant_rewrite_strategy: ("to_system" | "to_user_transcript") | null;
+                                        merge_adjacent_same_role: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        tail_assistant_detected: boolean;
+                                        transcript_message_count?: number;
+                                        transcriptized?: boolean;
+                                    };
+                                    worldbook?: {
+                                        hit_count: number;
+                                        matches?: {
+                                            activation: {
+                                                first_match: {
+                                                    char_end: number;
+                                                    char_start: number;
+                                                    excerpt: string;
+                                                    injection_index?: number;
+                                                    matched_key: string;
+                                                    /** @enum {string} */
+                                                    matched_key_scope: "primary" | "secondary";
+                                                    /** @enum {string} */
+                                                    matched_key_type: "plain" | "regex";
+                                                    message_index_from_latest?: number;
+                                                    /** @enum {string} */
+                                                    source_kind: "message" | "persona_description" | "character_description" | "character_personality" | "character_depth_prompt" | "scenario" | "creator_notes" | "injection" | "recursion_buffer";
+                                                } | null;
+                                                /** @enum {string} */
+                                                mode: "constant" | "triggered";
+                                                recursion_level: number;
+                                            };
+                                            comment: string;
+                                            content_preview: string;
+                                            insertion: {
+                                                depth?: number;
+                                                outlet_name?: string;
+                                                /** @enum {string} */
+                                                position: "before" | "after" | "at_depth" | "outlet";
+                                                /** @enum {string} */
+                                                role?: "system" | "user" | "assistant";
+                                            };
+                                            order: number;
+                                            source: {
+                                                /** @enum {string} */
+                                                kind: "session_worldbook" | "character_book";
+                                                worldbook_id: string | null;
+                                                worldbook_name: string;
+                                            };
+                                            uid: number;
+                                        }[];
+                                    };
+                                };
+                                source_floor_id: string;
+                                source_message_id: string;
+                                summaries: string[];
+                                /**
+                                 * @example {
+                                 *       "completion_tokens": 128,
+                                 *       "prompt_tokens": 320,
+                                 *       "total_tokens": 448
+                                 *     }
+                                 */
+                                total_usage: {
+                                    completion_tokens: number;
+                                    prompt_tokens: number;
+                                    total_tokens: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                499: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                504: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages/batch/delete": {
         parameters: {
             query?: never;
@@ -5725,6 +10636,3246 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate the last assistant response
+         * @description Regenerate the latest committed floor response and keep the previous floor as superseded branch.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    /**
+                     * @example {
+                     *       "config": {
+                     *         "enableDirector": true
+                     *       },
+                     *       "debug_options": {
+                     *         "include_prompt_snapshot": true,
+                     *         "include_runtime_trace": true,
+                     *         "include_worldbook_matches": false
+                     *       },
+                     *       "delivery": {
+                     *         "allow_assistant_prefill": false,
+                     *         "no_assistant": false,
+                     *         "require_last_user": true
+                     *       },
+                     *       "generation_params": {
+                     *         "max_output_tokens": 256,
+                     *         "reasoning_effort": "low",
+                     *         "temperature": 0.7,
+                     *         "top_p": 0.9
+                     *       },
+                     *       "session_state_writes": [
+                     *         {
+                     *           "namespace": "quest_flags",
+                     *           "slot": "companion",
+                     *           "value": {
+                     *             "mood": "ally"
+                     *           }
+                     *         },
+                     *         {
+                     *           "delete": true,
+                     *           "namespace": "quest_flags",
+                     *           "slot": "expired_hint"
+                     *         }
+                     *       ],
+                     *       "structure": {
+                     *         "assistant_rewrite_strategy": "to_system",
+                     *         "merge_adjacent_same_role": false,
+                     *         "mode": "no_assistant",
+                     *         "preserve_system_messages": true
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "enableDirector": true,
+                         *       "enableMemoryConsolidation": true,
+                         *       "enableTools": true,
+                         *       "enableVerifier": true,
+                         *       "maxRetries": 1,
+                         *       "toolMode": "inline",
+                         *       "verifierFailStrategy": "warn"
+                         *     }
+                         */
+                        config?: {
+                            enableDirector?: boolean;
+                            enableMemoryConsolidation?: boolean;
+                            enableTools?: boolean;
+                            enableVerifier?: boolean;
+                            maxRetries?: number;
+                            /** @enum {string} */
+                            toolMode?: "inline" | "standalone" | "both";
+                            /** @enum {string} */
+                            verifierFailStrategy?: "warn" | "block" | "retry";
+                        };
+                        confirmed_execution_ids?: string[];
+                        confirmed_session_state_mutation_ids?: string[];
+                        /**
+                         * @example {
+                         *       "include_prompt_snapshot": true,
+                         *       "include_runtime_trace": true,
+                         *       "include_worldbook_matches": false
+                         *     }
+                         */
+                        debug_options?: {
+                            include_prompt_snapshot?: boolean;
+                            include_runtime_trace?: boolean;
+                            include_worldbook_matches?: boolean;
+                        };
+                        delivery?: {
+                            allow_assistant_prefill?: boolean;
+                            no_assistant?: boolean;
+                            require_last_user?: boolean;
+                        };
+                        /**
+                         * @example {
+                         *       "max_output_tokens": 256,
+                         *       "reasoning_effort": "low",
+                         *       "temperature": 0.7,
+                         *       "top_p": 0.9
+                         *     }
+                         */
+                        generation_params?: {
+                            frequency_penalty?: number;
+                            max_output_tokens?: number;
+                            presence_penalty?: number;
+                            /** @enum {string} */
+                            reasoning_effort?: "low" | "medium" | "high";
+                            stop_sequences?: string[];
+                            stream?: boolean;
+                            temperature?: number;
+                            top_k?: number;
+                            top_p?: number;
+                        };
+                        session_state_writes?: {
+                            /** @enum {boolean} */
+                            delete?: true;
+                            namespace?: string;
+                            slot?: string;
+                            value?: unknown;
+                        }[];
+                        structure?: {
+                            /** @enum {string} */
+                            assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                            merge_adjacent_same_role?: boolean;
+                            /** @enum {string} */
+                            mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                            preserve_system_messages?: boolean;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "final_state": "committed",
+                         *         "floor_id": "floor_13",
+                         *         "floor_no": 13,
+                         *         "generated_text": "The assistant retries the last turn with a different phrasing.",
+                         *         "memory": {
+                         *           "job_id": null,
+                         *           "mode": "sync",
+                         *           "status": "applied"
+                         *         },
+                         *         "previous_floor_id": "floor_12",
+                         *         "prompt_snapshot": {
+                         *           "preset_id": "preset-1",
+                         *           "preset_updated_at": 1710000000000,
+                         *           "preset_version": 3,
+                         *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                         *           "prompt_mode": "compat_strict",
+                         *           "regex_post_rule_names": [],
+                         *           "regex_pre_rule_names": [
+                         *             "trim_whitespace"
+                         *           ],
+                         *           "regex_profile_id": "regex-1",
+                         *           "regex_profile_updated_at": 1710000002000,
+                         *           "regex_profile_version": 2,
+                         *           "token_estimate": 512,
+                         *           "worldbook_activated_entry_uids": [
+                         *             7
+                         *           ],
+                         *           "worldbook_id": "worldbook-1",
+                         *           "worldbook_updated_at": 1710000001000,
+                         *           "worldbook_version": 5
+                         *         },
+                         *         "runtime_trace": {
+                         *           "budgets": {
+                         *             "by_group": [
+                         *               {
+                         *                 "allocated_token_count": 256,
+                         *                 "estimated_token_count": 320,
+                         *                 "group": "history",
+                         *                 "pruned_token_count": 64,
+                         *                 "token_count": 256
+                         *               },
+                         *               {
+                         *                 "group": "worldbook",
+                         *                 "token_count": 64
+                         *               }
+                         *             ]
+                         *           },
+                         *           "delivery": {
+                         *             "allow_assistant_prefill": true,
+                         *             "assistant_prefill_applied": false,
+                         *             "assistant_prefill_requested": true,
+                         *             "assistant_prefill_strategy": "assistant_message_fallback",
+                         *             "degrade_reasons": [
+                         *               "require_last_user"
+                         *             ],
+                         *             "degraded": true,
+                         *             "ends_with_user": true,
+                         *             "last_message_role": "user",
+                         *             "no_assistant": false,
+                         *             "require_last_user": true
+                         *           },
+                         *           "macro": {
+                         *             "mutation_preview": [
+                         *               {
+                         *                 "key": "mood",
+                         *                 "kind": "set",
+                         *                 "scope": "branch",
+                         *                 "value": "steady"
+                         *               }
+                         *             ],
+                         *             "staged_mutations": [
+                         *               {
+                         *                 "key": "mood",
+                         *                 "kind": "set",
+                         *                 "scope": "branch",
+                         *                 "source_macro": "setvar",
+                         *                 "value": "steady"
+                         *               }
+                         *             ],
+                         *             "traces": [
+                         *               {
+                         *                 "macro_name": "lastGenerationType",
+                         *                 "phase": "assemble",
+                         *                 "raw_text": "{{lastGenerationType}}",
+                         *                 "resolved_text": "respond",
+                         *                 "source_kind": "macro"
+                         *               },
+                         *               {
+                         *                 "macro_name": "if",
+                         *                 "phase": "assemble",
+                         *                 "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                         *                 "resolved_text": "YES",
+                         *                 "selected_branch": "then",
+                         *                 "source_kind": "if"
+                         *               }
+                         *             ],
+                         *             "used_names": [
+                         *               "if",
+                         *               "lastGenerationType",
+                         *               "setvar"
+                         *             ],
+                         *             "warnings": [
+                         *               {
+                         *                 "code": "macro_preview_side_effect_suppressed",
+                         *                 "macro_name": "setvar",
+                         *                 "message": "Macro setvar side effect was previewed but not committed."
+                         *               }
+                         *             ]
+                         *           },
+                         *           "memory": {
+                         *             "summary_injected": true
+                         *           },
+                         *           "preset": {
+                         *             "continue_nudge_applied": false,
+                         *             "continue_nudge_text": null,
+                         *             "ignored_fields": [],
+                         *             "ignored_prompt_order_character_ids": [],
+                         *             "in_chat_inserted_entry_ids": [],
+                         *             "names_behavior_applied": "off",
+                         *             "selected_prompt_order_character_id": 100000,
+                         *             "trigger_filtered_entry_ids": [],
+                         *             "unresolved_markers": [],
+                         *             "unsupported_fields": [],
+                         *             "warnings": []
+                         *           },
+                         *           "regex": {
+                         *             "ai_output_rules": [],
+                         *             "preprocessed_user_message": "Please continue the campfire scene.",
+                         *             "user_input_rules": [
+                         *               "trim_whitespace"
+                         *             ]
+                         *           },
+                         *           "structure": {
+                         *             "assistant_rewrite_count": 1,
+                         *             "assistant_rewrite_strategy": "to_system",
+                         *             "merge_adjacent_same_role": false,
+                         *             "mode": "no_assistant",
+                         *             "tail_assistant_detected": false
+                         *           },
+                         *           "worldbook": {
+                         *             "hit_count": 1
+                         *           }
+                         *         },
+                         *         "summaries": [
+                         *           "The last assistant turn was regenerated."
+                         *         ],
+                         *         "total_usage": {
+                         *           "completion_tokens": 128,
+                         *           "prompt_tokens": 320,
+                         *           "total_tokens": 448
+                         *         }
+                         *       }
+                         *     }
+                         */
+                        "application/json": {
+                            /**
+                             * @example {
+                             *       "final_state": "committed",
+                             *       "floor_id": "floor_13",
+                             *       "floor_no": 13,
+                             *       "generated_text": "The assistant retries the last turn with a different phrasing.",
+                             *       "memory": {
+                             *         "job_id": null,
+                             *         "mode": "sync",
+                             *         "status": "applied"
+                             *       },
+                             *       "previous_floor_id": "floor_12",
+                             *       "prompt_snapshot": {
+                             *         "preset_id": "preset-1",
+                             *         "preset_updated_at": 1710000000000,
+                             *         "preset_version": 3,
+                             *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                             *         "prompt_mode": "compat_strict",
+                             *         "regex_post_rule_names": [],
+                             *         "regex_pre_rule_names": [
+                             *           "trim_whitespace"
+                             *         ],
+                             *         "regex_profile_id": "regex-1",
+                             *         "regex_profile_updated_at": 1710000002000,
+                             *         "regex_profile_version": 2,
+                             *         "token_estimate": 512,
+                             *         "worldbook_activated_entry_uids": [
+                             *           7
+                             *         ],
+                             *         "worldbook_id": "worldbook-1",
+                             *         "worldbook_updated_at": 1710000001000,
+                             *         "worldbook_version": 5
+                             *       },
+                             *       "runtime_trace": {
+                             *         "budgets": {
+                             *           "by_group": [
+                             *             {
+                             *               "allocated_token_count": 256,
+                             *               "estimated_token_count": 320,
+                             *               "group": "history",
+                             *               "pruned_token_count": 64,
+                             *               "token_count": 256
+                             *             },
+                             *             {
+                             *               "group": "worldbook",
+                             *               "token_count": 64
+                             *             }
+                             *           ]
+                             *         },
+                             *         "delivery": {
+                             *           "allow_assistant_prefill": true,
+                             *           "assistant_prefill_applied": false,
+                             *           "assistant_prefill_requested": true,
+                             *           "assistant_prefill_strategy": "assistant_message_fallback",
+                             *           "degrade_reasons": [
+                             *             "require_last_user"
+                             *           ],
+                             *           "degraded": true,
+                             *           "ends_with_user": true,
+                             *           "last_message_role": "user",
+                             *           "no_assistant": false,
+                             *           "require_last_user": true
+                             *         },
+                             *         "macro": {
+                             *           "mutation_preview": [
+                             *             {
+                             *               "key": "mood",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "value": "steady"
+                             *             }
+                             *           ],
+                             *           "staged_mutations": [
+                             *             {
+                             *               "key": "mood",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "source_macro": "setvar",
+                             *               "value": "steady"
+                             *             }
+                             *           ],
+                             *           "traces": [
+                             *             {
+                             *               "macro_name": "lastGenerationType",
+                             *               "phase": "assemble",
+                             *               "raw_text": "{{lastGenerationType}}",
+                             *               "resolved_text": "respond",
+                             *               "source_kind": "macro"
+                             *             },
+                             *             {
+                             *               "macro_name": "if",
+                             *               "phase": "assemble",
+                             *               "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                             *               "resolved_text": "YES",
+                             *               "selected_branch": "then",
+                             *               "source_kind": "if"
+                             *             }
+                             *           ],
+                             *           "used_names": [
+                             *             "if",
+                             *             "lastGenerationType",
+                             *             "setvar"
+                             *           ],
+                             *           "warnings": [
+                             *             {
+                             *               "code": "macro_preview_side_effect_suppressed",
+                             *               "macro_name": "setvar",
+                             *               "message": "Macro setvar side effect was previewed but not committed."
+                             *             }
+                             *           ]
+                             *         },
+                             *         "memory": {
+                             *           "summary_injected": true
+                             *         },
+                             *         "preset": {
+                             *           "continue_nudge_applied": false,
+                             *           "continue_nudge_text": null,
+                             *           "ignored_fields": [],
+                             *           "ignored_prompt_order_character_ids": [],
+                             *           "in_chat_inserted_entry_ids": [],
+                             *           "names_behavior_applied": "off",
+                             *           "selected_prompt_order_character_id": 100000,
+                             *           "trigger_filtered_entry_ids": [],
+                             *           "unresolved_markers": [],
+                             *           "unsupported_fields": [],
+                             *           "warnings": []
+                             *         },
+                             *         "regex": {
+                             *           "ai_output_rules": [],
+                             *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "user_input_rules": [
+                             *             "trim_whitespace"
+                             *           ]
+                             *         },
+                             *         "structure": {
+                             *           "assistant_rewrite_count": 1,
+                             *           "assistant_rewrite_strategy": "to_system",
+                             *           "merge_adjacent_same_role": false,
+                             *           "mode": "no_assistant",
+                             *           "tail_assistant_detected": false
+                             *         },
+                             *         "worldbook": {
+                             *           "hit_count": 1
+                             *         }
+                             *       },
+                             *       "summaries": [
+                             *         "The last assistant turn was regenerated."
+                             *       ],
+                             *       "total_usage": {
+                             *         "completion_tokens": 128,
+                             *         "prompt_tokens": 320,
+                             *         "total_tokens": 448
+                             *       }
+                             *     }
+                             */
+                            data: {
+                                final_state: string;
+                                floor_id: string;
+                                floor_no: number;
+                                generated_text: string;
+                                /**
+                                 * @example {
+                                 *       "job_id": null,
+                                 *       "mode": "sync",
+                                 *       "status": "applied"
+                                 *     }
+                                 */
+                                memory?: {
+                                    job_id: string | null;
+                                    /** @enum {string} */
+                                    mode: "sync" | "async";
+                                    /** @enum {string} */
+                                    status: "applied" | "queued";
+                                };
+                                previous_floor_id: string;
+                                /**
+                                 * @example {
+                                 *       "preset_id": "preset-1",
+                                 *       "preset_updated_at": 1710000000000,
+                                 *       "preset_version": 3,
+                                 *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                                 *       "prompt_mode": "compat_strict",
+                                 *       "regex_post_rule_names": [],
+                                 *       "regex_pre_rule_names": [
+                                 *         "trim_whitespace"
+                                 *       ],
+                                 *       "regex_profile_id": "regex-1",
+                                 *       "regex_profile_updated_at": 1710000002000,
+                                 *       "regex_profile_version": 2,
+                                 *       "token_estimate": 512,
+                                 *       "worldbook_activated_entry_uids": [
+                                 *         7
+                                 *       ],
+                                 *       "worldbook_id": "worldbook-1",
+                                 *       "worldbook_updated_at": 1710000001000,
+                                 *       "worldbook_version": 5
+                                 *     }
+                                 */
+                                prompt_snapshot?: {
+                                    preset_id: string | null;
+                                    preset_updated_at: number | null;
+                                    preset_version: number | null;
+                                    prompt_digest: string;
+                                    /** @enum {string} */
+                                    prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                    regex_post_rule_names: string[];
+                                    regex_pre_rule_names: string[];
+                                    regex_profile_id: string | null;
+                                    regex_profile_updated_at: number | null;
+                                    regex_profile_version: number | null;
+                                    token_estimate: number;
+                                    worldbook_activated_entry_uids: number[];
+                                    worldbook_id: string | null;
+                                    worldbook_updated_at: number | null;
+                                    worldbook_version: number | null;
+                                };
+                                /**
+                                 * @example {
+                                 *       "budgets": {
+                                 *         "by_group": [
+                                 *           {
+                                 *             "allocated_token_count": 256,
+                                 *             "estimated_token_count": 320,
+                                 *             "group": "history",
+                                 *             "pruned_token_count": 64,
+                                 *             "token_count": 256
+                                 *           },
+                                 *           {
+                                 *             "group": "worldbook",
+                                 *             "token_count": 64
+                                 *           }
+                                 *         ]
+                                 *       },
+                                 *       "delivery": {
+                                 *         "allow_assistant_prefill": true,
+                                 *         "assistant_prefill_applied": false,
+                                 *         "assistant_prefill_requested": true,
+                                 *         "assistant_prefill_strategy": "assistant_message_fallback",
+                                 *         "degrade_reasons": [
+                                 *           "require_last_user"
+                                 *         ],
+                                 *         "degraded": true,
+                                 *         "ends_with_user": true,
+                                 *         "last_message_role": "user",
+                                 *         "no_assistant": false,
+                                 *         "require_last_user": true
+                                 *       },
+                                 *       "macro": {
+                                 *         "mutation_preview": [
+                                 *           {
+                                 *             "key": "mood",
+                                 *             "kind": "set",
+                                 *             "scope": "branch",
+                                 *             "value": "steady"
+                                 *           }
+                                 *         ],
+                                 *         "staged_mutations": [
+                                 *           {
+                                 *             "key": "mood",
+                                 *             "kind": "set",
+                                 *             "scope": "branch",
+                                 *             "source_macro": "setvar",
+                                 *             "value": "steady"
+                                 *           }
+                                 *         ],
+                                 *         "traces": [
+                                 *           {
+                                 *             "macro_name": "lastGenerationType",
+                                 *             "phase": "assemble",
+                                 *             "raw_text": "{{lastGenerationType}}",
+                                 *             "resolved_text": "respond",
+                                 *             "source_kind": "macro"
+                                 *           },
+                                 *           {
+                                 *             "macro_name": "if",
+                                 *             "phase": "assemble",
+                                 *             "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                 *             "resolved_text": "YES",
+                                 *             "selected_branch": "then",
+                                 *             "source_kind": "if"
+                                 *           }
+                                 *         ],
+                                 *         "used_names": [
+                                 *           "if",
+                                 *           "lastGenerationType",
+                                 *           "setvar"
+                                 *         ],
+                                 *         "warnings": [
+                                 *           {
+                                 *             "code": "macro_preview_side_effect_suppressed",
+                                 *             "macro_name": "setvar",
+                                 *             "message": "Macro setvar side effect was previewed but not committed."
+                                 *           }
+                                 *         ]
+                                 *       },
+                                 *       "memory": {
+                                 *         "summary_injected": true
+                                 *       },
+                                 *       "preset": {
+                                 *         "continue_nudge_applied": false,
+                                 *         "continue_nudge_text": null,
+                                 *         "ignored_fields": [],
+                                 *         "ignored_prompt_order_character_ids": [],
+                                 *         "in_chat_inserted_entry_ids": [],
+                                 *         "names_behavior_applied": "off",
+                                 *         "selected_prompt_order_character_id": 100000,
+                                 *         "trigger_filtered_entry_ids": [],
+                                 *         "unresolved_markers": [],
+                                 *         "unsupported_fields": [],
+                                 *         "warnings": []
+                                 *       },
+                                 *       "regex": {
+                                 *         "ai_output_rules": [],
+                                 *         "preprocessed_user_message": "Please continue the campfire scene.",
+                                 *         "user_input_rules": [
+                                 *           "trim_whitespace"
+                                 *         ]
+                                 *       },
+                                 *       "structure": {
+                                 *         "assistant_rewrite_count": 1,
+                                 *         "assistant_rewrite_strategy": "to_system",
+                                 *         "merge_adjacent_same_role": false,
+                                 *         "mode": "no_assistant",
+                                 *         "tail_assistant_detected": false
+                                 *       },
+                                 *       "worldbook": {
+                                 *         "hit_count": 1
+                                 *       }
+                                 *     }
+                                 */
+                                runtime_trace?: {
+                                    budgets?: {
+                                        by_group: {
+                                            allocated_token_count?: number;
+                                            estimated_token_count?: number;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            token_count: number;
+                                        }[];
+                                        trim_reasons?: {
+                                            detail?: string;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            /** @enum {string} */
+                                            reason: "budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled";
+                                        }[];
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill: boolean;
+                                        assistant_prefill_applied: boolean;
+                                        assistant_prefill_requested: boolean;
+                                        assistant_prefill_strategy: ("provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none") | null;
+                                        degrade_reasons: ("assistant_prefill_disabled" | "assistant_prefill_unsupported" | "require_last_user" | "no_assistant_override")[];
+                                        degraded: boolean;
+                                        ends_with_user: boolean;
+                                        last_message_role: ("system" | "user" | "assistant") | null;
+                                        no_assistant: boolean;
+                                        require_last_user: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "mutation_preview": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "staged_mutations": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "source_macro": "setvar",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "traces": [
+                                     *         {
+                                     *           "macro_name": "lastGenerationType",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{lastGenerationType}}",
+                                     *           "resolved_text": "respond",
+                                     *           "source_kind": "macro"
+                                     *         },
+                                     *         {
+                                     *           "macro_name": "if",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                     *           "resolved_text": "YES",
+                                     *           "selected_branch": "then",
+                                     *           "source_kind": "if"
+                                     *         }
+                                     *       ],
+                                     *       "used_names": [
+                                     *         "if",
+                                     *         "lastGenerationType",
+                                     *         "setvar"
+                                     *       ],
+                                     *       "warnings": [
+                                     *         {
+                                     *           "code": "macro_preview_side_effect_suppressed",
+                                     *           "macro_name": "setvar",
+                                     *           "message": "Macro setvar side effect was previewed but not committed."
+                                     *         }
+                                     *       ]
+                                     *     }
+                                     */
+                                    macro?: {
+                                        mutation_preview: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            value?: string;
+                                        }[];
+                                        staged_mutations: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            source_macro: string;
+                                            value?: string;
+                                        }[];
+                                        traces: {
+                                            macro_name: string;
+                                            phase?: string;
+                                            raw_text: string;
+                                            resolved_text: string;
+                                            /** @enum {string} */
+                                            selected_branch?: "then" | "else" | "raw";
+                                            /** @enum {string} */
+                                            source_kind?: "text" | "raw" | "macro" | "if";
+                                        }[];
+                                        used_names: string[];
+                                        warnings: {
+                                            code: string;
+                                            macro_name?: string;
+                                            message: string;
+                                            raw_text?: string;
+                                        }[];
+                                    };
+                                    memory?: {
+                                        summary_injected: boolean;
+                                    };
+                                    preset?: {
+                                        continue_nudge_applied: boolean;
+                                        continue_nudge_text: string | null;
+                                        ignored_fields: string[];
+                                        ignored_prompt_order_character_ids: number[];
+                                        in_chat_inserted_entry_ids: string[];
+                                        names_behavior_applied: ("off" | "always") | null;
+                                        selected_prompt_order_character_id: number | null;
+                                        trigger_filtered_entry_ids: string[];
+                                        unresolved_markers: string[];
+                                        unsupported_fields: string[];
+                                        warnings: string[];
+                                    };
+                                    regex?: {
+                                        ai_output_rules: string[];
+                                        preprocessed_user_message: string | null;
+                                        user_input_rules: string[];
+                                    };
+                                    source_selection?: {
+                                        excluded_sources: {
+                                            detail?: string;
+                                            /** @enum {string} */
+                                            reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+                                            /**
+                                             * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
+                                             * @enum {string}
+                                             */
+                                            source: "history" | "memory" | "worldbook" | "examples";
+                                        }[];
+                                    };
+                                    structure?: {
+                                        assistant_prefill_transcriptized?: boolean;
+                                        assistant_rewrite_count: number;
+                                        assistant_rewrite_strategy: ("to_system" | "to_user_transcript") | null;
+                                        merge_adjacent_same_role: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        tail_assistant_detected: boolean;
+                                        transcript_message_count?: number;
+                                        transcriptized?: boolean;
+                                    };
+                                    worldbook?: {
+                                        hit_count: number;
+                                        matches?: {
+                                            activation: {
+                                                first_match: {
+                                                    char_end: number;
+                                                    char_start: number;
+                                                    excerpt: string;
+                                                    injection_index?: number;
+                                                    matched_key: string;
+                                                    /** @enum {string} */
+                                                    matched_key_scope: "primary" | "secondary";
+                                                    /** @enum {string} */
+                                                    matched_key_type: "plain" | "regex";
+                                                    message_index_from_latest?: number;
+                                                    /** @enum {string} */
+                                                    source_kind: "message" | "persona_description" | "character_description" | "character_personality" | "character_depth_prompt" | "scenario" | "creator_notes" | "injection" | "recursion_buffer";
+                                                } | null;
+                                                /** @enum {string} */
+                                                mode: "constant" | "triggered";
+                                                recursion_level: number;
+                                            };
+                                            comment: string;
+                                            content_preview: string;
+                                            insertion: {
+                                                depth?: number;
+                                                outlet_name?: string;
+                                                /** @enum {string} */
+                                                position: "before" | "after" | "at_depth" | "outlet";
+                                                /** @enum {string} */
+                                                role?: "system" | "user" | "assistant";
+                                            };
+                                            order: number;
+                                            source: {
+                                                /** @enum {string} */
+                                                kind: "session_worldbook" | "character_book";
+                                                worldbook_id: string | null;
+                                                worldbook_name: string;
+                                            };
+                                            uid: number;
+                                        }[];
+                                    };
+                                };
+                                summaries: string[];
+                                /**
+                                 * @example {
+                                 *       "completion_tokens": 128,
+                                 *       "prompt_tokens": 320,
+                                 *       "total_tokens": 448
+                                 *     }
+                                 */
+                                total_usage: {
+                                    completion_tokens: number;
+                                    prompt_tokens: number;
+                                    total_tokens: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                499: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                504: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Respond in a session
+         * @description Append user input and generate assistant response for the session.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    /**
+                     * @example {
+                     *       "branch_id": "main",
+                     *       "config": {
+                     *         "enableDirector": true,
+                     *         "enableMemoryConsolidation": true,
+                     *         "enableTools": true,
+                     *         "enableVerifier": true,
+                     *         "maxRetries": 1,
+                     *         "toolMode": "inline",
+                     *         "verifierFailStrategy": "warn"
+                     *       },
+                     *       "debug_options": {
+                     *         "include_prompt_snapshot": true,
+                     *         "include_runtime_trace": true,
+                     *         "include_worldbook_matches": false
+                     *       },
+                     *       "delivery": {
+                     *         "allow_assistant_prefill": true,
+                     *         "no_assistant": false,
+                     *         "require_last_user": false
+                     *       },
+                     *       "generation_params": {
+                     *         "max_output_tokens": 256,
+                     *         "reasoning_effort": "low",
+                     *         "temperature": 0.7,
+                     *         "top_p": 0.9
+                     *       },
+                     *       "message": "Please continue the campfire scene.",
+                     *       "prompt_intent": "normal",
+                     *       "session_state_writes": [
+                     *         {
+                     *           "namespace": "quest_flags",
+                     *           "slot": "companion",
+                     *           "value": {
+                     *             "mood": "ally"
+                     *           }
+                     *         },
+                     *         {
+                     *           "delete": true,
+                     *           "namespace": "quest_flags",
+                     *           "slot": "expired_hint"
+                     *         }
+                     *       ],
+                     *       "structure": {
+                     *         "assistant_rewrite_strategy": "to_system",
+                     *         "merge_adjacent_same_role": false,
+                     *         "mode": "no_assistant",
+                     *         "preserve_system_messages": true
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        branch_id?: string;
+                        /**
+                         * @example {
+                         *       "enableDirector": true,
+                         *       "enableMemoryConsolidation": true,
+                         *       "enableTools": true,
+                         *       "enableVerifier": true,
+                         *       "maxRetries": 1,
+                         *       "toolMode": "inline",
+                         *       "verifierFailStrategy": "warn"
+                         *     }
+                         */
+                        config?: {
+                            enableDirector?: boolean;
+                            enableMemoryConsolidation?: boolean;
+                            enableTools?: boolean;
+                            enableVerifier?: boolean;
+                            maxRetries?: number;
+                            /** @enum {string} */
+                            toolMode?: "inline" | "standalone" | "both";
+                            /** @enum {string} */
+                            verifierFailStrategy?: "warn" | "block" | "retry";
+                        };
+                        /**
+                         * @example {
+                         *       "include_prompt_snapshot": true,
+                         *       "include_runtime_trace": true,
+                         *       "include_worldbook_matches": false
+                         *     }
+                         */
+                        debug_options?: {
+                            include_prompt_snapshot?: boolean;
+                            include_runtime_trace?: boolean;
+                            include_worldbook_matches?: boolean;
+                        };
+                        delivery?: {
+                            allow_assistant_prefill?: boolean;
+                            no_assistant?: boolean;
+                            require_last_user?: boolean;
+                        };
+                        /**
+                         * @example {
+                         *       "max_output_tokens": 256,
+                         *       "reasoning_effort": "low",
+                         *       "temperature": 0.7,
+                         *       "top_p": 0.9
+                         *     }
+                         */
+                        generation_params?: {
+                            frequency_penalty?: number;
+                            max_output_tokens?: number;
+                            presence_penalty?: number;
+                            /** @enum {string} */
+                            reasoning_effort?: "low" | "medium" | "high";
+                            stop_sequences?: string[];
+                            stream?: boolean;
+                            temperature?: number;
+                            top_k?: number;
+                            top_p?: number;
+                        };
+                        message: string;
+                        /** @enum {string} */
+                        prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+                        session_state_writes?: {
+                            /** @enum {boolean} */
+                            delete?: true;
+                            namespace?: string;
+                            slot?: string;
+                            value?: unknown;
+                        }[];
+                        source_floor_id?: string;
+                        structure?: {
+                            /** @enum {string} */
+                            assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                            merge_adjacent_same_role?: boolean;
+                            /** @enum {string} */
+                            mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                            preserve_system_messages?: boolean;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "branch_id": "main",
+                         *         "final_state": "committed",
+                         *         "floor_id": "floor_12",
+                         *         "floor_no": 12,
+                         *         "generated_text": "The firelight wavers as the next part of the story begins.",
+                         *         "memory": {
+                         *           "job_id": null,
+                         *           "mode": "sync",
+                         *           "status": "applied"
+                         *         },
+                         *         "prompt_snapshot": {
+                         *           "preset_id": "preset-1",
+                         *           "preset_updated_at": 1710000000000,
+                         *           "preset_version": 3,
+                         *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                         *           "prompt_mode": "compat_strict",
+                         *           "regex_post_rule_names": [],
+                         *           "regex_pre_rule_names": [
+                         *             "trim_whitespace"
+                         *           ],
+                         *           "regex_profile_id": "regex-1",
+                         *           "regex_profile_updated_at": 1710000002000,
+                         *           "regex_profile_version": 2,
+                         *           "token_estimate": 512,
+                         *           "worldbook_activated_entry_uids": [
+                         *             7
+                         *           ],
+                         *           "worldbook_id": "worldbook-1",
+                         *           "worldbook_updated_at": 1710000001000,
+                         *           "worldbook_version": 5
+                         *         },
+                         *         "runtime_trace": {
+                         *           "budgets": {
+                         *             "by_group": [
+                         *               {
+                         *                 "allocated_token_count": 256,
+                         *                 "estimated_token_count": 320,
+                         *                 "group": "history",
+                         *                 "pruned_token_count": 64,
+                         *                 "token_count": 256
+                         *               },
+                         *               {
+                         *                 "group": "worldbook",
+                         *                 "token_count": 64
+                         *               }
+                         *             ]
+                         *           },
+                         *           "delivery": {
+                         *             "allow_assistant_prefill": true,
+                         *             "assistant_prefill_applied": false,
+                         *             "assistant_prefill_requested": true,
+                         *             "assistant_prefill_strategy": "assistant_message_fallback",
+                         *             "degrade_reasons": [
+                         *               "require_last_user"
+                         *             ],
+                         *             "degraded": true,
+                         *             "ends_with_user": true,
+                         *             "last_message_role": "user",
+                         *             "no_assistant": false,
+                         *             "require_last_user": true
+                         *           },
+                         *           "macro": {
+                         *             "mutation_preview": [
+                         *               {
+                         *                 "key": "mood",
+                         *                 "kind": "set",
+                         *                 "scope": "branch",
+                         *                 "value": "steady"
+                         *               }
+                         *             ],
+                         *             "staged_mutations": [
+                         *               {
+                         *                 "key": "mood",
+                         *                 "kind": "set",
+                         *                 "scope": "branch",
+                         *                 "source_macro": "setvar",
+                         *                 "value": "steady"
+                         *               }
+                         *             ],
+                         *             "traces": [
+                         *               {
+                         *                 "macro_name": "lastGenerationType",
+                         *                 "phase": "assemble",
+                         *                 "raw_text": "{{lastGenerationType}}",
+                         *                 "resolved_text": "respond",
+                         *                 "source_kind": "macro"
+                         *               },
+                         *               {
+                         *                 "macro_name": "if",
+                         *                 "phase": "assemble",
+                         *                 "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                         *                 "resolved_text": "YES",
+                         *                 "selected_branch": "then",
+                         *                 "source_kind": "if"
+                         *               }
+                         *             ],
+                         *             "used_names": [
+                         *               "if",
+                         *               "lastGenerationType",
+                         *               "setvar"
+                         *             ],
+                         *             "warnings": [
+                         *               {
+                         *                 "code": "macro_preview_side_effect_suppressed",
+                         *                 "macro_name": "setvar",
+                         *                 "message": "Macro setvar side effect was previewed but not committed."
+                         *               }
+                         *             ]
+                         *           },
+                         *           "memory": {
+                         *             "summary_injected": true
+                         *           },
+                         *           "preset": {
+                         *             "continue_nudge_applied": false,
+                         *             "continue_nudge_text": null,
+                         *             "ignored_fields": [],
+                         *             "ignored_prompt_order_character_ids": [],
+                         *             "in_chat_inserted_entry_ids": [],
+                         *             "names_behavior_applied": "off",
+                         *             "selected_prompt_order_character_id": 100000,
+                         *             "trigger_filtered_entry_ids": [],
+                         *             "unresolved_markers": [],
+                         *             "unsupported_fields": [],
+                         *             "warnings": []
+                         *           },
+                         *           "regex": {
+                         *             "ai_output_rules": [],
+                         *             "preprocessed_user_message": "Please continue the campfire scene.",
+                         *             "user_input_rules": [
+                         *               "trim_whitespace"
+                         *             ]
+                         *           },
+                         *           "structure": {
+                         *             "assistant_rewrite_count": 1,
+                         *             "assistant_rewrite_strategy": "to_system",
+                         *             "merge_adjacent_same_role": false,
+                         *             "mode": "no_assistant",
+                         *             "tail_assistant_detected": false
+                         *           },
+                         *           "worldbook": {
+                         *             "hit_count": 1
+                         *           }
+                         *         },
+                         *         "summaries": [
+                         *           "The group resumes the campfire planning scene."
+                         *         ],
+                         *         "total_usage": {
+                         *           "completion_tokens": 128,
+                         *           "prompt_tokens": 320,
+                         *           "total_tokens": 448
+                         *         }
+                         *       }
+                         *     }
+                         */
+                        "application/json": {
+                            /**
+                             * @example {
+                             *       "branch_id": "main",
+                             *       "final_state": "committed",
+                             *       "floor_id": "floor_12",
+                             *       "floor_no": 12,
+                             *       "generated_text": "The firelight wavers as the next part of the story begins.",
+                             *       "memory": {
+                             *         "job_id": null,
+                             *         "mode": "sync",
+                             *         "status": "applied"
+                             *       },
+                             *       "prompt_snapshot": {
+                             *         "preset_id": "preset-1",
+                             *         "preset_updated_at": 1710000000000,
+                             *         "preset_version": 3,
+                             *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                             *         "prompt_mode": "compat_strict",
+                             *         "regex_post_rule_names": [],
+                             *         "regex_pre_rule_names": [
+                             *           "trim_whitespace"
+                             *         ],
+                             *         "regex_profile_id": "regex-1",
+                             *         "regex_profile_updated_at": 1710000002000,
+                             *         "regex_profile_version": 2,
+                             *         "token_estimate": 512,
+                             *         "worldbook_activated_entry_uids": [
+                             *           7
+                             *         ],
+                             *         "worldbook_id": "worldbook-1",
+                             *         "worldbook_updated_at": 1710000001000,
+                             *         "worldbook_version": 5
+                             *       },
+                             *       "runtime_trace": {
+                             *         "budgets": {
+                             *           "by_group": [
+                             *             {
+                             *               "allocated_token_count": 256,
+                             *               "estimated_token_count": 320,
+                             *               "group": "history",
+                             *               "pruned_token_count": 64,
+                             *               "token_count": 256
+                             *             },
+                             *             {
+                             *               "group": "worldbook",
+                             *               "token_count": 64
+                             *             }
+                             *           ]
+                             *         },
+                             *         "delivery": {
+                             *           "allow_assistant_prefill": true,
+                             *           "assistant_prefill_applied": false,
+                             *           "assistant_prefill_requested": true,
+                             *           "assistant_prefill_strategy": "assistant_message_fallback",
+                             *           "degrade_reasons": [
+                             *             "require_last_user"
+                             *           ],
+                             *           "degraded": true,
+                             *           "ends_with_user": true,
+                             *           "last_message_role": "user",
+                             *           "no_assistant": false,
+                             *           "require_last_user": true
+                             *         },
+                             *         "macro": {
+                             *           "mutation_preview": [
+                             *             {
+                             *               "key": "mood",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "value": "steady"
+                             *             }
+                             *           ],
+                             *           "staged_mutations": [
+                             *             {
+                             *               "key": "mood",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "source_macro": "setvar",
+                             *               "value": "steady"
+                             *             }
+                             *           ],
+                             *           "traces": [
+                             *             {
+                             *               "macro_name": "lastGenerationType",
+                             *               "phase": "assemble",
+                             *               "raw_text": "{{lastGenerationType}}",
+                             *               "resolved_text": "respond",
+                             *               "source_kind": "macro"
+                             *             },
+                             *             {
+                             *               "macro_name": "if",
+                             *               "phase": "assemble",
+                             *               "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                             *               "resolved_text": "YES",
+                             *               "selected_branch": "then",
+                             *               "source_kind": "if"
+                             *             }
+                             *           ],
+                             *           "used_names": [
+                             *             "if",
+                             *             "lastGenerationType",
+                             *             "setvar"
+                             *           ],
+                             *           "warnings": [
+                             *             {
+                             *               "code": "macro_preview_side_effect_suppressed",
+                             *               "macro_name": "setvar",
+                             *               "message": "Macro setvar side effect was previewed but not committed."
+                             *             }
+                             *           ]
+                             *         },
+                             *         "memory": {
+                             *           "summary_injected": true
+                             *         },
+                             *         "preset": {
+                             *           "continue_nudge_applied": false,
+                             *           "continue_nudge_text": null,
+                             *           "ignored_fields": [],
+                             *           "ignored_prompt_order_character_ids": [],
+                             *           "in_chat_inserted_entry_ids": [],
+                             *           "names_behavior_applied": "off",
+                             *           "selected_prompt_order_character_id": 100000,
+                             *           "trigger_filtered_entry_ids": [],
+                             *           "unresolved_markers": [],
+                             *           "unsupported_fields": [],
+                             *           "warnings": []
+                             *         },
+                             *         "regex": {
+                             *           "ai_output_rules": [],
+                             *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "user_input_rules": [
+                             *             "trim_whitespace"
+                             *           ]
+                             *         },
+                             *         "structure": {
+                             *           "assistant_rewrite_count": 1,
+                             *           "assistant_rewrite_strategy": "to_system",
+                             *           "merge_adjacent_same_role": false,
+                             *           "mode": "no_assistant",
+                             *           "tail_assistant_detected": false
+                             *         },
+                             *         "worldbook": {
+                             *           "hit_count": 1
+                             *         }
+                             *       },
+                             *       "summaries": [
+                             *         "The group resumes the campfire planning scene."
+                             *       ],
+                             *       "total_usage": {
+                             *         "completion_tokens": 128,
+                             *         "prompt_tokens": 320,
+                             *         "total_tokens": 448
+                             *       }
+                             *     }
+                             */
+                            data: {
+                                branch_id: string;
+                                final_state: string;
+                                floor_id: string;
+                                floor_no: number;
+                                generated_text: string;
+                                /**
+                                 * @example {
+                                 *       "job_id": null,
+                                 *       "mode": "sync",
+                                 *       "status": "applied"
+                                 *     }
+                                 */
+                                memory?: {
+                                    job_id: string | null;
+                                    /** @enum {string} */
+                                    mode: "sync" | "async";
+                                    /** @enum {string} */
+                                    status: "applied" | "queued";
+                                };
+                                /**
+                                 * @example {
+                                 *       "preset_id": "preset-1",
+                                 *       "preset_updated_at": 1710000000000,
+                                 *       "preset_version": 3,
+                                 *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                                 *       "prompt_mode": "compat_strict",
+                                 *       "regex_post_rule_names": [],
+                                 *       "regex_pre_rule_names": [
+                                 *         "trim_whitespace"
+                                 *       ],
+                                 *       "regex_profile_id": "regex-1",
+                                 *       "regex_profile_updated_at": 1710000002000,
+                                 *       "regex_profile_version": 2,
+                                 *       "token_estimate": 512,
+                                 *       "worldbook_activated_entry_uids": [
+                                 *         7
+                                 *       ],
+                                 *       "worldbook_id": "worldbook-1",
+                                 *       "worldbook_updated_at": 1710000001000,
+                                 *       "worldbook_version": 5
+                                 *     }
+                                 */
+                                prompt_snapshot?: {
+                                    preset_id: string | null;
+                                    preset_updated_at: number | null;
+                                    preset_version: number | null;
+                                    prompt_digest: string;
+                                    /** @enum {string} */
+                                    prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                    regex_post_rule_names: string[];
+                                    regex_pre_rule_names: string[];
+                                    regex_profile_id: string | null;
+                                    regex_profile_updated_at: number | null;
+                                    regex_profile_version: number | null;
+                                    token_estimate: number;
+                                    worldbook_activated_entry_uids: number[];
+                                    worldbook_id: string | null;
+                                    worldbook_updated_at: number | null;
+                                    worldbook_version: number | null;
+                                };
+                                /**
+                                 * @example {
+                                 *       "budgets": {
+                                 *         "by_group": [
+                                 *           {
+                                 *             "allocated_token_count": 256,
+                                 *             "estimated_token_count": 320,
+                                 *             "group": "history",
+                                 *             "pruned_token_count": 64,
+                                 *             "token_count": 256
+                                 *           },
+                                 *           {
+                                 *             "group": "worldbook",
+                                 *             "token_count": 64
+                                 *           }
+                                 *         ]
+                                 *       },
+                                 *       "delivery": {
+                                 *         "allow_assistant_prefill": true,
+                                 *         "assistant_prefill_applied": false,
+                                 *         "assistant_prefill_requested": true,
+                                 *         "assistant_prefill_strategy": "assistant_message_fallback",
+                                 *         "degrade_reasons": [
+                                 *           "require_last_user"
+                                 *         ],
+                                 *         "degraded": true,
+                                 *         "ends_with_user": true,
+                                 *         "last_message_role": "user",
+                                 *         "no_assistant": false,
+                                 *         "require_last_user": true
+                                 *       },
+                                 *       "macro": {
+                                 *         "mutation_preview": [
+                                 *           {
+                                 *             "key": "mood",
+                                 *             "kind": "set",
+                                 *             "scope": "branch",
+                                 *             "value": "steady"
+                                 *           }
+                                 *         ],
+                                 *         "staged_mutations": [
+                                 *           {
+                                 *             "key": "mood",
+                                 *             "kind": "set",
+                                 *             "scope": "branch",
+                                 *             "source_macro": "setvar",
+                                 *             "value": "steady"
+                                 *           }
+                                 *         ],
+                                 *         "traces": [
+                                 *           {
+                                 *             "macro_name": "lastGenerationType",
+                                 *             "phase": "assemble",
+                                 *             "raw_text": "{{lastGenerationType}}",
+                                 *             "resolved_text": "respond",
+                                 *             "source_kind": "macro"
+                                 *           },
+                                 *           {
+                                 *             "macro_name": "if",
+                                 *             "phase": "assemble",
+                                 *             "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                 *             "resolved_text": "YES",
+                                 *             "selected_branch": "then",
+                                 *             "source_kind": "if"
+                                 *           }
+                                 *         ],
+                                 *         "used_names": [
+                                 *           "if",
+                                 *           "lastGenerationType",
+                                 *           "setvar"
+                                 *         ],
+                                 *         "warnings": [
+                                 *           {
+                                 *             "code": "macro_preview_side_effect_suppressed",
+                                 *             "macro_name": "setvar",
+                                 *             "message": "Macro setvar side effect was previewed but not committed."
+                                 *           }
+                                 *         ]
+                                 *       },
+                                 *       "memory": {
+                                 *         "summary_injected": true
+                                 *       },
+                                 *       "preset": {
+                                 *         "continue_nudge_applied": false,
+                                 *         "continue_nudge_text": null,
+                                 *         "ignored_fields": [],
+                                 *         "ignored_prompt_order_character_ids": [],
+                                 *         "in_chat_inserted_entry_ids": [],
+                                 *         "names_behavior_applied": "off",
+                                 *         "selected_prompt_order_character_id": 100000,
+                                 *         "trigger_filtered_entry_ids": [],
+                                 *         "unresolved_markers": [],
+                                 *         "unsupported_fields": [],
+                                 *         "warnings": []
+                                 *       },
+                                 *       "regex": {
+                                 *         "ai_output_rules": [],
+                                 *         "preprocessed_user_message": "Please continue the campfire scene.",
+                                 *         "user_input_rules": [
+                                 *           "trim_whitespace"
+                                 *         ]
+                                 *       },
+                                 *       "structure": {
+                                 *         "assistant_rewrite_count": 1,
+                                 *         "assistant_rewrite_strategy": "to_system",
+                                 *         "merge_adjacent_same_role": false,
+                                 *         "mode": "no_assistant",
+                                 *         "tail_assistant_detected": false
+                                 *       },
+                                 *       "worldbook": {
+                                 *         "hit_count": 1
+                                 *       }
+                                 *     }
+                                 */
+                                runtime_trace?: {
+                                    budgets?: {
+                                        by_group: {
+                                            allocated_token_count?: number;
+                                            estimated_token_count?: number;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            token_count: number;
+                                        }[];
+                                        trim_reasons?: {
+                                            detail?: string;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            /** @enum {string} */
+                                            reason: "budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled";
+                                        }[];
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill: boolean;
+                                        assistant_prefill_applied: boolean;
+                                        assistant_prefill_requested: boolean;
+                                        assistant_prefill_strategy: ("provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none") | null;
+                                        degrade_reasons: ("assistant_prefill_disabled" | "assistant_prefill_unsupported" | "require_last_user" | "no_assistant_override")[];
+                                        degraded: boolean;
+                                        ends_with_user: boolean;
+                                        last_message_role: ("system" | "user" | "assistant") | null;
+                                        no_assistant: boolean;
+                                        require_last_user: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "mutation_preview": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "staged_mutations": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "source_macro": "setvar",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "traces": [
+                                     *         {
+                                     *           "macro_name": "lastGenerationType",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{lastGenerationType}}",
+                                     *           "resolved_text": "respond",
+                                     *           "source_kind": "macro"
+                                     *         },
+                                     *         {
+                                     *           "macro_name": "if",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                     *           "resolved_text": "YES",
+                                     *           "selected_branch": "then",
+                                     *           "source_kind": "if"
+                                     *         }
+                                     *       ],
+                                     *       "used_names": [
+                                     *         "if",
+                                     *         "lastGenerationType",
+                                     *         "setvar"
+                                     *       ],
+                                     *       "warnings": [
+                                     *         {
+                                     *           "code": "macro_preview_side_effect_suppressed",
+                                     *           "macro_name": "setvar",
+                                     *           "message": "Macro setvar side effect was previewed but not committed."
+                                     *         }
+                                     *       ]
+                                     *     }
+                                     */
+                                    macro?: {
+                                        mutation_preview: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            value?: string;
+                                        }[];
+                                        staged_mutations: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            source_macro: string;
+                                            value?: string;
+                                        }[];
+                                        traces: {
+                                            macro_name: string;
+                                            phase?: string;
+                                            raw_text: string;
+                                            resolved_text: string;
+                                            /** @enum {string} */
+                                            selected_branch?: "then" | "else" | "raw";
+                                            /** @enum {string} */
+                                            source_kind?: "text" | "raw" | "macro" | "if";
+                                        }[];
+                                        used_names: string[];
+                                        warnings: {
+                                            code: string;
+                                            macro_name?: string;
+                                            message: string;
+                                            raw_text?: string;
+                                        }[];
+                                    };
+                                    memory?: {
+                                        summary_injected: boolean;
+                                    };
+                                    preset?: {
+                                        continue_nudge_applied: boolean;
+                                        continue_nudge_text: string | null;
+                                        ignored_fields: string[];
+                                        ignored_prompt_order_character_ids: number[];
+                                        in_chat_inserted_entry_ids: string[];
+                                        names_behavior_applied: ("off" | "always") | null;
+                                        selected_prompt_order_character_id: number | null;
+                                        trigger_filtered_entry_ids: string[];
+                                        unresolved_markers: string[];
+                                        unsupported_fields: string[];
+                                        warnings: string[];
+                                    };
+                                    regex?: {
+                                        ai_output_rules: string[];
+                                        preprocessed_user_message: string | null;
+                                        user_input_rules: string[];
+                                    };
+                                    source_selection?: {
+                                        excluded_sources: {
+                                            detail?: string;
+                                            /** @enum {string} */
+                                            reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+                                            /**
+                                             * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
+                                             * @enum {string}
+                                             */
+                                            source: "history" | "memory" | "worldbook" | "examples";
+                                        }[];
+                                    };
+                                    structure?: {
+                                        assistant_prefill_transcriptized?: boolean;
+                                        assistant_rewrite_count: number;
+                                        assistant_rewrite_strategy: ("to_system" | "to_user_transcript") | null;
+                                        merge_adjacent_same_role: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        tail_assistant_detected: boolean;
+                                        transcript_message_count?: number;
+                                        transcriptized?: boolean;
+                                    };
+                                    worldbook?: {
+                                        hit_count: number;
+                                        matches?: {
+                                            activation: {
+                                                first_match: {
+                                                    char_end: number;
+                                                    char_start: number;
+                                                    excerpt: string;
+                                                    injection_index?: number;
+                                                    matched_key: string;
+                                                    /** @enum {string} */
+                                                    matched_key_scope: "primary" | "secondary";
+                                                    /** @enum {string} */
+                                                    matched_key_type: "plain" | "regex";
+                                                    message_index_from_latest?: number;
+                                                    /** @enum {string} */
+                                                    source_kind: "message" | "persona_description" | "character_description" | "character_personality" | "character_depth_prompt" | "scenario" | "creator_notes" | "injection" | "recursion_buffer";
+                                                } | null;
+                                                /** @enum {string} */
+                                                mode: "constant" | "triggered";
+                                                recursion_level: number;
+                                            };
+                                            comment: string;
+                                            content_preview: string;
+                                            insertion: {
+                                                depth?: number;
+                                                outlet_name?: string;
+                                                /** @enum {string} */
+                                                position: "before" | "after" | "at_depth" | "outlet";
+                                                /** @enum {string} */
+                                                role?: "system" | "user" | "assistant";
+                                            };
+                                            order: number;
+                                            source: {
+                                                /** @enum {string} */
+                                                kind: "session_worldbook" | "character_book";
+                                                worldbook_id: string | null;
+                                                worldbook_name: string;
+                                            };
+                                            uid: number;
+                                        }[];
+                                    };
+                                };
+                                summaries: string[];
+                                /**
+                                 * @example {
+                                 *       "completion_tokens": 128,
+                                 *       "prompt_tokens": 320,
+                                 *       "total_tokens": 448
+                                 *     }
+                                 */
+                                total_usage: {
+                                    completion_tokens: number;
+                                    prompt_tokens: number;
+                                    total_tokens: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                499: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                504: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/respond/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry-run prompt assembly
+         * @description Assemble prompt and return debug metadata without calling LLM or writing turn data.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    /**
+                     * @example {
+                     *       "budget": {
+                     *         "max_input_tokens": 4096,
+                     *         "reserved_completion_tokens": 1024
+                     *       },
+                     *       "debug_options": {
+                     *         "include_worldbook_matches": true
+                     *       },
+                     *       "delivery": {
+                     *         "allow_assistant_prefill": false,
+                     *         "no_assistant": false,
+                     *         "require_last_user": true
+                     *       },
+                     *       "message": "Please continue the campfire scene.",
+                     *       "prompt_intent": "normal",
+                     *       "source_selection": {
+                     *         "examples": {
+                     *           "enabled": false
+                     *         },
+                     *         "history": {
+                     *           "max_messages": 24,
+                     *           "mode": "windowed"
+                     *         },
+                     *         "memory": {
+                     *           "enabled": true
+                     *         },
+                     *         "worldbook": {
+                     *           "enabled": true
+                     *         }
+                     *       },
+                     *       "structure": {
+                     *         "assistant_rewrite_strategy": "to_system",
+                     *         "merge_adjacent_same_role": false,
+                     *         "mode": "no_assistant",
+                     *         "preserve_system_messages": true
+                     *       },
+                     *       "visibility": {
+                     *         "hidden_floor_ranges": [
+                     *           {
+                     *             "end_floor_no": 2,
+                     *             "start_floor_no": 1
+                     *           }
+                     *         ],
+                     *         "mode": "allow_all_except_hidden"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        budget?: {
+                            max_input_tokens?: number;
+                            reserved_completion_tokens?: number;
+                        };
+                        debug_options?: {
+                            include_worldbook_matches?: boolean;
+                        };
+                        delivery?: {
+                            allow_assistant_prefill?: boolean;
+                            no_assistant?: boolean;
+                            require_last_user?: boolean;
+                        };
+                        message: string;
+                        /** @enum {string} */
+                        prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+                        source_selection?: {
+                            examples?: {
+                                enabled?: boolean;
+                            };
+                            history?: {
+                                max_messages?: number;
+                                /** @enum {string} */
+                                mode?: "full" | "windowed";
+                            };
+                            memory?: {
+                                enabled?: boolean;
+                            };
+                            worldbook?: {
+                                enabled?: boolean;
+                            };
+                        };
+                        structure?: {
+                            /** @enum {string} */
+                            assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                            merge_adjacent_same_role?: boolean;
+                            /** @enum {string} */
+                            mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                            preserve_system_messages?: boolean;
+                        };
+                        visibility?: {
+                            hidden_floor_ids?: string[];
+                            hidden_floor_ranges?: {
+                                end_floor_no: number;
+                                start_floor_no: number;
+                            }[];
+                            /** @enum {string} */
+                            mode?: "allow_all_except_hidden" | "deny_all_except_visible";
+                            visible_floor_ranges?: {
+                                end_floor_no: number;
+                                start_floor_no: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example {
+                         *       "data": {
+                         *         "assembly": {
+                         *           "assistant_prefill_applied": true,
+                         *           "assistant_prefill_strategy": "assistant_message_fallback",
+                         *           "continue_nudge_applied": true,
+                         *           "continue_nudge_text": "[Continue your last message without repeating its original content.]",
+                         *           "ignored_preset_fields": [],
+                         *           "ignored_prompt_order_character_ids": [
+                         *             200001
+                         *           ],
+                         *           "in_chat_inserted_entry_ids": [
+                         *             "continueHint"
+                         *           ],
+                         *           "memory_summary_injected": true,
+                         *           "mode": "preset",
+                         *           "names_behavior_applied": "always",
+                         *           "preprocessed_user_message": "Please continue the campfire scene.",
+                         *           "preset_used": true,
+                         *           "preset_warnings": [
+                         *             "检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。"
+                         *           ],
+                         *           "prompt_intent": "continue",
+                         *           "regex_post_rules": [],
+                         *           "regex_pre_rules": [
+                         *             "trim_whitespace"
+                         *           ],
+                         *           "reserved_variable_collisions": [],
+                         *           "selected_prompt_order_character_id": 100000,
+                         *           "trigger_filtered_entry_ids": [
+                         *             "quietPrompt"
+                         *           ],
+                         *           "unresolved_preset_markers": [],
+                         *           "unsupported_preset_fields": [],
+                         *           "worldbook_hits": 1,
+                         *           "worldbook_matches": [
+                         *             {
+                         *               "activation": {
+                         *                 "first_match": {
+                         *                   "char_end": 28,
+                         *                   "char_start": 20,
+                         *                   "excerpt": "Please continue the campfire scene.",
+                         *                   "matched_key": "campfire",
+                         *                   "matched_key_scope": "primary",
+                         *                   "matched_key_type": "plain",
+                         *                   "message_index_from_latest": 0,
+                         *                   "source_kind": "message"
+                         *                 },
+                         *                 "mode": "triggered",
+                         *                 "recursion_level": 0
+                         *               },
+                         *               "comment": "Campfire Lore",
+                         *               "content_preview": "The northern pass is watched by old sentries.",
+                         *               "insertion": {
+                         *                 "position": "before"
+                         *               },
+                         *               "order": 100,
+                         *               "source": {
+                         *                 "kind": "session_worldbook",
+                         *                 "worldbook_id": "worldbook-1",
+                         *                 "worldbook_name": "Campfire Worldbook"
+                         *               },
+                         *               "uid": 7
+                         *             }
+                         *           ]
+                         *         },
+                         *         "available_for_reply": 1536,
+                         *         "memory_summary": "The party recently agreed to search the northern pass.",
+                         *         "messages": [
+                         *           {
+                         *             "content": "Stay in character and keep the tone warm.",
+                         *             "role": "system"
+                         *           },
+                         *           {
+                         *             "content": "Please continue the campfire scene.",
+                         *             "role": "user"
+                         *           }
+                         *         ],
+                         *         "prompt_snapshot": {
+                         *           "preset_id": "preset-1",
+                         *           "preset_updated_at": 1710000000000,
+                         *           "preset_version": 3,
+                         *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                         *           "prompt_mode": "compat_strict",
+                         *           "regex_post_rule_names": [],
+                         *           "regex_pre_rule_names": [
+                         *             "trim_whitespace"
+                         *           ],
+                         *           "regex_profile_id": "regex-1",
+                         *           "regex_profile_updated_at": 1710000002000,
+                         *           "regex_profile_version": 2,
+                         *           "token_estimate": 512,
+                         *           "worldbook_activated_entry_uids": [
+                         *             7
+                         *           ],
+                         *           "worldbook_id": "worldbook-1",
+                         *           "worldbook_updated_at": 1710000001000,
+                         *           "worldbook_version": 5
+                         *         },
+                         *         "runtime_trace": {
+                         *           "budgets": {
+                         *             "by_group": [
+                         *               {
+                         *                 "allocated_token_count": 96,
+                         *                 "estimated_token_count": 128,
+                         *                 "group": "history",
+                         *                 "pruned_token_count": 32,
+                         *                 "token_count": 96
+                         *               },
+                         *               {
+                         *                 "group": "memory",
+                         *                 "token_count": 48
+                         *               },
+                         *               {
+                         *                 "group": "worldbook",
+                         *                 "token_count": 64
+                         *               },
+                         *               {
+                         *                 "group": "section:main",
+                         *                 "token_count": 80
+                         *               }
+                         *             ]
+                         *           },
+                         *           "delivery": {
+                         *             "allow_assistant_prefill": true,
+                         *             "assistant_prefill_applied": true,
+                         *             "assistant_prefill_requested": true,
+                         *             "assistant_prefill_strategy": "assistant_message_fallback",
+                         *             "degrade_reasons": [],
+                         *             "degraded": false,
+                         *             "ends_with_user": true,
+                         *             "last_message_role": "user",
+                         *             "no_assistant": false,
+                         *             "require_last_user": false
+                         *           },
+                         *           "macro": {
+                         *             "mutation_preview": [
+                         *               {
+                         *                 "key": "资产",
+                         *                 "kind": "set",
+                         *                 "scope": "branch",
+                         *                 "value": "{\"金币\":3,\"银币\":\"5\"}"
+                         *               }
+                         *             ],
+                         *             "staged_mutations": [
+                         *               {
+                         *                 "key": "资产",
+                         *                 "kind": "set",
+                         *                 "scope": "branch",
+                         *                 "source_macro": "setvar",
+                         *                 "value": "{\"金币\":3,\"银币\":\"5\"}"
+                         *               }
+                         *             ],
+                         *             "traces": [
+                         *               {
+                         *                 "macro_name": "getvar",
+                         *                 "phase": "dry_run",
+                         *                 "raw_text": "{{getvar::资产.金币}}",
+                         *                 "resolved_text": "3",
+                         *                 "source_kind": "macro"
+                         *               },
+                         *               {
+                         *                 "macro_name": "setvar",
+                         *                 "phase": "dry_run",
+                         *                 "raw_text": "{{setvar::资产.银币::5}}",
+                         *                 "resolved_text": "",
+                         *                 "source_kind": "macro"
+                         *               }
+                         *             ],
+                         *             "used_names": [
+                         *               "getvar",
+                         *               "setvar"
+                         *             ],
+                         *             "warnings": [
+                         *               {
+                         *                 "code": "macro_preview_side_effect_suppressed",
+                         *                 "macro_name": "setvar",
+                         *                 "message": "Macro setvar side effect was previewed but not committed."
+                         *               }
+                         *             ]
+                         *           },
+                         *           "memory": {
+                         *             "summary_injected": true
+                         *           },
+                         *           "preset": {
+                         *             "continue_nudge_applied": true,
+                         *             "continue_nudge_text": "[Continue your last message without repeating its original content.]",
+                         *             "ignored_fields": [],
+                         *             "ignored_prompt_order_character_ids": [
+                         *               200001
+                         *             ],
+                         *             "in_chat_inserted_entry_ids": [
+                         *               "continueHint"
+                         *             ],
+                         *             "names_behavior_applied": "always",
+                         *             "selected_prompt_order_character_id": 100000,
+                         *             "trigger_filtered_entry_ids": [
+                         *               "quietPrompt"
+                         *             ],
+                         *             "unresolved_markers": [],
+                         *             "unsupported_fields": [],
+                         *             "warnings": [
+                         *               "检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。"
+                         *             ]
+                         *           },
+                         *           "regex": {
+                         *             "ai_output_rules": [],
+                         *             "preprocessed_user_message": "Please continue the campfire scene.",
+                         *             "user_input_rules": [
+                         *               "trim_whitespace"
+                         *             ]
+                         *           },
+                         *           "structure": {
+                         *             "assistant_rewrite_count": 1,
+                         *             "assistant_rewrite_strategy": "to_system",
+                         *             "merge_adjacent_same_role": false,
+                         *             "mode": "no_assistant",
+                         *             "tail_assistant_detected": false
+                         *           },
+                         *           "visibility": {
+                         *             "filtered_floor_nos": [
+                         *               1,
+                         *               2
+                         *             ],
+                         *             "hidden_floor_ranges": [
+                         *               {
+                         *                 "end_floor_no": 2,
+                         *                 "start_floor_no": 1
+                         *               }
+                         *             ]
+                         *           },
+                         *           "worldbook": {
+                         *             "hit_count": 1,
+                         *             "matches": []
+                         *           }
+                         *         },
+                         *         "token_estimate": 512
+                         *       }
+                         *     }
+                         */
+                        "application/json": {
+                            /**
+                             * @example {
+                             *       "assembly": {
+                             *         "assistant_prefill_applied": true,
+                             *         "assistant_prefill_strategy": "assistant_message_fallback",
+                             *         "continue_nudge_applied": true,
+                             *         "continue_nudge_text": "[Continue your last message without repeating its original content.]",
+                             *         "ignored_preset_fields": [],
+                             *         "ignored_prompt_order_character_ids": [
+                             *           200001
+                             *         ],
+                             *         "in_chat_inserted_entry_ids": [
+                             *           "continueHint"
+                             *         ],
+                             *         "memory_summary_injected": true,
+                             *         "mode": "preset",
+                             *         "names_behavior_applied": "always",
+                             *         "preprocessed_user_message": "Please continue the campfire scene.",
+                             *         "preset_used": true,
+                             *         "preset_warnings": [
+                             *           "检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。"
+                             *         ],
+                             *         "prompt_intent": "continue",
+                             *         "regex_post_rules": [],
+                             *         "regex_pre_rules": [
+                             *           "trim_whitespace"
+                             *         ],
+                             *         "reserved_variable_collisions": [],
+                             *         "selected_prompt_order_character_id": 100000,
+                             *         "trigger_filtered_entry_ids": [
+                             *           "quietPrompt"
+                             *         ],
+                             *         "unresolved_preset_markers": [],
+                             *         "unsupported_preset_fields": [],
+                             *         "worldbook_hits": 1,
+                             *         "worldbook_matches": [
+                             *           {
+                             *             "activation": {
+                             *               "first_match": {
+                             *                 "char_end": 28,
+                             *                 "char_start": 20,
+                             *                 "excerpt": "Please continue the campfire scene.",
+                             *                 "matched_key": "campfire",
+                             *                 "matched_key_scope": "primary",
+                             *                 "matched_key_type": "plain",
+                             *                 "message_index_from_latest": 0,
+                             *                 "source_kind": "message"
+                             *               },
+                             *               "mode": "triggered",
+                             *               "recursion_level": 0
+                             *             },
+                             *             "comment": "Campfire Lore",
+                             *             "content_preview": "The northern pass is watched by old sentries.",
+                             *             "insertion": {
+                             *               "position": "before"
+                             *             },
+                             *             "order": 100,
+                             *             "source": {
+                             *               "kind": "session_worldbook",
+                             *               "worldbook_id": "worldbook-1",
+                             *               "worldbook_name": "Campfire Worldbook"
+                             *             },
+                             *             "uid": 7
+                             *           }
+                             *         ]
+                             *       },
+                             *       "available_for_reply": 1536,
+                             *       "memory_summary": "The party recently agreed to search the northern pass.",
+                             *       "messages": [
+                             *         {
+                             *           "content": "Stay in character and keep the tone warm.",
+                             *           "role": "system"
+                             *         },
+                             *         {
+                             *           "content": "Please continue the campfire scene.",
+                             *           "role": "user"
+                             *         }
+                             *       ],
+                             *       "prompt_snapshot": {
+                             *         "preset_id": "preset-1",
+                             *         "preset_updated_at": 1710000000000,
+                             *         "preset_version": 3,
+                             *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                             *         "prompt_mode": "compat_strict",
+                             *         "regex_post_rule_names": [],
+                             *         "regex_pre_rule_names": [
+                             *           "trim_whitespace"
+                             *         ],
+                             *         "regex_profile_id": "regex-1",
+                             *         "regex_profile_updated_at": 1710000002000,
+                             *         "regex_profile_version": 2,
+                             *         "token_estimate": 512,
+                             *         "worldbook_activated_entry_uids": [
+                             *           7
+                             *         ],
+                             *         "worldbook_id": "worldbook-1",
+                             *         "worldbook_updated_at": 1710000001000,
+                             *         "worldbook_version": 5
+                             *       },
+                             *       "runtime_trace": {
+                             *         "budgets": {
+                             *           "by_group": [
+                             *             {
+                             *               "allocated_token_count": 96,
+                             *               "estimated_token_count": 128,
+                             *               "group": "history",
+                             *               "pruned_token_count": 32,
+                             *               "token_count": 96
+                             *             },
+                             *             {
+                             *               "group": "memory",
+                             *               "token_count": 48
+                             *             },
+                             *             {
+                             *               "group": "worldbook",
+                             *               "token_count": 64
+                             *             },
+                             *             {
+                             *               "group": "section:main",
+                             *               "token_count": 80
+                             *             }
+                             *           ]
+                             *         },
+                             *         "delivery": {
+                             *           "allow_assistant_prefill": true,
+                             *           "assistant_prefill_applied": true,
+                             *           "assistant_prefill_requested": true,
+                             *           "assistant_prefill_strategy": "assistant_message_fallback",
+                             *           "degrade_reasons": [],
+                             *           "degraded": false,
+                             *           "ends_with_user": true,
+                             *           "last_message_role": "user",
+                             *           "no_assistant": false,
+                             *           "require_last_user": false
+                             *         },
+                             *         "macro": {
+                             *           "mutation_preview": [
+                             *             {
+                             *               "key": "资产",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "value": "{\"金币\":3,\"银币\":\"5\"}"
+                             *             }
+                             *           ],
+                             *           "staged_mutations": [
+                             *             {
+                             *               "key": "资产",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "source_macro": "setvar",
+                             *               "value": "{\"金币\":3,\"银币\":\"5\"}"
+                             *             }
+                             *           ],
+                             *           "traces": [
+                             *             {
+                             *               "macro_name": "getvar",
+                             *               "phase": "dry_run",
+                             *               "raw_text": "{{getvar::资产.金币}}",
+                             *               "resolved_text": "3",
+                             *               "source_kind": "macro"
+                             *             },
+                             *             {
+                             *               "macro_name": "setvar",
+                             *               "phase": "dry_run",
+                             *               "raw_text": "{{setvar::资产.银币::5}}",
+                             *               "resolved_text": "",
+                             *               "source_kind": "macro"
+                             *             }
+                             *           ],
+                             *           "used_names": [
+                             *             "getvar",
+                             *             "setvar"
+                             *           ],
+                             *           "warnings": [
+                             *             {
+                             *               "code": "macro_preview_side_effect_suppressed",
+                             *               "macro_name": "setvar",
+                             *               "message": "Macro setvar side effect was previewed but not committed."
+                             *             }
+                             *           ]
+                             *         },
+                             *         "memory": {
+                             *           "summary_injected": true
+                             *         },
+                             *         "preset": {
+                             *           "continue_nudge_applied": true,
+                             *           "continue_nudge_text": "[Continue your last message without repeating its original content.]",
+                             *           "ignored_fields": [],
+                             *           "ignored_prompt_order_character_ids": [
+                             *             200001
+                             *           ],
+                             *           "in_chat_inserted_entry_ids": [
+                             *             "continueHint"
+                             *           ],
+                             *           "names_behavior_applied": "always",
+                             *           "selected_prompt_order_character_id": 100000,
+                             *           "trigger_filtered_entry_ids": [
+                             *             "quietPrompt"
+                             *           ],
+                             *           "unresolved_markers": [],
+                             *           "unsupported_fields": [],
+                             *           "warnings": [
+                             *             "检测到 2 条 prompt_order 上下文轨道；当前运行时只会使用 character_id=100000 的 active 轨道。"
+                             *           ]
+                             *         },
+                             *         "regex": {
+                             *           "ai_output_rules": [],
+                             *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "user_input_rules": [
+                             *             "trim_whitespace"
+                             *           ]
+                             *         },
+                             *         "structure": {
+                             *           "assistant_rewrite_count": 1,
+                             *           "assistant_rewrite_strategy": "to_system",
+                             *           "merge_adjacent_same_role": false,
+                             *           "mode": "no_assistant",
+                             *           "tail_assistant_detected": false
+                             *         },
+                             *         "visibility": {
+                             *           "filtered_floor_nos": [
+                             *             1,
+                             *             2
+                             *           ],
+                             *           "hidden_floor_ranges": [
+                             *             {
+                             *               "end_floor_no": 2,
+                             *               "start_floor_no": 1
+                             *             }
+                             *           ]
+                             *         },
+                             *         "worldbook": {
+                             *           "hit_count": 1,
+                             *           "matches": []
+                             *         }
+                             *       },
+                             *       "token_estimate": 512
+                             *     }
+                             */
+                            data: {
+                                assembly: {
+                                    assistant_prefill_applied: boolean;
+                                    /** @enum {string} */
+                                    assistant_prefill_strategy: "provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none";
+                                    continue_nudge_applied: boolean;
+                                    continue_nudge_text: string | null;
+                                    ignored_preset_fields: string[];
+                                    ignored_prompt_order_character_ids: number[];
+                                    in_chat_inserted_entry_ids: string[];
+                                    memory_summary_injected: boolean;
+                                    /** @enum {string} */
+                                    mode: "preset" | "fallback";
+                                    /** @enum {string} */
+                                    names_behavior_applied: "off" | "always";
+                                    preprocessed_user_message: string | null;
+                                    preset_used: boolean;
+                                    preset_warnings: string[];
+                                    /** @enum {string} */
+                                    prompt_intent: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+                                    regex_post_rules: string[];
+                                    regex_pre_rules: string[];
+                                    reserved_variable_collisions: ("char" | "user")[];
+                                    selected_prompt_order_character_id: number | null;
+                                    trigger_filtered_entry_ids: string[];
+                                    unresolved_preset_markers: string[];
+                                    unsupported_preset_fields: string[];
+                                    worldbook_hits: number;
+                                    worldbook_matches?: {
+                                        activation: {
+                                            first_match: {
+                                                char_end: number;
+                                                char_start: number;
+                                                excerpt: string;
+                                                injection_index?: number;
+                                                matched_key: string;
+                                                /** @enum {string} */
+                                                matched_key_scope: "primary" | "secondary";
+                                                /** @enum {string} */
+                                                matched_key_type: "plain" | "regex";
+                                                message_index_from_latest?: number;
+                                                /** @enum {string} */
+                                                source_kind: "message" | "persona_description" | "character_description" | "character_personality" | "character_depth_prompt" | "scenario" | "creator_notes" | "injection" | "recursion_buffer";
+                                            } | null;
+                                            /** @enum {string} */
+                                            mode: "constant" | "triggered";
+                                            recursion_level: number;
+                                        };
+                                        comment: string;
+                                        content_preview: string;
+                                        insertion: {
+                                            depth?: number;
+                                            outlet_name?: string;
+                                            /** @enum {string} */
+                                            position: "before" | "after" | "at_depth" | "outlet";
+                                            /** @enum {string} */
+                                            role?: "system" | "user" | "assistant";
+                                        };
+                                        order: number;
+                                        source: {
+                                            /** @enum {string} */
+                                            kind: "session_worldbook" | "character_book";
+                                            worldbook_id: string | null;
+                                            worldbook_name: string;
+                                        };
+                                        uid: number;
+                                    }[];
+                                };
+                                available_for_reply: number;
+                                memory_summary: string | null;
+                                messages: {
+                                    content: string;
+                                    /** @enum {string} */
+                                    role: "system" | "user" | "assistant";
+                                }[];
+                                /**
+                                 * @example {
+                                 *       "preset_id": "preset-1",
+                                 *       "preset_updated_at": 1710000000000,
+                                 *       "preset_version": 3,
+                                 *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                                 *       "prompt_mode": "compat_strict",
+                                 *       "regex_post_rule_names": [],
+                                 *       "regex_pre_rule_names": [
+                                 *         "trim_whitespace"
+                                 *       ],
+                                 *       "regex_profile_id": "regex-1",
+                                 *       "regex_profile_updated_at": 1710000002000,
+                                 *       "regex_profile_version": 2,
+                                 *       "token_estimate": 512,
+                                 *       "worldbook_activated_entry_uids": [
+                                 *         7
+                                 *       ],
+                                 *       "worldbook_id": "worldbook-1",
+                                 *       "worldbook_updated_at": 1710000001000,
+                                 *       "worldbook_version": 5
+                                 *     }
+                                 */
+                                prompt_snapshot: {
+                                    preset_id: string | null;
+                                    preset_updated_at: number | null;
+                                    preset_version: number | null;
+                                    prompt_digest: string;
+                                    /** @enum {string} */
+                                    prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                    regex_post_rule_names: string[];
+                                    regex_pre_rule_names: string[];
+                                    regex_profile_id: string | null;
+                                    regex_profile_updated_at: number | null;
+                                    regex_profile_version: number | null;
+                                    token_estimate: number;
+                                    worldbook_activated_entry_uids: number[];
+                                    worldbook_id: string | null;
+                                    worldbook_updated_at: number | null;
+                                    worldbook_version: number | null;
+                                };
+                                runtime_trace?: {
+                                    budgets?: {
+                                        by_group: {
+                                            allocated_token_count?: number;
+                                            estimated_token_count?: number;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            token_count: number;
+                                        }[];
+                                        trim_reasons?: {
+                                            detail?: string;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            /** @enum {string} */
+                                            reason: "budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled";
+                                        }[];
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill: boolean;
+                                        assistant_prefill_applied: boolean;
+                                        assistant_prefill_requested: boolean;
+                                        assistant_prefill_strategy: ("provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none") | null;
+                                        degrade_reasons: ("assistant_prefill_disabled" | "assistant_prefill_unsupported" | "require_last_user" | "no_assistant_override")[];
+                                        degraded: boolean;
+                                        ends_with_user: boolean;
+                                        last_message_role: ("system" | "user" | "assistant") | null;
+                                        no_assistant: boolean;
+                                        require_last_user: boolean;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "mutation_preview": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "staged_mutations": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "source_macro": "setvar",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "traces": [
+                                     *         {
+                                     *           "macro_name": "lastGenerationType",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{lastGenerationType}}",
+                                     *           "resolved_text": "respond",
+                                     *           "source_kind": "macro"
+                                     *         },
+                                     *         {
+                                     *           "macro_name": "if",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                     *           "resolved_text": "YES",
+                                     *           "selected_branch": "then",
+                                     *           "source_kind": "if"
+                                     *         }
+                                     *       ],
+                                     *       "used_names": [
+                                     *         "if",
+                                     *         "lastGenerationType",
+                                     *         "setvar"
+                                     *       ],
+                                     *       "warnings": [
+                                     *         {
+                                     *           "code": "macro_preview_side_effect_suppressed",
+                                     *           "macro_name": "setvar",
+                                     *           "message": "Macro setvar side effect was previewed but not committed."
+                                     *         }
+                                     *       ]
+                                     *     }
+                                     */
+                                    macro?: {
+                                        mutation_preview: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            value?: string;
+                                        }[];
+                                        staged_mutations: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            source_macro: string;
+                                            value?: string;
+                                        }[];
+                                        traces: {
+                                            macro_name: string;
+                                            phase?: string;
+                                            raw_text: string;
+                                            resolved_text: string;
+                                            /** @enum {string} */
+                                            selected_branch?: "then" | "else" | "raw";
+                                            /** @enum {string} */
+                                            source_kind?: "text" | "raw" | "macro" | "if";
+                                        }[];
+                                        used_names: string[];
+                                        warnings: {
+                                            code: string;
+                                            macro_name?: string;
+                                            message: string;
+                                            raw_text?: string;
+                                        }[];
+                                    };
+                                    memory?: {
+                                        summary_injected: boolean;
+                                    };
+                                    preset?: {
+                                        continue_nudge_applied: boolean;
+                                        continue_nudge_text: string | null;
+                                        ignored_fields: string[];
+                                        ignored_prompt_order_character_ids: number[];
+                                        in_chat_inserted_entry_ids: string[];
+                                        names_behavior_applied: ("off" | "always") | null;
+                                        selected_prompt_order_character_id: number | null;
+                                        trigger_filtered_entry_ids: string[];
+                                        unresolved_markers: string[];
+                                        unsupported_fields: string[];
+                                        warnings: string[];
+                                    };
+                                    regex?: {
+                                        ai_output_rules: string[];
+                                        preprocessed_user_message: string | null;
+                                        user_input_rules: string[];
+                                    };
+                                    source_selection?: {
+                                        excluded_sources: {
+                                            detail?: string;
+                                            /** @enum {string} */
+                                            reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+                                            /**
+                                             * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
+                                             * @enum {string}
+                                             */
+                                            source: "history" | "memory" | "worldbook" | "examples";
+                                        }[];
+                                    };
+                                    structure?: {
+                                        assistant_prefill_transcriptized?: boolean;
+                                        assistant_rewrite_count: number;
+                                        assistant_rewrite_strategy: ("to_system" | "to_user_transcript") | null;
+                                        merge_adjacent_same_role: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        tail_assistant_detected: boolean;
+                                        transcript_message_count?: number;
+                                        transcriptized?: boolean;
+                                    };
+                                    visibility?: {
+                                        filtered_floor_nos: number[];
+                                        hidden_floor_ranges?: {
+                                            end_floor_no: number;
+                                            start_floor_no: number;
+                                        }[];
+                                    };
+                                    worldbook?: {
+                                        hit_count: number;
+                                        matches?: {
+                                            activation: {
+                                                first_match: {
+                                                    char_end: number;
+                                                    char_start: number;
+                                                    excerpt: string;
+                                                    injection_index?: number;
+                                                    matched_key: string;
+                                                    /** @enum {string} */
+                                                    matched_key_scope: "primary" | "secondary";
+                                                    /** @enum {string} */
+                                                    matched_key_type: "plain" | "regex";
+                                                    message_index_from_latest?: number;
+                                                    /** @enum {string} */
+                                                    source_kind: "message" | "persona_description" | "character_description" | "character_personality" | "character_depth_prompt" | "scenario" | "creator_notes" | "injection" | "recursion_buffer";
+                                                } | null;
+                                                /** @enum {string} */
+                                                mode: "constant" | "triggered";
+                                                recursion_level: number;
+                                            };
+                                            comment: string;
+                                            content_preview: string;
+                                            insertion: {
+                                                depth?: number;
+                                                outlet_name?: string;
+                                                /** @enum {string} */
+                                                position: "before" | "after" | "at_depth" | "outlet";
+                                                /** @enum {string} */
+                                                role?: "system" | "user" | "assistant";
+                                            };
+                                            order: number;
+                                            source: {
+                                                /** @enum {string} */
+                                                kind: "session_worldbook" | "character_book";
+                                                worldbook_id: string | null;
+                                                worldbook_name: string;
+                                            };
+                                            uid: number;
+                                        }[];
+                                    };
+                                };
+                                token_estimate: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/respond/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream chat response via SSE
+         * @description Start a chat turn and stream generated chunks as Server-Sent Events.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    /**
+                     * @example {
+                     *       "branch_id": "main",
+                     *       "config": {
+                     *         "enableDirector": true,
+                     *         "enableMemoryConsolidation": true,
+                     *         "enableTools": true,
+                     *         "enableVerifier": true,
+                     *         "maxRetries": 1,
+                     *         "toolMode": "inline",
+                     *         "verifierFailStrategy": "warn"
+                     *       },
+                     *       "debug_options": {
+                     *         "include_prompt_snapshot": true,
+                     *         "include_runtime_trace": true,
+                     *         "include_worldbook_matches": false
+                     *       },
+                     *       "delivery": {
+                     *         "allow_assistant_prefill": true,
+                     *         "no_assistant": false,
+                     *         "require_last_user": false
+                     *       },
+                     *       "generation_params": {
+                     *         "max_output_tokens": 256,
+                     *         "reasoning_effort": "low",
+                     *         "temperature": 0.7,
+                     *         "top_p": 0.9
+                     *       },
+                     *       "message": "Please continue the campfire scene.",
+                     *       "prompt_intent": "normal",
+                     *       "session_state_writes": [
+                     *         {
+                     *           "namespace": "quest_flags",
+                     *           "slot": "companion",
+                     *           "value": {
+                     *             "mood": "ally"
+                     *           }
+                     *         },
+                     *         {
+                     *           "delete": true,
+                     *           "namespace": "quest_flags",
+                     *           "slot": "expired_hint"
+                     *         }
+                     *       ],
+                     *       "structure": {
+                     *         "assistant_rewrite_strategy": "to_system",
+                     *         "merge_adjacent_same_role": false,
+                     *         "mode": "no_assistant",
+                     *         "preserve_system_messages": true
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        branch_id?: string;
+                        /**
+                         * @example {
+                         *       "enableDirector": true,
+                         *       "enableMemoryConsolidation": true,
+                         *       "enableTools": true,
+                         *       "enableVerifier": true,
+                         *       "maxRetries": 1,
+                         *       "toolMode": "inline",
+                         *       "verifierFailStrategy": "warn"
+                         *     }
+                         */
+                        config?: {
+                            enableDirector?: boolean;
+                            enableMemoryConsolidation?: boolean;
+                            enableTools?: boolean;
+                            enableVerifier?: boolean;
+                            maxRetries?: number;
+                            /** @enum {string} */
+                            toolMode?: "inline" | "standalone" | "both";
+                            /** @enum {string} */
+                            verifierFailStrategy?: "warn" | "block" | "retry";
+                        };
+                        /**
+                         * @example {
+                         *       "include_prompt_snapshot": true,
+                         *       "include_runtime_trace": true,
+                         *       "include_worldbook_matches": false
+                         *     }
+                         */
+                        debug_options?: {
+                            include_prompt_snapshot?: boolean;
+                            include_runtime_trace?: boolean;
+                            include_worldbook_matches?: boolean;
+                        };
+                        delivery?: {
+                            allow_assistant_prefill?: boolean;
+                            no_assistant?: boolean;
+                            require_last_user?: boolean;
+                        };
+                        /**
+                         * @example {
+                         *       "max_output_tokens": 256,
+                         *       "reasoning_effort": "low",
+                         *       "temperature": 0.7,
+                         *       "top_p": 0.9
+                         *     }
+                         */
+                        generation_params?: {
+                            frequency_penalty?: number;
+                            max_output_tokens?: number;
+                            presence_penalty?: number;
+                            /** @enum {string} */
+                            reasoning_effort?: "low" | "medium" | "high";
+                            stop_sequences?: string[];
+                            stream?: boolean;
+                            temperature?: number;
+                            top_k?: number;
+                            top_p?: number;
+                        };
+                        message: string;
+                        /** @enum {string} */
+                        prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+                        session_state_writes?: {
+                            /** @enum {boolean} */
+                            delete?: true;
+                            namespace?: string;
+                            slot?: string;
+                            value?: unknown;
+                        }[];
+                        source_floor_id?: string;
+                        structure?: {
+                            /** @enum {string} */
+                            assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                            merge_adjacent_same_role?: boolean;
+                            /** @enum {string} */
+                            mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                            preserve_system_messages?: boolean;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description SSE stream payload (start/chunk/summary/done/error events). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        /**
+                         * @example event: start
+                         *     data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main"}
+                         *
+                         *     event: run
+                         *     data: {"floor_id":"floor_12","run_id":"run_12","run_type":"respond","status":"running","phase":"page_generating","public_phase":"generating","phase_seq":5,"attempt_no":1,"started_at":1735689720000,"updated_at":1735689720300,"completed_at":null,"pending_output":{"temp_id":"temp_12","attempt_no":1,"state":"streaming","text":"The firelight wavers...","started_at":1735689720100,"updated_at":1735689720300,"error":null},"verifier":null,"error":null}
+                         *
+                         *     event: chunk
+                         *     data: {"chunk":"The firelight wavers..."}
+                         *
+                         *     event: done
+                         *     data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"The firelight wavers as the next part of the story begins.","summaries":["The group resumes the campfire planning scene."],"total_usage":{"prompt_tokens":320,"completion_tokens":128,"total_tokens":448},"memory":{"mode":"sync","status":"applied","job_id":null},"final_state":"committed","prompt_snapshot":{"preset_id":"preset-1","preset_updated_at":1710000000000,"preset_version":3,"worldbook_id":"worldbook-1","worldbook_updated_at":1710000001000,"worldbook_version":5,"regex_profile_id":"regex-1","regex_profile_updated_at":1710000002000,"regex_profile_version":2,"worldbook_activated_entry_uids":[7],"regex_pre_rule_names":["trim_whitespace"],"regex_post_rule_names":[],"prompt_mode":"compat_strict","prompt_digest":"0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c","token_estimate":512},"runtime_trace":{"worldbook":{"hit_count":1},"macro":{"warnings":[{"code":"macro_preview_side_effect_suppressed","message":"Macro setvar side effect was previewed but not committed.","macro_name":"setvar"}],"used_names":["if","lastGenerationType","setvar"],"mutation_preview":[{"kind":"set","scope":"branch","key":"mood","value":"steady"}],"staged_mutations":[{"kind":"set","scope":"branch","key":"mood","value":"steady","source_macro":"setvar"}],"traces":[{"macro_name":"lastGenerationType","raw_text":"{{lastGenerationType}}","resolved_text":"respond","phase":"assemble","source_kind":"macro"},{"macro_name":"if","raw_text":"{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}","resolved_text":"YES","phase":"assemble","source_kind":"if","selected_branch":"then"}]},"delivery":{"assistant_prefill_requested":true,"assistant_prefill_applied":false,"assistant_prefill_strategy":"assistant_message_fallback","allow_assistant_prefill":true,"require_last_user":true,"no_assistant":false,"last_message_role":"user","ends_with_user":true,"degraded":true,"degrade_reasons":["require_last_user"]}}}
+                         */
+                        "application/json": string;
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{id}/timeline": {
         parameters: {
             query?: never;
@@ -5970,6 +14121,328 @@ export interface paths {
         get: operations["getSessionRuntimeToolCatalog"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/session-state/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List managed domain bindings for a session
+         * @description Session-state internal observation endpoint. Not wrapped by @tavern/sdk or @tavern/client-helpers.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/session-state/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List live head metadata for a session
+         * @description Internal observation endpoint. Returns metadata only; the full value is not returned in the list endpoint.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/session-state/live/{namespace}/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve the live value for a single slot
+         * @description Internal observation endpoint. Returns the full resolved value, source-floor-aware when requested.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                    namespace: string;
+                    slot: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/session-state/mutations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List session-state mutations
+         * @description Internal observation endpoint. Returns summaries with payload_preview and payload_size_bytes only; the full value is not returned here.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/session-state/mutations/{mutationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a single session-state mutation with full payload
+         * @description Internal observation endpoint. Returns full payload for a single mutation.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                    mutationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/state/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diff public Session State values against live or another floor
+         * @description Public read surface for Session State diffs. Returns full values for public-stable slots.
+         */
+        get: operations["diffSessionStateValues"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/state/floors/{floorId}/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read public Session State floor snapshots
+         * @description Public read surface for floor snapshot values of public-stable Session State slots.
+         */
+        get: operations["getSessionStateFloorSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/state/namespaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List public session-state namespaces and slot definitions
+         * @description Public read surface for Session State. Returns public-stable built-in slot definitions plus registered custom namespaces.
+         */
+        get: operations["listSessionStateNamespaces"];
+        put?: never;
+        /**
+         * Register a custom Session State namespace
+         * @description Control-plane write surface for creating a per-session custom namespace registration and managed binding.
+         */
+        post: operations["registerSessionStateNamespace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/state/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve current-effective Session State values
+         * @description Public read surface for resolving current-effective or source-floor Session State values.
+         */
+        get: operations["resolveSessionStateValues"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/state/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a custom Session State value
+         * @description Public delete surface for registered custom namespaces. Maps delete to governed `present: false` and returns the current-effective single-slot view.
+         */
+        delete: operations["deleteSessionStateValue"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{sessionId}/state/values/write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write a custom Session State value
+         * @description Public write surface for registered custom namespaces. Performs governed direct write and returns the current-effective single-slot view.
+         */
+        post: operations["writeSessionStateValue"];
         delete?: never;
         options?: never;
         head?: never;
@@ -19155,6 +27628,1229 @@ export interface operations {
             };
             /** @description Default Response */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    diffSessionStateValues: {
+        parameters: {
+            query: {
+                floor_id: string;
+                against: string;
+                branch_id?: string;
+                namespace?: string;
+                slot?: string;
+            };
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "change_type": "changed",
+                     *           "left_floor_id": null,
+                     *           "left_present": true,
+                     *           "left_value": {
+                     *             "scene": "floor2-scene"
+                     *           },
+                     *           "namespace": "game_state",
+                     *           "right_floor_id": "floor_demo_1",
+                     *           "right_present": true,
+                     *           "right_value": {
+                     *             "scene": "floor1-scene"
+                     *           },
+                     *           "slot": "scene"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            /** @enum {string} */
+                            change_type: "added" | "removed" | "changed" | "unchanged";
+                            left_floor_id: string | null;
+                            left_present: boolean;
+                            left_value: unknown;
+                            namespace: string;
+                            right_floor_id: string | null;
+                            right_present: boolean;
+                            right_value: unknown;
+                            slot: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getSessionStateFloorSnapshot: {
+        parameters: {
+            query?: {
+                namespace?: string;
+                slot?: string;
+            };
+            header?: never;
+            path: {
+                sessionId: string;
+                floorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "branch_id": "main",
+                     *           "committed_at": 1714300000000,
+                     *           "floor_id": "floor_demo_1",
+                     *           "namespace": "game_state",
+                     *           "present": true,
+                     *           "schema_version": 1,
+                     *           "session_id": "sess_demo",
+                     *           "slot": "scene",
+                     *           "source_mutation_ids": [
+                     *             "ssm_demo_scene_1"
+                     *           ],
+                     *           "value": {
+                     *             "scene": "floor1-scene"
+                     *           },
+                     *           "visibility_mode": "fork_on_branch"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            committed_at: number | null;
+                            floor_id: string;
+                            namespace: string;
+                            present: boolean;
+                            schema_version: number | null;
+                            session_id: string;
+                            slot: string;
+                            source_mutation_ids: string[];
+                            value: unknown;
+                            /** @enum {string} */
+                            visibility_mode: "session_shared" | "branch_local" | "fork_on_branch";
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listSessionStateNamespaces: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "namespace": "game_state",
+                     *           "owner_kind": "built_in",
+                     *           "slots": [
+                     *             {
+                     *               "capabilities": {
+                     *                 "allowed_write_modes": [],
+                     *                 "client_readable": true,
+                     *                 "client_writable": false,
+                     *                 "supports_diff": true,
+                     *                 "supports_snapshot": true
+                     *               },
+                     *               "default_replay_safety": "safe",
+                     *               "default_write_mode": "commit_bound",
+                     *               "exposure_lifecycle": "public_stable",
+                     *               "schema_version": 1,
+                     *               "size_budget_bytes": 262144,
+                     *               "slot": "scene",
+                     *               "visibility_mode": "fork_on_branch"
+                     *             },
+                     *             {
+                     *               "capabilities": {
+                     *                 "allowed_write_modes": [],
+                     *                 "client_readable": true,
+                     *                 "client_writable": false,
+                     *                 "supports_diff": true,
+                     *                 "supports_snapshot": true
+                     *               },
+                     *               "default_replay_safety": "safe",
+                     *               "default_write_mode": "commit_bound",
+                     *               "exposure_lifecycle": "public_stable",
+                     *               "schema_version": 1,
+                     *               "size_budget_bytes": 524288,
+                     *               "slot": "world",
+                     *               "visibility_mode": "fork_on_branch"
+                     *             }
+                     *           ]
+                     *         },
+                     *         {
+                     *           "default_slot_template": {
+                     *             "allowed_write_modes": [
+                     *               "direct",
+                     *               "commit_bound"
+                     *             ],
+                     *             "client_writable": true,
+                     *             "default_replay_safety": "safe",
+                     *             "default_visibility_mode": "fork_on_branch",
+                     *             "default_write_mode": "direct",
+                     *             "replay_policy_source": "system_default",
+                     *             "supports_diff": true,
+                     *             "supports_snapshot": true
+                     *           },
+                     *           "logical_owner_id": "quest-plugin",
+                     *           "logical_owner_type": "plugin",
+                     *           "namespace": "quest_flags",
+                     *           "owner_kind": "custom",
+                     *           "slots": [
+                     *             {
+                     *               "capabilities": {
+                     *                 "allowed_write_modes": [
+                     *                   "direct",
+                     *                   "commit_bound"
+                     *                 ],
+                     *                 "client_readable": true,
+                     *                 "client_writable": true,
+                     *                 "supports_diff": true,
+                     *                 "supports_snapshot": true
+                     *               },
+                     *               "default_replay_safety": "safe",
+                     *               "default_write_mode": "direct",
+                     *               "exposure_lifecycle": "public_stable",
+                     *               "schema_version": 1,
+                     *               "size_budget_bytes": 1048576,
+                     *               "slot": "companion",
+                     *               "visibility_mode": "fork_on_branch"
+                     *             }
+                     *           ]
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        data: ({
+                            namespace: string;
+                            /** @enum {string} */
+                            owner_kind: "built_in";
+                            slots: {
+                                capabilities: {
+                                    allowed_write_modes: ("direct" | "commit_bound")[];
+                                    client_readable: boolean;
+                                    client_writable: boolean;
+                                    supports_diff: boolean;
+                                    supports_snapshot: boolean;
+                                };
+                                /** @enum {string} */
+                                default_replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                default_write_mode: "direct" | "commit_bound";
+                                /** @enum {string} */
+                                exposure_lifecycle: "public_stable" | "candidate" | "internal_only";
+                                schema_version: number;
+                                size_budget_bytes: number;
+                                slot: string;
+                                /** @enum {string} */
+                                visibility_mode: "session_shared" | "branch_local" | "fork_on_branch";
+                            }[];
+                        } | {
+                            default_slot_template: {
+                                allowed_write_modes: ("direct" | "commit_bound")[];
+                                client_writable: boolean;
+                                /** @enum {string} */
+                                default_replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                default_visibility_mode: "session_shared" | "branch_local" | "fork_on_branch";
+                                /** @enum {string} */
+                                default_write_mode: "direct" | "commit_bound";
+                                replay_policy_source: string;
+                                supports_diff: boolean;
+                                supports_snapshot: boolean;
+                            };
+                            logical_owner_id: string;
+                            logical_owner_type: string;
+                            namespace: string;
+                            /** @enum {string} */
+                            owner_kind: "custom";
+                            slots: {
+                                capabilities: {
+                                    allowed_write_modes: ("direct" | "commit_bound")[];
+                                    client_readable: boolean;
+                                    client_writable: boolean;
+                                    supports_diff: boolean;
+                                    supports_snapshot: boolean;
+                                };
+                                /** @enum {string} */
+                                default_replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                default_write_mode: "direct" | "commit_bound";
+                                /** @enum {string} */
+                                exposure_lifecycle: "public_stable" | "candidate" | "internal_only";
+                                schema_version: number;
+                                size_budget_bytes: number;
+                                slot: string;
+                                /** @enum {string} */
+                                visibility_mode: "session_shared" | "branch_local" | "fork_on_branch";
+                            }[];
+                        })[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    registerSessionStateNamespace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "logical_owner_id": "quest-plugin",
+                 *       "logical_owner_type": "plugin",
+                 *       "namespace": "quest_flags"
+                 *     }
+                 */
+                "application/json": {
+                    logical_owner_id: string;
+                    logical_owner_type: string;
+                    namespace: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "default_slot_template": {
+                     *           "allowed_write_modes": [
+                     *             "direct",
+                     *             "commit_bound"
+                     *           ],
+                     *           "client_writable": true,
+                     *           "default_replay_safety": "safe",
+                     *           "default_visibility_mode": "fork_on_branch",
+                     *           "default_write_mode": "direct",
+                     *           "replay_policy_source": "system_default",
+                     *           "supports_diff": true,
+                     *           "supports_snapshot": true
+                     *         },
+                     *         "logical_owner_id": "quest-plugin",
+                     *         "logical_owner_type": "plugin",
+                     *         "namespace": "quest_flags",
+                     *         "owner_kind": "custom",
+                     *         "slots": [
+                     *           {
+                     *             "capabilities": {
+                     *               "allowed_write_modes": [
+                     *                 "direct",
+                     *                 "commit_bound"
+                     *               ],
+                     *               "client_readable": true,
+                     *               "client_writable": true,
+                     *               "supports_diff": true,
+                     *               "supports_snapshot": true
+                     *             },
+                     *             "default_replay_safety": "safe",
+                     *             "default_write_mode": "direct",
+                     *             "exposure_lifecycle": "public_stable",
+                     *             "schema_version": 1,
+                     *             "size_budget_bytes": 1048576,
+                     *             "slot": "companion",
+                     *             "visibility_mode": "fork_on_branch"
+                     *           }
+                     *         ]
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "namespace": "game_state",
+                         *       "owner_kind": "built_in",
+                         *       "slots": [
+                         *         {
+                         *           "capabilities": {
+                         *             "allowed_write_modes": [],
+                         *             "client_readable": true,
+                         *             "client_writable": false,
+                         *             "supports_diff": true,
+                         *             "supports_snapshot": true
+                         *           },
+                         *           "default_replay_safety": "safe",
+                         *           "default_write_mode": "commit_bound",
+                         *           "exposure_lifecycle": "public_stable",
+                         *           "schema_version": 1,
+                         *           "size_budget_bytes": 262144,
+                         *           "slot": "scene",
+                         *           "visibility_mode": "fork_on_branch"
+                         *         },
+                         *         {
+                         *           "capabilities": {
+                         *             "allowed_write_modes": [],
+                         *             "client_readable": true,
+                         *             "client_writable": false,
+                         *             "supports_diff": true,
+                         *             "supports_snapshot": true
+                         *           },
+                         *           "default_replay_safety": "safe",
+                         *           "default_write_mode": "commit_bound",
+                         *           "exposure_lifecycle": "public_stable",
+                         *           "schema_version": 1,
+                         *           "size_budget_bytes": 524288,
+                         *           "slot": "world",
+                         *           "visibility_mode": "fork_on_branch"
+                         *         }
+                         *       ]
+                         *     }
+                         */
+                        data: {
+                            namespace: string;
+                            /** @enum {string} */
+                            owner_kind: "built_in";
+                            slots: {
+                                capabilities: {
+                                    allowed_write_modes: ("direct" | "commit_bound")[];
+                                    client_readable: boolean;
+                                    client_writable: boolean;
+                                    supports_diff: boolean;
+                                    supports_snapshot: boolean;
+                                };
+                                /** @enum {string} */
+                                default_replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                default_write_mode: "direct" | "commit_bound";
+                                /** @enum {string} */
+                                exposure_lifecycle: "public_stable" | "candidate" | "internal_only";
+                                schema_version: number;
+                                size_budget_bytes: number;
+                                slot: string;
+                                /** @enum {string} */
+                                visibility_mode: "session_shared" | "branch_local" | "fork_on_branch";
+                            }[];
+                        } | {
+                            default_slot_template: {
+                                allowed_write_modes: ("direct" | "commit_bound")[];
+                                client_writable: boolean;
+                                /** @enum {string} */
+                                default_replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                default_visibility_mode: "session_shared" | "branch_local" | "fork_on_branch";
+                                /** @enum {string} */
+                                default_write_mode: "direct" | "commit_bound";
+                                replay_policy_source: string;
+                                supports_diff: boolean;
+                                supports_snapshot: boolean;
+                            };
+                            logical_owner_id: string;
+                            logical_owner_type: string;
+                            namespace: string;
+                            /** @enum {string} */
+                            owner_kind: "custom";
+                            slots: {
+                                capabilities: {
+                                    allowed_write_modes: ("direct" | "commit_bound")[];
+                                    client_readable: boolean;
+                                    client_writable: boolean;
+                                    supports_diff: boolean;
+                                    supports_snapshot: boolean;
+                                };
+                                /** @enum {string} */
+                                default_replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                default_write_mode: "direct" | "commit_bound";
+                                /** @enum {string} */
+                                exposure_lifecycle: "public_stable" | "candidate" | "internal_only";
+                                schema_version: number;
+                                size_budget_bytes: number;
+                                slot: string;
+                                /** @enum {string} */
+                                visibility_mode: "session_shared" | "branch_local" | "fork_on_branch";
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    resolveSessionStateValues: {
+        parameters: {
+            query: {
+                branch_id: string;
+                namespace?: string;
+                slot?: string;
+                source_floor_id?: string;
+            };
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "branch_id": "main",
+                     *           "floor_id": "floor_demo_2",
+                     *           "namespace": "quest_flags",
+                     *           "present": true,
+                     *           "schema_version": 1,
+                     *           "session_id": "sess_demo",
+                     *           "slot": "companion",
+                     *           "source": "live_head",
+                     *           "source_mutation_ids": [
+                     *             "ssm_demo_1"
+                     *           ],
+                     *           "updated_at": 1714300000000,
+                     *           "value": {
+                     *             "mood": "ally"
+                     *           },
+                     *           "visibility_mode": "fork_on_branch"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            floor_id: string | null;
+                            namespace: string;
+                            present: boolean;
+                            schema_version: number | null;
+                            session_id: string;
+                            slot: string;
+                            /** @enum {string} */
+                            source: "live_head" | "latest_branch_snapshot" | "source_floor_snapshot" | "latest_main_snapshot" | "none";
+                            source_mutation_ids: string[];
+                            updated_at: number | null;
+                            value: unknown;
+                            /** @enum {string} */
+                            visibility_mode: "session_shared" | "branch_local" | "fork_on_branch";
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deleteSessionStateValue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "branch_id": "main",
+                 *       "namespace": "quest_flags",
+                 *       "slot": "companion"
+                 *     }
+                 */
+                "application/json": {
+                    branch_id: string;
+                    namespace: string;
+                    slot: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "branch_id": "main",
+                     *         "floor_id": "floor_demo_2",
+                     *         "namespace": "quest_flags",
+                     *         "present": true,
+                     *         "schema_version": 1,
+                     *         "session_id": "sess_demo",
+                     *         "slot": "companion",
+                     *         "source": "live_head",
+                     *         "source_mutation_ids": [
+                     *           "ssm_demo_1"
+                     *         ],
+                     *         "updated_at": 1714300000000,
+                     *         "value": {
+                     *           "mood": "ally"
+                     *         },
+                     *         "visibility_mode": "fork_on_branch"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "branch_id": "main",
+                         *       "floor_id": "floor_demo_2",
+                         *       "namespace": "quest_flags",
+                         *       "present": true,
+                         *       "schema_version": 1,
+                         *       "session_id": "sess_demo",
+                         *       "slot": "companion",
+                         *       "source": "live_head",
+                         *       "source_mutation_ids": [
+                         *         "ssm_demo_1"
+                         *       ],
+                         *       "updated_at": 1714300000000,
+                         *       "value": {
+                         *         "mood": "ally"
+                         *       },
+                         *       "visibility_mode": "fork_on_branch"
+                         *     }
+                         */
+                        data: {
+                            branch_id: string;
+                            floor_id: string | null;
+                            namespace: string;
+                            present: boolean;
+                            schema_version: number | null;
+                            session_id: string;
+                            slot: string;
+                            /** @enum {string} */
+                            source: "live_head" | "latest_branch_snapshot" | "source_floor_snapshot" | "latest_main_snapshot" | "none";
+                            source_mutation_ids: string[];
+                            updated_at: number | null;
+                            value: unknown;
+                            /** @enum {string} */
+                            visibility_mode: "session_shared" | "branch_local" | "fork_on_branch";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    writeSessionStateValue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "branch_id": "main",
+                 *       "namespace": "quest_flags",
+                 *       "slot": "companion",
+                 *       "value": {
+                 *         "mood": "ally"
+                 *       }
+                 *     }
+                 */
+                "application/json": {
+                    branch_id: string;
+                    namespace: string;
+                    slot: string;
+                    value: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "branch_id": "main",
+                     *         "floor_id": "floor_demo_2",
+                     *         "namespace": "quest_flags",
+                     *         "present": true,
+                     *         "schema_version": 1,
+                     *         "session_id": "sess_demo",
+                     *         "slot": "companion",
+                     *         "source": "live_head",
+                     *         "source_mutation_ids": [
+                     *           "ssm_demo_1"
+                     *         ],
+                     *         "updated_at": 1714300000000,
+                     *         "value": {
+                     *           "mood": "ally"
+                     *         },
+                     *         "visibility_mode": "fork_on_branch"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "branch_id": "main",
+                         *       "floor_id": "floor_demo_2",
+                         *       "namespace": "quest_flags",
+                         *       "present": true,
+                         *       "schema_version": 1,
+                         *       "session_id": "sess_demo",
+                         *       "slot": "companion",
+                         *       "source": "live_head",
+                         *       "source_mutation_ids": [
+                         *         "ssm_demo_1"
+                         *       ],
+                         *       "updated_at": 1714300000000,
+                         *       "value": {
+                         *         "mood": "ally"
+                         *       },
+                         *       "visibility_mode": "fork_on_branch"
+                         *     }
+                         */
+                        data: {
+                            branch_id: string;
+                            floor_id: string | null;
+                            namespace: string;
+                            present: boolean;
+                            schema_version: number | null;
+                            session_id: string;
+                            slot: string;
+                            /** @enum {string} */
+                            source: "live_head" | "latest_branch_snapshot" | "source_floor_snapshot" | "latest_main_snapshot" | "none";
+                            source_mutation_ids: string[];
+                            updated_at: number | null;
+                            value: unknown;
+                            /** @enum {string} */
+                            visibility_mode: "session_shared" | "branch_local" | "fork_on_branch";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

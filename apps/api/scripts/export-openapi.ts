@@ -3,6 +3,7 @@ import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildApp } from "../src/app.js";
+import { createOpenApiExportBuildAppOptions } from "../src/openapi-export-profile.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "../../..");
@@ -10,7 +11,7 @@ const DEFAULT_OUTPUT = "apps/api/openapi/openapi.json";
 
 async function main(): Promise<void> {
   const outputPath = resolveOutputPath(process.argv.slice(2));
-  const { app } = await buildApp({ databasePath: ":memory:", logger: false, enableMcp: true });
+  const { app } = await buildApp(createOpenApiExportBuildAppOptions());
 
   try {
     const response = await app.inject({ method: "GET", url: "/openapi.json" });

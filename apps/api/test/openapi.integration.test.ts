@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildApp } from "../src/app";
+import { createOpenApiExportBuildAppOptions } from "../src/openapi-export-profile.js";
 import { registerOpenApi } from "../src/plugins/openapi";
 import { registerChatRoutes } from "../src/routes/chat";
 import type { ChatService as ChatServiceType } from "../src/services/chat-service";
@@ -56,11 +57,26 @@ function getOpenApiSchemaExample(container: OpenApiContentContainer | undefined)
   return getOpenApiMediaExample(firstContent);
 }
 
+function getOpenApiRequestSchema(operation: OpenApiOperation | undefined): Record<string, unknown> | undefined {
+  const requestBody = readRecordNode(operation?.requestBody);
+  const content = readRecordNode(requestBody?.content);
+  const media = readRecordNode(content?.["application/json"]);
+  return readRecordNode(media?.schema);
+}
+
 function getOpenApiResponseSchema(operation: OpenApiOperation | undefined, statusCode: string): Record<string, unknown> | undefined {
   const response = readRecordNode(operation?.responses?.[statusCode]);
   const content = readRecordNode(response?.content);
   const media = readRecordNode(content?.["application/json"]);
   return readRecordNode(media?.schema);
+}
+
+function readArrayNode(value: unknown): unknown[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value;
 }
 
 function getOpenApiResponseExample(operation: OpenApiOperation | undefined, statusCode: string): unknown {
@@ -759,6 +775,79 @@ describe("OpenAPI integration", () => {
         exclusion_changes: [expect.objectContaining({ right: [expect.objectContaining({ source: "examples" })] })],
       },
     });
+  });
+
+  it("includes feature-gated chat and session-state routes in the export profile", async () => {
+    const exportAppResult = await buildApp(createOpenApiExportBuildAppOptions());
+
+    try {
+      const res = await exportAppResult.app.inject({ method: "GET", url: "/openapi.json" });
+      expect(res.statusCode).toBe(200);
+
+      const body = res.json<OpenApiDocument>();
+      expect(Object.keys(body.paths)).toContain("/sessions/{id}/respond");
+      expect(Object.keys(body.paths)).toContain("/sessions/{id}/regenerate");
+      expect(Object.keys(body.paths)).toContain("/floors/{id}/retry");
+      expect(Object.keys(body.paths)).toContain("/messages/{id}/edit-and-regenerate");
+      expect(Object.keys(body.paths)).toContain("/sessions/{sessionId}/state/namespaces");
+      expect(Object.keys(body.paths)).toContain("/sessions/{sessionId}/state/values/write");
+      expect(Object.keys(body.paths)).toContain("/sessions/{sessionId}/state/values");
+      expect(Object.keys(body.paths)).toContain("/sessions/{sessionId}/state/resolve");
+      expect(Object.keys(body.paths)).toContain("/sessions/{sessionId}/state/floors/{floorId}/snapshot");
+      expect(Object.keys(body.paths)).toContain("/sessions/{sessionId}/state/diff");
+
+      const respondPath = body.paths["/sessions/{id}/respond"] as { post?: OpenApiOperation };
+      const respondRequestSchema = getOpenApiRequestSchema(respondPath.post);
+      const respondProperties = readRecordNode(respondRequestSchema?.properties);
+      const sessionStateWritesSchema = readRecordNode(respondProperties?.session_state_writes);
+      const sessionStateWriteItemSchema = readRecordNode(sessionStateWritesSchema?.items);
+      const sessionStateWriteProperties = readRecordNode(sessionStateWriteItemSchema?.properties);
+      expect(sessionStateWriteProperties?.namespace).toBeDefined();
+      expect(sessionStateWriteProperties?.slot).toBeDefined();
+      expect(sessionStateWriteProperties?.value).toBeDefined();
+      expect(sessionStateWriteProperties?.delete).toBeDefined();
+
+      const regeneratePath = body.paths["/sessions/{id}/regenerate"] as { post?: OpenApiOperation };
+      expect(readRecordNode(getOpenApiRequestSchema(regeneratePath.post)?.properties)?.session_state_writes).toBeDefined();
+
+      const retryPath = body.paths["/floors/{id}/retry"] as { post?: OpenApiOperation };
+      expect(readRecordNode(getOpenApiRequestSchema(retryPath.post)?.properties)?.session_state_writes).toBeDefined();
+
+      const editAndRegeneratePath = body.paths["/messages/{id}/edit-and-regenerate"] as { post?: OpenApiOperation };
+      expect(readRecordNode(getOpenApiRequestSchema(editAndRegeneratePath.post)?.properties)?.session_state_writes).toBeDefined();
+
+      const namespacesPath = body.paths["/sessions/{sessionId}/state/namespaces"] as { post?: OpenApiOperation; get?: OpenApiOperation };
+      expect(readArrayNode(getOpenApiRequestSchema(namespacesPath.post)?.required)).toEqual(
+        expect.arrayContaining(["namespace", "logical_owner_type", "logical_owner_id"]),
+      );
+      expect(getOpenApiResponseSchema(namespacesPath.post, "201")).toBeDefined();
+      expect(getOpenApiResponseSchema(namespacesPath.get, "200")).toBeDefined();
+
+      const writePath = body.paths["/sessions/{sessionId}/state/values/write"] as { post?: OpenApiOperation };
+      expect(readArrayNode(getOpenApiRequestSchema(writePath.post)?.required)).toEqual(
+        expect.arrayContaining(["branch_id", "namespace", "slot", "value"]),
+      );
+      expect(getOpenApiResponseSchema(writePath.post, "200")).toBeDefined();
+
+      const deletePath = body.paths["/sessions/{sessionId}/state/values"] as { delete?: OpenApiOperation };
+      expect(readArrayNode(getOpenApiRequestSchema(deletePath.delete)?.required)).toEqual(
+        expect.arrayContaining(["branch_id", "namespace", "slot"]),
+      );
+
+      const resolvePath = body.paths["/sessions/{sessionId}/state/resolve"] as { get?: OpenApiOperation };
+      expect(resolvePath.get?.parameters?.some((parameter) => parameter.name === "branch_id")).toBe(true);
+      expect(getOpenApiResponseSchema(resolvePath.get, "200")).toBeDefined();
+
+      const snapshotPath = body.paths["/sessions/{sessionId}/state/floors/{floorId}/snapshot"] as { get?: OpenApiOperation };
+      expect(snapshotPath.get?.parameters?.some((parameter) => parameter.name === "floorId")).toBe(true);
+      expect(getOpenApiResponseSchema(snapshotPath.get, "200")).toBeDefined();
+
+      const diffPath = body.paths["/sessions/{sessionId}/state/diff"] as { get?: OpenApiOperation };
+      expect(diffPath.get?.parameters?.some((parameter) => parameter.name === "against")).toBe(true);
+      expect(getOpenApiResponseSchema(diffPath.get, "200")).toBeDefined();
+    } finally {
+      await exportAppResult.app.close();
+    }
   });
 
   it("serves Swagger UI page", async () => {

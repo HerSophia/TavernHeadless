@@ -116,6 +116,76 @@ describe("SessionStateCustomNamespaceService", () => {
     expect(listed).toEqual([registered]);
   });
 
+  it("trims valid identity fields and rejects invalid custom namespace identity formats", async () => {
+    const sessionId = nanoid();
+    await seedSession(database, sessionId, ACCOUNT_A, 1_200);
+
+    const registered = service.registerNamespace({
+      accountId: ACCOUNT_A,
+      sessionId,
+      namespace: " quest.flags ",
+      logicalOwnerType: " plugin.runtime ",
+      logicalOwnerId: " @scope/quest-plugin ",
+    });
+
+    expect(registered.namespace).toBe("quest.flags");
+    expect(registered.logicalOwnerType).toBe("plugin.runtime");
+    expect(registered.logicalOwnerId).toBe("@scope/quest-plugin");
+
+    expect(() => service.registerNamespace({
+      accountId: ACCOUNT_A,
+      sessionId,
+      namespace: "game_state.scene",
+      logicalOwnerType: "plugin",
+      logicalOwnerId: "quest-plugin",
+    })).toThrow(SessionStateCustomNamespaceServiceError);
+
+    expect(() => service.registerNamespace({
+      accountId: ACCOUNT_A,
+      sessionId,
+      namespace: "quest-flags",
+      logicalOwnerType: "plugin",
+      logicalOwnerId: "quest-plugin",
+    })).toThrow(SessionStateCustomNamespaceServiceError);
+    try {
+      service.registerNamespace({
+        accountId: ACCOUNT_A,
+        sessionId,
+        namespace: "quest-flags",
+        logicalOwnerType: "plugin",
+        logicalOwnerId: "quest-plugin",
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionStateCustomNamespaceServiceError);
+      expect((error as SessionStateCustomNamespaceServiceError).statusCode).toBe(400);
+      expect((error as SessionStateCustomNamespaceServiceError).code).toBe("session_state_namespace_invalid");
+    }
+
+    expect(() => service.registerNamespace({
+      accountId: ACCOUNT_A,
+      sessionId,
+      namespace: "quest_flags_2",
+      logicalOwnerType: "plugin-runtime",
+      logicalOwnerId: "quest-plugin",
+    })).toThrow(SessionStateCustomNamespaceServiceError);
+    expect(() => service.registerNamespace({
+      accountId: ACCOUNT_A,
+      sessionId,
+      namespace: "quest_flags_3",
+      logicalOwnerType: "plugin",
+      logicalOwnerId: "QuestPlugin",
+    })).toThrow(SessionStateCustomNamespaceServiceError);
+
+    const registrations = await database.db
+      .select()
+      .from(sessionStateNamespaceRegistrations)
+      .where(eq(sessionStateNamespaceRegistrations.sessionId, sessionId));
+    expect(registrations).toHaveLength(1);
+    expect(registrations[0]!.namespace).toBe("quest.flags");
+    expect(registrations[0]!.logicalOwnerType).toBe("plugin.runtime");
+    expect(registrations[0]!.logicalOwnerId).toBe("@scope/quest-plugin");
+  });
+
   it("lists materialized custom slots after the first successful direct write", async () => {
     const sessionId = nanoid();
     const now = 1_500;
