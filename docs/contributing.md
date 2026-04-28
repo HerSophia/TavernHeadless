@@ -301,6 +301,8 @@ git rev-list --left-right --count origin/main...origin/dev
 
 如果仓库已经开启 `Allow auto-merge`，这个 workflow 还会主动对同步分支触发一次 `CI` 的 `workflow_dispatch`，并传入 `run_coverage=false`，然后为同步 PR 开启 `--auto --merge`。
 
+同时，仓库在 `Settings -> Actions -> General -> Workflow permissions` 里还要开启 `Allow GitHub Actions to create and approve pull requests`。否则 workflow 虽然可以推送同步分支，但无法创建这条同步 PR。
+
 这样仍然完全遵守 `dev` 的 ruleset：不直接推送 `dev`，不绕过 required checks，只是在同步 PR 上把需要的检查和自动合并串起来。
 
 之所以显式触发一次 `CI`，是因为由 `GITHUB_TOKEN` 产生的 push / PR 事件不会自动触发后续 workflow。这里改用 `workflow_dispatch`，可以在不引入额外绕过权限的前提下，让同步 PR 自己拿到 required checks。
