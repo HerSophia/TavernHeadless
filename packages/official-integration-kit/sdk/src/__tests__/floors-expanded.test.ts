@@ -381,6 +381,18 @@ describe("sdk floors expanded resource", () => {
           includeRuntimeTrace: true,
           includeWorldbookMatches: false,
         },
+        sessionStateWrites: [
+          {
+            namespace: "quest_flags",
+            slot: "companion",
+            value: { mood: "ally" },
+          },
+          {
+            namespace: "quest_flags",
+            slot: "expired_hint",
+            delete: true,
+          },
+        ],
       }),
     ).resolves.toEqual({
       branchId: "main",
@@ -449,6 +461,19 @@ describe("sdk floors expanded resource", () => {
         max_output_tokens: 200,
         reasoning_effort: "low",
       },
+      session_state_writes: [
+        {
+          namespace: "quest_flags",
+          slot: "companion",
+          value: { mood: "ally" },
+        },
+        {
+          namespace: "quest_flags",
+          slot: "expired_hint",
+          delete: true,
+        },
+      ],
+
     }));
   });
 });

@@ -12,6 +12,7 @@ import { registerCrudRoutes } from "./routes";
 import { isSqliteBusyError, ResourceBusyError } from "./lib/retry.js";
 import { registerChatRoutes } from "./routes/chat";
 import { registerPromptRuntimeRoutes } from "./routes/prompt-runtime";
+import { registerSessionStateRoutes } from "./routes/session-state";
 import { registerSessionStateObservationRoutes } from "./routes/session-state-observation";
 
 import { registerWsPlugin, type WsBridge } from "./ws";
@@ -75,7 +76,10 @@ import { PromptRuntimeControlService, PromptRuntimeControlServiceError } from ".
 import { ToolWorker } from "./services/tool-worker.js";
 import {
   FirstPartyGameStateService,
+  SessionStateCustomNamespaceService,
+  SessionStatePublicService,
   SessionStateService,
+  createDefaultSessionStateSlotRegistry,
 } from "./session-state/index.js";
 import { SessionStateObservationService } from "./session-state/session-state-observation-service.js";
 
@@ -130,6 +134,12 @@ function mapSqliteConstraintErrorCode(message: string): { code: string; publicMe
     return {
       code: "client_data_managed_domain_conflict",
       publicMessage: "Client data managed domain registry already exists for host namespace",
+    };
+  }
+  if (message.includes("session_state_namespace_registration_account_session_namespace_uq") || message.includes("session_state_namespace_registration.account_id, session_state_namespace_registration.session_id, session_state_namespace_registration.namespace")) {
+    return {
+      code: "session_state_namespace_already_registered",
+      publicMessage: "Session state namespace is already registered for the session",
     };
   }
 
@@ -473,6 +483,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let promptRuntimePreviewService: Pick<ChatService, "previewPromptRuntimeText"> | undefined;
   let sessionStateService: SessionStateService | undefined;
   let firstPartyGameStateService: FirstPartyGameStateService | undefined;
+  let sessionStatePublicService: SessionStatePublicService | undefined;
+  let sessionStateCustomNamespaceService: SessionStateCustomNamespaceService | undefined;
   let sessionStateObservationService: SessionStateObservationService | undefined;
 
 
@@ -498,10 +510,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   }
 
   if (options.enableClientData === true && options.clientData) {
+    const sessionStateSlotRegistry = createDefaultSessionStateSlotRegistry();
+    sessionStateCustomNamespaceService = new SessionStateCustomNamespaceService(database.db, {
+      clientData: options.clientData,
+      slotRegistry: sessionStateSlotRegistry,
+    });
     sessionStateService = new SessionStateService(database.db, {
       clientData: options.clientData,
+      slotRegistry: sessionStateSlotRegistry,
+      customNamespaceService: sessionStateCustomNamespaceService,
     });
     firstPartyGameStateService = new FirstPartyGameStateService(database.db, sessionStateService);
+    sessionStatePublicService = new SessionStatePublicService(database.db, sessionStateService, sessionStateCustomNamespaceService);
     sessionStateObservationService = new SessionStateObservationService(database.db, sessionStateService);
   }
 
@@ -725,6 +745,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     await registerChatRoutes(app, chatService, {
       enableSseChat: options.enableSseChat,
       enablePromptDryRun: options.enablePromptDryRun,
+      enableClientData: options.enableClientData === true && Boolean(options.clientData),
       cors: options.cors,
     });
 
@@ -738,6 +759,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   await registerPromptRuntimeRoutes(app, promptRuntimeControlService, {
     previewService: promptRuntimePreviewService,
   });
+
+  if (sessionStatePublicService) {
+    await registerSessionStateRoutes(app, {
+      publicService: sessionStatePublicService,
+      customNamespaceService: sessionStateCustomNamespaceService,
+    });
+  }
 
   if (sessionStateObservationService) {
     await registerSessionStateObservationRoutes(app, {

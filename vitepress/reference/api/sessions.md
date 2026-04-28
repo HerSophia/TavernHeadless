@@ -4,7 +4,43 @@ outline: [2, 3]
 
 # Sessions（会话）
 
-会话是 TavernHeadless 的核心资源，代表一段角色扮演对话。每个会话绑定一个角色（Character）和一个用户卡（User），并关联 Preset、Worldbook、Regex 等资源。
+会话就是一段聊天。每个会话绑定了一个角色卡和一个用户卡，并挂上了预设、世界书、正则配置这些资源。
+
+创建会话之后，就可以往里面发消息聊起来了。
+
+## 什么时候需要看这页
+
+- 你要创建一个新会话
+- 你要查看或搜索已有会话
+- 你要修改会话的绑定资源
+- 你要删除或归档会话
+- 你要同步角色卡的最新内容到会话
+
+## 一个简单例子
+
+```bash
+# 创建一个会话
+curl -X POST http://localhost:3000/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "Campfire",
+    "character_id": "char_001",
+    "user_id": "usr_001",
+    "preset_id": "preset_001"
+  }'
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| preset | 预设，决定提示词的组装方式和外观 |
+| character | 角色卡，角色的人设和对话风格 |
+| user | 用户卡，玩家的人设 |
+| worldbook | 世界书，对话中触发关键词时注入的背景信息 |
+| regex profile | 正则配置，对文本做批量替换的规则集 |
+
+
 
 ## 创建会话
 

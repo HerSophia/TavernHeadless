@@ -4,7 +4,40 @@ outline: [2, 3]
 
 # LLM Instances（LLM 实例配置）
 
-独立管理 LLM 实例槽位的配置。与 [LLM Profiles](./llm-profiles) 分离，专注于实例级的启用状态、预设绑定和生成参数覆盖。
+LLM 实例配置用来控制每个生成槽位具体用哪个 LLM Profile、是否启用、以及额外的生成参数覆盖。
+
+它和 LLM Profiles 的关系是：Profile 管"连什么模型"，Instance Config 管"哪个槽位用哪个 Profile"。
+
+## 什么时候需要看这页
+
+- 你要为某个会话单独指定 LLM 配置
+- 你要调整某个槽位（例如 narrator、memory）的生成参数
+- 你要查看当前生效的实例配置
+
+## 一个简单例子
+
+```bash
+# 为某个会话的通配槽位指定 LLM Profile
+curl -X POST http://localhost:3000/llm-instances/configs \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "scope": "session",
+    "scope_id": "sess_001",
+    "instance_slot": "*",
+    "preset_id": "llm_profile_001",
+    "enabled": true
+  }'
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| instance slot | 生成槽位，例如 narrator、director、memory |
+| scope | 配置生效范围：`global`（全局）或 `session`（某个会话） |
+| fallback | 如果没有到精确匹配的配置，就向上找更通用的配置 |
+
+
 
 ## 实例槽位
 

@@ -4,7 +4,35 @@ outline: [2, 3]
 
 # Exports（导出）
 
-提供各资源的标准化导出接口。导出结果为文件下载（`Content-Disposition: attachment`），前端不需要自行组装格式。
+导出接口负责把 TavernHeadless 里的资源转成文件下载。支持聊天会话、预设、世界书、正则配置和角色卡。
+
+导出结果是文件下载，前端不需要自己拼格式。
+
+## 什么时候需要看这页
+
+- 你要把聊天会话导出为 `.thchat` 或 `.jsonl` 文件
+- 你要导出预设、世界书或角色卡
+- 你要发起异步导出（适合较大的会话）
+
+## 一个简单例子
+
+```bash
+# 导出一个聊天会话
+curl -o session.thchat "http://localhost:3000/export/chat/sess_001?format=thchat"
+
+# 导出一个角色卡
+curl -o character.json http://localhost:3000/export/character/char_001
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| .thchat | TavernHeadless 自己的聊天文件格式 |
+| .jsonl | SillyTavern 兼容的格式 |
+| 异步导出 | 把导出任务放到后台执行，通过作业接口轮询结果 |
+
+
 
 支持的资源类型：
 

@@ -1,11 +1,13 @@
 import { and, asc, count, desc, eq, gte, inArray, isNull, lte, type SQL } from "drizzle-orm";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
-import { floors, sessions, sessionStateMutations } from "../db/schema.js";
+import { floors, sessions, sessionStateMutations, sessionStateNamespaceRegistrations } from "../db/schema.js";
 import type {
+  SessionStateNamespaceRegistrationRecord,
   SessionStateMutationStatus,
   SessionStateMutationView,
   SessionStateNamespace,
+  SessionStateReplayPolicySource,
   SessionStateReplaySafety,
   SessionStateVisibilityMode,
   SessionStateWriteMode,
@@ -28,6 +30,12 @@ export interface SessionStateFloorHostRecord {
   state: typeof floors.$inferSelect["state"];
   createdAt: number;
   updatedAt: number;
+}
+
+export interface SessionStateNamespaceRegistrationListFilters {
+  accountId: string;
+  sessionId: string;
+  namespace?: SessionStateNamespace;
 }
 
 export interface SessionStateMutationListFilters {
@@ -56,6 +64,20 @@ export interface SessionStateMutationListPagination {
 export interface SessionStateMutationListResult {
   rows: SessionStateMutationView[];
   total: number;
+}
+
+export interface SessionStateMaterializedSlotRecord {
+  namespace: SessionStateNamespace;
+  slot: string;
+}
+
+export interface SessionStateMaterializedSlotListFilters {
+  accountId: string;
+  sessionId: string;
+  namespace?: SessionStateNamespace;
+  slot?: string;
+  statuses?: SessionStateMutationStatus[];
+  writeModes?: SessionStateWriteMode[];
 }
 
 export class SessionStateRepository {
@@ -120,6 +142,124 @@ export class SessionStateRepository {
       .get();
 
     return row ?? null;
+  }
+
+  getNamespaceRegistration(input: {
+    accountId: string;
+    sessionId: string;
+    namespace: SessionStateNamespace;
+  }): SessionStateNamespaceRegistrationRecord | null {
+    const row = this.db
+      .select()
+      .from(sessionStateNamespaceRegistrations)
+      .where(and(
+        eq(sessionStateNamespaceRegistrations.accountId, input.accountId),
+        eq(sessionStateNamespaceRegistrations.sessionId, input.sessionId),
+        eq(sessionStateNamespaceRegistrations.namespace, input.namespace),
+      ))
+      .limit(1)
+      .get();
+
+    return row ? toNamespaceRegistrationRecord(row) : null;
+  }
+
+  listNamespaceRegistrations(
+    filters: SessionStateNamespaceRegistrationListFilters,
+  ): SessionStateNamespaceRegistrationRecord[] {
+    const conditions = [
+      eq(sessionStateNamespaceRegistrations.accountId, filters.accountId),
+      eq(sessionStateNamespaceRegistrations.sessionId, filters.sessionId),
+    ];
+    if (filters.namespace !== undefined) {
+      conditions.push(eq(sessionStateNamespaceRegistrations.namespace, filters.namespace));
+    }
+
+    return this.db
+      .select()
+      .from(sessionStateNamespaceRegistrations)
+      .where(conditions.length === 1 ? conditions[0]! : and(...conditions))
+      .orderBy(asc(sessionStateNamespaceRegistrations.namespace), asc(sessionStateNamespaceRegistrations.createdAt))
+      .all()
+      .map(toNamespaceRegistrationRecord);
+  }
+
+  listMaterializedSlots(
+    filters: SessionStateMaterializedSlotListFilters,
+  ): SessionStateMaterializedSlotRecord[] {
+    const conditions: SQL[] = [
+      eq(sessionStateMutations.accountId, filters.accountId),
+      eq(sessionStateMutations.sessionId, filters.sessionId),
+    ];
+    if (filters.namespace !== undefined) {
+      conditions.push(eq(sessionStateMutations.stateNamespace, filters.namespace));
+    }
+    if (filters.slot !== undefined) {
+      conditions.push(eq(sessionStateMutations.targetSlot, filters.slot));
+    }
+    if (filters.statuses && filters.statuses.length > 0) {
+      conditions.push(inArray(sessionStateMutations.status, filters.statuses));
+    }
+    if (filters.writeModes && filters.writeModes.length > 0) {
+      conditions.push(inArray(sessionStateMutations.writeMode, filters.writeModes));
+    }
+
+    return this.db
+      .select({
+        namespace: sessionStateMutations.stateNamespace,
+        slot: sessionStateMutations.targetSlot,
+      })
+      .from(sessionStateMutations)
+      .where(conditions.length === 1 ? conditions[0]! : and(...conditions))
+      .groupBy(sessionStateMutations.stateNamespace, sessionStateMutations.targetSlot)
+      .orderBy(asc(sessionStateMutations.stateNamespace), asc(sessionStateMutations.targetSlot))
+      .all()
+      .map((row) => ({ namespace: row.namespace as SessionStateNamespace, slot: row.slot }));
+  }
+
+  createNamespaceRegistration(input: {
+    id: string;
+    accountId: string;
+    sessionId: string;
+    domainId: string;
+    namespace: SessionStateNamespace;
+    logicalOwnerType: string;
+    logicalOwnerId: string;
+    defaultVisibilityMode: SessionStateVisibilityMode;
+    defaultWriteMode: SessionStateWriteMode;
+    defaultReplaySafety: SessionStateReplaySafety;
+    clientWritable: boolean;
+    allowedWriteModes: SessionStateWriteMode[];
+    supportsSnapshot: boolean;
+    supportsDiff: boolean;
+    replayPolicySource: SessionStateReplayPolicySource;
+    createdAt: number;
+    updatedAt: number;
+  }): SessionStateNamespaceRegistrationRecord {
+    const row = this.db
+      .insert(sessionStateNamespaceRegistrations)
+      .values({
+        id: input.id,
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        domainId: input.domainId,
+        namespace: input.namespace,
+        logicalOwnerType: input.logicalOwnerType,
+        logicalOwnerId: input.logicalOwnerId,
+        defaultVisibilityMode: input.defaultVisibilityMode,
+        defaultWriteMode: input.defaultWriteMode,
+        defaultReplaySafety: input.defaultReplaySafety,
+        clientWritable: input.clientWritable,
+        allowedWriteModesJson: JSON.stringify(input.allowedWriteModes),
+        supportsSnapshot: input.supportsSnapshot,
+        supportsDiff: input.supportsDiff,
+        replayPolicySource: input.replayPolicySource,
+        createdAt: input.createdAt,
+        updatedAt: input.updatedAt,
+      })
+      .returning()
+      .get();
+
+    return toNamespaceRegistrationRecord(row);
   }
 
   createMutation(input: {
@@ -336,4 +476,41 @@ function toMutationView(row: typeof sessionStateMutations.$inferSelect): Session
     updatedAt: row.updatedAt,
     appliedAt: row.appliedAt ?? null,
   };
+}
+
+function toNamespaceRegistrationRecord(
+  row: typeof sessionStateNamespaceRegistrations.$inferSelect,
+): SessionStateNamespaceRegistrationRecord {
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    sessionId: row.sessionId,
+    domainId: row.domainId,
+    namespace: row.namespace,
+    logicalOwnerType: row.logicalOwnerType,
+    logicalOwnerId: row.logicalOwnerId,
+    defaultSlotTemplate: {
+      defaultVisibilityMode: row.defaultVisibilityMode,
+      defaultWriteMode: row.defaultWriteMode,
+      defaultReplaySafety: row.defaultReplaySafety,
+      clientWritable: row.clientWritable,
+      allowedWriteModes: parseAllowedWriteModes(row.allowedWriteModesJson),
+      supportsSnapshot: row.supportsSnapshot,
+      supportsDiff: row.supportsDiff,
+      replayPolicySource: row.replayPolicySource,
+    },
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function parseAllowedWriteModes(value: string): SessionStateWriteMode[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is SessionStateWriteMode => entry === "direct" || entry === "commit_bound")
+      : [];
+  } catch {
+    return [];
+  }
 }

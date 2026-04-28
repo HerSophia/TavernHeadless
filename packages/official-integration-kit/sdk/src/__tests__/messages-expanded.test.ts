@@ -379,6 +379,18 @@ describe("sdk messages expanded resource", () => {
           includeRuntimeTrace: true,
           includeWorldbookMatches: false,
         },
+        sessionStateWrites: [
+          {
+            namespace: "quest_flags",
+            slot: "companion",
+            value: { mood: "ally" },
+          },
+          {
+            namespace: "quest_flags",
+            slot: "expired_hint",
+            delete: true,
+          },
+        ],
         messageId: "msg-1",
       }),
     ).resolves.toEqual({
@@ -452,6 +464,19 @@ describe("sdk messages expanded resource", () => {
         max_output_tokens: 128,
         reasoning_effort: "medium",
       },
+      session_state_writes: [
+        {
+          namespace: "quest_flags",
+          slot: "companion",
+          value: { mood: "ally" },
+        },
+        {
+          namespace: "quest_flags",
+          slot: "expired_hint",
+          delete: true,
+        },
+      ],
+
     }));
   });
 });

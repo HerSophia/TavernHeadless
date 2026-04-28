@@ -231,7 +231,7 @@ const resolved = await resolveItemByPath(client, domainId, "settings", "theme.da
 | 导入、导出与模型 | `imports`、`exports`、`chatTransferJobs`、`llmProfiles`、`llmInstances` |
 | 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes` |
 | 工具与运行集成 | `tools`、`mcp` |
-| 高级客户端数据系统 | `clientData` |
+| 高级客户端数据系统 | `clientData`、`sessionState` |
 
 ## 记忆 scope 约定
 
@@ -382,13 +382,41 @@ console.log(diff.policyChanges);
 | `organizeCollectionItems` | collection 内 item 整理 |
 | `toClientDataMap` | item 列表转嵌套 map |
 | `resolveItemByPath` | 按 `collectionName + itemKey` 直接读取单项数据 |
-## Session-state 观察面不在官方包的范围内
 
-`/sessions/:id/session-state/*` 与 `/floors/:id/session-state/*` 是 session-state 治理层的内部观察面。它们是只读端点，按账号严格鉴权，专门用于排错与运维。
+## Session State 的公开接口已进入官方包
 
-这组端点不会进入 `@tavern/sdk` 和 `@tavern/client-helpers`，也不会被官方包自动封装。目的是为 session-state 下一阶段（例如 scene payload 升级、公开 API）保留快速迭代空间，避免观察面提前变成公开契约。
+`/sessions/:id/state/*` 是 Session State 的公开受治理接口。`@tavern/sdk` 现在提供 `client.sessionState`，当前覆盖：
 
-OpenAPI 会随路由生成这组端点的定义；如果你的集成方确实需要对接，请基于 OpenAPI 自行封装，并接受该契约在 session-state 迭代时可能变化。完整端点定义见 [`reference/api/session-state.md`](../reference/api/session-state.md)。
+- `registerNamespace`
+- `listNamespaces`
+- `writeValue`
+- `deleteValue`
+- `resolve`
+- `getFloorSnapshots`
+- `diff`
+
+其中：
+
+- `registerNamespace` 是 control-plane write，只负责注册 custom namespace
+- `writeValue` / `deleteValue` 是 public Session State value write，只针对 registered custom namespace
+- turn API 现在也支持 `sessionStateWrites`，对应 turn-embedded `commit_bound` 写入：
+  - `sessions.respond`
+  - `sessions.respondStream`
+  - `sessions.regenerate`
+  - `floors.retry`
+  - `messages.editAndRegenerate`
+- `listNamespaces` 会同时返回公开稳定的 built-in namespace 与当前 session 下已注册的 custom namespace
+- custom slot 会在首次成功 direct write 或首次成功 turn-bound commit 后 materialize，并进入 discovery / resolve / snapshot / diff
+- 当前公开稳定的 built-in slot 只有 `game_state.scene` 与 `game_state.world`
+- `game_state` 仍然对客户端只读；public delete 与 turn 内 `delete: true` 的治理语义都是 `present: false`
+
+公开端点定义见 [`reference/api/session-state.md`](../reference/api/session-state.md)。
+
+## Session-State 观察面仍不在官方包范围内
+
+`/sessions/:id/session-state/*` 与 `/floors/:id/session-state/*` 仍然是内部观察面。它们继续只用于排错与运维，不会进入 `@tavern/sdk` 和 `@tavern/client-helpers`。
+
+如果你的集成方确实需要对接这组内部观察面，请基于 OpenAPI 自行封装，并接受该契约可能变化。完整定义见 [`reference/api/session-state-observation.md`](../reference/api/session-state-observation.md)。
 
 
 

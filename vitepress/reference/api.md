@@ -140,8 +140,8 @@ WebSocket 也遵循相同边界：
 | Characters     | 角色卡管理、版本控制                                         | [Characters](./api/characters)         |
 | Users          | 用户卡管理                                                   | [Users](./api/users)                   |
 | Variables      | 五级变量系统                                                 | [Variables](./api/variables)           |
-| Macros         | ST 宏兼容层、dry-run 调试字段与执行边界                      | [Macros](./api/macros)                 |
-| Prompt Runtime | session 级 prompt 策略、Prompt Assets 绑定与 capability 边界 | [Prompt Runtime](./api/prompt-runtime) |
+| Macros         | 宏展开规则、兼容边界，以及 dry-run / preview 能看到的结果    | [Macros](./api/macros)                 |
+| Prompt Runtime | 查看当前提示词资源、策略和调试能力                           | [Prompt Runtime](./api/prompt-runtime) |
 
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
@@ -152,14 +152,17 @@ WebSocket 也遵循相同边界：
 | Regex Profiles | 正则配置管理 | [Regex Profiles](./api/regex-profiles) |
 | LLM Profiles | LLM 配置管理、模型发现与测试 | [LLM Profiles](./api/llm-profiles) |
 | LLM Instances | LLM 实例配置 | [LLM Instances](./api/llm-instances) |
-| Tools | 工具定义、execution journal、调用记录与会话权限 | [Tools](./api/tools) |
-| MCP Servers | MCP 服务器管理 | [MCP Servers](./api/mcp) |
+| Tools | 查看工具目录、管理自定义工具、查询执行记录和会话权限 | [Tools](./api/tools) |
+| MCP Servers | 连接外部 MCP 工具服务器并查看连接状态 | [MCP Servers](./api/mcp) |
 | Accounts | 账号管理 | [Accounts](./api/accounts) |
-| Client Data | 客户端专属数据域、导入导出、授权与审计 | [Client Data](./api/client-data) |
+| Client Data | 为应用或插件保存自己的结构化数据 | [Client Data](./api/client-data) |
+| Session State | 管理会话内受治理状态：注册、写入、读取和比较 | [Session State](./api/session-state) |
 
 ## 高级 API 资源
 
-下面这些资源主要面向开发调试、运维排障、自动化脚本和平台集成，不属于普通聊天主流程接口：
+下面这些资源主要面向开发调试、运维排障、自动化脚本和平台集成，不属于普通聊天主流程接口。
+
+第一次阅读这些页面时，建议先看每页开头的“什么时候需要看这页”“一个简单例子”“先理解几个词”。这样可以先知道它解决什么问题，再进入字段和错误码：
 
 - [Memory Jobs](./api/memory-jobs)
 - [Chat Transfer Jobs](./api/chat-transfer-jobs)
@@ -169,6 +172,8 @@ WebSocket 也遵循相同边界：
 - [Tools](./api/tools)
 - [MCP Servers](./api/mcp)
 - [Client Data](./api/client-data)
+- [Session State](./api/session-state)
+- [Session-State Observation（内部）](./api/session-state-observation)
 
 其中 `Client Data` 是一个独立的高级系统功能。它用于：
 
@@ -176,6 +181,8 @@ WebSocket 也遵循相同边界：
 - 为插件 owner 建立细粒度 grant 权限
 - 提供治理动作审计日志
 - 支持导入、导出、恢复、配额与并发控制
+
+`Session State` 当前公开的是 `/sessions/:sessionId/state/*` 这组受治理公开接口，以及 turn API 中的 `session_state_writes`。它们一起覆盖自定义命名空间注册、当前值写入、随回合一起提交的写入、删除、读取和比较。官方 SDK 会封装这组端点。内部观察面 `/sessions/:sessionId/session-state/*` 与 `/floors/:floorId/session-state/*` 仍保持内部定位，不进入官方包。
 
 如果接入方只需要普通聊天能力，不需要优先接入这组资源。
 

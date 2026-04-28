@@ -302,7 +302,7 @@ outline: [2, 3]
 
 说明：这张表只把底层 domain 标记为 managed 模式，不新建第二套状态存储。
 
-相关只读观察端点见 [`reference/api/session-state.md`](./api/session-state.md)。
+相关只读观察端点见 [`reference/api/session-state-observation.md`](./api/session-state-observation.md)。
 
 
 ## session_state_mutation
@@ -336,7 +336,7 @@ outline: [2, 3]
 
 索引：`session_state_mutation_session_branch_status_created_idx(session_id, branch_id, status, created_at)`、`session_state_mutation_source_floor_idx(source_floor_id, status, created_at)`、`session_state_mutation_run_idx(run_id, created_at)`
 
-相关只读观察端点（包括 mutation 列表、live head、floor snapshot、replay safety 与 diff）见 [`reference/api/session-state.md`](./api/session-state.md)。
+相关只读观察端点（包括 mutation 列表、live head、floor snapshot、replay safety 与 diff）见 [`reference/api/session-state-observation.md`](./api/session-state-observation.md)。
 
 
 说明：状态值本身仍保存在 `client_data_item` 中；`session_state_mutation` 负责治理日志、提交边界和 replay safety 决策。当前第一批内置 namespace 是 `game_state`，默认 slot 包括 `world`、`scene`、`inventory`、`combat`。

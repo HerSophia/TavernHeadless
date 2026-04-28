@@ -22,10 +22,12 @@ import {
   type EditAndRegenerateRequest,
   type RespondRuntimeOptions,
 } from "../services/chat-service.js";
+import { SessionStateServiceError } from "../session-state/session-state-service.js";
 import { ensureOptionalObjectBody, parseWithSchema, sendError } from "../lib/http.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 import { buildZodObjectSchema } from "./schemas/json-schema-zod.js";
 import {
+  generationParamsJsonSchema,
   sessionIdParamsJsonSchema,
   respondBodyJsonSchema,
   regenerateBodyJsonSchema,
@@ -38,6 +40,10 @@ import {
   dryRunSuccessResponseJsonSchema,
   dryRunBodyJsonSchema,
   streamResponseExample,
+  liveDebugOptionsJsonSchema,
+  promptDeliveryJsonSchema,
+  promptStructureJsonSchema,
+  turnConfigJsonSchema,
 } from "./schemas/chat-schemas.js";
 import { findNativePipelineError } from "../lib/native-pipeline-error.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
@@ -120,6 +126,18 @@ type DryRunVisibilityBody = {
   mode?: "allow_all_except_hidden" | "deny_all_except_visible";
 };
 
+type TurnSessionStateWriteValueBody = {
+  namespace: string;
+  slot: string;
+  value?: unknown;
+};
+
+type TurnSessionStateWriteDeleteBody = {
+  namespace: string;
+  slot: string;
+  delete: true;
+};
+
 type RespondBody = {
   message: string;
   prompt_intent?: (typeof promptIntentValues)[number];
@@ -130,6 +148,7 @@ type RespondBody = {
   generation_params?: GenerationParamsBody;
   branch_id?: string;
   source_floor_id?: string;
+  session_state_writes?: Array<TurnSessionStateWriteValueBody | TurnSessionStateWriteDeleteBody>;
 };
 
 type DryRunBody = {
@@ -151,6 +170,7 @@ type RegenerateBody = {
   generation_params?: GenerationParamsBody;
   confirmed_execution_ids?: string[];
   confirmed_session_state_mutation_ids?: string[];
+  session_state_writes?: Array<TurnSessionStateWriteValueBody | TurnSessionStateWriteDeleteBody>;
 };
 
 type EditAndRegenerateBody = RegenerateBody & {
@@ -172,15 +192,67 @@ const messageIdParamsSchema = z.object({
   id: z.string().min(1),
 });
 
-const respondBodySchema = buildZodObjectSchema<RespondBody>(respondBodyJsonSchema);
+const turnConfigBodySchema = buildZodObjectSchema<TurnConfigBody>(turnConfigJsonSchema);
+const generationParamsBodySchema = buildZodObjectSchema<GenerationParamsBody>(generationParamsJsonSchema);
+const promptDeliveryBodySchema = buildZodObjectSchema<PromptDeliveryBody>(promptDeliveryJsonSchema);
+const promptStructureBodySchema = buildZodObjectSchema<PromptStructureBody>(promptStructureJsonSchema);
+const liveDebugOptionsBodySchema = buildZodObjectSchema<LiveDebugOptionsBody>(liveDebugOptionsJsonSchema);
+
+const turnSessionStateWriteBodySchema: z.ZodType<TurnSessionStateWriteValueBody | TurnSessionStateWriteDeleteBody> = z.object({
+  namespace: z.string().min(1),
+  slot: z.string().min(1),
+  value: z.unknown().optional(),
+  delete: z.literal(true).optional(),
+}).strict().superRefine((value, context) => {
+  const hasValue = Object.prototype.hasOwnProperty.call(value, "value");
+  const isDelete = value.delete === true;
+  if (!hasValue && !isDelete) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Either 'value' or 'delete: true' is required",
+    });
+    return;
+  }
+  if (hasValue && isDelete) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "'value' and 'delete: true' cannot be sent together",
+    });
+  }
+});
+
+const respondBodySchema: z.ZodType<RespondBody> = z.object({
+  message: z.string().min(1),
+  prompt_intent: z.enum(promptIntentValues).optional(),
+  delivery: promptDeliveryBodySchema.optional(),
+  structure: promptStructureBodySchema.optional(),
+  debug_options: liveDebugOptionsBodySchema.optional(),
+  config: turnConfigBodySchema.optional(),
+  generation_params: generationParamsBodySchema.optional(),
+  branch_id: z.string().min(1).optional(),
+  source_floor_id: z.string().min(1).optional(),
+  session_state_writes: z.array(turnSessionStateWriteBodySchema).optional(),
+}).strict();
 
 const dryRunBodySchema = buildZodObjectSchema<DryRunBody>(dryRunBodyJsonSchema);
 
-const regenerateBodySchema = buildZodObjectSchema<RegenerateBody>(regenerateBodyJsonSchema);
+const regenerateBodySchema: z.ZodType<RegenerateBody> = z.object({
+  delivery: promptDeliveryBodySchema.optional(),
+  structure: promptStructureBodySchema.optional(),
+  debug_options: liveDebugOptionsBodySchema.optional(),
+  config: turnConfigBodySchema.optional(),
+  generation_params: generationParamsBodySchema.optional(),
+  confirmed_execution_ids: z.array(z.string().min(1)).optional(),
+  confirmed_session_state_mutation_ids: z.array(z.string().min(1)).optional(),
+  session_state_writes: z.array(turnSessionStateWriteBodySchema).optional(),
+}).strict();
 
-const editAndRegenerateBodySchema = buildZodObjectSchema<EditAndRegenerateBody>(editAndRegenerateBodyJsonSchema);
+const editAndRegenerateBodySchema: z.ZodType<EditAndRegenerateBody> = (regenerateBodySchema as z.AnyZodObject).extend({
+  content: z.string().min(1),
+  branch_id: z.string().min(1).optional(),
+}) as z.ZodType<EditAndRegenerateBody>;
 
-const retryFloorBodySchema = buildZodObjectSchema<RetryFloorBody>(retryFloorBodyJsonSchema);
+const retryFloorBodySchema: z.ZodType<RetryFloorBody> = regenerateBodySchema;
 
 
 
@@ -197,6 +269,7 @@ const chatMutationErrorResponses = {
 interface RegisterChatRoutesOptions {
   enableSseChat?: boolean;
   enablePromptDryRun?: boolean;
+  enableClientData?: boolean;
   cors?: CorsConfig;
 }
 
@@ -215,6 +288,7 @@ export async function registerChatRoutes(
 ): Promise<void> {
   const enableSseChat = options.enableSseChat === true;
   const enablePromptDryRun = options.enablePromptDryRun === true;
+  const enableClientData = options.enableClientData === true;
   const cors = options.cors ?? { origins: true, credentials: false };
 
   app.post("/sessions/:id/respond/dry-run", {
@@ -326,6 +400,10 @@ export async function registerChatRoutes(
     const parsedBody = parseWithSchema(respondBodySchema, request.body, reply);
     if (!parsedBody.ok) return;
 
+    if (!ensureTurnSessionStateWritesEnabled(reply, parsedBody.data.session_state_writes, enableClientData)) {
+      return;
+    }
+
     const respondRequest: RespondRequest = {
       message: parsedBody.data.message,
       config: parsedBody.data.config,
@@ -337,6 +415,7 @@ export async function registerChatRoutes(
       promptIntent: parsedBody.data.prompt_intent,
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
+      sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
     };
     const accountId = getRequestAuthContext(request).accountId;
@@ -462,6 +541,10 @@ export async function registerChatRoutes(
     const parsedBody = parseWithSchema(respondBodySchema, request.body, reply);
     if (!parsedBody.ok) return;
 
+    if (!ensureTurnSessionStateWritesEnabled(reply, parsedBody.data.session_state_writes, enableClientData)) {
+      return;
+    }
+
     // 将 snake_case 的请求体映射为 camelCase 的 RespondRequest
     const respondRequest: RespondRequest = {
       message: parsedBody.data.message,
@@ -474,6 +557,7 @@ export async function registerChatRoutes(
       promptIntent: parsedBody.data.prompt_intent,
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
+      sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
     };
     const accountId = getRequestAuthContext(request).accountId;
@@ -530,6 +614,10 @@ export async function registerChatRoutes(
     const parsedBody = parseWithSchema(regenerateBodySchema, body, reply);
     if (!parsedBody.ok) return;
 
+    if (!ensureTurnSessionStateWritesEnabled(reply, parsedBody.data.session_state_writes, enableClientData)) {
+      return;
+    }
+
     const regenerateRequest: RegenerateRequest = {
       config: parsedBody.data.config,
       generationParams: parsedBody.data.generation_params
@@ -539,6 +627,7 @@ export async function registerChatRoutes(
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
       confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
+      sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
       confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
     };
     const accountId = getRequestAuthContext(request).accountId;
@@ -593,6 +682,10 @@ export async function registerChatRoutes(
     const parsedBody = parseWithSchema(retryFloorBodySchema, body, reply);
     if (!parsedBody.ok) return;
 
+    if (!ensureTurnSessionStateWritesEnabled(reply, parsedBody.data.session_state_writes, enableClientData)) {
+      return;
+    }
+
     const retryRequest: RetryFloorRequest = {
       config: parsedBody.data.config,
       generationParams: parsedBody.data.generation_params
@@ -602,6 +695,7 @@ export async function registerChatRoutes(
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
       confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
+      sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
       confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
     };
 
@@ -647,6 +741,10 @@ export async function registerChatRoutes(
     const parsedBody = parseWithSchema(editAndRegenerateBodySchema, request.body, reply);
     if (!parsedBody.ok) return;
 
+    if (!ensureTurnSessionStateWritesEnabled(reply, parsedBody.data.session_state_writes, enableClientData)) {
+      return;
+    }
+
     const editRequest: EditAndRegenerateRequest = {
       content: parsedBody.data.content,
       branchId: parsedBody.data.branch_id,
@@ -658,6 +756,7 @@ export async function registerChatRoutes(
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
       confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
+      sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
       confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
     };
     const accountId = getRequestAuthContext(request).accountId;
@@ -703,6 +802,37 @@ function mapGenerationParams(
     stream: params.stream,
     reasoningEffort: params.reasoning_effort,
   };
+}
+
+function mapTurnSessionStateWritesRequest(
+  writes: Array<TurnSessionStateWriteValueBody | TurnSessionStateWriteDeleteBody> | undefined,
+): RespondRequest["sessionStateWrites"] {
+  return writes?.map((write) => {
+    if ("delete" in write && write.delete === true) {
+      return {
+        namespace: write.namespace,
+        slot: write.slot,
+        delete: true,
+      };
+    }
+    return {
+      namespace: write.namespace,
+      slot: write.slot,
+      value: "value" in write ? write.value : undefined,
+    };
+  });
+}
+
+function ensureTurnSessionStateWritesEnabled(
+  reply: import("fastify").FastifyReply,
+  writes: Array<TurnSessionStateWriteValueBody | TurnSessionStateWriteDeleteBody> | undefined,
+  enableClientData: boolean,
+): boolean {
+  if (writes === undefined || enableClientData) {
+    return true;
+  }
+  sendError(reply, 503, "feature_unavailable", "Session state is unavailable because client-data is disabled");
+  return false;
 }
 
 /** 将 camelCase 的 usage 映射为 snake_case */
@@ -1125,6 +1255,13 @@ function mapWorldbookMatchDetail(match: WorldbookMatchDetail): Record<string, un
 }
 
 function mapChatServiceError(error: ChatServiceError): { statusCode: number; code: string; message: string } {
+  if (error.cause instanceof SessionStateServiceError) {
+    return {
+      statusCode: error.cause.statusCode,
+      code: error.code,
+      message: error.message,
+    };
+  }
 
   switch (error.code) {
     case "session_not_found":
@@ -1163,6 +1300,7 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
     case "profile_disabled":
       return { statusCode: 409, code: error.code, message: error.message };
     case "secret_unavailable":
+    case "feature_unavailable":
     case "commit_busy":
     case "generation_queue_timeout":
       return { statusCode: 503, code: error.code, message: error.message };
@@ -1171,6 +1309,7 @@ function mapChatServiceError(error: ChatServiceError): { statusCode: number; cod
     case "secret_invalid_format":
     case "orchestration_failed":
     case "turn_commit_failed":
+    case "session_state_stage_failed":
       return { statusCode: 500, code: error.code, message: error.message };
     default:
       return { statusCode: 500, code: "internal_error", message: error.message };

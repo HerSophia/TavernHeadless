@@ -85,6 +85,63 @@ describe("FirstPartyGameStateService", () => {
     }));
   });
 
+  it("loads and normalizes the current live world state", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_736_020_005_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    service.stageWorldState({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId,
+      runType: "respond",
+      execution: createExecution(floorId, "The harbor has been sealed for inspection."),
+      promptSnapshot: {
+        worldbookId: "worldbook-harbor",
+        worldbookVersion: 7,
+        worldbookActivatedEntryUids: [101, 202],
+      },
+      stagedAt: now + 10,
+    });
+    sessionStateService.applyStagedMutationsForFloor({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId,
+      committedAt: now + 20,
+    });
+
+    const world = service.loadWorldContext({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+    });
+
+    expect(world.source).toBe("live_head");
+    expect(world.present).toBe(true);
+    expect(world.world).toEqual(expect.objectContaining({
+      kind: "first_party_world_state",
+      floorId,
+      summaryLines: ["The harbor has been sealed for inspection."],
+      worldbookId: "worldbook-harbor",
+      worldbookVersion: 7,
+      activatedWorldbookEntryUids: [101, 202],
+    }));
+  });
+
   it("uses source floor snapshots when the caller requests a source-floor baseline", async () => {
     const sessionId = nanoid();
     const floor1 = nanoid();
@@ -168,6 +225,99 @@ describe("FirstPartyGameStateService", () => {
     expect(sourceBaseline.floorId).toBe(floor1);
   });
 
+  it("uses source floor snapshots when the caller requests a world source-floor baseline", async () => {
+    const sessionId = nanoid();
+    const floor1 = nanoid();
+    const floor2 = nanoid();
+    const now = 1_736_020_015_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floor1,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await seedFloor(database, {
+      id: floor2,
+      sessionId,
+      floorNo: 2,
+      branchId: "main",
+      parentFloorId: floor1,
+      state: "committed",
+      createdAt: now + 20,
+      updatedAt: now + 20,
+    });
+
+    service.stageWorldState({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId: floor1,
+      runType: "respond",
+      execution: createExecution(floor1, "The old bridge remains open."),
+      promptSnapshot: {
+        worldbookId: "worldbook-bridge",
+        worldbookVersion: 1,
+        worldbookActivatedEntryUids: [11],
+      },
+      stagedAt: now + 40,
+    });
+    sessionStateService.applyStagedMutationsForFloor({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId: floor1,
+      committedAt: now + 50,
+    });
+
+    service.stageWorldState({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId: floor2,
+      runType: "respond",
+      execution: createExecution(floor2, "The old bridge is now guarded."),
+      promptSnapshot: {
+        worldbookId: "worldbook-bridge",
+        worldbookVersion: 2,
+        worldbookActivatedEntryUids: [11, 12],
+      },
+      stagedAt: now + 60,
+    });
+    sessionStateService.applyStagedMutationsForFloor({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId: floor2,
+      committedAt: now + 70,
+    });
+
+    const current = service.loadWorldContext({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+    });
+    const sourceBaseline = service.loadWorldContext({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      sourceFloorId: floor1,
+      expectedSourceBranchId: "main",
+      resolutionMode: "source_floor",
+    });
+
+    expect(current.world?.summaryLines).toEqual(["The old bridge is now guarded."]);
+    expect(current.source).toBe("live_head");
+    expect(sourceBaseline.world?.summaryLines).toEqual(["The old bridge remains open."]);
+    expect(sourceBaseline.source).toBe("source_floor_snapshot");
+    expect(sourceBaseline.floorId).toBe(floor1);
+  });
+
   it("rejects source floors from an unexpected branch", async () => {
     const sessionId = nanoid();
     const floorId = nanoid();
@@ -206,6 +356,47 @@ describe("FirstPartyGameStateService", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(FirstPartyGameStateServiceError);
       expect((error as FirstPartyGameStateServiceError).code).toBe("first_party_scene_source_floor_branch_mismatch");
+    }
+  });
+
+  it("rejects world source floors from an unexpected branch", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_736_020_022_500;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect(() => service.loadWorldContext({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "alt",
+      sourceFloorId: floorId,
+      expectedSourceBranchId: "alt",
+      resolutionMode: "source_floor",
+    })).toThrowError(FirstPartyGameStateServiceError);
+
+    try {
+      service.loadWorldContext({
+        accountId: ACCOUNT_ID,
+        sessionId,
+        branchId: "alt",
+        sourceFloorId: floorId,
+        expectedSourceBranchId: "alt",
+        resolutionMode: "source_floor",
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(FirstPartyGameStateServiceError);
+      expect((error as FirstPartyGameStateServiceError).code).toBe("first_party_world_source_floor_branch_mismatch");
     }
   });
 
@@ -250,6 +441,53 @@ describe("FirstPartyGameStateService", () => {
       expect(error).toBeInstanceOf(SessionStateServiceError);
       expect((error as SessionStateServiceError).code).toBe("session_state_floor_branch_mismatch");
     }
+  });
+
+  it("writes world payloads with prompt snapshot provenance into the staged mutation", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_736_020_027_500;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "generating",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const mutation = service.stageWorldState({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId,
+      runType: "respond",
+      execution: createExecution(floorId, "The eastern checkpoint is under repair."),
+      promptSnapshot: {
+        worldbookId: "worldbook-checkpoint",
+        worldbookVersion: 3,
+        worldbookActivatedEntryUids: [7, 9],
+      },
+      stagedAt: now + 10,
+    });
+
+    expect(mutation.targetSlot).toBe("world");
+    expect(mutation.runId).toBe(`first-party-world:respond:${floorId}`);
+    expect(mutation.payload.value).toEqual(buildWorldStateValue({
+      sessionId,
+      branchId: "main",
+      floorId,
+      runType: "respond",
+      summaryLines: ["The eastern checkpoint is under repair."],
+      worldbookId: "worldbook-checkpoint",
+      worldbookVersion: 3,
+      activatedWorldbookEntryUids: [7, 9],
+      updatedAt: now + 10,
+    }));
   });
 
   it("maps replay blockers from SessionStateService", async () => {
@@ -374,6 +612,50 @@ describe("FirstPartyGameStateService", () => {
       updatedAt: 1_700_000_000_000,
     })).toThrowError(FirstPartyGameStateServiceError);
   });
+
+  it("normalizes current v1 world payloads and preserves empty arrays", () => {
+    const normalized = service.normalizeWorldValue({
+      kind: "first_party_world_state",
+      schemaVersion: 1,
+      sessionId: "session-world-v1",
+      branchId: "main",
+      floorId: "floor-world-v1",
+      runType: "respond",
+      summaryLines: [],
+      worldbookId: null,
+      worldbookVersion: null,
+      activatedWorldbookEntryUids: [],
+      toolExecutionIds: [],
+      updatedAt: 1_700_000_000_100,
+    });
+
+    expect(normalized.schemaVersion).toBe(1);
+    expect(normalized.summaryLines).toEqual([]);
+    expect(normalized.worldbookId).toBeNull();
+    expect(normalized.worldbookVersion).toBeNull();
+    expect(normalized.activatedWorldbookEntryUids).toEqual([]);
+    expect(normalized.toolExecutionIds).toEqual([]);
+  });
+
+  it("accepts future v2 world payloads and fills optional fields with safe defaults", () => {
+    const normalized = service.normalizeWorldValue({
+      kind: "first_party_world_state",
+      schemaVersion: 2,
+      sessionId: "session-world-v2",
+      branchId: "main",
+      floorId: "floor-world-v2",
+      runType: "respond",
+      updatedAt: 1_700_000_000_500,
+      // summaryLines / worldbook fields / activated entries / toolExecutionIds intentionally omitted
+    });
+
+    expect(normalized.schemaVersion).toBe(2);
+    expect(normalized.summaryLines).toEqual([]);
+    expect(normalized.worldbookId).toBeNull();
+    expect(normalized.worldbookVersion).toBeNull();
+    expect(normalized.activatedWorldbookEntryUids).toEqual([]);
+    expect(normalized.toolExecutionIds).toEqual([]);
+  });
 });
 
 async function seedSession(database: DatabaseConnection, sessionId: string, now: number): Promise<void> {
@@ -455,6 +737,34 @@ function buildSceneStateValue(input: {
       completionTokens: 2,
       totalTokens: 3,
     },
+    toolExecutionIds: [],
+    updatedAt: input.updatedAt,
+  };
+}
+
+
+function buildWorldStateValue(input: {
+  sessionId: string;
+  branchId: string;
+  floorId: string;
+  runType: "respond" | "retry_turn" | "regenerate_page" | "edit_and_regenerate";
+  summaryLines: string[];
+  worldbookId: string | null;
+  worldbookVersion: number | null;
+  activatedWorldbookEntryUids: number[];
+  updatedAt: number;
+}) {
+  return {
+    kind: "first_party_world_state",
+    schemaVersion: 1,
+    sessionId: input.sessionId,
+    branchId: input.branchId,
+    floorId: input.floorId,
+    runType: input.runType,
+    summaryLines: [...input.summaryLines],
+    worldbookId: input.worldbookId,
+    worldbookVersion: input.worldbookVersion,
+    activatedWorldbookEntryUids: [...input.activatedWorldbookEntryUids],
     toolExecutionIds: [],
     updatedAt: input.updatedAt,
   };

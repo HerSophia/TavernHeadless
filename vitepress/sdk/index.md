@@ -193,11 +193,12 @@ const blob = await response.blob();
 | `llmInstances`     | `LlmInstancesResource`     | [LLM Instances](/reference/api/llm-instances)                        |
 | `tools`            | `ToolsResource`            | [Tools](/reference/api/tools)                                        |
 | `clientData`       | `ClientDataResource`       | [Client Data](/reference/api/client-data)                            |
+| `sessionState`     | `SessionStateResource`     | [Session State](/reference/api/session-state)                        |
 | `mcp`              | `McpResource`              | [MCP Servers](/reference/api/mcp)                                    |
 | `branches`         | `BranchesResource`         | [Sessions](/reference/api/sessions)                                  |
 | `health`           | `HealthResource`           | [API 总览](/reference/api)、[见下方](#health)                        |
 
-`sessions` 上同时挂载了 CRUD 方法和对话生成方法（`respond` / `respondStream` / `respondDryRun` / `regenerate`）。其中 `respond` / `respondStream` 会保留 `summaries` 和 `finalState`，`respondDryRun` 会返回对齐真实提交快照的 `promptSnapshot`。`sessions.create()` / `sessions.update()` 也会直接返回完整的 session payload。
+`sessions` 上同时挂载了 CRUD 方法和对话生成方法（`respond` / `respondStream` / `respondDryRun` / `regenerate`）。其中 `respond` / `respondStream` 会保留 `summaries` 和 `finalState`，`respondDryRun` 会返回对齐真实提交快照的 `promptSnapshot`。如果你要把 registered custom namespace 的写入与 turn 一起提交，`respond` / `respondStream` / `regenerate` 现在都接受 `sessionStateWrites`。`sessions.create()` / `sessions.update()` 也会直接返回完整的 session payload。
 
 `tools.listExecutions()` 对应新的主执行审计路由；`tools.listCallRecords()` 仍保留为兼容查询面。`imports.chat()` 会按 `format` 区分 `.thchat` 与 `sillytavern_jsonl` 的返回结构，`imports.character()` 会保留 `characterVersionId` 和可选 `session`。
 
@@ -246,6 +247,77 @@ console.log(auditLogs.data[0]?.action);
 如果服务端把某个 domain 标记为 managed domain，
 raw `clientData` 写路径会返回 `403 client_data_managed_domain_raw_access_forbidden`。
 这时应改走对应的受治理服务，而不是继续直接写 `clientData`。
+
+---
+
+## sessionState
+
+`client.sessionState` 对应公开的 `/sessions/:sessionId/state/*` 接口，不对应内部 observation 面。
+
+当前已经覆盖：
+
+- `registerNamespace`
+- `listNamespaces`
+- `writeValue`
+- `deleteValue`
+- `resolve`
+- `getFloorSnapshots`
+- `diff`
+
+```ts
+const registeredNamespace = await client.sessionState.registerNamespace({
+  sessionId: "session-1",
+  namespace: "quest_flags",
+  logicalOwnerType: "plugin",
+  logicalOwnerId: "quest-plugin",
+});
+const written = await client.sessionState.writeValue({
+  sessionId: "session-1",
+  branchId: "main",
+  namespace: "quest_flags",
+  slot: "companion",
+  value: { mood: "ally" },
+});
+const deleted = await client.sessionState.deleteValue({
+  sessionId: "session-1",
+  branchId: "main",
+  namespace: "quest_flags",
+  slot: "companion",
+});
+const definitions = await client.sessionState.listNamespaces({ sessionId: "session-1" });
+const values = await client.sessionState.resolve({ sessionId: "session-1", branchId: "main", namespace: "game_state" });
+const snapshots = await client.sessionState.getFloorSnapshots({ sessionId: "session-1", floorId: "floor-1", namespace: "game_state" });
+const diff = await client.sessionState.diff({
+  sessionId: "session-1",
+  floorId: "floor-1",
+  against: { kind: "live", branchId: "main" },
+  namespace: "game_state",
+});
+
+console.log(registeredNamespace.defaultSlotTemplate.defaultWriteMode);
+console.log(definitions[0]?.slots[0]?.slot);
+console.log(written.present, written.value);
+console.log(deleted.present, deleted.value);
+console.log(values[0]?.source);
+console.log(snapshots[0]?.committedAt);
+console.log(diff[0]?.changeType);
+```
+
+说明：
+
+- `registerNamespace(...)` 是 control-plane write，只负责注册 custom namespace，不负责写具体 state value
+- `writeValue(...)` 与 `deleteValue(...)` 是 public Session State 写接口，当前只允许 registered custom namespace
+- turn API 现在也支持 `sessionStateWrites`，对应 turn-embedded `commit_bound` 写入：
+  - `client.sessions.respond(...)`
+  - `client.sessions.respondStream(...)`
+  - `client.sessions.regenerate(...)`
+  - `client.floors.retry(...)`
+  - `client.messages.editAndRegenerate(...)`
+- `listNamespaces(...)` 会同时返回公开稳定的 built-in namespace 与当前 session 下已注册的 custom namespace
+- custom slot 在首次成功 `writeValue(...)` 或首次成功 turn-bound commit 后会被 materialize，并进入 `listNamespaces(...)`
+- 当前公开稳定的 built-in slot 只有 `game_state.scene` 与 `game_state.world`
+- `game_state` 仍然对客户端只读；`deleteValue(...)` 与 turn 内 `delete: true` 的治理语义都是把值改成 `present: false`
+- 内部 `/sessions/:id/session-state/*` 与 `/floors/:id/session-state/*` 观察面仍不在 SDK 包装范围内
 
 ---
 

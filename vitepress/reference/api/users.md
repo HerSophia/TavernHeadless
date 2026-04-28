@@ -4,7 +4,39 @@ outline: [2, 3]
 
 # Users（用户卡）
 
-用户卡代表参与对话的用户角色。一个账号可以有多个用户卡。
+用户卡代表参与对话的用户角色。一个账号下面可以有多个用户卡，每个会话在创建时需要绑定一个用户卡。
+
+## 什么时候需要看这页
+
+- 你要创建新的用户卡
+- 你要查看或修改已有用户卡
+- 你要删除不再需要的用户卡
+
+## 一个简单例子
+
+```bash
+# 创建一个用户卡
+curl -X POST http://localhost:3000/users \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "snapshot": {
+      "name": "Player",
+      "description": "A brave adventurer."
+    }
+  }'
+
+# 列出所有活跃用户卡
+curl "http://localhost:3000/users?status=active"
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| snapshot | 用户卡的完整快照，包括名字和描述 |
+| user | 这里指用户卡，不是账号 |
+
+
 
 ## User 对象
 
