@@ -31,6 +31,9 @@ describe('assembleNativePrompt', () => {
     const chatSection = ir.sections.find((section) => section.name === 'chatHistory');
 
     expect(systemSection?.messages[0]?.content).toBe('You are Luna helping Ari.');
+    expect(systemSection?.pinned).toBe(true);
+    expect(systemSection?.budgetGroup).toBe('section:nativeSystem');
+    expect(systemSection?.messages[0]?.prunable).toBe(false);
     expect(chatSection?.messages.map((message) => message.content)).toEqual([
       'Hello Luna',
       'Hi Ari',
@@ -145,6 +148,8 @@ describe('assembleNativePrompt', () => {
     const memorySection = ir.sections.find((section) => section.name === 'memory');
     expect(memorySection?.messages[0]?.role).toBe('system');
     expect(memorySection?.budgetGroup).toBe('memory');
+    expect(memorySection?.pinned).toBe(false);
+    expect(memorySection?.messages[0]?.prunable).toBe(false);
     expect(memorySection?.messages[0]?.source).toBe('memory');
     expect(memorySection?.messages[0]?.content).toContain('[Memory Summary]');
     expect(memorySection?.messages[0]?.content).toContain('Luna remembers the ritual.');

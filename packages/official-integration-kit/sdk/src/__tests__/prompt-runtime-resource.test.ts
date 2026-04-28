@@ -239,6 +239,20 @@ describe("sdk prompt runtime resource", () => {
                 supports_visibility: true,
                 include_worldbook_matches: true,
               },
+              inspect: {
+                enabled: true,
+                mode: "prepared_turn",
+                supports_branch: true,
+                supports_source_floor: true,
+                supports_visibility: true,
+                returns_prepared_turn: true,
+                returns_governance: true,
+                llm_call: false,
+                creates_floor: false,
+                writes_prompt_snapshot: false,
+                writes_explain_snapshot: false,
+                commits_side_effects: false,
+              },
               preview: {
                 enabled: true,
                 mode: "macro_text_preview",
@@ -255,6 +269,7 @@ describe("sdk prompt runtime resource", () => {
               explain: {
                 enabled: true,
                 read_only: true,
+                returns_governance: true,
                 requires_committed_floor: true,
                 persisted_truth_only: true,
                 recompute: false,
@@ -507,6 +522,20 @@ describe("sdk prompt runtime resource", () => {
           supportsVisibility: true,
           includeWorldbookMatches: true,
         },
+        inspect: {
+          enabled: true,
+          mode: "prepared_turn",
+          supportsBranch: true,
+          supportsSourceFloor: true,
+          supportsVisibility: true,
+          returnsPreparedTurn: true,
+          returnsGovernance: true,
+          llmCall: false,
+          createsFloor: false,
+          writesPromptSnapshot: false,
+          writesExplainSnapshot: false,
+          commitsSideEffects: false,
+        },
         preview: {
           enabled: true,
           mode: "macro_text_preview",
@@ -523,6 +552,7 @@ describe("sdk prompt runtime resource", () => {
         explain: {
           enabled: true,
           legacyFloorFallback: true,
+          returnsGovernance: true,
           readOnly: true,
           requiresCommittedFloor: true,
           persistedTruthOnly: true,
@@ -608,6 +638,25 @@ describe("sdk prompt runtime resource", () => {
             token_estimate: 42,
           },
           resolved_policy: null,
+          governance: {
+            entries: [
+              {
+                source_kind: "history",
+                declared_level: "budget_prunable",
+                registered: true,
+                effective_retention: "budget_prunable",
+                pinned: false,
+                prunable: true,
+                budget_groups: ["history"],
+                section_names: ["chatHistory"],
+                token_count: 320,
+                retained_token_count: 256,
+                pruned_token_count: 64,
+              },
+            ],
+            mismatches: [],
+            limitations: ["captured at commit time"],
+          },
           source_map: {
             history: {
               source_branch_id: "main",
@@ -653,6 +702,25 @@ describe("sdk prompt runtime resource", () => {
       assets: { preset: { id: "preset-1", name: "Story Preset" }, characterCard: { id: "char-1", name: "Hero" }, worldbook: null, regexProfile: null },
       promptSnapshot: { presetId: "preset-1", presetUpdatedAt: 1710000000000, presetVersion: 3, worldbookId: null, worldbookUpdatedAt: null, worldbookVersion: null, regexProfileId: null, regexProfileUpdatedAt: null, regexProfileVersion: null, worldbookActivatedEntryUids: [7], regexPreRuleNames: ["Input Rule"], regexPostRuleNames: [], promptMode: "compat_strict", promptDigest: "digest-1", tokenEstimate: 42 },
       resolvedPolicy: null,
+      governance: {
+        entries: [
+          {
+            sourceKind: "history",
+            declaredLevel: "budget_prunable",
+            registered: true,
+            effectiveRetention: "budget_prunable",
+            pinned: false,
+            prunable: true,
+            budgetGroups: ["history"],
+            sectionNames: ["chatHistory"],
+            tokenCount: 320,
+            retainedTokenCount: 256,
+            prunedTokenCount: 64,
+          },
+        ],
+        mismatches: [],
+        limitations: ["captured at commit time"],
+      },
       sourceMap: { history: { sourceBranchId: "main", sourceMode: "existing_branch" } },
       trimReasons: [{
         group: "section:main",
@@ -696,6 +764,12 @@ describe("sdk prompt runtime resource", () => {
             left: [{ source: "history", reason: "visibility_filtered" }],
             right: [{ source: "examples", reason: "disabled_by_policy" }],
           }],
+          governance_changes: [{
+            path: "governance.entries[0].effective_retention",
+            change_type: "changed",
+            left: "budget_prunable",
+            right: "fixed",
+          }],
           limitations: ["Right floor 'floor-right' has no committed prompt runtime snapshot. Compare skipped recomputation and returned limitations only."],
         },
       }),
@@ -723,6 +797,12 @@ describe("sdk prompt runtime resource", () => {
         left: [{ source: "history", reason: "visibility_filtered" }],
         right: [{ source: "examples", reason: "disabled_by_policy" }],
       }],
+      governanceChanges: [{
+        path: "governance.entries[0].effective_retention",
+        changeType: "changed",
+        left: "budget_prunable",
+        right: "fixed",
+      }],
       limitations: ["Right floor 'floor-right' has no committed prompt runtime snapshot. Compare skipped recomputation and returned limitations only."],
     });
 
@@ -734,6 +814,185 @@ describe("sdk prompt runtime resource", () => {
       right: { floor_id: "floor-right" },
     });
   });
+
+  it("maps inspect requests and inspect responses", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          scope: {
+            session_id: "session 1",
+            target_branch_id: "alt-inspect",
+            branch_exists: false,
+            source_floor_id: "floor-1",
+            history_source_branch_id: "fork-branch",
+            history_source_mode: "source_floor_branch",
+          },
+          policy: {
+            structure: { mode: "no_assistant", merge_adjacent_same_role: false, preserve_system_messages: true, assistant_rewrite_strategy: "to_system" },
+            delivery: { allow_assistant_prefill: true, require_last_user: false, no_assistant: true },
+            budget: { max_input_tokens: 4096, reserved_completion_tokens: 1024 },
+            source_selection: { history: { mode: "windowed", max_messages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
+            visibility: { mode: "allow_all_except_hidden", hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }] },
+            debug: { include_prompt_snapshot: false, include_runtime_trace: true, include_worldbook_matches: true },
+          },
+          source_map: {
+            delivery: { no_assistant: "request_override" },
+            history: { source_branch_id: "fork-branch", source_mode: "source_floor_branch" },
+          },
+          diagnostics: [
+            { code: "unmaterialized_branch_inspect", message: "branch pending", severity: "info", source: "branch", phase: "assemble" },
+          ],
+          trim_reasons: [
+            { group: "history", reason: "group_limit_exceeded", pruned_token_count: 32 },
+          ],
+          excluded_sources: [
+            { source: "history", reason: "visibility_filtered", detail: "Visibility filtered 2 floor(s) from the available history window." },
+          ],
+          section_stats: [
+            { section_name: "history", token_count: 256 },
+          ],
+          limitations: ["inspect is read-only"],
+          prepared_turn: {
+            messages: [
+              { role: "system", content: "System prompt" },
+              { role: "user", content: "Hello there" },
+            ],
+            token_estimate: 320,
+            available_for_reply: 704,
+            preprocessed_user_message: "Hello there",
+            prompt_snapshot: {
+              preset_id: "preset-1",
+              preset_updated_at: 1710000000000,
+              preset_version: 3,
+              worldbook_id: null,
+              worldbook_updated_at: null,
+              worldbook_version: null,
+              regex_profile_id: null,
+              regex_profile_updated_at: null,
+              regex_profile_version: null,
+              worldbook_activated_entry_uids: [7],
+              regex_pre_rule_names: ["Input Rule"],
+              regex_post_rule_names: [],
+              prompt_mode: "native",
+              prompt_digest: "digest-inspect",
+              token_estimate: 320,
+            },
+            runtime_trace: {
+              budgets: {
+                by_group: [
+                  { group: "history", token_count: 256 },
+                ],
+              },
+            },
+            memory_summary: "Remember the promise.",
+            generation_params: {
+              max_output_tokens: 256,
+              temperature: 0.7,
+              reasoning_effort: "medium",
+            },
+            requested_turn_config: {
+              enable_tools: true,
+              tool_mode: "both",
+            },
+            turn_config: {
+              enable_tools: true,
+              tool_mode: "both",
+            },
+            session_state_writes: {
+              total: 1,
+              writes: [
+                { namespace: "quest_flags", slot: "companion", operation: "set" },
+              ],
+            },
+          },
+          governance: {
+            entries: [
+              {
+                source_kind: "memory",
+                declared_level: "soft_required",
+                registered: true,
+                effective_retention: "soft_required",
+                pinned: false,
+                prunable: false,
+                budget_groups: ["memory"],
+                section_names: ["memory"],
+                token_count: 64,
+                retained_token_count: 64,
+                pruned_token_count: 0,
+              },
+            ],
+            mismatches: [],
+            limitations: [],
+          },
+        },
+      }),
+    );
+
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const promptRuntime = createPromptRuntimeResource(transport);
+
+    await expect(
+      promptRuntime.inspect({
+        accountId: "acc-1",
+        sessionId: "session 1",
+        message: "Hello there",
+        branchId: "alt-1",
+        sourceFloorId: "floor-1",
+        promptIntent: "continue",
+        config: { enableTools: true, toolMode: "both" },
+        generationParams: { maxOutputTokens: 256, temperature: 0.7, reasoningEffort: "medium" },
+        sessionStateWrites: [{ namespace: "quest_flags", slot: "companion", value: { mood: "ally" } }],
+        debugOptions: { includeRuntimeTrace: true, includeWorldbookMatches: true },
+        visibility: { mode: "allow_all_except_hidden", hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }] },
+        delivery: { noAssistant: true },
+        budget: { maxInputTokens: 4096, reservedCompletionTokens: 1024 },
+        sourceSelection: { history: { mode: "windowed", maxMessages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
+      }),
+    ).resolves.toMatchObject({
+      scope: { sessionId: "session 1", targetBranchId: "alt-inspect", branchExists: false, sourceFloorId: "floor-1", historySourceBranchId: "fork-branch", historySourceMode: "source_floor_branch" },
+      sourceMap: { delivery: { noAssistant: "request_override" }, history: { sourceBranchId: "fork-branch", sourceMode: "source_floor_branch" } },
+      diagnostics: [{ code: "unmaterialized_branch_inspect", message: "branch pending", severity: "info", source: "branch", phase: "assemble" }],
+      trimReasons: [{ group: "history", reason: "group_limit_exceeded", prunedTokenCount: 32 }],
+      excludedSources: [{ source: "history", reason: "visibility_filtered", detail: "Visibility filtered 2 floor(s) from the available history window." }],
+      sectionStats: [{ sectionName: "history", tokenCount: 256 }],
+      limitations: ["inspect is read-only"],
+      preparedTurn: {
+        messages: [{ role: "system", content: "System prompt" }, { role: "user", content: "Hello there" }],
+        tokenEstimate: 320,
+        availableForReply: 704,
+        preprocessedUserMessage: "Hello there",
+        memorySummary: "Remember the promise.",
+        generationParams: { maxOutputTokens: 256, temperature: 0.7, reasoningEffort: "medium" },
+        requestedTurnConfig: { enableTools: true, toolMode: "both" },
+        turnConfig: { enableTools: true, toolMode: "both" },
+        sessionStateWrites: { total: 1, writes: [{ namespace: "quest_flags", slot: "companion", operation: "set" }] },
+      },
+      governance: {
+        entries: [{ sourceKind: "memory", declaredLevel: "soft_required", registered: true, effectiveRetention: "soft_required", pinned: false, prunable: false, budgetGroups: ["memory"], sectionNames: ["memory"], tokenCount: 64, retainedTokenCount: 64, prunedTokenCount: 0 }],
+        mismatches: [],
+        limitations: [],
+      },
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/inspect");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      message: "Hello there",
+      branch_id: "alt-1",
+      source_floor_id: "floor-1",
+      prompt_intent: "continue",
+      config: { enable_tools: true, tool_mode: "both" },
+      generation_params: { max_output_tokens: 256, temperature: 0.7, reasoning_effort: "medium" },
+      session_state_writes: [{ namespace: "quest_flags", slot: "companion", value: { mood: "ally" } }],
+      debug_options: { include_runtime_trace: true, include_worldbook_matches: true },
+      visibility: { mode: "allow_all_except_hidden", hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }] },
+      delivery: { no_assistant: true },
+      budget: { max_input_tokens: 4096, reserved_completion_tokens: 1024 },
+      source_selection: { history: { mode: "windowed", max_messages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
+    });
+  });
+
 
   it("maps patch policy requests, preserves null clears, and normalizes the response", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(

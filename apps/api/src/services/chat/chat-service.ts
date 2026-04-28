@@ -74,9 +74,11 @@ import { TurnRunTracker } from "./turn-run-tracker.js";
 import { FirstPartyStateContextService } from "./first-party-state-context-service.js";
 import { RegexInputService } from "./regex-input-service.js";
 import { DraftFloorService } from "./draft-floor-service.js";
+import { PreparedPromptArtifactsBuilder } from "./prepared-prompt-artifacts-builder.js";
 import { PreparedTurnContextBuilder } from "./prepared-turn-context-builder.js";
 import { DryRunService } from "./dry-run-service.js";
 import { PromptRuntimePreviewService } from "./prompt-runtime-preview-service.js";
+import { PreparedTurnInspectionService } from "../prompt-runtime/prepared-turn-inspection-service.js";
 import { findErrorByConstructor } from "./shared/error-utils.js";
 import { normalizeBranchId } from "./shared/branch.js";
 import { buildLivePromptRuntimeRequestPolicy } from "./shared/request-policy.js";
@@ -122,9 +124,11 @@ export class ChatService {
   private readonly firstPartyStateContextService: FirstPartyStateContextService;
   private readonly regexInputService: RegexInputService;
   private readonly draftFloorService: DraftFloorService;
+  private readonly preparedPromptArtifactsBuilder: PreparedPromptArtifactsBuilder;
   private readonly preparedTurnContextBuilder: PreparedTurnContextBuilder;
   private readonly dryRunService: DryRunService;
   private readonly promptRuntimePreviewService: PromptRuntimePreviewService;
+  private readonly preparedTurnInspectionService: PreparedTurnInspectionService;
 
   constructor(
     private readonly db: AppDb,
@@ -195,15 +199,21 @@ export class ChatService {
     );
     this.regexInputService = new RegexInputService(db, this.messagePersistence);
     this.draftFloorService = new DraftFloorService(db, this.messagePersistence);
-    this.preparedTurnContextBuilder = new PreparedTurnContextBuilder(
+    this.preparedPromptArtifactsBuilder = new PreparedPromptArtifactsBuilder(
       db,
       tokenCounter,
       this.promptPreparationService,
       this.modelService,
+      this.memoryService,
+      this.regexInputService,
+      this.firstPartyStateContextService,
+    );
+    this.preparedTurnContextBuilder = new PreparedTurnContextBuilder(
+      this.preparedPromptArtifactsBuilder,
+      this.modelService,
       this.toolingService,
       this.memoryService,
       this.turnRunTracker,
-      this.firstPartyStateContextService,
     );
     this.dryRunService = new DryRunService(
       db,
@@ -219,6 +229,14 @@ export class ChatService {
       this.promptPreparationService,
       this.modelService,
       this.memoryService,
+    );
+    this.preparedTurnInspectionService = new PreparedTurnInspectionService(
+      db,
+      this.targetResolver,
+      this.modelService,
+      this.turnSessionStateService,
+      this.firstPartyStateContextService,
+      this.preparedPromptArtifactsBuilder,
     );
     this.turnExecutionFacade = new TurnExecutionFacade((args) => this.performTurnExecutionAndCommit(args));
     this.naiveTurnStrategy = new NaiveTurnStrategy(this.turnExecutionFacade);
@@ -398,6 +416,14 @@ export class ChatService {
     accountId?: string,
   ): Promise<import("./contracts.js").PromptRuntimePreviewResult> {
     return this.promptRuntimePreviewService.run(sessionId, request, this.resolveAccountId(accountId));
+  }
+
+  async inspectPromptRuntime(
+    sessionId: string,
+    request: import("../prompt-runtime/types.js").PromptRuntimeInspectRequest,
+    accountId?: string,
+  ): Promise<import("../prompt-runtime/types.js").PromptRuntimeInspectResult> {
+    return this.preparedTurnInspectionService.inspect(sessionId, request, this.resolveAccountId(accountId));
   }
 
   async regenerate(

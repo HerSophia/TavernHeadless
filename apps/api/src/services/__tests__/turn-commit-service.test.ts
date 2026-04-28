@@ -38,6 +38,7 @@ import {
   DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY,
   type PromptRuntimeInspectionResult,
 } from "../prompt-runtime-control-service.js";
+import { parsePromptRuntimeExplainSourceMapEnvelope } from "../prompt-runtime/explain-snapshot.js";
 import { TurnCommitService } from "../turn-commit-service.js";
 import { buildBranchVariableScopeId, type VariableScope } from "@tavern/shared";
 import {
@@ -1238,10 +1239,18 @@ describe("TurnCommitService", () => {
       createdAt: expectedSnapshot.createdAt,
     });
     expect(JSON.parse(inspectionSnapshotRow!.resolvedPolicyJson)).toEqual(expectedSnapshot.resolvedPolicy);
-    expect(JSON.parse(inspectionSnapshotRow!.sourceMapJson)).toEqual(expectedSnapshot.sourceMap);
     expect(JSON.parse(inspectionSnapshotRow!.trimReasonsJson)).toEqual(expectedSnapshot.trimReasons);
     expect(JSON.parse(inspectionSnapshotRow!.excludedSourcesJson)).toEqual(expectedSnapshot.excludedSources);
     expect(JSON.parse(inspectionSnapshotRow!.sectionStatsJson)).toEqual(expectedSnapshot.sectionStats);
+
+    expect(parsePromptRuntimeExplainSourceMapEnvelope({
+      snapshotVersion: inspectionSnapshotRow!.snapshotVersion,
+      sourceMapJson: inspectionSnapshotRow!.sourceMapJson,
+    })).toEqual({
+      snapshotVersion: expectedSnapshot.snapshotVersion,
+      sourceMap: expectedSnapshot.sourceMap,
+      governance: expectedSnapshot.governance,
+    });
   });
 
 

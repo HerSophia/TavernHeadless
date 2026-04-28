@@ -478,7 +478,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let mutationRuntimeComponents: ReturnType<typeof createDefaultMutationRuntimeComponents> | undefined;
   let toolRuntimeComponents: ReturnType<typeof createDefaultToolRuntimeComponents> | undefined;
   let floorRunService: FloorRunService | undefined;
-  let promptRuntimePreviewService: Pick<ChatService, "previewPromptRuntimeText"> | undefined;
+  let promptRuntimeReadOnlyService: Pick<ChatService, "previewPromptRuntimeText" | "inspectPromptRuntime"> | undefined;
   let sessionStateService: SessionStateService | undefined;
   let firstPartyGameStateService: FirstPartyGameStateService | undefined;
   let sessionStatePublicService: SessionStatePublicService | undefined;
@@ -738,7 +738,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       }
     );
 
-    promptRuntimePreviewService = chatService;
+    promptRuntimeReadOnlyService = chatService;
 
     await registerChatRoutes(app, chatService, {
       enableSseChat: options.enableSseChat,
@@ -755,7 +755,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   }
 
   await registerPromptRuntimeRoutes(app, promptRuntimeControlService, {
-    previewService: promptRuntimePreviewService,
+    previewService: promptRuntimeReadOnlyService,
+    inspectService: promptRuntimeReadOnlyService,
   });
 
   if (sessionStatePublicService) {

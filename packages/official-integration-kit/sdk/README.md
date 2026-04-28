@@ -536,6 +536,18 @@ const branchPolicy = await client.promptRuntime.patchBranchPolicy({
   },
 });
 
+const inspect = await client.promptRuntime.inspect({
+  accountId: "account-1",
+  sessionId: "session-1",
+  message: "Please continue the campfire scene.",
+  branchId: "alt-branch",
+  sourceFloorId: "floor-12",
+  generationParams: {
+    maxOutputTokens: 256,
+    temperature: 0.7,
+  },
+});
+
 const preview = await client.promptRuntime.previewText({
   accountId: "account-1",
   sessionId: "session-1",
@@ -577,6 +589,9 @@ console.log(branchPolicy.persistentPolicyEnvelope?.value.delivery?.noAssistant);
 console.log(preview.policy.budget);
 console.log(preview.text);
 console.log(preview.runtimeTrace.sourceSelection?.excludedSources);
+console.log(inspect.preparedTurn.messages);
+console.log(inspect.preparedTurn.promptSnapshot?.promptDigest);
+console.log(inspect.governance.entries);
 console.log(preview.runtimeTrace.visibility?.filteredFloorNos);
 console.log(preview.runtimeTrace.macro?.mutationPreview);
 console.log(preview.runtimeTrace.macro?.stagedMutations); // []
@@ -584,6 +599,7 @@ console.log(explain.promptSnapshot?.promptDigest);
 console.log(explain.snapshotAvailable);
 console.log(explain.assets);
 console.log(explain.sectionStats);
+console.log(explain.governance); // 旧 snapshot 可能为 null
 console.log(explain.resolvedPolicy); // 旧楼层 fallback 时可能为 null
 console.log(diff.policyChanges);
 console.log(diff.left.snapshotAvailable, diff.right.snapshotAvailable);
@@ -603,6 +619,7 @@ console.log(capabilities.unsupported);
 - `promptRuntime.getAssets(...)`
 - `promptRuntime.getBranchPolicy(...)`
 - `promptRuntime.getCapabilities(...)`
+- `promptRuntime.inspect(...)`
 - `promptRuntime.getFloorExplain(...)`
 - `promptRuntime.getSession(...)`
 - `promptRuntime.getPolicy(...)`
@@ -620,11 +637,14 @@ console.log(capabilities.unsupported);
 - `previewText(...)` 仍接受 request 级 `structure` / `delivery` / `budget` / `sourceSelection` / `visibility` 覆盖，但返回的 `runtimeTrace` 固定只投影 `capabilities.observability.preview.traceSubset`，即 `macro`、`sourceSelection`、`visibility`。resolved budget / policy 请查看 `policy` 与 `sourceMap`。
 - `previewText(...)` 的宏诊断继续统一走 `runtimeTrace.macro`，并且 `runtimeTrace.macro.stagedMutations` 固定为空；结构化 budget trim reason 仍以 dry-run / live 为主。
 - `previewText(...)` 响应的 `limitations` 会额外说明 preview 只是 `macro_text_preview` 子视图、不包含 assembly / delivery 真相，便于接入方在 UI 上提示用户 preview 不等于 live / dry-run 结果。
+- `inspect(...)` 是只读 prepared-turn 检查接口。它会返回 `preparedTurn`、`policy`、`sourceMap`、`governance`、`diagnostics`、`trimReasons`、`excludedSources`、`sectionStats`，但不会调用模型，也不会创建 floor、写 `promptSnapshot`、写 explain snapshot，或者提交任何副作用。
+- `inspect(...).preparedTurn.sessionStateWrites` 只回显请求里的写入摘要，不代表这些写入已经 stage 或提交。若部署没有开启 client-data，而请求里带了 `sessionStateWrites`，服务端会返回 `503 feature_unavailable`。
 - `getFloorExplain(...)` 只读取 committed floor 的持久化真相，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。对应 `capabilities.observability.explain.persistedTruthOnly === true`。
+- `getFloorExplain(...)` 现在会返回 `governance`。对于旧的 `snapshotVersion = 1` explain snapshot，这个字段会是 `null`，并且 `limitations` 会明确说明这是旧版本兼容结果。
 - `getFloorExplain(...)` 的 `snapshotAvailable` 表示 explain 是否来自 committed explain snapshot。snapshot-backed 路径会返回持久化 limitations 声明，fallback 路径会在其基础上追加"旧 floor 字段可能为 null"的 fallback 限制条目；`assets`、`resolvedPolicy`、`trimReasons`、`excludedSources`、`sectionStats` 在 fallback 路径可能为 `null`，并会保留 `diagnostics` / `limitations`。
 - `supportedSources` 与 `excludedSources[].source` 继续只承诺公开 source kind；具体 budget group 标签会出现在 `budgets.byGroup[].group`、`trimReasons[].group` 与 compare 的 `trimChanges` 中，例如 `section:main`。
 - `sectionStats[].sectionName` 直接反映后端真实写入的 IR section 名称。记忆相关 section 在 `compat_plus` 与 `native` 装配路径下稳定命名为 `memory`；`compat` 路径下记忆以后置 `system` 消息形式注入，不产生 `memory` section，`sectionStats` 中也不会出现对应条目。
-- `compare(...)` 只支持同一 session 内的两个 committed floor。返回值是结构化 path/value diff，不是全文级 diff；缺 snapshot 时会保留 `limitations`，而不是重算 explain。
+- `compare(...)` 只支持同一 session 内的两个 committed floor。返回值是结构化 path/value diff，不是全文级 diff；现在还会返回 `governanceChanges`。缺 snapshot 时会保留 `limitations`，而不是重算 explain。
 - `delivery: null`、`structure: null`、`budget: null`、`sourceSelection: null`、`visibility: null` 都会清空对应持久化 section。
 - 当前没有 `promptRuntime.macros(...)` 之类的专用 control plane 方法；宏边界继续通过统一观测面公开。
 

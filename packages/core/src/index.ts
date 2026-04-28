@@ -126,6 +126,10 @@ export type {
   PromptRuntimeSectionStat,
   PromptRuntimeDiffChangeType,
   PromptRuntimeDiffEntry,
+  PromptRuntimeGovernanceRetention,
+  PromptRuntimeGovernancePolicy,
+  PromptRuntimeGovernanceSeedEntry,
+  PromptRuntimeGovernanceSeed,
   PromptRuntimeTrace,
   PromptRuntimeDebugView,
   PromptRuntimeSourceDescriptor,
@@ -146,6 +150,9 @@ export {
   resolvePromptRuntimeSourceGovernanceLevel,
   PROMPT_MEMORY_SECTION_NAME,
   PROMPT_MEMORY_MESSAGE_SOURCE,
+  buildPromptRuntimeGovernanceSeed,
+  inferPromptRuntimeGovernanceSourceKind,
+  resolvePromptRuntimeGovernancePolicy,
 } from './prompt/index.js';
 export type {
   NativePromptMode,

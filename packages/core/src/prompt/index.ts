@@ -37,6 +37,10 @@ export type {
   PromptRuntimeSectionStat,
   PromptRuntimeDiffChangeType,
   PromptRuntimeDiffEntry,
+  PromptRuntimeGovernanceRetention,
+  PromptRuntimeGovernancePolicy,
+  PromptRuntimeGovernanceSeedEntry,
+  PromptRuntimeGovernanceSeed,
   PromptRuntimeTrace,
   PromptRuntimeDebugView,
 } from './types.js';
@@ -58,6 +62,8 @@ export {
   PROMPT_MEMORY_SECTION_NAME,
   PROMPT_MEMORY_MESSAGE_SOURCE,
 } from './runtime-registry.js';
+export { buildPromptRuntimeGovernanceSeed, inferPromptRuntimeGovernanceSourceKind, resolvePromptRuntimeGovernancePolicy } from './governance.js';
+
 export type {
   PromptRuntimeSourceDescriptor,
   PromptRuntimeBudgetGroupDescriptor,

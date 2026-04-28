@@ -331,6 +331,38 @@ export interface PromptRuntimeSectionStat {
   tokenCount: number;
 }
 
+export type PromptRuntimeGovernanceRetention =
+  | 'fixed'
+  | 'soft_required'
+  | 'budget_prunable'
+  | 'mixed';
+
+export interface PromptRuntimeGovernancePolicy {
+  sourceKind: string;
+  budgetGroup: string;
+  declaredLevel?: import('./runtime-registry.js').PromptRuntimeSourceGovernanceLevel;
+  pinned: boolean;
+  prunable: boolean;
+  effectiveRetention: PromptRuntimeGovernanceRetention;
+}
+
+export interface PromptRuntimeGovernanceSeedEntry {
+  sourceKind: string;
+  declaredLevel?: import('./runtime-registry.js').PromptRuntimeSourceGovernanceLevel;
+  registered: boolean;
+  budgetGroups: string[];
+  sectionNames: string[];
+  pinnedValues: boolean[];
+  prunableValues: boolean[];
+  tokenCount: number;
+  retainedTokenCount: number;
+  prunedTokenCount: number;
+}
+
+export interface PromptRuntimeGovernanceSeed {
+  entries: PromptRuntimeGovernanceSeedEntry[];
+}
+
 export type PromptRuntimeDiffChangeType = 'added' | 'removed' | 'changed';
 
 export interface PromptRuntimeDiffEntry<TValue = unknown> {

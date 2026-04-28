@@ -1,6 +1,11 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
+  mapPromptLiveDebugOptionsRequest,
+  mapPromptSnapshotPayload,
   mapPromptRuntimePreviewTracePayload,
+  mapPromptRuntimeTracePayload,
+  type PromptLiveDebugOptions,
+  type PromptSnapshotPreview,
   type PromptRuntimePreviewTrace,
   type PromptRuntimeSourceKind,
   type PromptRuntimeTrace,
@@ -36,6 +41,16 @@ export type PromptRuntimeHistorySourceMode = "existing_branch" | "source_floor_b
 export type PromptRuntimeDiagnosticSeverity = "info" | "warning" | "error";
 export type PromptRuntimeDiagnosticSource = "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
 export type PromptRuntimeDiagnosticPhase = "preview" | "dry_run" | "assemble" | "commit_consume" | "explain";
+export type PromptRuntimeSourceGovernanceLevel = "hard_required" | "soft_required" | "budget_prunable";
+export type PromptRuntimeGovernanceRetention = "fixed" | "soft_required" | "budget_prunable" | "mixed";
+export type PromptRuntimeGovernanceMismatchCode =
+  | "declared_budget_prunable_but_effectively_fixed"
+  | "declared_soft_required_but_effectively_budget_prunable"
+  | "unregistered_governed_source"
+  | "mixed_effective_retention";
+export type PromptRuntimePromptIntent = "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+export type PromptRuntimeTurnConfigToolMode = "inline" | "standalone" | "both";
+export type PromptRuntimeTurnConfigVerifierFailStrategy = "warn" | "block" | "retry";
 
 export type PromptRuntimePersistentStructurePolicy = {
   assistantRewriteStrategy?: PromptRuntimeAssistantRewriteStrategy;
@@ -189,6 +204,57 @@ export type PromptRuntimeAssetsView = {
   worldbook: PromptRuntimeAssetSummary | null;
 };
 
+export type PromptRuntimeGovernanceEntry = {
+  sourceKind: string;
+  declaredLevel?: PromptRuntimeSourceGovernanceLevel | null;
+  registered: boolean;
+  effectiveRetention: PromptRuntimeGovernanceRetention;
+  pinned: boolean | null;
+  prunable: boolean | null;
+  budgetGroups: string[];
+  sectionNames: string[];
+  tokenCount: number;
+  retainedTokenCount: number;
+  prunedTokenCount: number;
+};
+
+export type PromptRuntimeGovernanceMismatch = {
+  code: PromptRuntimeGovernanceMismatchCode;
+  sourceKind: string;
+  declaredLevel?: PromptRuntimeSourceGovernanceLevel | null;
+  effectiveRetention: PromptRuntimeGovernanceRetention;
+  budgetGroups: string[];
+  message: string;
+};
+
+export type PromptRuntimeGovernanceView = {
+  entries: PromptRuntimeGovernanceEntry[];
+  mismatches: PromptRuntimeGovernanceMismatch[];
+  limitations: string[];
+};
+
+export type PromptRuntimeInspectTurnConfig = {
+  enableTools?: boolean;
+  enableDirector?: boolean;
+  enableVerifier?: boolean;
+  enableMemoryConsolidation?: boolean;
+  verifierFailStrategy?: PromptRuntimeTurnConfigVerifierFailStrategy;
+  toolMode?: PromptRuntimeTurnConfigToolMode;
+  maxRetries?: number;
+};
+
+export type PromptRuntimeInspectGenerationParams = {
+  temperature?: number;
+  maxOutputTokens?: number;
+  topP?: number;
+  topK?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  stopSequences?: string[];
+  stream?: boolean;
+  reasoningEffort?: "low" | "medium" | "high";
+};
+
 export type PromptRuntimeResolvedState = {
   assets: PromptRuntimeAssetsView;
   branchPersistentPolicyEnvelope?: PromptRuntimePersistedPolicyEnvelope | null;
@@ -258,6 +324,20 @@ export type PromptRuntimeCapabilities = {
       returnsRuntimeTrace: boolean;
       supportsVisibility: boolean;
     };
+    inspect: {
+      commitsSideEffects: boolean;
+      createsFloor: boolean;
+      enabled: boolean;
+      llmCall: boolean;
+      mode: "prepared_turn";
+      returnsGovernance: boolean;
+      returnsPreparedTurn: boolean;
+      supportsBranch: boolean;
+      supportsSourceFloor: boolean;
+      supportsVisibility: boolean;
+      writesExplainSnapshot: boolean;
+      writesPromptSnapshot: boolean;
+    };
     live: {
       defaultOff: boolean;
       enabled: boolean;
@@ -300,6 +380,7 @@ export type PromptRuntimeCapabilities = {
       enabled: boolean;
       legacyFloorFallback: boolean;
       persistedTruthOnly: boolean;
+      returnsGovernance: boolean;
       readOnly: boolean;
       recompute: boolean;
       requiresCommittedFloor: boolean;
@@ -389,6 +470,26 @@ export type PromptRuntimeHistoricalExplainCommittedResult = {
   verifier?: { status: string; suggestion?: string | null; issues?: Array<{ description: string; severity: "warning" | "error" }> | null } | null;
 };
 
+export type PromptRuntimeInspectSessionStateWrite =
+  | { namespace: string; slot: string; value?: unknown }
+  | { namespace: string; slot: string; delete: true };
+
+export type PromptRuntimeSessionStateWriteSummary = {
+  namespace: string;
+  slot: string;
+  operation: "set" | "delete";
+};
+
+export type PromptRuntimeSessionStateWritesSummary = {
+  total: number;
+  writes: PromptRuntimeSessionStateWriteSummary[];
+};
+
+export type PromptRuntimeInspectPreparedTurnMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
 export type PromptRuntimeHistoricalExplain = {
   assets: PromptRuntimeAssetsView | null;
   diagnostics?: PromptRuntimeDiagnostic[];
@@ -397,12 +498,56 @@ export type PromptRuntimeHistoricalExplain = {
   limitations?: string[];
   promptSnapshot: { presetId: string | null; presetUpdatedAt: number | null; presetVersion: number | null; worldbookId: string | null; worldbookUpdatedAt: number | null; worldbookVersion: number | null; regexProfileId: string | null; regexProfileUpdatedAt: number | null; regexProfileVersion: number | null; worldbookActivatedEntryUids: number[]; regexPreRuleNames: string[]; regexPostRuleNames: string[]; promptMode: "compat_strict" | "compat_plus" | "native"; promptDigest: string; tokenEstimate: number; };
   resolvedPolicy: PromptRuntimeResolvedPolicy | null;
+  governance: PromptRuntimeGovernanceView | null;
   result: PromptRuntimeHistoricalExplainCommittedResult;
   sectionStats: Array<{ sectionName: string; tokenCount: number }> | null;
   snapshotAvailable: boolean;
   scope: PromptRuntimeScopeRef;
   sourceMap?: PromptRuntimeSourceMap;
   trimReasons: NonNullable<NonNullable<PromptRuntimeTrace["budgets"]>["trimReasons"]> | null;
+};
+
+export type PromptRuntimeInspectPreparedTurn = {
+  messages: PromptRuntimeInspectPreparedTurnMessage[];
+  tokenEstimate: number;
+  availableForReply: number;
+  preprocessedUserMessage: string | null;
+  promptSnapshot: PromptSnapshotPreview | null;
+  runtimeTrace: PromptRuntimeTrace | null;
+  memorySummary: string | null;
+  generationParams: PromptRuntimeInspectGenerationParams;
+  requestedTurnConfig: PromptRuntimeInspectTurnConfig | null;
+  turnConfig: PromptRuntimeInspectTurnConfig | null;
+  sessionStateWrites: PromptRuntimeSessionStateWritesSummary;
+};
+
+export type PromptRuntimeInspectOptions = PromptRuntimeGetSessionOptions & {
+  message: string;
+  branchId?: string;
+  sourceFloorId?: string;
+  promptIntent?: PromptRuntimePromptIntent;
+  config?: PromptRuntimeInspectTurnConfig;
+  generationParams?: PromptRuntimeInspectGenerationParams;
+  sessionStateWrites?: PromptRuntimeInspectSessionStateWrite[];
+  debugOptions?: PromptLiveDebugOptions;
+  visibility?: PromptRuntimeVisibilityPolicy;
+  structure?: PromptRuntimePersistentStructurePolicy;
+  delivery?: PromptRuntimePersistentDeliveryPolicy;
+  budget?: PromptRuntimeBudgetPolicy;
+  sourceSelection?: PromptRuntimeSourceSelectionPolicy;
+};
+
+export type PromptRuntimeInspectResult = {
+  scope: PromptRuntimeScopeRef;
+  policy: PromptRuntimeResolvedPolicy;
+  sourceMap: PromptRuntimeSourceMap;
+  diagnostics: PromptRuntimeDiagnostic[];
+  trimReasons: NonNullable<NonNullable<PromptRuntimeTrace["budgets"]>["trimReasons"]>;
+  excludedSources: NonNullable<PromptRuntimeTrace["sourceSelection"]>["excludedSources"];
+  sectionStats: Array<{ sectionName: string; tokenCount: number }>;
+  limitations: string[];
+  preparedTurn: PromptRuntimeInspectPreparedTurn;
+  governance: PromptRuntimeGovernanceView;
 };
 
 export type PromptRuntimePatchPolicyOptions = PromptRuntimeGetSessionOptions & {
@@ -436,6 +581,7 @@ export type PromptRuntimeExplainDiff = {
   limitations: string[];
   policyChanges: PromptRuntimeDiffEntry[];
   right: { floorId: string; snapshotAvailable: boolean };
+  governanceChanges: PromptRuntimeDiffEntry[];
   scopeChanges: PromptRuntimeDiffEntry[];
   trimChanges: PromptRuntimeDiffEntry[];
 };
@@ -450,6 +596,7 @@ export type PromptRuntimeGetFloorExplainOptions = { accountId?: AccountIdHint; f
 export type PromptRuntimeResource = {
   compare(options: PromptRuntimeCompareOptions): Promise<PromptRuntimeExplainDiff>;
   getAssets(options: PromptRuntimeGetAssetsOptions): Promise<PromptRuntimeAssetsView>;
+  inspect(options: PromptRuntimeInspectOptions): Promise<PromptRuntimeInspectResult>;
   getBranchPolicy(options: PromptRuntimeGetBranchPolicyOptions): Promise<PromptRuntimePolicyView>;
   getCapabilities(options?: PromptRuntimeGetCapabilitiesOptions): Promise<PromptRuntimeCapabilities>;
   getPolicy(options: PromptRuntimeGetPolicyOptions): Promise<PromptRuntimePolicyView>;
@@ -494,6 +641,23 @@ export function createPromptRuntimeResource(client: TransportClient): PromptRunt
       const payload = mapPromptRuntimeAssetsView(readRecord(response.body)?.data);
       if (!payload) {
         throw new Error("Prompt Runtime assets payload is missing");
+      }
+
+      return payload;
+    },
+    async inspect(options): Promise<PromptRuntimeInspectResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/inspect`,
+        {
+          body: mapPromptRuntimeInspectRequestBody(options),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+
+      const payload = mapPromptRuntimeInspectResult(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Prompt Runtime inspect payload is missing");
       }
 
       return payload;
@@ -751,6 +915,7 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
   const compare = readRecord(record.compare);
   const live = readRecord(observability?.live);
   const dryRun = readRecord(observability?.dry_run);
+  const inspect = readRecord(observability?.inspect);
   const preview = readRecord(observability?.preview);
   const stream = readRecord(observability?.stream);
   const explain = readRecord(observability?.explain);
@@ -761,7 +926,7 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
   const defaultsDelivery = mapPromptRuntimeResolvedDeliveryPolicy(delivery?.defaults);
   const defaultsSourceSelection = mapPromptRuntimeResolvedSourceSelectionPolicy(sourceSelection?.defaults);
 
-  if (!budget || !sourceSelection || !structure || !delivery || !observability || !macro || !governance || !compare || !live || !dryRun || !preview || !stream || !explain || !sessionGovernance || !branchGovernance || !defaultsBudget || !defaultsStructure || !defaultsDelivery || !defaultsSourceSelection) {
+  if (!budget || !sourceSelection || !structure || !delivery || !observability || !macro || !governance || !compare || !live || !dryRun || !inspect || !preview || !stream || !explain || !sessionGovernance || !branchGovernance || !defaultsBudget || !defaultsStructure || !defaultsDelivery || !defaultsSourceSelection) {
     return null;
   }
 
@@ -841,6 +1006,20 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
         returnsRuntimeTrace: readBoolean(dryRun.returns_runtime_trace, true),
         supportsVisibility: readBoolean(dryRun.supports_visibility, true),
       },
+      inspect: {
+        commitsSideEffects: readBoolean(inspect.commits_side_effects),
+        createsFloor: readBoolean(inspect.creates_floor),
+        enabled: readBoolean(inspect.enabled),
+        llmCall: readBoolean(inspect.llm_call),
+        mode: "prepared_turn",
+        returnsGovernance: readBoolean(inspect.returns_governance, true),
+        returnsPreparedTurn: readBoolean(inspect.returns_prepared_turn, true),
+        supportsBranch: readBoolean(inspect.supports_branch, true),
+        supportsSourceFloor: readBoolean(inspect.supports_source_floor, true),
+        supportsVisibility: readBoolean(inspect.supports_visibility, true),
+        writesExplainSnapshot: readBoolean(inspect.writes_explain_snapshot),
+        writesPromptSnapshot: readBoolean(inspect.writes_prompt_snapshot),
+      },
       preview: {
         commitsSideEffects: readBoolean(preview.commits_side_effects),
         createsFloor: readBoolean(preview.creates_floor),
@@ -861,6 +1040,7 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
         enabled: readBoolean(explain.enabled, true),
         legacyFloorFallback: readBoolean(explain.legacy_floor_fallback, true),
         persistedTruthOnly: readBoolean(explain.persisted_truth_only, true),
+        returnsGovernance: readBoolean(explain.returns_governance, true),
         readOnly: readBoolean(explain.read_only, true),
         recompute: readBoolean(explain.recompute),
         requiresCommittedFloor: readBoolean(explain.requires_committed_floor, true),
@@ -1125,6 +1305,78 @@ function mapPromptRuntimeDebugPolicy(value: unknown): PromptRuntimeDebugPolicy |
   };
 }
 
+function mapPromptRuntimeInspectRequestBody(options: PromptRuntimeInspectOptions): Record<string, unknown> {
+  return compactObject({
+    message: options.message,
+    branch_id: options.branchId,
+    source_floor_id: options.sourceFloorId,
+    prompt_intent: options.promptIntent,
+    config: mapPromptRuntimeInspectTurnConfigRequest(options.config),
+    generation_params: mapPromptRuntimeInspectGenerationParamsRequest(options.generationParams),
+    session_state_writes: mapPromptRuntimeInspectSessionStateWritesRequest(options.sessionStateWrites),
+    debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
+    visibility: mapPromptRuntimeVisibilityPolicyRequest(options.visibility),
+    structure: mapPromptRuntimePersistentStructurePolicyRequest(options.structure),
+    delivery: mapPromptRuntimePersistentDeliveryPolicyRequest(options.delivery),
+    budget: mapPromptRuntimeBudgetPolicyRequest(options.budget),
+    source_selection: mapPromptRuntimeSourceSelectionPolicyRequest(options.sourceSelection),
+  });
+}
+
+function mapPromptRuntimeInspectTurnConfigRequest(
+  value?: PromptRuntimeInspectTurnConfig,
+): Record<string, unknown> | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const mapped = compactObject({
+    enable_tools: value.enableTools,
+    enable_director: value.enableDirector,
+    enable_verifier: value.enableVerifier,
+    enable_memory_consolidation: value.enableMemoryConsolidation,
+    verifier_fail_strategy: value.verifierFailStrategy,
+    tool_mode: value.toolMode,
+    max_retries: value.maxRetries,
+  });
+
+  return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+function mapPromptRuntimeInspectGenerationParamsRequest(
+  value?: PromptRuntimeInspectGenerationParams,
+): Record<string, unknown> | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const mapped = compactObject({
+    frequency_penalty: value.frequencyPenalty,
+    max_output_tokens: value.maxOutputTokens,
+    presence_penalty: value.presencePenalty,
+    reasoning_effort: value.reasoningEffort,
+    stop_sequences: value.stopSequences,
+    stream: value.stream,
+    temperature: value.temperature,
+    top_k: value.topK,
+    top_p: value.topP,
+  });
+
+  return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+function mapPromptRuntimeInspectSessionStateWritesRequest(
+  value?: PromptRuntimeInspectSessionStateWrite[],
+): Record<string, unknown>[] | undefined {
+  if (!value || value.length === 0) {
+    return undefined;
+  }
+
+  return value.map((write) => ("delete" in write && write.delete === true)
+    ? { namespace: write.namespace, slot: write.slot, delete: true }
+    : { namespace: write.namespace, slot: write.slot, value: "value" in write ? write.value : undefined });
+}
+
 function mapPromptRuntimeVisibilityPolicyRequest(
   value?: PromptRuntimeVisibilityPolicy | null,
 ): Record<string, unknown> | null | undefined {
@@ -1180,6 +1432,181 @@ function mapPromptRuntimePreviewResult(value: unknown): PromptRuntimePreviewResu
   };
 }
 
+function mapPromptRuntimeInspectResult(value: unknown): PromptRuntimeInspectResult | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const scope = mapPromptRuntimeScopeRef(record.scope);
+  const policy = mapPromptRuntimeResolvedPolicy(record.policy);
+  const preparedTurn = mapPromptRuntimeInspectPreparedTurn(record.prepared_turn);
+  const governance = mapPromptRuntimeGovernanceView(record.governance);
+  if (!scope || !policy || !preparedTurn || !governance) {
+    return null;
+  }
+
+  return {
+    scope,
+    policy,
+    sourceMap: mapPromptRuntimeSourceMap(record.source_map) ?? {},
+    diagnostics: mapPromptRuntimeDiagnostics(record.diagnostics),
+    trimReasons: readArray(record.trim_reasons)
+      .map((item) => readRecord(item))
+      .filter((item): item is Record<string, unknown> => item !== null)
+      .map((item) => ({
+        group: readString(item.group),
+        reason: readString(item.reason) as NonNullable<PromptRuntimeInspectResult["trimReasons"]>[number]["reason"],
+        ...(readOptionalString(item.detail) ? { detail: readOptionalString(item.detail) } : {}),
+        ...(item.pruned_token_count !== undefined ? { prunedTokenCount: readNumber(item.pruned_token_count) } : {}),
+      })),
+    excludedSources: readArray(record.excluded_sources)
+      .map((item) => readRecord(item))
+      .filter((item): item is Record<string, unknown> => item !== null)
+      .map((item) => ({
+        source: readString(item.source) as PromptRuntimeInspectResult["excludedSources"][number]["source"],
+        reason: readString(item.reason) as PromptRuntimeInspectResult["excludedSources"][number]["reason"],
+        ...(readOptionalString(item.detail) ? { detail: readOptionalString(item.detail) } : {}),
+      })),
+    sectionStats: readArray(record.section_stats)
+      .map((item) => readRecord(item))
+      .filter((item): item is Record<string, unknown> => item !== null)
+      .map((item) => ({ sectionName: readString(item.section_name), tokenCount: readNumber(item.token_count) })),
+    limitations: mapStringArray(record.limitations),
+    preparedTurn,
+    governance,
+  };
+}
+
+function mapPromptRuntimeInspectPreparedTurn(value: unknown): PromptRuntimeInspectPreparedTurn | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const sessionStateWrites = mapPromptRuntimeSessionStateWritesSummary(record.session_state_writes);
+  if (!sessionStateWrites) {
+    return null;
+  }
+
+  return {
+    messages: readArray(record.messages)
+      .map((item) => readRecord(item))
+      .filter((item): item is Record<string, unknown> => item !== null)
+      .map((item) => ({
+        role: readString(item.role) === "system"
+          ? "system"
+          : readString(item.role) === "assistant"
+            ? "assistant"
+            : "user",
+        content: readString(item.content),
+      })),
+    tokenEstimate: readNumber(record.token_estimate),
+    availableForReply: readNumber(record.available_for_reply),
+    preprocessedUserMessage: readNullableString(record.preprocessed_user_message),
+    promptSnapshot: record.prompt_snapshot === null ? null : mapPromptSnapshotPayload(record.prompt_snapshot) ?? null,
+    runtimeTrace: record.runtime_trace === null ? null : mapPromptRuntimeTracePayload(record.runtime_trace) ?? null,
+    memorySummary: readNullableString(record.memory_summary),
+    generationParams: mapPromptRuntimeInspectGenerationParams(record.generation_params),
+    requestedTurnConfig: record.requested_turn_config === null ? null : mapPromptRuntimeInspectTurnConfig(record.requested_turn_config),
+    turnConfig: record.turn_config === null ? null : mapPromptRuntimeInspectTurnConfig(record.turn_config),
+    sessionStateWrites,
+  };
+}
+
+function mapPromptRuntimeInspectGenerationParams(value: unknown): PromptRuntimeInspectGenerationParams {
+  const record = readRecord(value);
+  if (!record) {
+    return {};
+  }
+
+  return {
+    ...(record.temperature !== undefined ? { temperature: readNumber(record.temperature) } : {}),
+    ...(record.max_output_tokens !== undefined ? { maxOutputTokens: readNumber(record.max_output_tokens) } : {}),
+    ...(record.top_p !== undefined ? { topP: readNumber(record.top_p) } : {}),
+    ...(record.top_k !== undefined ? { topK: readNumber(record.top_k) } : {}),
+    ...(record.frequency_penalty !== undefined ? { frequencyPenalty: readNumber(record.frequency_penalty) } : {}),
+    ...(record.presence_penalty !== undefined ? { presencePenalty: readNumber(record.presence_penalty) } : {}),
+    ...(record.stop_sequences !== undefined ? { stopSequences: mapStringArray(record.stop_sequences) } : {}),
+    ...(record.stream !== undefined ? { stream: readBoolean(record.stream) } : {}),
+    ...(record.reasoning_effort !== undefined ? { reasoningEffort: readString(record.reasoning_effort) as "low" | "medium" | "high" } : {}),
+  };
+}
+
+function mapPromptRuntimeInspectTurnConfig(value: unknown): PromptRuntimeInspectTurnConfig {
+  const record = readRecord(value);
+  if (!record) {
+    return {};
+  }
+
+  return {
+    ...(record.enable_tools !== undefined ? { enableTools: readBoolean(record.enable_tools) } : {}),
+    ...(record.enable_director !== undefined ? { enableDirector: readBoolean(record.enable_director) } : {}),
+    ...(record.enable_verifier !== undefined ? { enableVerifier: readBoolean(record.enable_verifier) } : {}),
+    ...(record.enable_memory_consolidation !== undefined ? { enableMemoryConsolidation: readBoolean(record.enable_memory_consolidation) } : {}),
+    ...(record.verifier_fail_strategy !== undefined ? { verifierFailStrategy: readString(record.verifier_fail_strategy) as PromptRuntimeTurnConfigVerifierFailStrategy } : {}),
+    ...(record.tool_mode !== undefined ? { toolMode: readString(record.tool_mode) as PromptRuntimeTurnConfigToolMode } : {}),
+    ...(record.max_retries !== undefined ? { maxRetries: readNumber(record.max_retries) } : {}),
+  };
+}
+
+function mapPromptRuntimeSessionStateWritesSummary(value: unknown): PromptRuntimeSessionStateWritesSummary | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    total: readNumber(record.total),
+    writes: readArray(record.writes)
+      .map((item) => readRecord(item))
+      .filter((item): item is Record<string, unknown> => item !== null)
+      .map((item) => ({
+        namespace: readString(item.namespace),
+        slot: readString(item.slot),
+        operation: readString(item.operation) === "delete" ? "delete" : "set",
+      })),
+  };
+}
+
+function mapPromptRuntimeGovernanceView(value: unknown): PromptRuntimeGovernanceView | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    entries: readArray(record.entries)
+      .map((item) => readRecord(item))
+      .filter((item): item is Record<string, unknown> => item !== null)
+      .map((item) => ({
+        sourceKind: readString(item.source_kind),
+        declaredLevel: readNullablePromptRuntimeSourceGovernanceLevel(item.declared_level),
+        registered: readBoolean(item.registered),
+        effectiveRetention: readPromptRuntimeGovernanceRetention(item.effective_retention),
+        pinned: typeof item.pinned === "boolean" ? item.pinned : item.pinned === null ? null : null,
+        prunable: typeof item.prunable === "boolean" ? item.prunable : item.prunable === null ? null : null,
+        budgetGroups: mapStringArray(item.budget_groups),
+        sectionNames: mapStringArray(item.section_names),
+        tokenCount: readNumber(item.token_count),
+        retainedTokenCount: readNumber(item.retained_token_count),
+        prunedTokenCount: readNumber(item.pruned_token_count),
+      })),
+    mismatches: readArray(record.mismatches)
+      .map((item) => readRecord(item))
+      .filter((item): item is Record<string, unknown> => item !== null)
+      .map((item) => ({
+        code: readPromptRuntimeGovernanceMismatchCode(item.code),
+        sourceKind: readString(item.source_kind),
+        declaredLevel: readNullablePromptRuntimeSourceGovernanceLevel(item.declared_level),
+        effectiveRetention: readPromptRuntimeGovernanceRetention(item.effective_retention),
+        budgetGroups: mapStringArray(item.budget_groups),
+        message: readString(item.message),
+      })),
+    limitations: mapStringArray(record.limitations),
+  };
+}
+
 function mapPromptRuntimeHistoricalExplain(value: unknown): PromptRuntimeHistoricalExplain | null {
   const record = readRecord(value);
   const floor = readRecord(record?.floor);
@@ -1228,6 +1655,7 @@ function mapPromptRuntimeHistoricalExplain(value: unknown): PromptRuntimeHistori
       tokenEstimate: readNumber(snapshot.token_estimate),
     },
     resolvedPolicy: record.resolved_policy === null ? null : mapPromptRuntimeResolvedPolicy(record.resolved_policy),
+    governance: record.governance === null ? null : mapPromptRuntimeGovernanceView(record.governance),
     result: {
       assistantMessageId: readString(result.assistant_message_id),
       committedAt: readNumber(result.committed_at),
@@ -1268,6 +1696,7 @@ function mapPromptRuntimeExplainDiff(value: unknown): PromptRuntimeExplainDiff |
     },
     limitations: mapStringArray(record.limitations),
     policyChanges: mapPromptRuntimeDiffEntries(record.policy_changes),
+    governanceChanges: mapPromptRuntimeDiffEntries(record.governance_changes),
     right: {
       floorId: readString(right.floor_id),
       snapshotAvailable: readBoolean(right.snapshot_available),
@@ -1549,6 +1978,38 @@ function readPromptRuntimeAssistantRewriteStrategy(
 ): PromptRuntimeAssistantRewriteStrategy | undefined {
   const strategy = readOptionalString(value);
   return strategy === "to_system" || strategy === "to_user_transcript" ? strategy : undefined;
+}
+
+function readNullablePromptRuntimeSourceGovernanceLevel(
+  value: unknown,
+): PromptRuntimeSourceGovernanceLevel | null {
+  const level = readOptionalString(value);
+  if (level === "hard_required" || level === "soft_required" || level === "budget_prunable") {
+    return level;
+  }
+
+  return null;
+}
+
+function readPromptRuntimeGovernanceRetention(value: unknown): PromptRuntimeGovernanceRetention {
+  const retention = readString(value, "soft_required");
+  if (retention === "fixed" || retention === "soft_required" || retention === "budget_prunable" || retention === "mixed") {
+    return retention;
+  }
+
+  return "soft_required";
+}
+
+function readPromptRuntimeGovernanceMismatchCode(value: unknown): PromptRuntimeGovernanceMismatchCode {
+  const code = readString(value, "mixed_effective_retention");
+  if (code === "declared_budget_prunable_but_effectively_fixed"
+    || code === "declared_soft_required_but_effectively_budget_prunable"
+    || code === "unregistered_governed_source"
+    || code === "mixed_effective_retention") {
+    return code;
+  }
+
+  return "mixed_effective_retention";
 }
 
 function readPromptRuntimePolicySource(value: unknown): PromptRuntimePolicySource | undefined {

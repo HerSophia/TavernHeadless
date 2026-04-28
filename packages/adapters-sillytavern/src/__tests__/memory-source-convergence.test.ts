@@ -109,9 +109,9 @@ describe('memory source convergence across compat_plus / native', () => {
     expect(nativeMemory!.budgetGroup).toBe('memory');
     expect(compatPlusMemory!.budgetGroup).toBe('memory');
 
-    // 3. pinned 一致。
-    expect(nativeMemory!.pinned).toBe(true);
-    expect(compatPlusMemory!.pinned).toBe(true);
+    // 3. pinned 一致，并保持 soft_required（不固定但不可预算裁剪）。
+    expect(nativeMemory!.pinned).toBe(false);
+    expect(compatPlusMemory!.pinned).toBe(false);
 
     const nativeMessage = firstMemoryMessage(nativeMemory);
     const compatPlusMessage = firstMemoryMessage(compatPlusMemory);

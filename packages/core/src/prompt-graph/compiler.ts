@@ -1,4 +1,5 @@
 import type { ChatRole, IRMessage, IRSection, PromptIR } from '../prompt/types.js';
+import { resolvePromptRuntimeGovernancePolicy } from '../prompt/governance.js';
 import { TemplateEngine } from '../prompt/template-engine.js';
 import type {
   CharacterNode,
@@ -285,6 +286,10 @@ function compileChatHistoryNode(
   policies: PromptExecutionPolicy,
 ): IRSection | null {
   const variables = input.variables ?? {};
+  const historyGovernance = resolvePromptRuntimeGovernancePolicy({
+    sourceKind: 'history',
+    fallback: { budgetGroup: 'history', pinned: false, prunable: true },
+  });
   const messages = (input.chatHistory ?? [])
     .filter((message) => message.role === 'user' || message.role === 'assistant')
     .map((message, index) => ({
@@ -297,13 +302,13 @@ function compileChatHistoryNode(
         true,
       ),
       source: `prompt-graph:${node.id}:chat:${index}`,
-      prunable: true,
+      prunable: historyGovernance.prunable,
       priority: index,
     } satisfies IRMessage));
 
-  return createSection(node.name, resolvePlacementOrder(group, node.placement), messages, false, {
+  return createSection(node.name, resolvePlacementOrder(group, node.placement), messages, historyGovernance.pinned, {
     semantic: 'chat_history',
-    budgetGroup: 'history',
+    budgetGroup: historyGovernance.budgetGroup,
   });
 }
 
@@ -314,6 +319,10 @@ function compileWorldbookNode(
   input: PromptGraphCompilerInput,
 ): IRSection | null {
   const variables = input.variables ?? {};
+  const worldbookGovernance = resolvePromptRuntimeGovernancePolicy({
+    sourceKind: 'worldbook',
+    fallback: { budgetGroup: 'worldbook', pinned: false, prunable: true },
+  });
   const messages = (input.worldbookEntries ?? [])
     .filter((entry) => {
       if ((entry.position ?? 'before') !== node.position) {
@@ -331,7 +340,7 @@ function compileWorldbookNode(
       role: entry.role ?? node.role,
       content: resolveTemplate(templateEngine, entry.content, variables),
       source: `prompt-graph:${node.id}:worldbook:${entry.id}`,
-      prunable: false,
+      prunable: worldbookGovernance.prunable,
     } satisfies IRMessage));
 
   const insertion = node.position === 'depth'
@@ -340,9 +349,9 @@ function compileWorldbookNode(
       ? findAnchorInsertion(group, node.placement)
       : toSectionInsertion(node.placement);
 
-  return createSection(node.name, resolvePlacementOrder(group, node.placement), messages, true, {
+  return createSection(node.name, resolvePlacementOrder(group, node.placement), messages, worldbookGovernance.pinned, {
     insertion,
-    budgetGroup: 'worldbook',
+    budgetGroup: worldbookGovernance.budgetGroup,
   });
 }
 
@@ -357,15 +366,20 @@ function compileExampleDialogueNode(
   if (!exampleDialogue) {
     return null;
   }
+  const exampleGovernance = resolvePromptRuntimeGovernancePolicy({
+    sourceKind: 'examples',
+    fallback: { budgetGroup: 'examples', pinned: false, prunable: true },
+  });
 
   const content = resolveTemplate(templateEngine, exampleDialogue, input.variables ?? {});
   return createSection(node.name, resolvePlacementOrder(group, node.placement), [{
     role: node.role,
     content: applyNamesBehavior(content, node.role, input, policies.namesBehavior, node.placement.kind === 'in_chat'),
     source: `prompt-graph:${node.id}`,
-    prunable: false,
-  }], true, {
+    prunable: exampleGovernance.prunable,
+  }], exampleGovernance.pinned, {
     insertion: toSectionInsertion(node.placement),
+    budgetGroup: exampleGovernance.budgetGroup,
   });
 }
 
@@ -380,16 +394,20 @@ function compileMemoryNode(
   if (!summary) {
     return null;
   }
+  const memoryGovernance = resolvePromptRuntimeGovernancePolicy({
+    sourceKind: 'memory',
+    fallback: { budgetGroup: 'memory', pinned: false, prunable: false },
+  });
 
   const content = resolveTemplate(templateEngine, `[Memory Summary]\n${summary}`, input.variables ?? {});
   return createSection(node.name, resolvePlacementOrder(group, node.placement), [{
     role: node.role,
     content: applyNamesBehavior(content, node.role, input, policies.namesBehavior, node.placement.kind === 'in_chat'),
     source: `prompt-graph:${node.id}`,
-    prunable: false,
-  }], true, {
+    prunable: memoryGovernance.prunable,
+  }], memoryGovernance.pinned, {
     insertion: toSectionInsertion(node.placement),
-    budgetGroup: 'memory',
+    budgetGroup: memoryGovernance.budgetGroup,
   });
 }
 

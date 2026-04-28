@@ -11780,6 +11780,46 @@
                       "session_id": "session-1",
                       "state": "committed"
                     },
+                    "governance": {
+                      "entries": [
+                        {
+                          "budget_groups": [
+                            "history"
+                          ],
+                          "declared_level": "budget_prunable",
+                          "effective_retention": "budget_prunable",
+                          "pinned": false,
+                          "prunable": true,
+                          "pruned_token_count": 64,
+                          "registered": true,
+                          "retained_token_count": 256,
+                          "section_names": [
+                            "chatHistory"
+                          ],
+                          "source_kind": "history",
+                          "token_count": 320
+                        },
+                        {
+                          "budget_groups": [
+                            "memory"
+                          ],
+                          "declared_level": "soft_required",
+                          "effective_retention": "soft_required",
+                          "pinned": false,
+                          "prunable": false,
+                          "pruned_token_count": 0,
+                          "registered": true,
+                          "retained_token_count": 64,
+                          "section_names": [
+                            "memory"
+                          ],
+                          "source_kind": "memory",
+                          "token_count": 64
+                        }
+                      ],
+                      "limitations": [],
+                      "mismatches": []
+                    },
                     "limitations": [
                       "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
                       "Variable commit remains page -> floor. Branch promotion is not automatic."
@@ -12228,6 +12268,186 @@
                             "committed_at"
                           ],
                           "type": "object"
+                        },
+                        "governance": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "entries": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "budget_groups": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "declared_level": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "hard_required",
+                                              "soft_required",
+                                              "budget_prunable"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "effective_retention": {
+                                        "enum": [
+                                          "fixed",
+                                          "soft_required",
+                                          "budget_prunable",
+                                          "mixed"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "pinned": {
+                                        "anyOf": [
+                                          {
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "prunable": {
+                                        "anyOf": [
+                                          {
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "pruned_token_count": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "registered": {
+                                        "type": "boolean"
+                                      },
+                                      "retained_token_count": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "section_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_kind": {
+                                        "type": "string"
+                                      },
+                                      "token_count": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "source_kind",
+                                      "registered",
+                                      "effective_retention",
+                                      "pinned",
+                                      "prunable",
+                                      "budget_groups",
+                                      "section_names",
+                                      "token_count",
+                                      "retained_token_count",
+                                      "pruned_token_count"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "limitations": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "mismatches": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "budget_groups": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "code": {
+                                        "enum": [
+                                          "declared_budget_prunable_but_effectively_fixed",
+                                          "declared_soft_required_but_effectively_budget_prunable",
+                                          "unregistered_governed_source",
+                                          "mixed_effective_retention"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "declared_level": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "hard_required",
+                                              "soft_required",
+                                              "budget_prunable"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "effective_retention": {
+                                        "enum": [
+                                          "fixed",
+                                          "soft_required",
+                                          "budget_prunable",
+                                          "mixed"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "type": "string"
+                                      },
+                                      "source_kind": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "source_kind",
+                                      "effective_retention",
+                                      "budget_groups",
+                                      "message"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "entries",
+                                "mismatches",
+                                "limitations"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "limitations": {
                           "items": {
@@ -13172,6 +13392,7 @@
                         "assets",
                         "prompt_snapshot",
                         "resolved_policy",
+                        "governance",
                         "trim_reasons",
                         "excluded_sources",
                         "section_stats",
@@ -36653,8 +36874,23 @@
                         "read_only": true,
                         "recompute": false,
                         "requires_committed_floor": true,
+                        "returns_governance": true,
                         "snapshot_availability_field": "snapshot_available",
                         "snapshot_supported": true
+                      },
+                      "inspect": {
+                        "commits_side_effects": false,
+                        "creates_floor": false,
+                        "enabled": true,
+                        "llm_call": false,
+                        "mode": "prepared_turn",
+                        "returns_governance": true,
+                        "returns_prepared_turn": true,
+                        "supports_branch": true,
+                        "supports_source_floor": true,
+                        "supports_visibility": true,
+                        "writes_explain_snapshot": false,
+                        "writes_prompt_snapshot": false
                       },
                       "live": {
                         "default_off": true,
@@ -37087,6 +37323,11 @@
                                     true
                                   ]
                                 },
+                                "returns_governance": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
                                 "snapshot_availability_field": {
                                   "enum": [
                                     "snapshot_available"
@@ -37102,12 +37343,92 @@
                               "required": [
                                 "enabled",
                                 "read_only",
+                                "returns_governance",
                                 "requires_committed_floor",
                                 "persisted_truth_only",
                                 "recompute",
                                 "snapshot_supported",
                                 "legacy_floor_fallback",
                                 "snapshot_availability_field"
+                              ],
+                              "type": "object"
+                            },
+                            "inspect": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "commits_side_effects": {
+                                  "enum": [
+                                    false
+                                  ]
+                                },
+                                "creates_floor": {
+                                  "enum": [
+                                    false
+                                  ]
+                                },
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "llm_call": {
+                                  "enum": [
+                                    false
+                                  ]
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "prepared_turn"
+                                  ],
+                                  "type": "string"
+                                },
+                                "returns_governance": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
+                                "returns_prepared_turn": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
+                                "supports_branch": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
+                                "supports_source_floor": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
+                                "supports_visibility": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
+                                "writes_explain_snapshot": {
+                                  "enum": [
+                                    false
+                                  ]
+                                },
+                                "writes_prompt_snapshot": {
+                                  "enum": [
+                                    false
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "enabled",
+                                "mode",
+                                "supports_branch",
+                                "supports_source_floor",
+                                "supports_visibility",
+                                "returns_prepared_turn",
+                                "returns_governance",
+                                "llm_call",
+                                "creates_floor",
+                                "writes_prompt_snapshot",
+                                "writes_explain_snapshot",
+                                "commits_side_effects"
                               ],
                               "type": "object"
                             },
@@ -37280,6 +37601,7 @@
                           "required": [
                             "live",
                             "dry_run",
+                            "inspect",
                             "preview",
                             "explain",
                             "stream"
@@ -45543,6 +45865,7 @@
                         ]
                       }
                     ],
+                    "governance_changes": [],
                     "left": {
                       "floor_id": "floor-left",
                       "snapshot_available": true
@@ -45654,6 +45977,32 @@
                           "type": "array"
                         },
                         "exclusion_changes": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "change_type": {
+                                "enum": [
+                                  "added",
+                                  "removed",
+                                  "changed"
+                                ],
+                                "type": "string"
+                              },
+                              "left": {},
+                              "path": {
+                                "type": "string"
+                              },
+                              "right": {}
+                            },
+                            "required": [
+                              "path",
+                              "change_type"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "governance_changes": {
                           "items": {
                             "additionalProperties": false,
                             "properties": {
@@ -45805,6 +46154,7 @@
                         "diagnostics_changes",
                         "trim_changes",
                         "exclusion_changes",
+                        "governance_changes",
                         "limitations"
                       ],
                       "type": "object"
@@ -45953,6 +46303,2999 @@
           }
         },
         "summary": "Compare committed floor prompt runtime snapshots",
+        "tags": [
+          "prompt-runtime"
+        ]
+      }
+    },
+    "/sessions/{id}/prompt-runtime/inspect": {
+      "post": {
+        "description": "Builds the full prepared-turn prompt view for a branch-aware request without calling an LLM, creating floors, staging session state writes, or committing any side effects.",
+        "operationId": "inspectSessionPromptRuntime",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "branch_id": "alt-branch",
+                "budget": {
+                  "max_input_tokens": 4096,
+                  "reserved_completion_tokens": 1024
+                },
+                "config": {
+                  "enableDirector": false,
+                  "enableTools": false,
+                  "enableVerifier": false
+                },
+                "debug_options": {
+                  "include_worldbook_matches": true
+                },
+                "delivery": {
+                  "allow_assistant_prefill": true,
+                  "no_assistant": true,
+                  "require_last_user": true
+                },
+                "generation_params": {
+                  "max_output_tokens": 256,
+                  "temperature": 0.7
+                },
+                "message": "Please continue the campfire scene.",
+                "prompt_intent": "normal",
+                "session_state_writes": [
+                  {
+                    "namespace": "quest_flags",
+                    "slot": "companion",
+                    "value": {
+                      "mood": "ally"
+                    }
+                  }
+                ],
+                "source_floor_id": "floor-source",
+                "source_selection": {
+                  "examples": {
+                    "enabled": false
+                  },
+                  "history": {
+                    "max_messages": 24,
+                    "mode": "windowed"
+                  },
+                  "memory": {
+                    "enabled": true
+                  },
+                  "worldbook": {
+                    "enabled": true
+                  }
+                },
+                "structure": {
+                  "assistant_rewrite_strategy": "to_system",
+                  "merge_adjacent_same_role": true,
+                  "mode": "no_assistant",
+                  "preserve_system_messages": true
+                },
+                "visibility": {
+                  "hidden_floor_ranges": [
+                    {
+                      "end_floor_no": 2,
+                      "start_floor_no": 1
+                    }
+                  ],
+                  "mode": "allow_all_except_hidden"
+                }
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "branch_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "budget": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "max_input_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "reserved_completion_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "config": {
+                    "additionalProperties": false,
+                    "example": {
+                      "enableDirector": true,
+                      "enableMemoryConsolidation": true,
+                      "enableTools": true,
+                      "enableVerifier": true,
+                      "maxRetries": 1,
+                      "toolMode": "inline",
+                      "verifierFailStrategy": "warn"
+                    },
+                    "properties": {
+                      "enableDirector": {
+                        "type": "boolean"
+                      },
+                      "enableMemoryConsolidation": {
+                        "type": "boolean"
+                      },
+                      "enableTools": {
+                        "type": "boolean"
+                      },
+                      "enableVerifier": {
+                        "type": "boolean"
+                      },
+                      "maxRetries": {
+                        "maximum": 5,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "toolMode": {
+                        "enum": [
+                          "inline",
+                          "standalone",
+                          "both"
+                        ],
+                        "type": "string"
+                      },
+                      "verifierFailStrategy": {
+                        "enum": [
+                          "warn",
+                          "block",
+                          "retry"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "debug_options": {
+                    "additionalProperties": false,
+                    "example": {
+                      "include_prompt_snapshot": true,
+                      "include_runtime_trace": true,
+                      "include_worldbook_matches": false
+                    },
+                    "properties": {
+                      "include_prompt_snapshot": {
+                        "type": "boolean"
+                      },
+                      "include_runtime_trace": {
+                        "type": "boolean"
+                      },
+                      "include_worldbook_matches": {
+                        "type": "boolean"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "delivery": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "allow_assistant_prefill": {
+                        "type": "boolean"
+                      },
+                      "no_assistant": {
+                        "type": "boolean"
+                      },
+                      "require_last_user": {
+                        "type": "boolean"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "generation_params": {
+                    "additionalProperties": false,
+                    "example": {
+                      "max_output_tokens": 256,
+                      "reasoning_effort": "low",
+                      "temperature": 0.7,
+                      "top_p": 0.9
+                    },
+                    "properties": {
+                      "frequency_penalty": {
+                        "type": "number"
+                      },
+                      "max_output_tokens": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "presence_penalty": {
+                        "type": "number"
+                      },
+                      "reasoning_effort": {
+                        "enum": [
+                          "low",
+                          "medium",
+                          "high"
+                        ],
+                        "type": "string"
+                      },
+                      "stop_sequences": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "stream": {
+                        "type": "boolean"
+                      },
+                      "temperature": {
+                        "maximum": 2,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "top_k": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "top_p": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "message": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "prompt_intent": {
+                    "enum": [
+                      "normal",
+                      "continue",
+                      "impersonate",
+                      "swipe",
+                      "regenerate",
+                      "quiet"
+                    ],
+                    "type": "string"
+                  },
+                  "session_state_writes": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "delete": {
+                          "enum": [
+                            true
+                          ],
+                          "type": "boolean"
+                        },
+                        "namespace": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "slot": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "value": {}
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "source_floor_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "source_selection": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "examples": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "history": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "max_messages": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "mode": {
+                            "enum": [
+                              "full",
+                              "windowed"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "memory": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "worldbook": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "structure": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "assistant_rewrite_strategy": {
+                        "enum": [
+                          "to_system",
+                          "to_user_transcript"
+                        ],
+                        "type": "string"
+                      },
+                      "merge_adjacent_same_role": {
+                        "type": "boolean"
+                      },
+                      "mode": {
+                        "enum": [
+                          "default",
+                          "strict_alternating",
+                          "no_assistant",
+                          "flattened"
+                        ],
+                        "type": "string"
+                      },
+                      "preserve_system_messages": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ],
+                    "type": "object"
+                  },
+                  "visibility": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "hidden_floor_ids": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "hidden_floor_ranges": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "end_floor_no": {
+                              "type": "integer"
+                            },
+                            "start_floor_no": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "start_floor_no",
+                            "end_floor_no"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "mode": {
+                        "enum": [
+                          "allow_all_except_hidden",
+                          "deny_all_except_visible"
+                        ],
+                        "type": "string"
+                      },
+                      "visible_floor_ranges": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "end_floor_no": {
+                              "type": "integer"
+                            },
+                            "start_floor_no": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "start_floor_no",
+                            "end_floor_no"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "message"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "diagnostics": [
+                      {
+                        "code": "derived_no_assistant_structure",
+                        "field_path": "policy.structure.mode",
+                        "message": "delivery.noAssistant forced the resolved structure.mode to no_assistant.",
+                        "severity": "warning",
+                        "source": "policy"
+                      }
+                    ],
+                    "excluded_sources": [
+                      {
+                        "detail": "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly.",
+                        "reason": "disabled_by_policy",
+                        "source": "examples"
+                      }
+                    ],
+                    "governance": {
+                      "entries": [
+                        {
+                          "budget_groups": [
+                            "history"
+                          ],
+                          "declared_level": "budget_prunable",
+                          "effective_retention": "budget_prunable",
+                          "pinned": false,
+                          "prunable": true,
+                          "pruned_token_count": 64,
+                          "registered": true,
+                          "retained_token_count": 256,
+                          "section_names": [
+                            "chatHistory"
+                          ],
+                          "source_kind": "history",
+                          "token_count": 320
+                        },
+                        {
+                          "budget_groups": [
+                            "memory"
+                          ],
+                          "declared_level": "soft_required",
+                          "effective_retention": "soft_required",
+                          "pinned": false,
+                          "prunable": false,
+                          "pruned_token_count": 0,
+                          "registered": true,
+                          "retained_token_count": 64,
+                          "section_names": [
+                            "memory"
+                          ],
+                          "source_kind": "memory",
+                          "token_count": 64
+                        }
+                      ],
+                      "limitations": [],
+                      "mismatches": []
+                    },
+                    "limitations": [
+                      "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+                      "Variable commit remains page -> floor. Branch promotion is not automatic."
+                    ],
+                    "policy": {
+                      "budget": {
+                        "max_input_tokens": 4096,
+                        "reserved_completion_tokens": 1024
+                      },
+                      "debug": {
+                        "include_prompt_snapshot": false,
+                        "include_runtime_trace": false,
+                        "include_worldbook_matches": false
+                      },
+                      "delivery": {
+                        "allow_assistant_prefill": true,
+                        "no_assistant": true,
+                        "require_last_user": true
+                      },
+                      "source_selection": {
+                        "examples": {
+                          "enabled": false
+                        },
+                        "history": {
+                          "max_messages": 24,
+                          "mode": "windowed"
+                        },
+                        "memory": {
+                          "enabled": true
+                        },
+                        "worldbook": {
+                          "enabled": true
+                        }
+                      },
+                      "structure": {
+                        "assistant_rewrite_strategy": "to_system",
+                        "merge_adjacent_same_role": true,
+                        "mode": "no_assistant",
+                        "preserve_system_messages": true
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": [
+                          {
+                            "end_floor_no": 2,
+                            "start_floor_no": 1
+                          }
+                        ],
+                        "mode": "allow_all_except_hidden"
+                      }
+                    },
+                    "prepared_turn": {
+                      "available_for_reply": 1536,
+                      "generation_params": {
+                        "max_output_tokens": 256,
+                        "temperature": 0.7
+                      },
+                      "memory_summary": "The party recently agreed to search the northern pass.",
+                      "messages": [
+                        {
+                          "content": "Stay in character and keep the tone warm.",
+                          "role": "system"
+                        },
+                        {
+                          "content": "Please continue the campfire scene.",
+                          "role": "user"
+                        }
+                      ],
+                      "preprocessed_user_message": "Please continue the campfire scene.",
+                      "prompt_snapshot": {
+                        "preset_id": "preset-story",
+                        "preset_updated_at": 1710000000000,
+                        "preset_version": 3,
+                        "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                        "prompt_mode": "compat_strict",
+                        "regex_post_rule_names": [],
+                        "regex_pre_rule_names": [
+                          "trim_whitespace"
+                        ],
+                        "regex_profile_id": "regex-safe",
+                        "regex_profile_updated_at": 1710000002000,
+                        "regex_profile_version": 2,
+                        "token_estimate": 512,
+                        "worldbook_activated_entry_uids": [
+                          7,
+                          12
+                        ],
+                        "worldbook_id": "wb-lore",
+                        "worldbook_updated_at": 1710000001000,
+                        "worldbook_version": 5
+                      },
+                      "requested_turn_config": {
+                        "enableDirector": false,
+                        "enableTools": false,
+                        "enableVerifier": false
+                      },
+                      "runtime_trace": {
+                        "macro": {
+                          "mutation_preview": [
+                            {
+                              "key": "资产",
+                              "kind": "set",
+                              "scope": "branch",
+                              "value": "{\"金币\":3}"
+                            }
+                          ],
+                          "staged_mutations": [],
+                          "traces": [
+                            {
+                              "macro_name": "setvar",
+                              "phase": "preview",
+                              "raw_text": "{{setvar::资产.金币::3}}",
+                              "resolved_text": "",
+                              "source_kind": "macro"
+                            },
+                            {
+                              "macro_name": "getvar",
+                              "phase": "preview",
+                              "raw_text": "{{getvar::资产}}",
+                              "resolved_text": "{\"金币\":3}",
+                              "source_kind": "macro"
+                            }
+                          ],
+                          "used_names": [
+                            "setvar",
+                            "getvar"
+                          ],
+                          "warnings": [
+                            {
+                              "code": "macro_preview_side_effect_suppressed",
+                              "macro_name": "setvar",
+                              "message": "Macro setvar side effect was previewed but not committed."
+                            }
+                          ]
+                        },
+                        "source_selection": {
+                          "excluded_sources": [
+                            {
+                              "detail": "Visibility filtered 2 floor(s) from the available history window.",
+                              "reason": "visibility_filtered",
+                              "source": "history"
+                            }
+                          ]
+                        },
+                        "visibility": {
+                          "filtered_floor_nos": [
+                            1,
+                            2
+                          ],
+                          "hidden_floor_ranges": [
+                            {
+                              "end_floor_no": 2,
+                              "start_floor_no": 1
+                            }
+                          ]
+                        }
+                      },
+                      "session_state_writes": {
+                        "total": 1,
+                        "writes": [
+                          {
+                            "namespace": "quest_flags",
+                            "operation": "set",
+                            "slot": "companion"
+                          }
+                        ]
+                      },
+                      "token_estimate": 512,
+                      "turn_config": {
+                        "enableDirector": false,
+                        "enableTools": false,
+                        "enableVerifier": false
+                      }
+                    },
+                    "scope": {
+                      "branch_exists": true,
+                      "history_source_branch_id": "alt-branch",
+                      "history_source_mode": "existing_branch",
+                      "session_id": "session-1",
+                      "source_floor_id": null,
+                      "target_branch_id": "alt-branch"
+                    },
+                    "section_stats": [
+                      {
+                        "section_name": "history",
+                        "token_count": 320
+                      },
+                      {
+                        "section_name": "main",
+                        "token_count": 96
+                      }
+                    ],
+                    "source_map": {
+                      "budget": {
+                        "max_input_tokens": "request_override",
+                        "reserved_completion_tokens": "request_override"
+                      },
+                      "delivery": {
+                        "allow_assistant_prefill": "system_default",
+                        "no_assistant": "branch_policy",
+                        "require_last_user": "session_policy"
+                      },
+                      "history": {
+                        "source_branch_id": "alt-branch",
+                        "source_mode": "existing_branch"
+                      },
+                      "source_selection": {
+                        "examples": {
+                          "enabled": "request_override"
+                        },
+                        "history": {
+                          "max_messages": "request_override",
+                          "mode": "request_override"
+                        },
+                        "memory": {
+                          "enabled": "system_default"
+                        },
+                        "worldbook": {
+                          "enabled": "system_default"
+                        }
+                      },
+                      "structure": {
+                        "assistant_rewrite_strategy": "system_default",
+                        "merge_adjacent_same_role": "branch_policy",
+                        "mode": "branch_policy",
+                        "preserve_system_messages": "system_default"
+                      },
+                      "visibility": {
+                        "hidden_floor_ranges": "request_override",
+                        "mode": "request_override"
+                      }
+                    },
+                    "trim_reasons": [
+                      {
+                        "detail": "Prompt runtime pruned 64 tokens from budget group 'history'.",
+                        "group": "history",
+                        "pruned_token_count": 64,
+                        "reason": "group_limit_exceeded"
+                      }
+                    ]
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "diagnostics": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "field_path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              },
+                              "phase": {
+                                "enum": [
+                                  "preview",
+                                  "dry_run",
+                                  "assemble",
+                                  "commit_consume",
+                                  "explain"
+                                ],
+                                "type": "string"
+                              },
+                              "severity": {
+                                "enum": [
+                                  "info",
+                                  "warning",
+                                  "error"
+                                ],
+                                "type": "string"
+                              },
+                              "source": {
+                                "enum": [
+                                  "policy",
+                                  "branch",
+                                  "macro",
+                                  "budget",
+                                  "source_selection",
+                                  "provider_constraint"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message",
+                              "severity"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "excluded_sources": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "detail": {
+                                "type": "string"
+                              },
+                              "reason": {
+                                "enum": [
+                                  "disabled_by_policy",
+                                  "budget_trimmed",
+                                  "provider_constraint",
+                                  "visibility_filtered",
+                                  "not_triggered"
+                                ],
+                                "type": "string"
+                              },
+                              "source": {
+                                "description": "Public source kind. Internal budget groups such as `section:*` do not appear here.",
+                                "enum": [
+                                  "history",
+                                  "memory",
+                                  "worldbook",
+                                  "examples"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "reason"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "governance": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "entries": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "budget_groups": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "declared_level": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "hard_required",
+                                          "soft_required",
+                                          "budget_prunable"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "effective_retention": {
+                                    "enum": [
+                                      "fixed",
+                                      "soft_required",
+                                      "budget_prunable",
+                                      "mixed"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "pinned": {
+                                    "anyOf": [
+                                      {
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "prunable": {
+                                    "anyOf": [
+                                      {
+                                        "type": "boolean"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "pruned_token_count": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "registered": {
+                                    "type": "boolean"
+                                  },
+                                  "retained_token_count": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "section_names": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "source_kind": {
+                                    "type": "string"
+                                  },
+                                  "token_count": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": [
+                                  "source_kind",
+                                  "registered",
+                                  "effective_retention",
+                                  "pinned",
+                                  "prunable",
+                                  "budget_groups",
+                                  "section_names",
+                                  "token_count",
+                                  "retained_token_count",
+                                  "pruned_token_count"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "limitations": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "mismatches": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "budget_groups": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "code": {
+                                    "enum": [
+                                      "declared_budget_prunable_but_effectively_fixed",
+                                      "declared_soft_required_but_effectively_budget_prunable",
+                                      "unregistered_governed_source",
+                                      "mixed_effective_retention"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "declared_level": {
+                                    "anyOf": [
+                                      {
+                                        "enum": [
+                                          "hard_required",
+                                          "soft_required",
+                                          "budget_prunable"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "effective_retention": {
+                                    "enum": [
+                                      "fixed",
+                                      "soft_required",
+                                      "budget_prunable",
+                                      "mixed"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  },
+                                  "source_kind": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "code",
+                                  "source_kind",
+                                  "effective_retention",
+                                  "budget_groups",
+                                  "message"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "entries",
+                            "mismatches",
+                            "limitations"
+                          ],
+                          "type": "object"
+                        },
+                        "limitations": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "policy": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "budget": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "max_input_tokens": {
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                "reserved_completion_tokens": {
+                                  "minimum": 1,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "debug": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "include_prompt_snapshot": {
+                                  "type": "boolean"
+                                },
+                                "include_runtime_trace": {
+                                  "type": "boolean"
+                                },
+                                "include_worldbook_matches": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "include_prompt_snapshot",
+                                "include_runtime_trace",
+                                "include_worldbook_matches"
+                              ],
+                              "type": "object"
+                            },
+                            "delivery": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "allow_assistant_prefill": {
+                                  "type": "boolean"
+                                },
+                                "no_assistant": {
+                                  "type": "boolean"
+                                },
+                                "require_last_user": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "allow_assistant_prefill",
+                                "require_last_user",
+                                "no_assistant"
+                              ],
+                              "type": "object"
+                            },
+                            "source_selection": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "examples": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "enabled": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "enabled"
+                                  ],
+                                  "type": "object"
+                                },
+                                "history": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "max_messages": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    },
+                                    "mode": {
+                                      "enum": [
+                                        "full",
+                                        "windowed"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "mode"
+                                  ],
+                                  "type": "object"
+                                },
+                                "memory": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "enabled": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "enabled"
+                                  ],
+                                  "type": "object"
+                                },
+                                "worldbook": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "enabled": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "enabled"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "history",
+                                "memory",
+                                "worldbook",
+                                "examples"
+                              ],
+                              "type": "object"
+                            },
+                            "structure": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "assistant_rewrite_strategy": {
+                                  "enum": [
+                                    "to_system",
+                                    "to_user_transcript"
+                                  ],
+                                  "type": "string"
+                                },
+                                "merge_adjacent_same_role": {
+                                  "type": "boolean"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "default",
+                                    "strict_alternating",
+                                    "no_assistant",
+                                    "flattened"
+                                  ],
+                                  "type": "string"
+                                },
+                                "preserve_system_messages": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "merge_adjacent_same_role",
+                                "preserve_system_messages"
+                              ],
+                              "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "items": {
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "hidden_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "allow_all_except_hidden",
+                                    "deny_all_except_visible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "end_floor_no": {
+                                        "type": "integer"
+                                      },
+                                      "start_floor_no": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "start_floor_no",
+                                      "end_floor_no"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "structure",
+                            "delivery",
+                            "budget",
+                            "source_selection",
+                            "visibility",
+                            "debug"
+                          ],
+                          "type": "object"
+                        },
+                        "prepared_turn": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "available_for_reply": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "generation_params": {
+                              "type": "object"
+                            },
+                            "memory_summary": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "messages": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "content": {
+                                    "type": "string"
+                                  },
+                                  "role": {
+                                    "enum": [
+                                      "system",
+                                      "user",
+                                      "assistant"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "role",
+                                  "content"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "preprocessed_user_message": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "prompt_snapshot": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "preset_id": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "preset_updated_at": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "preset_version": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "prompt_digest": {
+                                      "type": "string"
+                                    },
+                                    "prompt_mode": {
+                                      "enum": [
+                                        "compat_strict",
+                                        "compat_plus",
+                                        "native"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "regex_post_rule_names": {
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "regex_pre_rule_names": {
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "regex_profile_id": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "regex_profile_updated_at": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "regex_profile_version": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "token_estimate": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "worldbook_activated_entry_uids": {
+                                      "items": {
+                                        "type": "integer"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "worldbook_id": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "worldbook_updated_at": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "worldbook_version": {
+                                      "anyOf": [
+                                        {
+                                          "type": "integer"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "preset_id",
+                                    "preset_updated_at",
+                                    "preset_version",
+                                    "worldbook_id",
+                                    "worldbook_updated_at",
+                                    "worldbook_version",
+                                    "regex_profile_id",
+                                    "regex_profile_updated_at",
+                                    "regex_profile_version",
+                                    "worldbook_activated_entry_uids",
+                                    "regex_pre_rule_names",
+                                    "regex_post_rule_names",
+                                    "prompt_mode",
+                                    "prompt_digest",
+                                    "token_estimate"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "requested_turn_config": {
+                              "anyOf": [
+                                {
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "runtime_trace": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "budgets": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "by_group": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "allocated_token_count": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "estimated_token_count": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "group": {
+                                                "description": "Budget group label. This may include concrete section groups such as `section:main`.",
+                                                "type": "string"
+                                              },
+                                              "pruned_token_count": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "token_count": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "group",
+                                              "token_count"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "trim_reasons": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "detail": {
+                                                "type": "string"
+                                              },
+                                              "group": {
+                                                "description": "Budget group label. This may include concrete section groups such as `section:main`.",
+                                                "type": "string"
+                                              },
+                                              "pruned_token_count": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "reason": {
+                                                "enum": [
+                                                  "budget_exceeded",
+                                                  "group_limit_exceeded",
+                                                  "provider_constraint",
+                                                  "policy_disabled"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "group",
+                                              "reason"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
+                                      "required": [
+                                        "by_group"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "delivery": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "allow_assistant_prefill": {
+                                          "type": "boolean"
+                                        },
+                                        "assistant_prefill_applied": {
+                                          "type": "boolean"
+                                        },
+                                        "assistant_prefill_requested": {
+                                          "type": "boolean"
+                                        },
+                                        "assistant_prefill_strategy": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "provider_native",
+                                                "assistant_message_fallback",
+                                                "transcript_append",
+                                                "unsupported",
+                                                "none"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "degrade_reasons": {
+                                          "items": {
+                                            "enum": [
+                                              "assistant_prefill_disabled",
+                                              "assistant_prefill_unsupported",
+                                              "require_last_user",
+                                              "no_assistant_override"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "degraded": {
+                                          "type": "boolean"
+                                        },
+                                        "ends_with_user": {
+                                          "type": "boolean"
+                                        },
+                                        "last_message_role": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "system",
+                                                "user",
+                                                "assistant"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "no_assistant": {
+                                          "type": "boolean"
+                                        },
+                                        "require_last_user": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "assistant_prefill_requested",
+                                        "assistant_prefill_applied",
+                                        "assistant_prefill_strategy",
+                                        "allow_assistant_prefill",
+                                        "require_last_user",
+                                        "no_assistant",
+                                        "last_message_role",
+                                        "ends_with_user",
+                                        "degraded",
+                                        "degrade_reasons"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "macro": {
+                                      "additionalProperties": false,
+                                      "examples": [
+                                        {
+                                          "mutation_preview": [
+                                            {
+                                              "key": "mood",
+                                              "kind": "set",
+                                              "scope": "branch",
+                                              "value": "steady"
+                                            }
+                                          ],
+                                          "staged_mutations": [
+                                            {
+                                              "key": "mood",
+                                              "kind": "set",
+                                              "scope": "branch",
+                                              "source_macro": "setvar",
+                                              "value": "steady"
+                                            }
+                                          ],
+                                          "traces": [
+                                            {
+                                              "macro_name": "lastGenerationType",
+                                              "phase": "assemble",
+                                              "raw_text": "{{lastGenerationType}}",
+                                              "resolved_text": "respond",
+                                              "source_kind": "macro"
+                                            },
+                                            {
+                                              "macro_name": "if",
+                                              "phase": "assemble",
+                                              "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                              "resolved_text": "YES",
+                                              "selected_branch": "then",
+                                              "source_kind": "if"
+                                            }
+                                          ],
+                                          "used_names": [
+                                            "if",
+                                            "lastGenerationType",
+                                            "setvar"
+                                          ],
+                                          "warnings": [
+                                            {
+                                              "code": "macro_preview_side_effect_suppressed",
+                                              "macro_name": "setvar",
+                                              "message": "Macro setvar side effect was previewed but not committed."
+                                            }
+                                          ]
+                                        }
+                                      ],
+                                      "properties": {
+                                        "mutation_preview": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "key": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "set",
+                                                  "delete"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "scope": {
+                                                "enum": [
+                                                  "branch",
+                                                  "global"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "value": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "scope",
+                                              "key"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "staged_mutations": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "key": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "set",
+                                                  "delete"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "scope": {
+                                                "enum": [
+                                                  "branch",
+                                                  "global"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source_macro": {
+                                                "type": "string"
+                                              },
+                                              "value": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "scope",
+                                              "key",
+                                              "source_macro"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "traces": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "macro_name": {
+                                                "type": "string"
+                                              },
+                                              "phase": {
+                                                "type": "string"
+                                              },
+                                              "raw_text": {
+                                                "type": "string"
+                                              },
+                                              "resolved_text": {
+                                                "type": "string"
+                                              },
+                                              "selected_branch": {
+                                                "enum": [
+                                                  "then",
+                                                  "else",
+                                                  "raw"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source_kind": {
+                                                "enum": [
+                                                  "text",
+                                                  "raw",
+                                                  "macro",
+                                                  "if"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "macro_name",
+                                              "raw_text",
+                                              "resolved_text"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "used_names": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "warnings": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "code": {
+                                                "type": "string"
+                                              },
+                                              "macro_name": {
+                                                "type": "string"
+                                              },
+                                              "message": {
+                                                "type": "string"
+                                              },
+                                              "raw_text": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "code",
+                                              "message"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
+                                      "required": [
+                                        "warnings",
+                                        "used_names",
+                                        "mutation_preview",
+                                        "staged_mutations",
+                                        "traces"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "memory": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "summary_injected": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "summary_injected"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "preset": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "continue_nudge_applied": {
+                                          "type": "boolean"
+                                        },
+                                        "continue_nudge_text": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "ignored_fields": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "ignored_prompt_order_character_ids": {
+                                          "items": {
+                                            "type": "integer"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "in_chat_inserted_entry_ids": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "names_behavior_applied": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "off",
+                                                "always"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "selected_prompt_order_character_id": {
+                                          "anyOf": [
+                                            {
+                                              "type": "integer"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "trigger_filtered_entry_ids": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "unresolved_markers": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "unsupported_fields": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "warnings": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
+                                      "required": [
+                                        "selected_prompt_order_character_id",
+                                        "ignored_prompt_order_character_ids",
+                                        "unsupported_fields",
+                                        "ignored_fields",
+                                        "unresolved_markers",
+                                        "warnings",
+                                        "trigger_filtered_entry_ids",
+                                        "in_chat_inserted_entry_ids",
+                                        "continue_nudge_applied",
+                                        "continue_nudge_text",
+                                        "names_behavior_applied"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "regex": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "ai_output_rules": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "preprocessed_user_message": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "user_input_rules": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
+                                      "required": [
+                                        "user_input_rules",
+                                        "ai_output_rules",
+                                        "preprocessed_user_message"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "source_selection": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "excluded_sources": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "detail": {
+                                                "type": "string"
+                                              },
+                                              "reason": {
+                                                "enum": [
+                                                  "disabled_by_policy",
+                                                  "budget_trimmed",
+                                                  "provider_constraint",
+                                                  "visibility_filtered",
+                                                  "not_triggered"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source": {
+                                                "description": "Public source kind. Internal budget groups such as `section:*` do not appear here.",
+                                                "enum": [
+                                                  "history",
+                                                  "memory",
+                                                  "worldbook",
+                                                  "examples"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "source",
+                                              "reason"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
+                                      "required": [
+                                        "excluded_sources"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "structure": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "assistant_prefill_transcriptized": {
+                                          "type": "boolean"
+                                        },
+                                        "assistant_rewrite_count": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "assistant_rewrite_strategy": {
+                                          "anyOf": [
+                                            {
+                                              "enum": [
+                                                "to_system",
+                                                "to_user_transcript"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "merge_adjacent_same_role": {
+                                          "type": "boolean"
+                                        },
+                                        "mode": {
+                                          "enum": [
+                                            "default",
+                                            "strict_alternating",
+                                            "no_assistant",
+                                            "flattened"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "tail_assistant_detected": {
+                                          "type": "boolean"
+                                        },
+                                        "transcript_message_count": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "transcriptized": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "mode",
+                                        "merge_adjacent_same_role",
+                                        "assistant_rewrite_count",
+                                        "assistant_rewrite_strategy",
+                                        "tail_assistant_detected"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "visibility": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "filtered_floor_nos": {
+                                          "items": {
+                                            "type": "integer"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "hidden_floor_ranges": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "end_floor_no": {
+                                                "type": "integer"
+                                              },
+                                              "start_floor_no": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "start_floor_no",
+                                              "end_floor_no"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
+                                      "required": [
+                                        "filtered_floor_nos"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "worldbook": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "hit_count": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "matches": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "activation": {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "first_match": {
+                                                    "anyOf": [
+                                                      {
+                                                        "additionalProperties": false,
+                                                        "properties": {
+                                                          "char_end": {
+                                                            "minimum": 0,
+                                                            "type": "integer"
+                                                          },
+                                                          "char_start": {
+                                                            "minimum": 0,
+                                                            "type": "integer"
+                                                          },
+                                                          "excerpt": {
+                                                            "type": "string"
+                                                          },
+                                                          "injection_index": {
+                                                            "minimum": 0,
+                                                            "type": "integer"
+                                                          },
+                                                          "matched_key": {
+                                                            "type": "string"
+                                                          },
+                                                          "matched_key_scope": {
+                                                            "enum": [
+                                                              "primary",
+                                                              "secondary"
+                                                            ],
+                                                            "type": "string"
+                                                          },
+                                                          "matched_key_type": {
+                                                            "enum": [
+                                                              "plain",
+                                                              "regex"
+                                                            ],
+                                                            "type": "string"
+                                                          },
+                                                          "message_index_from_latest": {
+                                                            "minimum": 0,
+                                                            "type": "integer"
+                                                          },
+                                                          "source_kind": {
+                                                            "enum": [
+                                                              "message",
+                                                              "persona_description",
+                                                              "character_description",
+                                                              "character_personality",
+                                                              "character_depth_prompt",
+                                                              "scenario",
+                                                              "creator_notes",
+                                                              "injection",
+                                                              "recursion_buffer"
+                                                            ],
+                                                            "type": "string"
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "source_kind",
+                                                          "matched_key",
+                                                          "matched_key_scope",
+                                                          "matched_key_type",
+                                                          "char_start",
+                                                          "char_end",
+                                                          "excerpt"
+                                                        ],
+                                                        "type": "object"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "mode": {
+                                                    "enum": [
+                                                      "constant",
+                                                      "triggered"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "recursion_level": {
+                                                    "minimum": 0,
+                                                    "type": "integer"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "mode",
+                                                  "recursion_level",
+                                                  "first_match"
+                                                ],
+                                                "type": "object"
+                                              },
+                                              "comment": {
+                                                "type": "string"
+                                              },
+                                              "content_preview": {
+                                                "type": "string"
+                                              },
+                                              "insertion": {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "depth": {
+                                                    "type": "integer"
+                                                  },
+                                                  "outlet_name": {
+                                                    "type": "string"
+                                                  },
+                                                  "position": {
+                                                    "enum": [
+                                                      "before",
+                                                      "after",
+                                                      "at_depth",
+                                                      "outlet"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "role": {
+                                                    "enum": [
+                                                      "system",
+                                                      "user",
+                                                      "assistant"
+                                                    ],
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "position"
+                                                ],
+                                                "type": "object"
+                                              },
+                                              "order": {
+                                                "type": "integer"
+                                              },
+                                              "source": {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "kind": {
+                                                    "enum": [
+                                                      "session_worldbook",
+                                                      "character_book"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "worldbook_id": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "worldbook_name": {
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "worldbook_id",
+                                                  "worldbook_name"
+                                                ],
+                                                "type": "object"
+                                              },
+                                              "uid": {
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "uid",
+                                              "comment",
+                                              "content_preview",
+                                              "order",
+                                              "source",
+                                              "insertion",
+                                              "activation"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
+                                      "required": [
+                                        "hit_count"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  },
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "session_state_writes": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "total": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "writes": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "namespace": {
+                                        "type": "string"
+                                      },
+                                      "operation": {
+                                        "enum": [
+                                          "set",
+                                          "delete"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "slot": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "namespace",
+                                      "slot",
+                                      "operation"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "total",
+                                "writes"
+                              ],
+                              "type": "object"
+                            },
+                            "token_estimate": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "turn_config": {
+                              "anyOf": [
+                                {
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "messages",
+                            "token_estimate",
+                            "available_for_reply",
+                            "preprocessed_user_message",
+                            "prompt_snapshot",
+                            "runtime_trace",
+                            "memory_summary",
+                            "generation_params",
+                            "requested_turn_config",
+                            "turn_config",
+                            "session_state_writes"
+                          ],
+                          "type": "object"
+                        },
+                        "scope": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "branch_exists": {
+                              "type": "boolean"
+                            },
+                            "history_source_branch_id": {
+                              "type": "string"
+                            },
+                            "history_source_mode": {
+                              "enum": [
+                                "existing_branch",
+                                "source_floor_branch",
+                                "main_fallback"
+                              ],
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "type": "string"
+                            },
+                            "source_floor_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "target_branch_id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "session_id",
+                            "target_branch_id",
+                            "branch_exists",
+                            "history_source_branch_id",
+                            "history_source_mode"
+                          ],
+                          "type": "object"
+                        },
+                        "section_stats": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "section_name": {
+                                "description": "Prompt section name. Section stats remain section-level even when budget groups use concrete labels such as `section:main`.",
+                                "type": "string"
+                              },
+                              "token_count": {
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "section_name",
+                              "token_count"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "source_map": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "budget": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "max_input_tokens": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "reserved_completion_tokens": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "debug": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "include_prompt_snapshot": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "include_runtime_trace": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "include_worldbook_matches": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "delivery": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "allow_assistant_prefill": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "no_assistant": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "require_last_user": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "history": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "source_branch_id": {
+                                  "type": "string"
+                                },
+                                "source_mode": {
+                                  "enum": [
+                                    "existing_branch",
+                                    "source_floor_branch",
+                                    "main_fallback"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "source_selection": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "examples": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "enabled": {
+                                      "enum": [
+                                        "system_default",
+                                        "asset_default",
+                                        "session_policy",
+                                        "branch_policy",
+                                        "request_override",
+                                        "provider_constraint"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "type": "object"
+                                },
+                                "history": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "max_messages": {
+                                      "enum": [
+                                        "system_default",
+                                        "asset_default",
+                                        "session_policy",
+                                        "branch_policy",
+                                        "request_override",
+                                        "provider_constraint"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "mode": {
+                                      "enum": [
+                                        "system_default",
+                                        "asset_default",
+                                        "session_policy",
+                                        "branch_policy",
+                                        "request_override",
+                                        "provider_constraint"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "type": "object"
+                                },
+                                "memory": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "enabled": {
+                                      "enum": [
+                                        "system_default",
+                                        "asset_default",
+                                        "session_policy",
+                                        "branch_policy",
+                                        "request_override",
+                                        "provider_constraint"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "type": "object"
+                                },
+                                "worldbook": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "enabled": {
+                                      "enum": [
+                                        "system_default",
+                                        "asset_default",
+                                        "session_policy",
+                                        "branch_policy",
+                                        "request_override",
+                                        "provider_constraint"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "type": "object"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "structure": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "assistant_rewrite_strategy": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "merge_adjacent_same_role": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "preserve_system_messages": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "visibility": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "hidden_floor_ids": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "hidden_floor_ranges": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                },
+                                "visible_floor_ranges": {
+                                  "enum": [
+                                    "system_default",
+                                    "asset_default",
+                                    "session_policy",
+                                    "branch_policy",
+                                    "request_override",
+                                    "provider_constraint"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "trim_reasons": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "detail": {
+                                "type": "string"
+                              },
+                              "group": {
+                                "description": "Budget group label. This may include concrete section groups such as `section:main`.",
+                                "type": "string"
+                              },
+                              "pruned_token_count": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "reason": {
+                                "enum": [
+                                  "budget_exceeded",
+                                  "group_limit_exceeded",
+                                  "provider_constraint",
+                                  "policy_disabled"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "group",
+                              "reason"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "policy",
+                        "source_map",
+                        "diagnostics",
+                        "trim_reasons",
+                        "excluded_sources",
+                        "section_stats",
+                        "limitations",
+                        "prepared_turn",
+                        "governance"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Inspect branch-aware prepared prompt turn without side effects",
         "tags": [
           "prompt-runtime"
         ]

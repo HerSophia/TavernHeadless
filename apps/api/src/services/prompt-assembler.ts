@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { normalizePositiveInt } from "../lib/utils.js";
 import { parseSessionCharacterSnapshot, type SessionCharacterSnapshot } from "../lib/character-snapshot.js";
 import {
+  buildPromptRuntimeGovernanceSeed,
   compilePromptGraph,
   MessageBuilder,
   type ChatMessage,
@@ -21,6 +22,7 @@ import {
   type PromptRuntimeSourceSelectionTrace as CorePromptRuntimeSourceSelectionTrace,
   type PromptTrimReason as CorePromptTrimReason,
   type PromptRuntimeTrace as CorePromptRuntimeTrace,
+  type PromptRuntimeGovernanceSeed as CorePromptRuntimeGovernanceSeed,
   type PromptRuntimeVisibilityTrace as CorePromptRuntimeVisibilityTrace,
   type PromptRuntimeWorldbookTrace as CorePromptRuntimeWorldbookTrace,
   type TokenCounter,
@@ -264,6 +266,8 @@ export type PromptSourceExclusionReason = CorePromptSourceExclusionReason;
 
 export type PromptRuntimeSourceSelectionTrace = CorePromptRuntimeSourceSelectionTrace;
 
+export type PromptRuntimeGovernanceSeed = CorePromptRuntimeGovernanceSeed;
+
 export type PromptStructureMode = "default" | "strict_alternating" | "no_assistant" | "flattened";
 
 export type PromptStructureAssistantRewriteStrategy = "to_system" | "to_user_transcript";
@@ -410,6 +414,7 @@ export interface AssembleResult {
   };
   runtimeTraceSeed: PromptRuntimeTraceSeed;
   assemblyCompatSeed: PromptAssemblyCompatSeed;
+  governance?: PromptRuntimeGovernanceSeed;
   debug?: AssembleDebugInfo;
   promptSnapshot: PromptAssemblySnapshot;
 }
@@ -702,6 +707,7 @@ export async function assemblePrompt(
   let tokenUsageByGroup: Record<string, number> | undefined;
   let prunedTokenUsageByGroup: Record<string, number> | undefined;
   let allocatorTokenUsage: AssembleResult["tokenUsage"]["allocator"] | undefined;
+  let governance: PromptRuntimeGovernanceSeed | undefined;
   let memorySummaryHandledInPromptIR = false;
 
   const presetData = promptSnapshot.preset?.preset ?? null;
@@ -840,6 +846,11 @@ export async function assemblePrompt(
     tokenUsageBySection = assembledBudgetUsage.bySection;
     tokenUsageByGroup = assembledBudgetUsage.byGroup;
     prunedTokenUsageByGroup = assembledBudgetUsage.prunedByGroup;
+    governance = buildPromptRuntimeGovernanceSeed({
+      sections: budgetedPromptIr.sections,
+      retainedByGroup: assembledBudgetUsage.byGroup,
+      prunedByGroup: assembledBudgetUsage.prunedByGroup,
+    });
     allocatorTokenUsage = assembledBudgetUsage.allocator;
     mode = "preset";
   } else {
@@ -963,6 +974,7 @@ export async function assemblePrompt(
     },
     runtimeTraceSeed,
     assemblyCompatSeed,
+    ...(governance ? { governance } : {}),
     debug,
     promptSnapshot,
   };

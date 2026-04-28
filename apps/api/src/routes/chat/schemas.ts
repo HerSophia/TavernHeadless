@@ -19,6 +19,9 @@ import {
   liveDebugOptionsJsonSchema,
   promptDeliveryJsonSchema,
   promptStructureJsonSchema,
+  promptBudgetJsonSchema,
+  promptSourceSelectionJsonSchema,
+  dryRunVisibilityJsonSchema,
   turnConfigJsonSchema,
 } from "../schemas/chat-schemas.js";
 
@@ -164,6 +167,9 @@ export const turnConfigBodySchema = buildZodObjectSchema<TurnConfigBody>(turnCon
 export const generationParamsBodySchema = buildZodObjectSchema<GenerationParamsBody>(generationParamsJsonSchema);
 export const promptDeliveryBodySchema = buildZodObjectSchema<PromptDeliveryBody>(promptDeliveryJsonSchema);
 export const promptStructureBodySchema = buildZodObjectSchema<PromptStructureBody>(promptStructureJsonSchema);
+export const promptBudgetBodySchema = buildZodObjectSchema<PromptBudgetBody>(promptBudgetJsonSchema);
+export const promptSourceSelectionBodySchema = buildZodObjectSchema<PromptSourceSelectionBody>(promptSourceSelectionJsonSchema);
+export const dryRunVisibilityBodySchema = buildZodObjectSchema<DryRunVisibilityBody>(dryRunVisibilityJsonSchema);
 export const liveDebugOptionsBodySchema = buildZodObjectSchema<LiveDebugOptionsBody>(liveDebugOptionsJsonSchema);
 
 export const turnSessionStateWriteBodySchema: z.ZodType<TurnSessionStateWriteValueBody | TurnSessionStateWriteDeleteBody> = z.object({

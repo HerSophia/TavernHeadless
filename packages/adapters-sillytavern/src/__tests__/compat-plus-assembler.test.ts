@@ -130,14 +130,14 @@ describe('assembleCompatPlus', () => {
       expect(memorySection!.messages[0]!.source).toBe('memory');
     });
 
-    it('memory section is pinned and not prunable', () => {
+    it('memory section is soft-required and not prunable', () => {
       const items = [makeMemoryItem('fact')];
       const injection = makeInjection(items, '[Memory]\n- (summary) fact');
 
       const ir = assembleCompatPlus(baseInput({ memoryInjection: injection }));
 
       const memorySection = ir.sections.find((s) => s.name === 'memory');
-      expect(memorySection!.pinned).toBe(true);
+      expect(memorySection!.pinned).toBe(false);
       expect(memorySection!.messages[0]!.prunable).toBe(false);
     });
 

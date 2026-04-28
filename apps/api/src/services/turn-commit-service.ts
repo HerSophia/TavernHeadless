@@ -60,6 +60,7 @@ import {
   buildPromptRuntimeCommittedExplainSnapshot,
   type PromptRuntimeInspectionResult,
 } from "./prompt-runtime-control-service.js";
+import { serializePromptRuntimeExplainSourceMapEnvelope } from "./prompt-runtime/explain-snapshot.js";
 import type { SessionStateService } from "../session-state/session-state-service.js";
 
 type FloorRow = typeof floors.$inferSelect;
@@ -269,7 +270,7 @@ function toPromptRuntimeExplainSnapshotInsert(input: {
     snapshotVersion: snapshot.snapshotVersion,
     assetsJson: JSON.stringify(snapshot.assets),
     resolvedPolicyJson: JSON.stringify(snapshot.resolvedPolicy),
-    sourceMapJson: JSON.stringify(snapshot.sourceMap),
+    sourceMapJson: serializePromptRuntimeExplainSourceMapEnvelope({ snapshotVersion: snapshot.snapshotVersion, sourceMap: snapshot.sourceMap, governance: snapshot.governance }),
     diagnosticsJson: JSON.stringify(snapshot.diagnostics),
     trimReasonsJson: JSON.stringify(snapshot.trimReasons),
     excludedSourcesJson: JSON.stringify(snapshot.excludedSources),

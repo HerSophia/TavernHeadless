@@ -3,9 +3,9 @@ import type { PromptRuntimeSourceKind } from './types.js';
 /**
  * Prompt Runtime 来源的治理级别。
  *
- * 用于内部描述某类 source 在本轮装配中的保护强度，供装配器 / explain 侧
- * 在未来演进 prunable 策略时参考。首轮不开放为公共 API 类型，默认行为保持
- * 原样（即相关 section 仍 `prunable: false`）。
+ * 用于内部描述某类 source 在装配中的保护强度。native pipeline、prompt-graph
+ * compiler、inspect governance view 都应基于这套声明推导 `section.pinned`、
+ * `message.prunable` 与 explain 侧治理观测结果。
  *
  * 语义约定：
  *
@@ -40,8 +40,8 @@ export interface PromptRuntimeSourceDescriptor {
   /**
    * 默认治理级别。
    *
-   * 首轮仅作为装配器 / explain 侧的参考描述，不直接决定 IR message 的
-   * `prunable` 值。后续可以把这里的级别与 `prunable` 决策串起来，例如
+   * 这会直接参与 native / compiler 的 `section.pinned` 与 `message.prunable`
+   * 决策，并作为 inspect / explain governance view 的声明面。例如
    * `budget_prunable` 源默认允许 trim。
    */
   readonly defaultGovernanceLevel?: PromptRuntimeSourceGovernanceLevel;
@@ -85,6 +85,12 @@ export const PROMPT_MEMORY_SECTION_NAME = 'memory' as const;
 export const PROMPT_MEMORY_MESSAGE_SOURCE = 'memory' as const;
 
 const PROMPT_RUNTIME_SOURCE_REGISTRY: readonly PromptRuntimeSourceDescriptor[] = [
+  {
+    kind: 'native_system',
+    defaultBudgetGroup: 'section:nativeSystem',
+    traceLabel: 'native_system',
+    defaultGovernanceLevel: 'hard_required',
+  },
   {
     kind: 'history',
     defaultBudgetGroup: 'history',
@@ -209,11 +215,11 @@ export function resolvePromptRuntimeSourceDescriptor(
 /**
  * 读取某类来源的默认治理级别。
  *
- * 首轮仅用于装配器 / explain 侧的参考描述，不直接决定 IR message 的
- * `prunable` 值。如果未命中 registry，返回 `undefined` 表示未定义治理意图。
+ * 如果未命中 registry，返回 `undefined` 表示未定义治理意图。
  *
  * @example
  * ```ts
+ * resolvePromptRuntimeSourceGovernanceLevel('native_system'); // 'hard_required'
  * resolvePromptRuntimeSourceGovernanceLevel('memory');   // 'soft_required'
  * resolvePromptRuntimeSourceGovernanceLevel('worldbook'); // 'budget_prunable'
  * resolvePromptRuntimeSourceGovernanceLevel('unknown');   // undefined
