@@ -36,11 +36,11 @@ import {
   type ResolvedPromptRuntimePolicy,
   type ResolvedPromptStructurePolicy,
 } from "../services/prompt-runtime-control-service.js";
-import {
-  ChatServiceError,
-  type PromptRuntimePreviewRequest,
-  type PromptRuntimePreviewResult,
-} from "../services/chat-service.js";
+import { ChatServiceError } from "../services/chat/errors.js";
+import type {
+  PromptRuntimePreviewRequest,
+  PromptRuntimePreviewResult,
+} from "../services/chat/contracts.js";
 
 const sessionIdParamsSchema = z.object({
   id: z.string().min(1),

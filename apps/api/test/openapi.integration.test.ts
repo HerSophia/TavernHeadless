@@ -5,7 +5,7 @@ import { buildApp } from "../src/app";
 import { createOpenApiExportBuildAppOptions } from "../src/openapi-export-profile.js";
 import { registerOpenApi } from "../src/plugins/openapi";
 import { registerChatRoutes } from "../src/routes/chat";
-import type { ChatService as ChatServiceType } from "../src/services/chat-service";
+import type { ChatService as ChatServiceType } from "../src/services/chat/chat-service";
 
 type OpenApiDocument = {
   openapi: string;

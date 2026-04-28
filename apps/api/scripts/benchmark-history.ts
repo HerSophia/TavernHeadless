@@ -6,7 +6,7 @@ import { SimpleTokenCounter } from "@tavern/core";
 
 import { createDatabase } from "../src/db/client.js";
 import { floors, messagePages, messages, sessions } from "../src/db/schema.js";
-import { ChatService } from "../src/services/chat-service.js";
+import { ChatService } from "../src/services/chat/chat-service.js";
 import { eq } from "drizzle-orm";
 
 type BenchmarkOptions = {

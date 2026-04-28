@@ -9,7 +9,7 @@ import {
   PromptRuntimeControlServiceError,
   type PromptRuntimeControlService,
 } from "../src/services/prompt-runtime-control-service.js";
-import { ChatServiceError, type PromptRuntimePreviewRequest, type PromptRuntimePreviewResult } from "../src/services/chat-service.js";
+import { ChatServiceError, type PromptRuntimePreviewRequest, type PromptRuntimePreviewResult } from "../src/services/chat/chat-service.js";
 import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
 
 type PromptRuntimeControlServiceStub = {
