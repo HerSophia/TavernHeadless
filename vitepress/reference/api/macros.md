@@ -4,16 +4,39 @@ outline: [2, 3]
 
 # Macros（宏系统）
 
-本页说明 TavernHeadless 当前的 ST 宏兼容层。
+本页说明 TavernHeadless 当前的 ST 宏兼容层，也就是提示词里的双花括号宏占位写法会怎样被展开。
 
-它不是一个独立的 HTTP 资源，不提供单独的 `/macros` 路由。当前宏系统主要通过以下位置对外可见：
-
-- `compat_strict` / `compat_plus` 提示词装配路径
-- `POST /sessions/:id/respond/dry-run` 的调试输出
-- `POST /sessions/:id/prompt-runtime/preview` 的单段文本预览输出
-- `respond` / `regenerate` / `retry` / `editAndRegenerate` 的 assemble 与 commit 链路
+它不是一个独立的 HTTP 资源，不提供单独的 `/macros` 路由。当前宏系统主要通过聊天调试和提示词预览对外可见。
 
 如果你要看 dry-run、preview 或 live 返回字段，请同时参考 [Chat API](./chat) 和 [Prompt Runtime](./prompt-runtime)。
+
+## 什么时候需要看这页
+
+- 你要确认某个宏在当前实现里是否受支持。
+- 你要排查提示词里的 `user`、`char`、`getvar::name` 这类宏为什么没有按预期展开。
+- 你要了解当前兼容层和原始 ST 行为之间有哪些边界。
+
+## 一个简单例子
+
+假设你的预设里写了下面这段文本：
+
+```text
+{{user}} 正在和 {{char}} 交谈，当前心情是 {{getvar::mood}}。
+```
+
+如果你想确认展开结果是否正确，可以：
+
+1. 用 `POST /sessions/:id/respond/dry-run` 查看完整提示词调试输出。
+2. 如果你只想看一小段文本的展开结果，用 `POST /sessions/:id/prompt-runtime/preview`。
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| 宏 | 写在文本里的占位符，运行时会被替换成真实值 |
+| 兼容层 | 尽量兼容 ST 常见写法，但不是逐字逐行为旧实现复刻 |
+| dry-run | 只组装提示词和调试信息，不真正调用 LLM |
+| preview | 只预览一小段文本的展开结果 |
 
 ## 设计定位
 

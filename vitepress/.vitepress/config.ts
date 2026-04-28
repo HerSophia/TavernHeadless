@@ -120,6 +120,8 @@ export default defineConfig({
             { text: 'Chat Transfer Jobs（聊天传输作业）', link: '/reference/api/chat-transfer-jobs' },
             { text: 'Memory Jobs（记忆后台作业）', link: '/reference/api/memory-jobs' },
             { text: 'Client Data（客户端专属数据域）', link: '/reference/api/client-data' },
+            { text: 'Session State（受治理状态）', link: '/reference/api/session-state' },
+            { text: 'Session-State Observation（内部）', link: '/reference/api/session-state-observation' },
           ],
         },
       ],

@@ -4,16 +4,47 @@ outline: [2, 3]
 
 # Tools（工具调用）
 
-工具系统文档分为四层：
+这一页说明三类事情：系统里有哪些工具，
+某个会话当前真正能用哪些工具，
+以及这些工具在运行时实际发生了什么。
 
-1. `/tools/builtin`：列出当前 `BuiltinToolProvider` 可公开的内置工具定义
-2. `/tools/definitions*`：管理自定义工具定义
-3. `/tool-executions` 与 `/floors/:id/tool-executions`：查询执行 journal
-4. `/tools/call-records` 与 `/sessions/:id/tool-permissions`：查询旧调用记录与管理会话权限
+如果你只是想正常发起聊天，不需要先读这页。
+只有在你要接入自定义工具、排查工具为什么没有出现、
+或回看工具执行记录时，才需要看这组接口。
 
-`script` handler 目前被视为危险执行面。
-Beta3 默认关闭它的创建、更新和执行。
-只有服务端显式设置 `ENABLE_UNSAFE_SCRIPT_HANDLER=true` 时，definition-backed script tools 才会重新进入运行时目录。
+## 什么时候需要看这页
+
+- 你要查看某个会话当前真正可调用的工具列表。
+- 你要创建、修改或删除自定义工具定义。
+- 你要回看某次工具调用到底有没有执行成功、在哪里失败。
+- 你要查看或调整某个会话的工具权限。
+
+## 一个简单例子
+
+假设你发现模型这次聊天没有调用到本来应该出现的工具，可以按这个顺序排查：
+
+1. `GET /sessions/:id/tools/runtime`：先看这个会话当前真正可见的工具目录。
+2. 如果工具已经在目录里，
+   再看 `GET /tool-executions` 或
+   `GET /floors/:id/tool-executions`，确认执行阶段发生了什么。
+3. 如果工具根本没出现，
+   再检查 `GET /sessions/:id/tool-permissions`，
+   确认会话权限是否把它禁掉了。
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| 内置工具 | 系统自带的工具，例如掷骰子、读取时间 |
+| 自定义工具定义 | 由你创建的工具描述，决定名字、参数和处理方式 |
+| 运行时工具目录 | 某个会话此刻真正可见、真正可调用的工具集合 |
+| 执行 journal | 工具执行的主审计记录，也就是新的真实执行记录 |
+| 调用记录 | 为兼容旧接口保留的旧投影，字段比执行 journal 少 |
+
+`script` handler 指“执行一段自定义脚本”的处理方式。
+它风险较高。Beta3 默认关闭它的创建、更新和执行。
+只有服务端显式设置 `ENABLE_UNSAFE_SCRIPT_HANDLER=true` 时，
+这类工具才会重新进入运行时目录。
 
 ## 概念区分
 

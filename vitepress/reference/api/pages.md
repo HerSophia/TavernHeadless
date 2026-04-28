@@ -4,7 +4,35 @@ outline: [2, 3]
 
 # Pages（消息页）
 
-消息页是楼层内的版本容器。系统当前的 active 不变量是：同一 `(floor_id, page_no)` 最多只能有一个 `is_active = true` 的版本。
+消息页是楼层里面的分页容器。一个楼层可以有多页——比如重新生成后新的一页和旧的一页各是不同的页。
+
+每页下面可以有多条消息。同一个 `floor_id + page_no` 上，只有一个页是当前激活的。
+
+## 什么时候需要看这页
+
+- 你要创建新消息页
+- 你要切换激活页
+- 你要查看或修改某个页的属性
+
+## 一个简单例子
+
+```bash
+# 查看某个楼层下的消息页
+curl "http://localhost:3000/pages?floor_id=floor_001"
+
+# 激活某个页
+curl -X PATCH http://localhost:3000/pages/page_001/activate
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| page_no | 页序号，input 页通常是 0，output 页通常是 1 |
+| page_kind | 页类型：input（输入页）、output（输出页）、mixed（混合页） |
+| activate | 把当前这个页设为同一 floor + page_no 下的唯一激活页 |
+
+
 
 这不是“同一楼层只能有一个 active page”。因此：
 

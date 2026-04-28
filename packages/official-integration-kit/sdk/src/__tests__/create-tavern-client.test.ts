@@ -58,11 +58,31 @@ describe("createTavernClient", () => {
       message: "hi",
       onChunk: (payload) => chunks.push(payload.chunk),
       onSummary: (payload) => summaries.push(payload.summaries),
+      sessionStateWrites: [
+        {
+          namespace: "quest_flags",
+          slot: "companion",
+          value: { mood: "ally" },
+        },
+        {
+          namespace: "quest_flags",
+          slot: "expired_hint",
+          delete: true,
+        },
+      ],
       sessionId: "session-1",
     });
 
     expect(chunks).toEqual(["Hello"]);
     expect(summaries).toEqual([["one"]]);
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(init?.body).toBe(JSON.stringify({
+      message: "hi",
+      session_state_writes: [
+        { namespace: "quest_flags", slot: "companion", value: { mood: "ally" } },
+        { namespace: "quest_flags", slot: "expired_hint", delete: true },
+      ],
+    }));
     expect(result.branchId).toBe("branch-1");
     expect(result.finalState).toBe("committed");
     expect(result.generatedText).toBe("Hello");
@@ -139,6 +159,15 @@ describe("createTavernClient", () => {
     expect(typeof client.promptRuntime.patchBranchPolicy).toBe("function");
     expect(typeof client.promptRuntime.previewText).toBe("function");
     expect(typeof client.promptRuntime.getCapabilities).toBe("function");
+
+    expect(client.sessionState).toBeDefined();
+    expect(typeof client.sessionState.listNamespaces).toBe("function");
+    expect(typeof client.sessionState.registerNamespace).toBe("function");
+    expect(typeof client.sessionState.writeValue).toBe("function");
+    expect(typeof client.sessionState.deleteValue).toBe("function");
+    expect(typeof client.sessionState.resolve).toBe("function");
+    expect(typeof client.sessionState.getFloorSnapshots).toBe("function");
+    expect(typeof client.sessionState.diff).toBe("function");
 
     expect(client.tools).toBeDefined();
     expect(typeof client.tools.listBuiltin).toBe("function");

@@ -4,7 +4,50 @@ outline: [2, 3]
 
 # Variables（变量）
 
-变量系统提供五级作用域，用于在对话过程中存储和检索键值对。
+变量就是在对话里存一些键值对，用它来记住状态。
+
+它分了五个层级：全局、会话、分支、楼层、页。层级越靠下，优先级越高——页级值会覆盖楼层级值，依此类推。
+
+## 什么时候需要看这页
+
+- 你要写入或读取变量
+- 你要了解变量的五级优先级是怎么工作的
+- 你要看某个变量当前到底取的是哪个层级的值
+- 你要批量同步变量
+
+## 一个简单例子
+
+假设你在一个 RPG 会话里记录了冒险者的金币数：
+
+```bash
+# 写一个分支级别的变量
+curl -X PUT http://localhost:3000/variables \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "scope": "branch",
+    "session_id": "sess_001",
+    "branch_id": "main",
+    "key": "gold",
+    "value": 500
+  }'
+
+# 解析当前上下文里真正生效的 gold 值
+curl "http://localhost:3000/variables/resolve?session_id=sess_001&branch_id=main"
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| scope | 变量的作用域，一共五级 |
+| global | 全局范围 |
+| chat | 会话范围 |
+| branch | 分支范围 |
+| floor | 楼层范围 |
+| page | 页范围 |
+| resolve | 按优先级合并五级变量，得到最终胜出的值 |
+
+
 
 ## 作用域
 

@@ -4,13 +4,57 @@ outline: [2, 3]
 
 # Chat（对话生成）
 
-对话生成是 TavernHeadless 的核心功能。支持同步生成、SSE 流式生成、Prompt dry-run 调试、重新生成、楼层重试和编辑再生成。
+对话生成是 TavernHeadless 的核心功能。就是：发一条消息，模型回一条消息。
 
-如果你只需要对一段文本做宏 preview，而不需要完整 prompt 组装，请改用 `POST /sessions/:id/prompt-runtime/preview`。它复用同一条宏主线，但不会创建 floor，也不会调用 LLM。
+这组接口还提供了几种变化：
 
-如果你需要回看某个已提交楼层在当时真正落库的 `prompt_snapshot`、`prompt_runtime_explain_snapshot` 和 committed result，而不是当前请求的 live / dry-run 调试结果，请使用 `GET /floors/:id/prompt-runtime/explain`。它只读取持久化真相，不会重新组装 prompt，也不会重新计算 budget / source selection。
+- 流式生成：一边生成一边输出，不需要等到全部生成完
+- 重新生成：对最后一个回合重新生成一次
+- 楼层重试：对已经提交的某个回合重新生成
+- 编辑再生成：修改某条消息，然后基于修改后的内容重新生成
+- 调试：只组装提示词，不真正调用模型
 
-如果你需要比较两个已提交楼层的 Prompt Runtime 差异，请使用 `POST /sessions/:id/prompt-runtime/compare`。这个接口同样只读取 committed truth，不会额外做 explain recompute。
+## 什么时候需要看这页
+
+- 你要在前端接入聊天功能
+- 你要排查某次生成为什么失败、为什么没有按预期回复
+- 你要确认提示词组装是否正确
+- 你要接入流式生成
+
+## 一个简单例子
+
+最基础的调用是 `POST /sessions/:id/respond`。传一条消息，拿回一条回复：
+
+```bash
+curl -X POST http://localhost:3000/sessions/sess_001/respond \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "你好，请讲个故事"}'
+```
+
+如果要流式输出，换成 `POST /sessions/:id/respond/stream` 就行，请求体一样。
+
+如果只是想看提示词怎么组装的，不想真的调用模型，用 `POST /sessions/:id/respond/dry-run`。
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| floor | 一次对话回合的容器 |
+| branch | 对话的分支线，默认是 `main` |
+| dry-run | 只组装提示词，不调用模型 |
+| SSE | 服务端推送事件流，用于流式输出 |
+| regenerate | 对最后一个回合重新生成 |
+| retry | 对指定楼层重新生成 |
+
+## 补充阅读
+
+如果你只需要对一段文本做宏预览，而不需要完整提示词组装，请改用 `POST /sessions/:id/prompt-runtime/preview`。它不会创建 floor，也不会调用模型。
+
+如果你需要回看某个已提交楼层当时真正保存的提示词快照，而不是当前请求的调试结果，请使用 `GET /floors/:id/prompt-runtime/explain`。
+
+如果你需要比较两个已提交楼层的提示词差异，请使用 `POST /sessions/:id/prompt-runtime/compare`。
+
+
 
 ## 发送消息并生成回复
 
@@ -35,10 +79,25 @@ POST /sessions/:id/respond
 | `generation_params` | [GenerationParams](#generationparams-对象) | 否 | 生成参数覆盖 |
 | `branch_id` | string | 否 | 指定分支 ID |
 | `source_floor_id` | string | 否 | 从指定楼层开始（用于在中途插入） |
+| `session_state_writes` | object[] | 否 | 与本次 turn 一起提交的受治理 Session State 写入声明 |
+| `session_state_writes[].namespace` | string | 是 | 已注册 custom namespace |
+| `session_state_writes[].slot` | string | 是 | 目标 custom slot |
+| `session_state_writes[].value` | any JSON | 条件必填 | 要写入的 opaque JSON value。与 `delete` 二选一 |
+| `session_state_writes[].delete` | boolean | 条件必填 | 只允许 `true`。表示把当前值治理为 `present: false` |
 | `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
 | `debug_options.include_prompt_snapshot` | boolean | 否 | 打开后在成功响应 `data` 中返回 `prompt_snapshot` |
 | `debug_options.include_runtime_trace` | boolean | 否 | 打开后在成功响应 `data` 中返回 `runtime_trace` |
 | `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开 `runtime_trace.worldbook.matches` |
+
+`session_state_writes` 的边界如下：
+
+- 只允许 registered custom namespace
+- 不允许客户端直接写 `game_state`
+- 不接受 `branch_id` / `source_floor_id` / `write_mode` / `replay_safety` 之类底层治理字段
+- branch 与 source floor 一律从当前 turn 上下文派生
+- 只有在 `enableClientData === true && clientData` 时才可用；否则返回 `503 feature_unavailable`
+- 写入会在生成成功后先 stage，并在当前 turn commit 成功时一并落地
+- `delete: true` 的治理语义是写成 `present: false`
 
 ### 响应 `200`
 
@@ -91,11 +150,11 @@ POST /sessions/:id/respond
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
 | `400` | `validation_error` / `invalid_message_scope` | 参数校验失败，或消息作用域错误 |
-| `404` | `not_found` | 会话不存在 |
-| `409` | `session_archived` / `generation_conflict` / `commit_conflict` / `generation_target_stale` / `branch_local_snapshot_missing` | 会话状态冲突、提交边界冲突、排队请求等待期间目标上下文已经变化，或新分支所依赖的 source floor 缺少精确 local snapshot |
-| `503` | `secret_unavailable` / `commit_busy` / `generation_queue_timeout` | 密钥不可用，或生成 / 提交等待阶段已超时 |
+| `404` | `not_found` / `session_state_namespace_not_registered` | 会话不存在，或 turn 内声明的 custom namespace 尚未注册 |
+| `409` | `session_archived` / `generation_conflict` / `commit_conflict` / `generation_target_stale` / `branch_local_snapshot_missing` / `session_state_public_write_forbidden` / `session_state_payload_too_large` | 会话状态冲突、提交边界冲突、排队请求等待期间目标上下文已经变化、新分支所依赖的 source floor 缺少精确 local snapshot，或 turn 内 session-state 写入不被允许 / 超预算 |
+| `503` | `feature_unavailable` / `secret_unavailable` / `commit_busy` / `generation_queue_timeout` | client-data 未启用，密钥不可用，或生成 / 提交等待阶段已超时 |
 | `504` | `generation_timeout` | LLM 执行超时 |
-| `500` | `secret_invalid_format` / `orchestration_failed` / `turn_commit_failed` | 已保存的密文无法解密，或生成过程出现未分类内部错误 |
+| `500` | `secret_invalid_format` / `orchestration_failed` / `turn_commit_failed` / `session_state_stage_failed` | 已保存的密文无法解密，生成过程出现未分类内部错误，或 turn 内 session-state staging 失败 |
 
 上表列出的是常见错误，不是穷尽列表。
 
@@ -453,6 +512,7 @@ POST /sessions/:id/regenerate
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
 | `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
 | `confirmed_session_state_mutation_ids` | string[] | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
+| `session_state_writes` | object[] | 否 | 与 `/sessions/:id/respond` 相同的 turn-embedded commit-bound Session State 写入声明 |
 | `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
 | `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
 | `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
@@ -510,6 +570,7 @@ POST /floors/:id/retry
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
 | `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
 | `confirmed_session_state_mutation_ids` | string[] | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
+| `session_state_writes` | object[] | 否 | 与 `/sessions/:id/respond` 相同的 turn-embedded commit-bound Session State 写入声明 |
 | `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
 | `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
 | `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
@@ -573,6 +634,7 @@ POST /messages/:id/edit-and-regenerate
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
 | `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
 | `confirmed_session_state_mutation_ids` | string[] | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
+| `session_state_writes` | object[] | 否 | 与 `/sessions/:id/respond` 相同的 turn-embedded commit-bound Session State 写入声明 |
 | `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
 | `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
 | `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |

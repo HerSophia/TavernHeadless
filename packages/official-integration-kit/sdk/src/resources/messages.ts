@@ -6,7 +6,7 @@ import {
   type PromptLiveDebugOptions,
 } from "../prompt-runtime.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
-import type { RespondGenerationParams, RespondMemoryReceipt, RespondResult, RespondTurnConfig } from "./sessions.js";
+import type { RespondGenerationParams, RespondMemoryReceipt, RespondResult, RespondTurnConfig, TurnSessionStateWrite } from "./sessions.js";
 import {
   compactObject,
   readArray,
@@ -139,6 +139,7 @@ export type MessagesEditAndRegenerateOptions = {
   generationParams?: RespondGenerationParams;
   messageId: string;
   debugOptions?: PromptLiveDebugOptions;
+  sessionStateWrites?: TurnSessionStateWrite[];
 };
 
 export type MessagesResource = {
@@ -212,6 +213,7 @@ export function createMessagesResource(client: TransportClient): MessagesResourc
             content: options.content,
             debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
             generation_params: mapGenerationParams(options.generationParams),
+            session_state_writes: mapTurnSessionStateWrites(options.sessionStateWrites),
           }),
           headers: buildAccountHeaders(options.accountId),
           method: "POST",
@@ -397,6 +399,28 @@ function mapStringArray(value: unknown): string[] {
   return readArray(value)
     .map((item) => readOptionalString(item))
     .filter((item): item is string => item !== undefined);
+}
+
+function mapTurnSessionStateWrites(writes?: TurnSessionStateWrite[]): Record<string, unknown>[] | undefined {
+  if (!writes || writes.length === 0) {
+    return undefined;
+  }
+
+  return writes.map((write) => {
+    if ("delete" in write && write.delete === true) {
+      return {
+        namespace: write.namespace,
+        slot: write.slot,
+        delete: true,
+      };
+    }
+
+    return {
+      namespace: write.namespace,
+      slot: write.slot,
+      value: "value" in write ? write.value : undefined,
+    };
+  });
 }
 
 function readRespondMemoryReceipt(value: unknown): RespondMemoryReceipt | undefined {

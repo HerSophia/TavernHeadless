@@ -3,9 +3,10 @@ import { SimpleTokenCounter, type TurnExecutionResult, type TurnOrchestrator } f
 import { nanoid } from "nanoid";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
-import { accounts, floors, messagePages, messages, sessions } from "../../db/schema.js";
+import { accounts, floors, messagePages, messages, sessions, sessionStateMutations } from "../../db/schema.js";
 import { ChatService, ChatServiceError } from "../chat-service.js";
 import { FirstPartyGameStateService } from "../../session-state/first-party-game-state-service.js";
+import { SessionStateCustomNamespaceService } from "../../session-state/session-state-custom-namespace-service.js";
 import { SessionStateService } from "../../session-state/session-state-service.js";
 
 const promptAssemblerMocks = vi.hoisted(() => ({
@@ -62,6 +63,8 @@ describe("ChatService session-state replay gate", () => {
   let database: DatabaseConnection;
   let sessionStateService: SessionStateService;
   let firstPartyGameStateService: FirstPartyGameStateService;
+  let customNamespaceService: SessionStateCustomNamespaceService;
+  let turnCommitMock: ReturnType<typeof vi.fn>;
   let orchestrator: TurnOrchestrator;
   let chatService: ChatService;
 
@@ -75,25 +78,29 @@ describe("ChatService session-state replay gate", () => {
     branchLocalSnapshotMocks.materializeFromSourceFloor.mockImplementation(() => undefined);
     branchLocalSnapshotMocks.persistFloorLocalSnapshot.mockReset();
     branchLocalSnapshotMocks.persistFloorLocalSnapshot.mockImplementation(() => undefined);
+    customNamespaceService = new SessionStateCustomNamespaceService(database.db, {
+      clientData: CLIENT_DATA_CONFIG,
+    });
     sessionStateService = new SessionStateService(database.db, {
       clientData: CLIENT_DATA_CONFIG,
+      customNamespaceService,
     });
     firstPartyGameStateService = new FirstPartyGameStateService(database.db, sessionStateService);
     orchestrator = createMockTurnOrchestrator();
-    const turnCommitService = {
-      commit: vi.fn(async () => ({
-        usage: { promptTokens: 12, completionTokens: 34, totalTokens: 46 },
-        finalState: "committed" as const,
-        memory: undefined,
-      })),
-    };
+    turnCommitMock = vi.fn(async () => ({
+      usage: { promptTokens: 12, completionTokens: 34, totalTokens: 46 },
+      finalState: "committed" as const,
+      memory: undefined,
+    }));
     chatService = new ChatService(
       database.db,
       orchestrator,
       new SimpleTokenCounter(),
       {
         resolveTurnModels: async () => ({ narrator: { source: "env", generationParams: { maxOutputTokens: 128 } } }),
-        turnCommitService: turnCommitService as never,
+        turnCommitService: {
+          commit: turnCommitMock,
+        } as never,
         sessionStateService,
         firstPartyGameStateService,
       },
@@ -282,7 +289,192 @@ describe("ChatService session-state replay gate", () => {
     } satisfies Partial<ChatServiceError>);
   });
 
-  it("threads managed scene context into the shared prompt metadata carrier", () => {
+  it("applies custom session_state_writes after a successful respond commit", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_125_000;
+
+    await seedSession(database, sessionId, now);
+    customNamespaceService.registerNamespace({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      namespace: "quest_flags",
+      logicalOwnerType: "plugin",
+      logicalOwnerId: "quest-plugin",
+    });
+
+    turnCommitMock.mockImplementationOnce(async (input: {
+      accountId: string;
+      sessionId: string;
+      branchId?: string;
+      floorId: string;
+    }) => {
+      sessionStateService.applyStagedMutationsForFloor({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        branchId: input.branchId ?? "main",
+        floorId: input.floorId,
+        committedAt: now + 100,
+      });
+      return {
+        usage: { promptTokens: 12, completionTokens: 34, totalTokens: 46 },
+        finalState: "committed" as const,
+        memory: undefined,
+      };
+    });
+
+    const result = await chatService.respond(
+      sessionId,
+      {
+        message: "Continue the quest.",
+        sessionStateWrites: [
+          {
+            namespace: "quest_flags",
+            slot: "companion",
+            value: { mood: "ally" },
+          },
+          {
+            namespace: "quest_flags",
+            slot: "expired_hint",
+            delete: true,
+          },
+        ],
+      },
+      {},
+      ACCOUNT_ID,
+    );
+
+    expect(result.finalState).toBe("committed");
+
+    const liveCompanion = sessionStateService.resolveLiveValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: result.branchId,
+      namespace: "quest_flags",
+      slot: "companion",
+    });
+    expect(liveCompanion?.present).toBe(true);
+    expect(liveCompanion?.value).toEqual({ mood: "ally" });
+
+    const liveDeleted = sessionStateService.resolveLiveValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: result.branchId,
+      namespace: "quest_flags",
+      slot: "expired_hint",
+    });
+    expect(liveDeleted?.present).toBe(false);
+    expect(liveDeleted?.value).toBeNull();
+  });
+
+  it("rejects built-in session_state_writes from client turn requests", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_126_000;
+
+    await seedSession(database, sessionId, now);
+
+    await expect(chatService.respond(
+      sessionId,
+      {
+        message: "Try to write scene.",
+        sessionStateWrites: [
+          {
+            namespace: "game_state",
+            slot: "scene",
+            value: { revision: 1 },
+          },
+        ],
+      },
+      {},
+      ACCOUNT_ID,
+    )).rejects.toMatchObject({
+      code: "session_state_public_write_forbidden",
+    } satisfies Partial<ChatServiceError>);
+  });
+
+  it("rejects session_state_writes when session-state is unavailable", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_127_000;
+
+    await seedSession(database, sessionId, now);
+
+    const chatServiceWithoutSessionState = new ChatService(
+      database.db,
+      orchestrator,
+      new SimpleTokenCounter(),
+      {
+        resolveTurnModels: async () => ({ narrator: { source: "env", generationParams: { maxOutputTokens: 128 } } }),
+        turnCommitService: {
+          commit: turnCommitMock,
+        } as never,
+      },
+    );
+
+    await expect(chatServiceWithoutSessionState.respond(
+      sessionId,
+      {
+        message: "Continue the quest.",
+        sessionStateWrites: [
+          {
+            namespace: "quest_flags",
+            slot: "companion",
+            value: { mood: "ally" },
+          },
+        ],
+      },
+      {},
+      ACCOUNT_ID,
+    )).rejects.toMatchObject({
+      code: "feature_unavailable",
+    } satisfies Partial<ChatServiceError>);
+  });
+
+  it("discards staged custom session-state writes when commit fails", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_128_000;
+
+    await seedSession(database, sessionId, now);
+    customNamespaceService.registerNamespace({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      namespace: "quest_flags",
+      logicalOwnerType: "plugin",
+      logicalOwnerId: "quest-plugin",
+    });
+
+    turnCommitMock.mockRejectedValueOnce(new Error("commit exploded"));
+
+    await expect(chatService.respond(
+      sessionId,
+      {
+        message: "Continue the quest.",
+        sessionStateWrites: [
+          {
+            namespace: "quest_flags",
+            slot: "companion",
+            value: { mood: "ally" },
+          },
+        ],
+      },
+      {},
+      ACCOUNT_ID,
+    )).rejects.toMatchObject({
+      code: "turn_commit_failed",
+    } satisfies Partial<ChatServiceError>);
+
+    const mutationRows = await database.db.select().from(sessionStateMutations);
+    expect(mutationRows.some((row) => row.stateNamespace === "quest_flags" && row.status === "discarded")).toBe(true);
+
+    const live = sessionStateService.resolveLiveValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      namespace: "quest_flags",
+      slot: "companion",
+    });
+    expect(live).toBeNull();
+  });
+
+  it("threads managed scene and world context into the shared prompt metadata carrier", () => {
     const buildSessionPromptInfo = getBuildSessionPromptInfo(chatService);
     const sessionId = "session-carrier";
     const branchId = "branch-carrier";
@@ -321,6 +513,29 @@ describe("ChatService session-state replay gate", () => {
             updatedAt,
           }),
         },
+        world: {
+          namespace: "game_state",
+          slot: "world",
+          resolutionMode: "source_floor",
+          source: "source_floor_snapshot",
+          present: true,
+          schemaVersion: 1,
+          sessionId,
+          branchId,
+          floorId,
+          sourceMutationIds: ["mutation-2"],
+          updatedAt,
+          world: buildWorldStateValue({
+            sessionId,
+            branchId,
+            floorId,
+            summaryLines: ["The room is quiet."],
+            worldbookId: "worldbook-room",
+            worldbookVersion: 2,
+            activatedWorldbookEntryUids: [11, 12],
+            updatedAt,
+          }),
+        },
       },
     );
 
@@ -336,6 +551,17 @@ describe("ChatService session-state replay gate", () => {
           source_mutation_ids?: string[];
           generatedText?: string;
         };
+        world?: {
+          source?: string;
+          resolution_mode?: string;
+          floor_id?: string | null;
+          present?: boolean;
+          schema_version?: number | null;
+          source_mutation_ids?: string[];
+          worldbook_id?: string | null;
+          summary_line_count?: number;
+          summaryLines?: string[];
+        };
       };
     };
 
@@ -349,6 +575,17 @@ describe("ChatService session-state replay gate", () => {
       source_mutation_ids: ["mutation-1"],
     });
     expect(metadata.first_party_state?.scene?.generatedText).toBeUndefined();
+    expect(metadata.first_party_state?.world).toMatchObject({
+      source: "source_floor_snapshot",
+      resolution_mode: "source_floor",
+      floor_id: floorId,
+      present: true,
+      schema_version: 1,
+      source_mutation_ids: ["mutation-2"],
+      worldbook_id: "worldbook-room",
+      summary_line_count: 1,
+    });
+    expect(metadata.first_party_state?.world?.summaryLines).toBeUndefined();
   });
 
   it("loads current-effective and source-floor scene context through public respond flows", async () => {
@@ -376,13 +613,25 @@ describe("ChatService session-state replay gate", () => {
       generatedText: "The harbor is still quiet.",
       committedAt: now + 10,
     });
+    await stageCommittedWorld({
+      service: firstPartyGameStateService,
+      sessionStateService,
+      sessionId,
+      branchId: "main",
+      floorId: floor1,
+      summaryLine: "The harbor ledger lists two active watch posts.",
+      committedAt: now + 11,
+      worldbookId: "worldbook-harbor",
+      worldbookVersion: 4,
+      activatedWorldbookEntryUids: [21, 22],
+    });
 
     const buildSessionPromptInfoSpy = getBuildSessionPromptInfoSpy(chatService);
 
     const mainResult = await chatService.respond(sessionId, { message: "Continue the harbor scene." }, {}, ACCOUNT_ID);
     expect(mainResult.branchId).toBe("main");
 
-    const mainContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown> } | undefined;
+    const mainContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown>; world?: Record<string, unknown> } | undefined;
     expect(mainContext?.scene).toMatchObject({
       resolutionMode: "current_effective",
       source: "live_head",
@@ -391,6 +640,16 @@ describe("ChatService session-state replay gate", () => {
       sessionId,
       scene: expect.objectContaining({
         generatedText: "The harbor is still quiet.",
+      }),
+    });
+    expect(mainContext?.world).toMatchObject({
+      resolutionMode: "current_effective",
+      source: "live_head",
+      floorId: floor1,
+      branchId: "main",
+      sessionId,
+      world: expect.objectContaining({
+        summaryLines: ["The harbor ledger lists two active watch posts."],
       }),
     });
 
@@ -402,7 +661,7 @@ describe("ChatService session-state replay gate", () => {
     );
     expect(branchResult.branchId).toBe("alt");
 
-    const branchContext = buildSessionPromptInfoSpy.mock.calls[1]?.[2] as { scene?: Record<string, unknown> } | undefined;
+    const branchContext = buildSessionPromptInfoSpy.mock.calls[1]?.[2] as { scene?: Record<string, unknown>; world?: Record<string, unknown> } | undefined;
     expect(branchContext?.scene).toMatchObject({
       resolutionMode: "source_floor",
       source: "source_floor_snapshot",
@@ -411,6 +670,16 @@ describe("ChatService session-state replay gate", () => {
       sessionId,
       scene: expect.objectContaining({
         generatedText: "The harbor is still quiet.",
+      }),
+    });
+    expect(branchContext?.world).toMatchObject({
+      resolutionMode: "source_floor",
+      source: "source_floor_snapshot",
+      floorId: floor1,
+      branchId: "alt",
+      sessionId,
+      world: expect.objectContaining({
+        summaryLines: ["The harbor ledger lists two active watch posts."],
       }),
     });
   });
@@ -426,6 +695,18 @@ describe("ChatService session-state replay gate", () => {
       generatedText: "The campfire is small and steady.",
       committedAt: now + 30,
     });
+    await stageCommittedWorld({
+      service: firstPartyGameStateService,
+      sessionStateService,
+      sessionId,
+      branchId: "main",
+      floorId: floor1,
+      summaryLine: "The camp inventory is still dry.",
+      committedAt: now + 31,
+      worldbookId: "worldbook-camp",
+      worldbookVersion: 1,
+      activatedWorldbookEntryUids: [31],
+    });
     await stageCommittedScene({
       service: firstPartyGameStateService,
       sessionStateService,
@@ -435,12 +716,24 @@ describe("ChatService session-state replay gate", () => {
       generatedText: "The campfire flares into a blaze.",
       committedAt: now + 40,
     });
+    await stageCommittedWorld({
+      service: firstPartyGameStateService,
+      sessionStateService,
+      sessionId,
+      branchId: "main",
+      floorId: floor2,
+      summaryLine: "The camp inventory now includes wet blankets.",
+      committedAt: now + 41,
+      worldbookId: "worldbook-camp",
+      worldbookVersion: 2,
+      activatedWorldbookEntryUids: [31, 32],
+    });
 
     const buildSessionPromptInfoSpy = getBuildSessionPromptInfoSpy(chatService);
     const result = await chatService.regenerate(sessionId, {}, ACCOUNT_ID);
 
     expect(result.previousFloorId).toBe(floor2);
-    const firstPartyContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown> } | undefined;
+    const firstPartyContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown>; world?: Record<string, unknown> } | undefined;
     expect(firstPartyContext?.scene).toMatchObject({
       resolutionMode: "source_floor",
       source: "source_floor_snapshot",
@@ -449,6 +742,16 @@ describe("ChatService session-state replay gate", () => {
       sessionId,
       scene: expect.objectContaining({
         generatedText: "The campfire is small and steady.",
+      }),
+    });
+    expect(firstPartyContext?.world).toMatchObject({
+      resolutionMode: "source_floor",
+      source: "source_floor_snapshot",
+      floorId: floor1,
+      branchId: "main",
+      sessionId,
+      world: expect.objectContaining({
+        summaryLines: ["The camp inventory is still dry."],
       }),
     });
   });
@@ -464,6 +767,18 @@ describe("ChatService session-state replay gate", () => {
       generatedText: "A storm gathers over the ridge.",
       committedAt: now + 30,
     });
+    await stageCommittedWorld({
+      service: firstPartyGameStateService,
+      sessionStateService,
+      sessionId,
+      branchId: "main",
+      floorId: floor1,
+      summaryLine: "The ridge trail is still passable.",
+      committedAt: now + 31,
+      worldbookId: "worldbook-ridge",
+      worldbookVersion: 5,
+      activatedWorldbookEntryUids: [41],
+    });
     await stageCommittedScene({
       service: firstPartyGameStateService,
       sessionStateService,
@@ -473,12 +788,24 @@ describe("ChatService session-state replay gate", () => {
       generatedText: "Rain hits the ridge path.",
       committedAt: now + 40,
     });
+    await stageCommittedWorld({
+      service: firstPartyGameStateService,
+      sessionStateService,
+      sessionId,
+      branchId: "main",
+      floorId: floor2,
+      summaryLine: "The ridge trail now floods at dusk.",
+      committedAt: now + 41,
+      worldbookId: "worldbook-ridge",
+      worldbookVersion: 6,
+      activatedWorldbookEntryUids: [41, 42],
+    });
 
     const buildSessionPromptInfoSpy = getBuildSessionPromptInfoSpy(chatService);
     const result = await chatService.retryFloor(floor2, {}, ACCOUNT_ID);
 
     expect(result.floorId).toBe(floor2);
-    const firstPartyContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown> } | undefined;
+    const firstPartyContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown>; world?: Record<string, unknown> } | undefined;
     expect(firstPartyContext?.scene).toMatchObject({
       resolutionMode: "source_floor",
       source: "source_floor_snapshot",
@@ -487,6 +814,16 @@ describe("ChatService session-state replay gate", () => {
       sessionId,
       scene: expect.objectContaining({
         generatedText: "A storm gathers over the ridge.",
+      }),
+    });
+    expect(firstPartyContext?.world).toMatchObject({
+      resolutionMode: "source_floor",
+      source: "source_floor_snapshot",
+      floorId: floor1,
+      branchId: "main",
+      sessionId,
+      world: expect.objectContaining({
+        summaryLines: ["The ridge trail is still passable."],
       }),
     });
   });
@@ -502,6 +839,18 @@ describe("ChatService session-state replay gate", () => {
       generatedText: "The archive is silent.",
       committedAt: now + 20,
     });
+    await stageCommittedWorld({
+      service: firstPartyGameStateService,
+      sessionStateService,
+      sessionId,
+      branchId: "main",
+      floorId: floor1,
+      summaryLine: "The archive index still points to the sealed shelf.",
+      committedAt: now + 21,
+      worldbookId: "worldbook-archive",
+      worldbookVersion: 8,
+      activatedWorldbookEntryUids: [51, 52],
+    });
 
     const buildSessionPromptInfoSpy = getBuildSessionPromptInfoSpy(chatService);
     const result = await chatService.editAndRegenerate(
@@ -512,7 +861,7 @@ describe("ChatService session-state replay gate", () => {
 
     expect(result.sourceFloorId).toBe(floor1);
     expect(result.sourceMessageId).toBe(userMessageId);
-    const firstPartyContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown> } | undefined;
+    const firstPartyContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown>; world?: Record<string, unknown> } | undefined;
     expect(firstPartyContext?.scene).toMatchObject({
       resolutionMode: "source_floor",
       source: "source_floor_snapshot",
@@ -521,6 +870,16 @@ describe("ChatService session-state replay gate", () => {
       sessionId,
       scene: expect.objectContaining({
         generatedText: "The archive is silent.",
+      }),
+    });
+    expect(firstPartyContext?.world).toMatchObject({
+      resolutionMode: "source_floor",
+      source: "source_floor_snapshot",
+      floorId: floor1,
+      branchId: result.branchId,
+      sessionId,
+      world: expect.objectContaining({
+        summaryLines: ["The archive index still points to the sealed shelf."],
       }),
     });
   });
@@ -791,6 +1150,41 @@ async function stageCommittedScene(input: {
   });
 }
 
+async function stageCommittedWorld(input: {
+  service: FirstPartyGameStateService;
+  sessionStateService: SessionStateService;
+  sessionId: string;
+  branchId: string;
+  floorId: string;
+  summaryLine: string;
+  committedAt: number;
+  worldbookId?: string | null;
+  worldbookVersion?: number | null;
+  activatedWorldbookEntryUids?: number[];
+}): Promise<void> {
+  input.service.stageWorldState({
+    accountId: ACCOUNT_ID,
+    sessionId: input.sessionId,
+    branchId: input.branchId,
+    floorId: input.floorId,
+    runType: "respond",
+    execution: createTurnExecution(input.floorId, input.summaryLine),
+    promptSnapshot: {
+      worldbookId: input.worldbookId ?? null,
+      worldbookVersion: input.worldbookVersion ?? null,
+      worldbookActivatedEntryUids: [...(input.activatedWorldbookEntryUids ?? [])],
+    },
+    stagedAt: input.committedAt - 1,
+  });
+  input.sessionStateService.applyStagedMutationsForFloor({
+    accountId: ACCOUNT_ID,
+    sessionId: input.sessionId,
+    branchId: input.branchId,
+    floorId: input.floorId,
+    committedAt: input.committedAt,
+  });
+}
+
 function getAssertRetryReplayConfirmed(service: ChatService): (input: {
   floorId: string;
   sessionId: string;
@@ -848,4 +1242,30 @@ function getBuildSessionPromptInfoSpy(service: ChatService) {
     },
     "buildSessionPromptInfo",
   );
+}
+
+function buildWorldStateValue(input: {
+  sessionId: string;
+  branchId: string;
+  floorId: string;
+  summaryLines: string[];
+  worldbookId: string | null;
+  worldbookVersion: number | null;
+  activatedWorldbookEntryUids: number[];
+  updatedAt: number;
+}) {
+  return {
+    kind: "first_party_world_state",
+    schemaVersion: 1,
+    sessionId: input.sessionId,
+    branchId: input.branchId,
+    floorId: input.floorId,
+    runType: "respond",
+    summaryLines: [...input.summaryLines],
+    worldbookId: input.worldbookId,
+    worldbookVersion: input.worldbookVersion,
+    activatedWorldbookEntryUids: [...input.activatedWorldbookEntryUids],
+    toolExecutionIds: [],
+    updatedAt: input.updatedAt,
+  };
 }

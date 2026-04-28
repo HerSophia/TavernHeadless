@@ -4,7 +4,43 @@ outline: [2, 3]
 
 # LLM Profiles（LLM 配置）
 
-LLM Profile 管理 AI 模型的连接配置。支持多 Profile、多实例槽位（Instance Slot）和全局/会话级激活。API Key 在数据库中加密存储（需配置 `APP_SECRETS_MASTER_KEY`）。
+LLM Profile 存的是连接一个 AI 模型所需的信息：供应商、模型名、API 地址、API Key。
+
+一个 Profile 可以被多个实例槽位和多个会话共用。API Key 在数据库里是加密存储的，不会在接口返回明文。
+
+## 什么时候需要看这页
+
+- 你要添加新的模型连接配置
+- 你要查看、修改或删除已有的 LLM Profile
+- 你要测试某个模型是否能正常连接
+- 你要发现某个供应商下有哪些可用模型
+
+## 一个简单例子
+
+```bash
+# 创建一个 LLM Profile
+curl -X POST http://localhost:3000/llm-profiles \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "preset_name": "My OpenAI",
+    "provider": "openai",
+    "model_id": "gpt-4o",
+    "api_key_name": "openai-key-1"
+  }'
+
+# 列出所有 LLM Profile
+curl http://localhost:3000/llm-profiles
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| provider | 模型供应商，例如 openai、anthropic、deepseek |
+| API Key | 连接模型所需的密钥，在数据库里加密存储 |
+| instance slot | 生成槽位，具体哪个槽位用哪个 Profile 由 LLM Instances 决定 |
+
+
 
 ## 支持的供应商
 

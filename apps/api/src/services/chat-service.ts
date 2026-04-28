@@ -151,9 +151,14 @@ import {
   FirstPartyGameStateServiceError,
   type FirstPartyGameStateService,
 } from "../session-state/first-party-game-state-service.js";
-import type { FirstPartyReplayBlocker, FirstPartySceneContext, FirstPartySceneResolutionMode } from "../session-state/session-state-types.js";
-import type { SessionStateService } from "../session-state/session-state-service.js";
-import type { FirstPartyGameStateConsumer } from "../session-state/session-state-first-party-consumer.js";
+import type {
+  FirstPartyReplayBlocker,
+  FirstPartySceneContext,
+  FirstPartyStateResolutionMode,
+  FirstPartyWorldContext,
+  SessionStateNamespace,
+} from "../session-state/session-state-types.js";
+import { SessionStateServiceError, type SessionStateService } from "../session-state/session-state-service.js";
 
 // ── 请求/响应类型 ─────────────────────────────────────
 
@@ -163,8 +168,27 @@ export interface PromptLiveDebugOptions {
   includeWorldbookMatches?: boolean;
 }
 
+export interface TurnSessionStateWriteRequest {
+  /** 已注册 custom namespace */
+  namespace: SessionStateNamespace;
+  /** 目标 slot */
+  slot: string;
+  /** 要写入的 opaque JSON 值 */
+  value?: unknown;
+  /** 是否把本次写入解释为 delete => present: false */
+  delete?: boolean;
+}
+
+interface TurnSessionStateWritesRequest {
+  /**
+   * 本轮 turn 成功后才提交的 session-state mutations。
+   * 仅允许 registered custom namespace，且不允许客户端自行指定 branch / floor / replay safety。
+   */
+  sessionStateWrites?: TurnSessionStateWriteRequest[];
+}
+
 /** /respond 请求体 */
-export interface RespondRequest {
+export interface RespondRequest extends TurnSessionStateWritesRequest {
   /** 用户消息文本 */
   message: string;
   /** 回合配置覆盖 */
@@ -282,7 +306,7 @@ interface ReplayConfirmationRequest {
 }
 
 /** /regenerate 请求体 */
-export interface RegenerateRequest extends ReplayConfirmationRequest {
+export interface RegenerateRequest extends ReplayConfirmationRequest, TurnSessionStateWritesRequest {
   /** 回合配置覆盖（可选） */
   config?: TurnConfig;
   /** 生成参数覆盖（可选） */
@@ -370,6 +394,7 @@ interface ReplayBlockingSessionStateMutationDetail {
 
 interface FirstPartyStateContext {
   scene: FirstPartySceneContext | null;
+  world: FirstPartyWorldContext | null;
 }
 
 export interface EditAndRegenerateRequest extends RetryFloorRequest {
@@ -515,7 +540,6 @@ export interface ChatServiceOptions {
   /** 可选：外部注入提交服务。 */
   turnCommitService?: TurnCommitService;
   sessionStateService?: SessionStateService;
-  firstPartyGameStateConsumer?: FirstPartyGameStateConsumer;
   firstPartyGameStateService?: FirstPartyGameStateService;
   /**
    * 可选：按 slot 粒度为当前会话解析模型配置。
@@ -591,7 +615,6 @@ export class ChatService {
   private readonly generationCoordinator: GenerationCoordinator;
   private readonly executionPolicy: TurnExecutionPolicy;
   private readonly sessionStateService?: SessionStateService;
-  private readonly firstPartyGameStateConsumer?: FirstPartyGameStateConsumer;
   private readonly firstPartyGameStateService?: FirstPartyGameStateService;
   private readonly defaultNarratorProviderType?: ProviderType;
   private readonly accountContext: AccountContextOptions;
@@ -630,7 +653,6 @@ export class ChatService {
         sessionStateService: options.sessionStateService,
       });
     this.sessionStateService = options.sessionStateService;
-    this.firstPartyGameStateConsumer = options.firstPartyGameStateConsumer;
     this.firstPartyGameStateService = options.firstPartyGameStateService;
     this.generationCoordinator = options.generationCoordinator
       ?? options.generationGuard
@@ -666,6 +688,7 @@ export class ChatService {
   ): Promise<RespondResult> {
     const resolvedAccountId = this.resolveAccountId(accountId);
     await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot respond to an archived session");
+    this.assertTurnSessionStateWritesAvailable(request.sessionStateWrites);
 
     const branchId = normalizeBranchId(request.branchId);
 
@@ -889,6 +912,7 @@ export class ChatService {
             promptSnapshot: promptDebug.promptSnapshotRecord,
             promptRuntimeInspection: promptDebug.inspection,
             macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
+            sessionStateWrites: request.sessionStateWrites,
             runType: "respond",
             resolvedTurnModels,
             orchestrationFailureCode: "orchestration_failed",
@@ -1182,6 +1206,7 @@ export class ChatService {
   ): Promise<RegenerateResult> {
     const resolvedAccountId = this.resolveAccountId(accountId);
     await this.requireActiveSession(sessionId, resolvedAccountId, "Cannot regenerate in an archived session");
+    this.assertTurnSessionStateWritesAvailable(request.sessionStateWrites);
     const initialTargetFloor = await this.requireRegenerationTarget(sessionId);
 
     return this.withGenerationCoordinator(sessionId, "main", undefined, async (generationRuntime: CoordinatorRuntime) => {
@@ -1388,6 +1413,7 @@ export class ChatService {
         promptSnapshot: promptDebug.promptSnapshotRecord,
         promptRuntimeInspection: promptDebug.inspection,
         macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
+        sessionStateWrites: request.sessionStateWrites,
         resolvedTurnModels,
         runType: "regenerate_page",
         orchestrationFailureCode: "orchestration_failed",
@@ -1427,6 +1453,7 @@ export class ChatService {
   ): Promise<RetryFloorResult> {
     const resolvedAccountId = this.resolveAccountId(accountId);
     const initialTargetFloor = await this.requireRetryTargetFloor(floorId, resolvedAccountId);
+    this.assertTurnSessionStateWritesAvailable(request.sessionStateWrites);
     await this.requireActiveSession(initialTargetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session");
 
     return this.withGenerationCoordinator(
@@ -1610,6 +1637,7 @@ export class ChatService {
           promptSnapshot: promptDebug.promptSnapshotRecord,
           promptRuntimeInspection: promptDebug.inspection,
           macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
+          sessionStateWrites: request.sessionStateWrites,
           resolvedTurnModels,
           runType: "retry_turn",
           orchestrationFailureCode: "orchestration_failed",
@@ -1647,6 +1675,7 @@ export class ChatService {
   ): Promise<EditAndRegenerateResult> {
     const resolvedAccountId = this.resolveAccountId(accountId);
     const initialSource = await this.resolveEditableMessage(messageId, resolvedAccountId);
+    this.assertTurnSessionStateWritesAvailable(request.sessionStateWrites);
     await this.requireActiveSession(initialSource.sessionId, resolvedAccountId, "Cannot edit message in an archived session");
 
     const newBranchId = request.branchId ? normalizeBranchId(request.branchId) : `branch-${nanoid(8)}`;
@@ -1817,6 +1846,7 @@ export class ChatService {
     promptSnapshot?: NonNullable<PromptRuntimeExecutionResult["promptSnapshotRecord"]>;
     promptRuntimeInspection?: PromptRuntimeInspectionResult;
     macroStagedMutations?: StMacroStagedMutation[];
+    sessionStateWrites?: TurnSessionStateWriteRequest[];
     resolvedTurnModels: ResolvedTurnModels;
     orchestrationFailureCode: string;
     orchestrationFailureMessage: string;
@@ -1887,11 +1917,9 @@ export class ChatService {
       );
     }
 
-    if (this.firstPartyGameStateService || this.firstPartyGameStateConsumer) {
-      try {
-        const stageSceneState = this.firstPartyGameStateService?.stageSceneState.bind(this.firstPartyGameStateService)
-          ?? this.firstPartyGameStateConsumer?.stageSceneState.bind(this.firstPartyGameStateConsumer);
-        stageSceneState?.({
+    try {
+      if (this.firstPartyGameStateService) {
+        this.firstPartyGameStateService.stageSceneState({
           accountId: args.accountId,
           sessionId: args.sessionId,
           branchId: args.branchId ?? "main",
@@ -1899,15 +1927,39 @@ export class ChatService {
           runType: args.runType,
           execution,
         });
-      } catch (error) {
-        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
-        await this.failRunAndFloorBestEffort(args.floorId, error, "session_state_stage_failed");
-        throw new ChatServiceError(
-          "session_state_stage_failed",
-          `Failed to stage first-party session state: ${error instanceof Error ? error.message : String(error)}`,
-          error,
-        );
+        this.firstPartyGameStateService.stageWorldState({
+          accountId: args.accountId,
+          sessionId: args.sessionId,
+          branchId: args.branchId ?? "main",
+          floorId: args.floorId,
+          runType: args.runType,
+          execution,
+          promptSnapshot: args.promptSnapshot ? {
+            worldbookId: args.promptSnapshot.worldbookId,
+            worldbookVersion: args.promptSnapshot.worldbookVersion,
+            worldbookActivatedEntryUids: [...args.promptSnapshot.worldbookActivatedEntryUids],
+          } : undefined,
+        });
       }
+      this.stageTurnBoundSessionStateWrites({
+        accountId: args.accountId,
+        sessionId: args.sessionId,
+        branchId: args.branchId ?? "main",
+        floorId: args.floorId,
+        writes: args.sessionStateWrites,
+      });
+    } catch (error) {
+      this.discardStagedSessionStateBestEffort(args.accountId, args.sessionId, args.floorId, "session_state_stage_failed");
+      await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+      await this.failRunAndFloorBestEffort(args.floorId, error, "session_state_stage_failed");
+      if (error instanceof ChatServiceError) {
+        throw error;
+      }
+      throw new ChatServiceError(
+        "session_state_stage_failed",
+        `Failed to stage session state: ${error instanceof Error ? error.message : String(error)}`,
+        error,
+      );
     }
 
     await this.trackFloorRunPhase(args.floorId, "transaction_prepared");
@@ -2022,6 +2074,52 @@ export class ChatService {
     await this.markTurnModelUsed(args.resolvedTurnModels, args.accountId);
 
     return { execution, commit };
+  }
+
+  private assertTurnSessionStateWritesAvailable(writes?: TurnSessionStateWriteRequest[]): void {
+    if (!writes || writes.length === 0) {
+      return;
+    }
+    if (!this.sessionStateService) {
+      throw new ChatServiceError(
+        "feature_unavailable",
+        "Session state is unavailable because client-data is disabled",
+      );
+    }
+  }
+
+  private stageTurnBoundSessionStateWrites(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    floorId: string;
+    writes?: TurnSessionStateWriteRequest[];
+  }): void {
+    if (!input.writes || input.writes.length === 0) {
+      return;
+    }
+    if (!this.sessionStateService) {
+      throw new ChatServiceError("feature_unavailable", "Session state is unavailable because client-data is disabled");
+    }
+    for (const write of input.writes) {
+      try {
+        this.sessionStateService.stageClientCommitBoundValue({
+          accountId: input.accountId,
+          sessionId: input.sessionId,
+          branchId: input.branchId,
+          sourceFloorId: input.floorId,
+          namespace: write.namespace,
+          slot: write.slot,
+          value: write.delete === true ? null : write.value,
+          present: write.delete === true ? false : true,
+        });
+      } catch (error) {
+        if (error instanceof SessionStateServiceError) {
+          throw new ChatServiceError(error.code, error.message, error);
+        }
+        throw error;
+      }
+    }
   }
 
   private async markToolExecutionRunOutcome(
@@ -2334,10 +2432,11 @@ export class ChatService {
     branchId: string;
     sourceFloorId?: string | null;
     expectedSourceBranchId?: string | null;
-    resolutionMode?: FirstPartySceneResolutionMode;
+    resolutionMode?: FirstPartyStateResolutionMode;
   }): FirstPartyStateContext {
     return {
       scene: this.loadFirstPartySceneContext(input),
+      world: this.loadFirstPartyWorldContext(input),
     };
   }
 
@@ -2347,7 +2446,7 @@ export class ChatService {
     branchId: string;
     sourceFloorId?: string | null;
     expectedSourceBranchId?: string | null;
-    resolutionMode?: FirstPartySceneResolutionMode;
+    resolutionMode?: FirstPartyStateResolutionMode;
   }): FirstPartySceneContext | null {
     if (!this.firstPartyGameStateService) {
       return null;
@@ -2382,28 +2481,83 @@ export class ChatService {
     }
   }
 
+  private loadFirstPartyWorldContext(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    sourceFloorId?: string | null;
+    expectedSourceBranchId?: string | null;
+    resolutionMode?: FirstPartyStateResolutionMode;
+  }): FirstPartyWorldContext | null {
+    if (!this.firstPartyGameStateService) {
+      return null;
+    }
+
+    try {
+      return this.firstPartyGameStateService.loadWorldContext(input);
+    } catch (error) {
+      if (!(error instanceof FirstPartyGameStateServiceError)) {
+        throw error;
+      }
+
+      switch (error.code) {
+        case "first_party_world_source_floor_not_found":
+          throw new ChatServiceError("source_floor_not_found", error.message, error);
+        case "first_party_world_source_floor_not_committed":
+        case "first_party_world_source_floor_branch_mismatch":
+          throw new ChatServiceError("invalid_state", error.message, error);
+        case "first_party_world_payload_invalid":
+          throw new ChatServiceError(
+            "invalid_state",
+            `Managed world state is invalid: ${error.message}`,
+            error,
+          );
+        default:
+          throw new ChatServiceError("invalid_state", error.message, error);
+      }
+    }
+  }
+
   private buildFirstPartyStateDiagnostics(
     firstPartyStateContext: FirstPartyStateContext | undefined,
     phase: PromptRuntimeDiagnosticPhase,
   ): PromptRuntimeDiagnostic[] {
+    const diagnostics: PromptRuntimeDiagnostic[] = [];
     const scene = firstPartyStateContext?.scene;
-    if (!scene) {
-      return [];
+    if (scene) {
+      const floorMessage = scene.floorId ? ` at floor '${scene.floorId}'` : "";
+      const message = scene.present
+        ? `Managed scene context resolved from '${scene.source}'${floorMessage}.`
+        : scene.source === "none"
+          ? "Managed scene context is currently empty."
+          : `Managed scene context baseline from '${scene.source}' is empty${floorMessage}.`;
+
+      diagnostics.push({
+        code: scene.present ? "managed_scene_context_loaded" : "managed_scene_context_empty",
+        message,
+        severity: "info",
+        phase,
+      });
     }
 
-    const floorMessage = scene.floorId ? ` at floor '${scene.floorId}'` : "";
-    const message = scene.present
-      ? `Managed scene context resolved from '${scene.source}'${floorMessage}.`
-      : scene.source === "none"
-        ? "Managed scene context is currently empty."
-        : `Managed scene context baseline from '${scene.source}' is empty${floorMessage}.`;
+    const world = firstPartyStateContext?.world;
+    if (world) {
+      const floorMessage = world.floorId ? ` at floor '${world.floorId}'` : "";
+      const message = world.present
+        ? `Managed world context resolved from '${world.source}'${floorMessage}.`
+        : world.source === "none"
+          ? "Managed world context is currently empty."
+          : `Managed world context baseline from '${world.source}' is empty${floorMessage}.`;
 
-    return [{
-      code: scene.present ? "managed_scene_context_loaded" : "managed_scene_context_empty",
-      message,
-      severity: "info",
-      phase,
-    }];
+      diagnostics.push({
+        code: world.present ? "managed_world_context_loaded" : "managed_world_context_empty",
+        message,
+        severity: "info",
+        phase,
+      });
+    }
+
+    return diagnostics;
   }
 
   private toReplayBlockingExecutionDetailFromBlockedError(
@@ -2974,6 +3128,7 @@ export class ChatService {
       promptSnapshot: promptDebug.promptSnapshotRecord,
       promptRuntimeInspection: promptDebug.inspection,
       macroStagedMutations: assembled.runtimeTraceSeed.macroStagedMutations,
+      sessionStateWrites: args.request.sessionStateWrites,
       resolvedTurnModels,
       runType: args.runType,
       orchestrationFailureCode: "orchestration_failed",
@@ -4279,7 +4434,8 @@ function mergeSessionMetadataWithFirstPartyState(
   firstPartyStateContext?: FirstPartyStateContext,
 ): string | null {
   const scene = firstPartyStateContext?.scene;
-  if (!scene) {
+  const world = firstPartyStateContext?.world;
+  if (!scene && !world) {
     return metadataJson;
   }
 
@@ -4294,7 +4450,8 @@ function mergeSessionMetadataWithFirstPartyState(
     ...nextMetadata,
     first_party_state: {
       ...currentFirstPartyState,
-      scene: buildManagedSceneMetadata(scene),
+      ...(scene ? { scene: buildManagedSceneMetadata(scene) } : {}),
+      ...(world ? { world: buildManagedWorldMetadata(world) } : {}),
     },
   });
 }
@@ -4310,6 +4467,25 @@ function buildManagedSceneMetadata(scene: FirstPartySceneContext): Record<string
     floor_id: scene.floorId,
     updated_at: scene.updatedAt,
     source_mutation_ids: [...scene.sourceMutationIds],
+  };
+}
+
+function buildManagedWorldMetadata(world: FirstPartyWorldContext): Record<string, unknown> {
+  return {
+    namespace: world.namespace,
+    slot: world.slot,
+    resolution_mode: world.resolutionMode,
+    source: world.source,
+    present: world.present,
+    schema_version: world.schemaVersion,
+    floor_id: world.floorId,
+    updated_at: world.updatedAt,
+    source_mutation_ids: [...world.sourceMutationIds],
+    worldbook_id: world.world?.worldbookId ?? null,
+    worldbook_version: world.world?.worldbookVersion ?? null,
+    activated_worldbook_entry_uids: [...(world.world?.activatedWorldbookEntryUids ?? [])],
+    summary_line_count: world.world?.summaryLines.length ?? 0,
+    tool_execution_count: world.world?.toolExecutionIds.length ?? 0,
   };
 }
 

@@ -489,6 +489,67 @@ describe("sdk sessions expanded resource", () => {
     });
   });
 
+  it("sends sessionStateWrites with respond requests", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          branch_id: "main",
+          final_state: "committed",
+          floor_id: "floor-2",
+          floor_no: 2,
+          generated_text: "Hello",
+          summaries: ["summary-1"],
+          total_usage: {
+            completion_tokens: 5,
+            prompt_tokens: 10,
+            total_tokens: 15,
+          },
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.sessions.respond({
+      message: "hello",
+      sessionId: "session-1",
+      sessionStateWrites: [
+        {
+          namespace: "quest_flags",
+          slot: "companion",
+          value: { mood: "ally" },
+        },
+        {
+          namespace: "quest_flags",
+          slot: "expired_hint",
+          delete: true,
+        },
+      ],
+    })).resolves.toMatchObject({
+      branchId: "main",
+      finalState: "committed",
+      floorId: "floor-2",
+      floorNo: 2,
+      generatedText: "Hello",
+    });
+
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(init?.body).toBe(JSON.stringify({
+      message: "hello",
+      session_state_writes: [
+        {
+          namespace: "quest_flags",
+          slot: "companion",
+          value: { mood: "ally" },
+        },
+        {
+          namespace: "quest_flags",
+          slot: "expired_hint",
+          delete: true,
+        },
+      ],
+    }));
+  });
+
   it("maps regenerate payloads with previous floor metadata", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
@@ -553,6 +614,18 @@ describe("sdk sessions expanded resource", () => {
       confirmedExecutionIds: ["exec-3"],
       confirmedSessionStateMutationIds: ["mutation-3"],
       sessionId: "session-1",
+      sessionStateWrites: [
+        {
+          namespace: "quest_flags",
+          slot: "companion",
+          value: { mood: "ally" },
+        },
+        {
+          namespace: "quest_flags",
+          slot: "expired_hint",
+          delete: true,
+        },
+      ],
       debugOptions: {
         includePromptSnapshot: true,
         includeRuntimeTrace: true,
@@ -624,6 +697,18 @@ describe("sdk sessions expanded resource", () => {
         include_runtime_trace: true,
         include_worldbook_matches: false,
       },
+      session_state_writes: [
+        {
+          namespace: "quest_flags",
+          slot: "companion",
+          value: { mood: "ally" },
+        },
+        {
+          namespace: "quest_flags",
+          slot: "expired_hint",
+          delete: true,
+        },
+      ],
     }));
   });
 

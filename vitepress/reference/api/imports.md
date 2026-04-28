@@ -4,7 +4,39 @@ outline: [2, 3]
 
 # Imports（导入）
 
-提供 SillyTavern 生态的兼容导入接口。系统会解析原始数据，然后写入 TavernHeadless 的资源表。
+导入接口负责把 SillyTavern 生态的资源文件转成 TavernHeadless 内部可以使用的资源。
+
+导入时不执行宏，不做变量替换，只做解析和写入。
+
+## 什么时候需要看这页
+
+- 你要把已有的 SillyTavern 预设、角色卡或世界书导入进来
+- 你要把一个聊天文件导入为新的会话
+- 你要发起异步导入（适合较大的聊天文件）
+
+## 一个简单例子
+
+```bash
+# 导入一个角色卡文件
+curl -X POST http://localhost:3000/import/character \
+  -H 'Content-Type: multipart/form-data' \
+  -F 'file=@my_character.json'
+
+# 导入一个预设
+curl -X POST http://localhost:3000/import/preset \
+  -H 'Content-Type: multipart/form-data' \
+  -F 'file=@my_preset.json'
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| SillyTavern | 一个开源 AI 角色扮演前端，这里是兼容导入的目标 |
+| 异步导入 | 把导入任务放到后台执行，通过作业接口轮询结果 |
+| 宏 | 提示词里的双花括号占位符，导入时不展开 |
+
+
 
 导入完成后，后续查看、编辑和删除应使用对应的资源接口：
 

@@ -1,4 +1,9 @@
-import type { SessionStateNamespace, SessionStateSlotDefinition } from "./session-state-types.js";
+import type {
+  SessionStateNamespace,
+  SessionStateSlotCapabilities,
+  SessionStateSlotDefinition,
+  SessionStateSlotPublicExposure,
+} from "./session-state-types.js";
 import { SESSION_STATE_NAMESPACE_GAME_STATE } from "./session-state-types.js";
 
 export class SessionStateSlotRegistry {
@@ -26,6 +31,10 @@ export class SessionStateSlotRegistry {
     const all = [...this.definitions.values()];
     return namespace ? all.filter((definition) => definition.namespace === namespace) : all;
   }
+
+  listPublic(namespace?: SessionStateNamespace): SessionStateSlotDefinition[] {
+    return this.list(namespace).filter((definition) => definition.publicExposure.exposureLifecycle === "public_stable");
+  }
 }
 
 export function createDefaultSessionStateSlotRegistry(): SessionStateSlotRegistry {
@@ -39,6 +48,7 @@ export function createDefaultSessionStateSlotRegistry(): SessionStateSlotRegistr
     defaultReplaySafety: "safe",
     schemaVersion: 1,
     sizeBudgetBytes: 512 * 1024,
+    publicExposure: createBuiltInPublicExposure(),
   });
 
   registry.register({
@@ -49,6 +59,7 @@ export function createDefaultSessionStateSlotRegistry(): SessionStateSlotRegistr
     defaultReplaySafety: "safe",
     schemaVersion: 1,
     sizeBudgetBytes: 256 * 1024,
+    publicExposure: createBuiltInPublicExposure(),
   });
 
   registry.register({
@@ -59,6 +70,7 @@ export function createDefaultSessionStateSlotRegistry(): SessionStateSlotRegistr
     defaultReplaySafety: "safe",
     schemaVersion: 1,
     sizeBudgetBytes: 256 * 1024,
+    publicExposure: createBuiltInInternalExposure(),
   });
 
   registry.register({
@@ -69,6 +81,7 @@ export function createDefaultSessionStateSlotRegistry(): SessionStateSlotRegistr
     defaultReplaySafety: "safe",
     schemaVersion: 1,
     sizeBudgetBytes: 256 * 1024,
+    publicExposure: createBuiltInInternalExposure(),
   });
 
   return registry;
@@ -76,4 +89,30 @@ export function createDefaultSessionStateSlotRegistry(): SessionStateSlotRegistr
 
 function toRegistryKey(namespace: SessionStateNamespace, slot: string): string {
   return `${namespace}::${slot}`;
+}
+
+function createBuiltInPublicExposure(): SessionStateSlotPublicExposure {
+  return {
+    ownerKind: "built_in",
+    exposureLifecycle: "public_stable",
+    capabilities: createReadOnlyCapabilities(true),
+  };
+}
+
+function createBuiltInInternalExposure(): SessionStateSlotPublicExposure {
+  return {
+    ownerKind: "built_in",
+    exposureLifecycle: "internal_only",
+    capabilities: createReadOnlyCapabilities(false),
+  };
+}
+
+function createReadOnlyCapabilities(clientReadable: boolean): SessionStateSlotCapabilities {
+  return {
+    clientReadable,
+    clientWritable: false,
+    allowedWriteModes: [],
+    supportsSnapshot: true,
+    supportsDiff: true,
+  };
 }

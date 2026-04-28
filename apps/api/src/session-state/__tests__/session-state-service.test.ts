@@ -8,6 +8,7 @@ import { accounts, floors, messagePages, messages, sessions, sessionStateMutatio
 import { ChatMessagePersistence } from "../../services/chat-message-persistence.js";
 import { TurnCommitService } from "../../services/turn-commit-service.js";
 import { FirstPartyGameStateConsumer } from "../session-state-first-party-consumer.js";
+import { SessionStateCustomNamespaceService } from "../session-state-custom-namespace-service.js";
 import { SessionStateService, SessionStateServiceError } from "../session-state-service.js";
 
 const CLIENT_DATA_CONFIG = {
@@ -25,11 +26,16 @@ const ACCOUNT_ID = "default-admin";
 describe("SessionStateService", () => {
   let database: DatabaseConnection;
   let service: SessionStateService;
+  let customNamespaceService: SessionStateCustomNamespaceService;
 
   beforeEach(() => {
     database = createDatabase(":memory:");
+    customNamespaceService = new SessionStateCustomNamespaceService(database.db, {
+      clientData: CLIENT_DATA_CONFIG,
+    });
     service = new SessionStateService(database.db, {
       clientData: CLIENT_DATA_CONFIG,
+      customNamespaceService,
     });
   });
 
@@ -118,6 +124,128 @@ describe("SessionStateService", () => {
     expect(snapshot).not.toBeNull();
     expect(snapshot?.present).toBe(true);
     expect(asRecord(snapshot?.value)?.generatedText).toBe("Rain moves across the ruined courtyard.");
+  });
+
+  it("stages registered custom commit-bound state and applies it during turn commit", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const userMessageId = nanoid();
+    const now = 1_735_900_005_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "generating",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await seedInputPage(database, { floorId, pageId, now });
+    await seedUserMessage(database, { pageId, messageId: userMessageId, content: "Track the companion mood.", now });
+
+    customNamespaceService.registerNamespace({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      namespace: "quest_flags",
+      logicalOwnerType: "plugin",
+      logicalOwnerId: "quest-plugin",
+    });
+
+    const execution = createExecution({
+      floorId,
+      generatedText: "The companion keeps watch by the gate.",
+      summaries: ["The companion stays alert by the gate."],
+      promptTokens: 10,
+      completionTokens: 20,
+    });
+
+    const staged = service.stageCommitBoundValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      sourceFloorId: floorId,
+      namespace: "quest_flags",
+      slot: "companion",
+      value: { mood: "ally" },
+    });
+    expect(staged.status).toBe("staged");
+    expect(staged.writeMode).toBe("commit_bound");
+
+    const commitService = new TurnCommitService(
+      database.db,
+      new ChatMessagePersistence(database.db, new SimpleTokenCounter()),
+      createEventBus(),
+      { sessionStateService: service },
+    );
+
+    const result = await commitService.commit({
+      accountId: ACCOUNT_ID,
+      floorId,
+      sessionId,
+      branchId: "main",
+      execution,
+      committedAt: now + 200,
+    });
+
+    expect(result.finalState).toBe("committed");
+
+    const live = service.resolveLiveValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      namespace: "quest_flags",
+      slot: "companion",
+    });
+    expect(live?.present).toBe(true);
+    expect(live?.source).toBe("live_head");
+    expect(live?.value).toEqual({ mood: "ally" });
+  });
+
+  it("rejects client commit-bound writes to built-in namespaces", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_735_900_006_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "generating",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect(() => service.stageClientCommitBoundValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      sourceFloorId: floorId,
+      namespace: "game_state",
+      slot: "scene",
+      value: { revision: 1 },
+    })).toThrowError(SessionStateServiceError);
+
+    try {
+      service.stageClientCommitBoundValue({
+        accountId: ACCOUNT_ID,
+        sessionId,
+        branchId: "main",
+        sourceFloorId: floorId,
+        namespace: "game_state",
+        slot: "scene",
+        value: { revision: 1 },
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionStateServiceError);
+      expect((error as SessionStateServiceError).code).toBe("session_state_public_write_forbidden");
+    }
   });
 
   it("discarding a staged mutation does not pollute the live head", async () => {
@@ -512,6 +640,162 @@ describe("SessionStateService", () => {
       slot: "scene",
     });
     expect(asRecord(snapshot?.value)?.label).toBe("direct-write");
+  });
+
+  it("supports registered custom namespace direct write, delete, and later floor snapshot materialization", async () => {
+    const sessionId = nanoid();
+    const floor1 = nanoid();
+    const floor2 = nanoid();
+    const floor3 = nanoid();
+    const now = 1_735_900_035_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floor1,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "committed",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await seedFloor(database, {
+      id: floor2,
+      sessionId,
+      floorNo: 2,
+      branchId: "main",
+      parentFloorId: floor1,
+      state: "committed",
+      createdAt: now + 20,
+      updatedAt: now + 20,
+    });
+    await seedFloor(database, {
+      id: floor3,
+      sessionId,
+      floorNo: 3,
+      branchId: "main",
+      parentFloorId: floor2,
+      state: "committed",
+      createdAt: now + 40,
+      updatedAt: now + 40,
+    });
+
+    customNamespaceService.registerNamespace({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      namespace: "quest_flags",
+      logicalOwnerType: "plugin",
+      logicalOwnerId: "quest-plugin",
+    });
+
+    const written = service.writeDirectValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      namespace: "quest_flags",
+      slot: "companion",
+      value: { mood: "ally" },
+    });
+    expect(written.status).toBe("applied");
+
+    const liveAfterWrite = service.resolveLiveValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      namespace: "quest_flags",
+      slot: "companion",
+    });
+    expect(liveAfterWrite?.source).toBe("live_head");
+    expect(liveAfterWrite?.present).toBe(true);
+    expect(liveAfterWrite?.value).toEqual({ mood: "ally" });
+
+    const floor2Apply = service.applyStagedMutationsForFloor({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId: floor2,
+      committedAt: now + 200,
+    });
+    expect(floor2Apply.snapshots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          namespace: "quest_flags",
+          slot: "companion",
+          floorId: floor2,
+          present: true,
+          value: { mood: "ally" },
+        }),
+      ]),
+    );
+
+    const deleted = service.writeDirectValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      namespace: "quest_flags",
+      slot: "companion",
+      value: null,
+      present: false,
+    });
+    expect(deleted.status).toBe("applied");
+
+    const liveAfterDelete = service.resolveLiveValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      namespace: "quest_flags",
+      slot: "companion",
+    });
+    expect(liveAfterDelete?.present).toBe(false);
+    expect(liveAfterDelete?.value).toBeNull();
+
+    service.applyStagedMutationsForFloor({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId: floor3,
+      committedAt: now + 300,
+    });
+    const snapshotAfterDelete = service.getFloorSnapshot({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      floorId: floor3,
+      namespace: "quest_flags",
+      slot: "companion",
+    });
+    expect(snapshotAfterDelete?.present).toBe(false);
+    expect(snapshotAfterDelete?.value).toBeNull();
+  });
+
+  it("rejects direct write for an unregistered custom namespace", async () => {
+    const sessionId = nanoid();
+    const now = 1_735_900_037_000;
+
+    await seedSession(database, sessionId, now);
+
+    expect(() => service.writeDirectValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      namespace: "quest_flags",
+      slot: "companion",
+      value: { mood: "ally" },
+    })).toThrowError(SessionStateServiceError);
+
+    try {
+      service.writeDirectValue({
+        accountId: ACCOUNT_ID,
+        sessionId,
+        branchId: "main",
+        namespace: "quest_flags",
+        slot: "companion",
+        value: { mood: "ally" },
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(SessionStateServiceError);
+      expect((error as SessionStateServiceError).code).toBe("session_state_namespace_not_registered");
+    }
   });
 
   it("evaluates replay safety for confirmation, hard block, and uncertainty", async () => {

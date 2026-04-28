@@ -4,40 +4,65 @@ outline: [2, 3]
 
 # Prompt Runtime（提示词运行时）
 
-Prompt Runtime 是一组独立的高级 API 资源。它用于读取会话当前的 Prompt Assets 绑定、session / branch 级策略视图，以及系统公开的运行边界。
+Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会按什么规则组装提示词。**
 
-它仍然是 control plane，不负责执行一轮聊天，也不会替代现有的 Chat 主链路。
+这里可以查看会话当前绑定了哪些提示词资源，当前 session 和 branch 生效的策略是什么，也可以做少量只读调试。
 
-当前它还提供一个**单段文本宏预览**入口：`POST /sessions/:id/prompt-runtime/preview`。这个入口继续复用现有的宏执行主线，只做单段文本的 preview，不会创建第二条执行链。它的正式契约是 `macro_text_preview`，不是完整 runtime preview：不会执行 prompt assembly、budget allocation、delivery materialization，返回的 `runtime_trace` 也只投影 `macro`、`source_selection`、`visibility` 三个子字段。
+它不是发送消息的接口，也不会替代现有的 Chat 主链路。
 
-> 这组接口属于高级 API 资源，主要面向调试、平台集成、自动化脚本和策略治理。如果只需要普通聊天能力，不需要优先接入。
+如果你只需要普通聊天，先看 [Chat（对话生成）](./chat) 即可。只有在你需要排查提示词组装、预览宏结果、或比较两个已提交楼层的提示词快照时，才需要看这一页。
 
-如果你要看真实聊天接口、dry-run 或 live debug，请同时参考：
+## 什么时候需要看这页
 
-- [Chat（对话生成）](./chat)
-- [Macros（宏系统）](./macros)
+- 想确认当前会话绑定了哪些提示词资源，例如预设、角色卡、世界书、正则。
+- 想查看 session 或 branch 当前真正生效的提示词策略。
+- 想预览一小段文本里的宏会被展开成什么结果，但又不想真的发起一次聊天。
+- 想回看某个已提交楼层在当时真正落库的提示词快照，或者比较两个已提交楼层之间的差异。
+
+## 一个简单例子
+
+假设你在排查“为什么这个会话最近发给模型的提示词变短了”。可以按下面的顺序看：
+
+1. `GET /sessions/:id/prompt-runtime`：先看当前绑定了哪些提示词资源，当前预算和来源选择规则是什么。
+2. `POST /sessions/:id/prompt-runtime/preview`：拿一小段包含宏的文本做预览，确认宏展开结果是否符合预期。
+3. `GET /floors/:id/prompt-runtime/explain`：如果问题只出现在某个已提交楼层，再回看当时真正落库的解释快照。
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| Prompt Assets | 组成提示词的资源，例如预设、角色卡、世界书、正则配置 |
+| policy | 提示词组装规则，例如结构、投递方式、预算、来源选择 |
+| preview | 只对一小段文本做预览，不发起真实聊天，不创建 floor |
+| explain | 读取某个已提交楼层当时真正保存下来的提示词解释快照 |
+| compare | 比较两个已提交楼层的提示词快照差异 |
+
+当前还提供一个**单段文本宏预览**入口：`POST /sessions/:id/prompt-runtime/preview`。它只处理一段 `text`，不会创建第二条执行链，也不会真正发起一次聊天。
+
+这个入口的正式能力名是 `macro_text_preview`。它不是“完整提示词预览”：不会执行完整 prompt 组装、不会分配预算、不会生成最终投递内容，返回的 `runtime_trace` 也只会投影 `macro`、`source_selection`、`visibility` 这三个子字段。
 
 ## 设计边界
+当前 Prompt Runtime 对外公开的是只读控制面，以及单段文本预览入口。下面这些边界不会变：
 
-当前 Prompt Runtime 对外公开的是低风险 control plane，以及单段文本 preview 入口。文档上应当明确以下边界：
-
-- 不创建第二条执行链，真实运行仍走现有 `respond` / `regenerate` / `retry` / `edit-and-regenerate` 主链路。
+- 不创建第二条执行链，真实聊天仍走 `respond` / `regenerate` / `retry` / `edit-and-regenerate`。
 - `character_card` 仍然属于 Prompt Assets。
 - 当前不提供 `GET /sessions/:id/prompt-runtime/macros`。
 - 当前不提供 `GET /sessions/:id/prompt-runtime/run`。
-- preview 只提供 `POST /sessions/:id/prompt-runtime/preview`，并且一次只处理一段 `text`。对外契约为 `macro_text_preview`（`capabilities.observability.preview.mode`）。
-- preview 不走 LLM、不创建 floor、不写 `prompt_snapshot`、不提交副作用；也不执行 prompt assembly / budget allocation / delivery materialization，`returns_assembly_truth` 固定为 `false`。
-- preview 的 `runtime_trace` 只投影 `trace_subset` 中列出的子字段（当前为 `macro`、`source_selection`、`visibility`），resolved budget / delivery / structure 请读取 `policy` 与 `source_map`。
-- `GET /sessions/:id/prompt-runtime` 的 `branch_id` 只面向**已物化 branch**；未物化或不存在的 branch 返回 `404 branch_not_found`。
-- branch policy 只面向**已物化 branch**；当前不支持对未物化 branch 预写入 policy。
-- session policy 与 branch policy 现在都支持持久化治理 `structure`、`delivery`、`budget`、`source_selection`、`visibility`。
-- session / branch 持久化策略写入后统一使用 envelope：`{ version, updated_at, updated_by, value }`；读取侧继续兼容旧的 bare object metadata。
-- live 聊天链在成功越过 commit 边界后，会把 `prompt_runtime_explain_snapshot` 与 assistant message、floor state、`prompt_snapshot`、committed result 等真相一起写入同一同步事务。
-- `GET /floors/:id/prompt-runtime/explain` 与 `POST /sessions/:id/prompt-runtime/compare` 只读取 committed truth，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。
-- 对没有 committed snapshot 的旧 floor，会显式返回 `snapshot_available: false` 和结构化 `limitations`；不会做启发式伪回填。
-- compare 首轮只支持同一 session 内的两个 committed floor，不支持 preview 与 floor 混合比较。
-- 不持久化内建只读宏值，不持久化 ST `local/global` 兼容快照，也不持久化 `runKind`。
-- 宏诊断仍属于统一观测面，不单独拆成第二套 control plane 诊断接口。
+- preview 只提供 `POST /sessions/:id/prompt-runtime/preview`，一次只处理一段文本。它的正式能力名是 `macro_text_preview`。
+- preview 不调用模型、不创建楼层、不写 `prompt_snapshot`、不提交副作用。它也不做完整提示词组装、预算分配和最终投递内容生成，`returns_assembly_truth` 固定为 `false`。
+- preview 返回的 `runtime_trace` 只包含三个子字段：`macro`、`source_selection`、`visibility`。完整的预算、投递和结构信息，请读取 `policy` 与 `source_map`。
+- `GET /sessions/:id/prompt-runtime` 的 `branch_id` 只能查已经存在的分支；未创建的分支会返回 `404 branch_not_found`。
+- branch 策略也只对已经存在的分支生效；不能对还没创建的分支预先写入策略。
+- session 与 branch 的策略现在都支持持久化管理：`structure`、`delivery`、`budget`、`source_selection`、`visibility`。
+- 策略写入后统一包裹一层 envelope（`version`、`updated_at`、`updated_by`、`value`）。读取侧会继续兼容旧的裸对象格式。
+- 一次真实聊天在成功提交后，会把 `prompt_runtime_explain_snapshot` 与助理消息、楼层状态、`prompt_snapshot`、提交结果等数据一起写入同一个数据库事务。
+- `GET /floors/:id/prompt-runtime/explain` 和 `POST /sessions/:id/prompt-runtime/compare` 只读取已持久化的真相，不会重新组装提示词、重新展开宏、重新计算预算或来源选择。
+- 对于没有 committed snapshot 的旧楼层，会显式返回 `snapshot_available: false` 和结构化 `limitations`，不会试图用启发式方法补数据。
+- compare 在第一版只支持同一个会话内的两个已提交楼层，不支持 preview 与楼层混合比较。
+- 内建只读宏值不会被持久化。ST 的 `local` / `global` 兼容快照和 `runKind` 也不会被持久化。
+- 宏诊断仍然属于统一的观测面，不会另外开一组独立的诊断接口。
+
+
 
 ## 认证
 
