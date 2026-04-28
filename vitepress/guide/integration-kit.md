@@ -409,6 +409,18 @@ console.log(diff.policyChanges);
 - custom slot 会在首次成功 direct write 或首次成功 turn-bound commit 后 materialize，并进入 discovery / resolve / snapshot / diff
 - 当前公开稳定的 built-in slot 只有 `game_state.scene` 与 `game_state.world`
 - `game_state` 仍然对客户端只读；public delete 与 turn 内 `delete: true` 的治理语义都是 `present: false`
+- `registerNamespace` 当前遵循已经冻结的 identity contract：
+  - `namespace` 与 `logicalOwnerType` 必须使用小写稳定标识，可带点分段
+  - `logicalOwnerId` 必须使用小写稳定 id，允许字符 `a-z0-9._:@/-`
+  - `game_state` 与 `game_state.*` 仍然是保留 built-in namespace / prefix，不能注册为 custom namespace
+  - 服务端只会先做 `trim()`，不会自动转小写
+- `listNamespaces`、`resolve`、`getFloorSnapshots`、`diff` 当前都不提供 `limit` / `offset` 分页；服务端会直接返回当前过滤条件命中的完整结果
+- `listNamespaces` 返回的 `sizeBudgetBytes` 就是 slot 当前有效的 payload budget。custom namespace 默认继承当前部署的 Client Data item size limit；built-in slot 使用各自固定预算
+- Session State 的规模限制来自底层 managed storage。常见 `error.code` 包括：
+  - `validation_error`
+  - `session_state_namespace_count_limit_exceeded`、`session_state_namespace_item_limit_exceeded`、`session_state_namespace_byte_limit_exceeded`
+  - `session_state_account_item_limit_exceeded`、`session_state_account_byte_limit_exceeded`
+  - `session_state_payload_too_large`
 
 公开端点定义见 [`reference/api/session-state.md`](../reference/api/session-state.md)。
 
