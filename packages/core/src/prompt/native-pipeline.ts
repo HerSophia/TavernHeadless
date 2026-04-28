@@ -1,4 +1,5 @@
 import type { ChatMessage, ChatRole, IRMessage, IRSection, PromptIR, TokenCounter } from './types.js';
+import { resolvePromptRuntimeGovernancePolicy } from './governance.js';
 import { TemplateEngine } from './template-engine.js';
 import { PROMPT_MEMORY_MESSAGE_SOURCE, PROMPT_MEMORY_SECTION_NAME } from './runtime-registry.js';
 
@@ -196,6 +197,18 @@ export class TemplateNode implements NativePipelineNode {
 
     const sections: IRSection[] = [];
 
+    const nativeSystemGovernance = resolvePromptRuntimeGovernancePolicy({
+      sourceKind: 'native_system',
+      fallback: {
+        budgetGroup: 'section:nativeSystem',
+        pinned: true,
+        prunable: false,
+      },
+    });
+    const historyGovernance = resolvePromptRuntimeGovernancePolicy({
+      sourceKind: 'history',
+      fallback: { budgetGroup: 'history', pinned: false, prunable: true },
+    });
     const renderedSystem = renderWithVariables(
       templateEngine,
       state.input.systemPrompt,
@@ -206,13 +219,13 @@ export class TemplateNode implements NativePipelineNode {
       sections.push({
         name: 'nativeSystem',
         order: 0,
-        pinned: true,
-        budgetGroup: 'section:nativeSystem',
+        pinned: nativeSystemGovernance.pinned,
+        budgetGroup: nativeSystemGovernance.budgetGroup,
         messages: [{
           role: 'system',
           content: renderedSystem,
           source: 'native:system',
-          prunable: false,
+          prunable: nativeSystemGovernance.prunable,
           priority: 0,
         }],
       });
@@ -224,15 +237,15 @@ export class TemplateNode implements NativePipelineNode {
         role: message.role,
         content: renderWithVariables(templateEngine, message.content, variables),
         source: `native:chat:${index}`,
-        prunable: true,
+        prunable: historyGovernance.prunable,
         priority: index,
       }));
 
     sections.push({
       name: 'chatHistory',
       order: 2,
-      budgetGroup: 'history',
-      pinned: false,
+      budgetGroup: historyGovernance.budgetGroup,
+      pinned: historyGovernance.pinned,
       messages: chatMessages,
     });
 
@@ -286,6 +299,10 @@ export class WorldbookResolveNode implements NativePipelineNode {
 
     const templateEngine = new TemplateEngine();
     const variables = state.input.variables ?? {};
+    const worldbookGovernance = resolvePromptRuntimeGovernancePolicy({
+      sourceKind: 'worldbook',
+      fallback: { budgetGroup: 'worldbook', pinned: false, prunable: true },
+    });
 
     const beforeMessages: IRMessage[] = [];
     const afterMessages: IRMessage[] = [];
@@ -302,18 +319,13 @@ export class WorldbookResolveNode implements NativePipelineNode {
         depthSections.push({
           name: `worldbookDepth:${depth}`,
           order: 1000 + depth,
-          budgetGroup: 'worldbook',
-          pinned: true,
+          budgetGroup: worldbookGovernance.budgetGroup,
+          pinned: worldbookGovernance.pinned,
           messages: [{
             role: entry.role ?? 'system',
             content: rendered,
             source: `native:worldbook:${entry.id}@depth${depth}`,
-            // Phase 3 governance: worldbook registry 记为 `budget_prunable`，
-            // 但当前 native pipeline 固定 pin 住世界书条目。已公开治理的裁剪策略
-            // 仍由 `sourceSelection.worldbook.enabled` 与 budget allocator 的
-            // 组级裁剪承担，后续若放开 IR 层级 trim，应读取 registry 的
-            // governance level 决策。
-            prunable: false,
+            prunable: worldbookGovernance.prunable,
           }],
         });
         continue;
@@ -324,9 +336,7 @@ export class WorldbookResolveNode implements NativePipelineNode {
         role: entry.role ?? 'system',
         content: rendered,
         source: `native:worldbook:${entry.id}`,
-        // Phase 3 governance: worldbook registry 记为 `budget_prunable`。
-        // 说明同上，首轮保持 pin 住的既有行为。
-        prunable: false,
+        prunable: worldbookGovernance.prunable,
       });
     }
 
@@ -336,8 +346,8 @@ export class WorldbookResolveNode implements NativePipelineNode {
       sections.push({
         name: 'worldbookBefore',
         order: 1,
-        budgetGroup: 'worldbook',
-        pinned: true,
+        budgetGroup: worldbookGovernance.budgetGroup,
+        pinned: worldbookGovernance.pinned,
         messages: beforeMessages,
       });
     }
@@ -346,8 +356,8 @@ export class WorldbookResolveNode implements NativePipelineNode {
       sections.push({
         name: 'worldbookAfter',
         order: 3,
-        budgetGroup: 'worldbook',
-        pinned: true,
+        budgetGroup: worldbookGovernance.budgetGroup,
+        pinned: worldbookGovernance.pinned,
         messages: afterMessages,
       });
     }
@@ -455,6 +465,10 @@ export class MemoryInjectNode implements NativePipelineNode {
     if (!summary) {
       return state;
     }
+    const memoryGovernance = resolvePromptRuntimeGovernancePolicy({
+      sourceKind: 'memory',
+      fallback: { budgetGroup: 'memory', pinned: false, prunable: false },
+    });
 
     const firstSystemOrder = state.sections
       .filter((section) => section.messages.some((message) => message.role === 'system'))
@@ -469,17 +483,13 @@ export class MemoryInjectNode implements NativePipelineNode {
     sections.push({
       name: PROMPT_MEMORY_SECTION_NAME,
       order,
-      budgetGroup: 'memory',
-      pinned: true,
+      budgetGroup: memoryGovernance.budgetGroup,
+      pinned: memoryGovernance.pinned,
       messages: [{
         role: 'system',
         content: `[Memory Summary]\n${summary}`,
         source: PROMPT_MEMORY_MESSAGE_SOURCE,
-        // Phase 3 governance: memory registry 记为 `soft_required`。首轮保留
-        // `prunable: false`，对外治理依然走 `sourceSelection.memory.enabled`。
-        // 后续若允许 budget 在极端压力下裁剪 memory，应改为读取
-        // `resolvePromptRuntimeSourceGovernanceLevel('memory')`。
-        prunable: false,
+        prunable: memoryGovernance.prunable,
         priority: 0,
       }],
     });

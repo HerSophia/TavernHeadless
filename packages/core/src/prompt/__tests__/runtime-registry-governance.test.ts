@@ -22,6 +22,10 @@ describe('PromptRuntime source governance level registry', () => {
     expect(resolvePromptRuntimeSourceGovernanceLevel('memory')).toBe('soft_required');
   });
 
+  it('对 native_system 默认治理级别为 hard_required（原生系统段必须固定保留）', () => {
+    expect(resolvePromptRuntimeSourceGovernanceLevel('native_system')).toBe('hard_required');
+  });
+
   it('未知来源返回 undefined，不假定治理意图', () => {
     expect(resolvePromptRuntimeSourceGovernanceLevel('unknown')).toBeUndefined();
     expect(resolvePromptRuntimeSourceGovernanceLevel('')).toBeUndefined();
@@ -33,6 +37,7 @@ describe('PromptRuntime source governance level registry', () => {
       { kind: 'memory', expected: 'soft_required' },
       { kind: 'worldbook', expected: 'budget_prunable' },
       { kind: 'examples', expected: 'budget_prunable' },
+      { kind: 'native_system', expected: 'hard_required' },
     ];
 
     for (const entry of kinds) {

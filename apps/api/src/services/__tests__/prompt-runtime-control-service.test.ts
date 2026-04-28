@@ -1310,6 +1310,7 @@ describe("PromptRuntimeControlService", () => {
       historySourceMode: "existing_branch",
     });
     expect(explain.resolvedPolicy).toEqual(resolvedPolicy);
+    expect(explain.governance).toBeNull();
     expect(explain.sourceMap).toEqual(sourceMap);
     expect(explain.trimReasons).toEqual(trimReasons);
     expect(explain.excludedSources).toEqual(excludedSources);
@@ -1318,6 +1319,7 @@ describe("PromptRuntimeControlService", () => {
     expect(explain.limitations).toEqual([
       ...PROMPT_RUNTIME_LIMITATIONS,
       ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS,
+      "This historical explain snapshot predates governance capture, so governance is returned as null.",
     ]);
   });
 
@@ -1354,7 +1356,7 @@ describe("PromptRuntimeControlService", () => {
         sourceFloorId: null,
         historySourceBranchId: "main",
         historySourceMode: "existing_branch",
-        snapshotVersion: 1,
+        snapshotVersion: 2,
         assetsJson: JSON.stringify({ preset: null, characterCard: null, worldbook: null, regexProfile: null }),
         resolvedPolicyJson: JSON.stringify({
           structure: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY },
@@ -1368,9 +1370,30 @@ describe("PromptRuntimeControlService", () => {
           debug: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY },
         }),
         sourceMapJson: JSON.stringify({
-          budget: { maxInputTokens: "session_policy", reservedCompletionTokens: "session_policy" },
-          visibility: { mode: "session_policy", hiddenFloorRanges: "session_policy" },
-          history: { sourceBranchId: "main", sourceMode: "existing_branch" },
+          sourceMap: {
+            budget: { maxInputTokens: "session_policy", reservedCompletionTokens: "session_policy" },
+            visibility: { mode: "session_policy", hiddenFloorRanges: "session_policy" },
+            history: { sourceBranchId: "main", sourceMode: "existing_branch" },
+          },
+          governance: {
+            entries: [
+              {
+                sourceKind: "history",
+                declaredLevel: "budget_prunable",
+                registered: true,
+                effectiveRetention: "budget_prunable",
+                pinned: false,
+                prunable: true,
+                budgetGroups: ["history"],
+                sectionNames: ["chatHistory"],
+                tokenCount: 128,
+                retainedTokenCount: 96,
+                prunedTokenCount: 32,
+              },
+            ],
+            mismatches: [],
+            limitations: [],
+          },
         }),
         diagnosticsJson: JSON.stringify([]),
         trimReasonsJson: JSON.stringify([
@@ -1399,7 +1422,7 @@ describe("PromptRuntimeControlService", () => {
         sourceFloorId: leftFloor!.id,
         historySourceBranchId: "main",
         historySourceMode: "existing_branch",
-        snapshotVersion: 1,
+        snapshotVersion: 2,
         assetsJson: JSON.stringify({ preset: null, characterCard: null, worldbook: null, regexProfile: null }),
         resolvedPolicyJson: JSON.stringify({
           structure: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY },
@@ -1413,9 +1436,30 @@ describe("PromptRuntimeControlService", () => {
           debug: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY },
         }),
         sourceMapJson: JSON.stringify({
-          budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" },
-          visibility: { mode: "request_override", visibleFloorRanges: "request_override" },
-          history: { sourceBranchId: "main", sourceMode: "existing_branch" },
+          sourceMap: {
+            budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" },
+            visibility: { mode: "request_override", visibleFloorRanges: "request_override" },
+            history: { sourceBranchId: "main", sourceMode: "existing_branch" },
+          },
+          governance: {
+            entries: [
+              {
+                sourceKind: "history",
+                declaredLevel: "budget_prunable",
+                registered: true,
+                effectiveRetention: "fixed",
+                pinned: true,
+                prunable: false,
+                budgetGroups: ["history"],
+                sectionNames: ["chatHistory"],
+                tokenCount: 96,
+                retainedTokenCount: 96,
+                prunedTokenCount: 0,
+              },
+            ],
+            mismatches: [],
+            limitations: [],
+          },
         }),
         diagnosticsJson: JSON.stringify([]),
         trimReasonsJson: JSON.stringify([
@@ -1454,6 +1498,9 @@ describe("PromptRuntimeControlService", () => {
     expect(diff.exclusionChanges).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: "excludedSources", changeType: "changed" }),
     ]));
+    expect(diff.governanceChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "governance.entries", changeType: "changed" }),
+    ]));
     expect(diff.limitations).toEqual([]);
   });
 
@@ -1468,7 +1515,7 @@ describe("PromptRuntimeControlService", () => {
 
     expect(service.getCapabilities()).toEqual(expect.objectContaining({
       observability: expect.objectContaining({
-        preview: {
+        preview: expect.objectContaining({
           enabled: true,
           mode: "macro_text_preview",
           returnsRuntimeTrace: true,
@@ -1480,17 +1527,32 @@ describe("PromptRuntimeControlService", () => {
           writesPromptSnapshot: false,
           commitsSideEffects: false,
           traceSubset: ["macro", "source_selection", "visibility"],
-        },
-        explain: {
+        }),
+        inspect: expect.objectContaining({
+          enabled: true,
+          mode: "prepared_turn",
+          supportsBranch: true,
+          supportsSourceFloor: true,
+          supportsVisibility: true,
+          returnsPreparedTurn: true,
+          returnsGovernance: true,
+          llmCall: false,
+          createsFloor: false,
+          writesPromptSnapshot: false,
+          writesExplainSnapshot: false,
+          commitsSideEffects: false,
+        }),
+        explain: expect.objectContaining({
           enabled: true,
           readOnly: true,
+          returnsGovernance: true,
           requiresCommittedFloor: true,
           persistedTruthOnly: true,
           recompute: false,
           snapshotSupported: true,
           legacyFloorFallback: true,
           snapshotAvailabilityField: "snapshot_available",
-        },
+        }),
       }),
       compare: expect.objectContaining({
         enabled: true,
