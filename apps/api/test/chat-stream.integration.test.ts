@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { registerChatRoutes } from "../src/routes/chat";
-import { ChatServiceError, type ChatService, type RespondResult } from "../src/services/chat-service";
+import { ChatServiceError, type ChatService, type RespondResult } from "../src/services/chat/chat-service";
 import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
 
 interface ChatServiceStub {

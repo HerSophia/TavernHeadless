@@ -1,7 +1,8 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ChatServiceError, type ChatService } from "../../services/chat-service.js";
+import { type ChatService } from "../../services/chat/chat-service.js";
+import { ChatServiceError } from "../../services/chat/errors.js";
 import { SessionStateServiceError } from "../../session-state/session-state-service.js";
 import { registerChatRoutes } from "../chat.js";
 

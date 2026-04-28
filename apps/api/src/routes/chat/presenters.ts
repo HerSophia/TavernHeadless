@@ -1,0 +1,393 @@
+import type { FastifyReply, FastifyRequest } from "fastify";
+
+import type { PromptRuntimeTrace, PromptSnapshotPreview, WorldbookMatchDetail } from "../../services/prompt-assembler.js";
+import { ChatServiceError } from "../../services/chat/errors.js";
+import { SessionStateServiceError } from "../../session-state/session-state-service.js";
+import { sendError } from "../../lib/http.js";
+import { findNativePipelineError } from "../../lib/native-pipeline-error.js";
+
+export function mapUsageToSnakeCase(usage: { promptTokens: number; completionTokens: number; totalTokens: number }) {
+  return {
+    prompt_tokens: usage.promptTokens,
+    completion_tokens: usage.completionTokens,
+    total_tokens: usage.totalTokens,
+  };
+}
+
+export function mapMemoryToSnakeCase(memory: { mode: "sync" | "async"; status: "applied" | "queued"; jobId?: string } | undefined) {
+  if (!memory) {
+    return undefined;
+  }
+
+  return {
+    mode: memory.mode,
+    status: memory.status,
+    job_id: memory.jobId ?? null,
+  };
+}
+
+export function mapRunToSnakeCase(run: {
+  floorId: string;
+  runId: string;
+  runType: string;
+  status: string;
+  phase: string;
+  publicPhase: string;
+  phaseSeq: number;
+  attemptNo: number;
+  startedAt: number;
+  updatedAt: number;
+  completedAt?: number | null;
+  pendingOutput?: { tempId: string; attemptNo: number; state: string; text: string; startedAt: number; updatedAt: number; error?: string } | null;
+  verifier?: { status: string; suggestion?: string; issues?: Array<{ description: string; severity: string }> } | null;
+  error?: { code: string; message: string } | null;
+}) {
+  return {
+    floor_id: run.floorId, run_id: run.runId, run_type: run.runType, status: run.status, phase: run.phase,
+    public_phase: run.publicPhase, phase_seq: run.phaseSeq, attempt_no: run.attemptNo, started_at: run.startedAt,
+    updated_at: run.updatedAt, completed_at: run.completedAt ?? null,
+    pending_output: run.pendingOutput ? {
+      temp_id: run.pendingOutput.tempId, attempt_no: run.pendingOutput.attemptNo, state: run.pendingOutput.state,
+      text: run.pendingOutput.text, started_at: run.pendingOutput.startedAt, updated_at: run.pendingOutput.updatedAt,
+      error: run.pendingOutput.error ?? null,
+    } : null,
+    verifier: run.verifier ? { status: run.verifier.status, suggestion: run.verifier.suggestion ?? null, issues: run.verifier.issues ?? null } : null,
+    error: run.error ? { code: run.error.code, message: run.error.message } : null,
+  };
+}
+
+export function mapPromptSnapshotToSnakeCase(promptSnapshot: PromptSnapshotPreview): Record<string, unknown> {
+  return {
+    preset_id: promptSnapshot.presetId,
+    preset_updated_at: promptSnapshot.presetUpdatedAt,
+    preset_version: promptSnapshot.presetVersion,
+    worldbook_id: promptSnapshot.worldbookId,
+    worldbook_updated_at: promptSnapshot.worldbookUpdatedAt,
+    worldbook_version: promptSnapshot.worldbookVersion,
+    regex_profile_id: promptSnapshot.regexProfileId,
+    regex_profile_updated_at: promptSnapshot.regexProfileUpdatedAt,
+    regex_profile_version: promptSnapshot.regexProfileVersion,
+    worldbook_activated_entry_uids: promptSnapshot.worldbookActivatedEntryUids,
+    regex_pre_rule_names: promptSnapshot.regexPreRuleNames,
+    regex_post_rule_names: promptSnapshot.regexPostRuleNames,
+    prompt_mode: promptSnapshot.promptMode,
+    prompt_digest: promptSnapshot.promptDigest,
+    token_estimate: promptSnapshot.tokenEstimate,
+  };
+}
+
+export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<string, unknown> {
+  return {
+    ...(runtimeTrace.preset
+      ? {
+          preset: {
+            selected_prompt_order_character_id: runtimeTrace.preset.selectedPromptOrderCharacterId,
+            ignored_prompt_order_character_ids: runtimeTrace.preset.ignoredPromptOrderCharacterIds,
+            unsupported_fields: runtimeTrace.preset.unsupportedFields,
+            ignored_fields: runtimeTrace.preset.ignoredFields,
+            unresolved_markers: runtimeTrace.preset.unresolvedMarkers,
+            warnings: runtimeTrace.preset.warnings,
+            trigger_filtered_entry_ids: runtimeTrace.preset.triggerFilteredEntryIds,
+            in_chat_inserted_entry_ids: runtimeTrace.preset.inChatInsertedEntryIds,
+            continue_nudge_applied: runtimeTrace.preset.continueNudgeApplied,
+            continue_nudge_text: runtimeTrace.preset.continueNudgeText ?? null,
+            names_behavior_applied: runtimeTrace.preset.namesBehaviorApplied ?? null,
+          },
+        }
+      : {}),
+    ...(runtimeTrace.worldbook
+      ? {
+          worldbook: {
+            hit_count: runtimeTrace.worldbook.hitCount,
+            ...(runtimeTrace.worldbook.matches
+              ? {
+                  matches: runtimeTrace.worldbook.matches.map(mapWorldbookMatchDetail),
+                }
+              : {}),
+          },
+        }
+      : {}),
+    ...(runtimeTrace.regex
+      ? {
+          regex: {
+            user_input_rules: runtimeTrace.regex.userInputRules,
+            ai_output_rules: runtimeTrace.regex.aiOutputRules,
+            preprocessed_user_message: runtimeTrace.regex.preprocessedUserMessage ?? null,
+          },
+        }
+      : {}),
+    ...(runtimeTrace.budgets
+      ? {
+          budgets: {
+            by_group: runtimeTrace.budgets.byGroup.map((item) => ({
+              group: item.group,
+              token_count: item.tokenCount,
+              ...(item.estimatedTokenCount !== undefined ? { estimated_token_count: item.estimatedTokenCount } : {}),
+              ...(item.allocatedTokenCount !== undefined ? { allocated_token_count: item.allocatedTokenCount } : {}),
+              ...(item.prunedTokenCount !== undefined ? { pruned_token_count: item.prunedTokenCount } : {}),
+            })),
+            ...(runtimeTrace.budgets.trimReasons
+              ? {
+                  trim_reasons: runtimeTrace.budgets.trimReasons.map((item) => mapTrimReasonToSnakeCase(item)),
+                }
+              : {}),
+          },
+        }
+      : {}),
+    ...(runtimeTrace.structure
+      ? {
+          structure: {
+            mode: runtimeTrace.structure.mode,
+            merge_adjacent_same_role: runtimeTrace.structure.mergeAdjacentSameRole,
+            assistant_rewrite_count: runtimeTrace.structure.assistantRewriteCount,
+            assistant_rewrite_strategy: runtimeTrace.structure.assistantRewriteStrategy ?? null,
+            tail_assistant_detected: runtimeTrace.structure.tailAssistantDetected,
+            ...(runtimeTrace.structure.transcriptized !== undefined ? { transcriptized: runtimeTrace.structure.transcriptized } : {}),
+            ...(runtimeTrace.structure.transcriptMessageCount !== undefined ? { transcript_message_count: runtimeTrace.structure.transcriptMessageCount } : {}),
+            ...(runtimeTrace.structure.assistantPrefillTranscriptized !== undefined ? { assistant_prefill_transcriptized: runtimeTrace.structure.assistantPrefillTranscriptized } : {}),
+          },
+        }
+      : {}),
+    ...(runtimeTrace.memory ? { memory: { summary_injected: runtimeTrace.memory.summaryInjected } } : {}),
+    ...(runtimeTrace.macro
+      ? {
+          macro: {
+            warnings: runtimeTrace.macro.warnings.map((warning) => ({
+              code: warning.code,
+              message: warning.message,
+              ...(warning.macroName ? { macro_name: warning.macroName } : {}),
+              ...(warning.rawText ? { raw_text: warning.rawText } : {}),
+            })),
+            used_names: runtimeTrace.macro.usedNames,
+            mutation_preview: runtimeTrace.macro.mutationPreview.map((preview) => ({
+              kind: preview.kind,
+              scope: preview.scope,
+              key: preview.key,
+              ...(preview.value !== undefined ? { value: preview.value } : {}),
+            })),
+            staged_mutations: runtimeTrace.macro.stagedMutations.map((mutation) => ({
+              kind: mutation.kind,
+              scope: mutation.scope,
+              key: mutation.key,
+              ...(mutation.value !== undefined ? { value: mutation.value } : {}),
+              source_macro: mutation.sourceMacro,
+            })),
+            traces: runtimeTrace.macro.traces.map((trace) => mapMacroTraceEntryToSnakeCase(trace)),
+          },
+        }
+      : {}),
+    ...(runtimeTrace.sourceSelection
+      ? {
+          source_selection: {
+            excluded_sources: runtimeTrace.sourceSelection.excludedSources.map((item) => ({
+              source: item.source,
+              reason: item.reason,
+              ...(item.detail ? { detail: item.detail } : {}),
+            })),
+          },
+        }
+      : {}),
+    ...(runtimeTrace.delivery
+      ? {
+          delivery: {
+            assistant_prefill_requested: runtimeTrace.delivery.assistantPrefillRequested,
+            assistant_prefill_applied: runtimeTrace.delivery.assistantPrefillApplied,
+            assistant_prefill_strategy: runtimeTrace.delivery.assistantPrefillStrategy ?? null,
+            allow_assistant_prefill: runtimeTrace.delivery.allowAssistantPrefill,
+            require_last_user: runtimeTrace.delivery.requireLastUser,
+            no_assistant: runtimeTrace.delivery.noAssistant,
+            last_message_role: runtimeTrace.delivery.lastMessageRole ?? null,
+            ends_with_user: runtimeTrace.delivery.endsWithUser,
+            degraded: runtimeTrace.delivery.degraded,
+            degrade_reasons: runtimeTrace.delivery.degradeReasons,
+          },
+        }
+      : {}),
+    ...(runtimeTrace.visibility
+      ? {
+          visibility: {
+            hidden_floor_ranges: runtimeTrace.visibility.hiddenFloorRanges?.map((range) => ({
+              start_floor_no: range.startFloorNo,
+              end_floor_no: range.endFloorNo,
+            })),
+            filtered_floor_nos: runtimeTrace.visibility.filteredFloorNos,
+          },
+        }
+      : {}),
+  };
+}
+
+export function mapOptionalRuntimeTraceResponseField(runtimeTrace?: PromptRuntimeTrace): Record<string, unknown> {
+  return runtimeTrace
+    ? { runtime_trace: mapRuntimeTraceToSnakeCase(runtimeTrace) }
+    : {};
+}
+
+export function mapOptionalPromptDebugResponseFields(payload: {
+  promptSnapshot?: PromptSnapshotPreview;
+  runtimeTrace?: PromptRuntimeTrace;
+}): Record<string, unknown> {
+  return {
+    ...(payload.promptSnapshot ? { prompt_snapshot: mapPromptSnapshotToSnakeCase(payload.promptSnapshot) } : {}),
+    ...mapOptionalRuntimeTraceResponseField(payload.runtimeTrace),
+  };
+}
+
+function mapTrimReasonToSnakeCase(reason: NonNullable<NonNullable<PromptRuntimeTrace["budgets"]>["trimReasons"]>[number]): Record<string, unknown> {
+  return {
+    group: reason.group,
+    reason: reason.reason,
+    ...(reason.detail ? { detail: reason.detail } : {}),
+    ...(reason.prunedTokenCount !== undefined ? { pruned_token_count: reason.prunedTokenCount } : {}),
+  };
+}
+
+function mapMacroTraceEntryToSnakeCase(trace: NonNullable<PromptRuntimeTrace["macro"]>["traces"][number]): Record<string, unknown> {
+  return {
+    macro_name: trace.macroName,
+    raw_text: trace.rawText,
+    resolved_text: trace.resolvedText,
+    ...(trace.phase ? { phase: trace.phase } : {}),
+    ...(trace.sourceKind ? { source_kind: trace.sourceKind } : {}),
+    ...(trace.selectedBranch ? { selected_branch: trace.selectedBranch } : {}),
+  };
+}
+
+export function mapWorldbookMatchDetail(match: WorldbookMatchDetail): Record<string, unknown> {
+  return {
+    uid: match.uid,
+    comment: match.comment,
+    content_preview: match.contentPreview,
+    order: match.order,
+    source: {
+      kind: match.source.kind,
+      worldbook_id: match.source.worldbookId,
+      worldbook_name: match.source.worldbookName,
+    },
+    insertion: {
+      position: match.insertion.position,
+      ...(match.insertion.depth !== undefined ? { depth: match.insertion.depth } : {}),
+      ...(match.insertion.role ? { role: match.insertion.role } : {}),
+      ...(match.insertion.outletName ? { outlet_name: match.insertion.outletName } : {}),
+    },
+    activation: {
+      mode: match.activation.mode,
+      recursion_level: match.activation.recursionLevel,
+      first_match: match.activation.firstMatch
+        ? {
+            source_kind: match.activation.firstMatch.sourceKind,
+            ...(match.activation.firstMatch.messageIndexFromLatest !== undefined
+              ? { message_index_from_latest: match.activation.firstMatch.messageIndexFromLatest }
+              : {}),
+            ...(match.activation.firstMatch.injectionIndex !== undefined
+              ? { injection_index: match.activation.firstMatch.injectionIndex }
+              : {}),
+            matched_key: match.activation.firstMatch.matchedKey,
+            matched_key_scope: match.activation.firstMatch.matchedKeyScope,
+            matched_key_type: match.activation.firstMatch.matchedKeyType,
+            char_start: match.activation.firstMatch.charStart,
+            char_end: match.activation.firstMatch.charEnd,
+            excerpt: match.activation.firstMatch.excerpt,
+          }
+        : null,
+    },
+  };
+}
+
+export function mapChatServiceError(error: ChatServiceError): { statusCode: number; code: string; message: string } {
+  if (error.cause instanceof SessionStateServiceError) {
+    return {
+      statusCode: error.cause.statusCode,
+      code: error.code,
+      message: error.message,
+    };
+  }
+
+  switch (error.code) {
+    case "session_not_found":
+      return { statusCode: 404, code: "not_found", message: error.message };
+    case "session_archived":
+      return { statusCode: 409, code: "session_archived", message: error.message };
+    case "message_not_found":
+    case "floor_not_found":
+    case "source_floor_not_found":
+      return { statusCode: 404, code: error.code, message: error.message };
+    case "no_floor_to_regenerate":
+    case "no_user_message":
+      return { statusCode: 404, code: error.code, message: error.message };
+    case "invalid_message_role":
+    case "invalid_message_scope":
+    case "invalid_tool_mode":
+      return { statusCode: 400, code: error.code, message: error.message };
+    case "invalid_state":
+    case "generation_target_stale":
+    case "branch_exists":
+    case "branch_local_snapshot_missing":
+      return { statusCode: 409, code: error.code, message: error.message };
+    case "generation_cancelled":
+      return { statusCode: 499, code: error.code, message: error.message };
+    case "generation_conflict":
+    case "commit_conflict":
+      return { statusCode: 409, code: error.code, message: error.message };
+    case "tool_replay_blocked":
+    case "tool_replay_confirmation_required":
+    case "replay_confirmation_required":
+    case "session_state_replay_blocked":
+    case "session_state_replay_confirmation_required":
+    case "profile_not_found":
+    case "tool_catalog_conflict":
+    case "instance_slot_disabled_required":
+    case "profile_disabled":
+      return { statusCode: 409, code: error.code, message: error.message };
+    case "secret_unavailable":
+    case "feature_unavailable":
+    case "commit_busy":
+    case "generation_queue_timeout":
+      return { statusCode: 503, code: error.code, message: error.message };
+    case "generation_timeout":
+      return { statusCode: 504, code: error.code, message: error.message };
+    case "secret_invalid_format":
+    case "orchestration_failed":
+    case "turn_commit_failed":
+    case "session_state_stage_failed":
+      return { statusCode: 500, code: error.code, message: error.message };
+    default:
+      return { statusCode: 500, code: "internal_error", message: error.message };
+  }
+}
+
+export function handleChatError(error: unknown, request: FastifyRequest, reply: FastifyReply) {
+  logNativePipelineError(error, request, "chat_route");
+
+  if (!(error instanceof ChatServiceError)) {
+    throw error;
+  }
+
+  const mapped = mapChatServiceError(error);
+  return sendError(reply, mapped.statusCode, mapped.code, mapped.message, error.details);
+}
+
+export function logNativePipelineError(
+  error: unknown,
+  request: FastifyRequest,
+  stage: "chat_route" | "respond_stream",
+): void {
+  const nativePipelineError = findNativePipelineError(error);
+  if (!nativePipelineError) {
+    return;
+  }
+
+  request.log.error(
+    {
+      request_id: request.id,
+      route: request.routeOptions.url ?? request.url.split("?")[0] ?? "/",
+      stage,
+      error_code: "native_pipeline_failed",
+      node_name: nativePipelineError.nodeName,
+      input_summary: nativePipelineError.inputSummary,
+      state_summary: nativePipelineError.stateSummary,
+      err: error,
+    },
+    "native prompt pipeline failed",
+  );
+}

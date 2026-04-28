@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { registerChatRoutes } from "../src/routes/chat";
-import { ChatService, ChatServiceError, type ChatService as ChatServiceType, type DryRunResult } from "../src/services/chat-service";
+import { ChatService, ChatServiceError, type ChatService as ChatServiceType, type DryRunResult } from "../src/services/chat/chat-service";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import {
   accounts,

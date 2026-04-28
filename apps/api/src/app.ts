@@ -24,11 +24,9 @@ import {
 } from "./adapters";
 import { memoryItems, runtimeScopeStates } from "./db/schema.js";
 import { MEMORY_RUNTIME_SCOPE_TYPE, parseMemoryRuntimeScopeKey } from "./services/memory-runtime-job-definitions.js";
-import {
-  ChatService,
-  ChatServiceError,
-  type ResolvedTurnModels,
-} from "./services/chat-service";
+import { ChatService } from "./services/chat/chat-service";
+import type { ResolvedTurnModels } from "./services/chat/contracts";
+import { ChatServiceError } from "./services/chat/errors";
 import {
   InMemoryGenerationCoordinator,
   type GenerationCoordinator,

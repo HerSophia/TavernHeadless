@@ -17,7 +17,7 @@ import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import { branchLocalVariableSnapshots, floors, memoryItems, messagePages, messages, sessions } from "../src/db/schema";
 import { DrizzleMemoryRepository } from "../src/adapters/drizzle-memory-repository";
-import { ChatService } from "../src/services/chat-service";
+import { ChatService } from "../src/services/chat/chat-service";
 import type { TurnCommitService } from "../src/services/turn-commit-service";
 import {
   createEventBus,

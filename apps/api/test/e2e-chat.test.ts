@@ -30,7 +30,7 @@ import {
   worldbookEntries,
   regexProfiles,
 } from "../src/db/schema";
-import { ChatService, ChatServiceError } from "../src/services/chat-service";
+import { ChatService, ChatServiceError } from "../src/services/chat/chat-service";
 import { SimpleTokenCounter, type TurnOrchestrator, type TurnOutput, type TurnInput } from "@tavern/core";
 import { buildBranchVariableScopeId } from "@tavern/shared";
 
