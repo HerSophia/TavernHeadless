@@ -1,0 +1,119 @@
+name: Sync dev with main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-dev-with-main
+  cancel-in-progress: false
+
+jobs:
+  sync-dev:
+    name: Sync dev with main (safe PR path)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch main and dev
+        run: |
+          git fetch origin main dev
+
+      - name: Decide whether sync PR is needed
+        id: decide
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          read MAIN_AHEAD DEV_AHEAD < <(git rev-list --left-right --count origin/main...origin/dev)
+
+          echo "main_ahead=$MAIN_AHEAD" >> "$GITHUB_OUTPUT"
+          echo "dev_ahead=$DEV_AHEAD" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "main ahead of dev: $MAIN_AHEAD"
+            echo "dev ahead of main: $DEV_AHEAD"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$DEV_AHEAD" -ne 0 ]; then
+            echo "should_sync=false" >> "$GITHUB_OUTPUT"
+            echo "dev has its own commits. Skip sync." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$MAIN_AHEAD" -eq 0 ]; then
+            echo "should_sync=false" >> "$GITHUB_OUTPUT"
+            echo "dev is already up to date with main." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "should_sync=true" >> "$GITHUB_OUTPUT"
+          echo "dev has no unique commits and is behind main. Create or update sync PR." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update sync branch from main
+        if: steps.decide.outputs.should_sync == 'true'
+        env:
+          SYNC_BRANCH: chore/sync-dev-with-main
+        run: |
+          set -euo pipefail
+
+          git checkout -B "$SYNC_BRANCH" origin/main
+          git push --force-with-lease origin HEAD:"$SYNC_BRANCH"
+
+      - name: Create or update sync PR
+        if: steps.decide.outputs.should_sync == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SYNC_BRANCH: chore/sync-dev-with-main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          title="chore(ci): 让 dev 跟进 main 的最新基线"
+          body_file="$(mktemp)"
+
+          cat > "$body_file" <<'EOF'
+          ## What changed
+
+          - This PR was created by `.github/workflows/sync-dev-with-main.yml`.
+          - It syncs `dev` with the latest `main` baseline only when `dev` has no unique commits.
+
+          ## Why this change
+
+          - `main` has advanced.
+          - `dev` has no ahead commits of its own.
+          - Repository rules require changes to `dev` to go through a pull request, so this workflow opens or updates a PR instead of pushing `dev` directly.
+
+          ## Safety rules
+
+          - The workflow first runs `git rev-list --left-right --count origin/main...origin/dev`.
+          - If `dev` has any unique commits, it exits without changing anything.
+          - If `dev` is already up to date, it exits without changing anything.
+          EOF
+
+          existing_pr="$(gh pr list --state open --base dev --head "$SYNC_BRANCH" --json number --jq '.[0].number // empty')"
+
+          if [ -n "$existing_pr" ]; then
+            gh pr edit "$existing_pr" --title "$title" --body-file "$body_file"
+            echo "Updated existing PR #$existing_pr" >> "$GITHUB_STEP_SUMMARY"
+          else
+            pr_url="$(gh pr create --base dev --head "$SYNC_BRANCH" --title "$title" --body-file "$body_file")"
+            echo "Created PR: $pr_url" >> "$GITHUB_STEP_SUMMARY"
+          fi
