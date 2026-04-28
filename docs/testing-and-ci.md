@@ -324,6 +324,22 @@ Coverage：仅在 push 到 main / workflow_dispatch 时运行
 | push 到 `main`        | 常规检查 + API smoke + coverage               |
 | 手动触发              | 常规检查 + API smoke + coverage               |
 
+### main 合并后的 dev 安全同步
+
+另有一个独立 workflow：`.github/workflows/sync-dev-with-main.yml`。
+
+它只在 `main` push 或手动触发时运行，不属于常规 PR 必需检查。
+
+它先执行：
+
+```bash
+git rev-list --left-right --count origin/main...origin/dev
+```
+
+只有在 `dev` 没有自己独有 commit，且 `main` 确实领先 `dev` 时，它才会更新自动同步分支 `chore/sync-dev-with-main`，并创建或更新一个指向 `dev` 的 PR。
+
+它不会直接推送 `dev`。原因是 `dev` 的 ruleset 要求所有改动都通过 PR 合入。如果 `dev` 已经有自己独有的 commit，或者已经和 `main` 同步，这个 workflow 会直接成功退出。
+
 ### 超时限制
 
 | 阶段                       | 最大时间 |

@@ -287,6 +287,20 @@ main          稳定发布分支，只接受来自 dev 的合并
 
 不允许跳过 `dev` 直接把 feature 分支合进 `main`。
 
+### main 合并后的 dev 安全回补
+
+仓库还有一个独立 workflow：`.github/workflows/sync-dev-with-main.yml`。
+
+它只在 `main` push 或手动触发时运行，并先执行：
+
+```bash
+git rev-list --left-right --count origin/main...origin/dev
+```
+
+只有在 `dev` 没有自己独有 commit，且 `main` 确实领先 `dev` 时，它才会更新自动同步分支 `chore/sync-dev-with-main`，并创建或更新一个指向 `dev` 的 PR。
+
+这个 workflow 不会直接推送 `dev`。原因是 `dev` 受 ruleset 保护，所有改动都必须通过 PR 合入。如果 `dev` 已经有自己独有的 commit，workflow 会直接跳过，不覆盖正在集成的工作。
+
 ### 禁止事项
 
 - 不要直接推送到 `main` 或 `dev`
