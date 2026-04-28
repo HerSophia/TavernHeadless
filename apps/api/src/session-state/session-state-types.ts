@@ -31,6 +31,26 @@ export type SessionStateMutationStatus =
   | "blocked"
   | "uncertain";
 
+export type SessionStateSlotOwnerKind = "built_in" | "custom";
+export type SessionStatePublicExposureLifecycle = "public_stable" | "candidate" | "internal_only";
+
+export type SessionStateLogicalOwnerType = string & {};
+export type SessionStateReplayPolicySource = "system_default" | (string & {});
+
+export interface SessionStateSlotCapabilities {
+  clientReadable: boolean;
+  clientWritable: boolean;
+  allowedWriteModes: SessionStateWriteMode[];
+  supportsSnapshot: boolean;
+  supportsDiff: boolean;
+}
+
+export interface SessionStateSlotPublicExposure {
+  ownerKind: SessionStateSlotOwnerKind;
+  exposureLifecycle: SessionStatePublicExposureLifecycle;
+  capabilities: SessionStateSlotCapabilities;
+}
+
 export interface SessionStateSlotDefinition {
   namespace: SessionStateNamespace;
   slot: string;
@@ -39,6 +59,7 @@ export interface SessionStateSlotDefinition {
   defaultReplaySafety: ToolReplaySafety;
   schemaVersion: number;
   sizeBudgetBytes: number;
+  publicExposure: SessionStateSlotPublicExposure;
 }
 
 export interface SessionStateManagedDomainBinding {
@@ -174,7 +195,105 @@ export interface SessionStateReplayEvaluation {
   blockers: SessionStateReplayBlocker[];
 }
 
-export type FirstPartySceneResolutionMode = "current_effective" | "source_floor";
+export interface SessionStatePublicSlotDefinition {
+  namespace: SessionStateNamespace;
+  slot: string;
+  ownerKind: SessionStateSlotOwnerKind;
+  exposureLifecycle: SessionStatePublicExposureLifecycle;
+  visibilityMode: SessionStateVisibilityMode;
+  defaultWriteMode: SessionStateWriteMode;
+  defaultReplaySafety: ToolReplaySafety;
+  schemaVersion: number;
+  sizeBudgetBytes: number;
+  capabilities: SessionStateSlotCapabilities;
+}
+
+export interface SessionStateCustomNamespaceDefaultSlotTemplate {
+  defaultVisibilityMode: SessionStateVisibilityMode;
+  defaultWriteMode: SessionStateWriteMode;
+  defaultReplaySafety: SessionStateReplaySafety;
+  clientWritable: boolean;
+  allowedWriteModes: SessionStateWriteMode[];
+  supportsSnapshot: boolean;
+  supportsDiff: boolean;
+  replayPolicySource: SessionStateReplayPolicySource;
+}
+
+export interface SessionStatePublicBuiltInNamespaceDefinition {
+  namespace: SessionStateNamespace;
+  ownerKind: "built_in";
+  slots: SessionStatePublicSlotDefinition[];
+}
+
+export interface SessionStatePublicCustomNamespaceDefinition {
+  namespace: SessionStateNamespace;
+  ownerKind: "custom";
+  logicalOwnerType: SessionStateLogicalOwnerType;
+  logicalOwnerId: string;
+  defaultSlotTemplate: SessionStateCustomNamespaceDefaultSlotTemplate;
+  slots: SessionStatePublicSlotDefinition[];
+}
+
+export type SessionStatePublicNamespaceDefinition =
+  | SessionStatePublicBuiltInNamespaceDefinition
+  | SessionStatePublicCustomNamespaceDefinition;
+
+export interface SessionStateNamespaceRegistrationRecord {
+  id: string;
+  accountId: string;
+  sessionId: string;
+  domainId: string;
+  namespace: SessionStateNamespace;
+  logicalOwnerType: SessionStateLogicalOwnerType;
+  logicalOwnerId: string;
+  defaultSlotTemplate: SessionStateCustomNamespaceDefaultSlotTemplate;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SessionStatePublicResolvedValue {
+  namespace: SessionStateNamespace;
+  slot: string;
+  source: SessionStateResolvedValue["source"] | "none";
+  visibilityMode: SessionStateVisibilityMode;
+  schemaVersion: number | null;
+  present: boolean;
+  value: unknown | null;
+  sessionId: string;
+  branchId: string;
+  floorId: string | null;
+  sourceMutationIds: string[];
+  updatedAt: number | null;
+}
+
+export interface SessionStatePublicSnapshotValue {
+  namespace: SessionStateNamespace;
+  slot: string;
+  visibilityMode: SessionStateVisibilityMode;
+  schemaVersion: number | null;
+  present: boolean;
+  value: unknown | null;
+  sessionId: string;
+  branchId: string;
+  floorId: string;
+  sourceMutationIds: string[];
+  committedAt: number | null;
+}
+
+export interface SessionStatePublicDiffEntry {
+  namespace: SessionStateNamespace;
+  slot: string;
+  changeType: "added" | "removed" | "changed" | "unchanged";
+  leftFloorId: string | null;
+  rightFloorId: string | null;
+  leftPresent: boolean;
+  rightPresent: boolean;
+  leftValue: unknown | null;
+  rightValue: unknown | null;
+}
+
+export type FirstPartyStateResolutionMode = "current_effective" | "source_floor";
+export type FirstPartySceneResolutionMode = FirstPartyStateResolutionMode;
 
 export interface LoadFirstPartySceneContextInput {
   accountId: string;
@@ -182,13 +301,13 @@ export interface LoadFirstPartySceneContextInput {
   branchId: string;
   sourceFloorId?: string | null;
   expectedSourceBranchId?: string | null;
-  resolutionMode?: FirstPartySceneResolutionMode;
+  resolutionMode?: FirstPartyStateResolutionMode;
 }
 
 export interface FirstPartySceneContext {
   namespace: typeof SESSION_STATE_NAMESPACE_GAME_STATE;
   slot: "scene";
-  resolutionMode: FirstPartySceneResolutionMode;
+  resolutionMode: FirstPartyStateResolutionMode;
   source: SessionStateResolvedValue["source"] | "none";
   present: boolean;
   schemaVersion: number | null;
@@ -232,6 +351,65 @@ export interface StageFirstPartySceneStateInput {
   floorId: string;
   runType: FloorRunType;
   execution: Pick<TurnExecutionResult, "generatedText" | "summaries" | "totalUsage" | "toolExecutionRecords">;
+  stagedAt?: number;
+  requestId?: string | null;
+}
+
+export interface FirstPartyWorldPromptSnapshot {
+  worldbookId: string | null;
+  worldbookVersion: number | null;
+  worldbookActivatedEntryUids: number[];
+}
+
+export interface LoadFirstPartyWorldContextInput {
+  accountId: string;
+  sessionId: string;
+  branchId: string;
+  sourceFloorId?: string | null;
+  expectedSourceBranchId?: string | null;
+  resolutionMode?: FirstPartyStateResolutionMode;
+}
+
+export interface FirstPartyWorldContext {
+  namespace: typeof SESSION_STATE_NAMESPACE_GAME_STATE;
+  slot: "world";
+  resolutionMode: FirstPartyStateResolutionMode;
+  source: SessionStateResolvedValue["source"] | "none";
+  present: boolean;
+  schemaVersion: number | null;
+  sessionId: string;
+  branchId: string;
+  floorId: string | null;
+  sourceMutationIds: string[];
+  updatedAt: number | null;
+  world: NormalizedFirstPartyWorldState | null;
+}
+
+export interface FirstPartyWorldStateValue {
+  kind: "first_party_world_state";
+  schemaVersion: number;
+  sessionId: string;
+  branchId: string;
+  floorId: string;
+  runType: FloorRunType;
+  summaryLines: string[];
+  worldbookId: string | null;
+  worldbookVersion: number | null;
+  activatedWorldbookEntryUids: number[];
+  toolExecutionIds: string[];
+  updatedAt: number;
+}
+
+export type NormalizedFirstPartyWorldState = FirstPartyWorldStateValue;
+
+export interface StageFirstPartyWorldStateInput {
+  accountId: string;
+  sessionId: string;
+  branchId: string;
+  floorId: string;
+  runType: FloorRunType;
+  execution: Pick<TurnExecutionResult, "summaries" | "toolExecutionRecords">;
+  promptSnapshot?: FirstPartyWorldPromptSnapshot | null;
   stagedAt?: number;
   requestId?: string | null;
 }

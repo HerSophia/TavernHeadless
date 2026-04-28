@@ -14,6 +14,7 @@ import {
   type ClientDataManagedDomainRecord,
   type ClientDataItemRecord,
 } from "../client-data/client-data-repository.js";
+import type { SessionStateCustomNamespaceService } from "./session-state-custom-namespace-service.js";
 import { SessionStateRepository, type SessionStateFloorHostRecord } from "./session-state-repository.js";
 import {
   SessionStateSlotRegistry,
@@ -48,6 +49,7 @@ export interface SessionStateServiceOptions {
   slotRegistry?: SessionStateSlotRegistry;
   managedOwnerType?: "application" | "plugin";
   managedOwnerId?: string;
+  customNamespaceService?: SessionStateCustomNamespaceService;
   now?: () => number;
 }
 
@@ -61,6 +63,7 @@ export class SessionStateService {
   private readonly slotRegistry: SessionStateSlotRegistry;
   private readonly managedOwnerType: "application" | "plugin";
   private readonly managedOwnerId: string;
+  private readonly customNamespaceService?: SessionStateCustomNamespaceService;
   private readonly now: () => number;
 
   constructor(
@@ -71,6 +74,7 @@ export class SessionStateService {
     this.slotRegistry = options.slotRegistry ?? createDefaultSessionStateSlotRegistry();
     this.managedOwnerType = options.managedOwnerType ?? SESSION_STATE_INTERNAL_OWNER_TYPE;
     this.managedOwnerId = options.managedOwnerId ?? SESSION_STATE_INTERNAL_OWNER_ID;
+    this.customNamespaceService = options.customNamespaceService;
     this.now = options.now ?? Date.now;
   }
 
@@ -88,10 +92,61 @@ export class SessionStateService {
     runId?: string | null;
   }): SessionStateMutationView {
     return this.executeTransaction((tx) => {
-      const definition = this.requireSlotDefinition(input.namespace, input.slot);
+      const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
+      const definition = this.requireWritableSlotDefinition(host.accountId, host.id, input.namespace, input.slot);
       this.ensureWriteModeAllowed(definition, "commit_bound");
       const replaySafety = this.resolveReplaySafety(definition, input.replaySafety);
+      const sourceFloor = this.requireFloorInSession(tx, host.id, input.sourceFloorId);
+      this.requireFloorBranchMatch(sourceFloor, input.branchId, "Source floor");
+      const binding = this.ensureManagedDomainBinding(tx, host.accountId, host.id, input.namespace);
+      const payload = this.createMutationPayload({
+        present: input.present ?? true,
+        value: input.value,
+      });
+      this.assertPayloadWithinBudget(definition, payload);
+      const mutation = this.sessionStateRepository(tx).createMutation({
+        id: nanoid(),
+        accountId: host.accountId,
+        domainId: binding.domainId,
+        stateNamespace: input.namespace,
+        sessionId: host.id,
+        branchId: input.branchId,
+        sourceFloorId: input.sourceFloorId,
+        targetSlot: input.slot,
+        visibilityMode: definition.visibilityMode,
+        writeMode: "commit_bound",
+        replaySafety,
+        status: "staged",
+        requestId: input.requestId ?? null,
+        runId: input.runId ?? null,
+        payloadJson: JSON.stringify(payload),
+        sourceSnapshotFloorId: input.sourceFloorId,
+        liveHeadKey: this.buildLiveHeadItemKey(input.namespace, input.slot, definition.visibilityMode, host.id, input.branchId),
+        createdAt: this.now(),
+        updatedAt: this.now(),
+      });
+      return this.inflateMutation(mutation);
+    });
+  }
+
+  stageClientCommitBoundValue(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    sourceFloorId: string;
+    namespace: SessionStateNamespace;
+    slot: string;
+    value: unknown | null;
+    present?: boolean;
+    requestId?: string | null;
+    runId?: string | null;
+  }): SessionStateMutationView {
+    return this.executeTransaction((tx) => {
       const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
+      const definition = this.requireWritableSlotDefinition(host.accountId, host.id, input.namespace, input.slot);
+      this.ensureClientWritableCustomSlot(definition);
+      this.ensureWriteModeAllowed(definition, "commit_bound");
+      const replaySafety = this.resolveReplaySafety(definition);
       const sourceFloor = this.requireFloorInSession(tx, host.id, input.sourceFloorId);
       this.requireFloorBranchMatch(sourceFloor, input.branchId, "Source floor");
       const binding = this.ensureManagedDomainBinding(tx, host.accountId, host.id, input.namespace);
@@ -139,10 +194,10 @@ export class SessionStateService {
     sourceFloorId?: string | null;
   }): SessionStateMutationView {
     return this.executeTransaction((tx) => {
-      const definition = this.requireSlotDefinition(input.namespace, input.slot);
+      const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
+      const definition = this.requireWritableSlotDefinition(host.accountId, host.id, input.namespace, input.slot);
       this.ensureWriteModeAllowed(definition, "direct");
       const replaySafety = this.resolveReplaySafety(definition, input.replaySafety);
-      const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
       if (input.sourceFloorId) {
         this.requireFloorInSession(tx, host.id, input.sourceFloorId);
       }
@@ -257,7 +312,7 @@ export class SessionStateService {
     const appliedMutations: SessionStateMutationView[] = [];
 
     for (const mutationBase of stagedMutations) {
-      const definition = this.requireSlotDefinition(mutationBase.stateNamespace, mutationBase.targetSlot);
+      const definition = this.requireWritableSlotDefinition(host.accountId, host.id, mutationBase.stateNamespace, mutationBase.targetSlot);
       this.assertStagedMutationCommitContext(floor, definition, mutationBase);
       const payload = this.parseMutationPayload(mutationBase.payloadJson);
       if (mutationBase.replaySafety === "uncertain") {
@@ -286,7 +341,7 @@ export class SessionStateService {
 
     const snapshots: SessionStateFloorSnapshotView[] = [];
     for (const binding of managedByNamespace.values()) {
-      const definitions = this.slotRegistry.list(binding.stateNamespace);
+      const definitions = this.listSlotDefinitionsForSession(host.accountId, host.id, binding.stateNamespace);
       for (const definition of definitions) {
         const snapshot = this.materializeFloorSnapshotForSlot(tx, {
           accountId: host.accountId,
@@ -315,10 +370,14 @@ export class SessionStateService {
     slot: string;
     sourceFloorId?: string;
   }): SessionStateResolvedValue | null {
-    const definition = this.requireSlotDefinition(input.namespace, input.slot);
     this.requireSessionHost(this.db, input.accountId, input.sessionId, { requireActive: false });
     if (input.sourceFloorId) {
       this.requireFloorInSession(this.db, input.sessionId, input.sourceFloorId);
+    }
+
+    const definition = this.resolveReadableSlotDefinition(input.accountId, input.sessionId, input.namespace, input.slot);
+    if (!definition) {
+      return null;
     }
 
     const binding = this.findManagedDomainBinding(this.db, input.accountId, input.sessionId, input.namespace);
@@ -447,6 +506,10 @@ export class SessionStateService {
   }): SessionStateFloorSnapshotView | null {
     this.requireSessionHost(this.db, input.accountId, input.sessionId, { requireActive: false });
     this.requireFloorInSession(this.db, input.sessionId, input.floorId);
+    if (!this.resolveReadableSlotDefinition(input.accountId, input.sessionId, input.namespace, input.slot)) {
+      return null;
+    }
+
     const binding = this.findManagedDomainBinding(this.db, input.accountId, input.sessionId, input.namespace);
     if (!binding) {
       return null;
@@ -476,7 +539,7 @@ export class SessionStateService {
     this.requireFloorInSession(this.db, input.sessionId, input.leftFloorId);
     this.requireFloorInSession(this.db, input.sessionId, input.rightFloorId);
 
-    const definitions = this.slotRegistry.list(input.namespace);
+    const definitions = this.listSlotDefinitionsForSession(input.accountId, input.sessionId, input.namespace);
     return definitions.map((definition) => {
       const left = this.getFloorSnapshot({
         accountId: input.accountId,
@@ -506,7 +569,7 @@ export class SessionStateService {
     this.requireSessionHost(this.db, input.accountId, input.sessionId, { requireActive: false });
     this.requireFloorInSession(this.db, input.sessionId, input.floorId);
 
-    const definitions = this.slotRegistry.list(input.namespace);
+    const definitions = this.listSlotDefinitionsForSession(input.accountId, input.sessionId, input.namespace);
     return definitions.map((definition) => {
       const live = this.resolveLiveValue({
         accountId: input.accountId,
@@ -1126,6 +1189,56 @@ export class SessionStateService {
     }
   }
 
+  private listSlotDefinitionsForSession(
+    accountId: string,
+    sessionId: string,
+    namespace?: SessionStateNamespace,
+  ): SessionStateSlotDefinition[] {
+    return [
+      ...this.slotRegistry.list(namespace),
+      ...(this.customNamespaceService?.listMaterializedSlotDefinitions(accountId, sessionId, namespace) ?? []),
+    ].sort((left, right) => {
+      const namespaceOrder = left.namespace.localeCompare(right.namespace);
+      return namespaceOrder !== 0 ? namespaceOrder : left.slot.localeCompare(right.slot);
+    });
+  }
+
+  private resolveReadableSlotDefinition(
+    accountId: string,
+    sessionId: string,
+    namespace: SessionStateNamespace,
+    slot: string,
+  ): SessionStateSlotDefinition | null {
+    const builtInDefinition = this.slotRegistry.get(namespace, slot);
+    if (builtInDefinition) {
+      return builtInDefinition;
+    }
+    if (this.isBuiltInNamespace(namespace)) {
+      throw new SessionStateServiceError(404, "session_state_slot_not_registered", `Session state slot '${namespace}/${slot}' is not registered`);
+    }
+    return this.customNamespaceService?.getMaterializedSlotDefinition(accountId, sessionId, namespace, slot) ?? null;
+  }
+
+  private requireWritableSlotDefinition(
+    accountId: string,
+    sessionId: string,
+    namespace: SessionStateNamespace,
+    slot: string,
+  ): SessionStateSlotDefinition {
+    const builtInDefinition = this.slotRegistry.get(namespace, slot);
+    if (builtInDefinition) {
+      return builtInDefinition;
+    }
+    if (this.isBuiltInNamespace(namespace)) {
+      throw new SessionStateServiceError(404, "session_state_slot_not_registered", `Session state slot '${namespace}/${slot}' is not registered`);
+    }
+    const customDefinition = this.customNamespaceService?.resolveWritableSlotDefinition(accountId, sessionId, namespace, slot);
+    if (customDefinition) {
+      return customDefinition;
+    }
+    throw new SessionStateServiceError(404, "session_state_namespace_not_registered", `Session state namespace '${namespace}' is not registered for session '${sessionId}'`);
+  }
+
   private resolveReplaySafety(
     definition: SessionStateSlotDefinition,
     requestedReplaySafety?: SessionStateReplaySafety,
@@ -1145,6 +1258,9 @@ export class SessionStateService {
     if (writeMode === definition.defaultWriteMode) {
       return;
     }
+    if (definition.publicExposure.capabilities.allowedWriteModes.includes(writeMode)) {
+      return;
+    }
     if (definition.defaultWriteMode === "commit_bound" && writeMode === "direct") {
       return;
     }
@@ -1152,6 +1268,20 @@ export class SessionStateService {
       409,
       "session_state_write_mode_forbidden",
       `Write mode '${writeMode}' is not allowed for slot '${definition.namespace}/${definition.slot}'`,
+    );
+  }
+
+  private ensureClientWritableCustomSlot(definition: SessionStateSlotDefinition): void {
+    if (
+      definition.publicExposure.ownerKind === "custom"
+      && definition.publicExposure.capabilities.clientWritable === true
+    ) {
+      return;
+    }
+    throw new SessionStateServiceError(
+      409,
+      "session_state_public_write_forbidden",
+      `Client write is forbidden for slot '${definition.namespace}/${definition.slot}'`,
     );
   }
 
@@ -1177,6 +1307,10 @@ export class SessionStateService {
         `Session state payload for slot '${definition.namespace}/${definition.slot}' exceeds its size budget`,
       );
     }
+  }
+
+  private isBuiltInNamespace(namespace: SessionStateNamespace): boolean {
+    return this.slotRegistry.list(namespace).length > 0;
   }
 
   private buildManagedDomainName(sessionId: string, namespace: SessionStateNamespace): string {

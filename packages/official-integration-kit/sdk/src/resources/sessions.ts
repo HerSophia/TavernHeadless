@@ -53,6 +53,18 @@ export type RespondGenerationParams = {
   topP?: number;
 };
 
+export type TurnSessionStateWrite =
+  | {
+    namespace: string;
+    slot: string;
+    value: unknown;
+  }
+  | {
+    namespace: string;
+    slot: string;
+    delete: true;
+  };
+
 export type PromptIntent = "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
 
 export type SessionCharacterSyncPolicy = "pin" | "manual" | "force";
@@ -409,6 +421,7 @@ export type SessionsRespondBaseOptions = {
   sessionId: string;
   sourceFloorId?: string;
   promptIntent?: PromptIntent;
+  sessionStateWrites?: TurnSessionStateWrite[];
   debugOptions?: PromptLiveDebugOptions;
 };
 
@@ -440,6 +453,7 @@ export type SessionsRegenerateOptions = {
   config?: RespondTurnConfig;
   generationParams?: RespondGenerationParams;
   sessionId: string;
+  sessionStateWrites?: TurnSessionStateWrite[];
   debugOptions?: PromptLiveDebugOptions;
 };
 
@@ -733,6 +747,7 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
           config: options.config,
           debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
           generation_params: mapGenerationParams(options.generationParams),
+          session_state_writes: mapTurnSessionStateWrites(options.sessionStateWrites),
         }),
         headers: buildAccountHeaders(options.accountId),
         method: "POST",
@@ -934,7 +949,30 @@ function mapRespondRequestBody(options: SessionsRespondOptions | SessionsRespond
     generation_params: mapGenerationParams(options.generationParams),
     prompt_intent: options.promptIntent,
     message: options.message,
+    session_state_writes: mapTurnSessionStateWrites(options.sessionStateWrites),
     source_floor_id: options.sourceFloorId,
+  });
+}
+
+function mapTurnSessionStateWrites(writes?: TurnSessionStateWrite[]): Record<string, unknown>[] | undefined {
+  if (!writes || writes.length === 0) {
+    return undefined;
+  }
+
+  return writes.map((write) => {
+    if ("delete" in write && write.delete === true) {
+      return {
+        namespace: write.namespace,
+        slot: write.slot,
+        delete: true,
+      };
+    }
+
+    return {
+      namespace: write.namespace,
+      slot: write.slot,
+      value: "value" in write ? write.value : undefined,
+    };
   });
 }
 

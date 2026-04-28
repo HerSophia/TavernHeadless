@@ -4,10 +4,41 @@ outline: [2, 3]
 
 # Accounts（账号）
 
-账号是资源隔离的顶层实体。单账号模式（`ACCOUNT_MODE=single`）下，系统自动创建默认账号。多账号模式下，可通过 API 创建和管理多个账号。
+账号是整个系统中所有资源的顶层隔离单元。每个账号下面有自己独立的会话、角色、预设和配置。
 
-所有账号端点仅限 `admin` 角色访问，非 admin 请求返回 `403`。
-这里的 `admin` 以数据库 `accounts.role` 为准，不依赖 JWT `role` claim。
+在单账号模式下，系统会自动创建一个默认账号，不需要手动管理。在多账号模式下，可以通过这组接口来创建和管理多个账号。
+
+> 这组接口只对 `admin` 角色开放。普通用户访问会返回 `403`。
+
+## 什么时候需要看这页
+
+- 你要在多账号部署下创建或管理账号
+- 你要查看、启用或禁用某个账号
+- 你要删除不再使用的账号
+
+## 一个简单例子
+
+```bash
+# 创建一个新账号
+curl -X POST http://localhost:3000/accounts \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "dev-team", "role": "user"}'
+
+# 列出所有账号
+curl http://localhost:3000/accounts
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| admin | 管理员角色，可以管理其他账号 |
+| user | 普通用户角色，只能管理自己的资源 |
+| ACCOUNT_MODE | 环境变量，`single` 表示单账号，`multi` 表示多账号 |
+| disabled | 账号被禁用后无法访问任何资源 |
+
+
+
 
 - `ACCOUNT_MODE=single`：`GET /accounts` 只返回默认账号；`GET /accounts/:id` 只允许读取默认账号；`POST` / `PATCH` / `DELETE` 会返回 `409 account_mode_restricted`。
 - `ACCOUNT_MODE=multi`：保留完整的账号管理语义。

@@ -7,7 +7,7 @@ import {
 } from "../prompt-runtime.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
 import type { RegenerateResult } from "./messages.js";
-import type { RespondGenerationParams, RespondMemoryReceipt, RespondTurnConfig } from "./sessions.js";
+import type { RespondGenerationParams, RespondMemoryReceipt, RespondTurnConfig, TurnSessionStateWrite } from "./sessions.js";
 import {
   compactObject,
   readArray,
@@ -176,6 +176,7 @@ export type FloorsRetryOptions = {
   floorId: string;
   generationParams?: RespondGenerationParams;
   debugOptions?: PromptLiveDebugOptions;
+  sessionStateWrites?: TurnSessionStateWrite[];
 };
 
 export type FloorsResource = {
@@ -304,6 +305,7 @@ export function createFloorsResource(client: TransportClient): FloorsResource {
           config: options.config,
           debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
           generation_params: mapGenerationParams(options.generationParams),
+          session_state_writes: mapTurnSessionStateWrites(options.sessionStateWrites),
         }),
         headers: buildAccountHeaders(options.accountId),
         method: "POST",
@@ -355,6 +357,28 @@ function mapGenerationParams(generationParams?: RespondGenerationParams): Record
   });
 
   return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+function mapTurnSessionStateWrites(writes?: TurnSessionStateWrite[]): Record<string, unknown>[] | undefined {
+  if (!writes || writes.length === 0) {
+    return undefined;
+  }
+
+  return writes.map((write) => {
+    if ("delete" in write && write.delete === true) {
+      return {
+        namespace: write.namespace,
+        slot: write.slot,
+        delete: true,
+      };
+    }
+
+    return {
+      namespace: write.namespace,
+      slot: write.slot,
+      value: "value" in write ? write.value : undefined,
+    };
+  });
 }
 
 function mapFloorRecord(value: unknown): FloorRecord | null {

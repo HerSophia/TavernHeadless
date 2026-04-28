@@ -260,6 +260,85 @@ const client = createTavernClient({
 - grant / audit 管理接口要求 caller owner 必须是 domain owner；否则返回 `403 client_data_domain_grant_manage_forbidden`
 - 如果服务端把某个 domain 标记为 managed domain，raw client-data 写路径会返回 `403 client_data_managed_domain_raw_access_forbidden`；这时需要改走对应的受治理服务，而不是继续调用 raw `clientData` 资源
 
+### 使用公开的 Session State
+
+`client.sessionState` 对应公开的 `/sessions/:sessionId/state/*` 接口，不对应内部 observation 面。
+
+当前已经覆盖：
+
+- `sessionState.registerNamespace`
+- `sessionState.listNamespaces`
+- `sessionState.writeValue`
+- `sessionState.deleteValue`
+- `sessionState.resolve`
+- `sessionState.getFloorSnapshots`
+- `sessionState.diff`
+
+```ts
+const registeredNamespace = await client.sessionState.registerNamespace({
+  accountId: "account-1",
+  sessionId: "session-1",
+  namespace: "quest_flags",
+  logicalOwnerType: "plugin",
+  logicalOwnerId: "quest-plugin",
+});
+
+const written = await client.sessionState.writeValue({
+  accountId: "account-1",
+  sessionId: "session-1",
+  branchId: "main",
+  namespace: "quest_flags",
+  slot: "companion",
+  value: { mood: "ally" },
+});
+
+const deleted = await client.sessionState.deleteValue({
+  accountId: "account-1",
+  sessionId: "session-1",
+  branchId: "main",
+  namespace: "quest_flags",
+  slot: "companion",
+});
+
+const definitions = await client.sessionState.listNamespaces({
+  accountId: "account-1",
+  sessionId: "session-1",
+});
+
+const values = await client.sessionState.resolve({
+  accountId: "account-1",
+  sessionId: "session-1",
+  branchId: "main",
+  namespace: "game_state",
+});
+
+console.log(registeredNamespace.defaultSlotTemplate.defaultWriteMode);
+console.log(definitions[0]?.slots.map((slot) => slot.slot));
+console.log(written.present, written.value);
+console.log(deleted.present, deleted.value);
+console.log(values[0]?.source, values[0]?.value);
+```
+
+说明：
+
+- `registerNamespace(...)` 是 control-plane write，只负责注册 custom namespace，不负责写入具体 state value
+- `writeValue(...)` 与 `deleteValue(...)` 是 public Session State 写接口，当前只允许 registered custom namespace
+- turn API 现在也支持 `sessionStateWrites`，对应 turn-embedded `commit_bound` 写入：
+  - `sessions.respond(...)`
+  - `sessions.respondStream(...)`
+  - `sessions.regenerate(...)`
+  - `floors.retry(...)`
+  - `messages.editAndRegenerate(...)`
+- `listNamespaces(...)` 现在会同时返回公开稳定的 built-in namespace，以及当前 session 下已注册的 custom namespace
+- custom slot 在首次成功 `writeValue(...)` 或首次成功 turn-bound commit 后会进入 discovery，并作为 materialized synthetic slot definition 返回
+- 当前公开稳定的 built-in slot 只有 `game_state.scene` 与 `game_state.world`
+- `game_state` 仍然对客户端只读；public `deleteValue(...)` 与 turn 内 `delete: true` 的治理语义都是把值写成 `present: false`
+- turn-embedded `sessionStateWrites` 不会新增独立 stage API，也不接受客户端自带 `branchId` / `sourceFloorId` / `writeMode` / `replaySafety`
+
+### 内部 observation 面仍不在 SDK 包装范围内
+
+`/sessions/:id/session-state/*` 与 `/floors/:id/session-state/*` 仍然是内部观察面。它们不会进入 `@tavern/sdk` 和 `@tavern/client-helpers`。如果确实需要对接，请基于 OpenAPI 自行封装，并接受该契约可能变化。
+
 ### 列出会话，然后生成一次回复
 
 ```ts
@@ -284,6 +363,18 @@ const result = await client.sessions.respond({
     includeRuntimeTrace: true,
     includeWorldbookMatches: false,
   },
+  sessionStateWrites: [
+    {
+      namespace: "quest_flags",
+      slot: "companion",
+      value: { mood: "ally" },
+    },
+    {
+      namespace: "quest_flags",
+      slot: "expired_hint",
+      delete: true,
+    },
+  ],
 });
 
 console.log(result.generatedText);
@@ -366,6 +457,18 @@ const result = await client.sessions.respondStream({
     includeRuntimeTrace: true,
     includeWorldbookMatches: false,
   },
+  sessionStateWrites: [
+    {
+      namespace: "quest_flags",
+      slot: "companion",
+      value: { mood: "ally" },
+    },
+    {
+      namespace: "quest_flags",
+      slot: "expired_hint",
+      delete: true,
+    },
+  ],
 });
 
 console.log(result.floorId);
@@ -381,6 +484,10 @@ console.log(result.runtimeTrace);
 当打开 live debug 选项时，`promptSnapshot` 与 `runtimeTrace` 只会出现在最终 `done` 结果里，不会新增新的 SSE 事件类型。
 
 其中 `runtimeTrace.macro` 与同步接口保持同一套结构，便于复用同一份调试面代码。
+
+如果你要把 custom namespace 的写入和当前 turn 一起提交，应优先使用 `sessionStateWrites`。
+它会在生成成功后先 stage，再在 turn commit 成功时落地；读取仍走 `client.sessionState.resolve(...)` / `getFloorSnapshots(...)` / `diff(...)`。
+`delete: true` 的治理语义与 `sessionState.deleteValue(...)` 一致，都是把值改成 `present: false`。
 
 ### 读取、治理和比较 Prompt Runtime
 

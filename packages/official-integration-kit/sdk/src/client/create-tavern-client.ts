@@ -23,6 +23,7 @@ import { createPresetEntriesResource, type PresetEntriesResource } from "../reso
 import { createPresetsResource, type PresetsResource } from "../resources/presets.js";
 import { createPromptRuntimeResource, type PromptRuntimeResource } from "../resources/prompt-runtime.js";
 import { createRegexProfilesResource, type RegexProfilesResource } from "../resources/regex-profiles.js";
+import { createSessionStateResource, type SessionStateResource } from "../resources/session-state.js";
 import { createSessionsResource, type SessionsResource } from "../resources/sessions.js";
 import { createToolsResource, type ToolsResource } from "../resources/tools.js";
 import { createUsersResource, type UsersResource } from "../resources/users.js";
@@ -55,6 +56,7 @@ export type TavernClient = ApiClient & {
   presets: PresetsResource;
   promptRuntime: PromptRuntimeResource;
   regexProfiles: RegexProfilesResource;
+  sessionState: SessionStateResource;
   sessions: SessionsResource;
   tools: ToolsResource;
   users: UsersResource;
@@ -93,6 +95,7 @@ export function createTavernClient(options: TavernClientOptions): TavernClient {
     presets: createPresetsResource(transport),
     promptRuntime: createPromptRuntimeResource(transport),
     regexProfiles: createRegexProfilesResource(transport),
+    sessionState: createSessionStateResource(transport),
     sessions: createSessionsResource(transport),
     tools: createToolsResource(transport),
     users: createUsersResource(transport),

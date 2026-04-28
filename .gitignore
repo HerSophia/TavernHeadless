@@ -37,6 +37,7 @@ yarn-error.log*
 .cache/
 .tmp/
 tmp/
+.VSCodeCounter/
 
 # Generated SDK check temps
 packages/shared/src/generated/.openapi.check.json

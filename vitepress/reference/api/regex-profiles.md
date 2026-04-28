@@ -4,7 +4,34 @@ outline: [2, 3]
 
 # Regex Profiles（正则配置管理）
 
-管理通过 [导入接口](./imports#导入-regex-规则) 导入的 SillyTavern 正则替换规则集。
+正则配置是一组正则替换规则。聊天时，在消息发出去之前和模型回复回来之后，这些规则会自动对文本执行一次批量替换。
+
+正则配置通常从 SillyTavern 导入。
+
+## 什么时候需要看这页
+
+- 你要查看导入进来的正则配置列表
+- 你要查看某个正则配置的规则内容
+- 你要编辑或删除正则配置
+
+## 一个简单例子
+
+```bash
+# 列出所有正则配置
+curl http://localhost:3000/regex-profiles
+
+# 查看某个正则配置的详情
+curl http://localhost:3000/regex-profiles/regex_001
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| placement | 规则生效的位置，例如 user_input（用户输入）或 ai_output（模型输出） |
+| 正则脚本 | 一条正则替换规则，由查找模式和替换文本组成 |
+
+
 
 每个 Regex Profile 包含一组正则脚本，可用于 `user_input`、`ai_output`、`world_info` 等不同 placement。是否真正执行，取决于当前后端支持范围。
 

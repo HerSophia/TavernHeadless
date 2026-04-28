@@ -152,6 +152,18 @@ export const liveRuntimeTraceExample = {
 export const respondBodyExample = {
   message: "Please continue the campfire scene.",
   branch_id: "main",
+  session_state_writes: [
+    {
+      namespace: "quest_flags",
+      slot: "companion",
+      value: { mood: "ally" },
+    },
+    {
+      namespace: "quest_flags",
+      slot: "expired_hint",
+      delete: true,
+    },
+  ],
   prompt_intent: "normal",
   delivery: {
     allow_assistant_prefill: true,
@@ -213,6 +225,18 @@ export const regenerateBodyExample = {
     require_last_user: true,
     no_assistant: false,
   },
+  session_state_writes: [
+    {
+      namespace: "quest_flags",
+      slot: "companion",
+      value: { mood: "ally" },
+    },
+    {
+      namespace: "quest_flags",
+      slot: "expired_hint",
+      delete: true,
+    },
+  ],
   structure: {
     mode: "no_assistant",
     merge_adjacent_same_role: false,
@@ -229,6 +253,18 @@ export const regenerateBodyExample = {
 export const editAndRegenerateBodyExample = {
   content: "I step closer to the fire and lower my voice.",
   branch_id: "alt-branch",
+  session_state_writes: [
+    {
+      namespace: "quest_flags",
+      slot: "companion",
+      value: { mood: "ally" },
+    },
+    {
+      namespace: "quest_flags",
+      slot: "expired_hint",
+      delete: true,
+    },
+  ],
   delivery: {
     allow_assistant_prefill: false,
     require_last_user: true,
@@ -997,6 +1033,22 @@ const dryRunRuntimeTraceJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const turnSessionStateWriteJsonSchema = {
+  type: "object",
+  properties: {
+    namespace: { type: "string", minLength: 1 },
+    slot: { type: "string", minLength: 1 },
+    value: {},
+    delete: { type: "boolean", enum: [true] },
+  },
+  additionalProperties: false,
+} as const;
+
+const turnSessionStateWritesJsonSchema = {
+  type: "array",
+  items: turnSessionStateWriteJsonSchema,
+} as const;
+
 export const editAndRegenerateBodyJsonSchema = {
   type: "object",
   required: ["content"],
@@ -1016,6 +1068,7 @@ export const editAndRegenerateBodyJsonSchema = {
       type: "array",
       items: { type: "string", minLength: 1 },
     },
+    session_state_writes: turnSessionStateWritesJsonSchema,
   },
   examples: [editAndRegenerateBodyExample],
   additionalProperties: false,
@@ -1034,6 +1087,7 @@ export const respondBodyJsonSchema = {
     branch_id: { type: "string", minLength: 1 },
     debug_options: liveDebugOptionsJsonSchema,
     source_floor_id: { type: "string", minLength: 1 },
+    session_state_writes: turnSessionStateWritesJsonSchema,
   },
   examples: [respondBodyExample],
   additionalProperties: false,
@@ -1072,6 +1126,7 @@ export const regenerateBodyJsonSchema = {
       type: "array",
       items: { type: "string", minLength: 1 },
     },
+    session_state_writes: turnSessionStateWritesJsonSchema,
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,
@@ -1087,6 +1142,7 @@ export const retryFloorBodyJsonSchema = {
     debug_options: liveDebugOptionsJsonSchema,
     confirmed_execution_ids: regenerateBodyJsonSchema.properties.confirmed_execution_ids,
     confirmed_session_state_mutation_ids: regenerateBodyJsonSchema.properties.confirmed_session_state_mutation_ids,
+    session_state_writes: turnSessionStateWritesJsonSchema,
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,

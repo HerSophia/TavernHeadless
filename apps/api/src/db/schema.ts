@@ -399,6 +399,34 @@ export const clientDataManagedDomains = sqliteTable(
   })
 );
 
+export const sessionStateNamespaceRegistrations = sqliteTable(
+  "session_state_namespace_registration",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    domainId: text("domain_id").notNull().references(() => clientDataDomains.id, { onDelete: "cascade" }),
+    namespace: text("namespace").notNull(),
+    logicalOwnerType: text("logical_owner_type").notNull(),
+    logicalOwnerId: text("logical_owner_id").notNull(),
+    defaultVisibilityMode: text("default_visibility_mode", { enum: ["session_shared", "branch_local", "fork_on_branch"] }).notNull(),
+    defaultWriteMode: text("default_write_mode", { enum: ["direct", "commit_bound"] }).notNull(),
+    defaultReplaySafety: text("default_replay_safety", { enum: ["safe", "confirm_on_replay", "never_auto_replay", "uncertain"] }).notNull(),
+    clientWritable: integer("client_writable", { mode: "boolean" }).notNull().default(true),
+    allowedWriteModesJson: text("allowed_write_modes_json").notNull().default("[]"),
+    supportsSnapshot: integer("supports_snapshot", { mode: "boolean" }).notNull().default(true),
+    supportsDiff: integer("supports_diff", { mode: "boolean" }).notNull().default(true),
+    replayPolicySource: text("replay_policy_source").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountSessionNamespaceUnique: uniqueIndex("session_state_namespace_registration_account_session_namespace_uq").on(table.accountId, table.sessionId, table.namespace),
+    accountSessionCreatedIdx: index("session_state_namespace_registration_account_session_created_idx").on(table.accountId, table.sessionId, table.createdAt),
+    domainUnique: uniqueIndex("session_state_namespace_registration_domain_id_uq").on(table.domainId),
+  })
+);
+
 export const sessionStateMutations = sqliteTable(
   "session_state_mutation",
   {
