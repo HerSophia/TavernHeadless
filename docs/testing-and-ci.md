@@ -311,18 +311,41 @@ Changes ───┬─→ Lint
            └─→ API Smoke
 
 docs-only PR：docs lint 只告警，不阻断 CI；docs build 仍然阻断
-Coverage：仅在 push 到 main / workflow_dispatch 时运行
+Coverage：仅在 push 到 `main`，或手动触发且 `run_coverage=true` 时运行
 ```
 
 ### 触发条件
 
-| 事件                  | 跑什么                                        |
-| --------------------- | --------------------------------------------- |
-| push 到非 `main` 分支 | 常规检查 + API smoke                          |
-| PR 到 `main`          | 常规检查 + API smoke；docs-only PR 走轻量路径 |
-| PR 到 `dev`           | 常规检查 + API smoke；docs-only PR 走轻量路径 |
-| push 到 `main`        | 常规检查 + API smoke + coverage               |
-| 手动触发              | 常规检查 + API smoke + coverage               |
+| 事件                  | 跑什么                                                    |
+| --------------------- | --------------------------------------------------------- |
+| push 到非 `main` 分支 | 常规检查 + API smoke                                      |
+| PR 到 `main`          | 常规检查 + API smoke；docs-only PR 走轻量路径             |
+| PR 到 `dev`           | 常规检查 + API smoke；docs-only PR 走轻量路径             |
+| push 到 `main`        | 常规检查 + API smoke + coverage                           |
+| 手动触发              | 常规检查 + API smoke；`run_coverage=true` 时再跑 coverage |
+
+### main 合并后的 dev 安全同步
+
+另有一个独立 workflow：`.github/workflows/sync-dev-with-main.yml`。
+
+它只在 `main` push 或手动触发时运行，不属于常规 PR 必需检查。这个 workflow 需要 `actions: write`、`contents: write`、`pull-requests: write` 三类权限。
+
+它先执行：
+
+```bash
+git rev-list --left-right --count origin/main...origin/dev
+```
+
+只有在 `dev` 没有自己独有 commit，且 `main` 确实领先 `dev` 时，它才会更新自动同步分支 `chore/sync-dev-with-main`，并创建或更新一个指向 `dev` 的 PR。
+
+在仓库已经开启 `Allow auto-merge` 的前提下，它还会再做两步：
+
+1. 对同步分支主动触发 `CI` workflow，并传入 `run_coverage=false`，只生成 `dev` ruleset 需要的检查。
+2. 对同步 PR 开启 `--auto --merge`，等这些检查全绿后自动用 merge commit 合入 `dev`。
+
+它不会直接推送 `dev`。原因是 `dev` 的 ruleset 要求所有改动都通过 PR 合入。如果 `dev` 已经有自己独有的 commit，或者已经和 `main` 同步，这个 workflow 会直接成功退出。
+
+之所以要显式触发 `CI` 的 `workflow_dispatch`，是因为由 `GITHUB_TOKEN` 产生的 push / PR 事件不会自动触发后续 workflow。`workflow_dispatch` 是 GitHub 明确保留的例外路径，因此这里可以在不绕过 ruleset 的情况下，把同步 PR 所需的检查补齐。
 
 ### 超时限制
 
@@ -349,6 +372,15 @@ on:
   pull_request:
     branches: [main, dev]
   workflow_dispatch:
+    inputs:
+      run_coverage:
+        description: Whether to run the coverage job
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   changes:
@@ -433,7 +465,7 @@ jobs:
 
   coverage:
     if: >
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_coverage == 'true') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: [lint, typecheck, build, test-shard-1, test-shard-2, test-shard-3]
     runs-on: ubuntu-latest

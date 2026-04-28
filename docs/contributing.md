@@ -262,11 +262,11 @@ main          稳定发布分支，只接受来自 dev 的合并
 
 ### 分支职责
 
-| 分支 | 用途 | 谁可以合入 | 保护规则 |
-| ---- | ---- | ---- | ---- |
-| `main` | 稳定发布 | 只接受 `dev → main` 的 PR | 禁止直推、要求 CI 全绿 |
-| `dev` | 日常集成 | 接受 feature/fix 分支的 PR | 禁止直推、要求 CI 全绿 |
-| `feat/*` / `fix/*` / `chore/*` | 开发分支 | — | 无保护，开发者自行管理 |
+| 分支                           | 用途     | 谁可以合入                 | 保护规则               |
+| ------------------------------ | -------- | -------------------------- | ---------------------- |
+| `main`                         | 稳定发布 | 只接受 `dev → main` 的 PR  | 禁止直推、要求 CI 全绿 |
+| `dev`                          | 日常集成 | 接受 feature/fix 分支的 PR | 禁止直推、要求 CI 全绿 |
+| `feat/*` / `fix/*` / `chore/*` | 开发分支 | —                          | 无保护，开发者自行管理 |
 
 ### 日常流程
 
@@ -286,6 +286,26 @@ main          稳定发布分支，只接受来自 dev 的合并
 这个 PR 同样需要 CI 全绿才能合并。
 
 不允许跳过 `dev` 直接把 feature 分支合进 `main`。
+
+### main 合并后的 dev 安全回补
+
+仓库还有一个独立 workflow：`.github/workflows/sync-dev-with-main.yml`。
+
+它只在 `main` push 或手动触发时运行，并先执行：
+
+```bash
+git rev-list --left-right --count origin/main...origin/dev
+```
+
+只有在 `dev` 没有自己独有 commit，且 `main` 确实领先 `dev` 时，它才会更新自动同步分支 `chore/sync-dev-with-main`，并创建或更新一个指向 `dev` 的 PR。
+
+如果仓库已经开启 `Allow auto-merge`，这个 workflow 还会主动对同步分支触发一次 `CI` 的 `workflow_dispatch`，并传入 `run_coverage=false`，然后为同步 PR 开启 `--auto --merge`。
+
+这样仍然完全遵守 `dev` 的 ruleset：不直接推送 `dev`，不绕过 required checks，只是在同步 PR 上把需要的检查和自动合并串起来。
+
+之所以显式触发一次 `CI`，是因为由 `GITHUB_TOKEN` 产生的 push / PR 事件不会自动触发后续 workflow。这里改用 `workflow_dispatch`，可以在不引入额外绕过权限的前提下，让同步 PR 自己拿到 required checks。
+
+如果 `dev` 已经有自己独有的 commit，workflow 会直接跳过，不覆盖正在集成的工作。
 
 ### 禁止事项
 
@@ -318,16 +338,16 @@ main          稳定发布分支，只接受来自 dev 的合并
 
 ### 类型
 
-| 类型 | 用途 |
-| ---- | ---- |
-| `feat` | 新功能 |
-| `fix` | 修复问题 |
-| `refactor` | 重构 |
-| `docs` | 只改文档 |
-| `test` | 只改测试 |
-| `chore` | 构建、依赖、配置 |
-| `style` | 格式调整 |
-| `perf` | 性能优化 |
+| 类型       | 用途             |
+| ---------- | ---------------- |
+| `feat`     | 新功能           |
+| `fix`      | 修复问题         |
+| `refactor` | 重构             |
+| `docs`     | 只改文档         |
+| `test`     | 只改测试         |
+| `chore`    | 构建、依赖、配置 |
+| `style`    | 格式调整         |
+| `perf`     | 性能优化         |
 
 ### 范围
 
@@ -594,14 +614,14 @@ pnpm test:ci
 
 ### 标签建议
 
-| 标签 | 用途 |
-| ---- | ---- |
-| `bug` | 已确认问题 |
-| `feature` | 新需求 |
-| `discussion` | 需要讨论 |
-| `docs` | 文档更新 |
+| 标签              | 用途       |
+| ----------------- | ---------- |
+| `bug`             | 已确认问题 |
+| `feature`         | 新需求     |
+| `discussion`      | 需要讨论   |
+| `docs`            | 文档更新   |
 | `integration-kit` | 官方包相关 |
-| `help wanted` | 需要协助 |
+| `help wanted`     | 需要协助   |
 
 ### 发布原则
 

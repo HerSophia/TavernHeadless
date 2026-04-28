@@ -1,0 +1,152 @@
+name: Sync dev with main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-dev-with-main
+  cancel-in-progress: false
+
+jobs:
+  sync-dev:
+    name: Sync dev with main (safe PR path)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch main and dev
+        run: |
+          git fetch origin main dev
+
+      - name: Decide whether sync PR is needed
+        id: decide
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          read MAIN_AHEAD DEV_AHEAD < <(git rev-list --left-right --count origin/main...origin/dev)
+
+          echo "main_ahead=$MAIN_AHEAD" >> "$GITHUB_OUTPUT"
+          echo "dev_ahead=$DEV_AHEAD" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "main 领先 dev 的提交数：$MAIN_AHEAD"
+            echo "dev 领先 main 的提交数：$DEV_AHEAD"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$DEV_AHEAD" -ne 0 ]; then
+            echo "should_sync=false" >> "$GITHUB_OUTPUT"
+            echo "dev 有自己独有的提交，跳过自动同步。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$MAIN_AHEAD" -eq 0 ]; then
+            echo "should_sync=false" >> "$GITHUB_OUTPUT"
+            echo "dev 已经和 main 同步。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "should_sync=true" >> "$GITHUB_OUTPUT"
+          echo "dev 没有自己独有的提交，且落后于 main，开始创建或更新同步 PR。" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update sync branch from main
+        if: steps.decide.outputs.should_sync == 'true'
+        env:
+          SYNC_BRANCH: chore/sync-dev-with-main
+        run: |
+          set -euo pipefail
+
+          git checkout -B "$SYNC_BRANCH" origin/main
+          git push --force-with-lease origin HEAD:"$SYNC_BRANCH"
+
+      - name: Create or update sync PR
+        if: steps.decide.outputs.should_sync == 'true'
+        id: pr
+        env:
+          SYNC_BRANCH: chore/sync-dev-with-main
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+
+          title="chore(ci): 让 dev 跟进 main 的最新基线"
+          body_file="$(mktemp)"
+
+          cat > "$body_file" <<'EOF'
+          ## 做了什么
+
+          - 这个 PR 由 `.github/workflows/sync-dev-with-main.yml` 自动创建或更新。
+          - 只在 `dev` 没有自己独有 commit 时，把 `main` 的最新基线同步到 `dev`。
+
+          ## 为什么这样做
+
+          - `main` 已经前进。
+          - `dev` 没有自己独有 commit。
+          - 仓库 ruleset 要求 `dev` 上的改动必须通过 PR 合入，所以这里走安全的 PR 路径，不直接推送 `dev`。
+
+          ## 安全约束
+
+          - workflow 会先执行 `git rev-list --left-right --count origin/main...origin/dev`。
+          - 只要 `dev` 有自己独有 commit，就直接退出，不覆盖正在集成的工作。
+          - 如果 `dev` 已经和 `main` 同步，也会直接退出。
+          EOF
+
+          existing_pr="$(gh pr list --state open --base dev --head "$SYNC_BRANCH" --json number --jq '.[0].number // empty')"
+
+          if [ -n "$existing_pr" ]; then
+            gh pr edit "$existing_pr" --title "$title" --body-file "$body_file"
+            pr_number="$existing_pr"
+            echo "已更新现有同步 PR #$pr_number。" >> "$GITHUB_STEP_SUMMARY"
+          else
+            pr_url="$(gh pr create --base dev --head "$SYNC_BRANCH" --title "$title" --body-file "$body_file")"
+            echo "已创建同步 PR：$pr_url" >> "$GITHUB_STEP_SUMMARY"
+            pr_number="$(gh pr list --state open --base dev --head "$SYNC_BRANCH" --json number --jq '.[0].number')"
+          fi
+
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch CI on sync branch
+        if: steps.decide.outputs.should_sync == 'true'
+        env:
+          SYNC_BRANCH: chore/sync-dev-with-main
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+
+          gh workflow run ci.yml --ref "$SYNC_BRANCH" -f run_coverage=false
+
+          {
+            echo "已对 $SYNC_BRANCH 触发 CI workflow_dispatch，并传入 run_coverage=false。"
+            echo "这样可以在保持 PR 路径不变的前提下，为自动合并补齐 required checks。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enable auto-merge for sync PR
+        if: steps.decide.outputs.should_sync == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+
+          gh pr merge "${{ steps.pr.outputs.pr_number }}" --auto --merge --delete-branch
+
+          echo "已为 PR #${{ steps.pr.outputs.pr_number }} 开启 merge commit 方式的自动合并。" >> "$GITHUB_STEP_SUMMARY"
