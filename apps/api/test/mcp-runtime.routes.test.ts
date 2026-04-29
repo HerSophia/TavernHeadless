@@ -69,7 +69,7 @@ const runtimeMockState = vi.hoisted(() => {
   };
 });
 
-vi.mock("../src/mcp/mcp-connection.js", () => ({
+vi.mock("../src/services/tooling/mcp/mcp-connection.js", () => ({
   McpConnection: runtimeMockState.MockMcpConnection,
 }));
 

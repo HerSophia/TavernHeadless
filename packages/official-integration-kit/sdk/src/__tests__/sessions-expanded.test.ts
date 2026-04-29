@@ -890,4 +890,35 @@ describe("sdk sessions expanded resource", () => {
       },
     }));
   });
+
+  it("preserves explicit empty per-slot tool permission arrays", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            slot_allow_list: {
+              narrator: [],
+            },
+            slot_deny_list: {
+              memory: [],
+            },
+          },
+        }),
+      );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.sessions.getToolPermissions({ sessionId: "session-1" })).resolves.toEqual({
+      allowIrreversible: undefined,
+      enabled: undefined,
+      maxCallsPerTurn: undefined,
+      maxStepsPerGeneration: undefined,
+      slotAllowList: {
+        narrator: [],
+      },
+      slotDenyList: {
+        memory: [],
+      },
+    });
+  });
 });

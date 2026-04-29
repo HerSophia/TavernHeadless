@@ -440,7 +440,7 @@ describe('ToolExecutor', () => {
         status: 'error',
         errorMessage: 'execution failed',
       });
-      expect(JSON.parse(executor.getExecutionRecords()[0]!.resultJson)).toEqual({ error: 'execution failed' });
+      expect(JSON.parse(executor.getExecutionRecords()[0]!.resultJson)).toEqual({ error: 'execution failed', executionStatus: 'error' });
     });
 
     it('classifies uncertain timeout payloads into the execution journal', async () => {
@@ -461,6 +461,39 @@ describe('ToolExecutor', () => {
         toolName: 'failing',
         status: 'uncertain',
         lifecycleState: 'finished',
+      });
+    });
+
+    it('prioritizes explicit structured outcomes and returns them to the caller', async () => {
+      const tool = makeTool({ name: 'failing' });
+      registry.register(
+        makeProvider({
+          tools: [tool],
+          executeFn: async () => ({
+            error: 'provider failure without timeout keywords',
+            executionStatus: 'uncertain',
+            executionReasonCode: 'mcp_call_timeout_uncertain',
+            reconnectRequired: true,
+            providerMessage: 'local timeout while awaiting MCP response',
+          }),
+        }),
+      );
+
+      const result = await executor.execute('failing', {}, makeContext(), makePermissions());
+
+      expect(result).toMatchObject({
+        error: 'provider failure without timeout keywords',
+        executionStatus: 'uncertain',
+        executionReasonCode: 'mcp_call_timeout_uncertain',
+        reconnectRequired: true,
+        providerMessage: 'local timeout while awaiting MCP response',
+      });
+      expect(JSON.parse(executor.getExecutionRecords()[0]!.resultJson)).toEqual({
+        error: 'provider failure without timeout keywords',
+        executionStatus: 'uncertain',
+        executionReasonCode: 'mcp_call_timeout_uncertain',
+        reconnectRequired: true,
+        providerMessage: 'local timeout while awaiting MCP response',
       });
     });
 

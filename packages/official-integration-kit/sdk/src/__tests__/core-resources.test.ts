@@ -188,6 +188,7 @@ describe("sdk core resources", () => {
         allowedSlotsBasis: null,
         parameterSchemaBasis: null,
         replaySafetyBasis: null,
+        metadataBasisDetail: null,
       }],
     });
   });

@@ -59,6 +59,10 @@ TavernHeadless 官方接入的语义层。
 | `toClientDataMap` | 把 item 列表转换成适合界面消费的嵌套 map |
 | `resolveItemByPath` | 按 `collectionName + itemKey` 解析单个 client-data item |
 
+其中 `summarizeRuntimeToolCatalog` 只汇总 `/sessions/:id/tools/runtime` 返回的
+**session 级** 运行时工具目录。
+它不展开未来 run / node / step overlay。
+
 ## 用法
 
 ### Client Data helpers

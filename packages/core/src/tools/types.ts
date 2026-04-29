@@ -129,20 +129,40 @@ export type ToolExecutionProviderType = ToolProviderType | 'unknown';
 
 // ── Tool Call Result ──────────────────────────────────
 
+/**
+ * 工具执行的结构化结果元数据。
+ *
+ * 它只表达执行状态、原因码和连接/重试提示，不表达具体业务返回数据。
+ */
+export interface StructuredToolExecutionOutcome {
+  executionStatus: ToolExecutionStatus;
+  executionReasonCode?: string;
+  reconnectRequired?: boolean;
+  retryable?: boolean;
+  providerMessage?: string;
+}
+
 /** 工具执行结果 */
-export interface ToolCallResult {
+export interface ToolCallResult extends Partial<StructuredToolExecutionOutcome> {
   /** 执行成功时的返回数据 */
   data?: unknown;
   /** 执行失败时的错误信息 */
   error?: string;
-  /** 可选：供执行日志使用的更细粒度状态 */
+  /**
+   * 可选：供执行日志与上层控制流使用的结构化执行状态。
+   *
+   * 新代码应优先消费这些结构化字段，而不是依赖错误字符串推断。
+   */
   executionStatus?: ToolExecutionStatus;
   /**
-   * 可选：供执行日志使用的稳定原因码。
+   * 可选：供执行日志与上层控制流使用的稳定原因码。
    *
    * 供上层与审计层优先使用，不再依赖错误字符串推断。
    */
   executionReasonCode?: string;
+  reconnectRequired?: boolean;
+  retryable?: boolean;
+  providerMessage?: string;
 }
 
 // ── Tool Call Record ──────────────────────────────────
@@ -190,7 +210,11 @@ export interface ToolReplaySafetyEvaluation {
   reason: string;
 }
 
-/** 单次工具调用记录（绑定到 MessagePage） */
+/**
+ * 单次工具调用记录（legacy-compatible projection，绑定到 MessagePage）。
+ *
+ * 这是旧兼容读面，不是新的主执行审计真相。
+ */
 export interface ToolCallRecord {
   /** 记录 ID */
   id: string;
@@ -218,6 +242,7 @@ export interface ToolCallRecord {
  * 真实工具执行记录。
  *
  * 与旧的 ToolCallRecord 不同，此结构以 floor 为主归属，记录来源应为真实执行器。
+ * `tool_execution_record` 是主执行审计真相；deferred 场景再结合 `runtime_job` 观察后台生命周期。
  */
 export interface ExecutedToolCallRecord {
   id: string;

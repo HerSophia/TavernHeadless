@@ -411,6 +411,18 @@ Chat 相关方法会保留后端返回的这些字段：
 
 其中 `finalState === "committed"` 表示生成结果已经越过提交边界，相关持久化写入已经完成。
 
+### 会话级工具目录与会话基础权限
+
+工具相关接入目前分成两层：
+
+- `client.sessions.getRuntimeToolCatalog(...)` 读取 **session 级** 运行时工具目录快照。
+- `client.sessions.getToolPermissions(...)`、`putToolPermissions(...)`、`patchToolPermissions(...)` 读写 session 基础工具权限，对应 `metadata_json.tool_permissions`。
+
+这两组能力都不直接表示未来 run / node / step overlay 的最终执行权限。
+
+如果你需要看某个 MCP server 自己声明了哪些工具，可用 `client.mcp.listServerTools(...)`。
+但它不等于某个 session 当前真正可见的运行时工具目录。
+
 如果服务端在当前 turn 上启用了记忆持久化，`memory` 会额外说明记忆链路是同步完成还是已进入后台队列：
 
 ```ts

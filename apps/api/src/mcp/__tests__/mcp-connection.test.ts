@@ -360,6 +360,8 @@ describe("McpConnection", () => {
       error: "Tool call timeout after 50ms; execution outcome is uncertain; reconnect required before the next call",
       executionStatus: "uncertain",
       executionReasonCode: "mcp_call_timeout_uncertain",
+      reconnectRequired: true,
+      providerMessage: "Tool call timeout after 50ms",
     });
     expect(connection.state).toBe("reconnect_required");
     expect(connection.reconnectRequired).toBe(true);
