@@ -392,9 +392,9 @@ describe("TurnCommitService", () => {
     const [legacyToolCall] = await database.db
       .select()
       .from(toolCallRecords)
-      .where(eq(toolCallRecords.id, legacyToolCalls[0]!.id));
+      .where(eq(toolCallRecords.id, executedToolCalls[0]!.id));
     expect(legacyToolCall).toMatchObject({
-      id: legacyToolCalls[0]!.id,
+      id: executedToolCalls[0]!.id,
       pageId: result.outputPageId,
       seq: 1,
       callerSlot: "narrator",
@@ -403,6 +403,12 @@ describe("TurnCommitService", () => {
       durationMs: 17,
       createdAt: committedAt,
     });
+
+    const staleLegacyRows = await database.db
+      .select()
+      .from(toolCallRecords)
+      .where(eq(toolCallRecords.id, legacyToolCalls[0]!.id));
+    expect(staleLegacyRows).toEqual([]);
 
     const [snapshotRow] = await database.db
       .select()

@@ -592,7 +592,7 @@ Profile 可以按作用域（全局或会话）和槽位粒度绑定。例如：
 
 - 所有实例（叙述者、导演、校验员、记忆员）都可以调用工具，每个实例的权限独立配置。
 - 每次工具调用都会生成一条执行记录，归属到当前楼层，方便审计和排查。
-- 运行时工具目录是**会话级**快照，通过 `/sessions/:id/tools/runtime` 查看当前会话真正可调用的工具。
+- 运行时工具目录是**会话级**快照，通过 `/sessions/:id/tools/runtime` 查看当前会话真正可调用的工具；它不直接展开未来 run / node / step overlay。
 - 当前公开配置的 `toolMode` 仍只有 `inline`，即大模型在生成过程中自主决定是否调用工具。但部分 allowlisted 工具在 `inline` 回合内部可以先返回 deferred receipt，再由后台 `runtime_job` 延后完成。
 
 运行时工具目录中的单个工具仍可能带有 `defaultDeliveryMode = async_job`。这表示该工具在当前内联回合里会返回受理回执，并由后台 `runtime_job` 继续完成真实执行。
@@ -659,12 +659,12 @@ Profile 可以按作用域（全局或会话）和槽位粒度绑定。例如：
 | PATCH | `/tools/definitions/:id` | 更新工具定义 |
 | PATCH | `/tools/definitions/:id/toggle` | 启用/禁用工具 |
 | DELETE | `/tools/definitions/:id` | 删除工具定义 |
-| GET | `/tools/executions` | 查询主执行审计记录 |
+| GET | `/tool-executions` | 查询主执行审计记录 |
 | GET | `/tools/call-records` | 查询兼容调用记录 |
 | GET | `/sessions/:id/tools/runtime` | 获取会话级运行时工具目录 |
-| GET | `/sessions/:id/tool-permissions` | 获取会话工具权限 |
-| PUT | `/sessions/:id/tool-permissions` | 替换会话工具权限 |
-| PATCH | `/sessions/:id/tool-permissions` | 合并更新会话工具权限 |
+| GET | `/sessions/:id/tool-permissions` | 获取会话基础工具权限 |
+| PUT | `/sessions/:id/tool-permissions` | 替换会话基础工具权限 |
+| PATCH | `/sessions/:id/tool-permissions` | 合并更新会话基础工具权限 |
 | GET | `/mcp/servers` | 列出 MCP 服务器配置 |
 | GET | `/mcp/servers/:id` | 获取单个 MCP 服务器配置 |
 | POST | `/mcp/servers` | 创建 MCP 服务器配置 |

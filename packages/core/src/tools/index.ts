@@ -14,6 +14,7 @@ export type {
   PendingToolJobRequest,
   RuntimeToolDispatchResult,
   ToolCallResult,
+  StructuredToolExecutionOutcome,
   ToolCallStatus,
   ToolExecutionStatus,
   ToolExecutionLifecycleState,

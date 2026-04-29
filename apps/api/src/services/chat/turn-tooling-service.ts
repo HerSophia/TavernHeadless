@@ -1,8 +1,12 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { ToolPermissions, ToolRegistry, TurnConfig } from "@tavern/core";
 
 import type { AppDb } from "../../db/client.js";
 import { sessions } from "../../db/schema.js";
+import {
+  mapSessionBaseToolPermissionsRecordToCorePermissions,
+  resolveEffectiveToolPermissions,
+} from "../tooling/shared/permission-overlay.js";
 import {
   SessionToolRegistryService,
   SessionToolRegistryServiceError,
@@ -32,7 +36,7 @@ export class TurnToolingService {
     if (this.options.resolveToolPermissions) {
       const permissions = await this.options.resolveToolPermissions(sessionId, accountId);
       if (permissions) {
-        return permissions;
+        return resolveEffectiveToolPermissions(permissions);
       }
     }
 
@@ -40,13 +44,19 @@ export class TurnToolingService {
       const [session] = await this.db
         .select({ metadataJson: sessions.metadataJson })
         .from(sessions)
-        .where(eq(sessions.id, sessionId))
+        .where(and(
+          eq(sessions.id, sessionId),
+          eq(sessions.accountId, accountId),
+        ))
         .limit(1);
 
       if (session?.metadataJson) {
         const metadata = JSON.parse(session.metadataJson) as Record<string, unknown>;
-        if (metadata.tool_permissions && typeof metadata.tool_permissions === "object") {
-          return metadata.tool_permissions as ToolPermissions;
+        const sessionBasePermissions = mapSessionBaseToolPermissionsRecordToCorePermissions(
+          metadata.tool_permissions,
+        );
+        if (sessionBasePermissions) {
+          return resolveEffectiveToolPermissions(sessionBasePermissions);
         }
       }
     } catch {

@@ -13,6 +13,10 @@ export type RuntimeToolCatalogSummary = {
   uncertainTools: number;
 };
 
+/**
+ * 汇总会话级运行时工具目录快照。
+ * 它只基于 `/sessions/:id/tools/runtime` 的 session 级目录做统计，不展开未来 run/node/step overlay。
+ */
 export function summarizeRuntimeToolCatalog(
   catalog: SessionRuntimeToolCatalog,
 ): RuntimeToolCatalogSummary {

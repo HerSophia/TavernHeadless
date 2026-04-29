@@ -82,6 +82,10 @@ export type McpServerStatus = {
   transport: McpTransport;
 };
 
+/**
+ * MCP 服务器原始工具目录视图。
+ * 它只表示 MCP server 当前声明了哪些工具，不等于某个 session 最终可见的运行时工具目录。
+ */
 export type McpServerToolRecord = {
   description: string;
   name: string;
@@ -129,6 +133,11 @@ export type McpResource = {
   disconnectServer(options: { accountId?: AccountIdHint; serverId: string }): Promise<McpServerStatus>;
   getServer(options: { accountId?: AccountIdHint; serverId: string }): Promise<McpServerRecord>;
   getServerStatus(options: { accountId?: AccountIdHint; serverId: string }): Promise<McpServerStatus>;
+  /**
+   * 读取 MCP server 当前直接声明的工具列表。
+   * 如果你需要 session 级可见目录、权限过滤结果或运行时可用性，
+   * 应改用 `client.sessions.getRuntimeToolCatalog(...)`。
+   */
   listServerTools(options: { accountId?: AccountIdHint; serverId: string }): Promise<McpServerToolRecord[]>;
   listServers(options?: {
     accountId?: AccountIdHint;

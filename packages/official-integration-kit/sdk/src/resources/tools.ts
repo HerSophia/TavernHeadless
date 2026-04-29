@@ -175,6 +175,10 @@ export type ToolsResource = {
    * 兼容查询入口。仅承接当前公开的 `/tools/call-records`，不代表长期主审计模型。
    */
   listCallRecords(options: ToolCallRecordsListOptions): Promise<ToolCallRecordsListResult>;
+  /**
+   * 主审计查询入口。
+   * 对应 `tool_execution_record`；deferred 执行时再结合 `runtime_job` 观察后台生命周期。
+   */
   listExecutions(options: ToolExecutionsListOptions): Promise<ToolExecutionsListResult>;
   listDefinitions(options?: {
     accountId?: AccountIdHint;

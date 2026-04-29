@@ -1,7 +1,9 @@
 /**
  * Drizzle Tool Repository
  *
- * 工具调用记录与自定义工具定义的持久化层。
+ * 自定义工具定义，以及 `tool_call_record` 兼容投影的持久化层。
+ *
+ * 主执行审计真相位于 `tool_execution_record`；这里的 call records 只保留兼容读写职责。
  */
 
 import { eq, and, desc, asc, sql, isNull, ne } from "drizzle-orm";
@@ -75,7 +77,7 @@ export class DrizzleToolRepository {
   // ── Tool Call Records ──
 
   /**
-   * 批量插入工具调用记录。
+   * 批量插入 legacy `tool_call_record` 兼容投影。
    */
   async insertCallRecords(records: ToolCallRecordInsert[]): Promise<void> {
     if (records.length === 0) return;
@@ -97,7 +99,8 @@ export class DrizzleToolRepository {
   }
 
   /**
-   * 按条件查询工具调用记录。
+   * 按条件查询 legacy `tool_call_record` 兼容读面。
+   * 主审计真相请改用 `tool_execution_record` 查询路径。
    */
   async queryCallRecords(query: ToolCallRecordQuery): Promise<{
     records: ToolCallRecord[];

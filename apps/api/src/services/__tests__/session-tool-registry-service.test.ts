@@ -177,7 +177,7 @@ describe("SessionToolRegistryService", () => {
       ]),
       toolRuntimePolicy: new ToolRuntimePolicy({
         enableDeferredIrreversibleTools: true,
-        deferredMcpTools: ["mcp-1/github_create_issue"],
+        deferredToolAllowlist: ["mcp-1/github_create_issue"],
       }),
     });
 
@@ -199,6 +199,59 @@ describe("SessionToolRegistryService", () => {
       resultVisibility: "deferred_receipt",
       availability: "available",
       replaySafety: "never_auto_replay",
+    });
+  });
+
+  it("applies MCP metadata overrides and exposes basis detail in the runtime catalog", async () => {
+    await insertSession();
+    await insertMcpConfig({
+      configJson: JSON.stringify({
+        http: { url: "http://localhost:8123" },
+        metadataOverrides: [{
+          toolName: "mcp_lookup",
+          sideEffectLevel: "sandbox",
+          allowedSlots: ["narrator"],
+          parameterSchema: {
+            type: "object",
+            properties: {
+              query: { type: "string" },
+            },
+            required: ["query"],
+          },
+          replaySafety: "never_auto_replay",
+        }],
+      }),
+      defaultSideEffectLevel: "none",
+    });
+
+    const service = new SessionToolRegistryService(db, {
+      baseRegistry,
+      mcpManager: createMockMcpManager([
+        makeTool({ name: "mcp_lookup", sideEffectLevel: "none" }),
+      ]),
+      enableUnsafeScriptHandler: true,
+    });
+
+    const runtime = await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
+    const entry = runtime.catalog.tools.find((tool) => tool.name === "mcp_lookup");
+
+    expect(entry).toMatchObject({
+      name: "mcp_lookup",
+      source: "mcp",
+      availability: "available",
+      sideEffectLevel: "sandbox",
+      sideEffectLevelBasis: "account_override",
+      allowedSlots: ["narrator"],
+      allowedSlotsBasis: "account_override",
+      parameterSchemaBasis: "account_override",
+      replaySafety: "never_auto_replay",
+      replaySafetyBasis: "account_override",
+      metadataBasisDetail: {
+        sideEffectLevel: { basis: "account_override", scope: "tool" },
+        allowedSlots: { basis: "account_override", scope: "tool" },
+        parameterSchema: { basis: "account_override", scope: "local" },
+        replaySafety: { basis: "account_override", scope: "local" },
+      },
     });
   });
 

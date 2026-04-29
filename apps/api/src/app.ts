@@ -52,11 +52,11 @@ import { findNativePipelineError } from "./lib/native-pipeline-error";
 import { ensureDefaultAdminAccount } from "./accounts/service";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "./accounts/constants";
 import { registerCors, type CorsConfig } from "./plugins/cors";
-import { McpService } from "./services/mcp-service";
+import { McpService } from "./services/tooling/mcp/mcp-service";
 import { repairCrossAccountSessionCharacterBindings } from "./services/resource-ownership";
-import { McpConnectionManager } from "./mcp";
-import { registerMcpRuntimeRoutes } from "./routes/mcp";
-import { SessionToolRegistryService } from "./services/session-tool-registry-service";
+import { McpConnectionManager, McpToolProviderFactory } from "./services/tooling/mcp";
+import { registerMcpRuntimeRoutes } from "./routes/tooling/mcp";
+import { SessionToolRegistryService } from "./services/tooling/session-tool-registry-service";
 import { ToolRegistry, BuiltinToolProvider } from "@tavern/core";
 import { ResourceToolProvider } from "./tools/index.js";
 import { MemoryWorker } from "./services/memory-worker.js";
@@ -64,14 +64,14 @@ import { MemoryJobScheduler } from "./services/memory-job-scheduler.js";
 import { createDefaultMutationRuntimeComponents } from "./services/default-mutation-runtime.js";
 import { createMutationRuntimeJobBridge } from "./services/mutation-runtime-job-bridge.js";
 import { MutationWorker } from "./services/mutation-worker.js";
-import { createDefaultToolRuntimeComponents } from "./services/default-tool-runtime.js";
+import { createDefaultToolRuntimeComponents } from "./services/tooling/runtime/default-tool-runtime.js";
 import {
   cleanExpiredClientDataItems,
   purgeDeletedClientDataDomains,
 } from "./client-data/client-data-maintenance.js";
 
 import { PromptRuntimeControlService, PromptRuntimeControlServiceError } from "./services/prompt-runtime-control-service.js";
-import { ToolWorker } from "./services/tool-worker.js";
+import { ToolWorker } from "./services/tooling/runtime/tool-worker.js";
 import {
   FirstPartyGameStateService,
   SessionStateCustomNamespaceService,
@@ -580,7 +580,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       eventBus: orchestrationContext.eventBus,
       mcpManager,
       enableDeferredIrreversibleTools: options.enableDeferredIrreversibleTools,
-      deferredMcpTools: options.deferredIrreversibleMcpTools,
+      deferredToolAllowlist: options.deferredIrreversibleMcpTools,
       logger: app.log,
     });
 
@@ -596,12 +596,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       mutationRuntime: mutationRuntimeComponents.runtime,
     }));
 
+    const mcpDeferredHandler = mcpManager ? toolRuntimeComponents.handlerRegistry.find("mcp") : undefined;
+    const mcpToolProviderFactory = mcpManager
+      ? new McpToolProviderFactory({
+          connectionManager: mcpManager,
+          toolRuntimePolicy: toolRuntimeComponents.policy,
+          ...(mcpDeferredHandler ? { deferredHandler: mcpDeferredHandler } : {}),
+        })
+      : undefined;
+
     sessionToolRegistryService = new SessionToolRegistryService(database.db, {
       baseRegistry: baseToolRegistry,
       mcpManager,
       enableUnsafeScriptHandler: options.enableUnsafeScriptHandler,
       toolRuntimePolicy: toolRuntimeComponents.policy,
-      ...(toolRuntimeComponents.mcpToolProviderFactory ? { mcpToolProviderFactory: toolRuntimeComponents.mcpToolProviderFactory } : {}),
+      ...(mcpToolProviderFactory ? { mcpToolProviderFactory } : {}),
     });
   }
 

@@ -894,7 +894,7 @@ CREATE TABLE tool_execution_record (
 
 - 所有 LLM 实例（Narrator / Director / Verifier / Memory）都可以调用工具，但每个实例的工具权限独立配置。
 - 主审计模型是 `tool_execution_record`，以 floor 为主归属，并允许附带可空的 `page_id`。
-- 运行时工具目录是**会话级**快照，通过 `/sessions/:id/tools/runtime` 暴露当前 session 真正可调用的 builtin / custom / MCP 工具集合。
+- 运行时工具目录是**会话级**快照，通过 `/sessions/:id/tools/runtime` 暴露当前 session 真正可调用的 builtin / custom / MCP 工具集合；它不直接展开未来 run / node / step overlay。
 - 当前公开配置的 `toolMode` 仍只有 `inline`。`standalone` 和 `both` 会返回结构化配置错误，不再被文档视为已实现能力；但在 `inline` 回合内部，允许部分 allowlisted 工具先返回 deferred receipt，再通过 `runtime_job` 延后完成。
 - 兼容期内仍保留 `tool_call_record` 供旧查询接口使用，但它不是长期主模型。
 
@@ -921,7 +921,17 @@ CREATE TABLE tool_execution_record (
 
 ### 权限控制
 
-工具权限通过 `ToolPermissions` 配置，存储在会话的 `metadata_json.tool_permissions` 中：
+工具权限通过 `ToolPermissions` 配置，存储在会话的 `metadata_json.tool_permissions` 中。
+这组字段只表示 **session 级基础权限**，不是未来 run / node / step overlay 的最终模型。
+
+当前阶段已经先把边界固定为：
+
+- `metadata_json.tool_permissions` 只承载 session base permissions
+- 未来 run / node / step 权限只会以 overlay 形式叠加
+- overlay 不会直接回写到现有 session 元数据字段里
+- `/sessions/:id/tools/runtime` 继续只表达 session 级目录，不直接表示 overlay 叠加后的最终执行权限
+
+当前 session 基础权限字段包括：
 
 - **`slotAllowList`**：按实例槽位允许的工具名白名单。
 - **`slotDenyList`**：按实例槽位禁止的工具名黑名单。
@@ -993,12 +1003,12 @@ allowedSlots → slotAllowList → slotDenyList → allowIrreversible
 | PATCH | `/tools/definitions/:id` | 更新工具定义 |
 | DELETE | `/tools/definitions/:id` | 删除工具定义 |
 | PATCH | `/tools/definitions/:id/toggle` | 启用/禁用工具 |
-| GET | `/tools/executions` | 查询主执行审计记录（`tool_execution_record`） |
+| GET | `/tool-executions` | 查询主执行审计记录（`tool_execution_record`） |
 | GET | `/tools/call-records` | 查询兼容调用记录（`tool_call_record`） |
 | GET | `/sessions/:id/tools/runtime` | 获取会话级运行时工具目录快照 |
-| GET | `/sessions/:id/tool-permissions` | 获取会话工具权限 |
-| PUT | `/sessions/:id/tool-permissions` | 替换会话工具权限 |
-| PATCH | `/sessions/:id/tool-permissions` | 合并更新会话工具权限 |
+| GET | `/sessions/:id/tool-permissions` | 获取会话基础工具权限 |
+| PUT | `/sessions/:id/tool-permissions` | 替换会话基础工具权限 |
+| PATCH | `/sessions/:id/tool-permissions` | 合并更新会话基础工具权限 |
 | GET | `/mcp/servers` | 列出 MCP 服务器配置 |
 | GET | `/mcp/servers/:id` | 获取单个 MCP 服务器配置 |
 | POST | `/mcp/servers` | 创建 MCP 服务器配置 |

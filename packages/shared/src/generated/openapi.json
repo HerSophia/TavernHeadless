@@ -21748,6 +21748,110 @@
                             ],
                             "type": "object"
                           },
+                          "metadata_overrides": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "allowed_slots": {
+                                  "items": {
+                                    "enum": [
+                                      "narrator",
+                                      "director",
+                                      "verifier",
+                                      "memory"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "minItems": 1,
+                                  "type": "array"
+                                },
+                                "parameter_schema": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "properties": {
+                                      "additionalProperties": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "default": {},
+                                          "description": {
+                                            "type": "string"
+                                          },
+                                          "enum": {
+                                            "items": {
+                                              "type": "string"
+                                            },
+                                            "type": "array"
+                                          },
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "description": {
+                                                "type": "string"
+                                              },
+                                              "type": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          "type": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "type"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "object"
+                                    },
+                                    "required": {
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "type": {
+                                      "enum": [
+                                        "object"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "type"
+                                  ],
+                                  "type": "object"
+                                },
+                                "replay_safety": {
+                                  "enum": [
+                                    "safe",
+                                    "confirm_on_replay",
+                                    "never_auto_replay",
+                                    "uncertain"
+                                  ],
+                                  "type": "string"
+                                },
+                                "side_effect_level": {
+                                  "enum": [
+                                    "none",
+                                    "sandbox",
+                                    "irreversible"
+                                  ],
+                                  "type": "string"
+                                },
+                                "tool_name": {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "tool_name"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
                           "name": {
                             "type": "string"
                           },
@@ -21806,6 +21910,7 @@
                           "call_timeout_ms",
                           "tool_refresh_interval_ms",
                           "default_side_effect_level",
+                          "metadata_overrides",
                           "created_at",
                           "updated_at",
                           "live_status"
@@ -21911,6 +22016,110 @@
                       "url"
                     ],
                     "type": "object"
+                  },
+                  "metadata_overrides": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowed_slots": {
+                          "items": {
+                            "enum": [
+                              "narrator",
+                              "director",
+                              "verifier",
+                              "memory"
+                            ],
+                            "type": "string"
+                          },
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "parameter_schema": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "properties": {
+                              "additionalProperties": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "default": {},
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "enum": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  "type": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "object"
+                            },
+                            "required": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "type": {
+                              "enum": [
+                                "object"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ],
+                          "type": "object"
+                        },
+                        "replay_safety": {
+                          "enum": [
+                            "safe",
+                            "confirm_on_replay",
+                            "never_auto_replay",
+                            "uncertain"
+                          ],
+                          "type": "string"
+                        },
+                        "side_effect_level": {
+                          "enum": [
+                            "none",
+                            "sandbox",
+                            "irreversible"
+                          ],
+                          "type": "string"
+                        },
+                        "tool_name": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "tool_name"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
                   },
                   "name": {
                     "maxLength": 200,
@@ -22089,6 +22298,110 @@
                           ],
                           "type": "object"
                         },
+                        "metadata_overrides": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowed_slots": {
+                                "items": {
+                                  "enum": [
+                                    "narrator",
+                                    "director",
+                                    "verifier",
+                                    "memory"
+                                  ],
+                                  "type": "string"
+                                },
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "parameter_schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "properties": {
+                                    "additionalProperties": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "default": {},
+                                        "description": {
+                                          "type": "string"
+                                        },
+                                        "enum": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "description": {
+                                              "type": "string"
+                                            },
+                                            "type": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "type": "object"
+                                        },
+                                        "type": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "type"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "type": "object"
+                                  },
+                                  "required": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "type": {
+                                    "enum": [
+                                      "object"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "type": "object"
+                              },
+                              "replay_safety": {
+                                "enum": [
+                                  "safe",
+                                  "confirm_on_replay",
+                                  "never_auto_replay",
+                                  "uncertain"
+                                ],
+                                "type": "string"
+                              },
+                              "side_effect_level": {
+                                "enum": [
+                                  "none",
+                                  "sandbox",
+                                  "irreversible"
+                                ],
+                                "type": "string"
+                              },
+                              "tool_name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "tool_name"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -22147,6 +22460,7 @@
                         "call_timeout_ms",
                         "tool_refresh_interval_ms",
                         "default_side_effect_level",
+                        "metadata_overrides",
                         "created_at",
                         "updated_at",
                         "live_status"
@@ -22469,6 +22783,110 @@
                           ],
                           "type": "object"
                         },
+                        "metadata_overrides": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowed_slots": {
+                                "items": {
+                                  "enum": [
+                                    "narrator",
+                                    "director",
+                                    "verifier",
+                                    "memory"
+                                  ],
+                                  "type": "string"
+                                },
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "parameter_schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "properties": {
+                                    "additionalProperties": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "default": {},
+                                        "description": {
+                                          "type": "string"
+                                        },
+                                        "enum": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "description": {
+                                              "type": "string"
+                                            },
+                                            "type": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "type": "object"
+                                        },
+                                        "type": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "type"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "type": "object"
+                                  },
+                                  "required": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "type": {
+                                    "enum": [
+                                      "object"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "type": "object"
+                              },
+                              "replay_safety": {
+                                "enum": [
+                                  "safe",
+                                  "confirm_on_replay",
+                                  "never_auto_replay",
+                                  "uncertain"
+                                ],
+                                "type": "string"
+                              },
+                              "side_effect_level": {
+                                "enum": [
+                                  "none",
+                                  "sandbox",
+                                  "irreversible"
+                                ],
+                                "type": "string"
+                              },
+                              "tool_name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "tool_name"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -22527,6 +22945,7 @@
                         "call_timeout_ms",
                         "tool_refresh_interval_ms",
                         "default_side_effect_level",
+                        "metadata_overrides",
                         "created_at",
                         "updated_at",
                         "live_status"
@@ -22635,6 +23054,110 @@
                       "url"
                     ],
                     "type": "object"
+                  },
+                  "metadata_overrides": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowed_slots": {
+                          "items": {
+                            "enum": [
+                              "narrator",
+                              "director",
+                              "verifier",
+                              "memory"
+                            ],
+                            "type": "string"
+                          },
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "parameter_schema": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "properties": {
+                              "additionalProperties": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "default": {},
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "enum": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "description": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  "type": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "object"
+                            },
+                            "required": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "type": {
+                              "enum": [
+                                "object"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ],
+                          "type": "object"
+                        },
+                        "replay_safety": {
+                          "enum": [
+                            "safe",
+                            "confirm_on_replay",
+                            "never_auto_replay",
+                            "uncertain"
+                          ],
+                          "type": "string"
+                        },
+                        "side_effect_level": {
+                          "enum": [
+                            "none",
+                            "sandbox",
+                            "irreversible"
+                          ],
+                          "type": "string"
+                        },
+                        "tool_name": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "tool_name"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
                   },
                   "name": {
                     "maxLength": 200,
@@ -22816,6 +23339,110 @@
                           ],
                           "type": "object"
                         },
+                        "metadata_overrides": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowed_slots": {
+                                "items": {
+                                  "enum": [
+                                    "narrator",
+                                    "director",
+                                    "verifier",
+                                    "memory"
+                                  ],
+                                  "type": "string"
+                                },
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "parameter_schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "properties": {
+                                    "additionalProperties": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "default": {},
+                                        "description": {
+                                          "type": "string"
+                                        },
+                                        "enum": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "description": {
+                                              "type": "string"
+                                            },
+                                            "type": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "type": "object"
+                                        },
+                                        "type": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "type"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "type": "object"
+                                  },
+                                  "required": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "type": {
+                                    "enum": [
+                                      "object"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "type": "object"
+                              },
+                              "replay_safety": {
+                                "enum": [
+                                  "safe",
+                                  "confirm_on_replay",
+                                  "never_auto_replay",
+                                  "uncertain"
+                                ],
+                                "type": "string"
+                              },
+                              "side_effect_level": {
+                                "enum": [
+                                  "none",
+                                  "sandbox",
+                                  "irreversible"
+                                ],
+                                "type": "string"
+                              },
+                              "tool_name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "tool_name"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -22874,6 +23501,7 @@
                         "call_timeout_ms",
                         "tool_refresh_interval_ms",
                         "default_side_effect_level",
+                        "metadata_overrides",
                         "created_at",
                         "updated_at",
                         "live_status"
@@ -23881,6 +24509,110 @@
                           ],
                           "type": "object"
                         },
+                        "metadata_overrides": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowed_slots": {
+                                "items": {
+                                  "enum": [
+                                    "narrator",
+                                    "director",
+                                    "verifier",
+                                    "memory"
+                                  ],
+                                  "type": "string"
+                                },
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "parameter_schema": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "properties": {
+                                    "additionalProperties": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "default": {},
+                                        "description": {
+                                          "type": "string"
+                                        },
+                                        "enum": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "description": {
+                                              "type": "string"
+                                            },
+                                            "type": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "type": "object"
+                                        },
+                                        "type": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "type"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "type": "object"
+                                  },
+                                  "required": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "type": {
+                                    "enum": [
+                                      "object"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "type": "object"
+                              },
+                              "replay_safety": {
+                                "enum": [
+                                  "safe",
+                                  "confirm_on_replay",
+                                  "never_auto_replay",
+                                  "uncertain"
+                                ],
+                                "type": "string"
+                              },
+                              "side_effect_level": {
+                                "enum": [
+                                  "none",
+                                  "sandbox",
+                                  "irreversible"
+                                ],
+                                "type": "string"
+                              },
+                              "tool_name": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "tool_name"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "name": {
                           "type": "string"
                         },
@@ -23939,6 +24671,7 @@
                         "call_timeout_ms",
                         "tool_refresh_interval_ms",
                         "default_side_effect_level",
+                        "metadata_overrides",
                         "created_at",
                         "updated_at",
                         "live_status"
@@ -60104,6 +60837,7 @@
     },
     "/sessions/{id}/tool-permissions": {
       "get": {
+        "description": "Returns the session-base ToolPermissions snapshot stored in metadata_json.tool_permissions. This route does not expose future run/node/step overlays.",
         "operationId": "getSessionToolPermissions",
         "parameters": [
           {
@@ -60205,12 +60939,13 @@
             "description": "Default Response"
           }
         },
-        "summary": "Get session tool permissions",
+        "summary": "Get session base tool permissions",
         "tags": [
           "tools"
         ]
       },
       "patch": {
+        "description": "Applies a partial update to the session-base ToolPermissions object in metadata_json.tool_permissions. slot_allow_list and slot_deny_list merge by slot key. This route does not define future run/node/step overlays.",
         "operationId": "patchSessionToolPermissions",
         "parameters": [
           {
@@ -60392,12 +61127,13 @@
             "description": "Default Response"
           }
         },
-        "summary": "Partial update session tool permissions",
+        "summary": "Partial update session base tool permissions",
         "tags": [
           "tools"
         ]
       },
       "put": {
+        "description": "Replaces the session-base ToolPermissions object stored in metadata_json.tool_permissions. This route does not define future run/node/step overlays.",
         "operationId": "replaceSessionToolPermissions",
         "parameters": [
           {
@@ -60579,7 +61315,7 @@
             "description": "Default Response"
           }
         },
-        "summary": "Replace session tool permissions",
+        "summary": "Replace session base tool permissions",
         "tags": [
           "tools"
         ]
@@ -60587,6 +61323,7 @@
     },
     "/sessions/{id}/tools/runtime": {
       "get": {
+        "description": "Returns the session-level runtime tool catalog snapshot for the session. It does not expose future run/node/step permission overlays, which only participate when specific executions are prepared.",
         "operationId": "getSessionRuntimeToolCatalog",
         "parameters": [
           {
@@ -60660,6 +61397,7 @@
                                   {
                                     "enum": [
                                       "tool_declared",
+                                      "account_override",
                                       "server_default",
                                       "platform_default",
                                       "inferred_from_execution_policy",
@@ -60719,6 +61457,147 @@
                                 ],
                                 "type": "string"
                               },
+                              "metadata_basis_detail": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "allowed_slots": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "basis": {
+                                            "enum": [
+                                              "tool_declared",
+                                              "account_override",
+                                              "server_default",
+                                              "platform_default",
+                                              "inferred_from_execution_policy",
+                                              "shallow_schema_projection"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "scope": {
+                                            "enum": [
+                                              "tool",
+                                              "server",
+                                              "platform",
+                                              "local",
+                                              "projection",
+                                              "inference"
+                                            ],
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "basis",
+                                          "scope"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "parameter_schema": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "basis": {
+                                            "enum": [
+                                              "tool_declared",
+                                              "account_override",
+                                              "server_default",
+                                              "platform_default",
+                                              "inferred_from_execution_policy",
+                                              "shallow_schema_projection"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "scope": {
+                                            "enum": [
+                                              "tool",
+                                              "server",
+                                              "platform",
+                                              "local",
+                                              "projection",
+                                              "inference"
+                                            ],
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "basis",
+                                          "scope"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "replay_safety": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "basis": {
+                                            "enum": [
+                                              "tool_declared",
+                                              "account_override",
+                                              "server_default",
+                                              "platform_default",
+                                              "inferred_from_execution_policy",
+                                              "shallow_schema_projection"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "scope": {
+                                            "enum": [
+                                              "tool",
+                                              "server",
+                                              "platform",
+                                              "local",
+                                              "projection",
+                                              "inference"
+                                            ],
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "basis",
+                                          "scope"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "side_effect_level": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "basis": {
+                                            "enum": [
+                                              "tool_declared",
+                                              "account_override",
+                                              "server_default",
+                                              "platform_default",
+                                              "inferred_from_execution_policy",
+                                              "shallow_schema_projection"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "scope": {
+                                            "enum": [
+                                              "tool",
+                                              "server",
+                                              "platform",
+                                              "local",
+                                              "projection",
+                                              "inference"
+                                            ],
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "basis",
+                                          "scope"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "name": {
                                 "type": "string"
                               },
@@ -60727,6 +61606,7 @@
                                   {
                                     "enum": [
                                       "tool_declared",
+                                      "account_override",
                                       "server_default",
                                       "platform_default",
                                       "inferred_from_execution_policy",
@@ -60764,6 +61644,7 @@
                                   {
                                     "enum": [
                                       "tool_declared",
+                                      "account_override",
                                       "server_default",
                                       "platform_default",
                                       "inferred_from_execution_policy",
@@ -60796,6 +61677,7 @@
                                   {
                                     "enum": [
                                       "tool_declared",
+                                      "account_override",
                                       "server_default",
                                       "platform_default",
                                       "inferred_from_execution_policy",

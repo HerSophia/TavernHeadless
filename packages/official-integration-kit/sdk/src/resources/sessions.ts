@@ -237,6 +237,10 @@ export type SessionBranchDiff = {
   targetOnlyFloors: SessionBranchFloorSummary[];
 };
 
+/**
+ * 会话基础工具权限。
+ * 对应 `metadata_json.tool_permissions`，只表达 session 级基础权限，不是未来 run/node/step overlay 模型。
+ */
 export type SessionToolPermissions = {
   allowIrreversible?: boolean;
   enabled?: boolean;
@@ -258,10 +262,31 @@ export type SessionRuntimeToolCatalogSource = "live" | "cached" | "unavailable";
 
 export type SessionRuntimeToolMetadataBasis =
   | "tool_declared"
+  | "account_override"
   | "server_default"
   | "platform_default"
   | "inferred_from_execution_policy"
   | "shallow_schema_projection";
+
+export type SessionRuntimeToolMetadataScope =
+  | "tool"
+  | "server"
+  | "platform"
+  | "local"
+  | "projection"
+  | "inference";
+
+export type SessionRuntimeToolMetadataBasisEntry = {
+  basis: SessionRuntimeToolMetadataBasis;
+  scope: SessionRuntimeToolMetadataScope;
+};
+
+export type SessionRuntimeToolMetadataBasisDetail = {
+  sideEffectLevel?: SessionRuntimeToolMetadataBasisEntry;
+  allowedSlots?: SessionRuntimeToolMetadataBasisEntry;
+  parameterSchema?: SessionRuntimeToolMetadataBasisEntry;
+  replaySafety?: SessionRuntimeToolMetadataBasisEntry;
+};
 
 export type SessionRuntimeToolCatalogEntry = {
   allowedSlots: SessionRuntimeToolSlot[];
@@ -281,6 +306,7 @@ export type SessionRuntimeToolCatalogEntry = {
   allowedSlotsBasis: SessionRuntimeToolMetadataBasis | null;
   parameterSchemaBasis: SessionRuntimeToolMetadataBasis | null;
   replaySafetyBasis: SessionRuntimeToolMetadataBasis | null;
+  metadataBasisDetail: SessionRuntimeToolMetadataBasisDetail | null;
 };
 
 export type SessionRuntimeToolCatalogConflict = {
@@ -289,6 +315,10 @@ export type SessionRuntimeToolCatalogConflict = {
   toolName: string;
 };
 
+/**
+ * 会话级运行时工具目录快照。
+ * 它只表达当前 session 级可见目录，不直接表示未来 run/node/step overlay 的最终执行权限。
+ */
 export type SessionRuntimeToolCatalog = {
   conflicts: SessionRuntimeToolCatalogConflict[];
   generatedAt: number;
@@ -555,11 +585,27 @@ export type SessionsResource = {
   diffBranches(options: SessionsDiffBranchesOptions): Promise<SessionBranchDiff>;
   getActiveRun(options: SessionsGetActiveRunOptions): Promise<SessionActiveRunRecord>;
   getDetail(options: SessionsGetDetailOptions): Promise<SessionDetail>;
+  /**
+   * 读取会话级运行时工具目录快照。
+   * 该结果不直接包含未来 run/node/step overlay 的最终执行权限。
+   */
   getRuntimeToolCatalog(options: SessionsGetRuntimeToolCatalogOptions): Promise<SessionRuntimeToolCatalog>;
+  /**
+   * 读取 session 基础工具权限。
+   * 对应 `metadata_json.tool_permissions`。
+   */
   getToolPermissions(options: SessionsToolPermissionsOptions): Promise<SessionToolPermissions>;
   list(options?: SessionsListOptions): Promise<SessionRecord[]>;
   listBranches(options: SessionsListBranchesOptions): Promise<SessionBranchSummary[]>;
+  /**
+   * 对 session 基础工具权限做增量更新。
+   * 这不是未来 run/node/step overlay 的写入口。
+   */
   patchToolPermissions(options: SessionsPatchToolPermissionsOptions): Promise<SessionToolPermissions>;
+  /**
+   * 整体替换 session 基础工具权限。
+   * 这不是未来 run/node/step overlay 的写入口。
+   */
   putToolPermissions(options: SessionsPutToolPermissionsOptions): Promise<SessionToolPermissions>;
   regenerate(options: SessionsRegenerateOptions): Promise<SessionRegenerateResult>;
   remove(options: SessionsRemoveOptions): Promise<boolean>;
@@ -1639,6 +1685,36 @@ function mapToolPermissions(value: unknown): SessionToolPermissions {
   };
 }
 
+function mapRuntimeToolMetadataBasisEntry(
+  value: unknown,
+): SessionRuntimeToolMetadataBasisEntry | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  return {
+    basis: readString(record.basis, "tool_declared") as SessionRuntimeToolMetadataBasisEntry["basis"],
+    scope: readString(record.scope, "tool") as SessionRuntimeToolMetadataBasisEntry["scope"],
+  };
+}
+
+function mapRuntimeToolMetadataBasisDetail(
+  value: unknown,
+): SessionRuntimeToolMetadataBasisDetail | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    ...(record.side_effect_level ? { sideEffectLevel: mapRuntimeToolMetadataBasisEntry(record.side_effect_level) } : {}),
+    ...(record.allowed_slots ? { allowedSlots: mapRuntimeToolMetadataBasisEntry(record.allowed_slots) } : {}),
+    ...(record.parameter_schema ? { parameterSchema: mapRuntimeToolMetadataBasisEntry(record.parameter_schema) } : {}),
+    ...(record.replay_safety ? { replaySafety: mapRuntimeToolMetadataBasisEntry(record.replay_safety) } : {}),
+};
+}
+
 function mapRuntimeToolCatalogEntry(value: unknown): SessionRuntimeToolCatalogEntry | null {
   const record = readRecord(value);
   if (!record) {
@@ -1663,6 +1739,7 @@ function mapRuntimeToolCatalogEntry(value: unknown): SessionRuntimeToolCatalogEn
     allowedSlotsBasis: readNullableString(record.allowed_slots_basis) as SessionRuntimeToolCatalogEntry["allowedSlotsBasis"],
     parameterSchemaBasis: readNullableString(record.parameter_schema_basis) as SessionRuntimeToolCatalogEntry["parameterSchemaBasis"],
     replaySafetyBasis: readNullableString(record.replay_safety_basis) as SessionRuntimeToolCatalogEntry["replaySafetyBasis"],
+    metadataBasisDetail: mapRuntimeToolMetadataBasisDetail(record.metadata_basis_detail),
   };
 }
 
@@ -1678,8 +1755,7 @@ function mapStringArrayRecord(value: unknown): Record<string, string[]> | undefi
       readArray(item)
         .map((part) => readOptionalString(part))
         .filter((part): part is string => part !== undefined),
-    ] as const)
-    .filter(([, item]) => item.length > 0);
+    ] as const);
 
   return entries.length > 0 ? Object.fromEntries(entries) : {};
 }

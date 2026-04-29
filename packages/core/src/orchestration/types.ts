@@ -174,7 +174,11 @@ export interface TurnExecutionResult {
   consolidationResult?: ConsolidationResult;
   /** 总 Token 用量 */
   totalUsage: TokenUsage;
-  /** 本回合真实执行过的工具调用记录 */
+  /**
+   * 本回合真实执行过的工具调用记录。
+   *
+   * 后续 commit、审计与 deferred 生命周期观察都应以此字段为主真相源。
+   */
   toolExecutionRecords?: ExecutedToolCallRecord[];
   /** 本回合工具产生但尚未持久化的变量写入 */
   bufferedVariableMutations?: BufferedToolVariableMutation[];
@@ -182,6 +186,9 @@ export interface TurnExecutionResult {
   pendingToolJobs?: PendingToolJobRequest[];
   /**
    * 旧的摘要式工具调用记录。
+   *
+   * 仅作为 legacy-compatible projection fallback。
+   * 若 `toolExecutionRecords` 已存在，新路径不应再主动生产或消费此字段。
    *
    * @deprecated 新路径应使用 toolExecutionRecords。
    */
