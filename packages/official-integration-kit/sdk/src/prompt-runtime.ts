@@ -18,6 +18,35 @@ export type PromptLiveDebugOptions = {
 
 export type PromptSnapshotMode = "compat_strict" | "compat_plus" | "native";
 
+export type PromptSnapshotWorldbookActivationSource = {
+  kind: "session_worldbook" | "character_book";
+  worldbookId: string | null;
+  worldbookName: string;
+  assetScopeId: string;
+};
+
+export type PromptSnapshotWorldbookInsertion = {
+  depth?: number;
+  outletName?: string;
+  position:
+    | "before"
+    | "after"
+    | "an_top"
+    | "an_bottom"
+    | "em_top"
+    | "em_bottom"
+    | "at_depth"
+    | "outlet";
+  role?: "system" | "user" | "assistant";
+};
+
+export type PromptSnapshotWorldbookActivation = {
+  uid: number;
+  activationKey: string;
+  source: PromptSnapshotWorldbookActivationSource;
+  insertion: PromptSnapshotWorldbookInsertion;
+};
+
 export type PromptSnapshotPreview = {
   presetId: string | null;
   presetUpdatedAt: number | null;
@@ -28,10 +57,16 @@ export type PromptSnapshotPreview = {
   regexProfileId: string | null;
   regexProfileUpdatedAt: number | null;
   regexProfileVersion: number | null;
+  characterId?: string | null;
+  characterVersionId?: string | null;
+  characterImportedFormat?: string | null;
+  characterContentHash?: string | null;
   worldbookActivatedEntryUids: number[];
+  worldbookActivatedEntries?: PromptSnapshotWorldbookActivation[];
   regexPreRuleNames: string[];
   regexPostRuleNames: string[];
   promptMode: PromptSnapshotMode;
+  assetManifestDigest?: string | null;
   promptDigest: string;
   tokenEstimate: number;
 };
@@ -66,13 +101,22 @@ export type PromptRuntimeWorldbookMatchActivation = {
 export type PromptRuntimeWorldbookMatchInsertion = {
   depth?: number;
   outletName?: string;
-  position: "before" | "after" | "at_depth" | "outlet";
+  position:
+    | "before"
+    | "after"
+    | "an_top"
+    | "an_bottom"
+    | "em_top"
+    | "em_bottom"
+    | "at_depth"
+    | "outlet";
   role?: "system" | "user" | "assistant";
 };
 
 export type PromptRuntimeWorldbookMatchSource = {
   kind: "session_worldbook" | "character_book";
   worldbookId: string | null;
+  assetScopeId?: string;
   worldbookName: string;
 };
 
@@ -83,6 +127,8 @@ export type PromptRuntimeWorldbookMatchDetail = {
   insertion: PromptRuntimeWorldbookMatchInsertion;
   order: number;
   source: PromptRuntimeWorldbookMatchSource;
+  activationKey?: string;
+  assetScopeId?: string;
   uid: number;
 };
 
@@ -277,10 +323,32 @@ export function mapPromptSnapshotPayload(value: unknown): PromptSnapshotPreview 
     regexProfileId: readNullableString(record.regex_profile_id),
     regexProfileUpdatedAt: readNullableNumber(record.regex_profile_updated_at),
     regexProfileVersion: readNullableNumber(record.regex_profile_version),
+    ...(record.character_id !== undefined
+      ? { characterId: readNullableString(record.character_id) }
+      : {}),
+    ...(record.character_version_id !== undefined
+      ? { characterVersionId: readNullableString(record.character_version_id) }
+      : {}),
+    ...(record.character_imported_format !== undefined
+      ? { characterImportedFormat: readNullableString(record.character_imported_format) }
+      : {}),
+    ...(record.character_content_hash !== undefined
+      ? { characterContentHash: readNullableString(record.character_content_hash) }
+      : {}),
     worldbookActivatedEntryUids: mapNumberArray(record.worldbook_activated_entry_uids),
+    ...(record.worldbook_activated_entries !== undefined
+      ? {
+          worldbookActivatedEntries: readArray(record.worldbook_activated_entries)
+            .map(mapPromptSnapshotWorldbookActivation)
+            .filter((item): item is PromptSnapshotWorldbookActivation => item !== null),
+        }
+      : {}),
     regexPreRuleNames: mapStringArray(record.regex_pre_rule_names),
     regexPostRuleNames: mapStringArray(record.regex_post_rule_names),
     promptMode: readPromptSnapshotMode(record.prompt_mode),
+    ...(record.asset_manifest_digest !== undefined
+      ? { assetManifestDigest: readNullableString(record.asset_manifest_digest) }
+      : {}),
     promptDigest: readString(record.prompt_digest),
     tokenEstimate: readNumber(record.token_estimate),
   };
@@ -536,6 +604,33 @@ function mapPromptRuntimeMacroTraceEntry(value: unknown): PromptRuntimeMacroTrac
   };
 }
 
+function mapPromptSnapshotWorldbookActivation(value: unknown): PromptSnapshotWorldbookActivation | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const source = readRecord(record.source);
+  const insertion = readRecord(record.insertion);
+
+  return {
+    uid: readNumber(record.uid),
+    activationKey: readString(record.activation_key),
+    source: {
+      kind: readString(source?.kind, "session_worldbook") === "character_book" ? "character_book" : "session_worldbook",
+      worldbookId: readNullableString(source?.worldbook_id),
+      worldbookName: readString(source?.worldbook_name),
+      assetScopeId: readString(source?.asset_scope_id),
+    },
+    insertion: {
+      depth: readNullableNumber(insertion?.depth) ?? undefined,
+      outletName: readNullableString(insertion?.outlet_name) ?? undefined,
+      position: readPromptWorldbookInsertionPosition(insertion?.position),
+      role: readOptionalPromptMessageRole(insertion?.role),
+    },
+  };
+}
+
 function mapPromptRuntimeWorldbookMatchDetail(value: unknown): PromptRuntimeWorldbookMatchDetail | null {
   const record = readRecord(value);
   if (!record) {
@@ -545,6 +640,8 @@ function mapPromptRuntimeWorldbookMatchDetail(value: unknown): PromptRuntimeWorl
   const activation = readRecord(record.activation);
   const insertion = readRecord(record.insertion);
   const source = readRecord(record.source);
+  const sourceAssetScopeId = readOptionalString(source?.asset_scope_id) ?? undefined;
+  const assetScopeId = readOptionalString(record.asset_scope_id) ?? sourceAssetScopeId;
 
   return {
     activation: {
@@ -555,6 +652,8 @@ function mapPromptRuntimeWorldbookMatchDetail(value: unknown): PromptRuntimeWorl
       mode: readString(activation?.mode, "triggered") === "constant" ? "constant" : "triggered",
       recursionLevel: readNumber(activation?.recursion_level),
     },
+    ...(readOptionalString(record.activation_key) ? { activationKey: readString(record.activation_key) } : {}),
+    ...(assetScopeId ? { assetScopeId } : {}),
     comment: readString(record.comment),
     contentPreview: readString(record.content_preview),
     insertion: {
@@ -567,6 +666,7 @@ function mapPromptRuntimeWorldbookMatchDetail(value: unknown): PromptRuntimeWorl
     source: {
       kind: readString(source?.kind, "session_worldbook") === "character_book" ? "character_book" : "session_worldbook",
       worldbookId: readNullableString(source?.worldbook_id),
+      ...(sourceAssetScopeId ? { assetScopeId: sourceAssetScopeId } : {}),
       worldbookName: readString(source?.worldbook_name),
     },
     uid: readNumber(record.uid),
@@ -700,7 +800,14 @@ function readPromptWorldbookInsertionPosition(
   value: unknown,
 ): PromptRuntimeWorldbookMatchInsertion["position"] {
   const position = readString(value, "after");
-  return position === "before" || position === "after" || position === "at_depth" || position === "outlet"
+  return position === "before"
+    || position === "after"
+    || position === "an_top"
+    || position === "an_bottom"
+    || position === "em_top"
+    || position === "em_bottom"
+    || position === "at_depth"
+    || position === "outlet"
     ? position
     : "after";
 }

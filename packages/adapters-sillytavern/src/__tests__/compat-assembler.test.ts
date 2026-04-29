@@ -209,6 +209,10 @@ describe('assembleCompat', () => {
         before: [makeEntry({ uid: 1, content: 'Lore before', position: WI_POSITION.BEFORE })],
         after: [],
         atDepth: [],
+        anTop: [],
+        anBottom: [],
+        emTop: [],
+        emBottom: [],
         outletEntries: {},
       };
 
@@ -229,6 +233,10 @@ describe('assembleCompat', () => {
         before: [],
         after: [makeEntry({ uid: 2, content: 'Lore after', position: WI_POSITION.AFTER })],
         atDepth: [],
+        anTop: [],
+        anBottom: [],
+        emTop: [],
+        emBottom: [],
         outletEntries: {},
       };
 
@@ -256,6 +264,10 @@ describe('assembleCompat', () => {
         before: [],
         after: [],
         atDepth: [{ depth: 2, role: depthEntry.role, entry: depthEntry }],
+        anTop: [],
+        anBottom: [],
+        emTop: [],
+        emBottom: [],
         outletEntries: {},
       };
 
@@ -279,6 +291,10 @@ describe('assembleCompat', () => {
         before: [],
         after: [],
         atDepth: [],
+        anTop: [],
+        anBottom: [],
+        emTop: [],
+        emBottom: [],
         outletEntries: { custom: [outletEntry] },
       };
       const preset = makePreset({
@@ -286,6 +302,8 @@ describe('assembleCompat', () => {
           ...makePreset().prompts,
           { identifier: 'custom', name: 'Custom Outlet', marker: true, enabled: true },
         ],
+
+
         promptOrder: [...makePreset().promptOrder, 'custom'],
       });
 
@@ -298,6 +316,33 @@ describe('assembleCompat', () => {
       const section = ir.sections.find(s => s.name === 'worldInfoOutlet:custom');
       expect(section?.messages[0]?.content).toBe('Outlet lore');
     });
+
+    it('injects AN and EM entries into explicit sections instead of worldInfoAfter', () => {
+      const anEntry = makeEntry({ uid: 5, content: 'Author note lore', position: WI_POSITION.AN_TOP });
+      const emEntry = makeEntry({ uid: 6, content: 'Example message lore', position: WI_POSITION.EM_BOTTOM });
+      const results: TriggerResult = {
+        activated: [],
+        before: [],
+        after: [],
+        atDepth: [],
+        anTop: [anEntry],
+        anBottom: [],
+        emTop: [],
+        emBottom: [emEntry],
+        outletEntries: {},
+      };
+
+      const ir = assembleCompat({
+        preset: makePreset(),
+        chatHistory: [],
+        worldBookResults: results,
+      });
+
+      expect(ir.sections.find(s => s.name === 'worldInfoAfter')).toBeUndefined();
+      expect(ir.sections.find(s => s.name === 'worldInfoAuthorNoteTop')?.messages[0]?.content).toBe('Author note lore');
+      expect(ir.sections.find(s => s.name === 'worldInfoExampleMessageBottom')?.messages[0]?.content).toBe('Example message lore');
+    });
+
   });
 
   describe('character and persona sections', () => {
@@ -323,6 +368,8 @@ describe('assembleCompat', () => {
 
       expect(ir.sections.find(s => s.name === 'charPersonality')?.messages[0]?.content).toBe('Cheerful and bold.');
       expect(ir.sections.find(s => s.name === 'scenario')?.messages[0]?.content).toBe('A stormy castle siege.');
+
+
     });
 
     it('includes personaDescription as system section', () => {

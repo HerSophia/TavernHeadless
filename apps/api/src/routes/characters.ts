@@ -557,6 +557,9 @@ export async function registerCharacterRoutes(
           const versionNo = row.latestVersionNo + 1;
           const snapshotJson = stringifyJsonField(parsedBody.data.snapshot) ?? "{}";
           const contentHash = createHash("sha256").update(snapshotJson).digest("hex");
+          const latestVersion = row.latestVersionNo > 0
+            ? loadCharacterVersionByNo(tx, row.id, row.latestVersionNo)
+            : undefined;
 
           const updateResult = tx
             .update(characters)
@@ -577,6 +580,9 @@ export async function registerCharacterRoutes(
             versionNo,
             dataJson: snapshotJson,
             contentHash,
+            sourceArtifactJson: latestVersion?.sourceArtifactJson ?? null,
+            sourceArtifactFormat: latestVersion?.sourceArtifactFormat ?? null,
+            sourceArtifactDigest: latestVersion?.sourceArtifactDigest ?? null,
             createdAt: now
           }).run();
 
@@ -697,6 +703,9 @@ export async function registerCharacterRoutes(
             versionNo,
             dataJson: targetVersion.dataJson,
             contentHash: targetVersion.contentHash,
+            sourceArtifactJson: targetVersion.sourceArtifactJson,
+            sourceArtifactFormat: targetVersion.sourceArtifactFormat,
+            sourceArtifactDigest: targetVersion.sourceArtifactDigest,
             createdAt: now
           }).run();
 

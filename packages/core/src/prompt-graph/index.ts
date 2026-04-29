@@ -21,6 +21,7 @@ export type {
   PromptGraphDocument,
   PromptGraphCharacterInput,
   PromptGraphPersonaInput,
+  PromptGraphWorldbookPosition,
   PromptGraphWorldbookEntry,
   PromptGraphCompilerInput,
   PromptGraphCompiler,

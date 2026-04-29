@@ -217,6 +217,10 @@ describe('assembleCompatPlus', () => {
               disable: false, scanDepth: null, caseSensitive: null, matchWholeWords: null,
             }],
             atDepth: [],
+            anTop: [],
+            anBottom: [],
+            emTop: [],
+            emBottom: [],
           },
         }),
       );

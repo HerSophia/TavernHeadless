@@ -89,6 +89,19 @@ export class BranchLocalSnapshotMissingError extends Error {
   }
 }
 
+export function isBranchLocalSnapshotMissingError(error: unknown): error is {
+  code: "branch_local_snapshot_missing";
+  message: string;
+  details?: BranchLocalSnapshotMissingError["details"];
+} {
+  return error instanceof BranchLocalSnapshotMissingError
+    || (
+      isPlainRecord(error)
+      && error["code"] === "branch_local_snapshot_missing"
+      && typeof error["message"] === "string"
+    );
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

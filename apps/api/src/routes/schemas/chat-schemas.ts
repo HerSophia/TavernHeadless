@@ -54,10 +54,43 @@ export const livePromptSnapshotExample = {
   regex_profile_id: "regex-1",
   regex_profile_updated_at: 1710000002000,
   regex_profile_version: 2,
-  worldbook_activated_entry_uids: [7],
+  character_id: "char-hero",
+  character_version_id: "char-hero-v3",
+  character_imported_format: "tavern_card_v2",
+  character_content_hash: "9fe9ab675c6f2df7f9c9a96ef0c0f7797cf20cf8d88bbbd2361f6750e4b7dd1b",
+  worldbook_activated_entry_uids: [7, 7],
+  worldbook_activated_entries: [
+    {
+      uid: 7,
+      activation_key: "worldbook:worldbook-1:5:entry:7",
+      source: {
+        kind: "session_worldbook",
+        worldbook_id: "worldbook-1",
+        worldbook_name: "Campfire Worldbook",
+        asset_scope_id: "worldbook:worldbook-1:5",
+      },
+      insertion: {
+        position: "before",
+      },
+    },
+    {
+      uid: 7,
+      activation_key: "worldbook:character:char-hero:char-hero-v3:book:entry:7",
+      source: {
+        kind: "character_book",
+        worldbook_id: null,
+        worldbook_name: "Hero Character Book",
+        asset_scope_id: "worldbook:character:char-hero:char-hero-v3:book",
+      },
+      insertion: {
+        position: "after",
+      },
+    },
+  ],
   regex_pre_rule_names: ["trim_whitespace"],
   regex_post_rule_names: [],
   prompt_mode: "compat_strict",
+  asset_manifest_digest: "2c015f48f52d19ce879f19eeebc67ad3e7470d3d1f95e2eb1f5f3c1d8d8fdc47",
   prompt_digest: "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
   token_estimate: 512,
 } as const;
@@ -345,23 +378,7 @@ export const dryRunSuccessResponseExample = {
     token_estimate: 512,
     available_for_reply: 1536,
     memory_summary: "The party recently agreed to search the northern pass.",
-    prompt_snapshot: {
-      preset_id: "preset-1",
-      preset_updated_at: 1710000000000,
-      preset_version: 3,
-      worldbook_id: "worldbook-1",
-      worldbook_updated_at: 1710000001000,
-      worldbook_version: 5,
-      regex_profile_id: "regex-1",
-      regex_profile_updated_at: 1710000002000,
-      regex_profile_version: 2,
-      worldbook_activated_entry_uids: [7],
-      regex_pre_rule_names: ["trim_whitespace"],
-      regex_post_rule_names: [],
-      prompt_mode: "compat_strict",
-      prompt_digest: "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
-      token_estimate: 512,
-    },
+    prompt_snapshot: livePromptSnapshotExample,
     assembly: {
       mode: "preset",
       prompt_intent: "continue",
@@ -390,6 +407,8 @@ export const dryRunSuccessResponseExample = {
       worldbook_matches: [
         {
           uid: 7,
+          activation_key: "worldbook:worldbook-1:5:entry:7",
+          asset_scope_id: "worldbook:worldbook-1:5",
           comment: "Campfire Lore",
           content_preview: "The northern pass is watched by old sentries.",
           order: 100,
@@ -397,6 +416,7 @@ export const dryRunSuccessResponseExample = {
             kind: "session_worldbook",
             worldbook_id: "worldbook-1",
             worldbook_name: "Campfire Worldbook",
+            asset_scope_id: "worldbook:worldbook-1:5",
           },
           insertion: {
             position: "before",
@@ -495,7 +515,42 @@ export const streamResponseExample = [
   'data: {"chunk":"The firelight wavers..."}',
   "",
   "event: done",
-  'data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"The firelight wavers as the next part of the story begins.","summaries":["The group resumes the campfire planning scene."],"total_usage":{"prompt_tokens":320,"completion_tokens":128,"total_tokens":448},"memory":{"mode":"sync","status":"applied","job_id":null},"final_state":"committed","prompt_snapshot":{"preset_id":"preset-1","preset_updated_at":1710000000000,"preset_version":3,"worldbook_id":"worldbook-1","worldbook_updated_at":1710000001000,"worldbook_version":5,"regex_profile_id":"regex-1","regex_profile_updated_at":1710000002000,"regex_profile_version":2,"worldbook_activated_entry_uids":[7],"regex_pre_rule_names":["trim_whitespace"],"regex_post_rule_names":[],"prompt_mode":"compat_strict","prompt_digest":"0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c","token_estimate":512},"runtime_trace":{"worldbook":{"hit_count":1},"macro":{"warnings":[{"code":"macro_preview_side_effect_suppressed","message":"Macro setvar side effect was previewed but not committed.","macro_name":"setvar"}],"used_names":["if","lastGenerationType","setvar"],"mutation_preview":[{"kind":"set","scope":"branch","key":"mood","value":"steady"}],"staged_mutations":[{"kind":"set","scope":"branch","key":"mood","value":"steady","source_macro":"setvar"}],"traces":[{"macro_name":"lastGenerationType","raw_text":"{{lastGenerationType}}","resolved_text":"respond","phase":"assemble","source_kind":"macro"},{"macro_name":"if","raw_text":"{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}","resolved_text":"YES","phase":"assemble","source_kind":"if","selected_branch":"then"}]},"delivery":{"assistant_prefill_requested":true,"assistant_prefill_applied":false,"assistant_prefill_strategy":"assistant_message_fallback","allow_assistant_prefill":true,"require_last_user":true,"no_assistant":false,"last_message_role":"user","ends_with_user":true,"degraded":true,"degrade_reasons":["require_last_user"]}}}',
+  `data: ${JSON.stringify({
+    floor_id: "floor_12",
+    floor_no: 12,
+    branch_id: "main",
+    generated_text: "The firelight wavers as the next part of the story begins.",
+    summaries: ["The group resumes the campfire planning scene."],
+    total_usage: { prompt_tokens: 320, completion_tokens: 128, total_tokens: 448 },
+    memory: { mode: "sync", status: "applied", job_id: null },
+    final_state: "committed",
+    prompt_snapshot: livePromptSnapshotExample,
+    runtime_trace: {
+      worldbook: { hit_count: 1 },
+      macro: {
+        warnings: [{ code: "macro_preview_side_effect_suppressed", message: "Macro setvar side effect was previewed but not committed.", macro_name: "setvar" }],
+        used_names: ["if", "lastGenerationType", "setvar"],
+        mutation_preview: [{ kind: "set", scope: "branch", key: "mood", value: "steady" }],
+        staged_mutations: [{ kind: "set", scope: "branch", key: "mood", value: "steady", source_macro: "setvar" }],
+        traces: [
+          { macro_name: "lastGenerationType", raw_text: "{{lastGenerationType}}", resolved_text: "respond", phase: "assemble", source_kind: "macro" },
+          { macro_name: "if", raw_text: "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}", resolved_text: "YES", phase: "assemble", source_kind: "if", selected_branch: "then" },
+        ],
+      },
+      delivery: {
+        assistant_prefill_requested: true,
+        assistant_prefill_applied: false,
+        assistant_prefill_strategy: "assistant_message_fallback",
+        allow_assistant_prefill: true,
+        require_last_user: true,
+        no_assistant: false,
+        last_message_role: "user",
+        ends_with_user: true,
+        degraded: true,
+        degrade_reasons: ["require_last_user"],
+      },
+    },
+  })}`,
 ].join("\n");
 
 // ── JSON Schema constants ─────────────────────────────
@@ -627,7 +682,43 @@ export const floorVisibilityRangeJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const livePromptSnapshotJsonSchema = {
+const promptSnapshotWorldbookSourceJsonSchema = {
+  type: "object",
+  required: ["kind", "worldbook_id", "worldbook_name", "asset_scope_id"],
+  properties: {
+    kind: { type: "string", enum: ["session_worldbook", "character_book"] },
+    worldbook_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    worldbook_name: { type: "string" },
+    asset_scope_id: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const promptSnapshotWorldbookInsertionJsonSchema = {
+  type: "object",
+  required: ["position"],
+  properties: {
+    position: { type: "string", enum: ["before", "after", "an_top", "an_bottom", "em_top", "em_bottom", "at_depth", "outlet"] },
+    depth: { type: "integer" },
+    role: { type: "string", enum: promptMessageRoleValues },
+    outlet_name: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const promptSnapshotWorldbookActivationJsonSchema = {
+  type: "object",
+  required: ["uid", "activation_key", "source", "insertion"],
+  properties: {
+    uid: { type: "integer" },
+    activation_key: { type: "string" },
+    source: promptSnapshotWorldbookSourceJsonSchema,
+    insertion: promptSnapshotWorldbookInsertionJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+export const livePromptSnapshotJsonSchema = {
   type: "object",
   required: [
     "preset_id",
@@ -639,10 +730,16 @@ const livePromptSnapshotJsonSchema = {
     "regex_profile_id",
     "regex_profile_updated_at",
     "regex_profile_version",
+    "character_id",
+    "character_version_id",
+    "character_imported_format",
+    "character_content_hash",
     "worldbook_activated_entry_uids",
+    "worldbook_activated_entries",
     "regex_pre_rule_names",
     "regex_post_rule_names",
     "prompt_mode",
+    "asset_manifest_digest",
     "prompt_digest",
     "token_estimate",
   ],
@@ -656,10 +753,16 @@ const livePromptSnapshotJsonSchema = {
     regex_profile_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     regex_profile_updated_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
     regex_profile_version: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
+    character_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    character_version_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    character_imported_format: { anyOf: [{ type: "string" }, { type: "null" }] },
+    character_content_hash: { anyOf: [{ type: "string" }, { type: "null" }] },
     worldbook_activated_entry_uids: { type: "array", items: { type: "integer" } },
+    worldbook_activated_entries: { type: "array", items: promptSnapshotWorldbookActivationJsonSchema },
     regex_pre_rule_names: { type: "array", items: { type: "string" } },
     regex_post_rule_names: { type: "array", items: { type: "string" } },
     prompt_mode: { type: "string", enum: promptSnapshotModeValues },
+    asset_manifest_digest: { anyOf: [{ type: "string" }, { type: "null" }] },
     prompt_digest: { type: "string" },
     token_estimate: { type: "integer", minimum: 0 },
   },
@@ -719,7 +822,7 @@ const runtimeTraceWorldbookInsertionJsonSchema = {
   type: "object",
   required: ["position"],
   properties: {
-    position: { type: "string", enum: ["before", "after", "at_depth", "outlet"] },
+    position: { type: "string", enum: ["before", "after", "an_top", "an_bottom", "em_top", "em_bottom", "at_depth", "outlet"] },
     depth: { type: "integer" },
     role: { type: "string", enum: promptMessageRoleValues },
     outlet_name: { type: "string" },
@@ -729,20 +832,23 @@ const runtimeTraceWorldbookInsertionJsonSchema = {
 
 const runtimeTraceWorldbookSourceJsonSchema = {
   type: "object",
-  required: ["kind", "worldbook_id", "worldbook_name"],
+  required: ["kind", "worldbook_id", "worldbook_name", "asset_scope_id"],
   properties: {
     kind: { type: "string", enum: ["session_worldbook", "character_book"] },
     worldbook_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     worldbook_name: { type: "string" },
+    asset_scope_id: { type: "string" },
   },
   additionalProperties: false,
 } as const;
 
 const runtimeTraceWorldbookMatchJsonSchema = {
   type: "object",
-  required: ["uid", "comment", "content_preview", "order", "source", "insertion", "activation"],
+  required: ["uid", "activation_key", "asset_scope_id", "comment", "content_preview", "order", "source", "insertion", "activation"],
   properties: {
     uid: { type: "integer" },
+    activation_key: { type: "string" },
+    asset_scope_id: { type: "string" },
     comment: { type: "string" },
     content_preview: { type: "string" },
     order: { type: "integer" },

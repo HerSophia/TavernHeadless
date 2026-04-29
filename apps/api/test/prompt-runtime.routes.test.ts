@@ -983,6 +983,28 @@ describe("prompt runtime routes", () => {
     expect(response.json()).toEqual({ error: { code: "branch_local_snapshot_missing", message: "Source floor snapshot is missing" } });
   });
 
+  it("maps structural branch_local_snapshot_missing preview errors to 409", async () => {
+    const controlService = createPromptRuntimeControlService();
+    const previewService = createPromptRuntimePreviewService({
+      previewPromptRuntimeText: vi.fn(async () => {
+        const error = new Error("Source floor snapshot is missing") as Error & { code: string };
+        error.code = "branch_local_snapshot_missing";
+        throw error;
+      }),
+    });
+
+    await mountRoutes(controlService, previewService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/prompt-runtime/preview",
+      payload: { text: "{{getvar::mood}}", branch_id: "alt-preview", source_floor_id: "floor-old" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: { code: "branch_local_snapshot_missing", message: "Source floor snapshot is missing" } });
+  });
+
   it("maps POST /sessions/:id/prompt-runtime/inspect request and response", async () => {
     const controlService = createPromptRuntimeControlService();
     const inspectService = createPromptRuntimeInspectService({
@@ -1135,10 +1157,16 @@ describe("prompt runtime routes", () => {
           regexProfileId: "regex-1",
           regexProfileUpdatedAt: 1710000002000,
           regexProfileVersion: 2,
+          characterId: null,
+          characterVersionId: null,
+          characterImportedFormat: null,
+          characterContentHash: null,
           worldbookActivatedEntryUids: [7],
+          worldbookActivatedEntries: [],
           regexPreRuleNames: ["Input Rule"],
           regexPostRuleNames: [],
           promptMode: "compat_strict",
+          assetManifestDigest: null,
           promptDigest: "digest-1",
           tokenEstimate: 42,
         },
@@ -1216,10 +1244,16 @@ describe("prompt runtime routes", () => {
           regex_profile_id: "regex-1",
           regex_profile_updated_at: 1710000002000,
           regex_profile_version: 2,
+          character_id: null,
+          character_version_id: null,
+          character_imported_format: null,
+          character_content_hash: null,
           worldbook_activated_entry_uids: [7],
+          worldbook_activated_entries: [],
           regex_pre_rule_names: ["Input Rule"],
           regex_post_rule_names: [],
           prompt_mode: "compat_strict",
+          asset_manifest_digest: null,
           prompt_digest: "digest-1",
           token_estimate: 42,
         },

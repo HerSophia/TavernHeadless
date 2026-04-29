@@ -1,7 +1,12 @@
+import { createHash } from "node:crypto";
+
+import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildApp } from "../src/app";
+import type { AppDb } from "../src/db/client";
+import { characterVersions } from "../src/db/schema";
 
 const CHARACTER_CARD_V2 = {
   spec: "chara_card_v2",
@@ -31,9 +36,10 @@ const CHARACTER_CARD_V2 = {
 
 describe("Character Import Route", () => {
   let app: FastifyInstance;
+  let database: AppDb;
 
   beforeEach(async () => {
-    ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
+    ({ app, database } = await buildApp({ databasePath: ":memory:", logger: false }));
   });
 
   afterEach(async () => {
@@ -193,6 +199,20 @@ describe("Character Import Route", () => {
     expect(exportBody.data.creator).toBe("Test Suite");
     expect(exportBody.data.character_version).toBe("2.1");
     expect(exportBody.data.extensions).toEqual({ source_app: "vitest" });
+
+    const [versionRow] = await database
+      .select()
+      .from(characterVersions)
+      .where(eq(characterVersions.id, importBody.data.character_version_id))
+      .limit(1);
+
+    expect(versionRow).toBeDefined();
+    expect(versionRow?.sourceArtifactFormat).toBe("v2");
+    expect(versionRow?.sourceArtifactDigest).toBe(
+      createHash("sha256").update(JSON.stringify(CHARACTER_CARD_V2)).digest("hex"),
+    );
+    expect(JSON.parse(versionRow?.sourceArtifactJson ?? "null")).toEqual(CHARACTER_CARD_V2);
+    expect(versionRow?.dataJson).not.toBe(versionRow?.sourceArtifactJson);
 
     const sessionsRes = await app.inject({ method: "GET", url: "/sessions" });
     const sessionsBody = sessionsRes.json<{ data: unknown[] }>();

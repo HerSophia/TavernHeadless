@@ -12,6 +12,16 @@ export interface STPromptEntryBehavior {
   triggers?: PromptRunIntent[];
   /** Prompt Manager placement */
   placement: STPromptPlacement;
+  /** Prompt Manager 语义。 */
+  semantics?: STPromptEntrySemantics;
+}
+
+/** prompts[] 条目的执行语义。 */
+export interface STPromptEntrySemantics {
+  /** 该条目应按 system prompt 语义处理。 */
+  systemPrompt?: boolean;
+  /** 该条目不允许被角色卡覆盖。 */
+  forbidOverrides?: boolean;
 }
 
 /**

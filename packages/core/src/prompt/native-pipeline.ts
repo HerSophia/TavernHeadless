@@ -8,7 +8,7 @@ export type NativePromptMode = 'compat_strict' | 'native';
 export interface NativeWorldbookEntry {
   id: string;
   content: string;
-  position?: 'before' | 'after' | 'depth';
+  position?: 'before' | 'after' | 'an_top' | 'an_bottom' | 'em_top' | 'em_bottom' | 'depth' | 'outlet';
   role?: ChatRole;
   depth?: number;
 }
@@ -306,6 +306,10 @@ export class WorldbookResolveNode implements NativePipelineNode {
 
     const beforeMessages: IRMessage[] = [];
     const afterMessages: IRMessage[] = [];
+    const anTopMessages: IRMessage[] = [];
+    const anBottomMessages: IRMessage[] = [];
+    const emTopMessages: IRMessage[] = [];
+    const emBottomMessages: IRMessage[] = [];
     const depthSections: IRSection[] = [];
 
     for (const entry of entries) {
@@ -331,13 +335,26 @@ export class WorldbookResolveNode implements NativePipelineNode {
         continue;
       }
 
-      const target = entry.position === 'after' ? afterMessages : beforeMessages;
-      target.push({
+      const message = {
         role: entry.role ?? 'system',
         content: rendered,
         source: `native:worldbook:${entry.id}`,
         prunable: worldbookGovernance.prunable,
-      });
+      } satisfies IRMessage;
+
+      if (entry.position === 'after') {
+        afterMessages.push(message);
+      } else if (entry.position === 'an_top') {
+        anTopMessages.push(message);
+      } else if (entry.position === 'an_bottom') {
+        anBottomMessages.push(message);
+      } else if (entry.position === 'em_top') {
+        emTopMessages.push(message);
+      } else if (entry.position === 'em_bottom') {
+        emBottomMessages.push(message);
+      } else {
+        beforeMessages.push(message);
+      }
     }
 
     const sections = [...state.sections];
@@ -359,6 +376,46 @@ export class WorldbookResolveNode implements NativePipelineNode {
         budgetGroup: worldbookGovernance.budgetGroup,
         pinned: worldbookGovernance.pinned,
         messages: afterMessages,
+      });
+    }
+
+    if (anTopMessages.length > 0) {
+      sections.push({
+        name: 'worldbookAuthorNoteTop',
+        order: 2.1,
+        budgetGroup: worldbookGovernance.budgetGroup,
+        pinned: worldbookGovernance.pinned,
+        messages: anTopMessages,
+      });
+    }
+
+    if (anBottomMessages.length > 0) {
+      sections.push({
+        name: 'worldbookAuthorNoteBottom',
+        order: 2.2,
+        budgetGroup: worldbookGovernance.budgetGroup,
+        pinned: worldbookGovernance.pinned,
+        messages: anBottomMessages,
+      });
+    }
+
+    if (emTopMessages.length > 0) {
+      sections.push({
+        name: 'worldbookExampleMessageTop',
+        order: 2.3,
+        budgetGroup: worldbookGovernance.budgetGroup,
+        pinned: worldbookGovernance.pinned,
+        messages: emTopMessages,
+      });
+    }
+
+    if (emBottomMessages.length > 0) {
+      sections.push({
+        name: 'worldbookExampleMessageBottom',
+        order: 2.4,
+        budgetGroup: worldbookGovernance.budgetGroup,
+        pinned: worldbookGovernance.pinned,
+        messages: emBottomMessages,
       });
     }
 

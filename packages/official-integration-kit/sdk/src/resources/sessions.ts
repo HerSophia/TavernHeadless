@@ -4,6 +4,7 @@ import {
   mapPromptDebugPayload,
   mapPromptLiveDebugOptionsRequest,
   mapPromptRuntimeTracePayload,
+  mapPromptSnapshotPayload,
   type PromptLiveDebugOptions,
   type PromptRuntimeTrace,
   type PromptRuntimeWorldbookFirstMatch,
@@ -1137,7 +1138,7 @@ function mapDryRunMessage(value: unknown): RespondDryRunMessage | null {
 }
 
 function mapDryRunPromptSnapshot(value: Record<string, unknown> | null): RespondDryRunPromptSnapshot {
-  return {
+  return mapPromptSnapshotPayload(value) ?? {
     presetId: readNullableString(value?.preset_id),
     presetUpdatedAt: readNullableNumber(value?.preset_updated_at),
     presetVersion: readNullableNumber(value?.preset_version),
@@ -1248,6 +1249,8 @@ function mapDryRunWorldbookMatchDetail(value: unknown): RespondDryRunWorldbookMa
   const activation = readRecord(record.activation);
   const firstMatch = activation?.first_match === null ? null : mapDryRunWorldbookFirstMatch(activation?.first_match);
   const position = readString(insertion?.position, "after");
+  const sourceAssetScopeId = readOptionalString(source?.asset_scope_id) ?? undefined;
+  const assetScopeId = readOptionalString(record.asset_scope_id) ?? sourceAssetScopeId;
   const role = readOptionalString(insertion?.role);
 
   return {
@@ -1256,12 +1259,21 @@ function mapDryRunWorldbookMatchDetail(value: unknown): RespondDryRunWorldbookMa
       mode: readString(activation?.mode, "triggered") === "constant" ? "constant" : "triggered",
       recursionLevel: readNumber(activation?.recursion_level),
     },
+    ...(readOptionalString(record.activation_key) ? { activationKey: readString(record.activation_key) } : {}),
+    ...(assetScopeId ? { assetScopeId } : {}),
     comment: readString(record.comment),
     contentPreview: readString(record.content_preview),
     insertion: {
       depth: readNullableNumber(insertion?.depth) ?? undefined,
       outletName: readNullableString(insertion?.outlet_name) ?? undefined,
-      position: (position === "before" || position === "after" || position === "at_depth" || position === "outlet"
+      position: (position === "before"
+        || position === "after"
+        || position === "an_top"
+        || position === "an_bottom"
+        || position === "em_top"
+        || position === "em_bottom"
+        || position === "at_depth"
+        || position === "outlet"
         ? position
         : "after") as RespondDryRunWorldbookMatchInsertion["position"],
       role: (role === "system" || role === "user" || role === "assistant" ? role : undefined) as RespondDryRunWorldbookMatchInsertion["role"] | undefined,
@@ -1270,6 +1282,7 @@ function mapDryRunWorldbookMatchDetail(value: unknown): RespondDryRunWorldbookMa
     source: {
       kind: readString(source?.kind, "session_worldbook") === "character_book" ? "character_book" : "session_worldbook",
       worldbookId: readNullableString(source?.worldbook_id),
+      ...(sourceAssetScopeId ? { assetScopeId: sourceAssetScopeId } : {}),
       worldbookName: readString(source?.worldbook_name),
     },
     uid: readNumber(record.uid),

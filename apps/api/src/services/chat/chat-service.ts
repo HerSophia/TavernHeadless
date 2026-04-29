@@ -39,8 +39,8 @@ import {
 import { TurnCommitService } from "../turn-commit-service.js";
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
 import {
-  BranchLocalSnapshotMissingError,
   BranchLocalVariableSnapshotService,
+  isBranchLocalSnapshotMissingError,
 } from "../branch-local-variable-snapshot-service.js";
 
 import type {
@@ -1238,8 +1238,8 @@ export class ChatService {
   }
 
   private rethrowBranchLocalSnapshotError(error: unknown): never {
-    if (error instanceof BranchLocalSnapshotMissingError) {
-      throw new ChatServiceError(error.code, error.message, error, error.details);
+    if (isBranchLocalSnapshotMissingError(error)) {
+      throw new ChatServiceError("branch_local_snapshot_missing", error.message, error, error.details);
     }
 
     throw error;
